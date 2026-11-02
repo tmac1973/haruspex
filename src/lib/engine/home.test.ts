@@ -33,7 +33,8 @@ vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 }));
 vi.mock('#lib/agent/jobs/types/index.ts', () => ({ getJobType: () => ({ background: true }) }));
 vi.mock('#lib/home/fetchedCards.svelte.ts', () => ({
-	getCardError: (id: string) => m.errors[id] ?? null
+	getCardError: (id: string) => m.errors[id] ?? null,
+	getCardNotice: (id: string) => (id === 'gh' ? 'Start GitHub in Settings → MCP servers.' : null)
 }));
 vi.mock('#lib/home/cardTypes.ts', () => ({
 	getCardType: (id: string) =>
@@ -247,6 +248,40 @@ describe('home.cards', () => {
 			tomorrow: null
 		});
 		expect((view.payload as { today: string }).today).toMatch(/1–8°C · 20% rain$/);
+	});
+
+	it('sends GitHub items as stored, with the notice over them', async () => {
+		const item = {
+			id: 'PR_x',
+			repo: 'o/r',
+			number: 7,
+			title: 'Add a flag',
+			url: 'https://github.com/o/r/pull/7',
+			author: 'dave',
+			labels: [],
+			comments: 0,
+			updatedAt: '2026-10-31T09:00:00Z',
+			isPr: true
+		};
+		const view = await only(
+			card({
+				id: 'gh',
+				card_type: 'github',
+				config: JSON.stringify({ preset: 'prs_to_review', repos: ['o/r'] }),
+				last_result: JSON.stringify({ items: [item] }),
+				updated_at: 9
+			})
+		);
+		const shown = Object.fromEntries(Object.entries(item).filter(([k]) => k !== 'id'));
+		expect(view.payload).toEqual({
+			type: 'github',
+			scope: 'o/r',
+			items: [shown],
+			empty: 'No reviews requested.',
+			notice: 'Start GitHub in Settings → MCP servers.',
+			error: null,
+			updatedAt: 9
+		});
 	});
 
 	it('sends an unknown card by its title only', async () => {

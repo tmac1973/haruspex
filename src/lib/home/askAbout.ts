@@ -6,13 +6,15 @@
 import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
 import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
 import type { Meeting } from '#lib/home/meetings.ts';
+import type { GitHubItem } from '#lib/home/github.ts';
 import { newConversationWithDraft } from '#lib/stores/chat.svelte.ts';
 import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 
 export type AskItem =
 	| { kind: 'email'; item: ImportantEmail }
 	| { kind: 'meeting'; item: Meeting }
-	| { kind: 'news'; item: NewsItem };
+	| { kind: 'news'; item: NewsItem }
+	| { kind: 'github'; item: GitHubItem };
 
 function lines(a: AskItem): string[] {
 	switch (a.kind) {
@@ -40,6 +42,16 @@ function lines(a: AskItem): string[] {
 		case 'news': {
 			const s = a.item.source;
 			return [s.title, `${s.source}: ${s.link}`, a.item.summary];
+		}
+		case 'github': {
+			const g = a.item;
+			// The body isn't fetched; the chat can read it with the GitHub tools.
+			return [
+				`${g.repo}#${g.number} ${g.title}`,
+				`${g.isPr ? 'Pull request' : 'Issue'} by ${g.author}`,
+				...(g.labels.length ? [`Labels: ${g.labels.join(', ')}`] : []),
+				g.url
+			];
 		}
 	}
 }

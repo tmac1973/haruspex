@@ -36,6 +36,7 @@
 		isJobTypeAvailable,
 		listJobTypes
 	} from '#lib/agent/jobs/types/index.ts';
+	import type { JobDraft } from '#lib/stores/jobsTabSelection.svelte.ts';
 
 	// Platform-gated types (autonomous coding) hide from the picker until
 	// their probe says otherwise; idempotent, so fire per mount.
@@ -43,6 +44,8 @@
 
 	interface Props {
 		jobId: number | 'new';
+		/** What a new job starts from (a Home card's Plan this issue); unsaved until Save. */
+		draft?: JobDraft | null;
 		onsaved: (id: number) => void;
 		ondeleted: () => void;
 		oncancel: () => void;
@@ -50,7 +53,7 @@
 		onduplicated: (id: number) => void;
 	}
 
-	const { jobId, onsaved, ondeleted, oncancel, onduplicated }: Props = $props();
+	const { jobId, draft = null, onsaved, ondeleted, oncancel, onduplicated }: Props = $props();
 
 	let name = $state('');
 	let description = $state('');
@@ -174,6 +177,17 @@
 			typeConfig = getJobType('research')!.configDefaults();
 			modelForm = emptyModelForm();
 			modelFormVersion++;
+			const from = untrack(() => draft);
+			if (from) {
+				name = from.name;
+				workingDir = from.workingDir;
+				jobType = from.jobType;
+				typeConfig = { ...getJobType(from.jobType)!.configDefaults(), ...from.config };
+				openSection = 'type';
+				// Nothing is saved yet: leaving asks first, as for any unsaved edit.
+				baseline = '';
+				return;
+			}
 			void captureBaseline();
 			return;
 		}

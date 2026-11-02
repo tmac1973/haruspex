@@ -34,9 +34,15 @@ Each check lists your unread inbox mail and the model picks the messages that fi
 
 Both keep their last result, shown at once when Haruspex starts with the time it was read. **↻** reads again now (weather under 10 minutes old comes back unchanged). A failed read keeps the last result and says what went wrong.
 
+## Keep up with GitHub
+
+**Add card → GitHub…** needs the GitHub MCP server (see the `integrations` page) and reads through it every 15 minutes, with no model. Pick **Issues from others** (open issues someone else filed), **Reviews requested** or **Pull requests from others**. Leave Owners and Repos empty for your own repos. It skips ones you've commented on and bots unless you untick those; labels, days and a maximum narrow it. If the server is stopped, the card says so above its last result.
+
+An issue's **⋯** also has **Open code session**, which puts the issue in a new Code session's box unsent, and **Plan this issue**, a guided-planning job filled in from it (unsaved). Both need a Code session you've opened in a checkout of that repo.
+
 ## Act on what a card shows
 
-Each email, story and meeting has a **⋯** menu.
+Each email, story, meeting and GitHub item has a **⋯** menu.
 
 - **Ask about this** opens a new chat with the item quoted in the box, for you to add a question and send. For an email it quotes what the card shows; ask the chat to read the whole message.
 - **Open** shows a whole email. Clicking a headline opens the story; **Join** opens a meeting.
