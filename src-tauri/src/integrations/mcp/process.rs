@@ -170,6 +170,40 @@ pub struct McpSupervisor {
     /// path is a path: it keeps the supervisor drivable in tests, where the
     /// receiver end is just read directly.
     tools_changed: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    /// Tool calls under way, by server id. An update refuses to stop a server
+    /// with a call in flight. A std mutex because the guard that decrements
+    /// it does so in `Drop`, which cannot await.
+    in_flight: Arc<std::sync::Mutex<HashMap<String, u32>>>,
+}
+
+/// Counts one tool call for as long as it lives, so an error, an early return
+/// or a cancelled future all give the count back.
+struct InFlight {
+    counts: Arc<std::sync::Mutex<HashMap<String, u32>>>,
+    id: String,
+}
+
+impl InFlight {
+    fn start(counts: &Arc<std::sync::Mutex<HashMap<String, u32>>>, id: &str) -> Self {
+        let mut map = counts.lock().unwrap_or_else(|e| e.into_inner());
+        *map.entry(id.to_string()).or_insert(0) += 1;
+        Self {
+            counts: Arc::clone(counts),
+            id: id.to_string(),
+        }
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        let mut map = self.counts.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(n) = map.get_mut(&self.id) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                map.remove(&self.id);
+            }
+        }
+    }
 }
 
 impl McpSupervisor {
@@ -178,7 +212,15 @@ impl McpSupervisor {
             servers: Mutex::new(HashMap::new()),
             registry_path,
             tools_changed: None,
+            in_flight: Arc::default(),
         }
+    }
+
+    /// How many tool calls to this server are under way. Every tool call any
+    /// part of the app makes goes through [`Self::call_tool`].
+    pub fn calls_in_flight(&self, id: &str) -> u32 {
+        let map = self.in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(id).copied().unwrap_or(0)
     }
 
     /// Route `notifications/tools/list_changed` to this channel.
@@ -247,6 +289,7 @@ impl McpSupervisor {
         input_responses: Option<std::collections::BTreeMap<String, serde_json::Value>>,
         request_state: Option<String>,
     ) -> Result<McpCallOutcome, String> {
+        let _in_flight = InFlight::start(&self.in_flight, id);
         let started = std::time::Instant::now();
         let result = self
             .session(id)
@@ -1229,6 +1272,27 @@ mod tests {
         assert!(err.contains("not connected"), "got {err}");
         assert!(sup.list_tools("ghost").await.is_err());
         assert!(sup.connection("ghost").await.is_none());
+    }
+
+    #[test]
+    fn calls_in_flight_count_each_call_and_give_it_back_when_it_ends() {
+        let sup = supervisor();
+        let first = InFlight::start(&sup.in_flight, "srv");
+        let second = InFlight::start(&sup.in_flight, "srv");
+        let _other = InFlight::start(&sup.in_flight, "other");
+        assert_eq!(sup.calls_in_flight("srv"), 2);
+        drop(first);
+        assert_eq!(sup.calls_in_flight("srv"), 1);
+        drop(second);
+        assert_eq!(sup.calls_in_flight("srv"), 0);
+        assert_eq!(sup.calls_in_flight("other"), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_call_is_no_longer_in_flight() {
+        let sup = supervisor();
+        let _ = sup.call_tool("ghost", "read_thing", None, None, None).await;
+        assert_eq!(sup.calls_in_flight("ghost"), 0);
     }
 
     // ---- lifecycle -------------------------------------------------------

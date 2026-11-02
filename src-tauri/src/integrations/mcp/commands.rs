@@ -18,6 +18,7 @@ use super::process::{McpSupervisor, SpawnConfig};
 use super::server_config::McpServerConfig;
 use super::server_config::McpServerSource;
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
+use super::update;
 use crate::proxy::ProxyConfig;
 use crate::sidecar_util::SidecarStatus;
 use tauri::{AppHandle, Emitter};
@@ -223,6 +224,81 @@ pub async fn mcp_update_status(
         }
     }
     Ok(out)
+}
+
+/// Install a catalog server's current pin beside its installed version. The
+/// server keeps running; [`mcp_update_swap`] puts the new version in place.
+/// Progress streams on `mcp-install-progress`, as for an install.
+#[tauri::command]
+pub async fn mcp_update_stage(
+    app: AppHandle,
+    installer: State<'_, McpInstaller>,
+    entry_id: String,
+    server_id: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<(), String> {
+    let catalog = catalog::load()?;
+    let entry = catalog
+        .entry(&entry_id)
+        .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
+    installer
+        .stage_update(&app, entry, &server_id, proxy.as_ref())
+        .await
+}
+
+/// Put a staged update in place, carrying the user's files across. The caller
+/// has stopped the server; the old version waits until
+/// [`mcp_update_commit`] or [`mcp_update_rollback`].
+#[tauri::command]
+pub async fn mcp_update_swap(
+    app: AppHandle,
+    entry_id: String,
+    server_id: String,
+) -> Result<(), String> {
+    let dir = install::server_dir(&app, &server_id)?;
+    let catalog = catalog::load()?;
+    let installed = manifest::load_or_backfill(&dir, &entry_id, catalog.entry(&entry_id))?;
+    update::swap(&dir, &installed.package_files)
+}
+
+/// Keep the new version.
+#[tauri::command]
+pub async fn mcp_update_commit(app: AppHandle, server_id: String) -> Result<(), String> {
+    update::commit(&install::server_dir(&app, &server_id)?)
+}
+
+/// Put the old version back, from wherever the update stopped, and drop the
+/// staged install.
+#[tauri::command]
+pub async fn mcp_update_rollback(app: AppHandle, server_id: String) -> Result<(), String> {
+    update::rollback(&install::server_dir(&app, &server_id)?).map(|_| ())
+}
+
+/// Undo updates a previous run left half done. Called at launch, before any
+/// server starts. Returns the ids whose old version was restored.
+#[tauri::command]
+pub async fn mcp_update_recover(app: AppHandle) -> Result<Vec<String>, String> {
+    Ok(update::recover(&install::servers_root(&app)?))
+}
+
+/// Tool calls under way to a server. An update checks this after withdrawing
+/// the server's tools and before stopping it.
+#[tauri::command]
+pub async fn mcp_calls_in_flight(
+    supervisor: State<'_, McpSupervisor>,
+    server_id: String,
+) -> Result<u32, String> {
+    Ok(supervisor.calls_in_flight(&server_id))
+}
+
+/// Which of these paths are directories that exist — for an update to drop
+/// the addon projects that have gone before listing the rest.
+#[tauri::command]
+pub async fn mcp_existing_dirs(paths: Vec<String>) -> Result<Vec<String>, String> {
+    Ok(paths
+        .into_iter()
+        .filter(|p| std::path::Path::new(p).is_dir())
+        .collect())
 }
 
 /// Stop an install in flight. The staging directory goes with it, so a retry

@@ -48,7 +48,7 @@ pub const INSTALL_PROGRESS_EVENT: &str = "mcp-install-progress";
 
 /// Suffix for the staging directory. Never a valid server id, because ids are
 /// UUIDs the frontend makes.
-const STAGING_SUFFIX: &str = ".installing";
+pub(super) const STAGING_SUFFIX: &str = ".installing";
 
 /// Starts the error a blocked version is refused with, so the frontend can tell
 /// it from a failure and say why without parsing prose.
@@ -119,6 +119,44 @@ impl McpInstaller {
                 info!("mcp: installed {} for server {server_id}", entry.id);
                 emit(app, "Installed", 1, 1);
                 Ok(final_dir)
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_dir_all(&staging).await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Install the current pin beside an installed server, for
+    /// [`super::update::swap`] to put in place. The installed server is not
+    /// touched, so it keeps running while this downloads.
+    pub async fn stage_update(
+        &self,
+        app: &AppHandle,
+        entry: &CatalogEntry,
+        server_id: &str,
+        proxy: Option<&ProxyConfig>,
+    ) -> Result<(), String> {
+        self.reset_cancel().await;
+        let final_dir = server_dir(app, server_id)?;
+        if !final_dir.is_dir() {
+            return Err(format!("{} is not installed", entry.name));
+        }
+        let staging = staging_dir(&final_dir);
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+        tokio::fs::create_dir_all(&staging)
+            .await
+            .map_err(|e| format!("could not create {}: {e}", staging.display()))?;
+        let result = match self.install_into(app, entry, &staging, proxy).await {
+            Ok(()) => InstallManifest::for_install(&staging, entry)
+                .and_then(|manifest| manifest.write(&staging)),
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok(()) => {
+                info!("mcp: staged {} for server {server_id}", entry.id);
+                emit(app, "Installed", 1, 1);
+                Ok(())
             }
             Err(e) => {
                 let _ = tokio::fs::remove_dir_all(&staging).await;
@@ -418,7 +456,7 @@ pub fn server_dir(app: &AppHandle, server_id: &str) -> Result<PathBuf, String> {
     Ok(servers_root(app)?.join(server_id))
 }
 
-fn staging_dir(final_dir: &Path) -> PathBuf {
+pub(super) fn staging_dir(final_dir: &Path) -> PathBuf {
     let mut name = final_dir.as_os_str().to_os_string();
     name.push(STAGING_SUFFIX);
     PathBuf::from(name)
@@ -530,6 +568,7 @@ pub async fn uninstall(app: &AppHandle, server_id: &str) -> Result<(), String> {
     let dir = server_dir(app, server_id)?;
     let staging = staging_dir(&dir);
     let _ = tokio::fs::remove_dir_all(&staging).await;
+    let _ = tokio::fs::remove_dir_all(super::update::previous_dir(&dir)).await;
     match tokio::fs::remove_dir_all(&dir).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
