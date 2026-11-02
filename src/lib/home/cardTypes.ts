@@ -9,6 +9,8 @@ import CodeSessionsCard from '#lib/components/home/cards/CodeSessionsCard.svelte
 import PinnedJobCard from '#lib/components/home/cards/PinnedJobCard.svelte';
 import ImportantEmailsCard from '#lib/components/home/cards/ImportantEmailsCard.svelte';
 import ImportantEmailsForm from '#lib/components/home/forms/ImportantEmailsForm.svelte';
+import NewsCard from '#lib/components/home/cards/NewsCard.svelte';
+import NewsForm from '#lib/components/home/forms/NewsForm.svelte';
 import MeetingsCard from '#lib/components/home/cards/MeetingsCard.svelte';
 import MeetingsForm from '#lib/components/home/forms/MeetingsForm.svelte';
 import WeatherCard from '#lib/components/home/cards/WeatherCard.svelte';
@@ -114,6 +116,19 @@ const CARD_TYPES: CardType[] = [
 		notifies: true,
 		itemLabel: (item) => String((item.source as { subject?: string } | undefined)?.subject ?? ''),
 		defaultSchedule: { kind: 'interval', minutes: 30 }
+	},
+	{
+		id: 'news',
+		label: 'News',
+		kind: 'judged',
+		component: NewsCard,
+		form: NewsForm,
+		defaultSize: 'normal',
+		addable: () => true,
+		jobType: 'news_digest',
+		notifies: true,
+		itemLabel: (item) => String((item.source as { title?: string } | undefined)?.title ?? ''),
+		defaultSchedule: { kind: 'daily', time: '07:00' }
 	},
 	{
 		id: 'upcoming_meetings',

@@ -8,6 +8,7 @@
 import { registerJobType } from '#lib/agent/jobs/types/registry.ts';
 import { researchJobType } from '#lib/agent/jobs/types/research/definition.ts';
 import { emailDigestJobType } from '#lib/agent/jobs/types/email-digest/definition.ts';
+import { newsDigestJobType } from '#lib/agent/jobs/types/news-digest/definition.ts';
 import { auditJobType } from '#lib/agent/jobs/types/audit/definition.ts';
 import { guidedPlanningJobType } from '#lib/agent/jobs/types/guided-planning/definition.ts';
 import { autonomousCodingJobType } from '#lib/agent/jobs/types/autonomous-coding/definition.ts';
@@ -15,6 +16,7 @@ import { assetGenerationJobType } from '#lib/agent/jobs/types/asset-generation/d
 
 registerJobType(researchJobType);
 registerJobType(emailDigestJobType);
+registerJobType(newsDigestJobType);
 registerJobType(auditJobType);
 registerJobType(guidedPlanningJobType);
 registerJobType(autonomousCodingJobType);

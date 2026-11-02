@@ -1,6 +1,6 @@
 ---
 title: Home
-description: The Home tab — cards for jobs, Code sessions, pinned jobs, important email, meetings and weather. Adding, arranging and removing cards.
+description: The Home tab — cards for jobs, Code sessions, pinned jobs, important email, news, meetings and weather. Adding, arranging and removing cards.
 ---
 
 # Home
@@ -32,6 +32,10 @@ The card updates when a run finishes, scheduled runs included. If you delete the
 Each check lists your unread inbox mail and asks the model which messages fit your rule. The card shows each one's subject, sender and age, read straight from your mail, with the model's short reason under it. The model only picks; it can't change what the card says a message is. Mail you have read drops off at the next check, and checking never marks anything as read. **Refresh** checks now.
 
 A check waits while a chat or Code turn is using the model, and the card says "Waiting for chat". It reads only the sender, subject and first lines of each message, not the whole message. Like every job but research, it doesn't run in lean mode.
+
+## Follow the news you care about
+
+**Add card → News…** asks for RSS or Atom feeds (tick a few listed ones or paste your own) and your interests ("local politics, Rust, space"). Each morning at 7, or on **Refresh**, it reads the feeds and the model picks the stories that match, each with a one-line summary. Headlines, sources and links come from the feeds; click a headline to open it. A feed that can't be read is skipped.
 
 ## See your next meetings
 
