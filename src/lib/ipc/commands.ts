@@ -283,6 +283,7 @@ export const IPC = {
 	mcp_start_server: 'mcp_start_server',
 	mcp_stop_server: 'mcp_stop_server',
 	mcp_uninstall_server: 'mcp_uninstall_server',
+	mcp_update_status: 'mcp_update_status',
 	memory_add: 'memory_add',
 	memory_count: 'memory_count',
 	memory_delete: 'memory_delete',

@@ -39,7 +39,8 @@ const command: SetupStep = {
 	label: 'Sign in',
 	args: [],
 	help: null,
-	optional: false
+	optional: false,
+	onUpdate: false
 };
 const addon: SetupStep = {
 	kind: 'addon',

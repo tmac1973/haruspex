@@ -201,6 +201,11 @@ pub enum SetupStep {
         help: Option<String>,
         #[serde(default)]
         optional: bool,
+        /// Run again when the server is updated in place. For a step whose
+        /// result belongs to the package version — Playwright's browser, which
+        /// each release pins — not for a sign-in, which an update must keep.
+        #[serde(default)]
+        on_update: bool,
     },
     /// A pinned archive unpacked into a directory the user picks.
     ///
@@ -253,6 +258,28 @@ impl SetupStep {
     }
 }
 
+/// A version that must not start, and why, in words shown to the user.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedVersion {
+    /// Exact, as `acquisition.version` spells it. No ranges: npm, PyPI and
+    /// GitHub tags order versions three different ways.
+    pub version: String,
+    pub reason: String,
+}
+
+impl Acquisition {
+    /// The pinned version, as the catalog spells it.
+    pub fn version(&self) -> &str {
+        match self {
+            Acquisition::Npm { version, .. }
+            | Acquisition::Pypi { version, .. }
+            | Acquisition::Binary { version, .. } => version,
+        }
+    }
+}
+
 /// One vetted server.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
 #[ts(export)]
@@ -280,6 +307,21 @@ pub struct CatalogEntry {
     /// required for a companion entry — see `validate`.
     #[serde(default)]
     pub provenance: Option<Provenance>,
+    /// Versions of this server that must not start, for a known security
+    /// problem. Checked against what is installed, so a release can stop an
+    /// old install that is still on disk.
+    #[serde(default)]
+    pub blocked_versions: Vec<BlockedVersion>,
+}
+
+impl CatalogEntry {
+    /// Why `version` must not start, when it must not.
+    pub fn blocked_reason(&self, version: &str) -> Option<&str> {
+        self.blocked_versions
+            .iter()
+            .find(|b| b.version == version)
+            .map(|b| b.reason.as_str())
+    }
 }
 
 /// The bundled catalog, compiled in.
@@ -381,6 +423,24 @@ fn validate(catalog: &Catalog) -> Result<(), String> {
                 "entry {}: a companion-app entry must record its provenance",
                 entry.id
             ));
+        }
+        let mut blocked = std::collections::BTreeSet::new();
+        for b in &entry.blocked_versions {
+            if b.version.is_empty() || b.reason.trim().is_empty() {
+                return Err(format!(
+                    "entry {}: a blocked version needs a version and a reason",
+                    entry.id
+                ));
+            }
+            if b.version == entry.acquisition.version() {
+                return Err(format!(
+                    "entry {}: blocks {}, the version it pins",
+                    entry.id, b.version
+                ));
+            }
+            if !blocked.insert(b.version.as_str()) {
+                return Err(format!("entry {}: blocks {} twice", entry.id, b.version));
+            }
         }
         if let Acquisition::Binary { assets, sha256, .. } = &entry.acquisition {
             for triple in assets.keys() {
@@ -789,6 +849,61 @@ mod tests {
         parse(&text)
     }
 
+    fn blocking_catalog(blocked: &str) -> Result<Catalog, String> {
+        parse(&format!(
+            r#"{{"entries":[{{
+                "id":"b","name":"B","description":"d","homepage":"h",
+                "acquisition":{{"kind":"npm","package":"p","version":"2.0.0","bin":"p/i.js"}},
+                "blockedVersions":[{blocked}]
+            }}]}}"#
+        ))
+    }
+
+    #[test]
+    fn a_blocked_version_is_exact_explained_and_never_the_pin() {
+        let catalog = blocking_catalog(r#"{"version":"1.0.0","reason":"Leaks tokens."}"#)
+            .expect("a well-formed block");
+        assert_eq!(
+            catalog.entries[0].blocked_reason("1.0.0"),
+            Some("Leaks tokens.")
+        );
+        assert_eq!(catalog.entries[0].blocked_reason("1.0.1"), None);
+
+        let pin = blocking_catalog(r#"{"version":"2.0.0","reason":"x"}"#).unwrap_err();
+        assert!(pin.contains("the version it pins"), "{pin}");
+        let twice = blocking_catalog(
+            r#"{"version":"1.0.0","reason":"x"},{"version":"1.0.0","reason":"y"}"#,
+        )
+        .unwrap_err();
+        assert!(twice.contains("twice"), "{twice}");
+        let unexplained = blocking_catalog(r#"{"version":"1.0.0","reason":" "}"#).unwrap_err();
+        assert!(unexplained.contains("a reason"), "{unexplained}");
+    }
+
+    #[test]
+    fn only_playwrights_browser_download_reruns_on_update() {
+        // The browser belongs to the package version; Google's sign-in and
+        // Blender's add-on install do not, and rerunning them would make the
+        // user sign in or re-add the add-on on every update.
+        let mut rerun = Vec::new();
+        for entry in load().unwrap().entries {
+            for step in &entry.setup {
+                if let SetupStep::Command {
+                    label,
+                    on_update: true,
+                    ..
+                } = step
+                {
+                    rerun.push((entry.id.clone(), label.clone()));
+                }
+            }
+        }
+        assert_eq!(
+            rerun,
+            [("playwright".to_string(), "Download the browser".to_string())]
+        );
+    }
+
     const GOOD_SHA: &str = "36433ec6fe492e70823d57973f699b36efae2cdc6fd1e393bc6678a76bf8ebf9";
 
     #[test]
@@ -952,6 +1067,7 @@ mod tests {
             setup,
             companion: None,
             provenance: None,
+            blocked_versions: Vec::new(),
         }
     }
 

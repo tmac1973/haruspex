@@ -18,7 +18,13 @@ optional: boolean, } | { "kind": "file", label: string,
  * Destination name inside the server directory, e.g.
  * `gcp-oauth.keys.json`.
  */
-filename: string, help: string | null, optional: boolean, } | { "kind": "command", label: string, args: Array<string>, help: string | null, optional: boolean, } | { "kind": "addon", label: string, 
+filename: string, help: string | null, optional: boolean, } | { "kind": "command", label: string, args: Array<string>, help: string | null, optional: boolean, 
+/**
+ * Run again when the server is updated in place. For a step whose
+ * result belongs to the package version — Playwright's browser, which
+ * each release pins — not for a sign-in, which an update must keep.
+ */
+onUpdate: boolean, } | { "kind": "addon", label: string, 
 /**
  * Pinned release archive. Version-locked to the server it pairs with:
  * the two speak a private protocol over the bridge, so a mismatched

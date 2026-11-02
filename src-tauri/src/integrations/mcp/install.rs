@@ -50,6 +50,10 @@ pub const INSTALL_PROGRESS_EVENT: &str = "mcp-install-progress";
 /// UUIDs the frontend makes.
 const STAGING_SUFFIX: &str = ".installing";
 
+/// Starts the error a blocked version is refused with, so the frontend can tell
+/// it from a failure and say why without parsing prose.
+pub const BLOCKED_VERSION_PREFIX: &str = "BLOCKED_VERSION:";
+
 /// Placeholder an entry's `env` can use for the server's own directory.
 const SERVER_DIR_PLACEHOLDER: &str = "$serverDir";
 
@@ -654,6 +658,19 @@ fn catalog_command_args(dir: &Path, config: &McpServerConfig) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Refuse an installed version the current catalog entry blocks. Checked
+/// against the current entry, not the installed one, because a release is
+/// where an installed version is found to be unsafe.
+fn refuse_blocked(
+    current: Option<&CatalogEntry>,
+    installed: &InstallManifest,
+) -> Result<(), String> {
+    match current.and_then(|e| e.blocked_reason(installed.version())) {
+        Some(reason) => Err(format!("{BLOCKED_VERSION_PREFIX}{reason}")),
+        None => Ok(()),
+    }
+}
+
 /// The manifest of the server installed in `dir`, backfilled from the current
 /// catalog entry when the install predates manifests.
 fn installed_manifest(dir: &Path, entry_id: &str) -> Result<InstallManifest, String> {
@@ -707,7 +724,10 @@ fn build_spawn_config(
             // release that bumps the pin must not hand the old package a new
             // entry's arguments, and an entry that has left the catalog still
             // launches.
-            let manifest = installed_manifest(dir, entry_id)?;
+            let catalog = super::catalog::load()?;
+            let current = catalog.entry(entry_id);
+            let manifest = manifest::load_or_backfill(dir, entry_id, current)?;
+            refuse_blocked(current, &manifest)?;
             let mut spawn =
                 catalog_spawn_config(dir, &manifest.entry, &config.id, &config.secrets)?;
             // Appended after the entry's own environment so a catalog entry
@@ -1210,6 +1230,30 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("not a plain file name"), "{err}");
         assert!(!root.join("servers").join("escaped.json").exists());
+    }
+
+    #[test]
+    fn a_blocked_install_is_refused_with_a_marker_the_frontend_can_read() {
+        let mut current = super::super::catalog::load()
+            .unwrap()
+            .entry("playwright")
+            .unwrap()
+            .clone();
+        let installed_version = current.acquisition.version().to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let installed = InstallManifest::for_install(dir.path(), &current).unwrap();
+        assert_eq!(refuse_blocked(Some(&current), &installed), Ok(()));
+
+        current.blocked_versions = vec![super::super::catalog::BlockedVersion {
+            version: installed_version,
+            reason: "Runs any page's script.".into(),
+        }];
+        assert_eq!(
+            refuse_blocked(Some(&current), &installed),
+            Err("BLOCKED_VERSION:Runs any page's script.".to_string())
+        );
+        // An entry that left the catalog cannot block anything.
+        assert_eq!(refuse_blocked(None, &installed), Ok(()));
     }
 
     #[test]

@@ -41,6 +41,12 @@ export interface McpRuntimeState {
 	companion: CompanionStatus;
 	/** Why the last start failed, when it did. */
 	error: string | null;
+	/**
+	 * Why the installed version may not start, when the catalog blocks it for a
+	 * security problem. Kept apart from `error` because it is not a failure to
+	 * report: the fix is to update.
+	 */
+	blockedReason: string | null;
 	/** True while a start or stop is in flight, so the row can disable itself. */
 	busy: boolean;
 }
@@ -54,9 +60,13 @@ function blank(): McpRuntimeState {
 		tools: [],
 		companion: { kind: 'unknown' },
 		error: null,
+		blockedReason: null,
 		busy: false
 	};
 }
+
+/** What Rust starts the refusal of a blocked version with (`install.rs`). */
+const BLOCKED_VERSION_PREFIX = 'BLOCKED_VERSION:';
 
 const states = $state<Record<string, McpRuntimeState>>({});
 
@@ -125,7 +135,12 @@ export async function startMcpServer(
 	catalogEntry: CatalogEntry | null
 ): Promise<void> {
 	configs[config.id] = config;
-	patch(config.id, { busy: true, error: null, status: { type: 'Starting' } });
+	patch(config.id, {
+		busy: true,
+		error: null,
+		blockedReason: null,
+		status: { type: 'Starting' }
+	});
 	try {
 		// The backend outlives this module. A frontend reload — `make dev` after
 		// a change, or any webview reload — resets the tool registry and this
@@ -188,6 +203,18 @@ export async function startMcpServer(
 		// Withdraw anything a previous run left registered: a half-started
 		// server must not leave callable tools behind.
 		unregisterMcpServer(config.id);
+		if (message.startsWith(BLOCKED_VERSION_PREFIX)) {
+			patch(config.id, {
+				status: STOPPED,
+				connection: null,
+				tools: [],
+				companion: { kind: 'unknown' },
+				error: null,
+				blockedReason: message.slice(BLOCKED_VERSION_PREFIX.length),
+				busy: false
+			});
+			return;
+		}
 		patch(config.id, {
 			status: { type: 'Error', message },
 			connection: null,
