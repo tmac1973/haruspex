@@ -216,14 +216,14 @@ pub fn strip_url_queries(text: &str) -> String {
 }
 
 /// One word, its URL's `?…` or `#…` dropped up to where the URL ends (a
-/// closing quote, bracket or comma). Anything that isn't a URL comes back
-/// as it was.
+/// closing quote, backtick, bracket or comma, or the backslash of an escaped
+/// quote in a JSON string). Anything that isn't a URL comes back as it was.
 pub(crate) fn url_without_query(word: &str) -> String {
     let Some(start) = word.find("://") else {
         return word.to_string();
     };
     let end = word[start..]
-        .find(['"', '\'', ')', ']', '>', ','])
+        .find(['"', '\'', '`', '\\', ')', ']', '>', ','])
         .map_or(word.len(), |i| start + i);
     match word[start..end].find(['?', '#']) {
         Some(q) => format!("{}{}", &word[..start + q], &word[end..]),
@@ -274,6 +274,12 @@ mod tests {
         );
         assert_eq!(strip_url_queries("no url ?here"), "no url ?here");
         assert_eq!(strip_url_queries("[https://a.io/y]"), "[https://a.io/y]");
+        // A URL inside escaped JSON or Markdown code keeps what closes it.
+        assert_eq!(
+            strip_url_queries(r#"{\"url\":\"http://h:3000/v1?k=1\"}"#),
+            r#"{\"url\":\"http://h:3000/v1\"}"#
+        );
+        assert_eq!(strip_url_queries("`http://h/x?k=1`."), "`http://h/x`.");
     }
 
     #[test]
