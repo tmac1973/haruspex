@@ -50,25 +50,6 @@
 		removing = card;
 	}
 
-	/** Grid rows are this tall; a card spans as many as its height needs. */
-	const ROW = 4;
-	const GAP = 12;
-
-	/**
-	 * Pack the grid like a masonry wall: each cell spans the rows its card's
-	 * height needs, and dense placement fills the holes a short card leaves.
-	 */
-	function packRows(cell: HTMLElement) {
-		if (typeof ResizeObserver === 'undefined') return;
-		const card = cell.firstElementChild ?? cell;
-		const observer = new ResizeObserver(() => {
-			const height = card.getBoundingClientRect().height;
-			cell.style.gridRowEnd = `span ${Math.ceil((height + GAP) / ROW)}`;
-		});
-		observer.observe(card);
-		return { destroy: () => observer.disconnect() };
-	}
-
 	/**
 	 * A drag to move a card, by its header. Pointer events rather than HTML
 	 * drag and drop, which the webview's file drop takes over on Windows.
@@ -162,7 +143,6 @@
 				class:lifted={drag?.started && drag.id === card.id}
 				class:target={drag?.over === card.id}
 				data-card-id={card.id}
-				use:packRows
 			>
 				<CardFrame
 					title={type ? (type.title?.(card) ?? type.label) : 'Unknown card'}
@@ -226,15 +206,13 @@
 		margin-bottom: 12px;
 	}
 
-	/* Rows are 4px (ROW); packRows spans each cell over enough of them, and
-	   its card keeps 12px (GAP) below it in place of a row gap. */
+	/* Every card is one row tall and scrolls inside, so rows line up and the
+	   cards sit in their stored order, where a drag puts them. */
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-		grid-auto-rows: 4px;
-		grid-auto-flow: row dense;
-		column-gap: 12px;
-		align-items: start;
+		grid-auto-rows: 320px;
+		gap: 12px;
 	}
 
 	.grid.dragging {
@@ -244,6 +222,7 @@
 
 	.cell {
 		min-width: 0;
+		min-height: 0;
 	}
 
 	.cell.wide {

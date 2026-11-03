@@ -51,7 +51,7 @@ Each email, story, meeting and GitHub item has a **⋯** menu.
 
 ## Add, arrange and remove cards
 
-**Add card**, top right, adds a card at the end; drag a card by its title to move it, and cards pack together to fill gaps; a removed card can be added back. One that needs an account or server first is greyed out; hover it to see what to set up. Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (two columns) or **Normal width**, **Edit job** (its job's schedule and settings, in the Jobs tab) and **Remove**.
+**Add card**, top right, adds a card at the end; drag a card by its title to move it. Cards are one height and scroll inside; a removed card can be added back. One that needs an account or server first is greyed out; hover it to see what to set up. Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (two columns) or **Normal width**, **Edit job** (its job's schedule and settings, in the Jobs tab) and **Remove**.
 
 The email and news cards make their own job, which has a **Home** badge in the Jobs tab. It waits while a chat or Code turn is using the model (the card says "Waiting for chat"), and like every job but research it doesn't run in lean mode. **⋯ → Notify on new items** sends a desktop notification naming what's new; it is off until you turn it on. Removing such a card deletes its job unless you untick **Also delete the job**; removing a pinned job's card keeps the job unless you tick it.
 
