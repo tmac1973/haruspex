@@ -106,7 +106,7 @@ registerTool({
 		function: {
 			name: 'search_code',
 			description:
-				'Find the code that answers a question in plain words ("where is X handled", "what decides Y"). Returns the best few snippets with paths and line numbers. Use this first when you don\'t know the exact identifier; use code_grep when you do.',
+				'Call this before code_grep or reading files when you don\'t know the identifier. Finds the code that answers a question in plain words ("where is X handled", "what decides Y") and returns the best few snippets with paths and line numbers. Use code_grep when you already know the exact name.',
 			parameters: {
 				type: 'object',
 				properties: {

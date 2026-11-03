@@ -31,6 +31,11 @@ export interface HelperDef {
 	tools: string[];
 	/** Its tools write into the project (the writer lease; refused when read-only). */
 	writes: boolean;
+	/**
+	 * Its line in the Code system prompt's TOOLS list (`- tool — …`), while a
+	 * session offers it. Without one the model has only the tool's schema.
+	 */
+	prompt?: string;
 	/** Its own settings, if it has any. A lazy component, so this file pulls in no Svelte. */
 	settings?: HelperSettings<unknown>;
 }

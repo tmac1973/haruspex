@@ -12,6 +12,7 @@ import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 import { toolIndexSection } from '#lib/agent/tools/_deferredLoaded.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
+import type { HelperDef } from '#lib/helpers/registry.ts';
 
 const SEARCH_AND_FILE_TOOLS = `- code_grep — search file CONTENTS (gitignore-aware); returns file:line locations, not bodies. Find where something is defined/used, then read those lines.
 - code_glob — find files by path glob (e.g. "src/**/*.ts").
@@ -143,6 +144,25 @@ export interface BuildCodePromptOpts {
 	 * prompt lists them, and their TOOLS lines go in the `load_tools` result.
 	 */
 	deferred?: DeferredFamily[];
+	/** The helpers the session offers (`sessionHelpers`): their TOOLS lines lead the list. */
+	helpers?: Pick<HelperDef, 'id' | 'prompt'>[];
+}
+
+/** The session's helpers' TOOLS lines, each ending in a newline. */
+function helperLines(opts: BuildCodePromptOpts): string {
+	return (opts.helpers ?? [])
+		.filter((h) => h.prompt)
+		.map((h) => `${h.prompt}\n`)
+		.join('');
+}
+
+/** HOW TO WORK; with the Search helper on, it locates code with search_code first. */
+function howToWork(opts: BuildCodePromptOpts): string {
+	if (!opts.helpers?.some((h) => h.id === 'search')) return HOW_TO_WORK;
+	return HOW_TO_WORK.replace(
+		'- Explore before editing: grep/glob to locate code,',
+		'- Explore before editing: locate code with search_code (a question in plain words) or grep/glob (a name you already know),'
+	);
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -318,7 +338,7 @@ Project folder: ${opts.root}${sessionNotes(opts)}
 Commands you run with run_command execute one at a time in the project folder, without a terminal: nothing can be typed into them, and a \`cd\` or an exported variable does not carry over to the next call, so chain with && when needed. Paths for file tools are relative to the project folder. The project folder is your boundary: a command that reaches outside it needs the user's approval.${platformNote(opts)}
 
 TOOLS:
-${fileTools(opts.readOnly)}
+${helperLines(opts)}${fileTools(opts.readOnly)}
 - run_command — run ONE shell command; it runs to completion and returns combined output + exit code. ${UNIX_CAPTURE_NOTE} A foreground command times out (default ${timeout}s) if it doesn't exit — for anything long-running use background/watch instead. Options: background:true runs it detached and returns an id at once; watch:true does the same and notifies you with a follow-up turn when it finishes (exit code + output).
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
@@ -331,6 +351,6 @@ RUNNING PROCESSES:
 - Background commands are stopped when this session closes.
 - ${handoffRule(opts)}
 
-${HOW_TO_WORK}${tail(opts)}`
+${howToWork(opts)}${tail(opts)}`
 	};
 }

@@ -66,6 +66,7 @@ export { withNotice };
 import { logDebug } from '#lib/debugLog.ts';
 import { compactCodeThread, compactionDue, modelThread } from '#lib/code/compaction.ts';
 import type { CodeCompaction } from '#lib/code/session.ts';
+import { sessionHelpers } from '#lib/helpers/registry.ts';
 
 export interface CodeTurnOptions {
 	sessionId: string;
@@ -418,7 +419,7 @@ function batchLeads(messages: () => ChatMessage[]): {
 /** What `prepareSystem` needs of a turn. */
 export type SystemPromptInput = Pick<
 	CodeTurnOptions,
-	'root' | 'readOnly' | 'remote' | 'worktree' | 'wslDistro' | 'onProject'
+	'root' | 'readOnly' | 'remote' | 'worktree' | 'wslDistro' | 'onProject' | 'helpers'
 > & {
 	/** The turn is a subtask's, handed this task (`delegate`); see `BuildCodePromptOpts.subtask`. */
 	subtask?: BuildCodePromptOpts['subtask'];
@@ -475,7 +476,9 @@ export async function prepareSystem(
 		powershell: o.wslDistro ? null : await agentPowershell(),
 		delegate: delegateModes(o),
 		subtask: o.subtask,
-		deferred: turnTools?.deferredTools
+		deferred: turnTools?.deferredTools,
+		// A subtask gets no helpers (its prompt is built apart and ignores these).
+		helpers: o.subtask ? [] : sessionHelpers(o.helpers)
 	});
 	return { system, skills, turnTools };
 }
