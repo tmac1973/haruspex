@@ -21,7 +21,11 @@ It searches the text files in the session's folder, fresh on every call. Files y
 
 It works in a read-only session, since it changes nothing.
 
-For better results on vaguely worded questions, set a reranker on the Search row (Settings → Code → Helpers → Search): the server's address, an API key if it needs one, and a model (**Fetch** lists the server's rerank models). Any server with `/v1/rerank` works, such as llama-toolchest or llama-server started with `--reranking`. It adds a couple of seconds a search. If the reranker is down or takes over 15 seconds, the helper uses keyword ranking and tells the agent why.
+### Use it with a reranker
+
+Search is worth turning on only with a reranker. On its own it ranks code by the words it shares with the question, and those snippets are often not the right ones: the agent then searches and greps both, and uses more of its context than with grep alone. With a reranker it usually finds the code in fewer steps. In our tests the difference was small either way, so leave Search off if you have no reranker to point it at.
+
+Set the reranker on the Search row (Settings → Code → Helpers → Search): the server's address, an API key if it needs one, and a model (**Fetch** lists the server's rerank models). Any server with `/v1/rerank` works, such as llama-toolchest or llama-server started with `--reranking`. It adds a couple of seconds a search. If the reranker is down or takes over 15 seconds, the helper uses keyword ranking and tells the agent why.
 
 ## The 3D helper
 
