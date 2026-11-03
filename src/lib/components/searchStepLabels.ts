@@ -5,7 +5,8 @@
 /** Tools whose query is shown quoted (`<prefix>: "<query>"`). */
 const QUOTED_LABEL_PREFIX: Record<string, string> = {
 	web_search: 'Searching',
-	image_search: 'Searching images'
+	image_search: 'Searching images',
+	search_code: 'Searching code'
 };
 
 /** Tool → label prefix for the rest (`<prefix>: <query>`). */
