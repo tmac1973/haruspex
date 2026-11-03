@@ -83,7 +83,15 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 			? `Joints checked: ${c.jointsChecked.join(', ')}.`
 			: 'No knee or elbow joints found by name.',
 		`Ends ${cm(c.seam)} from where it starts${c.seamPart ? ` (${c.seamPart} moves most)` : ''}: a loop needs this near 0.`,
+		c.reachPart
+			? `Key pose: ${c.reachPart} gets ${cm(c.reach)} from where it starts (${Math.round((100 * c.reach) / (c.height || 1))}% of the model's height), at ${sec(c.reachAt)}. A timid key pose reads as no motion in a game: push it further if it is.`
+			: 'Nothing moves.',
 		`The model's centre wanders ${cm(c.drift)} across the floor.`,
+		...(c.slides.length
+			? [
+					'A planted part should stay put: turn the joint above it against the body, or lift it off the floor.'
+				]
+			: []),
 		p.length ? `Problems: ${p.join('; ')}.` : 'No problems found.'
 	);
 	return lines;

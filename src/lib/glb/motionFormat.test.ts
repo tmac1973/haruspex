@@ -17,6 +17,10 @@ function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 		seamPart: 'Mesh_Foot_L',
 		drift: 0.02,
 		fastest: ['Mesh_Foot_L', 'Mesh_Foot_R'],
+		reach: 0.42,
+		reachPart: 'Mesh_Hand_R',
+		reachAt: 0.4,
+		height: 0.7,
 		dead: [],
 		jumps: [],
 		sanity: [],
@@ -75,6 +79,21 @@ describe('formatClip', () => {
 			'Ends 1 cm from where it starts (Mesh_Foot_L moves most): a loop needs this near 0.'
 		);
 		expect(without.at(-1)).toBe('No problems found.');
+	});
+
+	it('names the key pose, and says to push a timid one', () => {
+		expect(formatClip(motion(), false)).toContain(
+			"Key pose: Mesh_Hand_R gets 42 cm from where it starts (60% of the model's height), at 0.40 s. A timid key pose reads as no motion in a game: push it further if it is."
+		);
+		expect(formatClip(motion({ reach: 0, reachPart: '' }), false)).toContain('Nothing moves.');
+	});
+
+	it('says how to fix a sliding foot, only when one slides', () => {
+		const hint =
+			'A planted part should stay put: turn the joint above it against the body, or lift it off the floor.';
+		expect(formatClip(motion(), false)).not.toContain(hint);
+		const sliding = motion({ slides: [{ part: 'Foot', cm: 9, from: 0, to: 0.5 }] });
+		expect(formatClip(sliding, false)).toContain(hint);
 	});
 
 	it('names a skinned rig', () => {

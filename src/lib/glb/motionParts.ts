@@ -20,6 +20,8 @@ const FRAME_INSIDE = 0.25;
 const CONTACT_SLACK = 0.01;
 /** Within this of the floor (m), a vertex is planted. */
 const PLANTED = 0.01;
+/** Fewer planted vertices than this is a graze, not a part standing on the floor. */
+const MIN_PLANTED = 3;
 /** A stance sliding more than this (m) is reported. */
 const SLIDE = 0.03;
 /** A fold past this many degrees the wrong way is reported. */
@@ -145,7 +147,11 @@ export function slideTracker(THREE: Three, parts: Part[], stride: number, floor:
 				);
 				const before = planted.get(part.name);
 				planted.set(part.name, now);
-				if (!now.size) {
+				// Distinct points: a cone's tip is several vertices in one place.
+				const points = new Set(
+					[...now.values()].map(([x, z]) => `${Math.round(x * 1e3)},${Math.round(z * 1e3)}`)
+				);
+				if (points.size < Math.ceil(MIN_PLANTED / stride)) {
 					close(part.name);
 					continue;
 				}
