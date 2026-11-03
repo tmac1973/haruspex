@@ -7,7 +7,7 @@
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { dbQuery } from '#lib/stores/dbCall.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
-	import { currentRunLine, runStatusLabel } from '#lib/home/jobsCard.ts';
+	import { currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
 	import { getJobType } from '#lib/agent/jobs/types/index.ts';
 
 	// Home hands every card its row; a live card keeps nothing in it.
@@ -18,6 +18,7 @@
 
 	const current = $derived(getCurrentRun());
 	const queued = $derived(getQueueDepth());
+	const progress = $derived(current ? runProgress(current) : null);
 	let recent = $state<RecentRun[]>([]);
 
 	// A run starting, finishing or joining the queue changes one of these.
@@ -52,11 +53,14 @@
 			>{currentRunLine(current, getJobType(current.jobType)?.background ?? false)}</span
 		>
 	</button>
+	{#if progress !== null}
+		<div class="bar"><span style:width="{Math.round(progress * 100)}%"></span></div>
+	{/if}
 {:else}
 	<p class="muted">Nothing running.</p>
 {/if}
 {#if queued > 0}
-	<p class="muted">{queued} queued</p>
+	<p class="muted"><span class="count">{queued}</span> queued</p>
 {/if}
 
 {#if recent.length > 0}
@@ -113,8 +117,37 @@
 		background: var(--bg-primary);
 	}
 
+	.row.current {
+		background: var(--accent-soft);
+	}
+
 	.row.current .name {
 		font-weight: 600;
+	}
+
+	.row.current .detail,
+	.count {
+		color: var(--accent);
+	}
+
+	.count {
+		font-weight: 600;
+	}
+
+	.bar {
+		height: 4px;
+		margin: 4px 0 6px;
+		border-radius: 2px;
+		background: var(--border);
+		overflow: hidden;
+	}
+
+	.bar span {
+		display: block;
+		height: 100%;
+		border-radius: 2px;
+		background: var(--accent);
+		transition: width 0.3s;
 	}
 
 	.name {

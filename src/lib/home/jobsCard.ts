@@ -18,6 +18,19 @@ export function currentRunLine(run: RunState, background = false): string {
 	return parts.join(' · ') || 'Running';
 }
 
+/**
+ * How far the run going now is, 0 to 1: its steps, and the current step's
+ * checklist within them. Null when there's nothing to measure (one step, no
+ * checklist), so the card shows no bar.
+ */
+export function runProgress(run: RunState): number | null {
+	const total = run.steps.length;
+	const list = run.steps[run.currentStepIndex]?.checklist;
+	const within = list?.length ? list.filter((e) => e.status === 'done').length / list.length : 0;
+	if (total <= 1 && !list?.length) return null;
+	return Math.min(1, (run.currentStepIndex + within) / Math.max(total, 1));
+}
+
 const STATUS_LABELS: Record<string, string> = {
 	queued: 'Queued',
 	running: 'Running',

@@ -137,6 +137,13 @@
 		font-size: 0.8rem;
 	}
 
+	/* The model's words, apart from the feed's. */
+	.summary {
+		margin-top: 2px;
+		padding-left: 6px;
+		border-left: 2px solid var(--accent);
+	}
+
 	.muted,
 	.error {
 		margin: 4px 0;
