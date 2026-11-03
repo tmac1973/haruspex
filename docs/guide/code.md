@@ -32,13 +32,13 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 Commands that need a password (`sudo`) or a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in, not run. Check it, then press `Enter`.
 
-The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. Then the agent gets the exit code, output and command as run. **Cancel** stops the wait (the agent goes on without it); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (old fish), the agent asks you.
+The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. The agent then gets the exit code, output and command run. **Cancel** stops the wait (the agent carries on); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (old fish), the agent asks you.
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits. A `.glb` opens in a 3D view (drag to orbit, scroll to zoom).
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files but not see your edits. A `.glb` opens in a 3D view (drag to orbit, scroll to zoom); **Animation** plays a clip.
 
-An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes them.
+An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable**: outside changes won't show. Closing a window with unsaved edits asks first; the main window closes them all.
 
 ## Steer or stop the agent
 

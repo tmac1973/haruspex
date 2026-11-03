@@ -16,6 +16,10 @@ export interface GlbStats {
 
 export interface GlbView {
 	stats: GlbStats;
+	/** The clips' names, in the file's order. */
+	clips: string[];
+	/** Loop one clip by index, or none (null) for the rest pose. */
+	playClip(index: number | null): void;
 	/** Put the camera back where it started. */
 	resetCamera(): void;
 	dispose(): void;
@@ -71,7 +75,13 @@ export async function mountGlbView(canvas: HTMLCanvasElement, bytes: Uint8Array)
 	resetCamera();
 
 	const mixer = gltf.animations.length > 0 ? new THREE.AnimationMixer(root) : null;
-	for (const clip of gltf.animations) mixer?.clipAction(clip).play();
+	const actions = mixer ? gltf.animations.map((clip) => mixer.clipAction(clip)) : [];
+	// One clip at a time: a walk and a run played together are neither.
+	function playClip(index: number | null): void {
+		mixer?.stopAllAction();
+		if (index !== null) actions[index]?.play();
+	}
+	playClip(actions.length ? 0 : null);
 	const clock = new THREE.Clock();
 
 	function resize(): void {
@@ -94,6 +104,8 @@ export async function mountGlbView(canvas: HTMLCanvasElement, bytes: Uint8Array)
 
 	return {
 		stats: countStats(root, [sizes.x, sizes.y, sizes.z], gltf.animations.length),
+		clips: gltf.animations.map((clip, i) => clip.name || `Clip ${i + 1}`),
+		playClip,
 		resetCamera,
 		dispose() {
 			renderer.setAnimationLoop(null);
