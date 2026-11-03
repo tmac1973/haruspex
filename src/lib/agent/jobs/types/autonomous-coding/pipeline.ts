@@ -357,7 +357,9 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			interactive,
 			cfg.open_findings,
 			cfg.asset_spec_path,
-			cfg.missing_assets
+			cfg.missing_assets,
+			cfg.models_spec_path,
+			cfg.missing_models
 		);
 		abortIfCancelled();
 		if (!outcome.ready) {
@@ -376,7 +378,9 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 				interactive,
 				cfg.open_findings,
 				cfg.asset_spec_path,
-				cfg.missing_assets
+				cfg.missing_assets,
+				cfg.models_spec_path,
+				cfg.missing_models
 			),
 			toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 			what: 'decisions file',
@@ -720,7 +724,9 @@ async function runPreflightTurn(
 	interactive: boolean,
 	openFindings: string[],
 	assetSpecPath: string | null,
-	missingAssets: string[]
+	missingAssets: string[],
+	modelsSpecPath: string | null,
+	missingModels: string[]
 ): Promise<PreflightOutcome> {
 	let captured: PreflightResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(PREFLIGHT);
@@ -744,7 +750,9 @@ async function runPreflightTurn(
 			interactive,
 			openFindings,
 			assetSpecPath,
-			missingAssets
+			missingAssets,
+			modelsSpecPath,
+			missingModels
 		),
 		toolAllowlist: withWebResearch(preflightTools(interactive), webResearch),
 		forceFinalTool: SUBMIT_PREFLIGHT_TOOL,

@@ -350,6 +350,9 @@ export interface ToolRegistration {
 		| 'planning'
 		| 'coding'
 		| 'memory'
+		/** A tool a job type offers its own turns (`draw_texture`). Only through
+		 *  a `toolAllowlist`, never the filters. */
+		| 'job'
 		| 'memory-write'
 		| 'interaction'
 		| 'mcp'

@@ -147,6 +147,7 @@ describe('coding_run overrides', () => {
 });
 
 describe('chain_models', () => {
+	const NONE = { assets: null, coding: null, models_create: null, models_animate: null };
 	const fast = {
 		model_remote_base_url: 'http://fast',
 		model_remote_api_key: null,
@@ -158,7 +159,7 @@ describe('chain_models', () => {
 	};
 
 	it('is "same as this job" for both stages when absent, as for every older job', () => {
-		expect(parseGuidedPlanningConfig('{}').chain_models).toEqual({ assets: null, coding: null });
+		expect(parseGuidedPlanningConfig('{}').chain_models).toEqual(NONE);
 	});
 
 	it('reads a stage override', () => {
@@ -175,8 +176,24 @@ describe('chain_models', () => {
 			{ coding: { model_remote_model_id: 'fast' } }
 		]) {
 			const c = parseGuidedPlanningConfig(JSON.stringify({ chain_models }));
-			expect(c.chain_models).toEqual({ assets: null, coding: null });
+			expect(c.chain_models).toEqual(NONE);
 		}
+	});
+
+	it('reads the two 3D stage overrides', () => {
+		const c = parseGuidedPlanningConfig(
+			JSON.stringify({ chain_models: { models_create: fast, models_animate: 'x' } })
+		);
+		expect(c.chain_models.models_create).toEqual(fast);
+		expect(c.chain_models.models_animate).toBeNull();
+	});
+});
+
+describe('generate_models', () => {
+	it('is off unless explicitly true', () => {
+		expect(parseGuidedPlanningConfig(null).generate_models).toBe(false);
+		expect(parseGuidedPlanningConfig('{"generate_models":"yes"}').generate_models).toBe(false);
+		expect(parseGuidedPlanningConfig('{"generate_models":true}').generate_models).toBe(true);
 	});
 });
 

@@ -91,6 +91,11 @@ export interface AssetGenerationConfig {
 	 * All-null columns are valid and mean the Settings model.
 	 */
 	chain_coding_model: ModelColumns | null;
+	/**
+	 * Set by a chain: a job to start instead of the coding run (the 3D models
+	 * run, which starts coding itself). Null = start coding from here.
+	 */
+	chain_next_job_id: number | null;
 }
 
 /** A number rounded into `[lo, hi]`, or null for anything that isn't one. */
@@ -149,7 +154,13 @@ export function parseAssetGenerationConfig(json: string | null): AssetGeneration
 			typeof raw.chain_base_name === 'string' && raw.chain_base_name.trim()
 				? raw.chain_base_name.trim()
 				: null,
-		chain_coding_model: parseModelColumns(raw.chain_coding_model)
+		chain_coding_model: parseModelColumns(raw.chain_coding_model),
+		chain_next_job_id:
+			typeof raw.chain_next_job_id === 'number' &&
+			Number.isInteger(raw.chain_next_job_id) &&
+			raw.chain_next_job_id > 0
+				? raw.chain_next_job_id
+				: null
 	};
 }
 

@@ -31,7 +31,9 @@ import {
 	type SamplingParams
 } from '#lib/stores/settings.ts';
 import { parseModelAdvanced } from '#lib/agent/jobs/modelAdvanced.ts';
-import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
+import { backendOverrideFor, jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
+import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
+import { modelFormFromColumns, modelFormSummary } from '#lib/agent/jobs/jobModelForm.ts';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from '#lib/agent/jobs/types/index.ts';
@@ -97,6 +99,25 @@ function jobDescriptor(job: JobWithSteps) {
 }
 
 /**
+ * A model a single turn may run on instead of the job's, described the way
+ * `jobDescriptor` describes the job's own: same descriptor path, so the
+ * Settings model (a null URL) falls back to the global values exactly as a
+ * job without an override does.
+ */
+function describeModel(cols: ModelColumns): {
+	label: string;
+	vision: boolean;
+	contextSize: number;
+} {
+	const descriptor = resolveBackendDescriptor(backendOverrideFor(cols));
+	return {
+		label: modelFormSummary(modelFormFromColumns(cols)),
+		vision: descriptor.vision,
+		contextSize: descriptor.contextSize
+	};
+}
+
+/**
  * What a run executes under, as the stats card reports it.
  *
  * Resolved here at run start and persisted with the run, because the job's
@@ -152,14 +173,24 @@ function runJobTurn(
 	job: JobWithSteps,
 	runId: number,
 	abort: AbortController,
-	opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal' | 'jobSubtasks'> & {
+	{
+		model,
+		...opts
+	}: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal' | 'jobSubtasks'> & {
 		turnKind?: string;
+		model?: ModelColumns;
 	}
 ): Promise<EphemeralTurnResult> {
 	if (current && current.id === runId) {
 		current = { ...current, waitingForSlot: true };
 	}
-	const backend = jobBackendOverride(job);
+	// A turn on its own model takes that model's backend, so it queues on that
+	// server's slot lane and its context size rides on the override. Vision is
+	// the model's too, unless the pipeline decided it.
+	const backend = model ? backendOverrideFor(model) : jobBackendOverride(job);
+	if (model && opts.visionSupported === undefined) {
+		opts = { ...opts, visionSupported: describeModel(model).vision };
+	}
 	return withInferenceSlot(
 		{
 			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
@@ -885,6 +916,7 @@ function buildRunContext(
 		isLive: () => current?.id === runId,
 		contextSize: () => jobDescriptor(job).contextSize,
 		visionSupported: () => jobDescriptor(job).vision,
+		describeModel,
 		finalizeRun: (status, error) => {
 			finalizeRun(runId, job.id, status, error);
 			void reflectOnRun(job, runId, status, error);

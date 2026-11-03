@@ -4,13 +4,13 @@ import { runGuidedPlanningPipeline } from '#lib/agent/jobs/types/guided-planning
 import {
 	type GuidedPlanningRunMode,
 	type GuidedPlanningVerification,
-	parseGuidedPlanningConfig,
-	stageModelProblem
+	parseGuidedPlanningConfig
 } from '#lib/agent/jobs/types/guided-planning/config.ts';
 import { DEFAULT_MAX_TURNS } from '#lib/agent/jobs/types/autonomous-coding/config.ts';
 import {
 	modelColumnsFromForm,
 	modelFormFromColumns,
+	stageModelProblem,
 	type JobModelForm
 } from '#lib/agent/jobs/jobModelForm.ts';
 import type { ChainModel } from '#lib/agent/jobs/chainModel.ts';
@@ -24,6 +24,7 @@ export interface GuidedPlanningEditorState {
 	web_research: boolean;
 	use_git: boolean;
 	generate_assets: boolean;
+	generate_models: boolean;
 	run_mode: GuidedPlanningRunMode;
 	// Concrete strings/numbers in the editor ('' and 0 = unset), converted back
 	// to nulls by configToJson.
@@ -31,6 +32,9 @@ export interface GuidedPlanningEditorState {
 	/** A chained stage's model; null = same as this job. */
 	chain_assets_model: JobModelForm | null;
 	chain_coding_model: JobModelForm | null;
+	/** The 3D job's creation and animation models; null = same as this job. */
+	chain_models_create_model: JobModelForm | null;
+	chain_models_animate_model: JobModelForm | null;
 	/** The planning skill's name; '' for none. */
 	planning_skill: string;
 	/** Stop after the overview. */
@@ -72,6 +76,11 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 		title: 'Assets',
 		description:
 			'Writing an asset spec from the finished plan, so a chained asset run can generate the art before any code is written. Only runs when "Also generate assets" is on.'
+	},
+	{
+		title: '3D models',
+		description:
+			'List the 3D models the plan needs, in models.json. Only runs when "Also generate 3D models" is on.'
 	},
 	{
 		title: 'Approval',
@@ -132,11 +141,14 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		web_research: true,
 		use_git: true,
 		generate_assets: false,
+		generate_models: false,
 		run_mode: 'attended',
 		// The coding job's own default, shown as itself, not a 0 meaning "unset".
 		coding_max_turns: DEFAULT_MAX_TURNS,
 		chain_assets_model: null,
 		chain_coding_model: null,
+		chain_models_create_model: null,
+		chain_models_animate_model: null,
 		planning_skill: '',
 		overview_only: false
 	}),
@@ -149,6 +161,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			web_research: c.web_research,
 			use_git: c.use_git,
 			generate_assets: c.generate_assets,
+			generate_models: c.generate_models,
 			run_mode: c.run_mode,
 			coding_max_turns: c.coding_run.max_turns ?? DEFAULT_MAX_TURNS,
 			chain_assets_model: c.chain_models.assets
@@ -156,6 +169,12 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 				: null,
 			chain_coding_model: c.chain_models.coding
 				? modelFormFromColumns(c.chain_models.coding)
+				: null,
+			chain_models_create_model: c.chain_models.models_create
+				? modelFormFromColumns(c.chain_models.models_create)
+				: null,
+			chain_models_animate_model: c.chain_models.models_animate
+				? modelFormFromColumns(c.chain_models.models_animate)
 				: null,
 			planning_skill: c.planning_skill ?? '',
 			overview_only: c.overview_only
@@ -172,15 +191,21 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			use_git: s.use_git ? undefined : false,
 			// Opt-in, so only `true` is worth storing.
 			generate_assets: s.generate_assets || undefined,
+			generate_models: s.generate_models || undefined,
 			// Sparse: only a non-default mode is stored.
 			run_mode: s.run_mode === 'attended' ? undefined : s.run_mode,
 			coding_run: codingRunJson(s),
-			// Sparse like the rest: absent when both stages inherit.
+			// Sparse like the rest: absent when every stage inherits.
 			chain_models:
-				s.chain_assets_model || s.chain_coding_model
+				s.chain_assets_model ||
+				s.chain_coding_model ||
+				s.chain_models_create_model ||
+				s.chain_models_animate_model
 					? {
 							assets: stageModelJson(s.chain_assets_model),
-							coding: stageModelJson(s.chain_coding_model)
+							coding: stageModelJson(s.chain_coding_model),
+							models_create: stageModelJson(s.chain_models_create_model),
+							models_animate: stageModelJson(s.chain_models_animate_model)
 						}
 					: undefined,
 			planning_skill: s.planning_skill || undefined,
@@ -192,6 +217,13 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		if (!workingDir.trim())
 			return 'Guided planning needs a working directory — the project to plan in.';
 		if (!s.initial_description.trim()) return 'Describe what you want to build to start planning.';
+		// The 3D job is made in every mode, so its two models are checked in every mode.
+		const models = s.generate_models && !s.overview_only;
+		const modelsProblem = models
+			? (stageModelProblem('3D creation model', s.chain_models_create_model) ??
+				stageModelProblem('3D animation model', s.chain_models_animate_model))
+			: null;
+		if (modelsProblem) return modelsProblem;
 		if (s.run_mode === 'unattended_chain' && !s.overview_only) {
 			return (
 				(s.generate_assets ? stageModelProblem('asset run', s.chain_assets_model) : null) ??
@@ -203,6 +235,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 	missingRequired: ({ config }) => {
 		const s = config as unknown as GuidedPlanningEditorState;
 		const chain = s.run_mode === 'unattended_chain' && !s.overview_only;
+		const models = s.generate_models && !s.overview_only;
 		return [
 			...(s.initial_description.trim() ? [] : ['What do you want to build?']),
 			...(chain && s.generate_assets && stageModelProblem('asset run', s.chain_assets_model)
@@ -210,6 +243,12 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 				: []),
 			...(chain && stageModelProblem('coding run', s.chain_coding_model)
 				? ['Coding run model']
+				: []),
+			...(models && stageModelProblem('3D creation model', s.chain_models_create_model)
+				? ['3D creation model']
+				: []),
+			...(models && stageModelProblem('3D animation model', s.chain_models_animate_model)
+				? ['3D animation model']
 				: [])
 		];
 	},

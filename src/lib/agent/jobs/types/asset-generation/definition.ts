@@ -36,6 +36,7 @@ export interface AssetGenerationEditorState {
 	coding_run: Record<string, unknown> | null;
 	chain_base_name: string | null;
 	chain_coding_model: ModelColumns | null;
+	chain_next_job_id: number | null;
 }
 
 /**
@@ -127,7 +128,8 @@ export const assetGenerationJobType: JobTypeDefinition = {
 		hand_off: true,
 		coding_run: null,
 		chain_base_name: null,
-		chain_coding_model: null
+		chain_coding_model: null,
+		chain_next_job_id: null
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAssetGenerationConfig(typeConfig);
@@ -147,7 +149,8 @@ export const assetGenerationJobType: JobTypeDefinition = {
 			hand_off: c.hand_off ?? true,
 			coding_run: c.coding_run,
 			chain_base_name: c.chain_base_name,
-			chain_coding_model: c.chain_coding_model
+			chain_coding_model: c.chain_coding_model,
+			chain_next_job_id: c.chain_next_job_id
 		};
 	},
 	configToJson: (config) => {
@@ -170,7 +173,8 @@ export const assetGenerationJobType: JobTypeDefinition = {
 						hand_off: s.hand_off,
 						coding_run: s.coding_run,
 						chain_base_name: s.chain_base_name ?? undefined,
-						chain_coding_model: s.chain_coding_model ?? undefined
+						chain_coding_model: s.chain_coding_model ?? undefined,
+						chain_next_job_id: s.chain_next_job_id ?? undefined
 					}
 				: {})
 		});

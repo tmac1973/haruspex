@@ -28,6 +28,7 @@ import '#lib/agent/tools/image-gen.ts';
 import '#lib/agent/tools/image-edit.ts';
 import '#lib/agent/tools/image-upscale.ts';
 import '#lib/agent/tools/make-asset.ts';
+import '#lib/agent/tools/draw-texture.ts';
 import '#lib/agent/tools/music-gen.ts';
 import '#lib/agent/tools/music-edit.ts';
 import '#lib/agent/tools/speech-gen.ts';

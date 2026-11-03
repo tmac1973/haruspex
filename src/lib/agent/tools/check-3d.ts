@@ -17,13 +17,18 @@ import {
 	MODEL_FILE as MODEL,
 	MODULE_FILE as MODULE
 } from '#lib/helpers/three/output.ts';
-import { runBuildModule } from '#lib/helpers/three/runModule.ts';
-import { errMessage } from '#lib/utils/error.ts';
+import {
+	failed,
+	loadModuleRun,
+	missingLine,
+	MOTION_NOTE,
+	readFile,
+	runFailure,
+	SHEET_NOTE,
+	type LoadIo
+} from '#lib/helpers/three/load.ts';
 
-export const SHEET_NOTE =
-	'The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): compare it with what you meant to make before you finish.';
-export const MOTION_NOTE =
-	"The motion sheet is attached (right and front frames, then all frames overlaid with trails of the parts that move most). 'No problems found' only means nothing is physically wrong: check the key pose reads at a glance from the side and the front, fix what you see, and call check_3d again before you finish.";
+export { MOTION_NOTE, SHEET_NOTE };
 
 const DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid). A module imports nothing; its default export gets THREE (the app's three) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed), random(seed)) and returns an Object3D, or { object, animations } for clips:
 \`\`\`js
@@ -37,11 +42,13 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
-Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. kit.texture('textures/bark.png') gives a Texture from a PNG next to the module; pass the path as a string literal. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {
 	path: string;
+	/** An animation module run beside the build module `path`. */
+	anim?: string;
 	out?: string;
 	opts: CheckOptions;
 }
@@ -76,12 +83,26 @@ function outPath(
 	return { out };
 }
 
+/** The animation module's path (undefined: none), or why it can't be used. */
+function animPath(raw: unknown, path: string): string | undefined | { problem: string } {
+	const anim = typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+	if (anim === undefined) return undefined;
+	if (!MODULE.test(path)) {
+		return { problem: 'anim works only with a .js or .mjs build module as path.' };
+	}
+	if (!MODULE.test(anim)) return { problem: 'anim must be a .js or .mjs module.' };
+	if (anim === path) return { problem: 'anim must be a different file from path.' };
+	return anim;
+}
+
 /** The arguments, checked, or why they can't be used. */
 function parseArgs(args: Record<string, unknown>): Args | string {
 	const path = typeof args.path === 'string' ? args.path.trim() : '';
 	if (!MODULE.test(path) && !MODEL.test(path)) {
 		return 'path must be a .js or .mjs build module, or a .glb or .gltf file.';
 	}
+	const anim = animPath(args.anim, path);
+	if (typeof anim === 'object') return anim.problem;
 	const { height, ground, max_triangles: max, clip } = args;
 	const bad = numberProblem(height, max);
 	if (bad) return bad;
@@ -92,6 +113,7 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 	if (typeof out === 'string') return out;
 	return {
 		path,
+		anim,
 		out: out.out,
 		opts: {
 			height: height as number | undefined,
@@ -117,10 +139,6 @@ function externalGltf(bytes: number[]): boolean {
 	}
 }
 
-function failed(lines: string[], path: string): string {
-	return ['The check failed.', ...lines, `Fix ${path} and call check_3d again.`].join('\n');
-}
-
 interface Source {
 	glb: Uint8Array;
 	/** A module's tracks that name a node it doesn't have. */
@@ -128,30 +146,21 @@ interface Source {
 }
 
 /** The GLB bytes to check: a module's export, or the file itself. */
-async function source(a: Args, abs: string, ctx: ToolContext): Promise<Source | string> {
-	let bytes: number[];
-	try {
-		bytes = await assetIo(ctx).read(abs);
-	} catch (e) {
-		return toolError(`Could not read ${a.path}: ${errMessage(e)}`);
-	}
+async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<Source | string> {
+	const io: LoadIo = { read: (p) => assetIo(ctx).read(p), cwd };
 	if (MODEL.test(a.path)) {
-		if (/\.gltf$/i.test(a.path) && externalGltf(bytes)) {
+		const got = await readFile(a.path, io);
+		if ('refused' in got) return toolError(got.refused);
+		if (/\.gltf$/i.test(a.path) && externalGltf(got.bytes)) {
 			return toolError('Export it as .glb, or embed its buffers and images in the .gltf.');
 		}
-		return { glb: new Uint8Array(bytes), missing: [] };
+		return { glb: new Uint8Array(got.bytes), missing: [] };
 	}
 	ctx.onProgress?.('Building');
-	const run = await runBuildModule(new TextDecoder().decode(new Uint8Array(bytes)), {
-		signal: ctx.signal
-	});
-	if (run.errors.length || !run.glb) {
-		const lines = run.errors.map((e) =>
-			e.line === null ? `- ${e.message}` : `- line ${e.line}: ${e.message}`
-		);
-		return failed(lines.length ? lines : ['- build() exported nothing.'], a.path);
-	}
-	return { glb: run.glb, missing: run.missingTracks };
+	const run = await loadModuleRun({ build: a.path, anim: a.anim }, io, ctx.signal);
+	if ('refused' in run) return toolError(run.refused);
+	if (run.errors.length || !run.glb) return runFailure(run.errors, { build: a.path, anim: a.anim });
+	return { glb: run.glb, missing: run.missing };
 }
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
@@ -159,7 +168,7 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	const a = parseArgs(args);
 	if (typeof a === 'string') return toolResult(toolError(a));
 	const cwd = ctxCwd(ctx);
-	const got = await source(a, resolveShellPath(a.path, cwd), ctx);
+	const got = await source(a, cwd, ctx);
 	if (typeof got === 'string') return toolResult(got);
 
 	ctx.onProgress?.('Checking');
@@ -193,15 +202,6 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	return toolResult(lines.join('\n'), checked.png ?? undefined);
 }
 
-/** The line about tracks the exporter dropped, if there were any. */
-function missingLine(missing: string[]): string[] {
-	if (!missing.length) return [];
-	const names = missing.slice(0, 12).join(', ');
-	return [
-		`Tracks naming a node the model doesn't have (the exporter dropped them, so they do nothing): ${names}.`
-	];
-}
-
 /** Give the agent the sheet when its model can see it; whether it did. */
 function attachSheet(ctx: ToolContext, path: string, png: string | null): boolean {
 	if (png === null || ctx.visionSupported === false) return false;
@@ -224,6 +224,11 @@ registerTool({
 						type: 'string',
 						description:
 							'A .js/.mjs build module, or a .glb/.gltf file, relative to the session folder.'
+					},
+					anim: {
+						type: 'string',
+						description:
+							'An animation module (.js): its default export animate(THREE, object, kit) returns an array of AnimationClip for the object path builds. Only with a module path.'
 					},
 					out: {
 						type: 'string',

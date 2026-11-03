@@ -83,7 +83,7 @@ describe('guided planning overview only', () => {
 	it('plans the overview stage alone', () => {
 		const steps = guidedPlanningJobType.planSteps(job(toJson(state({ overview_only: true }))));
 		expect(steps.map((s) => s.authored)).toEqual(['Overview']);
-		expect(guidedPlanningJobType.planSteps(job(toJson(state()))).length).toBe(7);
+		expect(guidedPlanningJobType.planSteps(job(toJson(state()))).length).toBe(8);
 	});
 
 	it('stores the flag only when it is on, and loads it back', () => {
@@ -106,5 +106,61 @@ describe('guided planning overview only', () => {
 				}) as unknown as Record<string, unknown>
 			})
 		).toBeNull();
+	});
+});
+
+describe('guided planning 3D models', () => {
+	const validate = (s: GuidedPlanningEditorState) =>
+		guidedPlanningJobType.validate?.({
+			name: 'x',
+			workingDir: '/repo',
+			steps: [],
+			config: s as unknown as Record<string, unknown>
+		});
+	const missing = (s: GuidedPlanningEditorState) =>
+		guidedPlanningJobType.missingRequired?.({
+			name: 'x',
+			workingDir: '/repo',
+			steps: [],
+			config: s as unknown as Record<string, unknown>
+		});
+
+	it('stores the switch only when on, and round-trips both stage models', () => {
+		expect(JSON.parse(toJson(state())).generate_models).toBeUndefined();
+		const saved = toJson(
+			state({
+				generate_models: true,
+				chain_models_create_model: modelFormFromColumns(fast)
+			})
+		);
+		expect(JSON.parse(saved).chain_models.models_create.model_remote_model_id).toBe('fast');
+		const loaded = guidedPlanningJobType.configFromJob(
+			saved
+		) as unknown as GuidedPlanningEditorState;
+		expect(loaded.generate_models).toBe(true);
+		expect(loaded.chain_models_create_model?.modelId).toBe('fast');
+		expect(loaded.chain_models_animate_model).toBeNull();
+	});
+
+	it('checks the two 3D models in every mode, only when the switch is on', () => {
+		const blank = emptyModelForm('remote');
+		for (const run_mode of ['attended', 'unattended_chain'] as const) {
+			expect(
+				validate(state({ run_mode, generate_models: true, chain_models_animate_model: blank }))
+			).toMatch(/3D animation model/);
+			expect(
+				missing(state({ run_mode, generate_models: true, chain_models_create_model: blank }))
+			).toContain('3D creation model');
+		}
+		expect(
+			validate(state({ generate_models: false, chain_models_create_model: blank }))
+		).toBeNull();
+	});
+
+	it('plans a 3D models stage between Assets and Approval', () => {
+		const steps = guidedPlanningJobType.planSteps({
+			type_config: toJson(state())
+		} as unknown as Parameters<typeof guidedPlanningJobType.planSteps>[0]);
+		expect(steps.map((s) => s.authored).slice(4, 7)).toEqual(['Assets', '3D models', 'Approval']);
 	});
 });

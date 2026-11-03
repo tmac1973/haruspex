@@ -218,7 +218,7 @@ describe('guided_planning — asset chain', () => {
 		wireWrites();
 		await run(planningJob(), turns([{ id: 'Not An Id', kind: 'sprite', prompt: 'x' }]));
 		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
-		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 7);
 		expect(String(handoff.at(-1)?.[3])).toContain(
 			'starts WITHOUT art: every asset the stage listed was rejected'
 		);
@@ -274,7 +274,7 @@ describe('guided_planning — asset chain', () => {
 
 		expect(mocks.createJob).toHaveBeenCalledTimes(1);
 		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
-		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 7);
 		expect(String(handoff.at(-1)?.[3])).toContain('no image backend');
 	});
 
@@ -301,7 +301,7 @@ describe('guided_planning — asset chain', () => {
 	it('still reaches the Approval and Handoff stages, so indices do not shift', async () => {
 		wireWrites();
 		await run(planningJob({ generate_assets: false }), turns());
-		for (const idx of [4, 5, 6]) {
+		for (const idx of [4, 5, 6, 7]) {
 			expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === idx)).toBe(true);
 		}
 	});

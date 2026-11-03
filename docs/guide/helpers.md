@@ -40,6 +40,10 @@ Ask for a 3D asset as usual ("make a low-poly mana potion for my Godot game"). T
 
 The agent can also ask to see one clip moving: eight frames from the side and the front, then all of them overlaid with trails of the parts that move most.
 
+The agent can keep a model's clips in a file of their own, beside the file that builds it. That file's `animate(THREE, object, kit)` gets the built model and returns its clips, and the helper checks the two files together (`anim`), so changing a clip never touches the model.
+
+A model can use a PNG from the project as a texture: the file calls `kit.texture('textures/bark.png')` with the path written out in full, relative to the file, and the PNG ends up inside the `.glb`.
+
 If the file has an error, the agent gets it with its line number and fixes it. It usually checks a few times before it's done.
 
 The agent can also check a `.glb` made another way, for example with a Blender script. That writes nothing, unless it asks for a resized copy.
@@ -52,6 +56,7 @@ The agent can ask the helper to:
 | `ground` | puts the feet on the floor, centred |
 | `max_triangles` | warns when the model is over a triangle budget |
 | `clip` | shows that animation clip moving instead of the still views |
+| `anim` | adds the clips from an animation file to the model |
 
 Three.js comes with the app, so the 3D helper needs no network. The agent sees the render sheet only if its model can read images; the text report comes either way.
 

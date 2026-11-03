@@ -63,6 +63,45 @@ describe('jobs runner — asset generation', () => {
 		expect(String(handoff.at(-1)?.[3])).toContain('Started coding job');
 	});
 
+	it('starts the job a chain named next, not a coding job', async () => {
+		// The 3D run: it starts coding itself when it is done.
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/' }, chain_next_job_id: 77 })
+				: makeJob({ id: 77, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).not.toHaveBeenCalled();
+		expect(mocks.getJob).toHaveBeenCalledWith(77);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(handoff.at(-1)?.[3])).toContain('Started job 77');
+	});
+
+	it('starts the coding job itself when the next job cannot start', async () => {
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/' }, chain_next_job_id: 77 })
+				: id === 77
+					? null
+					: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		expect(mocks.createJob.mock.calls[0][0].job_type).toBe('autonomous_coding');
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		const text = String(handoff.at(-1)?.[3]);
+		expect(text).toContain('Could not start job 77');
+		expect(text).toContain('Started coding job');
+	});
+
 	it('does not tell the coding run that kept art is missing', async () => {
 		// So its preflight plans around the gap instead of writing code that
 		// loads a file nobody made.

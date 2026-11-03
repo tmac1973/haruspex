@@ -280,13 +280,14 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'exec') return false;
 	// Job-type-owned structured-output tools — `audit` (submit_findings /
 	// submit_verdict), `planning` (submit_plan_outline), `coding`
-	// (submit_preflight, ...) — are only ever exposed via an explicit
-	// toolAllowlist, never the default toolset.
+	// (submit_preflight, ...), `job` (draw_texture) — are only ever exposed
+	// via an explicit toolAllowlist, never the default toolset.
 	if (
 		reg.category === 'audit' ||
 		reg.category === 'planning' ||
 		reg.category === 'coding' ||
-		reg.category === 'memory'
+		reg.category === 'memory' ||
+		reg.category === 'job'
 	)
 		return false;
 	// code_grep / code_glob are Code-mode fs tools; keep them out of Chat.

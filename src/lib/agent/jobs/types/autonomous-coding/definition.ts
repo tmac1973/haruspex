@@ -22,6 +22,8 @@ export interface AutonomousCodingEditorState {
 	open_findings: string[];
 	asset_spec_path: string | null;
 	missing_assets: string[];
+	models_spec_path: string | null;
+	missing_models: string[];
 }
 
 /**
@@ -96,7 +98,9 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		mute_preflight: false,
 		open_findings: [],
 		asset_spec_path: null,
-		missing_assets: []
+		missing_assets: [],
+		models_spec_path: null,
+		missing_models: []
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAutonomousCodingConfig(typeConfig);
@@ -110,7 +114,9 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			mute_preflight: c.mute_preflight ?? false,
 			open_findings: c.open_findings,
 			asset_spec_path: c.asset_spec_path,
-			missing_assets: c.missing_assets
+			missing_assets: c.missing_assets,
+			models_spec_path: c.models_spec_path,
+			missing_models: c.missing_models
 		};
 	},
 	configToJson: (config) => {
@@ -127,7 +133,9 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			// edited by hand lost the plan review's findings and its art.
 			open_findings: s.open_findings?.length ? s.open_findings : undefined,
 			asset_spec_path: s.asset_spec_path ?? undefined,
-			missing_assets: s.missing_assets?.length ? s.missing_assets : undefined
+			missing_assets: s.missing_assets?.length ? s.missing_assets : undefined,
+			models_spec_path: s.models_spec_path ?? undefined,
+			missing_models: s.missing_models?.length ? s.missing_models : undefined
 		});
 	},
 	validate: ({ workingDir, config }) => {

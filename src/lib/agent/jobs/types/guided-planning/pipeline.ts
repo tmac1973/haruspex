@@ -20,6 +20,11 @@ import {
 } from '#lib/agent/jobs/types/asset-generation/derive.ts';
 import { KIND_RULE, TRANSITION_RULE } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '#lib/agent/jobs/types/asset-generation/tools.ts';
+import { SUBMIT_PLAN_MODEL_SPEC_TOOL } from '#lib/agent/jobs/types/model-generation/tools.ts';
+import { derivePlanModelSpec } from '#lib/models3d/spec/derive.ts';
+import { validateModelSpec } from '#lib/models3d/spec/validate.ts';
+import { renderModelSpec } from '#lib/models3d/spec/write.ts';
+import { MAX_ENTRIES } from '#lib/models3d/spec/types.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '#lib/agent/tools/planning.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
@@ -901,6 +906,59 @@ export function assetSpecPrompt(outDir: string, specPath: string): string {
 }
 
 /**
+ * Told to every planning turn when 3D models are built for the plan, as
+ * `generatedArtNote` is for 2D art: where the files will be, so the plan
+ * loads them rather than planning to build them in code.
+ */
+export function modelsNote(): string {
+	return [
+		'3D MODELS ARE BUILT FOR THIS PLAN. Once the plan is finished, a 3D models run',
+		'builds each model the plan needs, and animates the ones that move, BEFORE any',
+		'code is written. Each is `assets/generated/model/<id>/<id>.glb`, with named',
+		'pivots and the clips the spec gives; code loads them, it does not build them.',
+		'`<id>` is the content id the plan uses for that thing: lowercase letters,',
+		"digits and underscores. Name each model's clips (Idle, Walk, Attack) where",
+		'the plan relies on them. This is decided: do NOT ask the user where the',
+		'models come from or how their files are named.'
+	].join('\n');
+}
+
+/** The models stage's system prompt: list the 3D models a finished plan needs. */
+export function planModelSpecPrompt(outDir: string, specPath: string): string {
+	return [
+		'You are listing the 3D models a finished plan needs, so they can be built',
+		'in code BEFORE any code for the game is written.',
+		'',
+		'Process:',
+		`1. Read EVERY file in \`${outDir}\` (fs_list_dir, fs_read_text) — the overview`,
+		'   and every phase file. Ground yourself in the working directory too, so you',
+		'   do not list models the project already has.',
+		'2. Decide one shared style line: polygon level, shading and palette feel,',
+		'   e.g. "low-poly, flat colours, chunky proportions". No subject.',
+		`3. List every 3D model the PLAN calls for, and nothing it does not, at most ${MAX_ENTRIES}.`,
+		'   For each one:',
+		'   - id: the content id the plan already uses for this thing, copied',
+		'     EXACTLY. Lowercase letters, digits and underscores, starting with a',
+		'     letter. The code loads the file by this name, so an id you improved',
+		'     is a file nothing opens.',
+		'   - title: what it is, two or three words.',
+		'   - description: its shape, main parts and colours, in one or two sentences.',
+		'   - height_m: its overall height in metres, so the set shares one scale',
+		'     (a door is about 2, a person 1.8, a crate 0.6).',
+		'   - parts and clips only for a model that moves. parts are the pivot names',
+		'     at its joints, written Side_Part: Hip_L, Knee_L, Shoulder_R, Neck.',
+		'     Every pivot a clip moves must be listed.',
+		'   - clips: name, seconds (0.2 to 10), loop, and action (what happens). Use',
+		'     the clip names the plan uses.',
+		'   - A static prop (crate, tree, rock) has no parts and no clips.',
+		'4. If the plan needs no 3D models, submit an empty entries list.',
+		'',
+		`Call \`${SUBMIT_PLAN_MODEL_SPEC_TOOL}\` exactly once, at the end. Do not write`,
+		`any files yourself — the runner writes \`${specPath}\` from what you submit.`
+	].join('\n');
+}
+
+/**
  * The verifier reports a clean plan by replying with "PLAN OK".
  *
  * Relies on `finalText` having reasoning stripped: a model that emits a
@@ -1037,19 +1095,29 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	 */
 	const wantsAssets =
 		cfg.generate_assets && runMode === 'unattended_chain' && resolveImageBackend().kind !== 'none';
-	// Every planning turn is told the art is coming, and where it will be —
-	// except the asset stage itself, whose prompt is about nothing else.
-	if (wantsAssets) {
+	/**
+	 * Whether this run writes models.json. Every mode but overview only, which
+	 * has no plan to read; no backend is needed to write a list.
+	 */
+	const wantsModels = cfg.generate_models && !cfg.overview_only;
+	// Every planning turn is told the art and the models are coming, and where
+	// they will be — except the two spec stages, whose prompts are about
+	// nothing else.
+	if (wantsAssets || wantsModels) {
 		const run = deps.runJobTurn;
+		const notes = [
+			...(wantsAssets ? [generatedArtNote()] : []),
+			...(wantsModels ? [modelsNote()] : [])
+		].join('\n\n');
 		deps = {
 			...deps,
 			runJobTurn: (o) =>
 				run(
 					// A turn with no prompt of its own gets the default one, which a
 					// prompt passed here would REPLACE; those are left alone.
-					o.turnKind === 'assets.derive' || o.systemPrompt == null
+					o.turnKind === 'assets.derive' || o.turnKind === 'models.derive' || o.systemPrompt == null
 						? o
-						: { ...o, systemPrompt: `${o.systemPrompt}\n\n${generatedArtNote()}` }
+						: { ...o, systemPrompt: `${o.systemPrompt}\n\n${notes}` }
 				)
 		};
 	}
@@ -1071,8 +1139,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const PLANNING = 2;
 	const VERIFY = 3;
 	const ASSETS = 4;
-	const APPROVAL = 5;
-	const HANDOFF = 6;
+	const MODELS = 5;
+	const APPROVAL = 6;
+	const HANDOFF = 7;
 
 	const startStep = (idx: number) => {
 		const startedAt = Date.now();
@@ -1734,12 +1803,168 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		);
 	};
 
+	/** Where models.json goes: beside the plan, as the asset spec is. */
+	const modelsSpecPath = `${outDir}models.json`;
+	/** Ids the models stage settled on; empty means no 3D job is made. */
+	let modelIds: string[] = [];
+	/** Why models that were asked for will not be built, for the handoff to say. */
+	let noModelsReason: string | null = null;
+
+	/**
+	 * Derive models.json from the finished plan and write it.
+	 *
+	 * Never throws, as `writeAssetSpec` does not: a stage that cannot produce
+	 * a spec leaves `modelIds` empty, and the handoff goes on without a 3D run.
+	 */
+	const writeModelSpec = async (): Promise<string> => {
+		let payload: Record<string, unknown> | null = null;
+		try {
+			await deps.runJobTurn({
+				userMessage: `Read the plan in ${outDir} and list the 3D models it needs.`,
+				systemPrompt: planModelSpecPrompt(outDir, modelsSpecPath),
+				turnKind: 'models.derive',
+				contextSize: deps.contextSize(),
+				visionSupported: deps.visionSupported(),
+				maxIterations: 30,
+				// Read-only, as the asset stage: the runner writes the spec.
+				toolAllowlist: [
+					'fs_read_text',
+					'fs_list_dir',
+					'code_grep',
+					'code_glob',
+					SUBMIT_PLAN_MODEL_SPEC_TOOL
+				],
+				forceFinalTool: SUBMIT_PLAN_MODEL_SPEC_TOOL,
+				...deps.buildStreamCallbacks(MODELS),
+				onToolStart: (call: ResolvedToolCall) => {
+					if (call.name === SUBMIT_PLAN_MODEL_SPEC_TOOL && call.arguments) {
+						payload = call.arguments;
+					}
+				}
+			});
+		} catch (e) {
+			const { aborted, msg } = normalizeAbort(e);
+			if (aborted) throw e;
+			noModelsReason = `the 3D models stage failed (${msg})`;
+			return `No models.json written — the stage failed: ${msg}`;
+		}
+
+		if (!payload) {
+			noModelsReason = 'the 3D models stage never submitted a list';
+			return 'No models.json written — the model never submitted one.';
+		}
+
+		const { spec, rejected } = derivePlanModelSpec(payload);
+		if (spec.entries.length === 0) {
+			if (rejected.length > 0) noModelsReason = 'every model the stage listed was rejected';
+			return rejected.length > 0
+				? `No models.json written — every entry was rejected: ${rejected.join(', ')}.`
+				: 'No models.json written — the plan needs no 3D models.';
+		}
+		const problems = validateModelSpec(spec);
+		if (problems.length > 0) {
+			noModelsReason = `the models list failed its checks (${problems.join('; ')})`;
+			return `No models.json written — the derived spec has problems:\n${problems.join('\n')}`;
+		}
+
+		await writeWorkdirFile(modelsSpecPath, renderModelSpec(spec));
+		modelIds = spec.entries.map((e) => e.id);
+		await appendModelsToOverview(
+			spec.entries.map((e) => ({
+				id: e.id,
+				height: e.height_m,
+				clips: e.clips.map((c) => c.name)
+			}))
+		);
+		const rejectedNote = rejected.length
+			? `\n\n${rejected.length} entry(ies) were rejected for an unusable id and will NOT be ` +
+				`built: ${rejected.join(', ')}.`
+			: '';
+		return (
+			`Wrote ${modelsSpecPath} — ${spec.entries.length} model(s): ${modelIds.join(', ')}.` +
+			rejectedNote
+		);
+	};
+
+	/** The models' ids in overview.md, as `appendAssetsToOverview` does for art. */
+	const appendModelsToOverview = async (
+		entries: Array<{ id: string; height: number; clips: string[] }>
+	) => {
+		const existing = await readWorkdirFile(overviewPath);
+		if (existing === null) return;
+		// Idempotent, and it keeps an Assets section that comes after it.
+		const [base, rest = ''] = existing.split('\n## 3D models\n');
+		const after = rest.includes('\n## ') ? rest.slice(rest.indexOf('\n## ')) : '';
+		const rows = entries.map(
+			(e) => `| \`${e.id}\` | ${e.height} m | ${e.clips.length ? e.clips.join(', ') : '—'} |`
+		);
+		await writeWorkdirFile(
+			overviewPath,
+			[
+				base.trimEnd(),
+				'',
+				'## 3D models',
+				'',
+				'These models are built before any code is written. Load each from',
+				'`assets/generated/model/<id>/<id>.glb`. Do not rename an id or a clip.',
+				'',
+				'| Id | Height | Clips |',
+				'| --- | --- | --- |',
+				...rows,
+				''
+			].join('\n') + after
+		);
+	};
+
+	/**
+	 * The 3D models job, made from models.json. Unstarted; null when it could
+	 * not be created. `chain` carries what an unattended chain hands on.
+	 */
+	const createModelsJob = (
+		runMode3d: 'attended' | 'unattended',
+		chain: Record<string, unknown> = {}
+	): Promise<number | null> =>
+		createJob({
+			name: `${job.name} — 3D models`,
+			description:
+				`Created by guided-planning run ${runId} from the plan in ${outDir}. ` +
+				`${modelIds.length} model(s) to build.`,
+			working_dir: job.working_dir,
+			auto_approve_tools: true,
+			schedule_kind: 'manual',
+			schedule_config: null,
+			next_due_at: null,
+			job_type: 'model_generation',
+			parent_job_id: job.id,
+			parent_run_id: runId,
+			// The job's own model only writes a spec, and the spec exists.
+			...stageModelColumns(job, null),
+			type_config: JSON.stringify({
+				spec_path: modelsSpecPath,
+				run_mode: runMode3d,
+				create_model: stageModelColumns(job, cfg.chain_models.models_create),
+				animate_model: stageModelColumns(job, cfg.chain_models.models_animate),
+				// The 3D job's default; the user turns it on in that job.
+				allow_textures: false,
+				...chain
+			})
+		});
+
 	/** Set when the asset chain was wanted, attempted, and could not start. */
 	let assetChainFailed = false;
+	/** Set when the 3D chain was wanted, attempted, and could not start. */
+	let modelsChainFailed = false;
 
 	const handoff = async (): Promise<string> => {
 		if (runMode !== 'unattended_chain') {
-			return `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}"`;
+			const skipped = `Skipped — run mode is "${RUN_MODE_LABELS[runMode]}"`;
+			if (modelIds.length === 0) return skipped;
+			// Nothing is chained in this mode, but the models were asked for:
+			// the job is made for the user to start, attended, with no handoff.
+			const modelsJobId = await createModelsJob('attended');
+			return modelsJobId === null
+				? `${skipped}. Could not create the 3D models job.`
+				: `Created 3D models job ${modelsJobId} from ${modelsSpecPath}; start it from the Jobs tab.`;
 		}
 		// The only hard refusal left. "Reviewed and imperfect" and "nothing has
 		// looked at this" are different states, and only the second is unsafe.
@@ -1752,6 +1977,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// job, for both stages, even when the asset stage has its own.
 		const assetsModel = stageModelColumns(job, cfg.chain_models.assets);
 		const codingModel = stageModelColumns(job, cfg.chain_models.coding);
+		const createModel = stageModelColumns(job, cfg.chain_models.models_create);
+		const animateModel = stageModelColumns(job, cfg.chain_models.models_animate);
 
 		// The coding job's configuration, whoever ends up starting it. Built
 		// once so the chained asset run forwards exactly what guided planning
@@ -1772,9 +1999,31 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			open_findings: openFindings
 		};
 
+		// The 3D job is made first when there are models, so the asset job can
+		// name it as the job to start next. Unstarted until one of the two
+		// runs below starts it. It starts the coding run itself, and tells it
+		// where the 2D spec is too when there is art.
+		const modelsJobId =
+			modelIds.length > 0
+				? await createModelsJob('unattended', {
+						chain_base_name: job.name,
+						chain_coding_model: codingModel,
+						coding_run: assetIds.length
+							? { ...codingConfig, asset_spec_path: specPath }
+							: codingConfig
+					})
+				: null;
+		if (modelIds.length > 0 && modelsJobId === null) modelsChainFailed = true;
+		/** "3D models job 12 (run 40), which builds 4 model(s) from …, creating on …". */
+		const modelsLine = (modelsRunId: number | null) =>
+			`3D models job ${modelsJobId}` +
+			(modelsRunId === null ? '' : ` (run ${modelsRunId})`) +
+			`, which builds ${modelIds.length} model(s) from ${modelsSpecPath}, creating on ` +
+			`${describeStageModel(createModel)} and animating on ${describeStageModel(animateModel)}.`;
+
 		// Assets first when there are any: the coding run should be building
-		// against art that already exists, and the asset run starts the coding
-		// run itself once it is done.
+		// against art that already exists, and the asset run starts the next
+		// run itself once it is done — the 3D run when there is one, else coding.
 		if (assetIds.length > 0) {
 			const assetJobId = await createJob({
 				name: `${job.name} — assets`,
@@ -1804,7 +2053,10 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					...(assetTargetSize ? { target_size: assetTargetSize } : {}),
 					// Forwarded, not applied: the asset run creates the coding
 					// job when it finishes, and knows which assets are missing.
-					coding_run: codingConfig
+					// Kept with a 3D run next too, as the fallback when that
+					// run cannot start.
+					coding_run: codingConfig,
+					...(modelsJobId !== null ? { chain_next_job_id: modelsJobId } : {})
 				})
 			});
 			if (assetJobId !== null) {
@@ -1812,15 +2064,35 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				if (assetRunId !== null) {
 					return (
 						`Started asset job ${assetJobId} (run ${assetRunId}) on ${assetIds.length} ` +
-						`asset(s) from ${specPath}, on ${describeStageModel(assetsModel)}. It starts ` +
-						`the coding run, on ${describeStageModel(codingModel)}, when it finishes.`
+						`asset(s) from ${specPath}, on ${describeStageModel(assetsModel)}. ` +
+						(modelsJobId !== null
+							? `It starts ${modelsLine(null)} That run starts the coding run, on ` +
+								`${describeStageModel(codingModel)}, when it finishes.`
+							: `It starts the coding run, on ${describeStageModel(codingModel)}, ` +
+								'when it finishes.') +
+						(modelsChainFailed ? ' Could not create the 3D models job, so no models.' : '')
 					);
 				}
 			}
-			// Falls through to the coding job deliberately. A night's work must
-			// not be lost because the asset run could not start; the code is
-			// still worth building, and the handoff says what happened.
+			// Falls through deliberately. A night's work must not be lost
+			// because the asset run could not start; the models and the code
+			// are still worth building, and the handoff says what happened.
 			assetChainFailed = true;
+		}
+
+		if (modelsJobId !== null) {
+			const modelsRunId = await deps.startChainedRun(modelsJobId);
+			if (modelsRunId !== null) {
+				return (
+					`Started ${modelsLine(modelsRunId)} ` +
+					`It starts the coding run, on ${describeStageModel(codingModel)}, when it finishes.` +
+					(assetChainFailed
+						? ' The asset run could not be started, so there is no generated art.'
+						: '')
+				);
+			}
+			// As for the asset run: the code is still worth building.
+			modelsChainFailed = true;
 		}
 
 		const codingJobId = await createJob({
@@ -1853,6 +2125,10 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				? ' Assets were requested but no image backend is configured, so none were generated.'
 				: '') +
 			(noArtReason ? ` It starts WITHOUT art: ${noArtReason}.` : '') +
+			(modelsChainFailed
+				? ' The 3D models run could not be started, so there are no models.'
+				: '') +
+			(noModelsReason ? ` It starts WITHOUT 3D models: ${noModelsReason}.` : '') +
 			(openFindings.length
 				? ` Carried ${openFindings.length} unresolved finding(s) over for its preflight to settle.`
 				: ' The last review found nothing outstanding.');
@@ -2100,6 +2376,14 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		} else {
 			finishStep(ASSETS, await writeAssetSpec());
 		}
+
+		// 3D models — write models.json, in every mode, for the same reasons
+		// and at the same point as the asset spec.
+		startStep(MODELS);
+		finishStep(
+			MODELS,
+			wantsModels ? await writeModelSpec() : 'Skipped — 3D models are off for this job'
+		);
 
 		// Approval — plan / dependency-map approval checkpoint loop.
 		//

@@ -143,3 +143,20 @@ describe('hand_off', () => {
 		expect(parseAssetGenerationConfig('{"hand_off":true}').hand_off).toBe(true);
 	});
 });
+
+describe('chain_next_job_id', () => {
+	it('reads a job id', () => {
+		expect(cfg('{"chain_next_job_id":42}').chain_next_job_id).toBe(42);
+	});
+
+	it('is null for anything that is not a positive whole number', () => {
+		for (const raw of [
+			'{}',
+			'{"chain_next_job_id":"42"}',
+			'{"chain_next_job_id":0}',
+			'{"chain_next_job_id":1.5}'
+		]) {
+			expect(cfg(raw).chain_next_job_id).toBeNull();
+		}
+	});
+});

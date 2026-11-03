@@ -168,3 +168,12 @@ export function modelFormSummary(form: JobModelForm): string {
 		? 'Settings default'
 		: `${form.source === 'openrouter' ? 'OpenRouter' : 'Remote'} · ${form.modelId.trim() || 'no model picked'}`;
 }
+
+/** Why a chosen stage model can't be saved, or null. */
+export function stageModelProblem(label: string, form: JobModelForm | null): string | null {
+	if (!form || form.source === 'settings') return null;
+	if (!form.baseUrl.trim() || !form.modelId.trim()) {
+		return `Pick a server and a model for the ${label}, or set it back to "Same as this job".`;
+	}
+	return null;
+}

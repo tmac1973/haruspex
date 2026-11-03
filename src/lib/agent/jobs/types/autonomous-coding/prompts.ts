@@ -89,7 +89,9 @@ export function preflightPrompt(
 	interactive: boolean = true,
 	openFindings: string[] = [],
 	assetSpecPath: string | null = null,
-	missingAssets: string[] = []
+	missingAssets: string[] = [],
+	modelsSpecPath: string | null = null,
+	missingModels: string[] = []
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -162,6 +164,7 @@ export function preflightPrompt(
 		// ask_user_question it has no tool for.
 		...openFindingsStep(openFindings, decisionsPath),
 		...assetSpecStep(assetSpecPath, decisionsPath, missingAssets),
+		...modelsSpecStep(modelsSpecPath, decisionsPath, missingModels),
 		...(webResearch
 			? interactive
 				? interviewResearchRules('the plan or any answer the user gives')
@@ -220,6 +223,31 @@ function assetSpecStep(
 		'- An entry with a `rejected` field has a file: the best attempt, which failed',
 		'  its checks. Use it like any other; it may be replaced later.',
 		'- Where the spec lists an asset the plan never mentions, leave it alone.'
+	];
+}
+
+/**
+ * The 3D models built before this run started, as `assetSpecStep` is for 2D
+ * art. Same rule: the code loads what is there and plans around what is not;
+ * it never builds a model itself.
+ */
+function modelsSpecStep(
+	specPath: string | null,
+	decisionsPath: string,
+	missing: string[] = []
+): string[] {
+	if (!specPath) return [];
+	return [
+		'',
+		'3D MODELS WERE BUILT FOR THIS PLAN:',
+		`3D models were built from \`${specPath}\`; each model is`,
+		'`assets/generated/model/<id>/<id>.glb` with the clips the spec names.',
+		...(missing.length ? [`Not built: ${missing.join(', ')}.`] : []),
+		'- Load each model by that path and its clips by the names in the spec.',
+		'  Never rename an id or a clip.',
+		`- A model that was not built does NOT exist. Record each in \`${decisionsPath}\``,
+		'  and decide what the code does without it — a placeholder made in code, or',
+		'  the feature left out. Do NOT try to build models; you have no tool for it.'
 	];
 }
 

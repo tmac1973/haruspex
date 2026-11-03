@@ -31,6 +31,7 @@ const ORDER = [
 	'write-skills',
 	'media-skills',
 	'jobs',
+	'3d-models',
 	'memory',
 	'images',
 	'image-editing',

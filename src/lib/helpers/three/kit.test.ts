@@ -34,8 +34,22 @@ describe.skipIf(!existsSync(BUNDLE))('the three-kit bundle', () => {
 				'createNoise',
 				'mergeGeometries',
 				'mergeVertices',
-				'random'
+				'random',
+				'texture'
 			].sort()
 		);
+	});
+
+	it('hands out the textures the runner set, and names a path it has not', () => {
+		const g = globalThis as unknown as { HaruspexThreeKit?: Record<string, unknown> };
+		new Function(readFileSync(BUNDLE, 'utf8'))();
+		const k = g.HaruspexThreeKit as unknown as {
+			kit: { texture: (p: string) => unknown };
+			setTextures: (m: Record<string, unknown>) => void;
+		};
+		const bark = { isTexture: true };
+		k.setTextures({ 'textures/bark.png': bark });
+		expect(k.kit.texture('textures/bark.png')).toBe(bark);
+		expect(() => k.kit.texture('leaf.png')).toThrow(/kit\.texture\("leaf\.png"\): no such PNG/);
 	});
 });

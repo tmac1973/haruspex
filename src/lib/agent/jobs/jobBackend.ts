@@ -1,6 +1,7 @@
 import type { BackendOverride } from '#lib/api.ts';
 import type { ModelOverrideConfig } from '#lib/stores/jobs.svelte.ts';
 import { parseModelAdvanced } from '#lib/agent/jobs/modelAdvanced.ts';
+import { modelColumnsOf, type ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 
 /**
  * The remote backend a job should run against, or undefined to use the global
@@ -9,6 +10,16 @@ import { parseModelAdvanced } from '#lib/agent/jobs/modelAdvanced.ts';
  * every turn the job runs, regardless of job type.
  */
 export function jobBackendOverride(job: ModelOverrideConfig): BackendOverride | undefined {
+	return backendOverrideFor(modelColumnsOf(job));
+}
+
+/**
+ * The remote backend a set of model columns names, or undefined for the
+ * Settings backend. Split out of `jobBackendOverride` so a pipeline can run
+ * one turn on a model other than the job's (a 3D run's creation and
+ * animation models).
+ */
+export function backendOverrideFor(job: ModelColumns): BackendOverride | undefined {
 	const url = job.model_remote_base_url?.trim();
 	if (!url) return undefined;
 	return {

@@ -209,6 +209,135 @@ describe('check_3d', () => {
 		);
 	});
 
+	it('runs an animation module beside the build module', async () => {
+		const ANIM = 'export default () => [];';
+		files.set('/proj/m/hero.js', enc(MODULE));
+		files.set('/proj/m/hero.anim.js', enc(ANIM));
+		const out = await call({ path: 'm/hero.js', anim: 'm/hero.anim.js' });
+		expect(runner.runBuildModule.mock.calls[0][0]).toBe(MODULE);
+		expect(runner.runBuildModule.mock.calls[0][1]).toMatchObject({ anim: ANIM });
+		expect(files.get('/proj/m/hero.glb')).toEqual([...GLB]);
+		expect(out.result).toMatch(/^Wrote m\/hero\.glb\./);
+	});
+
+	it('names the animation module in its errors, and asks to fix it', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		files.set('/proj/a.anim.js', enc(MODULE));
+		runner.runBuildModule.mockResolvedValueOnce({
+			glb: null,
+			errors: [
+				{ kind: 'error', message: 'x is not defined', line: 4, file: 'anim' },
+				{
+					kind: 'error',
+					message: 'animate() must return an array of AnimationClip.',
+					line: null,
+					file: 'anim'
+				}
+			],
+			missingTracks: []
+		});
+		const out = await call({ path: 'a.js', anim: 'a.anim.js' });
+		expect(out.result).toBe(
+			[
+				'The check failed.',
+				'- a.anim.js:4: x is not defined',
+				'- a.anim.js: animate() must return an array of AnimationClip.',
+				'Fix a.anim.js and call check_3d again.'
+			].join('\n')
+		);
+	});
+
+	it('asks to fix the build module when any error came from it', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		files.set('/proj/a.anim.js', enc(MODULE));
+		runner.runBuildModule.mockResolvedValueOnce({
+			glb: null,
+			errors: [
+				{ kind: 'error', message: 'bad', line: 2, file: 'build' },
+				{ kind: 'error', message: 'worse', line: 5, file: 'anim' }
+			],
+			missingTracks: []
+		});
+		const out = await call({ path: 'a.js', anim: 'a.anim.js' });
+		expect(out.result).toContain('- line 2: bad\n- a.anim.js:5: worse\nFix a.js and call');
+	});
+
+	it('refuses an animation module it cannot use', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		expect((await call({ path: 'a.glb', anim: 'a.anim.js' })).result).toMatch(
+			/anim works only with a \.js or \.mjs build module/
+		);
+		expect((await call({ path: 'a.js', anim: 'a.json' })).result).toMatch(
+			/anim must be a \.js or \.mjs module/
+		);
+		expect((await call({ path: 'a.js', anim: 'a.js' })).result).toMatch(/different file/);
+		expect((await call({ path: 'a.js', anim: 'missing.anim.js' })).result).toMatch(
+			/Could not read missing\.anim\.js/
+		);
+		expect(runner.runBuildModule).not.toHaveBeenCalled();
+	});
+
+	describe('kit.texture', () => {
+		const PNG_BYTES = [137, 80, 78, 71];
+		const uses = (...paths: string[]) =>
+			`export default (T, kit) => { ${paths.map((p) => `kit.texture('${p}');`).join(' ')} };`;
+
+		it('reads the PNGs from beside the module, from both modules, keyed as written', async () => {
+			files.set('/proj/m/crate.js', enc(uses('tex/wood.png')));
+			files.set('/proj/m/crate.anim.js', enc(uses('../shared/metal.png', 'tex/wood.png')));
+			files.set('/proj/m/tex/wood.png', PNG_BYTES);
+			files.set('/proj/shared/metal.png', [1, 2, 3]);
+			await call({ path: 'm/crate.js', anim: 'm/crate.anim.js' });
+			expect(runner.runBuildModule.mock.calls[0][1].textures).toEqual({
+				'tex/wood.png': 'data:image/png;base64,iVBORw==',
+				'../shared/metal.png': 'data:image/png;base64,AQID'
+			});
+		});
+
+		it('passes no textures when the module names none', async () => {
+			files.set('/proj/a.js', enc(MODULE));
+			await call({ path: 'a.js' });
+			expect(runner.runBuildModule.mock.calls[0][1].textures).toEqual({});
+		});
+
+		it('refuses a PNG outside the working folder', async () => {
+			files.set('/proj/m/a.js', enc(uses('../../secret.png')));
+			const out = await call({ path: 'm/a.js' });
+			expect(out.result).toMatch(/must be inside the working folder/);
+			expect(runner.runBuildModule).not.toHaveBeenCalled();
+		});
+
+		it('refuses an absolute path, and an absolute module climbing out', async () => {
+			files.set('/proj/a.js', enc(uses('/etc/x.png')));
+			expect((await call({ path: 'a.js' })).result).toMatch(/inside the working folder/);
+			files.set('/proj/b.js', enc(uses('../x.png')));
+			expect((await call({ path: '/proj/b.js' })).result).toMatch(/inside the working folder/);
+		});
+
+		it('refuses a file that is not a PNG', async () => {
+			files.set('/proj/a.js', enc(uses('bark.jpg')));
+			expect((await call({ path: 'a.js' })).result).toMatch(/only \.png files/);
+		});
+
+		it('refuses a PNG over the size limit', async () => {
+			files.set('/proj/a.js', enc(uses('big.png')));
+			files.set('/proj/big.png', new Array(4 * 1024 * 1024 + 1).fill(0));
+			expect((await call({ path: 'a.js' })).result).toMatch(/over 4 MB/);
+			expect(runner.runBuildModule).not.toHaveBeenCalled();
+		});
+
+		it('refuses more than eight PNGs', async () => {
+			const names = Array.from({ length: 9 }, (_, i) => `t${i}.png`);
+			files.set('/proj/a.js', enc(uses(...names)));
+			expect((await call({ path: 'a.js' })).result).toMatch(/names 9 PNGs; use at most 8/);
+		});
+
+		it('says which PNG it could not read', async () => {
+			files.set('/proj/m/a.js', enc(uses('bark.png')));
+			expect((await call({ path: 'm/a.js' })).result).toMatch(/Could not read m\/bark\.png/);
+		});
+	});
+
 	it('is a core tool, in no deferred family', () => {
 		const cat = toolCategory('check_3d')!;
 		expect(TOOL_FAMILIES.some((f) => f.has('check_3d', cat))).toBe(false);

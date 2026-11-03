@@ -170,3 +170,22 @@ describe('mute_preflight', () => {
 		}
 	});
 });
+
+describe('models_spec_path / missing_models', () => {
+	it('are unset for a hand-created job', () => {
+		const cfg = parseAutonomousCodingConfig('{"plan_dir":"plan/x/"}');
+		expect(cfg.models_spec_path).toBeNull();
+		expect(cfg.missing_models).toEqual([]);
+	});
+
+	it('carry what a 3D handoff wrote', () => {
+		const cfg = parseAutonomousCodingConfig(
+			JSON.stringify({
+				models_spec_path: ' plan/x/models.json ',
+				missing_models: ['tree', '', 3]
+			})
+		);
+		expect(cfg.models_spec_path).toBe('plan/x/models.json');
+		expect(cfg.missing_models).toEqual(['tree']);
+	});
+});

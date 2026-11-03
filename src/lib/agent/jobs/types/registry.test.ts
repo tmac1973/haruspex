@@ -72,7 +72,8 @@ describe('registration barrel', () => {
 			'audit',
 			'guided_planning',
 			'autonomous_coding',
-			'asset_generation'
+			'asset_generation',
+			'model_generation'
 		]);
 	});
 
@@ -80,7 +81,7 @@ describe('registration barrel', () => {
 	// defined when something imports it first, and the barrel throws.
 	it('loads every definition on its own, without an import cycle through the barrel', async () => {
 		const definitions = import.meta.glob('./*/definition.ts');
-		expect(Object.keys(definitions)).toHaveLength(7);
+		expect(Object.keys(definitions)).toHaveLength(8);
 		for (const [path, load] of Object.entries(definitions)) {
 			vi.resetModules();
 			await expect(load(), path).resolves.toBeTruthy();
@@ -129,6 +130,7 @@ describe('registration barrel', () => {
 			'Planning',
 			'Verification',
 			'Assets',
+			'3D models',
 			'Approval',
 			'Handoff'
 		]);
@@ -168,7 +170,9 @@ describe('registration barrel', () => {
 			mute_preflight: false,
 			open_findings: [],
 			asset_spec_path: null,
-			missing_assets: []
+			missing_assets: [],
+			models_spec_path: null,
+			missing_models: []
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -180,7 +184,9 @@ describe('registration barrel', () => {
 			mute_preflight: false,
 			open_findings: [],
 			asset_spec_path: null,
-			missing_assets: []
+			missing_assets: [],
+			models_spec_path: null,
+			missing_models: []
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',

@@ -13,6 +13,20 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createNoise, random } from '#lib/helpers/three/noise.ts';
 
+/** The module's PNGs by the path it wrote, filled by the runner before it runs (`textures.ts`). */
+const textures = new Map<string, THREE.Texture>();
+
+/** The texture for a PNG the module named as a string literal. */
+function texture(path: string): THREE.Texture {
+	const t = textures.get(path);
+	if (!t) {
+		throw new Error(
+			`kit.texture("${path}"): no such PNG next to the module (paths are read before build runs, so pass a string literal).`
+		);
+	}
+	return t;
+}
+
 /** What a build module's `build(THREE, kit)` gets as `kit`. */
 export const kit = {
 	mergeGeometries,
@@ -21,11 +35,16 @@ export const kit = {
 	ConvexGeometry,
 	ParametricGeometry,
 	createNoise,
-	random
+	random,
+	texture
 };
 
 (globalThis as unknown as { HaruspexThreeKit: unknown }).HaruspexThreeKit = {
 	THREE,
 	GLTFExporter,
-	kit
+	kit,
+	setTextures: (map: Record<string, THREE.Texture>) => {
+		textures.clear();
+		for (const [path, t] of Object.entries(map)) textures.set(path, t);
+	}
 };

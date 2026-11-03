@@ -50,6 +50,149 @@ describe('modulePage', () => {
 		expect(page).not.toContain('"</script>');
 		expect(page).toContain('\\u003c/script>');
 	});
+
+	it('imports no animation module without one', () => {
+		const page = modulePage('export default () => 1;', 'k');
+		expect(page).toContain('window.__hxAnim = null;');
+	});
+
+	it('embeds an animation module, escaped like the source', () => {
+		const page = modulePage('', 'k', 'export default () => ["</script>"];');
+		expect(page).toContain('window.__hxAnim = "export default () => [\\"\\u003c/script>\\"];";');
+		expect(page.indexOf('__hxAnim')).toBeLessThan(page.indexOf('__hxRun'));
+	});
+
+	it('embeds no textures without any', () => {
+		expect(modulePage('', 'k')).toContain('window.__hxTextures = {};');
+	});
+
+	it('embeds the textures as JSON, escaped like the source', () => {
+		const page = modulePage('', 'k', undefined, { '</script>.png': 'data:image/png;base64,AA' });
+		expect(page).toContain(
+			'window.__hxTextures = {"\\u003c/script>.png":"data:image/png;base64,AA"};'
+		);
+		expect(page.indexOf('__hxTextures')).toBeLessThan(page.indexOf('__hxRun'));
+	});
+});
+
+/** The page's runner, run in this window with a fake kit; what it posted. */
+function runner() {
+	const posted: Record<string, unknown>[] = [];
+	vi.spyOn(window, 'postMessage').mockImplementation((m: unknown) => {
+		posted.push(m as Record<string, unknown>);
+	});
+	const named = (name: string) => ({ isObject3D: true, name });
+	const w = window as unknown as Record<string, unknown>;
+	w.HaruspexThreeKit = {
+		THREE: {
+			PropertyBinding: {
+				findNode: (o: { name: string }, n: string) => (n === o.name ? o : null),
+				parseTrackName: (t: string) => ({ nodeName: t.split('.')[0] })
+			}
+		},
+		kit: {},
+		GLTFExporter: class {
+			async parseAsync(_o: unknown, opts: { animations: { name: string }[] }) {
+				posted.push({ t: 'exported', clips: opts.animations.map((c) => c.name) });
+				return new ArrayBuffer(4);
+			}
+		}
+	};
+	w.__hxSource = '';
+	w.__hxAnim = null;
+	const page = modulePage('', 'k');
+	const script = page.slice(page.lastIndexOf('<script>') + 8, page.lastIndexOf('</script>'));
+	new Function(script)();
+	const run = w.__hxRun as (mod: unknown, anim?: unknown) => Promise<void>;
+	return { posted, named, run };
+}
+
+const clip = (name: string) => ({ name, tracks: [{ name: 'Body.quaternion' }] });
+
+describe('the runner with an animation module', () => {
+	afterEach(() => {
+		const w = window as unknown as Record<string, unknown>;
+		delete w.HaruspexThreeKit;
+		delete w.__hxRun;
+	});
+
+	it('adds the clips animate() returns to the build clips', async () => {
+		const { posted, named, run } = runner();
+		const object = named('Body');
+		let got: unknown;
+		await run(
+			{ default: () => ({ object, animations: [clip('Idle')] }) },
+			{
+				default: (_T: unknown, o: unknown) => {
+					got = o;
+					return [clip('Walk')];
+				}
+			}
+		);
+		expect(got).toBe(object);
+		expect(posted).toContainEqual({ t: 'exported', clips: ['Idle', 'Walk'] });
+		expect(posted.some((m) => m.t === 'hx-glb')).toBe(true);
+		expect(posted.some((m) => m.t === 'hx-err')).toBe(false);
+	});
+
+	it('blames the animation module when animate() returns no array', async () => {
+		const { posted, named, run } = runner();
+		await run({ default: () => named('Body') }, { animate: () => clip('Walk') });
+		expect(posted).toContainEqual({
+			t: 'hx-err',
+			kind: 'error',
+			message: 'animate() must return an array of AnimationClip.',
+			line: null,
+			file: 'anim'
+		});
+		expect(posted.some((m) => m.t === 'hx-glb')).toBe(false);
+	});
+
+	it('blames the animation module when it has no animate', async () => {
+		const { posted, named, run } = runner();
+		await run({ default: () => named('Body') }, {});
+		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
+			message: expect.stringContaining('no default export function animate'),
+			file: 'anim'
+		});
+	});
+
+	it('refuses a clip name both modules use', async () => {
+		const { posted, named, run } = runner();
+		await run(
+			{ default: () => ({ object: named('Body'), animations: [clip('Walk')] }) },
+			{ default: () => [clip('Walk')] }
+		);
+		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
+			message: 'Clip "Walk" comes from both modules.',
+			file: 'anim'
+		});
+	});
+});
+
+describe('the runner with textures', () => {
+	afterEach(() => {
+		const w = window as unknown as Record<string, unknown>;
+		delete w.HaruspexThreeKit;
+		delete w.__hxRun;
+		delete w.__hxTextures;
+		vi.unstubAllGlobals();
+	});
+
+	it('ends with an error naming a PNG it could not decode', async () => {
+		vi.useRealTimers();
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('bad')));
+		(window as unknown as Record<string, unknown>).__hxTextures = { 'bark.png': 'data:x' };
+		const { posted } = runner();
+		await vi.waitFor(() => expect(posted).toContainEqual({ t: 'hx-end' }));
+		expect(posted).toContainEqual({
+			t: 'hx-err',
+			kind: 'error',
+			message: 'Texture bark.png could not be decoded.',
+			line: null,
+			file: 'build'
+		});
+	});
 });
 
 describe('lineOf', () => {
@@ -75,7 +218,7 @@ describe('runBuildModule', () => {
 		await vi.advanceTimersByTimeAsync(1);
 		const r = (await run) as ModuleRunResult;
 		expect([...r.glb!]).toEqual([103, 108, 84, 70]);
-		expect(r.errors).toEqual([{ kind: 'error', message: 'late', line: 4 }]);
+		expect(r.errors).toEqual([{ kind: 'error', message: 'late', line: 4, file: 'build' }]);
 		expect(r.missingTracks).toEqual([]);
 	});
 
@@ -90,6 +233,19 @@ describe('runBuildModule', () => {
 		expect(page.indexOf('PB.findNode')).toBeLessThan(page.indexOf('GLTFExporter()'));
 	});
 
+	it('keeps which module an error came from', async () => {
+		const { run, f } = await start({ anim: 'export default () => [];' });
+		expect(invoke).toHaveBeenCalledWith('artifact_register', {
+			html: expect.stringContaining('window.__hxAnim = "export default () => [];"')
+		});
+		f.send({ t: 'hx-err', message: 'x is not defined', line: 3, file: 'anim' });
+		f.send({ t: 'hx-end' });
+		await vi.advanceTimersByTimeAsync(LATE_MS);
+		expect(((await run) as ModuleRunResult).errors).toEqual([
+			{ kind: 'error', message: 'x is not defined', line: 3, file: 'anim' }
+		]);
+	});
+
 	it('resolves with the errors when the module fails', async () => {
 		const { run, f } = await start();
 		f.send({ t: 'hx-err', message: "Unexpected token '}'", line: 7 });
@@ -97,7 +253,7 @@ describe('runBuildModule', () => {
 		await vi.advanceTimersByTimeAsync(LATE_MS);
 		expect(await run).toEqual({
 			glb: null,
-			errors: [{ kind: 'error', message: "Unexpected token '}'", line: 7 }],
+			errors: [{ kind: 'error', message: "Unexpected token '}'", line: 7, file: 'build' }],
 			missingTracks: []
 		});
 	});
@@ -111,7 +267,8 @@ describe('runBuildModule', () => {
 				{
 					kind: 'timeout',
 					message: 'Timed out after 1 s waiting for build() to return.',
-					line: null
+					line: null,
+					file: 'build'
 				}
 			],
 			missingTracks: []
