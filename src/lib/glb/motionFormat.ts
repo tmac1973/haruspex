@@ -79,6 +79,9 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 		c.rig === 'skinned'
 			? `Rig: skinned, ${c.bones} bones.`
 			: `Rig: rigid, ${c.bones} animated nodes.`,
+		c.jointsChecked.length
+			? `Joints checked: ${c.jointsChecked.join(', ')}.`
+			: 'No knee or elbow joints found by name.',
 		`Ends ${cm(c.seam)} from where it starts${c.seamPart ? ` (${c.seamPart} moves most)` : ''}: a loop needs this near 0.`,
 		`The model's centre wanders ${cm(c.drift)} across the floor.`,
 		p.length ? `Problems: ${p.join('; ')}.` : 'No problems found.'

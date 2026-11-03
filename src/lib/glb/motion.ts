@@ -16,7 +16,9 @@ import {
 	poser,
 	strideFor
 } from '#lib/glb/motionPose.ts';
+import { contactTracker, jointTracker, slideTracker } from '#lib/glb/motionParts.ts';
 import { trackChecks, type TrackChecks } from '#lib/glb/motionTracks.ts';
+import { weldFor } from '#lib/glb/report.ts';
 
 export const ANALYSIS_FRAMES = 16;
 /** Through the floor by more than this (m) is a problem. */
@@ -96,6 +98,8 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 	const floor = rest.min.y;
 	const restCentre = rest.getCenter(new THREE.Vector3());
 	const rig = rigOf(root, trackNodes(gltf, THREE));
+	const size = rest.getSize(new THREE.Vector3());
+	const weld = weldFor(Math.max(size.x, size.y, size.z));
 
 	return gltf.animations.map((clip) => {
 		const pose = poser(THREE, root, clip);
@@ -107,6 +111,9 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 		const travel = new Map<string, number>();
 		const first = new Map<string, InstanceType<Three['Vector3']>>();
 		const last = new Map<string, InstanceType<Three['Vector3']>>();
+		const contacts = contactTracker(THREE, meshes, stride, weld);
+		const slides = slideTracker(THREE, parts, stride, floor);
+		const joints = jointTracker(THREE, root);
 		try {
 			for (const t of sampleTimes(clip.duration, ANALYSIS_FRAMES)) {
 				pose.at(t);
@@ -122,6 +129,9 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 					else first.set(part.name, p);
 					last.set(part.name, p);
 				}
+				contacts.frame(t);
+				slides.frame(t);
+				joints.frame(t);
 			}
 		} finally {
 			pose.stop();
@@ -151,11 +161,10 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 			drift,
 			fastest,
 			...trackChecks(clip),
-			passes: [],
-			apart: [],
-			slides: [],
-			joints: [],
-			jointsChecked: []
+			...contacts.result(),
+			...slides.result(),
+			...joints.result(),
+			jointsChecked: joints.checked
 		};
 	});
 }

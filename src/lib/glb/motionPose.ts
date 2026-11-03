@@ -67,15 +67,16 @@ export function forEachWorldVertex(
 	THREE: Three,
 	mesh: Mesh,
 	stride: number,
-	fn: (x: number, y: number, z: number) => void,
+	fn: (x: number, y: number, z: number, index: number) => void,
 	indices?: number[]
 ): void {
 	const v = new THREE.Vector3();
 	const count = indices ? indices.length : vertexCount(mesh);
 	for (let k = 0; k < count; k += stride) {
 		// getVertexPosition applies morphs and, on a SkinnedMesh, the skeleton.
-		mesh.getVertexPosition(indices ? indices[k] : k, v).applyMatrix4(mesh.matrixWorld);
-		fn(v.x, v.y, v.z);
+		const i = indices ? indices[k] : k;
+		mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld);
+		fn(v.x, v.y, v.z, i);
 	}
 }
 

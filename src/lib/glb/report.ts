@@ -86,6 +86,16 @@ function materialsOf(mesh: Mesh): Material[] {
 	return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 }
 
+/** The weld tolerance for an asset whose largest dimension is `dim`. */
+export const weldFor = (dim: number) => Math.max(dim, 1e-6) * 1e-5;
+
+/** Whether a part can hide another: closed, and not entirely see-through. */
+export function isClosedOpaque(mesh: Mesh, weld: number): boolean {
+	return (
+		!materialsOf(mesh).every((m) => m.transparent) && meshShape(mesh.geometry, weld).boundary === 0
+	);
+}
+
 function meshesOf(root: Object3D): Mesh[] {
 	const out: Mesh[] = [];
 	root.traverse((o) => {
@@ -198,7 +208,7 @@ function partRelations(
 /** Vertices sampled from a mesh, in world space: at most this many. */
 const BURIED_SAMPLES = 24;
 /** A ray direction no axis-aligned edge lies along. */
-const RAY: Vec3 = [0.9238, 0.3204, 0.2096];
+export const RAY: Vec3 = [0.9238, 0.3204, 0.2096];
 
 /**
  * Whether every sampled vertex of `inner` lies inside `host`'s closed volume:
@@ -325,7 +335,7 @@ export function inspectGlb(THREE: Three, gltf: LoadedGlb, opts: InspectOptions =
 	if (meshes.length === 0) problems.push('The GLB has no meshes.');
 	if (!finite || dim === 0) problems.push('The GLB has zero or non-finite size.');
 
-	const read = readMeshes(THREE, meshes, Math.max(dim, 1e-6) * 1e-5);
+	const read = readMeshes(THREE, meshes, weldFor(dim));
 	const { parts, closed, materials, textures } = read;
 	problems.push(...read.problems);
 	warnings.push(...read.warnings);
