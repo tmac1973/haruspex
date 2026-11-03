@@ -15,6 +15,9 @@ describe('poser', () => {
 		const up = worldOf(arm);
 		expect(up.x).toBeCloseTo(0.2);
 		expect(up.y).toBeCloseTo(1.15);
+		pose.at(0);
+		expect(worldOf(arm).distanceTo(rest)).toBeLessThan(1e-6);
+		pose.at(1);
 		pose.stop();
 		expect(worldOf(arm).distanceTo(rest)).toBeLessThan(1e-6);
 	});

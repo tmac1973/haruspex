@@ -25,6 +25,8 @@ export function poser(THREE: Three, root: Object3D, clip: AnimationClip): Poser 
 	action.play();
 	return {
 		at(t) {
+			// A play-once action pauses when it reaches its end; start it fresh.
+			action.reset();
 			mixer.setTime(Math.min(Math.max(t, 0), clip.duration));
 			root.updateMatrixWorld(true);
 		},
