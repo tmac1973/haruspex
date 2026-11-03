@@ -10,6 +10,7 @@ import {
 	helperOn,
 	helpers,
 	registerHelper,
+	sessionHelpers,
 	type HelperDef
 } from './registry';
 
@@ -77,6 +78,14 @@ describe('the helper registry', () => {
 		expect(helperOn(def.id)).toBe(true);
 	});
 
+	it('gives a session its stored ids, or the switched-on ones when it has none', () => {
+		expect(sessionHelpers(null)).not.toContain(def);
+		expect(sessionHelpers([def.id, 'gone'])).toEqual([def]);
+		setCodeHelper(def.id, true);
+		expect(sessionHelpers(undefined)).toContain(def);
+		expect(sessionHelpers([])).toEqual([]);
+	});
+
 	it('marks a writing helper’s tools as write tools', () => {
 		expect(isCodeWriteTool(TOOL)).toBe(true);
 	});
@@ -106,6 +115,13 @@ describe('offering a helper’s tools', () => {
 		expect(offered(codeTab)).toBe(false);
 		setCodeHelper(def.id, true);
 		expect(offered(codeTab)).toBe(true);
+	});
+
+	it('follows the session’s own list over the setting', () => {
+		expect(offered({ ...codeTab, codeHelpers: [def.id] })).toBe(true);
+		setCodeHelper(def.id, true);
+		expect(offered({ ...codeTab, codeHelpers: [] })).toBe(false);
+		expect(offered({ ...codeTab, codeHelpers: null })).toBe(true);
 	});
 
 	it('never offers them in Shell Code mode, Chat, a subtask or a read-only session', () => {

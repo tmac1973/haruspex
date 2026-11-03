@@ -89,6 +89,7 @@ const db = vi.hoisted(() => {
 					if ('title' in patch) row.title = patch.title;
 					if ('backend' in patch) row.backend = patch.backend;
 					if ('effort' in patch) row.reasoning_effort = patch.effort;
+					if ('helpers' in patch) row.helpers = patch.helpers;
 					return undefined;
 				}
 				case 'code_bg_status':
@@ -726,6 +727,108 @@ describe('a Code session', () => {
 		expect(o.codeSessionId).toBe(s.id);
 		await s.setBackend(null);
 		expect(db.rows.get(s.id)!.backend).toBeNull();
+	});
+
+	it('passes its own helpers, and saves changes to them', async () => {
+		const s = await newSession('/proj');
+		await s.setSessionHelpers(['three']);
+		expect(db.rows.get(s.id)!.helpers).toBe('["three"]');
+		await s.send('hi');
+		expect((mocks.runAgentLoop.mock.calls[0][0] as AgentLoopOptions).codeHelpers).toEqual([
+			'three'
+		]);
+		await s.setSessionHelpers(null);
+		expect(db.rows.get(s.id)!.helpers).toBeNull();
+	});
+
+	it('saves a turn as it goes, so an app closed mid-turn keeps it', async () => {
+		const s = await newSession('/proj');
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		let reached!: () => void;
+		const midTurn = new Promise<void>((r) => (reached = r));
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			const grep = { id: 'c1', name: 'code_grep', arguments: {} };
+			o.onToolStart(grep);
+			add(
+				o,
+				{
+					role: 'assistant',
+					content: '',
+					tool_calls: [
+						{ id: 'c1', type: 'function', function: { name: 'code_grep', arguments: '{}' } }
+					]
+				},
+				{ role: 'tool', tool_call_id: 'c1', content: 'src/a.ts:1: x' }
+			);
+			o.onToolEnd(grep, 'src/a.ts:1: x');
+			// The next call is written but not answered.
+			add(o, {
+				role: 'assistant',
+				content: '',
+				tool_calls: [{ id: 'c2', type: 'function', function: { name: 'x', arguments: '{}' } }]
+			});
+			reached();
+			await gate;
+			o.onStreamChunk(chunk('Found it.'));
+			o.onComplete();
+		});
+		const sending = s.send('where is x?');
+		await midTurn;
+		await vi.waitFor(() =>
+			expect(storedThread(s.id)?.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool'])
+		);
+		const steps = storedThread(s.id)!.messageSteps[2];
+		expect(steps.map((st) => [st.toolName, st.status])).toEqual([['code_grep', 'done']]);
+
+		// What a restart now would load: the turn so far, ready to go on from.
+		const reopened = decodeCodeSession(db.rows.get(s.id)!.thread as string)!;
+		expect(reopened.messages[2].content).toBe('src/a.ts:1: x');
+
+		release();
+		await sending;
+		expect(storedThread(s.id)!.messages.map((m) => m.role)).toEqual([
+			'user',
+			'assistant',
+			'tool',
+			'assistant'
+		]);
+	});
+
+	it('saves the opening message once the turn starts, before the model answers', async () => {
+		const s = await newSession('/proj');
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('start on it');
+		await turn.running;
+		await vi.waitFor(() => expect(storedThread(s.id)?.messages).toHaveLength(1));
+		expect(storedThread(s.id)!.messages[0].content).toBe('start on it');
+		turn.release();
+		await sending;
+		expect(storedThread(s.id)!.messages).toHaveLength(2);
+	});
+
+	it('counts tokens across turns and keeps the count', async () => {
+		const s = await newSession('/proj');
+		const usage = (p: number, c: number) => ({
+			prompt_tokens: p,
+			completion_tokens: c,
+			total_tokens: p + c
+		});
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => {
+			o.onUsageUpdate?.(usage(1000, 50));
+			o.onUsageUpdate?.(usage(1200, 80));
+			o.onStreamChunk(chunk('ok'));
+			o.onComplete();
+		});
+		await s.send('one');
+		await s.send('two');
+		expect(s.totals).toMatchObject({ promptTokens: 4400, completionTokens: 260, calls: 4 });
+		// A local model: no cost.
+		expect(s.totals.costUsd).toBeNull();
+		await closeSession(s.id);
+		const again = (await openSession(s.id))!;
+		expect(again.totals).toEqual(s.totals);
 	});
 
 	it('renames', async () => {

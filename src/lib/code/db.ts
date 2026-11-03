@@ -5,7 +5,8 @@
  * session store has to tell "no sessions" from "the save did not happen",
  * since the thread is written after every turn to survive a power cut.
  *
- * The translations done here are the backend and the specialists: Rust
+ * The translations done here are the backend and the specialist and helper
+ * lists: Rust
  * stores them as opaque JSON, callers deal in `BackendOverride` and a list
  * of ids. The thread stays a string; it is
  * `#lib/code/session.ts`'s to encode and decode.
@@ -20,10 +21,12 @@ import type { CodeLocation } from '#lib/ipc/gen/CodeLocation.ts';
 export type { CodeSessionSummary, CodeLocation };
 
 /** A session row with its backend and specialists decoded. */
-export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'specialists'> & {
+export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'specialists' | 'helpers'> & {
 	backend: BackendOverride | null;
 	/** The specialist entry ids it offers; null: the ones on by default. */
 	specialists: string[] | null;
+	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
+	helpers: string[] | null;
 };
 
 /**
@@ -36,6 +39,8 @@ export interface CodeSessionMetaPatch {
 	effort?: string | null;
 	/** Null puts the session back on the specialists marked on by default. */
 	specialists?: string[] | null;
+	/** Null puts the session back on the helpers switched on in Settings. */
+	helpers?: string[] | null;
 }
 
 /** A stored backend that no longer parses falls back to the global one. */
@@ -49,8 +54,8 @@ function decodeBackend(json: string | null): BackendOverride | null {
 	}
 }
 
-/** A stored list that no longer parses falls back to the defaults. */
-function decodeSpecialists(json: string | null | undefined): string[] | null {
+/** A stored id list that no longer parses falls back to the defaults. */
+function decodeIds(json: string | null | undefined, what: string): string[] | null {
 	if (!json) return null;
 	try {
 		const parsed: unknown = JSON.parse(json);
@@ -58,7 +63,7 @@ function decodeSpecialists(json: string | null | undefined): string[] | null {
 	} catch {
 		// Falls through to the warning.
 	}
-	console.warn('A Code session has a specialist list that does not parse; using the defaults.');
+	console.warn(`A Code session has a ${what} list that does not parse; using the defaults.`);
 	return null;
 }
 
@@ -66,7 +71,8 @@ function toRecord(row: CodeSessionRow): CodeSessionRecord {
 	return {
 		...row,
 		backend: decodeBackend(row.backend),
-		specialists: decodeSpecialists(row.specialists)
+		specialists: decodeIds(row.specialists, 'specialist'),
+		helpers: decodeIds(row.helpers, 'helper')
 	};
 }
 
@@ -201,6 +207,9 @@ export function updateCodeSessionMeta(id: string, patch: CodeSessionMetaPatch): 
 	if (patch.effort !== undefined) wire.effort = patch.effort;
 	if (patch.specialists !== undefined) {
 		wire.specialists = patch.specialists === null ? null : JSON.stringify(patch.specialists);
+	}
+	if (patch.helpers !== undefined) {
+		wire.helpers = patch.helpers === null ? null : JSON.stringify(patch.helpers);
 	}
 	return invoke<void>('code_session_update_meta', { id, patch: wire });
 }

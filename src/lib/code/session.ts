@@ -3,12 +3,14 @@
  * `src-tauri/src/db/code_sessions.rs`).
  *
  * The Rust side reads this shape in one place, `fork_thread`, which slices
- * `messages` and the index-keyed sidecars and keeps or drops `compaction`; a
- * change to any of them, or to `CODE_SESSION_VERSION`, must be mirrored there.
+ * `messages` and the index-keyed sidecars, keeps or drops `compaction`, and
+ * drops `usage`; a change to any of them, or to `CODE_SESSION_VERSION`, must
+ * be mirrored there.
  *
  * A coding session's value is the conversation (what was decided, what was
- * tried, what failed), so the thread is written per turn rather than on
- * shutdown — a shutdown hook never runs when the power goes.
+ * tried, what failed), so the thread is written as a turn goes, after each
+ * tool result, and again when it ends — a shutdown hook never runs when the
+ * power goes, and an app closed mid-turn would lose the whole turn.
  *
  * Kept apart from `stores/code.svelte.ts` so the encode/decode contract is
  * unit-testable without a Svelte runtime or a live database.
@@ -17,6 +19,7 @@
 import type { ChatMessage } from '#lib/api.ts';
 import type { SearchStep, AgentStopReason } from '#lib/agent/loop.ts';
 import type { MessageStats } from '#lib/stores/chat.svelte.ts';
+import { decodeUsage, type SessionUsage } from '#lib/code/usageTotals.ts';
 
 /**
  * Bumped when the payload shape changes incompatibly. A row written by a
@@ -53,6 +56,11 @@ export interface CodeSessionSnapshot {
 	 * sends the whole thread, as it always did.
 	 */
 	compaction?: CodeCompaction | null;
+	/**
+	 * Tokens and cost so far (`code/usageTotals.ts`). Optional, as above; a
+	 * fork drops it and counts its own.
+	 */
+	usage?: SessionUsage | null;
 }
 
 export type CodeSessionState = Omit<CodeSessionSnapshot, 'version' | 'savedAt'>;
@@ -90,7 +98,8 @@ export function decodeCodeSession(json: string | null): CodeSessionState | null 
 		messageStats: snap.messageStats ?? {},
 		messageStops: snap.messageStops ?? {},
 		messageHistorySent: snap.messageHistorySent ?? {},
-		compaction: decodeCompaction(snap.compaction, snap.messages.length)
+		compaction: decodeCompaction(snap.compaction, snap.messages.length),
+		usage: decodeUsage(snap.usage)
 	};
 }
 

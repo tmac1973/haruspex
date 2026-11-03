@@ -213,6 +213,8 @@ export interface AgentLoopOptions {
 	codeEffort?: string | null;
 	/** The Code session's specialists; see ToolContext.codeSpecialists. */
 	codeSpecialists?: string[] | null;
+	/** The Code session's helpers; see ToolSchemaOpts.codeHelpers. */
+	codeHelpers?: string[] | null;
 	/** The turn is a subtask's; see ToolContext.subtask. */
 	subtask?: { depth: 1 };
 	/** A `delegate` call's subtask changed: its card's state, for `call`'s step. */

@@ -13,6 +13,8 @@ The list on the left holds every saved session, newest first, with its folder an
 
 Long sessions show their last 20 turns; **Show earlier** loads more.
 
+If Haruspex closes mid-turn, the session keeps your message and each finished step; send one to go on.
+
 ## When a session gets long
 
 Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one. `/compact` does it now. The conversation you see stays whole; **Earlier turns summarised** marks the cut and opens the summary. File contents aren't kept, so the agent reads files again.
@@ -43,13 +45,13 @@ A **Read-only** badge in the header marks a fork that shares its folder. Its age
 
 ## Sessions sharing a folder
 
-Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn is writing files or running commands that may change them, another session's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
+Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn writes files or runs commands that may change them, another's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
 
-When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note also shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, whether from the branch menu, the Shell or another terminal. Both notes survive a restart: changes not yet told, and a branch switched while Haruspex was closed, are told on the next turn.
+When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, from the branch menu, the Shell or a terminal. Both notes survive a restart: changes not yet told, and a branch switched while Haruspex was closed, are told on the next turn.
 
 ## When a session's folder is gone
 
-If a session's folder was deleted, moved, or is on an unmounted drive, the session shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes to the front; if the folder goes mid-turn, the banner shows when the turn ends.
+If a session's folder was deleted, moved, or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes to the front; if the folder goes mid-turn, the banner shows when the turn ends.
 
 - **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
 - **Delete session** deletes it.
@@ -58,13 +60,13 @@ Haruspex never recreates the missing folder.
 
 ## Delete a worktree session
 
-Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you are told why. Its branch is always kept. When the last worktree goes, the empty `<project>-worktrees` folder goes with it.
+Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you're told why. Its branch is always kept. When the last worktree goes, the empty `<project>-worktrees` folder goes with it.
 
 ## Move a session to its own window
 
-**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It only works while the session is idle; otherwise the button says why. Unsent text and images in the input box go with it, both ways.
+**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It works only while the session is idle. Unsent text and images in the input box go with it, both ways.
 
-The window shows that one session, without the list. Its header names the model; the status badge stays in the main window. `F2` and `F3` work there as in the main window.
+The window shows that one session, without the list. The status badge stays in the main window. `F2` and `F3` work there as in the main window.
 
 - **⇤ Re-attach** puts it back as a tab in the main window and closes the window (also only when idle).
 - Commands that need a terminal still open in a Shell tab in the main window, which comes to the front. **Go to shell**, **Cancel** and **Stop** work as in the tab.

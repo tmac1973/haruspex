@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
 	 * Settings → Code → Helpers: one switch per helper (`#lib/helpers/`), each
-	 * off by default. A helper's tools reach the Code tab's agent only while its
-	 * switch is on. A helper with its own settings shows their editor under the
-	 * switch while it is on.
+	 * off by default. The switches are what a Code session offers its agent
+	 * until it chooses its own in the header's Extras menu. A helper with its
+	 * own settings shows their editor under the switch while it is on.
 	 */
 	import { helpers } from '#lib/helpers/registry.ts';
 	import '#lib/helpers/index.ts';
@@ -39,7 +39,10 @@
 	{:else}
 		<p class="help">No helpers yet.</p>
 	{/each}
-	<p class="help">
+	<p
+		class="help"
+		title="A session can change these for itself in its header's Extras menu; until then it follows these switches."
+	>
 		Tools the agent runs without a model, such as rendering a 3D model to check it.
 	</p>
 </section>

@@ -2,8 +2,9 @@
 	import { ioRoot } from '#lib/code/paths.ts';
 	/**
 	 * One session's header: its folder and git branch, whether it is
-	 * read-only, its model (see CodeModelPicker), reasoning effort and specialists, the
-	 * repo's AGENTS.md, how full the context is, and its background processes.
+	 * read-only, its model (see CodeModelPicker), reasoning effort, specialists and
+	 * helpers (ExtrasMenu), the repo's AGENTS.md, how full the context is, the
+	 * tokens and cost so far, and its background processes.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
@@ -11,7 +12,8 @@
 	import BackgroundChip from '#lib/components/code/BackgroundChip.svelte';
 	import CodeModelPicker from '#lib/components/code/CodeModelPicker.svelte';
 	import CodeBranchControl from '#lib/components/code/CodeBranchControl.svelte';
-	import SpecialistsMenu from '#lib/components/code/SpecialistsMenu.svelte';
+	import ExtrasMenu from '#lib/components/code/ExtrasMenu.svelte';
+	import SessionUsageChip from '#lib/components/code/SessionUsageChip.svelte';
 	import { folderName } from '#lib/code/sessionList.ts';
 	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -106,7 +108,7 @@
 		{/each}
 	</select>
 
-	<SpecialistsMenu {session} />
+	<ExtrasMenu {session} />
 
 	<span class="spacer"></span>
 
@@ -125,6 +127,7 @@
 			compact
 		/>
 	{/if}
+	<SessionUsageChip totals={session.totals} />
 	<BackgroundChip {session} />
 </div>
 

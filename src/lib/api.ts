@@ -280,6 +280,8 @@ export interface Usage {
 	 * silent — see `reportCall`.
 	 */
 	completion_tokens_details?: { reasoning_tokens?: number };
+	/** What the call cost in USD. OpenRouter reports it; others don't. */
+	cost?: number;
 }
 
 export interface StreamChunk {
@@ -482,6 +484,8 @@ function buildRequestBody(
 	if (isOpenRouter && options.reasoning !== undefined) {
 		body.reasoning = options.reasoning;
 	}
+	// Asks OpenRouter for each call's cost in `usage.cost`.
+	if (isOpenRouter) body.usage = { include: true };
 
 	return body;
 }
