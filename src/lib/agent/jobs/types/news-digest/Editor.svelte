@@ -41,17 +41,19 @@
 			text="RSS or Atom feeds, read through Settings → Network → Network Proxy. The model picks from their latest items; it never opens the articles."
 		/>
 	</legend>
-	{#each PRESET_FEEDS as preset (preset.url)}
-		<label class="check">
-			<input
-				type="checkbox"
-				checked={cfg.feeds.includes(preset.url)}
-				onchange={(e) => togglePreset(preset.url, (e.currentTarget as HTMLInputElement).checked)}
-				required={cfg.feeds.length === 0}
-			/>
-			{preset.name}
-		</label>
-	{/each}
+	<div class="list">
+		{#each PRESET_FEEDS as preset (preset.url)}
+			<label class="check">
+				<input
+					type="checkbox"
+					checked={cfg.feeds.includes(preset.url)}
+					onchange={(e) => togglePreset(preset.url, (e.currentTarget as HTMLInputElement).checked)}
+					required={cfg.feeds.length === 0}
+				/>
+				{preset.name}
+			</label>
+		{/each}
+	</div>
 	<label class="field">
 		<span class="label">Other feeds, one URL per line</span>
 		<textarea
@@ -109,6 +111,21 @@
 		border: none;
 		margin: 0;
 		padding: 0;
+	}
+
+	/* A box of its own, so a long list scrolls where you can see it does. */
+	.list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		/* Six and a half rows: a cut row says there is more. */
+		max-height: 155px;
+		overflow-y: auto;
+		margin-bottom: 8px;
+		padding: 6px 8px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-input);
 	}
 
 	.check {

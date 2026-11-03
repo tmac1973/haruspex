@@ -44,6 +44,10 @@ describe('summaryFacts', () => {
 		]);
 	});
 
+	it('leaves out a run that has finished', () => {
+		expect(summaryFacts(input({ run: { status: 'succeeded' } }), NOW)).toEqual([]);
+	});
+
 	it('says a job is waiting on an answer', () => {
 		expect(summaryFacts(input({ run: { status: 'needs_input' } }), NOW)[0].label).toBe(
 			'job needs your answer'

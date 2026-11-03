@@ -714,18 +714,59 @@ const SENT_NAMES: &[&str] = &[
     "INBOX/Sent",
 ];
 
-/// The mailbox for sent mail: the one LIST flags `\Sent`, else one with a
-/// well-known name.
-fn sent_mailbox(names: &[(String, bool)]) -> Option<String> {
+/// Names a Trash folder goes by on servers that do not flag one `\Trash`.
+const TRASH_NAMES: &[&str] = &[
+    "Trash",
+    "Deleted Items",
+    "Deleted Messages",
+    "Bin",
+    "[Gmail]/Trash",
+    "[Google Mail]/Trash",
+    "INBOX.Trash",
+    "INBOX/Trash",
+];
+
+/// A special-use mailbox: the one LIST flags, else one with a well-known name.
+fn special_mailbox(names: &[(String, bool)], known: &[&str]) -> Option<String> {
     names
         .iter()
         .find(|(_, flagged)| *flagged)
         .or_else(|| {
-            SENT_NAMES
+            known
                 .iter()
                 .find_map(|want| names.iter().find(|(n, _)| n.eq_ignore_ascii_case(want)))
         })
         .map(|(n, _)| n.clone())
+}
+
+/// The mailbox for sent mail: the one LIST flags `\Sent`, else one with a
+/// well-known name.
+fn sent_mailbox(names: &[(String, bool)]) -> Option<String> {
+    special_mailbox(names, SENT_NAMES)
+}
+
+/// Every mailbox's name, and whether LIST gives it the attribute `flag` picks.
+async fn mailboxes(
+    session: &mut ImapSession,
+    host: &str,
+    t: &Timeouts,
+    flag: fn(&async_imap::types::NameAttribute) -> bool,
+) -> Result<Vec<(String, bool)>, String> {
+    use futures_util::TryStreamExt;
+    let list = async {
+        let names: Vec<async_imap::types::Name> = session
+            .list(Some(""), Some("*"))
+            .await?
+            .try_collect()
+            .await?;
+        Ok::<_, async_imap::error::Error>(
+            names
+                .iter()
+                .map(|n| (n.name().to_string(), n.attributes().iter().any(flag)))
+                .collect::<Vec<_>>(),
+        )
+    };
+    within(t.command, host, "LIST", list).await
 }
 
 /// Save a copy of a sent message to the account's Sent mailbox, marked read.
@@ -747,28 +788,8 @@ async fn append_in(
     t: &Timeouts,
 ) -> Result<(), String> {
     use async_imap::types::NameAttribute;
-    use futures_util::TryStreamExt;
     let host = account.imap_host.as_str();
-    let list = async {
-        let names: Vec<async_imap::types::Name> = session
-            .list(Some(""), Some("*"))
-            .await?
-            .try_collect()
-            .await?;
-        Ok::<_, async_imap::error::Error>(
-            names
-                .iter()
-                .map(|n| {
-                    let flagged = n
-                        .attributes()
-                        .iter()
-                        .any(|a| matches!(a, NameAttribute::Sent));
-                    (n.name().to_string(), flagged)
-                })
-                .collect::<Vec<_>>(),
-        )
-    };
-    let names = within(t.command, host, "LIST", list).await?;
+    let names = mailboxes(session, host, t, |a| matches!(a, NameAttribute::Sent)).await?;
     let mailbox = sent_mailbox(&names).ok_or_else(|| "no Sent mailbox was found".to_string())?;
     within(
         t.command,
@@ -777,6 +798,61 @@ async fn append_in(
         session.append(&mailbox, Some("(\\Seen)"), None, raw),
     )
     .await
+}
+
+/// Move one INBOX message (by handle) to the account's Trash: UID MOVE where
+/// the server has it, else copy, flag `\Deleted` and, with UIDPLUS, expunge
+/// that one message. Without UIDPLUS it stays flagged in INBOX, which mail
+/// apps hide, rather than risk expunging another app's flagged mail.
+pub async fn trash_message(account: &EmailAccount, message_id: &str) -> Result<(), String> {
+    let t = TIMEOUTS;
+    let account = &auth::resolve(account).await?;
+    let mut session = checkout(account, &t).await?;
+    let out = trash_in(&mut session, account, message_id, &t).await;
+    if out.is_ok() {
+        checkin(account, session);
+    }
+    out
+}
+
+async fn trash_in(
+    session: &mut ImapSession,
+    account: &EmailAccount,
+    message_id: &str,
+    t: &Timeouts,
+) -> Result<(), String> {
+    use async_imap::types::NameAttribute;
+    use futures_util::TryStreamExt;
+    let host = account.imap_host.as_str();
+    let names = mailboxes(session, host, t, |a| matches!(a, NameAttribute::Trash)).await?;
+    let trash = special_mailbox(&names, TRASH_NAMES)
+        .ok_or_else(|| "no Trash mailbox was found".to_string())?;
+    let validity = select_inbox(session, host, t).await?;
+    let set = uid_from_handle(message_id, validity)?.to_string();
+    let caps = within(t.command, host, "CAPABILITY", session.capabilities()).await?;
+    if caps.has_str("MOVE") {
+        return within(t.command, host, "MOVE", session.uid_mv(&set, &trash)).await;
+    }
+    within(t.command, host, "COPY", session.uid_copy(&set, &trash)).await?;
+    let store = async {
+        session
+            .uid_store(&set, "+FLAGS.SILENT (\\Deleted)")
+            .await?
+            .try_collect::<Vec<_>>()
+            .await
+    };
+    within(t.command, host, "STORE", store).await?;
+    if caps.has_str("UIDPLUS") {
+        let expunge = async {
+            session
+                .uid_expunge(&set)
+                .await?
+                .try_collect::<Vec<_>>()
+                .await
+        };
+        within(t.command, host, "EXPUNGE", expunge).await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -978,6 +1054,28 @@ mod tests {
         assert!(err.contains("127.0.0.1"), "{err}");
         assert!(err.contains("did not answer"), "{err}");
         server.abort();
+    }
+
+    #[test]
+    fn the_trash_is_the_flagged_one_else_a_known_name() {
+        let named = |v: &[(&str, bool)]| -> Vec<(String, bool)> {
+            v.iter().map(|(n, f)| (n.to_string(), *f)).collect()
+        };
+        assert_eq!(
+            special_mailbox(&named(&[("Bin", false), ("Papierkorb", true)]), TRASH_NAMES),
+            Some("Papierkorb".into())
+        );
+        assert_eq!(
+            special_mailbox(
+                &named(&[("INBOX", false), ("[Gmail]/Trash", false)]),
+                TRASH_NAMES
+            ),
+            Some("[Gmail]/Trash".into())
+        );
+        assert_eq!(
+            special_mailbox(&named(&[("INBOX", false)]), TRASH_NAMES),
+            None
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@
 	import type { MeetingsResult } from '#lib/home/meetings.ts';
 	import { greeting, summaryFacts } from '#lib/home/summary.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
+	import { isTrashed } from '#lib/home/trashedEmails.svelte.ts';
 	import { sessionsNeedingAttention } from '#lib/home/needsAttention.ts';
 	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import { currentPrompts } from '#lib/engine/prompts.svelte.ts';
@@ -36,7 +37,8 @@
 		if (own.length === 0) return null;
 		return own.reduce((sum, c) => {
 			const json = getLatestRun(c.job_id as number).latestSucceeded?.result_json;
-			return sum + (parse<{ items: unknown[] }>(json)?.items.length ?? 0);
+			const items = parse<{ items: { id: string }[] }>(json)?.items ?? [];
+			return sum + items.filter((i) => !isTrashed(i.id)).length;
 		}, 0);
 	});
 

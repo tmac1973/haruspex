@@ -13,8 +13,9 @@ import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getCardError, getCardNotice } from '#lib/home/fetchedCards.svelte.ts';
 import { GITHUB_EMPTY, githubConfigOf, scopeLine, type GitHubResult } from '#lib/home/github.ts';
-import { currentRunLine, runStatusLabel } from '#lib/home/jobsCard.ts';
+import { activeRun, currentRunLine, runStatusLabel } from '#lib/home/jobsCard.ts';
 import { finalOutput } from '#lib/home/latestRun.svelte.ts';
+import { isTrashed } from '#lib/home/trashedEmails.svelte.ts';
 import { groupOf, type MeetingGroup, type MeetingsResult } from '#lib/home/meetings.ts';
 import { weatherLabel, type DayForecast, type WeatherResult } from '#lib/home/weather.ts';
 import { dbQuery } from '#lib/stores/dbCall.ts';
@@ -44,7 +45,7 @@ function parse<T>(json: string | null): T | null {
 }
 
 async function jobsPayload(): Promise<HomeCardPayload> {
-	const run = getCurrentRun();
+	const run = activeRun(getCurrentRun());
 	const recent = await dbQuery<RecentRun[]>({
 		cmd: 'db_job_runs_list_recent',
 		category: 'home',
@@ -123,12 +124,14 @@ const IDLE: HomeJobState = {
 function emailItems(json: string | null): HomeEmailItem[] | null {
 	const items = parse<{ items: ImportantEmail[] }>(json)?.items;
 	return (
-		items?.map((i) => ({
-			from: i.source.from,
-			subject: i.source.subject,
-			date: i.source.date,
-			why: i.why
-		})) ?? null
+		items
+			?.filter((i) => !isTrashed(i.id))
+			.map((i) => ({
+				from: i.source.from,
+				subject: i.source.subject,
+				date: i.source.date,
+				why: i.why
+			})) ?? null
 	);
 }
 

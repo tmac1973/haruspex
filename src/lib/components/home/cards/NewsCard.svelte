@@ -5,7 +5,7 @@
 	 */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
-	import { enqueue, getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
@@ -82,13 +82,6 @@
 	{:else if !running && !queued && !failed}
 		<p class="muted">Not read yet.</p>
 	{/if}
-	<div class="actions">
-		<button
-			onclick={() => void enqueue(jobId, 'manual')}
-			disabled={running || queued}
-			title={running || queued ? 'Already reading' : 'Read the feeds now'}>Refresh</button
-		>
-	</div>
 {/if}
 
 <style>
@@ -154,26 +147,5 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-
-	.actions {
-		display: flex;
-		justify-content: flex-end;
-		margin-top: 8px;
-	}
-
-	.actions button {
-		padding: 4px 10px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.8rem;
-	}
-
-	.actions button:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 </style>

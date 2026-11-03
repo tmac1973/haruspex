@@ -6,7 +6,7 @@
 	 */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
-	import { enqueue, getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
@@ -14,6 +14,8 @@
 	import ItemActions, { type ItemAction } from '#lib/components/home/ItemActions.svelte';
 	import EmailReader from '#lib/components/home/EmailReader.svelte';
 	import DraftReply from '#lib/components/home/DraftReply.svelte';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { isTrashed, trashEmail } from '#lib/home/trashedEmails.svelte.ts';
 
 	let { card }: { card: HomeCard } = $props();
 
@@ -30,7 +32,8 @@
 		const json = latestRun?.latestSucceeded?.result_json;
 		if (!json) return null;
 		try {
-			return (JSON.parse(json) as { items: ImportantEmail[] }).items;
+			const all = (JSON.parse(json) as { items: ImportantEmail[] }).items;
+			return all.filter((item) => !isTrashed(item.id));
 		} catch {
 			return null;
 		}
@@ -39,6 +42,22 @@
 	/** The message open in the reader, and the one with a draft panel under it. */
 	let reading = $state<ImportantEmail | null>(null);
 	let drafting = $state<string | null>(null);
+	/** The message whose Delete asks first, and why the last delete failed. */
+	let deleting = $state<ImportantEmail | null>(null);
+	let deleteError = $state<string | null>(null);
+
+	async function confirmDelete() {
+		const item = deleting;
+		const account = item ? accountOf(item) : undefined;
+		deleting = null;
+		if (!item || !account) return;
+		deleteError = null;
+		try {
+			await trashEmail(account, item.id, item.source.messageId);
+		} catch (e) {
+			deleteError = `Couldn't delete "${item.source.subject}": ${String(e)}`;
+		}
+	}
 
 	function accountOf(item: ImportantEmail) {
 		return getSettings().integrations.email.accounts.find((a) => a.id === item.source.accountId);
@@ -59,7 +78,12 @@
 				label: 'Ask about this',
 				run: () => askAbout('Important emails', { kind: 'email', item })
 			},
-			{ label: 'Draft reply', run: () => (drafting = item.id), disabledReason: noSend }
+			{ label: 'Draft reply', run: () => (drafting = item.id), disabledReason: noSend },
+			{
+				label: 'Delete',
+				run: () => (deleting = item),
+				disabledReason: account ? undefined : 'This account was removed from Settings'
+			}
 		];
 	}
 
@@ -81,6 +105,9 @@
 		<p class="error" title={failed.error ?? undefined}>
 			The last check failed{failed.error ? `: ${failed.error}` : '.'}
 		</p>
+	{/if}
+	{#if deleteError}
+		<p class="error" title={deleteError}>{deleteError}</p>
 	{/if}
 	{#if items && items.length > 0}
 		<ul>
@@ -122,13 +149,16 @@
 			onclose={() => (reading = null)}
 		/>
 	{/if}
-	<div class="actions">
-		<button
-			onclick={() => void enqueue(jobId, 'manual')}
-			disabled={running || queued}
-			title={running || queued ? 'Already checking' : 'Check for new mail now'}>Refresh</button
-		>
-	</div>
+	<ConfirmDialog
+		open={deleting !== null}
+		title="Delete email"
+		confirmLabel="Move to Trash"
+		destructive
+		onconfirm={() => void confirmDelete()}
+		oncancel={() => (deleting = null)}
+	>
+		<p>"{deleting?.source.subject || '(no subject)'}" goes to the account's Trash.</p>
+	</ConfirmDialog>
 {/if}
 
 <style>
@@ -194,26 +224,5 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-
-	.actions {
-		display: flex;
-		justify-content: flex-end;
-		margin-top: 8px;
-	}
-
-	.actions button {
-		padding: 4px 10px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.8rem;
-	}
-
-	.actions button:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 </style>

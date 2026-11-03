@@ -25,18 +25,21 @@
 	</legend>
 	{#if accounts.length === 0}
 		<p class="hint">No email accounts yet. Add one in Settings → Integrations → Email.</p>
+	{:else}
+		<div class="list">
+			{#each accounts as account (account.id)}
+				<label class="check">
+					<input
+						type="checkbox"
+						checked={cfg.accountIds.includes(account.id)}
+						onchange={(e) => toggle(account.id, (e.currentTarget as HTMLInputElement).checked)}
+						required={cfg.accountIds.length === 0}
+					/>
+					{account.label}{account.enabled ? '' : ' (off)'}
+				</label>
+			{/each}
+		</div>
 	{/if}
-	{#each accounts as account (account.id)}
-		<label class="check">
-			<input
-				type="checkbox"
-				checked={cfg.accountIds.includes(account.id)}
-				onchange={(e) => toggle(account.id, (e.currentTarget as HTMLInputElement).checked)}
-				required={cfg.accountIds.length === 0}
-			/>
-			{account.label}{account.enabled ? '' : ' (off)'}
-		</label>
-	{/each}
 </fieldset>
 
 <label class="field">
@@ -79,6 +82,20 @@
 		border: none;
 		margin: 0;
 		padding: 0;
+	}
+
+	/* A box of its own, so a long list scrolls where you can see it does. */
+	.list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		/* Six and a half rows: a cut row says there is more. */
+		max-height: 155px;
+		overflow-y: auto;
+		padding: 6px 8px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-input);
 	}
 
 	.check {

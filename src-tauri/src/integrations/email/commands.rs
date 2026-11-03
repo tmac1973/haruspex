@@ -174,6 +174,13 @@ pub async fn email_prepare_summary(
     Ok(sub_agent::prepare(&msg).into())
 }
 
+/// Move one INBOX message to the account's Trash. Only Home's email card
+/// invokes it, after the user confirms; no tool can.
+#[tauri::command]
+pub async fn email_trash(account: EmailAccount, message_id: String) -> Result<(), String> {
+    imap_client::trash_message(&account, &message_id).await
+}
+
 /// Log in to the account's SMTP server without sending: Settings' check
 /// when Allow sending is on.
 #[tauri::command]

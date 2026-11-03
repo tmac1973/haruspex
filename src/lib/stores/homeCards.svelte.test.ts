@@ -20,6 +20,7 @@ import {
 	getHomeCards,
 	loadHomeCards,
 	moveCard,
+	moveCardTo,
 	removeCard,
 	setCardSize
 } from './homeCards.svelte';
@@ -116,6 +117,22 @@ describe('homeCards', () => {
 		expect(types()).toEqual(['b', 'a', 'c']);
 		await moveCard(c.id, -1);
 		expect(types()).toEqual(['b', 'c', 'a']);
+	});
+
+	it('puts a dragged card where it was dropped, either way', async () => {
+		settings.homeSeeded = true;
+		await addCard('a');
+		await addCard('b');
+		await addCard('c');
+		const [a, , c] = getHomeCards();
+
+		await moveCardTo(c.id, a.id);
+		expect(types()).toEqual(['c', 'a', 'b']);
+		await moveCardTo(c.id, getHomeCards()[2].id);
+		expect(types()).toEqual(['a', 'b', 'c']);
+		tauri.invoke.mockClear();
+		await moveCardTo(a.id, a.id);
+		expect(tauri.invoke).not.toHaveBeenCalledWith('db_home_cards_reorder', expect.anything());
 	});
 
 	it('switches a card between normal and wide', async () => {

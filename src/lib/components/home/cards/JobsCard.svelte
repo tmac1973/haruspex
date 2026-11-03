@@ -7,7 +7,7 @@
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { dbQuery } from '#lib/stores/dbCall.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
-	import { currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
+	import { activeRun, currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
 	import { getJobType } from '#lib/agent/jobs/types/index.ts';
 
 	// Home hands every card its row; a live card keeps nothing in it.
@@ -16,7 +16,7 @@
 
 	const RECENT = 5;
 
-	const current = $derived(getCurrentRun());
+	const current = $derived(activeRun(getCurrentRun()));
 	const queued = $derived(getQueueDepth());
 	const progress = $derived(current ? runProgress(current) : null);
 	let recent = $state<RecentRun[]>([]);

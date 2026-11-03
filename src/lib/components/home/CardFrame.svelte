@@ -30,6 +30,8 @@
 		notify?: boolean | null;
 		onnotify?: (on: boolean) => void;
 		onremove: () => void;
+		/** A press on the header, where a drag to move the card starts. */
+		ongrab?: (e: PointerEvent) => void;
 		children: Snippet;
 	}
 
@@ -49,6 +51,7 @@
 		notify = null,
 		onnotify,
 		onremove,
+		ongrab,
 		children
 	}: Props = $props();
 
@@ -71,7 +74,9 @@
 />
 
 <section class="card" class:wide={size === 'wide'} aria-label={title}>
-	<header>
+	<!-- The drag is for a pointer; the menu's Move up and Move down do it by keyboard. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<header class:grab={ongrab !== undefined} onpointerdown={ongrab}>
 		<div class="heading">
 			<h3>{title}</h3>
 			{#if status}
@@ -145,14 +150,8 @@
 		background: var(--bg-secondary);
 	}
 
-	.card.wide {
-		grid-column: span 2;
-	}
-
-	@media (max-width: 700px) {
-		.card.wide {
-			grid-column: auto;
-		}
+	header.grab {
+		cursor: grab;
 	}
 
 	header {

@@ -50,7 +50,7 @@ export function summaryFacts(input: SummaryInput, now = new Date()): SummaryFact
 	const facts: SummaryFact[] = [];
 	if (input.run?.status === 'needs_input') {
 		facts.push({ key: 'run', count: 1, label: 'job needs your answer', target: 'jobs' });
-	} else if (input.run) {
+	} else if (input.run?.status === 'running') {
 		facts.push({ key: 'run', count: 1, label: 'job running', target: 'jobs' });
 	}
 	if (input.queued > 0) {
