@@ -14,6 +14,16 @@ describe('Code tab prompt', () => {
 		expect(tab()).not.toContain('READ-ONLY');
 	});
 
+	it('leads TOOLS with the session helpers’ lines, and searches first with Search on', () => {
+		const search = { id: 'search', prompt: '- search_code — find code.' };
+		const text = tab({ helpers: [{ id: '3d' }, search] });
+		expect(text).toContain('TOOLS:\n- search_code — find code.\n- code_grep');
+		expect(text).toContain('locate code with search_code (a question in plain words)');
+		const without = tab({ helpers: [{ id: '3d' }] });
+		expect(without).not.toContain('search_code');
+		expect(without).toContain('- Explore before editing: grep/glob to locate code,');
+	});
+
 	it('tells a worktree session its branch and that ignored files are missing', () => {
 		const text = tab({ worktree: { branch: 'fix-login-fork' } });
 		expect(text).toContain('fresh git worktree on branch fix-login-fork');

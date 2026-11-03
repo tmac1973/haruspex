@@ -15,7 +15,7 @@ Helpers work in the Code tab only. The 3D helper needs a session that can write;
 
 ## The Search helper
 
-Turn on **Search** and the agent gets a `search_code` tool. It asks a question in plain words ("where does the message box grow as I type?") and gets back the six best snippets of code, each with its path and line numbers, best first. Snippets next to each other in one file are joined, so there can be fewer. The agent then reads around the best one or greps for a name it saw.
+Turn on **Search** and the agent gets a `search_code` tool, and is told to use it first whenever it doesn't know the exact name to grep for. It asks a question in plain words ("where does the message box grow as I type?") and gets back the six best snippets of code, each with its path and line numbers, best first. Snippets next to each other in one file are joined, so there can be fewer. The agent then reads around the best one or greps for a name it saw.
 
 It searches the text files in the session's folder, fresh on every call. Files your `.gitignore` skips, binaries, lockfiles and files over 1 MB are left out; tests and generated files are kept but ranked lower. The agent can narrow a search to one subfolder.
 

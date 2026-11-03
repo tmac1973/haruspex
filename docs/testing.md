@@ -338,7 +338,8 @@ Settings → General → Load tools when needed on and off, on the same tasks.
 
 The app under test is any build with Settings → Remote control on (on this
 computer, `https://localhost:8788` needs nothing more), set to the model to
-evaluate. The script changes only Load tools when needed, and puts it back.
+evaluate. The script changes only the settings its options name (Load tools
+when needed, the Search helper, Code max steps), and puts them back.
 
 ```bash
 npm run model-eval -- setup                     # the test folder and project (ffmpeg, git)
@@ -361,5 +362,18 @@ npm run model-eval -- summary                   # pass rates, requests, first pr
   run two at once against the same app, or chat in it while it runs.
 - **The conversation** is 12 turns in one chat across every tool group, for how
   a small context window holds up; it has no pass checks, so read its answers.
+- **The search group** (`--prompts search`, not part of `all`) is the Search
+  helper's ten "where is X" tasks (`plan/search-code/phase-06-live-rerun.md`),
+  run in Code sessions on a clone of Haruspex that `setup` makes at the commit
+  the answers come from. A run passes when a path after the answer's `FILES:`
+  is one of the task's files. `--search off|keyword|rerank` sets the helper
+  (rerank: `--rerank-url`, `--rerank-model`), `--code-steps` the Code max
+  steps, and `summary` gives right files, requests, total prompt tokens and
+  how often `search_code` ran:
+
+  ```bash
+  npm run model-eval -- run --label p06 --prompts search --runs 1 --search keyword --code-steps 20
+  ```
+
 - Chats and sessions it makes stay in the app (memory off) until
   `npm run model-eval -- cleanup` deletes the ones `--out` names.
