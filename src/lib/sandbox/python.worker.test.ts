@@ -125,6 +125,9 @@ function doneFor(id: string): ToolResult {
 
 /** Import a fresh worker module. Resolves once it has asked for its config. */
 async function load(pyodide: Promise<unknown> = Promise.resolve(py.api)): Promise<void> {
+	// A rejected load waits through the worker's import below; marked handled
+	// here so a slow import isn't an unhandled rejection. The worker still sees it.
+	pyodide.catch(() => {});
 	mocks.loadPyodide.mockReturnValue(pyodide);
 	await import('./python.worker');
 	await settle();

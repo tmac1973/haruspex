@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { box, clip, gltf, move, skinnedLeg, turn } from './motionFixtures';
 import { inspectMotion } from './motion';
 import { formatClip } from './motionFormat';
-import { foldDegrees, jointsOf } from './motionParts';
+import { foldDegrees, jointsOf, relative, sameTransform } from './motionParts';
 
 const scene = (...children: THREE.Object3D[]) => {
 	const root = new THREE.Group();
@@ -50,6 +50,40 @@ describe('passing into', () => {
 			)
 		);
 		expect(c.passes).toEqual([]);
+	});
+
+	it('leaves two parts alone that turn together under one pivot', () => {
+		// A head made of two boxes whose faces touch at rest, under a neck that
+		// turns: they can't pass into each other, whatever the ray parity says.
+		const neck = new THREE.Group();
+		neck.name = 'Neck';
+		neck.position.set(0, 1, 0);
+		neck.add(box('Cranium', [0.3, 0.25, 0.3], [0, 0.125, 0]));
+		neck.add(box('Crown', [0.3, 0.1, 0.3], [0, 0.3, 0]));
+		const c = one(scene(neck), turn('Neck', [1, 0, 0], [0, 0.5, 1], [0, 40, 0]));
+		expect(c.passes).toEqual([]);
+	});
+
+	it('treats parts under one turning pivot as unmoved, and others as moved', () => {
+		const neck = new THREE.Group();
+		const cranium = box('Cranium', [0.3, 0.25, 0.3], [0, 0.125, 0]);
+		const crown = box('Crown', [0.3, 0.1, 0.3], [0, 0.3, 0]);
+		const torso = box('Torso', [0.4, 0.5, 0.3], [0, -0.3, 0]);
+		neck.add(cranium, crown);
+		const root = scene(neck, torso);
+		const head = relative(THREE, cranium, crown)!;
+		const onBody = relative(THREE, cranium, torso)!;
+
+		neck.rotation.set(0.7, 0.2, 0);
+		root.updateMatrixWorld(true);
+		expect(sameTransform(head, relative(THREE, cranium, crown))).toBe(true);
+		expect(sameTransform(onBody, relative(THREE, cranium, torso))).toBe(false);
+	});
+
+	it('never takes a skinned mesh as unmoved: it deforms', () => {
+		const { mesh } = skinnedLeg();
+		expect(relative(THREE, mesh, body())).toBeNull();
+		expect(sameTransform(new THREE.Matrix4(), null)).toBe(false);
 	});
 
 	it('never counts a see-through part as a host', () => {
