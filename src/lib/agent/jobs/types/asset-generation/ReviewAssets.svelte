@@ -7,7 +7,6 @@
 	import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
 	import { renderAssetSpec } from '#lib/assets/spec/write.ts';
 	import type { AssetEntry, AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
-	import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { resolveImageBackend } from '#lib/image/index.ts';
 	import {
 		regenerateMarked,
@@ -144,7 +143,10 @@
 						content: renderAssetSpec(s),
 						overwrite: true
 					}),
-				run: () => enqueue(jobId, 'manual')
+				// Loaded here, not at the top: the runner imports the job-type
+				// barrel, which imports this editor, so a static import makes a
+				// cycle that leaves this job type undefined at registration.
+				run: async () => (await import('#lib/agent/jobs/runner.svelte.ts')).enqueue(jobId, 'manual')
 			});
 			onclose();
 		} catch (e) {

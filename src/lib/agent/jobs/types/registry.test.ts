@@ -76,6 +76,17 @@ describe('registration barrel', () => {
 		]);
 	});
 
+	// A definition whose imports lead back to the barrel registers before it is
+	// defined when something imports it first, and the barrel throws.
+	it('loads every definition on its own, without an import cycle through the barrel', async () => {
+		const definitions = import.meta.glob('./*/definition.ts');
+		expect(Object.keys(definitions)).toHaveLength(7);
+		for (const [path, load] of Object.entries(definitions)) {
+			vi.resetModules();
+			await expect(load(), path).resolves.toBeTruthy();
+		}
+	});
+
 	it('research: planSteps maps authored steps 1:1, pre-rendering only step 0', async () => {
 		const { getJobType } = await import('./index');
 		const job = {
