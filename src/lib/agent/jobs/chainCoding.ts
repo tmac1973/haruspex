@@ -7,7 +7,7 @@
  * where that art is.
  */
 
-import { createJob } from '#lib/stores/jobs.svelte.ts';
+import { createJob, getJob, updateJob } from '#lib/stores/jobs.svelte.ts';
 import { modelColumnsOf, type ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 
@@ -97,13 +97,63 @@ export async function handoffToCoding(ctx: JobRunContext, opts: CodingHandoff): 
 }
 
 /**
+ * Merge `fields` into a stored job's `type_config.coding_run`: what this run
+ * knows that the coding run the next job starts must hear. True when saved,
+ * or when the job carries no coding run to tell. Never throws.
+ */
+async function mergeIntoCodingRun(
+	jobId: number,
+	fields: Record<string, unknown>
+): Promise<boolean> {
+	try {
+		const next = await getJob(jobId);
+		if (!next) return false;
+		const config: unknown = next.type_config ? JSON.parse(next.type_config) : {};
+		if (!config || typeof config !== 'object' || Array.isArray(config)) return false;
+		const codingRun = (config as Record<string, unknown>).coding_run;
+		if (!codingRun || typeof codingRun !== 'object' || Array.isArray(codingRun)) return true;
+		return await updateJob(jobId, {
+			name: next.name,
+			description: next.description,
+			working_dir: next.working_dir,
+			auto_approve_tools: next.auto_approve_tools,
+			job_type: next.job_type,
+			schedule_kind: next.schedule_kind,
+			schedule_config: next.schedule_config,
+			next_due_at: next.next_due_at,
+			...modelColumnsOf(next),
+			type_config: JSON.stringify({ ...config, coding_run: { ...codingRun, ...fields } })
+		});
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Start a job a chain created ahead of time: the 3D run a 2D run hands on to.
  * The result line, or null when it could not be started. Never throws.
+ *
+ * `codingFields`, when given, is merged into that job's `coding_run` first:
+ * only this run knows which of its assets are missing, and the coding run
+ * the next job starts must not load them. A failed merge still starts the
+ * job, and the result line says so.
  */
-export async function handoffToNextJob(ctx: JobRunContext, jobId: number): Promise<string | null> {
+export async function handoffToNextJob(
+	ctx: JobRunContext,
+	jobId: number,
+	codingFields: Record<string, unknown> | null = null
+): Promise<string | null> {
 	try {
+		const merged = codingFields === null || (await mergeIntoCodingRun(jobId, codingFields));
 		const runId = await ctx.startChainedRun(jobId);
-		return runId === null ? null : `Started job ${jobId} (run ${runId}).`;
+		if (runId === null) return null;
+		return (
+			`Started job ${jobId} (run ${runId}).` +
+			(merged
+				? ''
+				: ` Could not update job ${jobId}'s coding configuration, so its coding run ` +
+					'is not told which assets are missing.')
+		);
 	} catch {
 		return null;
 	}

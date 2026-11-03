@@ -514,7 +514,12 @@ async function handoff(
 	if (nextId === null) return toCoding();
 	const skipped = handoffSkipped(ctx, cfg.coding_run, cfg.hand_off);
 	if (skipped) return skipped;
-	const started = await handoffToNextJob(ctx, nextId);
+	// That run starts the coding run, but only this one knows what is missing.
+	const started = await handoffToNextJob(
+		ctx,
+		nextId,
+		missing.length ? { missing_assets: missing.map((e) => e.id) } : null
+	);
 	if (started) return started;
 	return `Could not start job ${nextId}. ${await toCoding()}`;
 }
