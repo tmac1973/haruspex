@@ -184,6 +184,33 @@ describe('animateStage', () => {
 		expect(clipsSummary(h.spec, h.states)).toContain('1 of 1 animated model(s) done.');
 	});
 
+	it('ends a turn once its clips pass, and only then', async () => {
+		verdict.judgeModel.mockResolvedValue(pass());
+		const h = harness();
+		await h.run();
+		const end = h.turns[0].endTurnWhen!;
+		const check = [{ name: 'check_3d' }] as never;
+
+		// A batch with no check doesn't judge.
+		verdict.judgeModel.mockClear();
+		expect(await end([{ name: 'fs_write_text' }] as never)).toBe(false);
+		expect(verdict.judgeModel).not.toHaveBeenCalled();
+
+		expect(await end(check)).toBe(true);
+		expect(verdict.judgeModel.mock.calls[0][0]).toMatchObject({ stage: 'animate' });
+
+		verdict.judgeModel.mockResolvedValue(fail(['Walk: the loop does not close.']));
+		expect(await end(check)).toBe(false);
+
+		verdict.judgeModel.mockResolvedValue(pass());
+		files.set(BUILD, [0]);
+		expect(await end(check)).toBe(false);
+		files.set(BUILD, [...SOURCE]);
+
+		verdict.judgeModel.mockRejectedValue(new Error('no WebGL'));
+		expect(await end(check)).toBe(false);
+	});
+
 	it('puts a changed build module back and says so', async () => {
 		verdict.judgeModel.mockResolvedValue(pass());
 		const h = harness({}, (n) => {

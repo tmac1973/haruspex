@@ -154,7 +154,8 @@ export function animateSystemPrompt(): string {
 		'   animation module, `out` = the .glb and `clip` = the clip name.',
 		'3. Fix what it reports and look at the motion sheet: the poses must do what the',
 		'   clip says. Check again after each change.',
-		'4. Stop when every clip checks clean. Write files only in the model’s folder.'
+		'4. Stop when every clip checks clean: the turn ends on its own once they pass.',
+		'   Write files only in the model’s folder.'
 	].join('\n');
 }
 

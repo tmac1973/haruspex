@@ -166,6 +166,11 @@ export async function runIteration(
 		ctx.options.onComplete();
 		return 'complete';
 	}
+	if (ctx.options.endTurnWhen && (await ctx.options.endTurnWhen(toolCalls))) {
+		logDebug('agent', 'branch=end-turn-when stop', { iteration });
+		ctx.options.onComplete();
+		return 'complete';
+	}
 	// Break out of a no-progress loop (same command re-run repeatedly) instead
 	// of cycling to the iteration cap; the final-synthesis path then wraps up.
 	if (nudges.shouldStopForCommandRepeat()) {

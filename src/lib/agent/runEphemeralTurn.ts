@@ -47,6 +47,8 @@ export interface EphemeralTurnOptions {
 	feedback?: AgentLoopOptions['feedback'];
 	/** Force the turn to end with a call to this tool. See `AgentLoopOptions`. */
 	forceFinalTool?: string;
+	/** End the turn after a tool batch when this says so. See `AgentLoopOptions`. */
+	endTurnWhen?: AgentLoopOptions['endTurnWhen'];
 	/** Remote backend override for this turn's model calls. See `AgentLoopOptions`. */
 	backend?: BackendOverride;
 	/** The turn's inference slot, given back while long tools run. See `AgentLoopOptions`. */
@@ -260,6 +262,7 @@ export async function runEphemeralTurn(
 			toolAllowlist: options.toolAllowlist,
 			feedback: options.feedback,
 			forceFinalTool: options.forceFinalTool,
+			endTurnWhen: options.endTurnWhen,
 			backend: options.backend,
 			slot: options.slot,
 			interactive: options.interactive,
