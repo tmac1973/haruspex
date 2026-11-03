@@ -207,6 +207,38 @@
 		{/if}
 	</div>
 
+	<div class="toggle-row">
+		<label>
+			<input type="checkbox" bind:checked={cfg.generate_models} />
+			<span class="label">
+				Also generate 3D models
+				<Tooltip
+					label="About generating 3D models"
+					text="Writes models.json from the plan. Plan + code chains a 3D run before coding; other modes create the job for you to start."
+				/>
+			</span>
+		</label>
+	</div>
+
+	{#if cfg.generate_models}
+		<div class="stages">
+			<StageModelRow
+				bind:form={cfg.chain_models_create_model}
+				jobForm={jobModel}
+				warnNoVision
+				label="3D creation"
+				tip="Builds each model as code and checks it with check_3d."
+			/>
+			<StageModelRow
+				bind:form={cfg.chain_models_animate_model}
+				jobForm={jobModel}
+				warnNoVision
+				label="3D animation"
+				tip="Writes each animated model's clips."
+			/>
+		</div>
+	{/if}
+
 	{#if cfg.run_mode === 'unattended_chain'}
 		<div class="toggle-row">
 			<label>

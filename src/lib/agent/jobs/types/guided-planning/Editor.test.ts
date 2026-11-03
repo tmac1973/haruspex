@@ -174,3 +174,30 @@ describe('guided-planning Editor', () => {
 		expect(screen.queryByLabelText('Max model steps per turn')).toBeNull();
 	});
 });
+
+describe('guided-planning Editor — 3D models', () => {
+	it('shows the switch in every mode, with the two rows only when it is on', () => {
+		for (const run_mode of ['attended', 'unattended_plan', 'unattended_chain']) {
+			const { unmount } = render(Editor, {
+				props: {
+					config: { ...guidedPlanningJobType.configDefaults!(), run_mode },
+					jobName: 'Test job'
+				}
+			});
+			expect(screen.getByLabelText(/Also generate 3D models/)).toBeTruthy();
+			expect(screen.queryByLabelText('Change the 3d creation')).toBeNull();
+			unmount();
+		}
+	});
+
+	it('shows the 3D creation and animation rows when on', () => {
+		mount({ generate_models: true });
+		expect(screen.getByLabelText('Change the 3d creation')).toBeTruthy();
+		expect(screen.getByLabelText('Change the 3d animation')).toBeTruthy();
+	});
+
+	it('hides it for an overview-only run', () => {
+		mount({ overview_only: true });
+		expect(screen.queryByLabelText(/Also generate 3D models/)).toBeNull();
+	});
+});

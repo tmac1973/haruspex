@@ -64,9 +64,9 @@ describe('guided_planning — handoff', () => {
 		};
 	}
 
-	/** Stage 6 — Handoff. */
+	/** Stage 7 — Handoff. */
 	const handoffOutput = () => {
-		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 7);
 		return String(calls[calls.length - 1]?.[3] ?? '');
 	};
 
@@ -334,7 +334,7 @@ describe('guided_planning — chained coding run settings', () => {
 
 	const handoff = () =>
 		String(
-			mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6).at(-1)?.[3] ?? ''
+			mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 7).at(-1)?.[3] ?? ''
 		);
 
 	it('names the coding job after the plan', async () => {

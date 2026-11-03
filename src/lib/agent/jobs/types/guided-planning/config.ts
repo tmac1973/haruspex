@@ -20,6 +20,10 @@ import { parseChainModel, type ChainModel } from '#lib/agent/jobs/chainModel.ts'
 export interface GuidedPlanningChainModels {
 	assets: ChainModel | null;
 	coding: ChainModel | null;
+	/** The 3D job's creation model. Passed to the 3D job, which runs it. */
+	models_create: ChainModel | null;
+	/** The 3D job's animation model. */
+	models_animate: ChainModel | null;
 }
 
 /** Overrides applied to the coding job a chained run creates. */
@@ -98,6 +102,14 @@ export interface GuidedPlanningConfig {
 	 */
 	generate_assets: boolean;
 	/**
+	 * Write `models.json` from the finished plan. In `unattended_chain` the
+	 * handoff chains a 3D models run before coding (after the 2D run when that
+	 * is on too); in every other mode it creates the 3D job, not started.
+	 * Needs no backend, so unlike `generate_assets` it works in every mode but
+	 * overview only, which has no plan to read. Defaults to off.
+	 */
+	generate_models: boolean;
+	/**
 	 * Which checkpoints the run stops at. See `GuidedPlanningRunMode`.
 	 * Anything unrecognised reads as `attended`: a malformed config must not
 	 * silently make a run unattended.
@@ -113,7 +125,10 @@ export interface GuidedPlanningConfig {
 	 * whatever it is born with is what runs all night.
 	 */
 	coding_run: GuidedPlanningCodingRun;
-	/** Only read in `unattended_chain`; ignored otherwise. */
+	/**
+	 * `assets` and `coding` are read only in `unattended_chain`; the two 3D
+	 * models wherever `generate_models` makes a 3D job.
+	 */
 	chain_models: GuidedPlanningChainModels;
 	/**
 	 * The planning skill for this kind of project, by name: its questions go
@@ -183,6 +198,7 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		// Absent means off, unlike the two above: this one costs GPU time and
 		// needs a configured backend, so it is opt-in.
 		generate_assets: raw.generate_assets === true,
+		generate_models: raw.generate_models === true,
 		run_mode: mode,
 		// Never skipped in unattended_chain, enforced HERE and not only in the
 		// Editor: the severity gate is the one thing standing between a bad plan
@@ -193,7 +209,9 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		coding_run: codingRun,
 		chain_models: {
 			assets: parseChainModel(cm.assets),
-			coding: parseChainModel(cm.coding)
+			coding: parseChainModel(cm.coding),
+			models_create: parseChainModel(cm.models_create),
+			models_animate: parseChainModel(cm.models_animate)
 		},
 		planning_skill:
 			typeof raw.planning_skill === 'string' && raw.planning_skill.trim()

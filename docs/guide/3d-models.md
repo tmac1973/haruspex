@@ -18,7 +18,7 @@ The job reads a spec, `models.json`, from **Models spec** (by default `assets/ha
 
 A static prop such as a crate or a tree has no parts and no clips. If the spec file doesn't exist, the run writes one from **What to make**, on the job's own model. A spec that exists is read as it is and never rewritten; if it has problems, the run stops and lists them.
 
-Guided planning can write the spec for you from a finished plan: see the `jobs` page.
+Guided planning can write the spec for you: see "From guided planning" below.
 
 ## Choose the two models
 
@@ -46,6 +46,15 @@ A model is done when `check_3d` reports no errors and its height is within 10% o
 ## Allow textures
 
 Off by default: models are coloured with materials, vertex colours and the kit's noise. With **Allow textures** on, the creation model can also draw tiling textures in code and map them onto its materials with `kit.texture` (see the `textures` page). Images from the asset generation job are never used on models.
+
+## From guided planning
+
+Turn on **Also generate 3D models** in a guided planning job. After the asset stage, a **3D models** stage reads the finished plan and writes `plan/<slug>/models.json`, using the ids the plan already uses, and adds a "3D models" table to `overview.md`. **3D creation** and **3D animation** under the switch choose the new job's two models; each is **Same as this job** (the planning job) by default.
+
+- In _Unattended plan + code_, the run starts the 3D models job, unattended, and it starts the coding run when it finishes. With **Also generate assets** on too, the order is plan, assets, 3D models, coding. If a run in the chain can't start, the next one starts instead.
+- In every other mode, the run creates the 3D models job, _Attended_ and not started, for you to start from the Jobs tab.
+- **Overview only** writes no `models.json`, since there is no plan to read.
+- **Allow textures** is off in the job it makes; turn it on there.
 
 ## Where the files go
 

@@ -158,7 +158,7 @@ describe('guided_planning — run mode', () => {
 
 	/** Stage 5 — Approval. Assets took index 4 when it was inserted. */
 	const approvalOutput = () => {
-		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 5);
+		const calls = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
 		return String(calls[calls.length - 1]?.[3] ?? '');
 	};
 
@@ -439,7 +439,7 @@ describe('guided_planning — a crashed verifier does not discard the plan', () 
 		// The gate that was written as defensive is now the one that matters.
 		expect(mocks.createJob).not.toHaveBeenCalled();
 		// The one hard refusal left: nothing checked this plan at all.
-		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 6);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 7);
 		expect(String(handoff[handoff.length - 1][3])).toContain('verification did not run');
 	});
 });
