@@ -15,6 +15,7 @@ pub mod claims;
 pub mod folders;
 pub mod git;
 pub mod job;
+pub mod rank;
 pub mod search;
 pub mod subtask_git;
 pub mod wsl;

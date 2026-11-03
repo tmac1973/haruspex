@@ -106,7 +106,7 @@ impl grep::searcher::Sink for ContextSink<'_> {
 /// Windows path the tools can walk (see `require_absolute`). Other roots — the
 /// Code tab's working directory, a PowerShell or Linux/macOS shell cwd — are
 /// already host paths and pass through untouched.
-fn resolve_code_root(root: String, wsl_distro: Option<&str>) -> Result<String, String> {
+pub(crate) fn resolve_code_root(root: String, wsl_distro: Option<&str>) -> Result<String, String> {
     match wsl_distro {
         Some(_) => crate::fs_tools::absolute::require_absolute(&root, wsl_distro)
             .map(|p| p.to_string_lossy().into_owned()),
@@ -122,7 +122,10 @@ fn resolve_code_root(root: String, wsl_distro: Option<&str>) -> Result<String, S
 /// `code_grep` and `code_glob` so they agree on traversal + path derivation.
 /// Under a WSL distro's share the relative path uses `/`, and a file outside
 /// `strip_root` is named by its Linux path, never the share's.
-fn walk_files(walk_root: &Path, strip_root: &Path) -> impl Iterator<Item = (String, PathBuf)> {
+pub(crate) fn walk_files(
+    walk_root: &Path,
+    strip_root: &Path,
+) -> impl Iterator<Item = (String, PathBuf)> {
     use ignore::WalkBuilder;
     let strip_root = strip_root.to_path_buf();
     let wsl = super::wsl::parse_wsl_unc(&strip_root.to_string_lossy()).is_some();
