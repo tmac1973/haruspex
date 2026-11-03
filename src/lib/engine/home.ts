@@ -13,7 +13,7 @@ import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getCardError, getCardNotice } from '#lib/home/fetchedCards.svelte.ts';
 import { GITHUB_EMPTY, githubConfigOf, scopeLine, type GitHubResult } from '#lib/home/github.ts';
-import { activeRun, currentRunLine, runStatusLabel } from '#lib/home/jobsCard.ts';
+import { activeRun, currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
 import { finalOutput } from '#lib/home/latestRun.svelte.ts';
 import { isTrashed } from '#lib/home/trashedEmails.svelte.ts';
 import { groupOf, type MeetingGroup, type MeetingsResult } from '#lib/home/meetings.ts';
@@ -58,7 +58,9 @@ async function jobsPayload(): Promise<HomeCardPayload> {
 		current: run
 			? {
 					jobName: run.jobName,
-					line: currentRunLine(run, getJobType(run.jobType)?.background ?? false)
+					line: currentRunLine(run, getJobType(run.jobType)?.background ?? false),
+					status: run.status,
+					progress: runProgress(run)
 				}
 			: null,
 		queued: getQueueDepth(),
@@ -180,7 +182,10 @@ function meetingsPayload(card: HomeCard, now: Date): HomeCardPayload {
 				summary: m.summary,
 				time: time(m.start, m.end, m.allDay),
 				location: m.location,
-				joinUrl: m.joinUrl
+				joinUrl: m.joinUrl,
+				start: m.start,
+				end: m.end,
+				allDay: m.allDay
 			}))
 		}));
 	}

@@ -448,7 +448,16 @@ export interface HomeNewsItem {
 export interface HomeMeetingGroup {
 	/** "Now", "Later today", … as of when the card was read. */
 	name: string;
-	events: { summary: string; time: string; location: string | null; joinUrl: string | null }[];
+	events: {
+		summary: string;
+		time: string;
+		location: string | null;
+		joinUrl: string | null;
+		/** RFC 3339, for working out which meeting is next. */
+		start: string;
+		end: string;
+		allDay: boolean;
+	}[];
 }
 
 /** What one card shows, by its type: render-ready, so a client needs no other call. */
@@ -456,7 +465,14 @@ export type HomeCardPayload =
 	| {
 			type: 'jobs';
 			/** The run going now, as a line ("Step 2 of 4 · Plan"). */
-			current: { jobName: string; line: string } | null;
+			current: {
+				jobName: string;
+				line: string;
+				/** The run's status: `running`, or `needs_input` while it waits on an answer. */
+				status: string;
+				/** How far it is, 0 to 1; null with nothing to measure. */
+				progress: number | null;
+			} | null;
 			queued: number;
 			recent: HomeRunLine[];
 	  }

@@ -158,6 +158,33 @@ describe('the web store', () => {
 		expect(store.selected).toBe('s1');
 	});
 
+	it("tops Home with the desktop's summary band", async () => {
+		const d = fakeDesktop({});
+		const store = new WebStore(d.transport);
+		store.sessions = [
+			{ id: 's1', title: 'Fix', root: '/p', wslDistro: null, status: 'idle', window: 'main' }
+		];
+		store.prompts = { 'main:1': { promptId: 'main:1', sessionId: 's1' } as Prompt };
+		store.homeCards = [
+			{
+				id: 'j',
+				size: 'normal',
+				title: 'Jobs',
+				payload: {
+					type: 'jobs',
+					current: { jobName: 'Digest', line: 'Step 1 of 2', status: 'running', progress: 0.5 },
+					queued: 2,
+					recent: []
+				}
+			}
+		];
+		render(HomeView, { store });
+		expect(screen.getByText(/job running/)).toBeTruthy();
+		expect(screen.getByText(/queued/, { selector: '.band .fact' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: /session needs you/ }));
+		expect(store.tab).toBe('code');
+	});
+
 	it('reads Home again when a job run changes, only while Home shows', async () => {
 		vi.useFakeTimers();
 		const d = fakeDesktop({ 'home.cards': [] });

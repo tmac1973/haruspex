@@ -23,9 +23,9 @@
 				<li>
 					<div class="name">{m.summary || '(no title)'}</div>
 					<div class="detail">
-						{m.time}{#if m.location}&nbsp;· {m.location}{/if}
+						<span class:now={group.name === 'Now'}>{m.time}</span>{#if m.location}&nbsp;· {m.location}{/if}
 						{#if m.joinUrl}
-							· <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">Join</a>
+							<a class="join" href={m.joinUrl} target="_blank" rel="noopener noreferrer">Join</a>
 						{/if}
 					</div>
 				</li>
@@ -40,5 +40,18 @@
 		font-size: 0.8rem;
 		font-weight: 600;
 		color: var(--text-secondary);
+	}
+
+	.now {
+		color: var(--accent);
+	}
+
+	.join {
+		margin-left: 6px;
+		padding: 1px 10px;
+		border-radius: 6px;
+		background: var(--accent);
+		color: var(--accent-contrast) !important;
+		text-decoration: none;
 	}
 </style>

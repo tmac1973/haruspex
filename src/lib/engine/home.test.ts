@@ -110,7 +110,12 @@ describe('home.cards', () => {
 			title: 'Jobs',
 			payload: {
 				type: 'jobs',
-				current: { jobName: 'Digest', line: 'Step 1 of 2 · Waiting for chat' },
+				current: {
+					jobName: 'Digest',
+					line: 'Step 1 of 2 · Waiting for chat',
+					status: 'running',
+					progress: 0
+				},
 				queued: 1,
 				recent: [{ jobName: 'News', status: 'Failed', at: 9 }]
 			}
@@ -224,7 +229,20 @@ describe('home.cards', () => {
 			type: 'upcoming_meetings',
 			error: 'Calendar offline',
 			updatedAt: 3,
-			groups: [{ name: 'Later today', events: [{ summary: 'Standup', joinUrl: 'https://meet/x' }] }]
+			groups: [
+				{
+					name: 'Later today',
+					events: [
+						{
+							summary: 'Standup',
+							joinUrl: 'https://meet/x',
+							start: '2026-11-02T09:00:00',
+							end: '2026-11-02T09:15:00',
+							allDay: false
+						}
+					]
+				}
+			]
 		});
 	});
 
