@@ -68,7 +68,33 @@ export function insideShare(THREE: Three, inner: Mesh, host: Mesh): number {
 	return inside / pts.length;
 }
 
-/** Parts passing into others, and parts coming away from the body. */
+/** How far apart two relative transforms may be and still count as unmoved. */
+const RIGID_EPSILON = 1e-6;
+
+/** `a`'s transform in `b`'s space; a skinned mesh deforms, so it has none. */
+export function relative(THREE: Three, a: Mesh, b: Mesh): InstanceType<Three['Matrix4']> | null {
+	if (isSkinned(a) || isSkinned(b)) return null;
+	return new THREE.Matrix4().copy(b.matrixWorld).invert().multiply(a.matrixWorld);
+}
+
+/** Whether two relative transforms are the same, so the parts haven't moved apart. */
+export function sameTransform(
+	rest: { elements: ArrayLike<number> },
+	now: { elements: ArrayLike<number> } | null
+): boolean {
+	if (!now) return false;
+	return Array.from(rest.elements).every((v, i) => Math.abs(v - now.elements[i]) <= RIGID_EPSILON);
+}
+
+/**
+ * Parts passing into others, and parts coming away from the body.
+ *
+ * A pair that keeps its rest transform to each other (two meshes under one
+ * pivot) can't pass into each other, so it is skipped at that frame. Without
+ * this, the fixed ray direction of `insideShare` turns with the pose and two
+ * surfaces that touch at rest can flip its parity: a false report that a
+ * model then spends its rounds trying to fix.
+ */
 export function contactTracker(THREE: Three, meshes: Mesh[], stride: number, weld: number) {
 	const boxes = () => new Map(meshes.map((m) => [m, posedBox(THREE, [m], stride)]));
 	const rest = boxes();
@@ -81,15 +107,17 @@ export function contactTracker(THREE: Three, meshes: Mesh[], stride: number, wel
 		return meshes.some((o) => o !== m && grown.intersectsBox(at.get(o)!));
 	};
 	const hosts = meshes.filter((m) => isClosedOpaque(m, weld));
-	const pairs: [Mesh, Mesh][] = [];
+	const pairs: { a: Mesh; b: Mesh; rest: InstanceType<Three['Matrix4']> | null }[] = [];
 	for (const a of meshes) {
 		for (const b of hosts) {
 			if (a === b) continue;
 			const joined =
 				rest.get(a)!.intersectsBox(rest.get(b)!) && insideShare(THREE, a, b) > REST_INSIDE;
-			if (!joined) pairs.push([a, b]);
+			if (!joined) pairs.push({ a, b, rest: relative(THREE, a, b) });
 		}
 	}
+	const unmoved = (p: (typeof pairs)[number]) =>
+		!!p.rest && sameTransform(p.rest, relative(THREE, p.a, p.b));
 	const attached = meshes.filter((m) => touches(m, rest));
 	const passes = new Map<string, TimeSpan>();
 	const apart = new Map<string, TimeSpan>();
@@ -97,8 +125,9 @@ export function contactTracker(THREE: Three, meshes: Mesh[], stride: number, wel
 	return {
 		frame(t: number) {
 			const at = boxes();
-			for (const [a, b] of pairs) {
-				if (!at.get(a)!.intersectsBox(at.get(b)!)) continue;
+			for (const p of pairs) {
+				const { a, b } = p;
+				if (!at.get(a)!.intersectsBox(at.get(b)!) || unmoved(p)) continue;
 				if (insideShare(THREE, a, b) >= FRAME_INSIDE) note(passes, key(a, b), t);
 			}
 			for (const m of attached) if (!touches(m, at)) note(apart, m.name, t);
