@@ -176,7 +176,11 @@
 		white-space: nowrap;
 	}
 
+	/* The model's words, apart from the message's. */
 	.why {
+		margin-top: 2px;
+		padding-left: 6px;
+		border-left: 2px solid var(--accent);
 		font-size: 0.8rem;
 	}
 

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import AddCardMenu from '#lib/components/home/AddCardMenu.svelte';
 	import CardFrame from '#lib/components/home/CardFrame.svelte';
+	import SummaryBand from '#lib/components/home/SummaryBand.svelte';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { getCardType } from '#lib/home/cardTypes.ts';
 	import {
@@ -62,6 +63,7 @@
 
 <div class="home">
 	<div class="toolbar">
+		<SummaryBand {cards} />
 		<AddCardMenu />
 	</div>
 
@@ -127,8 +129,10 @@
 	}
 
 	.toolbar {
-		display: flex;
-		justify-content: flex-end;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 12px;
 		margin-bottom: 12px;
 	}
 

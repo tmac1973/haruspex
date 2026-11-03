@@ -59,8 +59,10 @@
 						<span class="name">{row.label}</span>
 						<span class="root">{folderName(row.root)}</span>
 					</span>
-					<span class="chip" class:attention={row.chip === 'attention'}
-						>{CHIP_LABELS[row.chip]}</span
+					<span
+						class="chip"
+						class:attention={row.chip === 'attention'}
+						class:running={row.chip === 'running'}>{CHIP_LABELS[row.chip]}</span
 					>
 				</button>
 			</li>
@@ -125,6 +127,13 @@
 
 	.chip.attention {
 		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--accent-contrast);
+	}
+
+	.chip.running {
+		border-color: var(--accent);
+		background: var(--accent-soft);
 		color: var(--accent);
 	}
 

@@ -64,7 +64,9 @@
 				<li>
 					<div class="text">
 						<span class="title">{m.summary || '(no title)'}</span>
-						<span class="when">{time(m)}{m.location && !m.joinUrl ? ` · ${m.location}` : ''}</span>
+						<span class="when" class:now={group.name === 'Now'}
+							>{time(m)}{m.location && !m.joinUrl ? ` · ${m.location}` : ''}</span
+						>
 					</div>
 					{#if m.joinUrl}
 						<button class="join" onclick={() => void openInBrowser(m.joinUrl!)} title={m.joinUrl}
@@ -134,13 +136,17 @@
 		font-size: 0.78rem;
 	}
 
+	.when.now {
+		color: var(--accent);
+	}
+
 	.join {
 		flex-shrink: 0;
 		padding: 3px 10px;
 		border: 1px solid var(--accent);
 		border-radius: 6px;
-		background: none;
-		color: var(--accent);
+		background: var(--accent);
+		color: var(--accent-contrast);
 		cursor: pointer;
 		font-size: 0.78rem;
 	}

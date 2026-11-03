@@ -5,12 +5,12 @@ description: The Home tab — cards for jobs, Code sessions, pinned jobs, import
 
 # Home
 
-The Home tab is the first tab: cards that show at a glance what Haruspex is doing and what needs you. Ctrl / ⌘ + 1 opens it; Chat moved to Ctrl / ⌘ + 2 and the other tab keys moved up one (see the `shortcuts` page). Home isn't shown in Lean or Lean + files (see the `lean-mode` page).
+The Home tab is the first tab: cards that show what Haruspex is doing and what needs you. The band at the top counts running and queued jobs, Code sessions waiting on you, important emails and your next meeting; a job or session count opens its tab. Ctrl / ⌘ + 1 opens it (see the `shortcuts` page). Home isn't shown in Lean or Lean + files (see the `lean-mode` page).
 
 ## The cards you start with
 
-- **Jobs** — the job running now with its step and progress ("Step 2 of 4 · 3/7"), how many runs are queued, and the five latest runs. Click a run to open it in the Jobs tab.
-- **Code sessions** — sessions that are running, queued, waiting on a shell command, or waiting on you (**Needs attention**: a command to approve or a question to answer). Click one to open it. Idle sessions, and sessions in a detached Code window, aren't listed.
+- **Jobs** — the job running now with its step and progress ("Step 2 of 4 · 3/7"), how many runs are queued, and the five latest runs. Click a run to open it.
+- **Code sessions** — sessions that are running, queued, waiting on a shell command, or waiting on you (**Needs attention**: a command to approve or a question to answer). Click one to open it. Idle sessions and ones in a detached Code window aren't listed.
 
 ## Pin a job
 
@@ -20,7 +20,7 @@ The Home tab is the first tab: cards that show at a glance what Haruspex is doin
 
 **Add card → Important emails…** needs an email account (see the `integrations` page). Pick the accounts, say what counts as important ("from my manager, or about invoices"), how far back to look, how many to show and how often to check (every 30 minutes to start).
 
-Each check lists your unread inbox mail and the model picks the messages that fit your rule, reading only each one's sender, subject and first lines. The card shows subject, sender and age straight from your mail, with the model's short reason under each; the model can't change what a message says it is. Read mail drops off at the next check, and checking never marks anything as read. **Refresh** checks now.
+Each check lists your unread inbox mail and the model picks the ones that fit your rule, reading only sender, subject and first lines. Subject, sender and age come straight from your mail; the model's short reason sits under each, with a coloured edge, and it can't change what a message says it is. Read mail drops off at the next check, and checking never marks anything as read. **Refresh** checks now.
 
 ## Follow the news you care about
 
@@ -32,7 +32,7 @@ Each check lists your unread inbox mail and the model picks the messages that fi
 
 **Add card → Weather…** looks up a town or city for you to pick, in °C or °F. The forecast comes from Open-Meteo (no account) through Settings → Network → Network Proxy, which is sent only the place's coordinates. Now, today and tomorrow; every 30 minutes.
 
-Both keep their last result, shown at once when Haruspex starts with the time it was read. **↻** reads again now (weather under 10 minutes old comes back unchanged). A failed read keeps the last result and says what went wrong.
+Both keep their last result, shown at start-up with the time it was read. **↻** reads again now (weather under 10 minutes old comes back unchanged). A failed read keeps the last result and says what went wrong.
 
 ## Keep up with GitHub
 
@@ -54,6 +54,6 @@ Each email, story, meeting and GitHub item has a **⋯** menu.
 
 The email and news cards make their own job, which has a **Home** badge in the Jobs tab. It waits while a chat or Code turn is using the model (the card says "Waiting for chat"), and like every job but research it doesn't run in lean mode. **⋯ → Notify on new items** sends a desktop notification naming what's new; it is off until you turn it on. Removing such a card deletes its job unless you untick **Also delete the job**; removing a pinned job's card keeps the job unless you tick it.
 
-Cards and their order are kept across restarts, and stack in one column on a narrow window. Removing every card leaves Home empty. A card from a newer version of Haruspex shows as **Unknown card** and can only be removed.
+Cards and their order are kept across restarts, and stack in one column on a narrow window. A card from a newer version of Haruspex shows as **Unknown card** and can only be removed.
 
 Remote control's page shows Home too, read-only, from your phone or another computer (see the `remote-control` page).

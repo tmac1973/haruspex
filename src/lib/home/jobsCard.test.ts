@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunState, RunStepState } from '#lib/agent/jobs/runner.svelte.ts';
-import { currentRunLine, runStatusLabel } from './jobsCard';
+import { currentRunLine, runProgress, runStatusLabel } from './jobsCard';
 
 function step(over: Partial<RunStepState> = {}): RunStepState {
 	return { promptAuthored: 'p', description: null, checklist: null, ...over } as RunStepState;
@@ -54,5 +54,21 @@ describe('runStatusLabel', () => {
 		expect(runStatusLabel('succeeded')).toBe('Done');
 		expect(runStatusLabel('cancelled')).toBe('Stopped');
 		expect(runStatusLabel('weird')).toBe('weird');
+	});
+});
+
+describe('runProgress', () => {
+	it('has nothing to measure for one step with no checklist', () => {
+		expect(runProgress(run())).toBeNull();
+	});
+
+	it('counts finished steps and the current checklist', () => {
+		const list = [
+			{ label: 'a', status: 'done' },
+			{ label: 'b', status: 'todo' }
+		] as RunStepState['checklist'];
+		const second = run({ currentStepIndex: 1, steps: [step(), step({ checklist: list })] });
+		expect(runProgress(second)).toBe(0.75);
+		expect(runProgress(run({ steps: [step({ checklist: list })] }))).toBe(0.5);
 	});
 });
