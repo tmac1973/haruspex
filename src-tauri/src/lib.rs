@@ -600,6 +600,7 @@ pub fn run() {
             code_tools::app_protected_targets,
             code_tools::search::code_grep,
             code_tools::search::code_glob,
+            code_tools::rank::code_search_candidates,
             code_tools::background::code_bg_start,
             code_tools::background::code_bg_status,
             code_tools::background::code_bg_tail,
