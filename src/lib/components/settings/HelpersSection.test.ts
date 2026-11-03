@@ -19,6 +19,7 @@ vi.mock('#lib/stores/settings.ts', () => ({
 }));
 
 import HelpersSection from './HelpersSection.svelte';
+import FakeEditor from './HelpersSection.fixture.svelte';
 
 const threeD: HelperDef = {
 	id: '3d',
@@ -50,6 +51,21 @@ describe('HelpersSection', () => {
 		await fireEvent.click(box);
 		expect(setCodeHelper).toHaveBeenCalledWith('3d', true);
 		expect(box.checked).toBe(true);
+	});
+
+	it('shows a helper’s settings only while its switch is on', async () => {
+		state.helpers = [
+			{
+				...threeD,
+				settings: { parse: (raw) => raw, component: async () => ({ default: FakeEditor }) }
+			}
+		];
+		render(HelpersSection);
+		expect(screen.queryByTestId('fake-editor')).toBeNull();
+		await fireEvent.click(screen.getByRole('checkbox'));
+		expect((await screen.findByTestId('fake-editor')).textContent).toBe('editing 3d');
+		await fireEvent.click(screen.getByRole('checkbox'));
+		expect(screen.queryByTestId('fake-editor')).toBeNull();
 	});
 
 	it('reflects a helper already on', () => {

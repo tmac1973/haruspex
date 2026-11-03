@@ -35,7 +35,9 @@ beforeEach(() => {
 			email: { accounts: [{ id: 'e1', password: 'pw', passwordRef: 'email:e1' }] }
 		},
 		ownerApiEnabled: true,
-		remoteAccessToken: ''
+		remoteAccessToken: '',
+		codeHelpers: {},
+		codeHelperConfig: { other: { keep: true } }
 	};
 });
 
@@ -165,6 +167,41 @@ describe('settings.patch', () => {
 		);
 		expect(() => patchSettings({ inferenceBackend: 'remote' })).toThrow(
 			'inferenceBackend takes an object, not a string'
+		);
+	});
+
+	it('sets a helper it has not seen yet', () => {
+		patchSettings({
+			codeHelpers: { search: true },
+			codeHelperConfig: { search: { rerank: { url: 'http://box' } } }
+		});
+		expect(store.settings.codeHelpers).toEqual({ search: true });
+		expect(store.settings.codeHelperConfig).toEqual({
+			other: { keep: true },
+			search: { rerank: { url: 'http://box' } }
+		});
+	});
+
+	it('replaces a helper’s config whole', () => {
+		patchSettings({ codeHelperConfig: { search: { rerank: { url: 'http://box' } } } });
+		patchSettings({ codeHelperConfig: { search: { embed: { url: 'http://e' } } } });
+		expect(store.settings.codeHelperConfig).toEqual({
+			other: { keep: true },
+			search: { embed: { url: 'http://e' } }
+		});
+	});
+
+	it('still refuses a secret inside a helper’s config, and unknown keys elsewhere', () => {
+		expect(() =>
+			patchSettings({ codeHelperConfig: { search: { rerank: { apiKey: 'sk' } } } })
+		).toThrow('codeHelperConfig.search.rerank.apiKey is a secret');
+		expect(() => patchSettings({ codeHelperConfig: { search: [{ token: 'x' }] } })).toThrow(
+			'codeHelperConfig.search[0].token is a secret'
+		);
+		expect(store.settings.codeHelperConfig).toEqual({ other: { keep: true } });
+		expect(() => patchSettings({ codeHelperz: {} })).toThrow('no such setting: codeHelperz');
+		expect(() => patchSettings({ inferenceBackend: { search: true } })).toThrow(
+			'no such setting: inferenceBackend.search'
 		);
 	});
 

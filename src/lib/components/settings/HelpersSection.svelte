@@ -2,7 +2,8 @@
 	/**
 	 * Settings → Code → Helpers: one switch per helper (`#lib/helpers/`), each
 	 * off by default. A helper's tools reach the Code tab's agent only while its
-	 * switch is on.
+	 * switch is on. A helper with its own settings shows their editor under the
+	 * switch while it is on.
 	 */
 	import { helpers } from '#lib/helpers/registry.ts';
 	import '#lib/helpers/index.ts';
@@ -28,6 +29,13 @@
 			/>
 			<span><strong>{h.label}</strong> — {h.summary}</span>
 		</label>
+		{#if h.settings && on[h.id] === true}
+			<div class="helper-settings">
+				{#await h.settings.component() then { default: Editor }}
+					<Editor helperId={h.id} />
+				{/await}
+			</div>
+		{/if}
 	{:else}
 		<p class="help">No helpers yet.</p>
 	{/each}
@@ -35,3 +43,9 @@
 		Tools the agent runs without a model, such as rendering a 3D model to check it.
 	</p>
 </section>
+
+<style>
+	.helper-settings {
+		margin-left: 1.75rem;
+	}
+</style>
