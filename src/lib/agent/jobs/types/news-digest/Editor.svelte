@@ -93,7 +93,13 @@
 		<input type="number" min="1" max="168" bind:value={cfg.hours} />
 	</label>
 	<label class="field">
-		<span class="label">At most</span>
+		<span class="label">
+			Show at most
+			<Tooltip
+				label="About the limit"
+				text="The most stories the card shows. Each read still goes through every feed; the model picks the best matches, most relevant first, up to this many."
+			/>
+		</span>
 		<input type="number" min="1" max="20" bind:value={cfg.max} />
 	</label>
 </div>
