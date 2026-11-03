@@ -1,11 +1,11 @@
 ---
 title: Code subtasks
-description: Subtasks in the Code tab and autonomous coding jobs — helper agents the coding agent hands parts of a task to, read-only or writing in their own copy, how many run at once, and how to turn them off.
+description: Subtasks in the Code tab and autonomous coding jobs — sub-agents the coding agent hands parts of a task to, read-only or writing in their own copy, how many run at once, and how to turn them off.
 ---
 
 # Code subtasks
 
-A subtask is a helper agent the coding agent starts on its own to handle one part of your request, such as "find every caller of this function" or "work out how the tests mock the database". For the Code tab itself, see the `code` page.
+A subtask is a sub-agent the coding agent starts on its own to handle one part of your request, such as "find every caller of this function" or "work out how the tests mock the database". For the Code tab itself, see the `code` page.
 
 ## What a subtask does
 
