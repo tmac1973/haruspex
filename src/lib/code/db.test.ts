@@ -86,6 +86,15 @@ describe('code session wrappers', () => {
 		warn.mockRestore();
 	});
 
+	it('decodes the helper list apart from the specialists', async () => {
+		mocks.invoke.mockResolvedValueOnce(row({ helpers: '["three"]', specialists: null }));
+		const rec = await loadCodeSession('s1');
+		expect(rec.helpers).toEqual(['three']);
+		expect(rec.specialists).toBeNull();
+		mocks.invoke.mockResolvedValueOnce(row());
+		expect((await loadCodeSession('s1')).helpers).toBeNull();
+	});
+
 	it('loads by id, treating an unparseable backend as the global one', async () => {
 		mocks.invoke.mockResolvedValueOnce(row({ backend: 'not json' }));
 		const rec = await loadCodeSession('s1');
@@ -172,6 +181,11 @@ describe('code session wrappers', () => {
 		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
 			id: 's1',
 			patch: { specialists: null }
+		});
+		await updateCodeSessionMeta('s1', { helpers: ['three'] });
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
+			id: 's1',
+			patch: { helpers: '["three"]' }
 		});
 	});
 

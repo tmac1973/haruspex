@@ -878,6 +878,9 @@ impl Database {
             // NULL means the ones marked on by default (every session before
             // specialists existed).
             "ALTER TABLE code_sessions ADD COLUMN specialists TEXT",
+            // The helper ids a Code session offers, as a JSON array; NULL
+            // means the ones switched on in Settings → Code → Helpers.
+            "ALTER TABLE code_sessions ADD COLUMN helpers TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

@@ -71,6 +71,8 @@ import {
 import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
 import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
+import { addCall, catalogPrices, emptyUsage, type SessionUsage } from '#lib/code/usageTotals.ts';
+import { getOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { registerCodeOpener } from '#lib/code/bridge.ts';
 import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
@@ -157,6 +159,8 @@ export class CodeSession {
 	effort = $state<string | null>(null);
 	/** The specialist entry ids it offers; null: the ones on by default. */
 	specialists = $state<string[] | null>(null);
+	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
+	helpers = $state<string[] | null>(null);
 
 	messages = $state<ChatMessage[]>([]);
 	/** Index-keyed sidecars, as the shell store keeps them. */
@@ -212,6 +216,8 @@ export class CodeSession {
 	usage = $state<{ promptTokens: number; completionTokens: number; contextSize: number } | null>(
 		null
 	);
+	/** Tokens and cost the session's agent has used, across every turn (saved). */
+	totals = $state<SessionUsage>(emptyUsage());
 	/** The repo's AGENTS.md as the last turn carried it. */
 	agentsMd = $state<AgentsMd | null>(null);
 	/** The trusted repo the last turn took instructions from. */
@@ -240,6 +246,13 @@ export class CodeSession {
 	backgroundSubtaskCount = $state(0);
 	/** Reads the input box's unsent text and images (`setDraftReader`). */
 	private draftReader: (() => Prefill) | null = null;
+	/** Saves run one after another, so a later one never lands first. */
+	private saving: Promise<void> = Promise.resolve();
+	/**
+	 * The running turn's progress waiting to be saved (`checkpoint`): what it
+	 * has added so far. Null once saved, or when the turn ends.
+	 */
+	private pendingCheckpoint: ChatMessage[] | null = null;
 	/** Settles once the running turn has been saved. */
 	private turnDone: Promise<void> | null = null;
 	/** The naming call has been made (or is under way); it is made once. */
@@ -268,6 +281,7 @@ export class CodeSession {
 		this.backend = record.backend;
 		this.effort = record.reasoning_effort;
 		this.specialists = record.specialists;
+		this.helpers = record.helpers;
 		// A new session, or a fork at its first message, stores an empty thread,
 		// which decodes as null: that is an empty session, not a broken one.
 		const thread = decodeCodeSession(record.thread);
@@ -278,6 +292,7 @@ export class CodeSession {
 			this.messageStops = thread.messageStops;
 			this.messageHistorySent = thread.messageHistorySent;
 			this.compaction = thread.compaction ?? null;
+			this.totals = thread.usage ?? emptyUsage();
 		}
 		this.unwatch = setCodeWatchCompletionHandler(this.id, () => {
 			void this.flushWatchNotifications();
@@ -666,6 +681,18 @@ export class CodeSession {
 		}
 	};
 
+	/** Null puts the session back on the Settings switches. Applies from the next turn. */
+	setSessionHelpers = async (ids: string[] | null): Promise<void> => {
+		const prev = this.helpers;
+		this.helpers = ids;
+		try {
+			await updateCodeSessionMeta(this.id, { helpers: ids });
+		} catch (e) {
+			this.helpers = prev;
+			throw e;
+		}
+	};
+
 	rename = async (title: string): Promise<void> => {
 		const next = title.trim();
 		if (!next || next === this.title) return;
@@ -775,7 +802,8 @@ export class CodeSession {
 		messageStats: $state.snapshot(this.messageStats),
 		messageStops: $state.snapshot(this.messageStops),
 		messageHistorySent: $state.snapshot(this.messageHistorySent),
-		compaction: this.compaction
+		compaction: this.compaction,
+		usage: $state.snapshot(this.totals)
 	});
 
 	/**
@@ -878,6 +906,7 @@ export class CodeSession {
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
 				specialists: this.specialists ? [...this.specialists] : null,
+				helpers: this.helpers ? [...this.helpers] : null,
 				readOnly: this.readOnly,
 				remote: this.remote,
 				wslDistro: this.wslDistro,
@@ -909,7 +938,11 @@ export class CodeSession {
 					admitted = true;
 					this.ticket = null;
 					this.status = 'running';
+					// From here the turn has started: keep the opening message
+					// even if the app closes before the model answers.
+					this.checkpoint([]);
 				},
+				onCheckpoint: (added) => this.checkpoint(added),
 				onRequeue: (t) => {
 					this.ticket = t;
 					this.status = t ? 'queued' : 'running';
@@ -922,6 +955,7 @@ export class CodeSession {
 						completionTokens: usage.completion_tokens,
 						contextSize
 					};
+					this.countCall(usage);
 				},
 				onContextManaged: (info) => {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
@@ -959,6 +993,8 @@ export class CodeSession {
 			this.lastError = errMessage(e);
 			logDebug('code', 'turn threw', { id: this.id, error: this.lastError });
 		} finally {
+			// The turn's end is saved below; progress not yet saved is stale.
+			this.pendingCheckpoint = null;
 			this.abortController = null;
 			this.clearLive();
 			this.ticket = null;
@@ -1100,21 +1136,73 @@ export class CodeSession {
 		this.messageSteps = { ...this.messageSteps, [at]: steps };
 	}
 
+	/** Add one model call of the session's agent to `totals`. */
+	private countCall(usage: Usage): void {
+		const descriptor = resolveBackendDescriptor(this.backend ?? undefined);
+		const paid = descriptor.kind === 'openrouter';
+		const prices =
+			paid && usage.cost === undefined
+				? catalogPrices(getOpenRouterCatalog(), descriptor.modelId)
+				: null;
+		this.totals = addCall(this.totals, usage, paid, prices);
+	}
+
 	/**
-	 * Write the thread. Per turn, not on shutdown: a power cut runs no
-	 * shutdown hook. A failed save is reported, never thrown into the turn.
+	 * Save the running turn as far as it has got (`added`: what it has added
+	 * after its opening message), so an app closed mid-turn keeps it. Its
+	 * steps go on its last message, as a stopped turn's do. Calls that come
+	 * faster than a save share one.
 	 */
-	private async persist(): Promise<void> {
-		try {
-			await saveCodeSession(this.id, encodeCodeSession(this.snapshot()), undefined, {
-				noticesSeenAt: this.noticesSince,
-				agentBranch: this.branchSeenByAgent
-			});
-			this.saveError = null;
-		} catch (e) {
-			this.saveError = errMessage(e);
-			logDebug('code', 'save failed', { id: this.id, error: this.saveError });
-		}
+	private checkpoint(added: ChatMessage[]): void {
+		const queued = this.pendingCheckpoint !== null;
+		this.pendingCheckpoint = added;
+		if (queued) return;
+		void this.enqueueSave(() => {
+			const partial = this.pendingCheckpoint;
+			this.pendingCheckpoint = null;
+			if (!partial) return null;
+			const state = this.snapshot();
+			state.messages = [...state.messages, ...($state.snapshot(partial) as ChatMessage[])];
+			const steps = $state.snapshot(this.searchSteps) as SearchStep[];
+			if (partial.length > 0 && steps.length > 0) {
+				state.messageSteps = {
+					...state.messageSteps,
+					[state.messages.length - 1]: markStepsStopped(steps)
+				};
+			}
+			return state;
+		});
+	}
+
+	/**
+	 * Write the thread, as each turn ends and as it goes (`checkpoint`), not
+	 * on shutdown: a power cut runs no shutdown hook. A failed save is
+	 * reported, never thrown into the turn.
+	 */
+	private persist(): Promise<void> {
+		return this.enqueueSave(() => this.snapshot());
+	}
+
+	/**
+	 * Queue a save behind any in flight. `state` is read when its turn comes,
+	 * so it writes the session as it is then; null skips it.
+	 */
+	private enqueueSave(state: () => CodeSessionState | null): Promise<void> {
+		this.saving = this.saving.then(async () => {
+			const snap = state();
+			if (!snap) return;
+			try {
+				await saveCodeSession(this.id, encodeCodeSession(snap), undefined, {
+					noticesSeenAt: this.noticesSince,
+					agentBranch: this.branchSeenByAgent
+				});
+				this.saveError = null;
+			} catch (e) {
+				this.saveError = errMessage(e);
+				logDebug('code', 'save failed', { id: this.id, error: this.saveError });
+			}
+		});
+		return this.saving;
 	}
 
 	private scheduleBackgroundPoll(): void {

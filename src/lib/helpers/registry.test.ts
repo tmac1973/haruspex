@@ -4,7 +4,14 @@ import { isCodeWriteTool } from '#lib/agent/tools/codeTabProfile.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult } from '#lib/agent/tools/types.ts';
 import { setCodeHelper } from '#lib/stores/settings.ts';
-import { helperForTool, helperOn, helpers, registerHelper, type HelperDef } from './registry';
+import {
+	helperForTool,
+	helperOn,
+	helpers,
+	registerHelper,
+	sessionHelpers,
+	type HelperDef
+} from './registry';
 
 const TOOL = 'zz_test_helper_tool';
 
@@ -54,6 +61,14 @@ describe('the helper registry', () => {
 		expect(helperOn(def.id)).toBe(true);
 	});
 
+	it('gives a session its stored ids, or the switched-on ones when it has none', () => {
+		expect(sessionHelpers(null)).not.toContain(def);
+		expect(sessionHelpers([def.id, 'gone'])).toEqual([def]);
+		setCodeHelper(def.id, true);
+		expect(sessionHelpers(undefined)).toContain(def);
+		expect(sessionHelpers([])).toEqual([]);
+	});
+
 	it('marks a writing helper’s tools as write tools', () => {
 		expect(isCodeWriteTool(TOOL)).toBe(true);
 	});
@@ -66,6 +81,13 @@ describe('offering a helper’s tools', () => {
 		expect(offered(codeTab)).toBe(false);
 		setCodeHelper(def.id, true);
 		expect(offered(codeTab)).toBe(true);
+	});
+
+	it('follows the session’s own list over the setting', () => {
+		expect(offered({ ...codeTab, codeHelpers: [def.id] })).toBe(true);
+		setCodeHelper(def.id, true);
+		expect(offered({ ...codeTab, codeHelpers: [] })).toBe(false);
+		expect(offered({ ...codeTab, codeHelpers: null })).toBe(true);
 	});
 
 	it('never offers them in Shell Code mode, Chat, a subtask or a read-only session', () => {

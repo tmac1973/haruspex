@@ -9,9 +9,9 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 ## Start a session
 
-Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The folder is fixed: the agent can't work outside it.
+Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The agent can't work outside the folder.
 
-Type what you want and press `Enter`. After the first reply the model names the session, never replacing a name you gave it. Sessions save after every reply.
+Type what you want and press `Enter`. After the first reply the model names the session, never replacing a name you gave it. Sessions save as they go.
 
 The camera button attaches the screen, a window or a region to your next message.
 
@@ -22,7 +22,7 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 ## Read what the agent did
 
 - **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewrites don't ask first. A second whole rewrite in one turn needs a command (a test, say) run first.
-- **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab, not run.
+- **Commands** show as a card: command, exit code, time and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab, not run.
 - Searches and reads show as a step list.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step is above it in grey.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
@@ -32,7 +32,7 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 Commands that need a password (`sudo`) or a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in, not run. Check it, then press `Enter`.
 
-The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. The agent then gets the exit code, output and command run. **Cancel** stops the wait (the agent carries on); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (old fish), the agent asks you.
+The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. The agent then gets the exit code and output. **Cancel** stops the wait (the agent carries on); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (old fish), the agent asks you.
 
 ## Edit files
 
@@ -54,10 +54,11 @@ The header above the conversation holds:
 - the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits for an idle agent and committed or stashed changes; it warns when another open session uses the repo;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**; picking one never starts it;
 - **Effort** — how hard the model thinks, where it has levels;
-- **Specialists** — see the `specialists` page (for model-free tools, `helpers`);
-- the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
+- **Extras** — see the `specialists` and `helpers` pages;
+- the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is;
+- tokens used, and the cost on OpenRouter (hover for details).
 
-Model, effort and specialists apply from the next message.
+Model, effort and extras apply from the next message.
 
 ## Background processes
 

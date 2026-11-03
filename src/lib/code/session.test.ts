@@ -17,6 +17,7 @@ function state(over: Partial<CodeSessionState> = {}): CodeSessionState {
 		messageStops: {},
 		messageHistorySent: {},
 		compaction: null,
+		usage: null,
 		...over
 	};
 }
@@ -58,6 +59,20 @@ describe('code session persistence', () => {
 		const decoded = decodeCodeSession(JSON.stringify(encoded));
 		expect(decoded?.messages).toHaveLength(2);
 		expect(decoded?.messageSteps).toEqual({});
+	});
+
+	it('round-trips the usage count, and reads a bad one as none', () => {
+		const usage = {
+			promptTokens: 1200,
+			completionTokens: 300,
+			calls: 2,
+			costUsd: 0.004,
+			estimated: false
+		};
+		expect(decodeCodeSession(encodeCodeSession(state({ usage })))?.usage).toEqual(usage);
+		const encoded = JSON.parse(encodeCodeSession(state()));
+		encoded.usage = { promptTokens: 'lots' };
+		expect(decodeCodeSession(JSON.stringify(encoded))?.usage).toBeNull();
 	});
 
 	it('round-trips a compaction', () => {

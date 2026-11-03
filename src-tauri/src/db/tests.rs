@@ -2576,6 +2576,49 @@ fn code_session_specialists_start_unset_are_patched_and_follow_a_fork() {
 }
 
 #[test]
+fn code_session_helpers_start_unset_are_patched_apart_and_follow_a_fork() {
+    let db = test_db();
+    let dir = TempDir::new("helpers");
+    let s = db.create_code_session(dir.path(), None, None).unwrap();
+    // Unset: the ones switched on in Settings.
+    assert_eq!(s.helpers, None);
+
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"helpers":"[\"three\"]"}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.helpers.as_deref(), Some(r#"["three"]"#));
+
+    // Specialists are a column of their own.
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"specialists":"[]"}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    assert_eq!(
+        db.load_code_session(&s.id).unwrap().helpers.as_deref(),
+        Some(r#"["three"]"#)
+    );
+
+    let fork = db.fork_code_session(&s.id, 0).unwrap();
+    assert_eq!(fork.helpers.as_deref(), Some(r#"["three"]"#));
+
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"helpers":null}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    assert_eq!(db.load_code_session(&s.id).unwrap().helpers, None);
+}
+
+#[test]
+fn fork_thread_drops_the_usage_count() {
+    let thread = serde_json::json!({
+        "version": 1,
+        "savedAt": 1,
+        "messages": [{"role":"user"},{"role":"assistant"}],
+        "usage": { "promptTokens": 10, "completionTokens": 5, "calls": 1 }
+    })
+    .to_string();
+    let fork: serde_json::Value =
+        serde_json::from_str(&code_sessions::fork_thread(&thread, 2).unwrap()).unwrap();
+    assert!(fork.get("usage").is_none());
+}
+
+#[test]
 fn code_session_fork_cuts_messages_and_sidecars_at_the_fork_point() {
     let db = test_db();
     let dir = TempDir::new("fork");

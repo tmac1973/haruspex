@@ -40,6 +40,7 @@ export type TurnToolsInput = Pick<
 	| 'skills'
 	| 'codeSessionId'
 	| 'codeSpecialists'
+	| 'codeHelpers'
 	| 'conversationId'
 	| 'backend'
 >;
@@ -66,6 +67,7 @@ export function resolveTurnTools(options: TurnToolsInput): TurnTools {
 		codeReadOnly: options.codeReadOnly ?? false,
 		codeRemote: options.codeRemote ?? false,
 		codeSpecialists: options.codeSpecialists,
+		codeHelpers: options.codeHelpers,
 		interactive: options.interactive ?? false,
 		subtask: options.subtask !== undefined,
 		// The forced final tool is always offered. A stage once listed its

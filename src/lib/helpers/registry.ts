@@ -1,8 +1,9 @@
 /**
  * Helpers: tools the Code tab's agent runs with no model behind them, such
  * as building and rendering a 3D model to check it. Each helper owns some
- * tools and has a switch in Settings → Code → Helpers, off by default; the
- * tool filter offers a helper's tools only while its switch is on.
+ * tools and has a switch in Settings → Code → Helpers, off by default, and a
+ * Code session can turn each on or off for itself (`sessionHelpers`); the
+ * tool filter offers a helper's tools only while the session has it on.
  *
  * Imports only the settings store, so the tool registry and the Code tab
  * profile can read it without an import cycle.
@@ -49,6 +50,17 @@ export function helperForTool(tool: string): HelperDef | undefined {
 /** Whether the user has switched `id` on. */
 export function helperOn(id: string): boolean {
 	return getSettings().codeHelpers?.[id] === true;
+}
+
+/**
+ * The helpers a Code session offers, in registration order: the ids it
+ * stored, or with none stored, the ones switched on in Settings. An id no
+ * helper has any more is ignored.
+ */
+export function sessionHelpers(stored: string[] | null | undefined): HelperDef[] {
+	if (stored === null || stored === undefined) return helpers().filter((h) => helperOn(h.id));
+	const on = new Set(stored);
+	return helpers().filter((h) => on.has(h.id));
 }
 
 /** For tests: forget every helper. */

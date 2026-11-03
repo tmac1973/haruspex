@@ -32,7 +32,7 @@ import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
 import { sessionSpecialists } from '#lib/specialists/session.ts';
-import { helperForTool, helperOn } from '#lib/helpers/registry.ts';
+import { helperForTool, sessionHelpers } from '#lib/helpers/registry.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -119,6 +119,8 @@ interface ToolFilterOpts {
 	codeRemote: boolean;
 	/** A Code tab session with at least one specialist on: `ask_specialist`. */
 	specialists: boolean;
+	/** The helper ids whose tools the turn offers (`ToolSchemaOpts.codeHelpers`). */
+	helpers: Set<string>;
 	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
 	subtask: boolean;
 	hasEmail: boolean;
@@ -351,11 +353,12 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	}
 	// A session's specialists are the user's to turn on (the Code tab header).
 	if (reg.category === 'specialist' && !opts.specialists) return false;
-	// A helper's tools: the Code tab only, while its switch in Settings → Code →
-	// Helpers is on, and not the writing ones in a read-only session.
+	// A helper's tools: the Code tab only, while the session has it on (by
+	// default, its switch in Settings → Code → Helpers), and not the writing
+	// ones in a read-only session.
 	const helper = helperForTool(reg.schema.function.name);
 	if (helper) {
-		return isCodeTab(opts) && helperOn(helper.id) && !(helper.writes && opts.codeReadOnly);
+		return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
 	}
 	// Subtasks are the user's to switch off (Settings → Code → Subtasks).
 	if (reg.schema.function.name === 'delegate' && getSettings().codeSubtasks === 'off') {
@@ -396,6 +399,11 @@ export interface ToolSchemaOpts {
 	 * default. Undefined outside the Code tab, which offers none.
 	 */
 	codeSpecialists?: string[] | null;
+	/**
+	 * The Code tab session's helper ids; null or undefined: the ones switched
+	 * on in Settings → Code → Helpers.
+	 */
+	codeHelpers?: string[] | null;
 	/** A subtask's turn: no `delegate`, and nothing that needs the user. */
 	subtask?: boolean;
 	/** A live user is present. Gates tools that only make sense for one. */
@@ -475,6 +483,7 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		codeRemote: opts.codeRemote ?? false,
 		specialists:
 			opts.codeSpecialists !== undefined && sessionSpecialists(opts.codeSpecialists).length > 0,
+		helpers: new Set(sessionHelpers(opts.codeHelpers).map((h) => h.id)),
 		subtask: opts.subtask ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),

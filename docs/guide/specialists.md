@@ -26,7 +26,7 @@ In Settings → Code → Specialists, pick a kind from **Add specialist…**, th
 
 ## Turn specialists on for a session
 
-A Code session offers the agent only the specialists that are on for it. **Specialists: N** in the session's header opens a list with a checkbox for each one; a change applies from the next message. **Use defaults** goes back to the ones ticked **On by default** in Settings → Code → Specialists, which is what a new session starts with. The menu is hidden while you have no specialists.
+A Code session offers the agent only the specialists that are on for it. **Extras: N** in the session's header lists them, and the helpers, with a checkbox for each; a change applies from the next message. **Use defaults** goes back to the ones ticked **On by default** in Settings → Code → Specialists, which is what a new session starts with.
 
 A read-only session can't use a specialist that writes files.
 

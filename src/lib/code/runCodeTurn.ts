@@ -92,6 +92,8 @@ export interface CodeTurnOptions {
 	effort: string | null;
 	/** The specialist entry ids the session offers; null: the ones on by default. */
 	specialists?: string[] | null;
+	/** The helper ids the session offers; null: the ones on in Settings. */
+	helpers?: string[] | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
 	readOnly?: boolean;
 	/** Started from another computer (Settings → Remote control): nothing that needs a person at this one, so no `open_in_shell`. */
@@ -138,6 +140,13 @@ export interface CodeTurnOptions {
 	onReasoning?: (reasoning: string) => void;
 	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onUsage?: (usage: Usage, contextSize: number) => void;
+	/**
+	 * What the turn would add if it ended now, as `CodeTurnResult.added` has it
+	 * but with no answer and only whole call/result batches. Given after each
+	 * tool result and steering message, for the session to save so an app
+	 * closed mid-turn keeps what the turn did.
+	 */
+	onCheckpoint?: (added: ChatMessage[]) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
 	/**
 	 * A tool starts. `lead` is the text the model wrote alongside the calls,
@@ -198,6 +207,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	let stopReason: AgentStopReason = 'complete';
 	let undelivered: SteeringMessage[] = [];
 	let loopError: Error | null = null;
+	const checkpoint = () => o.onCheckpoint?.(collectTurnMessages(added, steered, null));
 
 	const result = (
 		outcome: CodeTurnResult['outcome'],
@@ -227,6 +237,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 			codeRemote: o.remote ?? false,
 			codeSessionId: o.sessionId,
 			codeSpecialists: o.specialists ?? null,
+			codeHelpers: o.helpers ?? null,
 			visionSupported: descriptor.vision,
 			interactive: true,
 			backend
@@ -274,6 +285,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeWriteGuard: o.writeGuard,
 					codeEffort: o.effort,
 					codeSpecialists: o.specialists ?? null,
+					codeHelpers: o.helpers ?? null,
 					onSubtaskUpdate: o.onSubtaskUpdate,
 					subtaskStops: o.subtaskStops,
 					startBackgroundSubtask: o.startBackgroundSubtask,
@@ -298,12 +310,16 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					interactive: true,
 					signal: o.signal,
 					takeSteering: o.takeSteering,
-					onMessageAdded: (m) => added.push(m),
+					onMessageAdded: (m) => {
+						added.push(m);
+						if (m.role === 'tool') checkpoint();
+					},
 					onSteering: (steers) => {
 						// The loop has just added these as the newest messages.
 						for (const m of added.slice(-steers.length)) steered.add(m);
 						answerStart = stream.length;
 						o.onSteering?.(steers);
+						checkpoint();
 					},
 					...live.options,
 					onStreamChunk: (chunk, meta) => {

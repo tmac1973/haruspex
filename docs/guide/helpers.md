@@ -9,7 +9,7 @@ A helper is a tool the Code tab's agent runs with no model behind it. It does on
 
 ## Turn a helper on
 
-Settings → Code → Helpers has a switch for each helper, all off. A helper's tool reaches the agent from the next message after you turn it on. Hover a helper for what it does.
+Settings → Code → Helpers has a switch for each helper, all off. A session follows these switches until you change its own: **Extras: N** in the session's header lists the helpers (and specialists) with a checkbox each, and **Use defaults** goes back to the switches. A change applies from the next message. Hover a helper for what it does.
 
 Helpers work in the Code tab only, not in a read-only session.
 
