@@ -1,16 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { LatestRun } from '#lib/home/latestRun.svelte.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => null) }));
-
 const m = vi.hoisted(() => ({
+	invoke: vi.fn<(...args: unknown[]) => Promise<null>>(async () => null),
 	latest: { latest: null, latestSucceeded: null } as LatestRun,
 	current: null as Record<string, unknown> | null,
 	enqueue: vi.fn(async () => 1)
 }));
 
+vi.mock('@tauri-apps/api/core', () => ({ invoke: m.invoke }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getSettings: () => ({
+		integrations: { email: { accounts: [{ id: 'acc', label: 'Work', sendEnabled: false }] } }
+	})
+}));
 vi.mock('#lib/home/latestRun.svelte.ts', () => ({ getLatestRun: () => m.latest }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: m.enqueue,
@@ -19,6 +25,7 @@ vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 }));
 
 import ImportantEmailsCard from './ImportantEmailsCard.svelte';
+import { _resetForTests } from '#lib/home/trashedEmails.svelte.ts';
 
 const card = {
 	id: 'c1',
@@ -33,6 +40,14 @@ const card = {
 	created_at: 0
 } as HomeCard;
 
+function email(id: string, subject: string) {
+	return {
+		id,
+		why: 'Money owed',
+		source: { accountId: 'acc', messageId: `mid-${id}`, from: 'Dana', subject, date: '' }
+	};
+}
+
 function succeeded(items: unknown[]): LatestRun['latestSucceeded'] {
 	return {
 		id: 5,
@@ -46,6 +61,8 @@ beforeEach(() => {
 	m.latest = { latest: null, latestSucceeded: null };
 	m.current = null;
 	m.enqueue.mockClear();
+	m.invoke.mockClear();
+	_resetForTests();
 });
 
 describe('ImportantEmailsCard', () => {
@@ -87,18 +104,22 @@ describe('ImportantEmailsCard', () => {
 		expect(screen.getByText('No important mail.')).toBeTruthy();
 	});
 
-	it('says it is waiting for chat, and greys out Refresh, while its run waits', () => {
+	it('says it is waiting for chat while its run waits', () => {
 		m.current = { id: 7, jobId: 3, status: 'running', waitingForSlot: true };
 		render(ImportantEmailsCard, { card });
 		expect(screen.getByText('Waiting for chat…')).toBeTruthy();
-		expect((screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(
-			true
-		);
 	});
 
-	it('checks now on Refresh', async () => {
+	it('moves a message to Trash after asking, and stops listing it', async () => {
+		m.latest = { latest: null, latestSucceeded: succeeded([email('a', 'Invoice overdue')]) };
 		render(ImportantEmailsCard, { card });
-		await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-		expect(m.enqueue).toHaveBeenCalledWith(3, 'manual');
+		await fireEvent.click(screen.getByRole('button', { name: 'Actions for Invoice overdue' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }));
+		await waitFor(() => expect(screen.queryByText('Invoice overdue')).toBeNull());
+		expect(m.invoke).toHaveBeenCalledWith('email_trash', {
+			account: expect.objectContaining({ id: 'acc' }),
+			messageId: 'mid-a'
+		});
 	});
 });

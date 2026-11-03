@@ -692,6 +692,7 @@ pub fn run() {
             integrations::email::commands::email_forget_session,
             integrations::email::commands::email_test_smtp,
             integrations::email::commands::email_send,
+            integrations::email::commands::email_trash,
             integrations::email::commands::email_reply_context,
             secrets::secret_available,
             secrets::secret_store_kind,

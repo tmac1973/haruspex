@@ -118,6 +118,33 @@ export async function moveCard(id: string, dir: -1 | 1): Promise<void> {
 	});
 }
 
+/** `ids` with `id` taken out and put back where `target` was: a drop on a card. */
+export function droppedOn(ids: string[], id: string, target: string): string[] {
+	const from = ids.indexOf(id);
+	const to = ids.indexOf(target);
+	if (from < 0 || to < 0 || from === to) return ids;
+	const next = ids.filter((x) => x !== id);
+	next.splice(to, 0, id);
+	return next;
+}
+
+/** Drag and drop: the card takes the place of the one it was dropped on. */
+export async function moveCardTo(id: string, target: string): Promise<void> {
+	const ids = droppedOn(
+		cards.map((c) => c.id),
+		id,
+		target
+	);
+	if (ids.every((x, i) => x === cards[i]?.id)) return;
+	await dbMutate({
+		cmd: 'db_home_cards_reorder',
+		category: 'home',
+		args: { ids },
+		onError: 'reordering Home cards failed',
+		onSuccess: reload
+	});
+}
+
 export async function setCardSize(id: string, size: CardSize): Promise<void> {
 	await dbMutate({
 		cmd: 'db_home_cards_update',

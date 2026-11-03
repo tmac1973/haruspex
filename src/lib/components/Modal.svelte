@@ -190,6 +190,9 @@
 	}
 
 	.modal-body {
+		/* min-height: 0 lets the body shrink below its content and scroll;
+		   WebKitGTK otherwise grows it past the box and clips the rest. */
+		min-height: 0;
 		padding: 8px 24px 20px;
 		overflow-y: auto;
 	}
