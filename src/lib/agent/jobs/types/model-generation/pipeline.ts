@@ -3,8 +3,8 @@
  *
  * Stages, declared here so their indices never move: Spec, Create, Animate,
  * Report. The handoff to a coding run goes last when it lands, so nothing
- * before it renumbers. This phase ships the spec stage; the stages after it
- * finish as skipped until their phases fill them in.
+ * before it renumbers. Spec and Create run; Animate and Report finish as
+ * skipped until their phases fill them in.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -35,6 +35,8 @@ import {
 import { parseModelSpec } from '#lib/models3d/spec/parse.ts';
 import { validateModelSpec } from '#lib/models3d/spec/validate.ts';
 import { renderModelSpec } from '#lib/models3d/spec/write.ts';
+import { createStage, entrySummary } from '#lib/agent/jobs/types/model-generation/create.ts';
+import { initialEntryStates } from '#lib/agent/jobs/types/model-generation/state.ts';
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
@@ -196,12 +198,17 @@ export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(SPEC);
 		abortIfCancelled();
-		const { output } = await specStage(ctx, cfg, specPath, abortIfCancelled);
+		const { spec, output } = await specStage(ctx, cfg, specPath, abortIfCancelled);
 		finishStep(SPEC, output);
+
+		startStep(CREATE);
+		const states = initialEntryStates(spec);
+		await createStage(ctx, cfg, spec, states, CREATE);
+		finishStep(CREATE, entrySummary(spec, states));
 
 		// Started and finished rather than left pending, so the run view shows
 		// what did not run, as guided planning does for a stage switched off.
-		for (const idx of [CREATE, ANIMATE, REPORT]) {
+		for (const idx of [ANIMATE, REPORT]) {
 			startStep(idx);
 			finishStep(idx, 'Skipped — not built yet.');
 		}

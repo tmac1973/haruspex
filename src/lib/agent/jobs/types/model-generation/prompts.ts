@@ -1,7 +1,9 @@
 /** Prompts for the 3D models job. */
 
 import { SUBMIT_MODEL_SPEC_TOOL } from '#lib/agent/jobs/types/model-generation/tools.ts';
-import { MAX_ENTRIES } from '#lib/models3d/spec/types.ts';
+import { DRAW_TEXTURE_TOOL } from '#lib/agent/tools/draw-texture.ts';
+import { modelFiles } from '#lib/models3d/spec/paths.ts';
+import { MAX_ENTRIES, type ModelEntry, type ModelSpec } from '#lib/models3d/spec/types.ts';
 
 /** The spec stage's system prompt: list the models from the user's description. */
 export function modelSpecPrompt(description: string, specPath: string): string {
@@ -40,5 +42,86 @@ export function modelSpecRetryPrompt(problems: string[]): string {
 		'',
 		`Call \`${SUBMIT_MODEL_SPEC_TOOL}\` again with the whole list corrected. Do not explain;`,
 		'submit.'
+	].join('\n');
+}
+
+/** The rig rule, word for word in every creation prompt: animation depends on it. */
+export const RIG_RULE =
+	'Every name in Parts is an Object3D pivot placed at the joint it turns about, holding the ' +
+	'meshes it moves, nested parent → child (Hip_L > Knee_L). Animation rotates these pivots ' +
+	'and nothing else.';
+
+/**
+ * The creation stage's system prompt, the same for every entry and every
+ * round: what a build module is, the units, the rig rule and the check loop.
+ * The entry itself goes in the user message.
+ */
+export function createSystemPrompt(spec: ModelSpec, allowTextures: boolean): string {
+	return [
+		'You build one 3D model in code: a Three.js build module, checked with `check_3d`.',
+		'',
+		'The build module:',
+		'- `export default function build(THREE, kit)` returns one Object3D. No imports.',
+		'- kit: mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry,',
+		'  ParametricGeometry, createNoise(seed), random(seed)' +
+			(allowTextures ? ', texture(path).' : '.'),
+		'- Units are metres, y is up, the front faces +z, the feet stand on y = 0.',
+		'- Name every mesh.',
+		'- No clips: build returns the object only. Another stage animates it.',
+		...(spec.style ? ['', `Style for every model in this set: ${spec.style}`] : []),
+		'',
+		`Rig: ${RIG_RULE}`,
+		allowTextures
+			? [
+					'',
+					'Colour with materials and vertex colours, kit.createNoise for variation. For a',
+					`surface that needs a pattern, call \`${DRAW_TEXTURE_TOOL}\` with path`,
+					"`<folder>textures/<name>.png`, <folder> being the model's folder, then use",
+					"`kit.texture('textures/<name>.png')` in the module (a string literal)."
+				].join('\n')
+			: '\nColour with materials and vertex colours, kit.createNoise for variation. No textures.',
+		'',
+		'Process:',
+		'1. Write the module with `fs_write_text`.',
+		'2. Call `check_3d` with `path` = the .js and `out` = the .glb.',
+		'3. Fix everything it reports and check again. Look at the render sheet: the',
+		'   shape, proportions and colours must match the description.',
+		'4. Stop when the check is clean and the model looks right. Write files only in',
+		"   the model's folder."
+	].join('\n');
+}
+
+/** The first message for one entry: what to build and where. */
+export function createEntryPrompt(entry: ModelEntry, note: string | null = null): string {
+	const f = modelFiles(entry);
+	return [
+		...(note ? [`The user reviewed this model and asked for a change: ${note}`, ''] : []),
+		`Build: ${entry.title}`,
+		'',
+		entry.description,
+		'',
+		`Folder: ${entry.dir}`,
+		`Height: ${entry.height_m} m.`,
+		entry.parts.length > 0
+			? `Parts (pivots, named exactly so): ${entry.parts.join(', ')}.`
+			: 'Parts: none; a static model.',
+		'',
+		`Write ${f.build}, then check it with check_3d (path ${f.build}, out ${f.glb}).`,
+		...(note ? ['', `${f.build} may already exist: read it, then change what the note asks.`] : [])
+	].join('\n');
+}
+
+/** The next round's message: what the last check found, for a fresh turn. */
+export function createRepairPrompt(entry: ModelEntry, problems: string[]): string {
+	const f = modelFiles(entry);
+	return [
+		`${entry.title} (${f.build}) is not done yet. The last check found:`,
+		'',
+		...problems.map((p) => `- ${p}`),
+		'',
+		`Height: ${entry.height_m} m.` +
+			(entry.parts.length > 0 ? ` Parts: ${entry.parts.join(', ')}.` : ''),
+		'',
+		`Read ${f.build}. Fix ${entry.id}.js and check it again (path ${f.build}, out ${f.glb}).`
 	].join('\n');
 }

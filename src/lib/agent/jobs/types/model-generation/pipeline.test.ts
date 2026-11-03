@@ -1,9 +1,9 @@
 /**
- * The 3D models run, driven whole through its spec stage.
+ * The 3D models run, driven whole through its spec and creation stages.
  *
  * Only the module boundaries are stand-ins: Tauri's `invoke` (an in-memory
- * working directory) and the runner's context, whose `runJobTurn` is the
- * model.
+ * working directory), `judgeModel` (the webview's checker) and the runner's
+ * context, whose `runJobTurn` is the model.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -22,12 +22,16 @@ import { SUBMIT_MODEL_SPEC_TOOL } from './tools';
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
+vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 
 const SPEC_PATH = DEFAULT_MODELS_SPEC_PATH;
 
 /** The working directory, as the fs commands see it. */
 let files: Map<string, string>;
 let written: string[];
+/** Binary files the run wrote (GLBs, sheets). */
+let bytesWritten: string[];
 
 function routes() {
 	return invokeRouter({
@@ -39,6 +43,13 @@ function routes() {
 		fs_write_text: (a) => {
 			written.push(a!.relPath as string);
 			files.set(a!.relPath as string, a!.content as string);
+		},
+		fs_read_bytes: (a) => {
+			if (!files.has(a!.relPath as string)) throw `Not a file: ${String(a!.relPath)}`;
+			return [1];
+		},
+		fs_write_bytes: (a) => {
+			bytesWritten.push(a!.relPath as string);
 		}
 	});
 }
@@ -116,6 +127,11 @@ function harness(opts: { config?: Record<string, unknown>; turn?: Turn } = {}): 
 		trigger: 'manual',
 		runJobTurn: async (turnOpts) => {
 			h.turns.push(turnOpts);
+			// A creation turn writes its entry's build module.
+			if (turnOpts.turnKind === 'models.create') {
+				const id = /^Build: (\w+)/m.exec(turnOpts.userMessage)?.[1]?.toLowerCase();
+				files.set(`assets/generated/model/${id}/${id}.js`, 'export default () => {}');
+			}
 			const call = opts.turn?.(turnOpts) ?? null;
 			if (call) turnOpts.onToolStart?.(call);
 			return {} as EphemeralTurnResult;
@@ -137,6 +153,9 @@ function harness(opts: { config?: Record<string, unknown>; turn?: Turn } = {}): 
 	return h;
 }
 
+/** The turns that wrote the spec, not the creation turns after it. */
+const deriveTurns = (h: Harness) => h.turns.filter((t) => t.turnKind === 'models.derive');
+
 const submit = (args: Record<string, unknown>): ResolvedToolCall => ({
 	id: 'c1',
 	name: SUBMIT_MODEL_SPEC_TOOL,
@@ -147,11 +166,21 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	files = new Map();
 	written = [];
+	bytesWritten = [];
 	tauri.invoke.mockImplementation(routes());
+	verdict.judgeModel.mockResolvedValue({
+		done: true,
+		problems: [],
+		warnings: [],
+		text: '',
+		sheetPng: 'data:image/png;base64,iVBORw0KGgo=',
+		clipSheets: {},
+		glb: new Uint8Array([1])
+	});
 });
 
 describe('a run over an existing spec', () => {
-	it('reads it, leaves it alone, and asks the model nothing', async () => {
+	it('reads it, leaves it alone, and builds each entry', async () => {
 		files.set(SPEC_PATH, renderModelSpec(knightSpec()));
 		const h = harness();
 
@@ -162,8 +191,16 @@ describe('a run over an existing spec', () => {
 			status: 'succeeded',
 			output: `${SPEC_PATH} — 2 model(s), 1 animated (Walk)`
 		});
-		expect(h.turns).toEqual([]);
+		expect(deriveTurns(h)).toEqual([]);
+		expect(h.turns.map((t) => t.turnKind)).toEqual(['models.create', 'models.create']);
 		expect(written).toEqual([]);
+		expect(bytesWritten).toEqual([
+			'assets/generated/model/knight/knight.glb',
+			'assets/generated/model/knight/sheet.png',
+			'assets/generated/model/crate/crate.glb',
+			'assets/generated/model/crate/sheet.png'
+		]);
+		expect(h.steps[CREATE].output).toContain('2 of 2 model(s) done.');
 		for (const idx of [CREATE, ANIMATE, REPORT]) expect(h.steps[idx].status).toBe('succeeded');
 	});
 
@@ -223,8 +260,8 @@ describe('a run with no spec', () => {
 		await runModelGenerationPipeline(h.ctx);
 
 		expect(h.finished?.status).toBe('succeeded');
-		expect(h.turns).toHaveLength(1);
-		const [turn] = h.turns;
+		expect(deriveTurns(h)).toHaveLength(1);
+		const [turn] = deriveTurns(h);
 		expect(turn.turnKind).toBe('models.derive');
 		expect(turn.forceFinalTool).toBe(SUBMIT_MODEL_SPEC_TOOL);
 		expect(turn.toolAllowlist).toContain(SUBMIT_MODEL_SPEC_TOOL);
@@ -282,8 +319,10 @@ describe('a run with no spec', () => {
 		await runModelGenerationPipeline(h.ctx);
 
 		expect(h.finished?.status).toBe('succeeded');
-		expect(h.turns).toHaveLength(2);
-		expect(h.turns[1].userMessage).toContain('knight: has clips but no parts for them to move.');
+		expect(deriveTurns(h)).toHaveLength(2);
+		expect(deriveTurns(h)[1].userMessage).toContain(
+			'knight: has clips but no parts for them to move.'
+		);
 		expect(written).toEqual([SPEC_PATH]);
 	});
 
