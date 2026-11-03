@@ -317,6 +317,16 @@ as the same prompt with and without the 3D helper (Settings → Code → Helpers
 node scripts/drive/judge3d.mjs comparison.png run-a/assets/potion.glb run-b/assets/potion.glb
 ```
 
+For animation, `scripts/drive/motion-sheet.mjs` draws one clip's motion sheet
+and prints the clip checks, with the app's own code, exactly as `check_3d`
+shows them. `--build` runs an agent's build module with the bundled kit
+(`npm run build:three-kit` first), for a run that didn't rebuild its GLB.
+
+```bash
+node scripts/drive/motion-sheet.mjs --build run-a/assets/imp.js run-a/final.glb
+node scripts/drive/motion-sheet.mjs run-a/attack.png run-a/final.glb Attack
+```
+
 ## Evaluating a model
 
 `scripts/model-eval.mjs` puts a running Haruspex through a fixed set of Chat and
