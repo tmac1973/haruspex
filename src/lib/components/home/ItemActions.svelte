@@ -13,6 +13,22 @@
 	let { actions, label }: { actions: ItemAction[]; label: string } = $props();
 
 	let open = $state(false);
+	let trigger = $state<HTMLButtonElement>();
+	/**
+	 * Fixed to the window, not the card: a card's body scrolls, and would
+	 * clip a menu inside it. It opens upward near the window's bottom, and
+	 * closes on any scroll rather than drift from its button.
+	 */
+	let place = $state({ top: 0, right: 0, up: false });
+
+	function toggle() {
+		if (!open && trigger) {
+			const r = trigger.getBoundingClientRect();
+			const up = r.bottom + 160 > window.innerHeight;
+			place = { top: up ? r.top - 2 : r.bottom + 2, right: window.innerWidth - r.right, up };
+		}
+		open = !open;
+	}
 
 	function pick(action: ItemAction) {
 		open = false;
@@ -25,17 +41,30 @@
 		if (open && e.key === 'Escape') open = false;
 	}}
 />
+<svelte:document
+	onscrollcapture={() => {
+		open = false;
+	}}
+/>
 
 <span class="host">
 	<button
 		class="trigger"
-		onclick={() => (open = !open)}
+		bind:this={trigger}
+		onclick={toggle}
 		aria-label={`Actions for ${label}`}
 		aria-haspopup="menu"
 		aria-expanded={open}>⋯</button
 	>
 	{#if open}
-		<div class="menu" role="menu" aria-label={`Actions for ${label}`}>
+		<div
+			class="menu"
+			class:up={place.up}
+			role="menu"
+			aria-label={`Actions for ${label}`}
+			style:top="{place.top}px"
+			style:right="{place.right}px"
+		>
 			{#each actions as action (action.label)}
 				<button
 					role="menuitem"
@@ -69,9 +98,7 @@
 	}
 
 	.menu {
-		position: absolute;
-		top: calc(100% + 2px);
-		right: 0;
+		position: fixed;
 		z-index: 10;
 		display: flex;
 		flex-direction: column;
@@ -80,6 +107,10 @@
 		border-radius: 6px;
 		background: var(--bg-secondary);
 		overflow: hidden;
+	}
+
+	.menu.up {
+		transform: translateY(-100%);
 	}
 
 	.menu button {

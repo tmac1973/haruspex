@@ -144,6 +144,8 @@
 	.card {
 		display: flex;
 		flex-direction: column;
+		box-sizing: border-box;
+		height: 100%;
 		min-width: 0;
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -248,9 +250,11 @@
 		background: var(--bg-primary);
 	}
 
+	/* Home gives every card the same height; what doesn't fit scrolls. */
 	.body {
 		flex: 1;
 		min-height: 0;
+		overflow-y: auto;
 		padding: 0 12px 10px;
 		font-size: 0.875rem;
 	}
