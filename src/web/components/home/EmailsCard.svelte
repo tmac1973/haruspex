@@ -19,7 +19,7 @@
 			<li>
 				<div class="name">{item.subject || '(no subject)'}</div>
 				<div class="detail">{item.from} · {when(item.date)}</div>
-				<div>{item.why}</div>
+				<div class="model">{item.why}</div>
 			</li>
 		{/each}
 	</ul>

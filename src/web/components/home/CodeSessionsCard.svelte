@@ -45,7 +45,11 @@
 			<li>
 				<button class="row" onclick={() => open(s.id)} title={s.root}>
 					<span class="name">{s.title || name(s.root)}</span>
-					<span class="chip" class:attention={chip === 'attention'}>{CHIPS[chip] ?? chip}</span>
+					<span
+						class="chip"
+						class:attention={chip === 'attention'}
+						class:running={chip === 'running'}>{CHIPS[chip] ?? chip}</span
+					>
 				</button>
 			</li>
 		{/each}
@@ -70,12 +74,22 @@
 
 	.chip {
 		flex-shrink: 0;
+		padding: 1px 8px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
 		font-size: 0.75rem;
 		color: var(--text-secondary);
 	}
 
 	.chip.attention {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--accent-contrast);
+	}
+
+	.chip.running {
+		border-color: var(--accent);
+		background: var(--accent-soft);
 		color: var(--accent);
-		font-weight: 600;
 	}
 </style>

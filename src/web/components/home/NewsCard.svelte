@@ -16,7 +16,7 @@
 				<div class="detail">
 					{item.source}{#if item.published}&nbsp;· {lastActive(item.published)}{/if}
 				</div>
-				<div>{item.summary}</div>
+				<div class="model">{item.summary}</div>
 			</li>
 		{/each}
 	</ul>
