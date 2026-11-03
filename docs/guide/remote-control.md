@@ -37,7 +37,7 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 
 Attach pictures with 📎 or a paste, up to 8 a message. `/name` runs a skill, and `/compact`, `/skills` and `/new` work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 
-**Home**, first in the switch atop the list, shows this computer's Home cards, read-only (see `home`): tap a Code session to open it; headlines, GitHub items and **Join** open in your browser.
+**Home**, first in the switch atop the list, shows this computer's Home band and cards, read-only (see `home`): tap a Code session to open it; headlines, GitHub items and **Join** open in your browser.
 
 In lean mode (see `lean-mode`) the page shows Chat only, with a **Lean mode** label; turn it off at this computer.
 

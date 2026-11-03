@@ -11,6 +11,7 @@
 	import MeetingsCard from './MeetingsCard.svelte';
 	import NewsCard from './NewsCard.svelte';
 	import PinnedJobCard from './PinnedJobCard.svelte';
+	import SummaryBand from './SummaryBand.svelte';
 	import WeatherCard from './WeatherCard.svelte';
 
 	let { store }: { store: WebStore } = $props();
@@ -23,6 +24,7 @@
 	{#if store.homeCards === null}
 		<p class="muted">Reading Home…</p>
 	{:else}
+		<SummaryBand {store} cards={store.homeCards} />
 		{#each store.homeCards as card (card.id)}
 			{@const p = card.payload}
 			<section class="home-card" aria-label={card.title}>
@@ -113,5 +115,28 @@
 
 	.home-card :global(a) {
 		color: var(--accent);
+	}
+
+	/* The model's words, apart from the source's. */
+	.home-card :global(.model) {
+		margin-top: 2px;
+		padding-left: 6px;
+		border-left: 2px solid var(--accent);
+		font-size: 0.85rem;
+	}
+
+	.home-card :global(.labels) {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-top: 2px;
+	}
+
+	.home-card :global(.label) {
+		padding: 0 6px;
+		border-radius: 8px;
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-size: 0.72rem;
 	}
 </style>

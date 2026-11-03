@@ -4,6 +4,9 @@
  */
 import type { Meeting } from '#lib/home/meetings.ts';
 
+/** All the band needs of a meeting, which the web client's payload carries too. */
+export type MeetingTimes = Pick<Meeting, 'summary' | 'start' | 'end' | 'allDay'>;
+
 export interface SummaryInput {
 	/** The job run going now, or null. */
 	run: { status: string } | null;
@@ -13,7 +16,7 @@ export interface SummaryInput {
 	/** What the Important emails cards show, all together; null without such a card. */
 	emails: number | null;
 	/** What the Upcoming meetings cards read. */
-	meetings: Meeting[];
+	meetings: MeetingTimes[];
 }
 
 /** One fact in the band; `target` is the tab a click opens. */
@@ -35,7 +38,7 @@ function time(at: string): string {
 }
 
 /** The next meeting that hasn't ended, as "Next: Design sync at 3:30 PM" or "… now". */
-function nextMeeting(meetings: Meeting[], now: Date): string | null {
+function nextMeeting(meetings: MeetingTimes[], now: Date): string | null {
 	const next = meetings
 		.filter((m) => !m.allDay && Date.parse(m.end) > now.getTime())
 		.sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0];

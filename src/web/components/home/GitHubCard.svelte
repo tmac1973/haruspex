@@ -27,7 +27,9 @@
 					{item.repo}#{item.number} · {item.author} · 💬 {item.comments} · {age(item.updatedAt)}
 				</div>
 				{#if item.labels.length > 0}
-					<div class="detail">{item.labels.join(', ')}</div>
+					<div class="labels">
+						{#each item.labels as label (label)}<span class="label">{label}</span>{/each}
+					</div>
 				{/if}
 			</li>
 		{/each}
