@@ -236,6 +236,40 @@ function textureNote(
 	return lines.join(' ');
 }
 
+/** Where the call writes, or why it may not write here. */
+async function targetFor(
+	input: ParsedInput,
+	args: Record<string, unknown>,
+	ctx: ToolContext,
+	tool: string
+): Promise<Target | string> {
+	// The terminal may have walked off this machine (ssh, a container): the
+	// file would land here while the model thinks it is over there.
+	const elsewhere = await localWriteBlocked(tool, ctx);
+	if (elsewhere) return elsewhere;
+	// Relative to the shell's folder, or in the Code tab the session's.
+	const cwd = ctxCwd(ctx);
+	const path = resolveShellPath(input.path, cwd);
+	return { path, overwrite: args.overwrite === true, io: assetIo(ctx), cwd };
+}
+
+/**
+ * `make_asset`'s texture branch on its own, for a tool that offers textures
+ * and nothing that needs the image backend (`draw_texture`). `args.kind` is
+ * ignored: it always draws a texture.
+ */
+export async function drawTexture(
+	args: Record<string, unknown>,
+	ctx: ToolContext,
+	tool = 'make_asset'
+) {
+	const input = parseInput({ ...args, kind: 'texture' });
+	if (typeof input === 'string') return toolResult(toolError(input));
+	const target = await targetFor(input, args, ctx, tool);
+	if (typeof target === 'string') return toolResult(toolError(target));
+	return makeTexture(input, target, ctx);
+}
+
 registerTool({
 	category: 'image',
 	schema: {
@@ -337,15 +371,8 @@ registerTool({
 	execute: async (args, ctx) => {
 		const input = parseInput(args);
 		if (typeof input === 'string') return toolResult(toolError(input));
-
-		// The terminal may have walked off this machine (ssh, a container): the
-		// file would land here while the model thinks it is over there.
-		const elsewhere = await localWriteBlocked('make_asset', ctx);
-		if (elsewhere) return toolResult(toolError(elsewhere));
-		// Relative to the shell's folder, or in the Code tab the session's.
-		const cwd = ctxCwd(ctx);
-		const path = resolveShellPath(input.path, cwd);
-		const target = { path, overwrite: args.overwrite === true, io: assetIo(ctx), cwd };
+		const target = await targetFor(input, args, ctx, 'make_asset');
+		if (typeof target === 'string') return toolResult(toolError(target));
 		const { kind, ...rest } = input.asset;
 		if (kind === 'transition') {
 			// parseInput refuses a transition without its arguments.
