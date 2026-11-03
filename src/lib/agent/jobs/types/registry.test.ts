@@ -1,6 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { JobTypeDefinition } from './types';
+
+// The first import of the barrel transforms every job type's module graph.
+// On a busy CI runner that alone went past a test's 5 s, so whichever test ran
+// first timed out. Pay it once here; imports after resetModules reuse the
+// transformed modules.
+beforeAll(async () => {
+	await import('./index');
+}, 60_000);
 
 // The registry itself is pure; reset modules per test so registrations from
 // one test (or the barrel) never leak into another.
