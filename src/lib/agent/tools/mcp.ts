@@ -49,6 +49,12 @@ import {
 } from '#lib/stores/mcpApproval.svelte.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
+import { capWithSpill } from '#lib/agent/tools/pty-exec.ts';
+import {
+	OVERSIZED_MESSAGE_MAX_TOKENS,
+	TOKEN_BYTES_RATIO,
+	TOOL_CUT_HINT
+} from '#lib/agent/contextBudget.ts';
 
 /**
  * Maximum MRTR round trips for one tool call.
@@ -58,6 +64,17 @@ import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
  * SDKs use.
  */
 export const MAX_MRTR_ROUNDS = 10;
+
+/**
+ * Most of one tool's text result handed back, as the shell's output is capped.
+ *
+ * The pre-send guard keeps no more than this of any message, so a result
+ * under it reaches the model whole either way. Not the shell's 16 KB: a
+ * Playwright page snapshot is often bigger, and cutting its middle loses the
+ * element refs the model needs to click. Without a cap, a result that fit a
+ * large window rode along in every later call of the turn.
+ */
+export const MCP_RESULT_MAX_BYTES = Math.floor(OVERSIZED_MESSAGE_MAX_TOKENS * TOKEN_BYTES_RATIO);
 
 /**
  * Called when a tool call fails, with the server it failed on.
@@ -330,7 +347,11 @@ export function imageDataUrl(block: unknown): string | null {
  * budget as a screenshot or an image read off disk. A model that can't read
  * images is told one was left out rather than sent it.
  */
-function withImages(outcome: CompleteOutcome, toolName: string, ctx: ToolContext): ToolExecOutput {
+async function withImages(
+	outcome: CompleteOutcome,
+	toolName: string,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
 	let thumb: string | undefined;
 	const describe = (dataUrl: string): string => {
 		if (ctx.visionSupported === false) return "[image omitted: this model can't read images]";
@@ -342,7 +363,16 @@ function withImages(outcome: CompleteOutcome, toolName: string, ctx: ToolContext
 		return '[image attached: you can see it in your next response]';
 	};
 	const result = formatContent(outcome, toolName, describe);
-	return toolResult(result, thumb);
+	// The server's own error text is left whole: it is short, and every word
+	// of it may be the reason. A spill file is named only where the model can
+	// read it, which needs a working folder or Shell mode.
+	const capped = outcome.isError
+		? result
+		: await capWithSpill(result, MCP_RESULT_MAX_BYTES, {
+				hint: TOOL_CUT_HINT,
+				spill: Boolean(ctx.workingDir) || ctx.shellMode
+			});
+	return toolResult(capped, thumb);
 }
 
 /**

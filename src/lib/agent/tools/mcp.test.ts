@@ -9,12 +9,14 @@ import {
 	unregisterMcpServer,
 	registeredMcpToolNames,
 	MAX_MRTR_ROUNDS,
+	MCP_RESULT_MAX_BYTES,
 	elicitationMessage,
 	formatContent,
 	imageDataUrl,
 	setToolFailureHook
 } from './mcp';
 import { MAX_PENDING_IMAGES } from './fs-read';
+import { isSpillFile } from './pty-exec';
 import { getToolSchemas, executeTool } from './registry';
 import {
 	forgetAllApprovals,
@@ -560,6 +562,50 @@ describe('images a tool returns', () => {
 		const out = await executeTool('mcp__srv-1__screenshot', {}, c);
 		expect(c.pendingImages).toHaveLength(MAX_PENDING_IMAGES);
 		expect(out.result).toContain('too many images');
+	});
+});
+
+describe('large results', () => {
+	const big = `first line\n${'x'.repeat(200)}\n`.repeat(400) + 'last line';
+
+	beforeEach(() => {
+		registerMcpTools(SERVER, 'One', [tool('snapshot')], ['snapshot']);
+		invoke.mockImplementation(async (cmd: string) =>
+			cmd === 'code_write_overflow' ? '/tmp/haruspex-run-output-1.txt' : complete(big)
+		);
+	});
+
+	it('passes a result under the cap through whole', async () => {
+		invoke.mockResolvedValue(complete('small'));
+		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx());
+		expect(out.result).toBe('small');
+	});
+
+	it('keeps the head and tail, with a hint to ask for less', async () => {
+		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx());
+		expect(new TextEncoder().encode(out.result).length).toBeLessThan(MCP_RESULT_MAX_BYTES + 1024);
+		expect(out.result.startsWith('first line')).toBe(true);
+		expect(out.result.endsWith('last line')).toBe(true);
+		expect(out.result).toContain('Call the tool again for a narrower part');
+	});
+
+	it('names no spill file when the model has nothing to read it with', async () => {
+		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx());
+		expect(out.result).not.toContain('fs_read_text');
+		expect(invoke).not.toHaveBeenCalledWith('code_write_overflow', expect.anything());
+	});
+
+	it('saves the full result where the model can read it back', async () => {
+		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx({ workingDir: '/w' }));
+		expect(invoke).toHaveBeenCalledWith('code_write_overflow', { content: big });
+		expect(out.result).toContain('saved to /tmp/haruspex-run-output-1.txt');
+		expect(isSpillFile('/tmp/haruspex-run-output-1.txt')).toBe(true);
+	});
+
+	it("leaves the server's own error text whole", async () => {
+		invoke.mockResolvedValue({ ...complete(big), isError: true });
+		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx());
+		expect(out.result).not.toContain('middle truncated');
 	});
 });
 
