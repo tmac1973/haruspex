@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SearchChunk } from '#lib/ipc/gen/SearchChunk.ts';
+import { setCodeHelperConfig } from '#lib/stores/settings.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 // Imported once, statically: the tool registry's first load takes seconds (#409).
 import { executeTool } from '#lib/agent/tools/index.ts';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rerank: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('#lib/rerank.ts', () => ({ rerankDocuments: mocks.rerank }));
 
 const ctx = makeToolContext({ workingDir: '/work', codeMode: true });
 
@@ -23,7 +25,11 @@ function answer(chunks: SearchChunk[], terms = ['grow', 'type']) {
 	mocks.invoke.mockResolvedValueOnce({ terms, chunks, files_scanned: 10 });
 }
 
-beforeEach(() => mocks.invoke.mockReset());
+beforeEach(() => {
+	mocks.invoke.mockReset();
+	mocks.rerank.mockReset();
+	setCodeHelperConfig('search', undefined);
+});
 
 describe('search_code', () => {
 	it('formats snippets with numbered lines and names the ranking', async () => {
@@ -86,5 +92,53 @@ describe('search_code', () => {
 			limit: 100,
 			wslDistro: 'Ubuntu'
 		});
+	});
+});
+
+describe('search_code with a reranker', () => {
+	const rerank = { url: 'http://box:3000', keyId: null, model: 'reranker-0.6b' };
+	const three = [chunk('a.ts', 1, ['a']), chunk('b.ts', 1, ['b']), chunk('c.ts', 1, ['c'])];
+	const heads = (out: string) => out.match(/^== \S+/gm);
+
+	it('never reranks when none is set', async () => {
+		answer(three);
+		const out = await executeTool('search_code', { query: 'q' }, ctx);
+		expect(mocks.rerank).not.toHaveBeenCalled();
+		expect(out.result).toMatch(/\(keyword ranking\)$/);
+	});
+
+	it('orders the snippets as the reranker does and names it', async () => {
+		setCodeHelperConfig('search', { rerank });
+		answer(three);
+		mocks.rerank.mockResolvedValueOnce({
+			order: [
+				{ index: 2, score: 0.9 },
+				{ index: 0, score: 0.5 },
+				{ index: 1, score: 0.1 }
+			]
+		});
+		const out = await executeTool('search_code', { query: 'where is c' }, ctx);
+		expect(mocks.rerank).toHaveBeenCalledWith(
+			rerank,
+			'where is c',
+			['a.ts\na', 'b.ts\nb', 'c.ts\nc'],
+			15_000
+		);
+		expect(heads(out.result)).toEqual(['== c.ts:1-1', '== a.ts:1-1', '== b.ts:1-1']);
+		expect(out.result).toMatch(/\(reranked by reranker-0\.6b\)$/);
+	});
+
+	it('keeps the keyword order and names the error when the reranker fails', async () => {
+		setCodeHelperConfig('search', { rerank });
+		answer(three);
+		mocks.rerank.mockRejectedValueOnce('connection refused');
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const out = await executeTool('search_code', { query: 'q' }, ctx);
+		expect(heads(out.result)).toEqual(['== a.ts:1-1', '== b.ts:1-1', '== c.ts:1-1']);
+		expect(out.result).toMatch(
+			/\(keyword ranking: the reranker didn't answer — connection refused\)$/
+		);
+		expect(warn).toHaveBeenCalled();
+		warn.mockRestore();
 	});
 });

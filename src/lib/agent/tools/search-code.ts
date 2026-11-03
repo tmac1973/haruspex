@@ -1,11 +1,18 @@
 /**
  * `search_code`: the Search helper's tool (Settings → Code → Helpers). Finds
  * code from a question in plain words: `code_search_candidates` scores chunks
- * of the project's files by the query's words, and this returns the best few
- * as numbered snippets with their paths.
+ * of the project's files by the query's words, a reranker set on the Search
+ * row reorders them when there is one, and this returns the best few as
+ * numbered snippets with their paths. A reranker that fails or is slow leaves
+ * the keyword order, and the result says so.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { ctxCwd, ctxWslDistroArg, labelArg, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
+import { helperConfig } from '#lib/helpers/registry.ts';
+import type { SearchConfig } from '#lib/helpers/search/config.ts';
+import { rerankDocuments } from '#lib/rerank.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolExecOutput } from '#lib/agent/tools/types.ts';
@@ -16,6 +23,8 @@ import type { SearchChunk } from '#lib/ipc/gen/SearchChunk.ts';
 const CANDIDATES = 100;
 /** How many chunks the agent sees, before touching ones merge. */
 const SHOWN = 6;
+/** The most a rerank may take before keyword ranking stands. */
+const RERANK_TIMEOUT_MS = 15_000;
 
 export interface Snippet {
 	path: string;
@@ -49,6 +58,32 @@ export function pickSnippets(chunks: SearchChunk[]): Snippet[] {
 		for (let n = near.start; n <= near.end; n++) near.lines.push(byLine.get(n) ?? '');
 	}
 	return out;
+}
+
+/**
+ * The chunks in the order a reranker set on the Search row gives them, with a
+ * note naming what ranked them. No reranker, or one that fails: keyword order.
+ */
+export async function rankChunks(
+	query: string,
+	chunks: SearchChunk[]
+): Promise<{ chunks: SearchChunk[]; ranking: string }> {
+	const endpoint = helperConfig<SearchConfig>('search')?.rerank;
+	if (!endpoint || chunks.length === 0) return { chunks, ranking: 'keyword ranking' };
+	try {
+		const res = await rerankDocuments(
+			endpoint,
+			query,
+			chunks.map((c) => `${c.path}\n${c.text}`),
+			RERANK_TIMEOUT_MS
+		);
+		const ranked = res.order.map((o) => chunks[o.index]).filter((c) => c !== undefined);
+		return { chunks: ranked, ranking: `reranked by ${endpoint.model}` };
+	} catch (e) {
+		const reason = errMessage(e).split('\n')[0].slice(0, 120);
+		console.warn(`search_code: rerank at ${urlForReport(endpoint.url)} failed: ${reason}`);
+		return { chunks, ranking: `keyword ranking: the reranker didn't answer — ${reason}` };
+	}
 }
 
 /** The snippets as `== path:start-end` and numbered lines, then what ranked them. */
@@ -94,7 +129,8 @@ registerTool({
 				limit: CANDIDATES,
 				...ctxWslDistroArg(ctx)
 			});
-			const out = formatSnippets(pickSnippets(res.chunks), res.terms, 'keyword ranking');
+			const ranked = await rankChunks(args.query as string, res.chunks);
+			const out = formatSnippets(pickSnippets(ranked.chunks), res.terms, ranked.ranking);
 			return toolResult(await withLocalScopeNote(out, ctx));
 		} catch (e) {
 			return toolResult(toolInvokeError('code_search_candidates', e));
