@@ -17,20 +17,18 @@ import {
 	MODEL_FILE as MODEL,
 	MODULE_FILE as MODULE
 } from '#lib/helpers/three/output.ts';
-import { runBuildModule, type ModuleError } from '#lib/helpers/three/runModule.ts';
 import {
-	MAX_TEXTURE_BYTES,
-	MAX_TEXTURES,
-	textureRefs,
-	texturePath
-} from '#lib/helpers/three/textures.ts';
-import { bytesToBase64 } from '#lib/utils/base64.ts';
-import { errMessage } from '#lib/utils/error.ts';
+	failed,
+	loadModuleRun,
+	missingLine,
+	MOTION_NOTE,
+	readFile,
+	runFailure,
+	SHEET_NOTE,
+	type LoadIo
+} from '#lib/helpers/three/load.ts';
 
-export const SHEET_NOTE =
-	'The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): compare it with what you meant to make before you finish.';
-export const MOTION_NOTE =
-	"The motion sheet is attached (right and front frames, then all frames overlaid with trails of the parts that move most). 'No problems found' only means nothing is physically wrong: check the key pose reads at a glance from the side and the front, fix what you see, and call check_3d again before you finish.";
+export { MOTION_NOTE, SHEET_NOTE };
 
 const DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid). A module imports nothing; its default export gets THREE (the app's three) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed), random(seed)) and returns an Object3D, or { object, animations } for clips:
 \`\`\`js
@@ -141,119 +139,28 @@ function externalGltf(bytes: number[]): boolean {
 	}
 }
 
-function failed(lines: string[], path: string): string {
-	return ['The check failed.', ...lines, `Fix ${path} and call check_3d again.`].join('\n');
-}
-
 interface Source {
 	glb: Uint8Array;
 	/** A module's tracks that name a node it doesn't have. */
 	missing: string[];
 }
 
-/** A file's bytes, or the tool error saying it couldn't be read. */
-async function readFile(
-	path: string,
-	cwd: string | null,
-	ctx: ToolContext
-): Promise<number[] | string> {
-	try {
-		return await assetIo(ctx).read(resolveShellPath(path, cwd));
-	} catch (e) {
-		return toolError(`Could not read ${path}: ${errMessage(e)}`);
-	}
-}
-
-const text = (bytes: number[]) => new TextDecoder().decode(new Uint8Array(bytes));
-
-/** The folder part of `path`: '' for a file in the working folder. */
-function dirOf(path: string): string {
-	const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-	return i < 0 ? '' : i === 0 ? '/' : path.slice(0, i);
-}
-
-/**
- * The PNGs the module sources name with `kit.texture`, read from beside the
- * build module `path` as data URLs keyed by the path as written; or the tool
- * error that stops the run.
- */
-async function readTextures(
-	sources: string[],
-	path: string,
-	cwd: string | null,
-	ctx: ToolContext
-): Promise<Record<string, string> | string> {
-	const refs = [...new Set(sources.flatMap(textureRefs))];
-	if (refs.length > MAX_TEXTURES) {
-		return toolError(`kit.texture names ${refs.length} PNGs; use at most ${MAX_TEXTURES}.`);
-	}
-	const root = cwd?.replace(/[/\\]+$/, '');
-	const out: Record<string, string> = {};
-	for (const ref of refs) {
-		if (!/\.png$/i.test(ref)) return toolError(`kit.texture("${ref}"): only .png files.`);
-		const rel = texturePath(dirOf(path), ref);
-		const full = rel === null ? null : resolveShellPath(rel, cwd);
-		if (full === null || (root && !full.startsWith(`${root}/`))) {
-			return toolError(`kit.texture("${ref}"): the PNG must be inside the working folder.`);
-		}
-		const bytes = await readFile(rel as string, cwd, ctx);
-		if (typeof bytes === 'string') return bytes;
-		if (bytes.length > MAX_TEXTURE_BYTES) {
-			const mb = MAX_TEXTURE_BYTES / 1024 / 1024;
-			return toolError(`kit.texture("${ref}"): the PNG is over ${mb} MB.`);
-		}
-		out[ref] = `data:image/png;base64,${bytesToBase64(new Uint8Array(bytes))}`;
-	}
-	return out;
-}
-
-/** The failure lines for a module run's errors; those from the animation module name it. */
-function errorLines(errors: ModuleError[], anim: string | undefined): string[] {
-	return errors.map((e) => {
-		if (e.file === 'anim' && anim) {
-			return e.line === null ? `- ${anim}: ${e.message}` : `- ${anim}:${e.line}: ${e.message}`;
-		}
-		return e.line === null ? `- ${e.message}` : `- line ${e.line}: ${e.message}`;
-	});
-}
-
 /** The GLB bytes to check: a module's export, or the file itself. */
 async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<Source | string> {
-	const bytes = await readFile(a.path, cwd, ctx);
-	if (typeof bytes === 'string') return bytes;
+	const io: LoadIo = { read: (p) => assetIo(ctx).read(p), cwd };
 	if (MODEL.test(a.path)) {
-		if (/\.gltf$/i.test(a.path) && externalGltf(bytes)) {
+		const got = await readFile(a.path, io);
+		if ('refused' in got) return toolError(got.refused);
+		if (/\.gltf$/i.test(a.path) && externalGltf(got.bytes)) {
 			return toolError('Export it as .glb, or embed its buffers and images in the .gltf.');
 		}
-		return { glb: new Uint8Array(bytes), missing: [] };
+		return { glb: new Uint8Array(got.bytes), missing: [] };
 	}
-	return built(a, text(bytes), cwd, ctx);
-}
-
-/** A build module's export, with its animation module and textures; or why it failed. */
-async function built(
-	a: Args,
-	build: string,
-	cwd: string | null,
-	ctx: ToolContext
-): Promise<Source | string> {
-	let anim: string | undefined;
-	if (a.anim !== undefined) {
-		const animBytes = await readFile(a.anim, cwd, ctx);
-		if (typeof animBytes === 'string') return animBytes;
-		anim = text(animBytes);
-	}
-	const textures = await readTextures([build, anim ?? ''], a.path, cwd, ctx);
-	if (typeof textures === 'string') return textures;
 	ctx.onProgress?.('Building');
-	const run = await runBuildModule(build, { signal: ctx.signal, anim, textures });
-	if (run.errors.length || !run.glb) {
-		const lines = errorLines(run.errors, a.anim);
-		const fromAnim = run.errors.length > 0 && run.errors.every((e) => e.file === 'anim');
-		const fix = a.anim !== undefined && fromAnim ? a.anim : a.path;
-		return failed(lines.length ? lines : ['- build() exported nothing.'], fix);
-	}
-	return { glb: run.glb, missing: run.missingTracks };
+	const run = await loadModuleRun({ build: a.path, anim: a.anim }, io, ctx.signal);
+	if ('refused' in run) return toolError(run.refused);
+	if (run.errors.length || !run.glb) return runFailure(run.errors, { build: a.path, anim: a.anim });
+	return { glb: run.glb, missing: run.missing };
 }
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
@@ -293,15 +200,6 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 		...(sees ? [checked.clip ? MOTION_NOTE : SHEET_NOTE] : [])
 	];
 	return toolResult(lines.join('\n'), checked.png ?? undefined);
-}
-
-/** The line about tracks the exporter dropped, if there were any. */
-function missingLine(missing: string[]): string[] {
-	if (!missing.length) return [];
-	const names = missing.slice(0, 12).join(', ');
-	return [
-		`Tracks naming a node the model doesn't have (the exporter dropped them, so they do nothing): ${names}.`
-	];
 }
 
 /** Give the agent the sheet when its model can see it; whether it did. */
