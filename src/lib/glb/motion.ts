@@ -14,7 +14,8 @@ import {
 	partsOf,
 	posedBox,
 	poser,
-	strideFor
+	strideFor,
+	type Part
 } from '#lib/glb/motionPose.ts';
 import { contactTracker, jointTracker, slideTracker } from '#lib/glb/motionParts.ts';
 import { trackChecks, type TrackChecks } from '#lib/glb/motionTracks.ts';
@@ -52,6 +53,12 @@ export interface ClipMotion extends TrackChecks {
 	drift: number;
 	/** The parts whose centres travel furthest, for trails. */
 	fastest: string[];
+	/** The furthest any part gets from where it starts (m), which part, and when: the key pose. */
+	reach: number;
+	reachPart: string;
+	reachAt: number;
+	/** The model's height at rest (m), to say how big the motion is. */
+	height: number;
 	passes: ({ part: string; into: string } & TimeSpan)[];
 	apart: ({ part: string } & TimeSpan)[];
 	slides: ({ part: string; cm: number } & TimeSpan)[];
@@ -86,6 +93,46 @@ function trackNodes(gltf: LoadedGlb, THREE: Three): Set<string> {
 	return out;
 }
 
+/** Where each part's centre goes: the seam, the key pose's reach, and the parts to trail. */
+function pathTracker(THREE: Three, parts: Part[], stride: number) {
+	const travel = new Map<string, number>();
+	const first = new Map<string, InstanceType<Three['Vector3']>>();
+	const last = new Map<string, InstanceType<Three['Vector3']>>();
+	let reach = 0;
+	let reachPart = '';
+	let reachAt = 0;
+	return {
+		frame(t: number) {
+			for (const part of parts) {
+				const p = partCentre(THREE, part, stride);
+				const prev = last.get(part.name);
+				if (prev) travel.set(part.name, (travel.get(part.name) ?? 0) + prev.distanceTo(p));
+				else first.set(part.name, p);
+				last.set(part.name, p);
+				const away = first.get(part.name)!.distanceTo(p);
+				if (away > reach) [reach, reachPart, reachAt] = [away, part.name, t];
+			}
+		},
+		result(): Pick<
+			ClipMotion,
+			'seam' | 'seamPart' | 'fastest' | 'reach' | 'reachPart' | 'reachAt'
+		> {
+			let seam = 0;
+			let seamPart = '';
+			for (const part of parts) {
+				const d = first.get(part.name)?.distanceTo(last.get(part.name)!) ?? 0;
+				if (d > seam) [seam, seamPart] = [d, part.name];
+			}
+			const fastest = [...travel.entries()]
+				.filter(([, d]) => d > 1e-4)
+				.sort((a, b) => b[1] - a[1])
+				.slice(0, TRAILS)
+				.map(([name]) => name);
+			return { seam, seamPart, fastest, reach, reachPart, reachAt };
+		}
+	};
+}
+
 /** Measure every clip; `[]` when the GLB has none. */
 export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 	if (!gltf.animations.length) return [];
@@ -108,9 +155,7 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 		let lift = 0;
 		let liftAt = 0;
 		let drift = 0;
-		const travel = new Map<string, number>();
-		const first = new Map<string, InstanceType<Three['Vector3']>>();
-		const last = new Map<string, InstanceType<Three['Vector3']>>();
+		const paths = pathTracker(THREE, parts, stride);
 		const contacts = contactTracker(THREE, meshes, stride, weld);
 		const slides = slideTracker(THREE, parts, stride, floor);
 		const joints = jointTracker(THREE, root);
@@ -122,13 +167,7 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 				if (box.min.y - floor > lift) [lift, liftAt] = [box.min.y - floor, t];
 				const c = box.getCenter(new THREE.Vector3());
 				drift = Math.max(drift, Math.hypot(c.x - restCentre.x, c.z - restCentre.z));
-				for (const part of parts) {
-					const p = partCentre(THREE, part, stride);
-					const prev = last.get(part.name);
-					if (prev) travel.set(part.name, (travel.get(part.name) ?? 0) + prev.distanceTo(p));
-					else first.set(part.name, p);
-					last.set(part.name, p);
-				}
+				paths.frame(t);
 				contacts.frame(t);
 				slides.frame(t);
 				joints.frame(t);
@@ -136,17 +175,6 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 		} finally {
 			pose.stop();
 		}
-		let seam = 0;
-		let seamPart = '';
-		for (const part of parts) {
-			const d = first.get(part.name)!.distanceTo(last.get(part.name)!);
-			if (d > seam) [seam, seamPart] = [d, part.name];
-		}
-		const fastest = [...travel.entries()]
-			.filter(([, d]) => d > 1e-4)
-			.sort((a, b) => b[1] - a[1])
-			.slice(0, TRAILS)
-			.map(([name]) => name);
 		return {
 			name: clip.name,
 			duration: clip.duration,
@@ -156,10 +184,9 @@ export function inspectMotion(THREE: Three, gltf: LoadedGlb): ClipMotion[] {
 			sinkAt,
 			lift,
 			liftAt,
-			seam,
-			seamPart,
 			drift,
-			fastest,
+			height: size.y,
+			...paths.result(),
 			...trackChecks(clip),
 			...contacts.result(),
 			...slides.result(),

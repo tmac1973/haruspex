@@ -130,6 +130,28 @@ describe('foot slide', () => {
 		expect(c.slides[0].cm).toBeLessThanOrEqual(11);
 	});
 
+	it('leaves a part that only grazes the floor with a point alone', () => {
+		const cone = new THREE.Mesh(
+			new THREE.ConeGeometry(0.05, 0.2, 6),
+			new THREE.MeshStandardMaterial()
+		);
+		cone.name = 'Claw';
+		cone.rotation.x = Math.PI;
+		cone.position.y = 0.1;
+		const c = one(
+			scene(cone),
+			move(
+				'Claw',
+				[0, 1],
+				[
+					[0, 0.1, 0],
+					[0.1, 0.1, 0]
+				]
+			)
+		);
+		expect(c.slides).toEqual([]);
+	});
+
 	it('leaves a step alone: lift, move, land', () => {
 		const step = move(
 			'Foot',

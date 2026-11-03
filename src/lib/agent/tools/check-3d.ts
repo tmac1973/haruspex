@@ -23,7 +23,7 @@ import { errMessage } from '#lib/utils/error.ts';
 export const SHEET_NOTE =
 	'The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): compare it with what you meant to make before you finish.';
 export const MOTION_NOTE =
-	'The motion sheet is attached (right and front frames, then all frames overlaid with trails of the parts that move most): check each frame is a pose you meant before you finish.';
+	"The motion sheet is attached (right and front frames, then all frames overlaid with trails of the parts that move most). 'No problems found' only means nothing is physically wrong: check the key pose reads at a glance from the side and the front, fix what you see, and call check_3d again before you finish.";
 
 const DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid). A module imports nothing; its default export gets THREE (the app's three) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed), random(seed)) and returns an Object3D, or { object, animations } for clips:
 \`\`\`js
@@ -37,7 +37,7 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
-Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows that clip moving.
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {

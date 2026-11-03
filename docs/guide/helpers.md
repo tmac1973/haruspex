@@ -22,7 +22,7 @@ Ask for a 3D asset as usual ("make a low-poly mana potion for my Godot game"). T
 - **parts**: each named part, with parts that float free or hide inside others;
 - **problems**: faces that vanish from behind or point inward, missing normals, big textures;
 - **materials**;
-- **clips**: for each animation clip, whether it goes through or off the floor, parts pass into others or come away, feet slide, knees or elbows bend the wrong way, and how far it ends from where it started.
+- **clips**: for each animation clip, whether it goes through or off the floor, parts pass into others or come away, feet slide, knees or elbows bend the wrong way, how far its key pose reaches, and how far it ends from where it started.
 
 The agent can also ask to see one clip moving: eight frames from the side and the front, then all of them overlaid with trails of the parts that move most.
 

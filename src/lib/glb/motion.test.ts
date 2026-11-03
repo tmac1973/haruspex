@@ -46,6 +46,10 @@ describe('inspectMotion', () => {
 		expect(s.seam).toBeGreaterThan(0.1);
 		expect(s.seamPart).toBe('Arm');
 		expect(s.fastest).toEqual(['Arm']);
+		// The loop's key pose is halfway: the arm at its highest, then back.
+		expect(l.reachPart).toBe('Arm');
+		expect(l.reachAt).toBeCloseTo(0.5, 1);
+		expect(l.reach).toBeGreaterThan(0.2);
 	});
 
 	it('leaves the scene at rest', () => {
