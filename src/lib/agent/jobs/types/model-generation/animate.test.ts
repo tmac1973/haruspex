@@ -95,7 +95,8 @@ type TurnOpts = Parameters<JobRunContext['runJobTurn']>[0];
 
 function harness(
 	config: Record<string, unknown> = {},
-	turn: (n: number) => void = () => files.set(ANIM, [1])
+	// Each turn's module differs, as a model's edits do: an unchanged one is the same attempt.
+	turn: (n: number) => void = (n) => files.set(ANIM, [n])
 ) {
 	const turns: TurnOpts[] = [];
 	const step: Partial<RunStepState> = {};
@@ -196,25 +197,35 @@ describe('animateStage', () => {
 		expect(await end([{ name: 'fs_write_text' }] as never)).toBe(false);
 		expect(verdict.judgeModel).not.toHaveBeenCalled();
 
+		files.set(ANIM, [10]);
 		expect(await end(check)).toBe(true);
 		expect(verdict.judgeModel.mock.calls[0][0]).toMatchObject({ stage: 'animate' });
 
+		// An unchanged module is the same attempt: judged once.
+		verdict.judgeModel.mockClear();
+		expect(await end(check)).toBe(true);
+		expect(verdict.judgeModel).not.toHaveBeenCalled();
+
+		files.set(ANIM, [20]);
 		verdict.judgeModel.mockResolvedValue(fail(['Walk: the loop does not close.']));
 		expect(await end(check)).toBe(false);
 
+		files.set(ANIM, [21]);
 		verdict.judgeModel.mockResolvedValue(pass());
 		files.set(BUILD, [0]);
 		expect(await end(check)).toBe(false);
 		files.set(BUILD, [...SOURCE]);
 
+		files.set(ANIM, [22]);
 		verdict.judgeModel.mockRejectedValue(new Error('no WebGL'));
 		expect(await end(check)).toBe(false);
 	});
 
 	it('puts a changed build module back and says so', async () => {
+		verdict.judgeModel.mockResolvedValueOnce(fail(['Walk: the loop does not close.']));
 		verdict.judgeModel.mockResolvedValue(pass());
 		const h = harness({}, (n) => {
-			files.set(ANIM, [1]);
+			files.set(ANIM, [n]);
 			if (n === 1) files.set(BUILD, [0]);
 		});
 
@@ -226,6 +237,44 @@ describe('animateStage', () => {
 			'knight.js was changed; it was put back. Change only knight.anim.js.'
 		);
 		expect(h.states[0].clips?.status).toBe('done');
+	});
+
+	it('passes a round whose clips pass once the build module is put back', async () => {
+		verdict.judgeModel.mockResolvedValue(pass());
+		const h = harness({}, (n) => {
+			files.set(ANIM, [n]);
+			files.set(BUILD, [0]);
+		});
+
+		await h.run();
+
+		expect(files.get(BUILD)).toEqual(SOURCE);
+		expect(h.turns).toHaveLength(1);
+		expect(h.states[0].clips?.status).toBe('done');
+	});
+
+	it('keeps every attempt and puts the best one forward', async () => {
+		verdict.judgeModel
+			.mockResolvedValueOnce(fail(['Walk: the loop does not close.']))
+			.mockResolvedValueOnce({ ...fail(['Walk: a', 'Walk: b', 'Walk: c']), glb: null });
+		const h = harness({ rounds: 2 });
+
+		await h.run();
+
+		// Round 1 had one problem, round 2 three and no GLB: round 1 stays.
+		expect(files.get(ANIM)).toEqual([1]);
+		expect(files.get(`${DIR}attempts/animate-01/knight.anim.js`)).toEqual([1]);
+		expect(files.get(`${DIR}attempts/animate-02/knight.anim.js`)).toEqual([2]);
+		const notes = new TextDecoder().decode(
+			new Uint8Array(files.get(`${DIR}attempts/animate-02/problems.txt`)!)
+		);
+		expect(notes).toContain('- Walk: c');
+		expect(h.states[0].clips).toMatchObject({
+			status: 'needs_work',
+			attempts: 2,
+			kept: 1,
+			problems: ['Walk: the loop does not close.']
+		});
 	});
 
 	it('repairs a missing clip in the next round', async () => {

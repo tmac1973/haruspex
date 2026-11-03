@@ -5,7 +5,8 @@
  * The animator writes `<id>.anim.js` beside the build module and checks each
  * clip with `check_3d`; `judgeModel` decides in code whether the clips are
  * done. The build module is creation's: it is hashed before the first turn,
- * and a turn that changes it has it put back and is told so.
+ * and a turn that changes it has it put back and is told so. Every judged
+ * attempt is kept, and the best one is what stays (`attempts.ts`).
  */
 
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
@@ -17,18 +18,11 @@ import {
 	animateRepairPrompt,
 	animateSystemPrompt
 } from '#lib/agent/jobs/types/model-generation/prompts.ts';
-import {
-	modelFileExists,
-	modelLoadIo,
-	writeModelBytes,
-	writeSheetPng
-} from '#lib/agent/jobs/types/model-generation/io.ts';
+import { Attempts, sha256, type Attempt } from '#lib/agent/jobs/types/model-generation/attempts.ts';
+import { modelLoadIo, writeModelBytes } from '#lib/agent/jobs/types/model-generation/io.ts';
 import type { ClipsState, EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
-import { judgeModel } from '#lib/glb/verdict.ts';
 import { modelFiles } from '#lib/models3d/spec/paths.ts';
 import type { ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
-import { bytesToBase64 } from '#lib/utils/base64.ts';
-import { normalizeAbort } from '#lib/utils/error.ts';
 
 /** What an animation turn may use: the model's files and the checker. */
 export const ANIMATE_TOOLS: readonly string[] = [
@@ -44,12 +38,6 @@ const abortError = () => new DOMException('Aborted', 'AbortError');
 /** Whether the stage animates this entry: built, kept, and with clips to make. */
 export function wantsClips(entry: ModelEntry, state: EntryState): boolean {
 	return entry.clips.length > 0 && state.status !== 'skipped' && state.glb;
-}
-
-async function sha256(bytes: Uint8Array): Promise<string> {
-	// A fresh buffer: `digest` refuses a view onto a shared one.
-	const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
-	return bytesToBase64(new Uint8Array(digest));
 }
 
 async function readBytes(workdir: string, relPath: string): Promise<Uint8Array> {
@@ -98,9 +86,37 @@ export async function animateEntry(input: AnimateEntryInput): Promise<void> {
 	const target = stageModel(ctx, cfg.animate_model);
 	const original = await readBytes(workdir, files.build);
 	const hash = await sha256(original);
-	const clips: ClipsState = { status: 'pending', problems: [], rounds: 0, sheets: [] };
+	const clips: ClipsState = {
+		status: 'pending',
+		problems: [],
+		rounds: 0,
+		sheets: [],
+		attempts: 0,
+		kept: null
+	};
 	state.clips = clips;
 	const firstMessage = animateEntryPrompt(entry, new TextDecoder().decode(original));
+	const attempts = new Attempts({
+		workdir,
+		entry,
+		stage: 'animate',
+		start: 0,
+		signal: ctx.abort.signal
+	});
+	const judge = async (): Promise<Attempt | null> => {
+		const a = await attempts.judge();
+		clips.attempts = attempts.count;
+		if (a?.kept) {
+			clips.kept = a.n;
+			clips.sheets = Object.keys(a.verdict.clipSheets);
+			state.warnings = a.warnings;
+		}
+		return a;
+	};
+	const buildUntouched = async () => {
+		const now = await readBytes(workdir, files.build).catch(() => null);
+		return now !== null && (await sha256(now)) === hash;
+	};
 
 	while (clips.rounds < cfg.rounds) {
 		if (ctx.abort.signal.aborted) throw abortError();
@@ -113,71 +129,34 @@ export async function animateEntry(input: AnimateEntryInput): Promise<void> {
 			toolAllowlist: [...ANIMATE_TOOLS],
 			writeRoot: entry.dir,
 			model: target.model,
-			// Only an untouched build module can pass: a changed one is put back
+			// Only an untouched build module counts: a changed one is put back
 			// after the turn, and the model told why.
-			endTurnWhen: endWhenPassing(async () => {
-				const now = await readBytes(workdir, files.build);
-				if ((await sha256(now)) !== hash) return false;
-				if (!(await modelFileExists(workdir, files.anim))) return false;
-				const io = modelLoadIo(workdir);
-				const signal = ctx.abort.signal;
-				return (await judgeModel({ entry, files, stage: 'animate', io, signal })).done;
-			}),
+			endTurnWhen: endWhenPassing(
+				async () => (await buildUntouched()) && ((await judge())?.done ?? false)
+			),
 			...ctx.buildStreamCallbacks(stepIndex)
 		});
 		clips.rounds++;
 
 		const problems: string[] = [];
-		const now = await readBytes(workdir, files.build).catch(() => null);
-		if (now === null || (await sha256(now)) !== hash) {
+		if (!(await buildUntouched())) {
 			await writeModelBytes(workdir, files.build, original);
 			problems.push(
 				`${entry.id}.js was changed; it was put back. Change only ${entry.id}.anim.js.`
 			);
 		}
-		if (!(await modelFileExists(workdir, files.anim))) {
-			problems.push(`No ${entry.id}.anim.js was written.`);
-		} else {
-			problems.push(...(await judgeAndKeep(input, workdir)));
-		}
+		const last = await judge();
+		if (!last) problems.push(`No ${entry.id}.anim.js was written.`);
+		else problems.push(...last.problems);
 		clips.problems = problems;
-		if (problems.length === 0) {
-			clips.status = 'done';
-			input.onRound?.();
-			return;
-		}
 		input.onRound?.();
+		// Judged with the build module put back, so a pass is a pass.
+		if (last?.done) break;
 	}
-	clips.status = 'needs_work';
-	state.status = 'needs_work';
-}
-
-/** Judge the animated build and write what passed the check; its problems. */
-async function judgeAndKeep(input: AnimateEntryInput, workdir: string): Promise<string[]> {
-	const { ctx, entry, state } = input;
-	const files = modelFiles(entry);
-	const clips = state.clips!;
-	try {
-		const verdict = await judgeModel({
-			entry,
-			files,
-			stage: 'animate',
-			io: modelLoadIo(workdir),
-			signal: ctx.abort.signal
-		});
-		if (verdict.glb) await writeModelBytes(workdir, files.glb, verdict.glb);
-		for (const [name, png] of Object.entries(verdict.clipSheets)) {
-			if (await writeSheetPng(workdir, files.clipSheet(name), png)) {
-				if (!clips.sheets.includes(name)) clips.sheets.push(name);
-			}
-		}
-		state.warnings = verdict.warnings;
-		return verdict.done ? [] : verdict.problems;
-	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		if (aborted || ctx.abort.signal.aborted) throw abortError();
-		return [`The check could not run: ${msg}`];
-	}
+	const best = await attempts.finish();
+	if (best) clips.problems = best.problems;
+	clips.status = best?.done ? 'done' : 'needs_work';
+	if (!best?.done) state.status = 'needs_work';
 }
 
 /**

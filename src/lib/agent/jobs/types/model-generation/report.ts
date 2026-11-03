@@ -5,7 +5,8 @@
  */
 
 import { modelFiles, REPORT_NAME } from '#lib/models3d/spec/paths.ts';
-import type { ModelSpec } from '#lib/models3d/spec/types.ts';
+import type { ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
+import { attemptDir } from '#lib/agent/jobs/types/model-generation/attempts.ts';
 import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 
 /** The report lands beside the spec. */
@@ -68,6 +69,23 @@ export function modelReportTable(spec: ModelSpec, states: EntryState[]): string 
 	].join('\n');
 }
 
+/** Which attempt each stage kept, with every attempt's folder linked by its own. */
+export function attemptsLine(
+	entry: Pick<ModelEntry, 'dir'>,
+	s: Pick<EntryState, 'attempts' | 'kept' | 'clips'>
+): string | null {
+	const one = (stage: 'create' | 'animate', label: string, count: number, kept: number | null) =>
+		count > 0
+			? `${label}: ${count} attempt${count === 1 ? '' : 's'}` +
+				(kept === null ? '' : `, kept \`${attemptDir(entry, stage, kept)}\``)
+			: null;
+	const parts = [
+		one('create', 'Creation', s.attempts, s.kept),
+		one('animate', 'Animation', s.clips?.attempts ?? 0, s.clips?.kept ?? null)
+	].filter((p) => p !== null);
+	return parts.length ? `${parts.join('. ')}.` : null;
+}
+
 export function renderModelReport(input: ModelReportInput): string {
 	const { spec, states, reportPath } = input;
 	const slash = reportPath.lastIndexOf('/');
@@ -83,6 +101,8 @@ export function renderModelReport(input: ModelReportInput): string {
 		for (const name of s.clips?.sheets ?? []) {
 			out.push(`![${e.title} — ${name}](${link(files.clipSheet(name))})`, '');
 		}
+		const kept = attemptsLine(e, s);
+		if (kept) out.push(kept, '');
 		if (s.note) out.push(`Review note: ${s.note}`, '');
 		const problems = s.status === 'skipped' ? [] : openProblems(s);
 		if (problems.length > 0) out.push('Open problems:', '', ...problems.map((p) => `- ${p}`), '');

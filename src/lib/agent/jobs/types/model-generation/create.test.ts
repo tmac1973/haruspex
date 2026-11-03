@@ -99,8 +99,8 @@ function harness(config: Record<string, unknown> = {}, writes = true) {
 		trigger: 'manual',
 		runJobTurn: async (opts: TurnOpts) => {
 			turns.push(opts);
-			// The model writes its build module.
-			if (writes) files.set('assets/generated/model/knight/knight.js', [1]);
+			// The model writes its build module, different each turn as real edits are.
+			if (writes) files.set('assets/generated/model/knight/knight.js', [turns.length]);
 			return {} as EphemeralTurnResult;
 		},
 		patchStep: (_i: number, patch: Partial<RunStepState>) => Object.assign(step, patch),
@@ -151,9 +151,11 @@ describe('createStage', () => {
 		expect(await end([{ name: 'fs_edit_text' }] as never)).toBe(false);
 		expect(verdict.judgeModel).not.toHaveBeenCalled();
 
+		files.set('assets/generated/model/knight/knight.js', [10]);
 		expect(await end(check)).toBe(true);
 		expect(verdict.judgeModel.mock.calls[0][0]).toMatchObject({ stage: 'create' });
 
+		files.set('assets/generated/model/knight/knight.js', [20]);
 		verdict.judgeModel.mockResolvedValue(fail(['Height is 2.4 m; the spec says 1.8 m (±10%).']));
 		expect(await end(check)).toBe(false);
 
@@ -177,7 +179,7 @@ describe('createStage', () => {
 		expect(h.states[0].status).toBe('done');
 	});
 
-	it('marks needs work after the rounds run out, keeping the last good GLB', async () => {
+	it('marks needs work after the rounds run out, keeping the best attempt', async () => {
 		verdict.judgeModel
 			.mockResolvedValueOnce(fail(['Missing part "Hip_L": name the pivot exactly so.']))
 			.mockResolvedValueOnce(fail(['build() threw: x is not defined'], false));
@@ -186,13 +188,19 @@ describe('createStage', () => {
 		await h.run();
 
 		expect(h.turns).toHaveLength(2);
+		// Round 1 built with one problem; round 2 didn't build. Round 1 stays,
+		// its source put back so it matches the GLB.
 		expect(h.states[0]).toMatchObject({
 			status: 'needs_work',
 			rounds: 2,
-			problems: ['build() threw: x is not defined'],
-			glb: true
+			problems: ['Missing part "Hip_L": name the pivot exactly so.'],
+			glb: true,
+			attempts: 2,
+			kept: 1
 		});
 		expect(files.get('assets/generated/model/knight/knight.glb')).toEqual([9]);
+		expect(files.get('assets/generated/model/knight/knight.js')).toEqual([1]);
+		expect(files.get('assets/generated/model/knight/attempts/create-02/knight.js')).toEqual([2]);
 		expect(h.step.checklist).toEqual([
 			{ label: 'Knight', status: 'blocked', detail: 'needs work' }
 		]);

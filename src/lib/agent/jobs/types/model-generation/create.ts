@@ -5,7 +5,8 @@
  * it with `check_3d`, then `judgeModel` decides in code whether it is done.
  * Not done, the next turn gets the problems; out of rounds, the entry is
  * "needs work" with them, and the run goes on. Each turn is a fresh
- * conversation, so a repair message names the file to read back.
+ * conversation, so a repair message names the file to read back. Every
+ * judged attempt is kept, and the best one is what stays (`attempts.ts`).
  */
 
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
@@ -17,18 +18,11 @@ import {
 	createRepairPrompt,
 	createSystemPrompt
 } from '#lib/agent/jobs/types/model-generation/prompts.ts';
-import {
-	modelFileExists,
-	modelLoadIo,
-	writeModelBytes,
-	writeSheetPng
-} from '#lib/agent/jobs/types/model-generation/io.ts';
+import { Attempts, type Attempt } from '#lib/agent/jobs/types/model-generation/attempts.ts';
+import { modelLoadIo } from '#lib/agent/jobs/types/model-generation/io.ts';
 import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { DRAW_TEXTURE_TOOL } from '#lib/agent/tools/draw-texture.ts';
-import { judgeModel } from '#lib/glb/verdict.ts';
-import { modelFiles } from '#lib/models3d/spec/paths.ts';
 import type { ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
-import { normalizeAbort } from '#lib/utils/error.ts';
 
 /** What a creation turn may use: the model's files and the checker. */
 export const CREATE_TOOLS: readonly string[] = [
@@ -145,7 +139,6 @@ export async function buildEntry(input: BuildEntryInput): Promise<void> {
 	const { ctx, cfg, spec, entry, state, stepIndex } = input;
 	const workdir = ctx.job.working_dir;
 	if (!workdir) throw new Error('No working directory.');
-	const files = modelFiles(entry);
 	const io = modelLoadIo(workdir);
 	const target = stageModel(ctx, cfg.create_model);
 	const systemPrompt = createSystemPrompt(spec, cfg.allow_textures);
@@ -153,6 +146,26 @@ export async function buildEntry(input: BuildEntryInput): Promise<void> {
 
 	state.status = 'pending';
 	state.rounds = 0;
+	// A rebuild after review starts a new best: the user turned the old one down.
+	const attempts = new Attempts({
+		workdir,
+		entry,
+		stage: 'create',
+		start: state.attempts,
+		signal: ctx.abort.signal,
+		io
+	});
+	const judge = async (): Promise<Attempt | null> => {
+		const a = await attempts.judge();
+		state.attempts = attempts.count;
+		if (a?.kept) {
+			state.kept = a.n;
+			state.glb ||= a.verdict.glb !== null;
+			if (a.verdict.sheetPng) state.sheet = a.verdict.sheetPng;
+			state.warnings = a.warnings;
+		}
+		return a;
+	};
 	let problems: string[] = [];
 	while (state.rounds < cfg.rounds) {
 		if (ctx.abort.signal.aborted) throw abortError();
@@ -166,66 +179,20 @@ export async function buildEntry(input: BuildEntryInput): Promise<void> {
 			// Writes outside the model's own folder are refused.
 			writeRoot: entry.dir,
 			model: target.model,
-			endTurnWhen: endWhenPassing(
-				async () =>
-					(await modelFileExists(workdir, files.build)) &&
-					(await judgeModel({ entry, files, stage: 'create', io, signal: ctx.abort.signal })).done
-			),
+			endTurnWhen: endWhenPassing(async () => (await judge())?.done ?? false),
 			...ctx.buildStreamCallbacks(stepIndex)
 		});
 		state.rounds++;
 
-		if (!(await modelFileExists(workdir, files.build))) {
-			problems = [`No ${entry.id}.js was written.`];
-		} else {
-			problems = await judgeAndKeep(input, workdir, io);
-		}
-		state.problems = problems;
-		if (problems.length === 0) {
-			state.status = 'done';
-			input.onRound?.();
-			return;
-		}
+		// The repair message gets what this turn left; the entry keeps its best.
+		const last = await judge();
+		problems = last ? last.problems : [`No ${entry.id}.js was written.`];
 		input.onRound?.();
+		if (last?.done) break;
 	}
-	state.status = 'needs_work';
-}
-
-/**
- * Judge the entry's build and write what passed the check. Returns its
- * problems: empty when it is done. A checker that throws is a problem for
- * this entry, not the end of the run; a cancel still cancels.
- */
-async function judgeAndKeep(
-	input: BuildEntryInput,
-	workdir: string,
-	io: ReturnType<typeof modelLoadIo>
-): Promise<string[]> {
-	const { ctx, entry, state } = input;
-	const files = modelFiles(entry);
-	try {
-		const verdict = await judgeModel({
-			entry,
-			files,
-			stage: 'create',
-			io,
-			signal: ctx.abort.signal
-		});
-		if (verdict.glb) {
-			await writeModelBytes(workdir, files.glb, verdict.glb);
-			state.glb = true;
-		}
-		if (verdict.sheetPng) {
-			await writeSheetPng(workdir, files.sheet, verdict.sheetPng);
-			state.sheet = verdict.sheetPng;
-		}
-		state.warnings = verdict.warnings;
-		return verdict.done ? [] : verdict.problems;
-	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		if (aborted || ctx.abort.signal.aborted) throw abortError();
-		return [`The check could not run: ${msg}`];
-	}
+	const best = await attempts.finish();
+	state.problems = best ? best.problems : problems;
+	state.status = best?.done ? 'done' : 'needs_work';
 }
 
 /**

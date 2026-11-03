@@ -209,7 +209,11 @@ describe('a run over an existing spec', () => {
 		]);
 		expect(files.get(SPEC_PATH)).toBe(renderModelSpec(knightSpec()));
 		expect(written).toEqual(['assets/REPORT-models.md']);
-		expect(bytesWritten).toEqual([
+		// Each judged attempt is copied under attempts/; the main files are the best one's.
+		expect(bytesWritten.filter((p) => p.includes('/attempts/'))).toContain(
+			'assets/generated/model/knight/attempts/animate-01/knight.anim.js'
+		);
+		expect(bytesWritten.filter((p) => !p.includes('/attempts/'))).toEqual([
 			'assets/generated/model/knight/knight.glb',
 			'assets/generated/model/knight/sheet.png',
 			'assets/generated/model/crate/crate.glb',

@@ -32,7 +32,7 @@ function states(s: ModelSpec): EntryState[] {
 			status: 'done',
 			glb: true,
 			sheet: 'data:',
-			clips: { status: 'done', problems: [], rounds: 1, sheets: ['Walk'] }
+			clips: { status: 'done', problems: [], rounds: 1, sheets: ['Walk'], attempts: 3, kept: 3 }
 		},
 		{
 			...tree,
