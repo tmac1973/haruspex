@@ -64,7 +64,13 @@
 		<input type="number" min="1" max="168" bind:value={cfg.hours} />
 	</label>
 	<label class="field">
-		<span class="label">At most</span>
+		<span class="label">
+			Show at most
+			<Tooltip
+				label="About the limit"
+				text="The most messages the card shows. Each check still reads your unread mail from the look-back window; the model picks the best matches, most important first, up to this many."
+			/>
+		</span>
 		<input type="number" min="1" max="20" bind:value={cfg.max} />
 	</label>
 </div>
