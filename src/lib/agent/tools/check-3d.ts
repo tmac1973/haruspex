@@ -17,7 +17,7 @@ import {
 	MODEL_FILE as MODEL,
 	MODULE_FILE as MODULE
 } from '#lib/helpers/three/output.ts';
-import { runBuildModule } from '#lib/helpers/three/runModule.ts';
+import { runBuildModule, type ModuleError } from '#lib/helpers/three/runModule.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 export const SHEET_NOTE =
@@ -37,11 +37,13 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
-Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {
 	path: string;
+	/** An animation module run beside the build module `path`. */
+	anim?: string;
 	out?: string;
 	opts: CheckOptions;
 }
@@ -76,12 +78,26 @@ function outPath(
 	return { out };
 }
 
+/** The animation module's path (undefined: none), or why it can't be used. */
+function animPath(raw: unknown, path: string): string | undefined | { problem: string } {
+	const anim = typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+	if (anim === undefined) return undefined;
+	if (!MODULE.test(path)) {
+		return { problem: 'anim works only with a .js or .mjs build module as path.' };
+	}
+	if (!MODULE.test(anim)) return { problem: 'anim must be a .js or .mjs module.' };
+	if (anim === path) return { problem: 'anim must be a different file from path.' };
+	return anim;
+}
+
 /** The arguments, checked, or why they can't be used. */
 function parseArgs(args: Record<string, unknown>): Args | string {
 	const path = typeof args.path === 'string' ? args.path.trim() : '';
 	if (!MODULE.test(path) && !MODEL.test(path)) {
 		return 'path must be a .js or .mjs build module, or a .glb or .gltf file.';
 	}
+	const anim = animPath(args.anim, path);
+	if (typeof anim === 'object') return anim.problem;
 	const { height, ground, max_triangles: max, clip } = args;
 	const bad = numberProblem(height, max);
 	if (bad) return bad;
@@ -92,6 +108,7 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 	if (typeof out === 'string') return out;
 	return {
 		path,
+		anim,
 		out: out.out,
 		opts: {
 			height: height as number | undefined,
@@ -127,29 +144,54 @@ interface Source {
 	missing: string[];
 }
 
-/** The GLB bytes to check: a module's export, or the file itself. */
-async function source(a: Args, abs: string, ctx: ToolContext): Promise<Source | string> {
-	let bytes: number[];
+/** A file's bytes, or the tool error saying it couldn't be read. */
+async function readFile(
+	path: string,
+	cwd: string | null,
+	ctx: ToolContext
+): Promise<number[] | string> {
 	try {
-		bytes = await assetIo(ctx).read(abs);
+		return await assetIo(ctx).read(resolveShellPath(path, cwd));
 	} catch (e) {
-		return toolError(`Could not read ${a.path}: ${errMessage(e)}`);
+		return toolError(`Could not read ${path}: ${errMessage(e)}`);
 	}
+}
+
+const text = (bytes: number[]) => new TextDecoder().decode(new Uint8Array(bytes));
+
+/** The failure lines for a module run's errors; those from the animation module name it. */
+function errorLines(errors: ModuleError[], anim: string | undefined): string[] {
+	return errors.map((e) => {
+		if (e.file === 'anim' && anim) {
+			return e.line === null ? `- ${anim}: ${e.message}` : `- ${anim}:${e.line}: ${e.message}`;
+		}
+		return e.line === null ? `- ${e.message}` : `- line ${e.line}: ${e.message}`;
+	});
+}
+
+/** The GLB bytes to check: a module's export, or the file itself. */
+async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<Source | string> {
+	const bytes = await readFile(a.path, cwd, ctx);
+	if (typeof bytes === 'string') return bytes;
 	if (MODEL.test(a.path)) {
 		if (/\.gltf$/i.test(a.path) && externalGltf(bytes)) {
 			return toolError('Export it as .glb, or embed its buffers and images in the .gltf.');
 		}
 		return { glb: new Uint8Array(bytes), missing: [] };
 	}
+	let anim: string | undefined;
+	if (a.anim !== undefined) {
+		const animBytes = await readFile(a.anim, cwd, ctx);
+		if (typeof animBytes === 'string') return animBytes;
+		anim = text(animBytes);
+	}
 	ctx.onProgress?.('Building');
-	const run = await runBuildModule(new TextDecoder().decode(new Uint8Array(bytes)), {
-		signal: ctx.signal
-	});
+	const run = await runBuildModule(text(bytes), { signal: ctx.signal, anim });
 	if (run.errors.length || !run.glb) {
-		const lines = run.errors.map((e) =>
-			e.line === null ? `- ${e.message}` : `- line ${e.line}: ${e.message}`
-		);
-		return failed(lines.length ? lines : ['- build() exported nothing.'], a.path);
+		const lines = errorLines(run.errors, a.anim);
+		const fromAnim = run.errors.length > 0 && run.errors.every((e) => e.file === 'anim');
+		const fix = a.anim !== undefined && fromAnim ? a.anim : a.path;
+		return failed(lines.length ? lines : ['- build() exported nothing.'], fix);
 	}
 	return { glb: run.glb, missing: run.missingTracks };
 }
@@ -159,7 +201,7 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	const a = parseArgs(args);
 	if (typeof a === 'string') return toolResult(toolError(a));
 	const cwd = ctxCwd(ctx);
-	const got = await source(a, resolveShellPath(a.path, cwd), ctx);
+	const got = await source(a, cwd, ctx);
 	if (typeof got === 'string') return toolResult(got);
 
 	ctx.onProgress?.('Checking');
@@ -224,6 +266,11 @@ registerTool({
 						type: 'string',
 						description:
 							'A .js/.mjs build module, or a .glb/.gltf file, relative to the session folder.'
+					},
+					anim: {
+						type: 'string',
+						description:
+							'An animation module (.js): its default export animate(THREE, object, kit) returns an array of AnimationClip for the object path builds. Only with a module path.'
 					},
 					out: {
 						type: 'string',
