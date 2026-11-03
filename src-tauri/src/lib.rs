@@ -39,6 +39,7 @@ mod power;
 mod process_util;
 mod proxy;
 mod remote;
+mod rerank;
 mod runtimes;
 mod sandbox_fetch;
 mod sandbox_save;
@@ -450,6 +451,8 @@ pub fn run() {
             image_gen::commands::texture_ground_preview,
             image_gen::commands::image_seam_finish,
             inference::probe_inference_server,
+            rerank::rerank_documents,
+            rerank::list_server_models,
             inference_queue::inference_acquire,
             inference_queue::inference_cancel,
             inference_queue::inference_release,
