@@ -42,6 +42,8 @@ The agent can also ask to see one clip moving: eight frames from the side and th
 
 The agent can keep a model's clips in a file of their own, beside the file that builds it. That file's `animate(THREE, object, kit)` gets the built model and returns its clips, and the helper checks the two files together (`anim`), so changing a clip never touches the model.
 
+A model can use a PNG from the project as a texture: the file calls `kit.texture('textures/bark.png')` with the path written out in full, relative to the file, and the PNG ends up inside the `.glb`.
+
 If the file has an error, the agent gets it with its line number and fixes it. It usually checks a few times before it's done.
 
 The agent can also check a `.glb` made another way, for example with a Blender script. That writes nothing, unless it asks for a resized copy.

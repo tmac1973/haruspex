@@ -61,6 +61,18 @@ describe('modulePage', () => {
 		expect(page).toContain('window.__hxAnim = "export default () => [\\"\\u003c/script>\\"];";');
 		expect(page.indexOf('__hxAnim')).toBeLessThan(page.indexOf('__hxRun'));
 	});
+
+	it('embeds no textures without any', () => {
+		expect(modulePage('', 'k')).toContain('window.__hxTextures = {};');
+	});
+
+	it('embeds the textures as JSON, escaped like the source', () => {
+		const page = modulePage('', 'k', undefined, { '</script>.png': 'data:image/png;base64,AA' });
+		expect(page).toContain(
+			'window.__hxTextures = {"\\u003c/script>.png":"data:image/png;base64,AA"};'
+		);
+		expect(page.indexOf('__hxTextures')).toBeLessThan(page.indexOf('__hxRun'));
+	});
 });
 
 /** The page's runner, run in this window with a fake kit; what it posted. */
@@ -154,6 +166,31 @@ describe('the runner with an animation module', () => {
 		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
 			message: 'Clip "Walk" comes from both modules.',
 			file: 'anim'
+		});
+	});
+});
+
+describe('the runner with textures', () => {
+	afterEach(() => {
+		const w = window as unknown as Record<string, unknown>;
+		delete w.HaruspexThreeKit;
+		delete w.__hxRun;
+		delete w.__hxTextures;
+		vi.unstubAllGlobals();
+	});
+
+	it('ends with an error naming a PNG it could not decode', async () => {
+		vi.useRealTimers();
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('bad')));
+		(window as unknown as Record<string, unknown>).__hxTextures = { 'bark.png': 'data:x' };
+		const { posted } = runner();
+		await vi.waitFor(() => expect(posted).toContainEqual({ t: 'hx-end' }));
+		expect(posted).toContainEqual({
+			t: 'hx-err',
+			kind: 'error',
+			message: 'Texture bark.png could not be decoded.',
+			line: null,
+			file: 'build'
 		});
 	});
 });

@@ -18,6 +18,13 @@ import {
 	MODULE_FILE as MODULE
 } from '#lib/helpers/three/output.ts';
 import { runBuildModule, type ModuleError } from '#lib/helpers/three/runModule.ts';
+import {
+	MAX_TEXTURE_BYTES,
+	MAX_TEXTURES,
+	textureRefs,
+	texturePath
+} from '#lib/helpers/three/textures.ts';
+import { bytesToBase64 } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 export const SHEET_NOTE =
@@ -37,7 +44,7 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
-Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. kit.texture('textures/bark.png') gives a Texture from a PNG next to the module; pass the path as a string literal. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {
@@ -159,6 +166,47 @@ async function readFile(
 
 const text = (bytes: number[]) => new TextDecoder().decode(new Uint8Array(bytes));
 
+/** The folder part of `path`: '' for a file in the working folder. */
+function dirOf(path: string): string {
+	const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+	return i < 0 ? '' : i === 0 ? '/' : path.slice(0, i);
+}
+
+/**
+ * The PNGs the module sources name with `kit.texture`, read from beside the
+ * build module `path` as data URLs keyed by the path as written; or the tool
+ * error that stops the run.
+ */
+async function readTextures(
+	sources: string[],
+	path: string,
+	cwd: string | null,
+	ctx: ToolContext
+): Promise<Record<string, string> | string> {
+	const refs = [...new Set(sources.flatMap(textureRefs))];
+	if (refs.length > MAX_TEXTURES) {
+		return toolError(`kit.texture names ${refs.length} PNGs; use at most ${MAX_TEXTURES}.`);
+	}
+	const root = cwd?.replace(/[/\\]+$/, '');
+	const out: Record<string, string> = {};
+	for (const ref of refs) {
+		if (!/\.png$/i.test(ref)) return toolError(`kit.texture("${ref}"): only .png files.`);
+		const rel = texturePath(dirOf(path), ref);
+		const full = rel === null ? null : resolveShellPath(rel, cwd);
+		if (full === null || (root && !full.startsWith(`${root}/`))) {
+			return toolError(`kit.texture("${ref}"): the PNG must be inside the working folder.`);
+		}
+		const bytes = await readFile(rel as string, cwd, ctx);
+		if (typeof bytes === 'string') return bytes;
+		if (bytes.length > MAX_TEXTURE_BYTES) {
+			const mb = MAX_TEXTURE_BYTES / 1024 / 1024;
+			return toolError(`kit.texture("${ref}"): the PNG is over ${mb} MB.`);
+		}
+		out[ref] = `data:image/png;base64,${bytesToBase64(new Uint8Array(bytes))}`;
+	}
+	return out;
+}
+
 /** The failure lines for a module run's errors; those from the animation module name it. */
 function errorLines(errors: ModuleError[], anim: string | undefined): string[] {
 	return errors.map((e) => {
@@ -179,14 +227,26 @@ async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<So
 		}
 		return { glb: new Uint8Array(bytes), missing: [] };
 	}
+	return built(a, text(bytes), cwd, ctx);
+}
+
+/** A build module's export, with its animation module and textures; or why it failed. */
+async function built(
+	a: Args,
+	build: string,
+	cwd: string | null,
+	ctx: ToolContext
+): Promise<Source | string> {
 	let anim: string | undefined;
 	if (a.anim !== undefined) {
 		const animBytes = await readFile(a.anim, cwd, ctx);
 		if (typeof animBytes === 'string') return animBytes;
 		anim = text(animBytes);
 	}
+	const textures = await readTextures([build, anim ?? ''], a.path, cwd, ctx);
+	if (typeof textures === 'string') return textures;
 	ctx.onProgress?.('Building');
-	const run = await runBuildModule(text(bytes), { signal: ctx.signal, anim });
+	const run = await runBuildModule(build, { signal: ctx.signal, anim, textures });
 	if (run.errors.length || !run.glb) {
 		const lines = errorLines(run.errors, a.anim);
 		const fromAnim = run.errors.length > 0 && run.errors.every((e) => e.file === 'anim');

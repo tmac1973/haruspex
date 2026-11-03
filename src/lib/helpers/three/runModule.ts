@@ -6,6 +6,8 @@
  * `GLTFExporter`. An animation module beside it (`anim`) gets the built
  * object as `animate(THREE, object, kit)` and returns more clips: a module
  * can't import a sibling file, since each runs from its own `blob:` URL.
+ * PNGs the modules name with `kit.texture` come in as data URLs (`textures`),
+ * decoded into textures before either module runs.
  * Errors carry their line in the model's own file, and which file that is.
  */
 import { threeKitUrl } from '#lib/helpers/three/kitUrl.ts';
@@ -29,6 +31,8 @@ export interface ModuleRunOptions {
 	timeoutMs?: number;
 	/** An animation module's source: its `animate(THREE, object, kit)` adds clips. */
 	anim?: string;
+	/** The PNGs the modules use, as data URLs keyed by the path `kit.texture` is called with. */
+	textures?: Record<string, string>;
 }
 
 /** The first `blob:` frame's line in a stack: WebKit `f@blob:…:12:7`, Chromium `at f (blob:…:12:7)`. */
@@ -106,29 +110,65 @@ const RUNNER = `(function () {
 	var blob = function (code) { return URL.createObjectURL(new Blob([code], { type: 'text/javascript' })); };
 	srcUrl = blob(window.__hxSource);
 	animUrl = typeof window.__hxAnim === 'string' ? blob(window.__hxAnim) : null;
-	var s = document.createElement('script');
-	s.type = 'module';
-	s.src = blob(animUrl
-		? 'import * as mod from "' + srcUrl + '"; import * as anim from "' + animUrl + '"; window.__hxRun(mod, anim);'
-		: 'import * as mod from "' + srcUrl + '"; window.__hxRun(mod);');
-	var after = function () { if (!started) end(); };
-	s.addEventListener('load', after);
-	s.addEventListener('error', function () { err('The module did not load.', { line: null, file: 'build' }); after(); });
-	document.head.appendChild(s);
+	var load = function () {
+		var s = document.createElement('script');
+		s.type = 'module';
+		s.src = blob(animUrl
+			? 'import * as mod from "' + srcUrl + '"; import * as anim from "' + animUrl + '"; window.__hxRun(mod, anim);'
+			: 'import * as mod from "' + srcUrl + '"; window.__hxRun(mod);');
+		var after = function () { if (!started) end(); };
+		s.addEventListener('load', after);
+		s.addEventListener('error', function () { err('The module did not load.', { line: null, file: 'build' }); after(); });
+		document.head.appendChild(s);
+	};
+	var decode = async function (path, url) {
+		var T = kit.THREE;
+		var bitmap = await createImageBitmap(await (await fetch(url)).blob());
+		var canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+		canvas.getContext('2d').drawImage(bitmap, 0, 0);
+		var t = new T.CanvasTexture(canvas);
+		t.name = path;
+		t.colorSpace = T.SRGBColorSpace;
+		t.wrapS = t.wrapT = T.RepeatWrapping;
+		return t;
+	};
+	var textures = window.__hxTextures || {};
+	var paths = Object.keys(textures);
+	if (!paths.length) { load(); return; }
+	(async function () {
+		var made = {};
+		for (var i = 0; i < paths.length; i++) {
+			try { made[paths[i]] = await decode(paths[i], textures[paths[i]]); }
+			catch (e) { err('Texture ' + paths[i] + ' could not be decoded.', { line: null, file: 'build' }); end(); return; }
+		}
+		kit.setTextures(made);
+		load();
+	})();
 })();`.replace(/\n\s*/g, ' ');
 
 /** `value` as JSON that can sit in a script tag: `<` escaped so it can't end the tag. */
-function scriptJson(value: string | null): string {
+function scriptJson(value: unknown): string {
 	return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-/** The page that runs `source` (and `animSource`), with the kit loaded from the app's origin. */
-export function modulePage(source: string, kitUrl = threeKitUrl(), animSource?: string): string {
+/**
+ * The page that runs `source` (and `animSource`), with the kit loaded from the
+ * app's origin and `textures` (path → PNG data URL) for `kit.texture`.
+ */
+export function modulePage(
+	source: string,
+	kitUrl = threeKitUrl(),
+	animSource?: string,
+	textures: Record<string, string> = {}
+): string {
 	return [
 		'<!doctype html><html><head><meta charset="utf-8">',
 		`<script src="${kitUrl}"></script>`,
 		`<script>window.__hxSource = ${scriptJson(source)};</script>`,
 		`<script>window.__hxAnim = ${scriptJson(animSource ?? null)};</script>`,
+		`<script>window.__hxTextures = ${scriptJson(textures)};</script>`,
 		`<script>${RUNNER}</script>`,
 		'</head><body></body></html>'
 	].join('\n');
@@ -139,13 +179,13 @@ export async function runBuildModule(
 	source: string,
 	opts: ModuleRunOptions = {}
 ): Promise<ModuleRunResult> {
-	const { signal, timeoutMs = 45_000, anim } = opts;
+	const { signal, timeoutMs = 45_000, anim, textures } = opts;
 	const result: ModuleRunResult = { glb: null, errors: [], missingTracks: [] };
 	const settle = (ctl: FrameControl) => {
 		ctl.clearDeadline();
 		ctl.later(LATE_MS, () => ctl.done());
 	};
-	await runHiddenFrame(modulePage(source, threeKitUrl(), anim), {
+	await runHiddenFrame(modulePage(source, threeKitUrl(), anim, textures), {
 		signal,
 		timeoutMs,
 		onTimeout: (ctl) => {
