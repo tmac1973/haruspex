@@ -28,6 +28,13 @@ const SECRET_MAPS = new Set(['secrets']);
  */
 const SECRET_LISTS = new Set(['args']);
 
+/**
+ * Top-level maps keyed by helper id. A patch replaces an entry under one
+ * whole, whether or not it existed, so the API can set up a helper it hasn't
+ * seen yet: `{ codeHelperConfig: { search: {…} } }`.
+ */
+const OPEN_MAPS = new Set(['codeHelpers', 'codeHelperConfig']);
+
 /** A URL with a part that can carry a credential: `user:pw@`, `?token=…`, `#…`. */
 const URL_WITH_CREDENTIAL = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*@|[^?#]*[?#])/i;
 
@@ -127,10 +134,24 @@ export function readSettings(keys?: string[]): { settings: Json; redacted: strin
 
 const kind = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
 
+/** Throws on a secret anywhere in `value`, which sits at `path`. */
+function refuseSecrets(value: Json, path: string): void {
+	if (Array.isArray(value)) value.forEach((x, i) => refuseSecrets(x, `${path}[${i}]`));
+	if (!isObject(value)) return;
+	for (const [k, v] of Object.entries(value)) {
+		const at = `${path}.${k}`;
+		if (SECRET_KEY.test(k) || SECRET_MAPS.has(k)) {
+			throw new Error(`${at} is a secret: set it in Settings on the computer`);
+		}
+		refuseSecrets(v, at);
+	}
+}
+
 /**
  * `patch` laid over `current`: objects merged key by key, anything else
  * replaced. Throws on a key `current` hasn't got, on a secret, and on a value
- * of another type than the one it replaces (null fits any).
+ * of another type than the one it replaces (null fits any). An entry directly
+ * under an `OPEN_MAPS` key is the exception: replaced whole, new or not.
  */
 export function mergePatch(current: Json, patch: Json, path: string): Json {
 	if (!isObject(patch) || !isObject(current)) {
@@ -146,6 +167,11 @@ export function mergePatch(current: Json, patch: Json, path: string): Json {
 			throw new Error(`${at} is a secret: set it in Settings on the computer`);
 		}
 		if (!(k in current)) throw new Error(`no such setting: ${at}`);
+		if (path === '' && OPEN_MAPS.has(k) && isObject(v) && isObject(current[k])) {
+			refuseSecrets(v, at);
+			out[k] = { ...current[k], ...v };
+			continue;
+		}
 		out[k] = mergePatch(current[k], v, at);
 	}
 	return out;
