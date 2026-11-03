@@ -15,6 +15,10 @@ export interface ClipsState {
 	rounds: number;
 	/** The clips whose motion sheet was written. */
 	sheets: string[];
+	/** Animation attempts judged, each kept under `attempts/animate-NN/`. */
+	attempts: number;
+	/** The attempt whose files are the main ones, or null before any. */
+	kept: number | null;
 }
 
 export interface EntryState {
@@ -32,6 +36,10 @@ export interface EntryState {
 	glb: boolean;
 	/** What the last check reported that doesn't block. */
 	warnings: string[];
+	/** Creation attempts judged, each kept under `attempts/create-NN/`; a rebuild goes on counting. */
+	attempts: number;
+	/** The creation attempt whose files are the main ones, or null before any. */
+	kept: number | null;
 	/** The animation stage's result; null when it did not animate this entry. */
 	clips: ClipsState | null;
 }
@@ -47,6 +55,8 @@ export function initialEntryStates(spec: ModelSpec): EntryState[] {
 		sheet: null,
 		glb: false,
 		warnings: [],
+		attempts: 0,
+		kept: null,
 		clips: null
 	}));
 }
