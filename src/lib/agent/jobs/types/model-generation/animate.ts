@@ -11,7 +11,7 @@
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { StepChecklistEntry } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ModelGenerationConfig } from '#lib/agent/jobs/types/model-generation/config.ts';
-import { stageModel } from '#lib/agent/jobs/types/model-generation/create.ts';
+import { endWhenPassing, stageModel } from '#lib/agent/jobs/types/model-generation/create.ts';
 import {
 	animateEntryPrompt,
 	animateRepairPrompt,
@@ -113,6 +113,16 @@ export async function animateEntry(input: AnimateEntryInput): Promise<void> {
 			toolAllowlist: [...ANIMATE_TOOLS],
 			writeRoot: entry.dir,
 			model: target.model,
+			// Only an untouched build module can pass: a changed one is put back
+			// after the turn, and the model told why.
+			endTurnWhen: endWhenPassing(async () => {
+				const now = await readBytes(workdir, files.build);
+				if ((await sha256(now)) !== hash) return false;
+				if (!(await modelFileExists(workdir, files.anim))) return false;
+				const io = modelLoadIo(workdir);
+				const signal = ctx.abort.signal;
+				return (await judgeModel({ entry, files, stage: 'animate', io, signal })).done;
+			}),
 			...ctx.buildStreamCallbacks(stepIndex)
 		});
 		clips.rounds++;

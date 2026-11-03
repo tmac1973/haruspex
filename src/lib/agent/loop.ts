@@ -450,6 +450,13 @@ export interface AgentLoopOptions {
 	 */
 	forceFinalTool?: string;
 	/**
+	 * Asked after each tool batch, with that batch's calls: true ends the turn
+	 * there, with no further model call. For a stage whose "done" is decided
+	 * in code, so a model that has already passed can't keep polishing to its
+	 * iteration cap.
+	 */
+	endTurnWhen?: (calls: ResolvedToolCall[]) => boolean | Promise<boolean>;
+	/**
 	 * Remote backend override applied to every model call in this turn. When
 	 * set, requests route to this server/model instead of the global Settings
 	 * backend — the mechanism behind per-job model selection. Absent → Settings.

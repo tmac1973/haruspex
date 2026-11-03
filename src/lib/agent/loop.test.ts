@@ -1486,6 +1486,33 @@ describe('runAgentLoop: forced-final tool terminus', () => {
 	});
 });
 
+describe('runAgentLoop: endTurnWhen', () => {
+	it('ends the turn after a batch it accepts, with no further model call', async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }]),
+			toolCallResponse([{ id: 'c2', name: 'submit_thing', args: '{"ok":true}' }])
+		);
+		const endTurnWhen = vi.fn(async () => true);
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing', endTurnWhen });
+		await runAgentLoop(options);
+		expect(api.chatCompletion).toHaveBeenCalledTimes(1);
+		expect(endTurnWhen).toHaveBeenCalledWith([expect.objectContaining({ name: 'fetch_url' })]);
+		expect(cb.onComplete).toHaveBeenCalled();
+	});
+
+	it('keeps going while it says no', async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }]),
+			toolCallResponse([{ id: 'c2', name: 'submit_thing', args: '{"ok":true}' }])
+		);
+		const endTurnWhen = vi.fn(() => false);
+		const { options } = makeOptions({ forceFinalTool: 'submit_thing', endTurnWhen });
+		await runAgentLoop(options);
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		expect(endTurnWhen).toHaveBeenCalledTimes(1);
+	});
+});
+
 /**
  * The observability contract Phase 02 rests on. Autonomous-coding turns all
  * set `forceFinalTool`, and that path answers with ONE non-streaming call and

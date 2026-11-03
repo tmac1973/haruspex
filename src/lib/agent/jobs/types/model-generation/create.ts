@@ -118,6 +118,24 @@ export interface BuildEntryInput {
 }
 
 /**
+ * A stage turn's `endTurnWhen`: after a tool batch that ran `check_3d`, judge
+ * the entry as the stage will once the turn ends, and end the turn when it
+ * passes. Without it a model that has passed keeps polishing until its
+ * iteration cap. A judge that throws (or a cancel) doesn't end the turn here;
+ * the loop and the stage handle both.
+ */
+export function endWhenPassing(passes: () => Promise<boolean>) {
+	return async (calls: readonly { name: string }[]): Promise<boolean> => {
+		if (!calls.some((c) => c.name === 'check_3d')) return false;
+		try {
+			return await passes();
+		} catch {
+			return false;
+		}
+	};
+}
+
+/**
  * Build one entry: up to `cfg.rounds` turns, each judged in code. Resets
  * the entry's rounds, so a rebuild after review counts afresh. Writes the
  * GLB and sheet of every build that passed the check, so out of rounds the
@@ -148,6 +166,11 @@ export async function buildEntry(input: BuildEntryInput): Promise<void> {
 			// Writes outside the model's own folder are refused.
 			writeRoot: entry.dir,
 			model: target.model,
+			endTurnWhen: endWhenPassing(
+				async () =>
+					(await modelFileExists(workdir, files.build)) &&
+					(await judgeModel({ entry, files, stage: 'create', io, signal: ctx.abort.signal })).done
+			),
 			...ctx.buildStreamCallbacks(stepIndex)
 		});
 		state.rounds++;

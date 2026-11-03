@@ -140,6 +140,28 @@ describe('createStage', () => {
 		expect(h.step.description).toBe('Build every model · Settings default');
 	});
 
+	it('ends a turn once its build passes, and only then', async () => {
+		verdict.judgeModel.mockResolvedValue(pass());
+		const h = harness();
+		await h.run();
+		const end = h.turns[0].endTurnWhen!;
+		const check = [{ name: 'check_3d' }] as never;
+
+		verdict.judgeModel.mockClear();
+		expect(await end([{ name: 'fs_edit_text' }] as never)).toBe(false);
+		expect(verdict.judgeModel).not.toHaveBeenCalled();
+
+		expect(await end(check)).toBe(true);
+		expect(verdict.judgeModel.mock.calls[0][0]).toMatchObject({ stage: 'create' });
+
+		verdict.judgeModel.mockResolvedValue(fail(['Height is 2.4 m; the spec says 1.8 m (±10%).']));
+		expect(await end(check)).toBe(false);
+
+		verdict.judgeModel.mockResolvedValue(pass());
+		files.delete('assets/generated/model/knight/knight.js');
+		expect(await end(check)).toBe(false);
+	});
+
 	it('repairs on round 2 with the problems listed', async () => {
 		verdict.judgeModel
 			.mockResolvedValueOnce(fail(['Height is 2.4 m; the spec says 1.8 m (±10%).']))
