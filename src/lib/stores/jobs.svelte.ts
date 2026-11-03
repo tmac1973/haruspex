@@ -19,7 +19,8 @@ export type JobType =
 	| 'audit'
 	| 'guided_planning'
 	| 'autonomous_coding'
-	| 'asset_generation';
+	| 'asset_generation'
+	| 'model_generation';
 
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 

@@ -18,6 +18,7 @@ import type { JobStepInput, JobSummary, JobType, JobWithSteps } from '#lib/store
 import type { RunStatus, RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
+import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
@@ -121,6 +122,12 @@ export interface JobTypeEditorProps {
 	workingDir: string;
 	/** The job being edited, or 'new' before its first save. */
 	jobId: number | 'new';
+	/**
+	 * The job's own model as currently set in the editor — live, not saved.
+	 * For types whose stage rows say "Same as this job" and need to know what
+	 * that model is (whether it can see).
+	 */
+	jobModel: JobModelForm;
 }
 // Loose component typing: editors declare a subset of JobTypeEditorProps.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

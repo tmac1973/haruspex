@@ -34,6 +34,7 @@ const PAGES = [
 	'write-skills',
 	'media-skills',
 	'jobs',
+	'3d-models',
 	'memory',
 	'images',
 	'image-editing',
@@ -99,7 +100,7 @@ describe('the user guide', () => {
 
 	it('only points at pages that exist', () => {
 		for (const p of pages) {
-			for (const m of p.raw.matchAll(/`([a-z-]+)` page/g)) {
+			for (const m of p.raw.matchAll(/`([a-z0-9-]+)` page/g)) {
 				expect(PAGES, `${p.name} → ${m[1]}`).toContain(m[1]);
 			}
 		}

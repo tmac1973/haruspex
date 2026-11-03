@@ -2,21 +2,13 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { resolveImageBackend } from '#lib/image/index.ts';
 	import type { GuidedPlanningEditorState } from '#lib/agent/jobs/types/guided-planning/definition.ts';
-	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
+	import StageModelRow from '#lib/components/jobs/StageModelRow.svelte';
 	import Disclosure from '#lib/components/Disclosure.svelte';
-	import Modal from '#lib/components/Modal.svelte';
-	import {
-		emptyModelForm,
-		modelFormSummary,
-		type JobModelForm
-	} from '#lib/agent/jobs/jobModelForm.ts';
-	import { stageModelProblem } from '#lib/agent/jobs/types/guided-planning/config.ts';
+	import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import { listSkills, usableSkills } from '#lib/skills/client.ts';
 	import { knownTrustedRoot } from '#lib/skills/project.ts';
 	import { defaultPlanDir } from '#lib/agent/jobs/types/guided-planning/config.ts';
-
-	type StageKey = 'chain_assets_model' | 'chain_coding_model';
 
 	// The guided-planning section of the job editor (see JobTypeEditorProps):
 	// the seed idea and the plan output folder. The output dir auto-derives
@@ -25,16 +17,19 @@
 		config = $bindable(),
 		// Part of every job-type editor's bindable props: JobEditor binds it, and
 		// Svelte throws on a bind to an undeclared prop. This one has no steps.
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-useless-assignment
+		// eslint-disable-next-line no-useless-assignment
 		steps = $bindable([]),
 		jobName = '',
-		workingDir = ''
+		workingDir = '',
+		jobModel
 	}: {
 		config: Record<string, unknown>;
 		steps?: import('#lib/stores/jobs.svelte.ts').JobStepInput[];
 		jobName?: string;
 		/** The project folder, whose repo's skills count once it is trusted. */
 		workingDir?: string;
+		/** This job's own model, which a stage's "Same as this job" means. */
+		jobModel?: JobModelForm;
 	} = $props();
 
 	const cfg = config as unknown as GuidedPlanningEditorState;
@@ -47,27 +42,6 @@
 	// Disabled rather than hidden: "why is there no asset option" is a worse
 	// question than "why is this greyed out", and the hint answers the second.
 	const imageBackendReady = resolveImageBackend().kind !== 'none';
-
-	function setStageModel(key: StageKey, choice: string) {
-		cfg[key] = choice === 'choose' ? (cfg[key] ?? emptyModelForm('remote')) : null;
-	}
-
-	/** The stage whose model dialog is open. */
-	let editingStage = $state<{ key: StageKey; label: string } | null>(null);
-
-	function stageSummary(form: JobModelForm | null): string {
-		if (!form) return 'Same as this job';
-		return form.source === 'settings' ? STAGE_SETTINGS.title : modelFormSummary(form);
-	}
-
-	// "Same as this job" is the planning job's model. The Settings model is a
-	// different choice whenever this job has its own server: the local model
-	// for the coding run, say, while planning runs remotely.
-	const STAGE_SETTINGS = {
-		title: 'Settings model',
-		description:
-			'Whatever Settings → Inference has active — the local model, or the server set there.'
-	};
 
 	// The skills the planning-skill picker offers: those written for guided
 	// planning first, then the rest. Reloaded (after a pause) as the working
@@ -253,17 +227,19 @@
 		<div class="stages">
 			<span class="group-label">Later stages</span>
 			{#if cfg.generate_assets && imageBackendReady}
-				{@render stageRow(
-					'chain_assets_model',
-					'Asset run model',
-					'The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image.'
-				)}
+				<StageModelRow
+					bind:form={cfg.chain_assets_model}
+					jobForm={jobModel}
+					label="Asset run model"
+					tip="The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image."
+				/>
 			{/if}
-			{@render stageRow(
-				'chain_coding_model',
-				'Coding run model',
-				'The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it.'
-			)}
+			<StageModelRow
+				bind:form={cfg.chain_coding_model}
+				jobForm={jobModel}
+				label="Coding run model"
+				tip="The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it."
+			/>
 		</div>
 
 		<Disclosure label="Coding run settings">
@@ -286,61 +262,6 @@
 		</Disclosure>
 	{/if}
 {/if}
-
-<!-- A stage's model is one row; its full model form opens in a dialog. Inline,
-     two more model forms (each with its own advanced fold) sat inside this
-     section, three levels deep. -->
-{#snippet stageRow(key: StageKey, label: string, tip: string)}
-	{@const problem = stageModelProblem(label.toLowerCase(), cfg[key])}
-	<div class="stage-row" class:missing={problem !== null}>
-		<span class="label stage-name">
-			{label}
-			<Tooltip label={`About the ${label.toLowerCase()}`} text={tip} />
-		</span>
-		<span class="stage-value" title={problem ?? undefined}>{stageSummary(cfg[key])}</span>
-		<button
-			type="button"
-			class="btn btn-small"
-			aria-label={`Change the ${label.toLowerCase()}`}
-			onclick={() => (editingStage = { key, label })}
-		>
-			Change…
-		</button>
-	</div>
-{/snippet}
-
-<Modal
-	open={editingStage !== null}
-	title={editingStage?.label ?? ''}
-	dismissable
-	onclose={() => (editingStage = null)}
->
-	{#if editingStage}
-		{@const key = editingStage.key}
-		<div class="stage-dialog">
-			<select
-				value={cfg[key] ? 'choose' : 'same'}
-				onchange={(e) => setStageModel(key, e.currentTarget.value)}
-				aria-label={editingStage.label}
-			>
-				<option value="same">Same as this job</option>
-				<option value="choose">Choose…</option>
-			</select>
-			{#if cfg[key]}
-				<JobModelFields
-					bind:form={cfg[key]}
-					name={`${key}-source`}
-					settingsLabel={STAGE_SETTINGS}
-				/>
-			{/if}
-			<div class="dialog-actions">
-				<button type="button" class="btn btn-primary" onclick={() => (editingStage = null)}>
-					Done
-				</button>
-			</div>
-		</div>
-	{/if}
-</Modal>
 
 <style>
 	.field.run-mode {
@@ -382,51 +303,6 @@
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--text-muted);
-	}
-
-	.stage-row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 6px 6px 6px 12px;
-		border: 1px solid var(--border-strong);
-		border-radius: 8px;
-		background: var(--bg-input);
-	}
-
-	/* Amber until a save is refused, then red: the editor marks its root. */
-	.stage-row.missing {
-		border-color: var(--warning);
-	}
-
-	:global(.job-editor.attempted) .stage-row.missing {
-		border-color: var(--error-text);
-	}
-
-	.stage-name {
-		flex: none;
-		min-width: 140px;
-	}
-
-	.stage-value {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: 0.82rem;
-		color: var(--text-secondary);
-	}
-
-	.stage-dialog {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.dialog-actions {
-		display: flex;
-		justify-content: flex-end;
 	}
 
 	.toggle-row label {

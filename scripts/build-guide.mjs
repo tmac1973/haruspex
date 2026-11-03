@@ -51,11 +51,13 @@ const escape = (s) =>
 export function renderGuide(pages) {
 	// The reading order getting-started lists them in, then any others.
 	const first = pages.find((p) => p.name === FIRST);
-	const listed = [...(first?.body ?? '').matchAll(/^- `([a-z-]+)`/gm)].map((m) => m[1]);
+	const listed = [...(first?.body ?? '').matchAll(/^- `([a-z0-9-]+)`/gm)].map((m) => m[1]);
 	/** @param {string} name */
 	const rank = (name) =>
 		name === FIRST ? -1 : listed.includes(name) ? listed.indexOf(name) : listed.length;
-	const ordered = [...pages].sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name));
+	const ordered = [...pages].sort(
+		(a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name)
+	);
 	const names = new Set(pages.map((p) => p.name));
 	const marked = new Marked({ gfm: true });
 	/** @type {Map<string, string>} */
@@ -68,12 +70,12 @@ export function renderGuide(pages) {
 			name === FIRST ? (atRoot ? './' : '../') : atRoot ? `${name}/` : `../${name}/`;
 		let html = /** @type {string} */ (marked.parse(page.body));
 		// "see the `skills` page" links to that page.
-		html = html.replace(/<code>([a-z-]+)<\/code> page/g, (_, name) => {
+		html = html.replace(/<code>([a-z0-9-]+)<\/code> page/g, (_, name) => {
 			if (!names.has(name)) throw new Error(`${page.name}: no page "${name}"`);
 			return `<a href="${href(name)}"><code>${name}</code></a> page`;
 		});
 		// So does a list item that starts with a page name ("- `models` — …").
-		html = html.replace(/<li><code>([a-z-]+)<\/code>/g, (whole, name) =>
+		html = html.replace(/<li><code>([a-z0-9-]+)<\/code>/g, (whole, name) =>
 			names.has(name) ? `<li><a href="${href(name)}"><code>${name}</code></a>` : whole
 		);
 		const up = atRoot ? '../' : '../../';

@@ -4,13 +4,13 @@ import { runGuidedPlanningPipeline } from '#lib/agent/jobs/types/guided-planning
 import {
 	type GuidedPlanningRunMode,
 	type GuidedPlanningVerification,
-	parseGuidedPlanningConfig,
-	stageModelProblem
+	parseGuidedPlanningConfig
 } from '#lib/agent/jobs/types/guided-planning/config.ts';
 import { DEFAULT_MAX_TURNS } from '#lib/agent/jobs/types/autonomous-coding/config.ts';
 import {
 	modelColumnsFromForm,
 	modelFormFromColumns,
+	stageModelProblem,
 	type JobModelForm
 } from '#lib/agent/jobs/jobModelForm.ts';
 import type { ChainModel } from '#lib/agent/jobs/chainModel.ts';
