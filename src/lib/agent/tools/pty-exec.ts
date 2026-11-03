@@ -463,12 +463,6 @@ async function formatPtyResult(
 	return spillIfLarge(header, body);
 }
 
-/**
- * Format command/terminal output under the inline budget: return it inline if
- * it fits, otherwise middle-truncate and spill the full text to a temp file the
- * model can read with fs_read_text. `body` must be non-empty. Shared by the
- * PTY runner and the interactive shell tools.
- */
 /** The spill files written here, compared without regard to slash or case. */
 const spills = new Set<string>();
 const spillKey = (path: string) => path.trim().replace(/\\/g, '/').toLowerCase();
@@ -481,9 +475,28 @@ export function isSpillFile(path: string): boolean {
 	return spills.has(spillKey(path));
 }
 
+/**
+ * Format command/terminal output under the inline budget: return it inline if
+ * it fits, otherwise middle-truncate and spill the full text to a temp file the
+ * model can read with fs_read_text. `body` must be non-empty. Shared by the
+ * PTY runner and the interactive shell tools.
+ */
 export async function spillIfLarge(header: string, body: string): Promise<string> {
-	const truncated = truncateCapturedOutput(body, RUN_OUTPUT_MAX_BYTES);
-	if (!truncated.truncated) return `${header}\n${truncated.text}`;
+	return `${header}\n${await capWithSpill(body, RUN_OUTPUT_MAX_BYTES)}`;
+}
+
+/**
+ * `body` cut to its head and tail when over `maxBytes`. The full text goes to
+ * a temp file named in the result only when `spill` is set: a caller whose
+ * model has no `fs_read_text` passes false, and `hint` alone says what to do.
+ */
+export async function capWithSpill(
+	body: string,
+	maxBytes: number,
+	opts: { hint?: string; spill?: boolean } = {}
+): Promise<string> {
+	const truncated = truncateCapturedOutput(body, maxBytes, opts.hint);
+	if (!truncated.truncated || opts.spill === false) return truncated.text;
 	let overflowNote = '';
 	try {
 		const path = await invoke<string>('code_write_overflow', { content: body });
@@ -492,7 +505,7 @@ export async function spillIfLarge(header: string, body: string): Promise<string
 	} catch {
 		// Temp-file write failed; the in-band truncation marker still stands.
 	}
-	return `${header}\n${truncated.text}${overflowNote}`;
+	return `${truncated.text}${overflowNote}`;
 }
 
 /** UTF-8 safe base64, for handing a script to `base64 -d`. */

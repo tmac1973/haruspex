@@ -21,7 +21,10 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getApiKeyValue: () => undefined
 }));
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
-vi.mock('#lib/agent/contextBudget.ts', () => ({ describeContextManaged: () => 'managed' }));
+vi.mock('#lib/agent/contextBudget.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/agent/contextBudget.ts')>()),
+	describeContextManaged: () => 'managed'
+}));
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()

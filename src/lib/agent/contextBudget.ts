@@ -46,8 +46,10 @@ const OVERSIZED_MESSAGE_FRACTION = 0.25;
 export const OVERSIZED_MESSAGE_MAX_TOKENS = 16_000;
 // What the cut marker tells the model it can do about the dropped middle.
 // The shell's own hint (narrow the command) is for output it captured itself.
+export const TOOL_CUT_HINT =
+	'Call the tool again for a narrower part (a range, a filter, a page) if you need the dropped region';
 const CUT_HINTS: Record<string, string> = {
-	tool: 'Call the tool again for a narrower part (a range, a filter, a page) if you need the dropped region',
+	tool: TOOL_CUT_HINT,
 	user: 'Ask the user for the part you need if it was in the dropped region',
 	assistant: 'This is your own earlier reply, cut to fit the context'
 };
