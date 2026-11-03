@@ -353,6 +353,21 @@ function booleanRecord(value: unknown): Record<string, boolean> {
 	);
 }
 
+/** A stored map of plain-JSON values, dropping any entry that isn't; anything else is `{}`. */
+export function jsonRecord(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	const out: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(value)) {
+		try {
+			const plain = JSON.stringify(v);
+			if (plain !== undefined) out[k] = JSON.parse(plain);
+		} catch {
+			// A cycle, a BigInt: not JSON, so the helper falls back to its defaults.
+		}
+	}
+	return out;
+}
+
 function migrateTrustedRepos(repos: Record<string, unknown>): Record<string, RepoTrust> {
 	return Object.fromEntries(
 		Object.entries(repos).map(([root, v]) => [
@@ -941,6 +956,12 @@ export interface AppSettings {
 	 * or false is off. See `#lib/helpers/registry.ts`.
 	 */
 	codeHelpers: Record<string, boolean>;
+	/**
+	 * Each helper's own settings, by helper id: plain JSON that the helper
+	 * parses (`helperConfig` in `#lib/helpers/registry.ts`). Absent means
+	 * the helper's defaults.
+	 */
+	codeHelperConfig: Record<string, unknown>;
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1248,6 +1269,7 @@ const defaults: AppSettings = {
 	generationServers: [],
 	specialists: [],
 	codeHelpers: {},
+	codeHelperConfig: {},
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
@@ -1424,6 +1446,7 @@ function load(): AppSettings {
 						}))
 					: [],
 				codeHelpers: booleanRecord(rest.codeHelpers),
+				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),
@@ -1513,6 +1536,11 @@ export function updateSettings(partial: Partial<AppSettings>): void {
 /** Turn a helper on or off (Settings → Code → Helpers). */
 export function setCodeHelper(id: string, on: boolean): void {
 	commit({ ...settings, codeHelpers: { ...settings.codeHelpers, [id]: on } });
+}
+
+/** Store one helper's own settings (Settings → Code → Helpers), whole. */
+export function setCodeHelperConfig(id: string, value: unknown): void {
+	commit({ ...settings, codeHelperConfig: { ...settings.codeHelperConfig, [id]: value } });
 }
 
 /** Replace the specialist list (Settings → Code → Specialists). */

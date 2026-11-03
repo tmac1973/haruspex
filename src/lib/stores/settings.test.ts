@@ -1424,4 +1424,30 @@ describe('code helpers setting', () => {
 		fresh.setCodeHelper('a', false);
 		expect(fresh.getSettings().codeHelpers).toEqual({ a: false, b: true });
 	});
+	it('starts with no helper config, and keeps only an object from storage', async () => {
+		expect((await loadWith(null)).getSettings().codeHelperConfig).toEqual({});
+		expect((await loadWith({ codeHelperConfig: 'x' })).getSettings().codeHelperConfig).toEqual({});
+		expect((await loadWith({ codeHelperConfig: [1] })).getSettings().codeHelperConfig).toEqual({});
+		expect(
+			(await loadWith({ codeHelperConfig: { search: { rerank: null } } })).getSettings()
+				.codeHelperConfig
+		).toEqual({ search: { rerank: null } });
+	});
+
+	it('drops a config entry that is not plain JSON', async () => {
+		const { jsonRecord } = await loadWith(null);
+		const cycle: Record<string, unknown> = {};
+		cycle.self = cycle;
+		expect(jsonRecord({ fn: () => 1, cycle, ok: { n: 1 } })).toEqual({ ok: { n: 1 } });
+	});
+
+	it('stores one helper’s config as a plain clone, leaving the others', async () => {
+		const fresh = await loadWith({ codeHelperConfig: { a: 1 } });
+		const live = new Proxy({ url: 'http://box' }, {});
+		fresh.setCodeHelperConfig('b', live);
+		const stored = fresh.getSettings().codeHelperConfig;
+		expect(stored).toEqual({ a: 1, b: { url: 'http://box' } });
+		expect(stored.b).not.toBe(live);
+		expect(() => structuredClone(fresh.getSettings())).not.toThrow();
+	});
 });

@@ -7,7 +7,16 @@
  * Imports only the settings store, so the tool registry and the Code tab
  * profile can read it without an import cycle.
  */
+import type { Component } from 'svelte';
 import { getSettings } from '#lib/stores/settings.ts';
+
+/** A helper's own settings, stored as plain JSON under its id (`codeHelperConfig`). */
+export interface HelperSettings<T> {
+	/** Cleans whatever is stored (absent, old or hand-edited) into a valid T. */
+	parse(raw: unknown): T;
+	/** The editor shown under the switch while the helper is on. */
+	component: () => Promise<{ default: Component<{ helperId: string }> }>;
+}
 
 export interface HelperDef {
 	id: string;
@@ -21,6 +30,8 @@ export interface HelperDef {
 	tools: string[];
 	/** Its tools write into the project (the writer lease; refused when read-only). */
 	writes: boolean;
+	/** Its own settings, if it has any. A lazy component, so this file pulls in no Svelte. */
+	settings?: HelperSettings<unknown>;
 }
 
 const registered = new Map<string, HelperDef>();
@@ -49,6 +60,13 @@ export function helperForTool(tool: string): HelperDef | undefined {
 /** Whether the user has switched `id` on. */
 export function helperOn(id: string): boolean {
 	return getSettings().codeHelpers?.[id] === true;
+}
+
+/** Helper `id`'s settings, parsed; `undefined` when it has none. */
+export function helperConfig<T>(id: string): T | undefined {
+	const def = registered.get(id);
+	if (!def?.settings) return undefined;
+	return def.settings.parse(getSettings().codeHelperConfig?.[id]) as T;
 }
 
 /** For tests: forget every helper. */

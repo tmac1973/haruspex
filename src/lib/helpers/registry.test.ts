@@ -3,8 +3,15 @@ import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { isCodeWriteTool } from '#lib/agent/tools/codeTabProfile.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult } from '#lib/agent/tools/types.ts';
-import { setCodeHelper } from '#lib/stores/settings.ts';
-import { helperForTool, helperOn, helpers, registerHelper, type HelperDef } from './registry';
+import { setCodeHelper, setCodeHelperConfig } from '#lib/stores/settings.ts';
+import {
+	helperConfig,
+	helperForTool,
+	helperOn,
+	helpers,
+	registerHelper,
+	type HelperDef
+} from './registry';
 
 const TOOL = 'zz_test_helper_tool';
 
@@ -15,6 +22,21 @@ const def: HelperDef = {
 	tooltip: 'Only in tests.',
 	tools: [TOOL],
 	writes: true
+};
+
+const withSettings: HelperDef = {
+	id: 'zz-configured',
+	label: 'Configured',
+	summary: 'A helper with settings.',
+	tooltip: 'Only in tests.',
+	tools: [],
+	writes: false,
+	settings: {
+		parse: (raw) => ({
+			url: typeof (raw as { url?: unknown })?.url === 'string' ? (raw as { url: string }).url : ''
+		}),
+		component: async () => ({ default: (() => {}) as never })
+	}
 };
 
 beforeAll(() => {
@@ -28,6 +50,7 @@ beforeAll(() => {
 		displayLabel: () => 'test'
 	});
 	registerHelper(def);
+	registerHelper(withSettings);
 });
 
 afterEach(() => setCodeHelper(def.id, false));
@@ -56,6 +79,23 @@ describe('the helper registry', () => {
 
 	it('marks a writing helper’s tools as write tools', () => {
 		expect(isCodeWriteTool(TOOL)).toBe(true);
+	});
+});
+
+describe('a helper’s settings', () => {
+	afterEach(() => setCodeHelperConfig(withSettings.id, undefined));
+
+	it('parses what is stored, or gives the defaults when nothing is', () => {
+		expect(helperConfig(withSettings.id)).toEqual({ url: '' });
+		setCodeHelperConfig(withSettings.id, { url: 'http://box:3000' });
+		expect(helperConfig(withSettings.id)).toEqual({ url: 'http://box:3000' });
+		setCodeHelperConfig(withSettings.id, 'garbage');
+		expect(helperConfig(withSettings.id)).toEqual({ url: '' });
+	});
+
+	it('is undefined for a helper without settings, or an unknown one', () => {
+		expect(helperConfig(def.id)).toBeUndefined();
+		expect(helperConfig('unknown')).toBeUndefined();
 	});
 });
 
