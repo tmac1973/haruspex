@@ -16,7 +16,8 @@ describe('editor round trip', () => {
 			run_mode: 'unattended',
 			coding_run: { plan_dir: 'plan/x/', max_turns: 300 },
 			chain_base_name: 'dark times',
-			chain_coding_model: { model_remote_model_id: 'thinking-cap' }
+			chain_coding_model: { model_remote_model_id: 'thinking-cap' },
+			chain_next_job_id: 77
 		});
 		const state = assetGenerationJobType.configFromJob(stored);
 		expect(state.hand_off).toBe(true);
@@ -25,6 +26,7 @@ describe('editor round trip', () => {
 		expect(saved.chain_base_name).toBe('dark times');
 		expect(saved.chain_coding_model.model_remote_model_id).toBe('thinking-cap');
 		expect(saved.hand_off).toBe(true);
+		expect(saved.chain_next_job_id).toBe(77);
 	});
 
 	it('writes no chain fields for a hand-made job', () => {

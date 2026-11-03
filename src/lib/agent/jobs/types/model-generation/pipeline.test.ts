@@ -17,7 +17,7 @@ import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { RunStepState } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
-import { ANIMATE, CREATE, REPORT, SPEC, runModelGenerationPipeline } from './pipeline';
+import { ANIMATE, CREATE, HANDOFF, REPORT, SPEC, runModelGenerationPipeline } from './pipeline';
 import { SUBMIT_MODEL_SPEC_TOOL } from './tools';
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -26,6 +26,8 @@ const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
 vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 const question = vi.hoisted(() => ({ ask: vi.fn() }));
 vi.mock('#lib/stores/userQuestion.svelte.ts', () => ({ askUserQuestion: question.ask }));
+const jobs = vi.hoisted(() => ({ createJob: vi.fn() }));
+vi.mock('#lib/stores/jobs.svelte.ts', () => ({ createJob: jobs.createJob }));
 
 const SPEC_PATH = DEFAULT_MODELS_SPEC_PATH;
 
@@ -109,7 +111,7 @@ interface Harness {
 
 function harness(opts: { config?: Record<string, unknown>; turn?: Turn } = {}): Harness {
 	const h: Harness = {
-		steps: [{}, {}, {}, {}],
+		steps: [{}, {}, {}, {}, {}],
 		finished: null,
 		turns: [],
 		ctx: null as unknown as JobRunContext
@@ -404,6 +406,78 @@ describe('a run with no spec', () => {
 		expect(h.finished?.error).toContain('Could not write a usable models spec after 2 attempts');
 		expect(h.turns).toHaveLength(2);
 		expect(written).toEqual([]);
+	});
+});
+
+describe('the handoff', () => {
+	const unbuilt = {
+		done: false,
+		problems: ['build() exported nothing.'],
+		warnings: [],
+		text: '',
+		sheetPng: null,
+		clipSheets: {},
+		glb: null
+	};
+
+	it('chains nothing for a standalone job, and says so', async () => {
+		files.set(SPEC_PATH, renderModelSpec(knightSpec()));
+		const h = harness({ config: { run_mode: 'unattended' } });
+
+		await runModelGenerationPipeline(h.ctx);
+
+		expect(h.finished?.status).toBe('succeeded');
+		expect(h.steps[HANDOFF]).toMatchObject({ status: 'succeeded' });
+		expect(h.steps[HANDOFF].output).toContain('no coding configuration');
+		expect(jobs.createJob).not.toHaveBeenCalled();
+	});
+
+	it('starts the coding job with the models spec and what is missing', async () => {
+		files.set(SPEC_PATH, renderModelSpec(knightSpec()));
+		// The knight builds; the crate never does.
+		verdict.judgeModel.mockImplementation(async (...args: unknown[]) =>
+			JSON.stringify(args).includes('crate')
+				? unbuilt
+				: {
+						done: true,
+						problems: [],
+						warnings: [],
+						text: '',
+						sheetPng: 'data:image/png;base64,iVBORw0KGgo=',
+						clipSheets: {},
+						glb: new Uint8Array([1])
+					}
+		);
+		jobs.createJob.mockResolvedValue(500);
+		const h = harness({
+			config: {
+				run_mode: 'unattended',
+				rounds: 1,
+				coding_run: { plan_dir: 'plan/x/', asset_spec_path: 'plan/x/assets.json' },
+				chain_base_name: 'Arena',
+				chain_coding_model: { model_remote_model_id: 'coder' }
+			}
+		});
+		(h.ctx as { trigger: string }).trigger = 'chained';
+		h.ctx.startChainedRun = async () => 501;
+
+		await runModelGenerationPipeline(h.ctx);
+
+		expect(h.finished?.status).toBe('succeeded');
+		const input = jobs.createJob.mock.calls[0][0];
+		expect(input.name).toBe('Arena — coding');
+		expect(input.job_type).toBe('autonomous_coding');
+		expect(input.model_remote_model_id).toBe('coder');
+		const cfg = JSON.parse(input.type_config);
+		// The 2D run's spec stays beside the 3D one.
+		expect(cfg).toMatchObject({
+			plan_dir: 'plan/x/',
+			asset_spec_path: 'plan/x/assets.json',
+			models_spec_path: SPEC_PATH,
+			missing_models: ['crate']
+		});
+		expect(h.steps[HANDOFF].output).toContain('Started coding job 500 (run 501)');
+		expect(h.steps[HANDOFF].output).toContain('NOT on disk: crate');
 	});
 });
 

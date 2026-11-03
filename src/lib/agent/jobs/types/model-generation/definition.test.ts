@@ -82,8 +82,41 @@ describe('editor round trip', () => {
 });
 
 describe('planSteps', () => {
-	it('names the four stages in the pipeline’s order', () => {
+	it('names the five stages in the pipeline’s order', () => {
 		const steps = modelGenerationJobType.planSteps({} as never);
-		expect(steps.map((s) => s.authored)).toEqual(['Spec', 'Create', 'Animate', 'Report']);
+		expect(steps.map((s) => s.authored)).toEqual([
+			'Spec',
+			'Create',
+			'Animate',
+			'Report',
+			'Hand off'
+		]);
+	});
+});
+
+describe('editor round trip — chain', () => {
+	it("keeps a chain's settings when saved from the editor", () => {
+		const stored = JSON.stringify({
+			spec_path: 'plan/x/models.json',
+			coding_run: { plan_dir: 'plan/x/', asset_spec_path: 'plan/x/assets.json' },
+			chain_base_name: 'arena',
+			chain_coding_model: { model_remote_model_id: 'thinking-cap' }
+		});
+		const s = modelGenerationJobType.configFromJob(stored);
+		expect(s.hand_off).toBe(true);
+		const saved = JSON.parse(modelGenerationJobType.configToJson(s)!);
+		expect(saved.coding_run).toEqual({
+			plan_dir: 'plan/x/',
+			asset_spec_path: 'plan/x/assets.json'
+		});
+		expect(saved.chain_base_name).toBe('arena');
+		expect(saved.chain_coding_model.model_remote_model_id).toBe('thinking-cap');
+		expect(saved.hand_off).toBe(true);
+	});
+
+	it('writes no chain fields for a hand-made job', () => {
+		const saved = JSON.parse(modelGenerationJobType.configToJson(state())!);
+		expect(saved).not.toHaveProperty('coding_run');
+		expect(saved).not.toHaveProperty('hand_off');
 	});
 });

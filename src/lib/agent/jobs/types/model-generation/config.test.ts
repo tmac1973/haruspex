@@ -35,7 +35,11 @@ describe('parseModelGenerationConfig', () => {
 			create_turns: DEFAULT_STAGE_TURNS,
 			animate_turns: DEFAULT_STAGE_TURNS,
 			rounds: DEFAULT_ROUNDS,
-			use_git: true
+			use_git: true,
+			coding_run: null,
+			hand_off: null,
+			chain_base_name: null,
+			chain_coding_model: null
 		});
 	});
 
@@ -99,5 +103,27 @@ describe('parseModelGenerationConfig', () => {
 		expect(resolveModelsSpecPath(cfg('{"spec_path": " plan/x/models.json "}'))).toBe(
 			'plan/x/models.json'
 		);
+	});
+});
+
+describe('chain fields', () => {
+	it('reads what a chain wrote', () => {
+		const c = cfg(
+			JSON.stringify({
+				coding_run: { plan_dir: 'plan/x/' },
+				hand_off: false,
+				chain_base_name: ' Arena ',
+				chain_coding_model: { model_remote_model_id: 'coder' }
+			})
+		);
+		expect(c.coding_run).toEqual({ plan_dir: 'plan/x/' });
+		expect(c.hand_off).toBe(false);
+		expect(c.chain_base_name).toBe('Arena');
+		expect(c.chain_coding_model?.model_remote_model_id).toBe('coder');
+	});
+
+	it('degrades a malformed coding_run to null', () => {
+		expect(cfg('{"coding_run":[]}').coding_run).toBeNull();
+		expect(cfg('{"coding_run":"x"}').coding_run).toBeNull();
 	});
 });

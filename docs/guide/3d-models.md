@@ -35,6 +35,7 @@ Each row is **Same as this job** until you press **Change…** and pick another 
 2. **Create**: for each model, the creation model writes `<id>.js` and checks it with `check_3d` until the checks pass. A model with clips is built as rigid parts under the named pivots, nested parent to child (`Hip_L > Knee_L`).
 3. **Animate**: for each model with clips, the animation model writes `<id>.anim.js`, which takes the built model and returns its clips. It checks each clip's motion sheet. It never changes `<id>.js`; if it does, the run puts the file back.
 4. **Report**: `REPORT-models.md` beside the spec lists each model as done, needs work or skipped, with its render sheet, clip sheets and open problems.
+5. **Hand off**: a job that a plan chained starts the coding run, and tells it which models were not built. A standalone job does nothing here. A chained job you start by hand hands off too, unless you clear **Start the coding run when done**.
 
 A model is done when `check_3d` reports no errors and its height is within 10% of the spec. Clips follow the same rule. Each model and each clip set gets a few turns (**Limits → Turns per model**). When they run out, the run keeps the last GLB that built, marks the model needs work with its problems, and moves on.
 

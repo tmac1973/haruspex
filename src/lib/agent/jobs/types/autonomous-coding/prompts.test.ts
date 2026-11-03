@@ -515,3 +515,24 @@ describe('loop prompts and subtasks', () => {
 		expect(flat(phaseTurnPrompt('test', 'plan/x/', false))).not.toContain('delegate');
 	});
 });
+
+describe('preflightPrompt — 3D models', () => {
+	it('names the models spec and what was not built, only when set', () => {
+		const prompt = flat(
+			preflightPrompt('plan/x', 'plan/x/D.md', false, false, [], null, [], 'plan/x/models.json', [
+				'tree'
+			])
+		);
+		expect(prompt).toContain('3D models were built from `plan/x/models.json`');
+		expect(prompt).toContain('assets/generated/model/<id>/<id>.glb');
+		expect(prompt).toContain('Not built: tree.');
+		expect(flat(preflightPrompt('plan/x', 'plan/x/D.md', false))).not.toContain('3D MODELS');
+	});
+
+	it('leaves out the not-built line when every model was built', () => {
+		const prompt = flat(
+			preflightPrompt('plan/x', 'plan/x/D.md', false, false, [], null, [], 'plan/x/models.json')
+		);
+		expect(prompt).not.toContain('Not built');
+	});
+});

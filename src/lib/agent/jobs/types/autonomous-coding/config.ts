@@ -51,6 +51,10 @@ export interface AutonomousCodingConfig {
 	 * were never written.
 	 */
 	missing_assets: string[];
+	/** The 3D models spec, set by a 3D run's handoff as `asset_spec_path` is by a 2D one. */
+	models_spec_path: string | null;
+	/** Models spec ids with no GLB on disk, set by that handoff. */
+	missing_models: string[];
 	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
@@ -118,6 +122,13 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 				: null,
 		missing_assets: Array.isArray(raw.missing_assets)
 			? raw.missing_assets.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+			: [],
+		models_spec_path:
+			typeof raw.models_spec_path === 'string' && raw.models_spec_path.trim().length > 0
+				? raw.models_spec_path.trim()
+				: null,
+		missing_models: Array.isArray(raw.missing_models)
+			? raw.missing_models.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
 			: []
 	};
 }

@@ -169,7 +169,9 @@ describe('registration barrel', () => {
 			mute_preflight: false,
 			open_findings: [],
 			asset_spec_path: null,
-			missing_assets: []
+			missing_assets: [],
+			models_spec_path: null,
+			missing_models: []
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -181,7 +183,9 @@ describe('registration barrel', () => {
 			mute_preflight: false,
 			open_findings: [],
 			asset_spec_path: null,
-			missing_assets: []
+			missing_assets: [],
+			models_spec_path: null,
+			missing_models: []
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',

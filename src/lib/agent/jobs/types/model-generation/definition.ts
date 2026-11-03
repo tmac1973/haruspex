@@ -1,5 +1,5 @@
 import type { JobTypeDefinition, PlannedStep } from '#lib/agent/jobs/types/types.ts';
-import type { ChainModel } from '#lib/agent/jobs/chainModel.ts';
+import type { ChainModel, ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import { runModelGenerationPipeline } from '#lib/agent/jobs/types/model-generation/pipeline.ts';
 import {
 	parseModelGenerationConfig,
@@ -33,6 +33,11 @@ export interface ModelGenerationEditorState {
 	animate_turns: number;
 	rounds: number;
 	use_git: boolean;
+	/** Carried untouched: a chain sets these. Only hand_off has a field. */
+	hand_off: boolean;
+	coding_run: Record<string, unknown> | null;
+	chain_base_name: string | null;
+	chain_coding_model: ModelColumns | null;
 }
 
 /**
@@ -43,7 +48,8 @@ const MODEL_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 	{ title: 'Spec', description: 'Read or write models.json' },
 	{ title: 'Create', description: 'Build every model' },
 	{ title: 'Animate', description: 'Animate the models with clips' },
-	{ title: 'Report', description: 'Write the report' }
+	{ title: 'Report', description: 'Write the report' },
+	{ title: 'Hand off', description: 'Start the coding run, when chained' }
 ];
 
 function planModelSteps(): PlannedStep[] {
@@ -98,7 +104,11 @@ export const modelGenerationJobType: JobTypeDefinition = {
 		create_turns: DEFAULT_STAGE_TURNS,
 		animate_turns: DEFAULT_STAGE_TURNS,
 		rounds: DEFAULT_ROUNDS,
-		use_git: true
+		use_git: true,
+		hand_off: true,
+		coding_run: null,
+		chain_base_name: null,
+		chain_coding_model: null
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseModelGenerationConfig(typeConfig);
@@ -112,7 +122,11 @@ export const modelGenerationJobType: JobTypeDefinition = {
 			create_turns: c.create_turns,
 			animate_turns: c.animate_turns,
 			rounds: c.rounds,
-			use_git: c.use_git
+			use_git: c.use_git,
+			hand_off: c.hand_off ?? true,
+			coding_run: c.coding_run,
+			chain_base_name: c.chain_base_name,
+			chain_coding_model: c.chain_coding_model
 		};
 	},
 	configToJson: (config) => {
@@ -127,7 +141,16 @@ export const modelGenerationJobType: JobTypeDefinition = {
 			create_turns: s.create_turns,
 			animate_turns: s.animate_turns,
 			rounds: s.rounds,
-			use_git: s.use_git
+			use_git: s.use_git,
+			// Only meaningful, and only written, for a job a chain made.
+			...(s.coding_run
+				? {
+						hand_off: s.hand_off,
+						coding_run: s.coding_run,
+						chain_base_name: s.chain_base_name ?? undefined,
+						chain_coding_model: s.chain_coding_model ?? undefined
+					}
+				: {})
 		});
 	},
 	validate: ({ workingDir, config }) => {

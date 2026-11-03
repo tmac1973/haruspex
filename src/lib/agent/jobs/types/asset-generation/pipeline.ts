@@ -10,8 +10,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
-import { createJob } from '#lib/stores/jobs.svelte.ts';
-import { modelColumnsOf } from '#lib/agent/jobs/chainModel.ts';
+import { handoffSkipped, handoffToCoding, handoffToNextJob } from '#lib/agent/jobs/chainCoding.ts';
 import { normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
@@ -471,29 +470,18 @@ async function writeContactSheet(
 }
 
 /**
- * Start the coding run this asset run was chained ahead of, or say why not.
+ * Start the job this run was chained ahead of, or say why not. Never throws.
  *
- * Never throws. A run that has already produced a set of assets must not be
- * recorded as failed over a handoff it could not complete — `createJob` and
- * `startChainedRun` both report failure by returning null, and each is
- * reported rather than propagated. Same shape as guided planning's handoff,
- * for the same reason: the morning's first question is "did it chain, and if
- * not why not", and the run timeline should answer it.
+ * A chain with a 3D run after this one names it in `chain_next_job_id`; that
+ * run starts the coding run. When it cannot start, the coding run is started
+ * from here, so the chain still ends in code.
  */
-async function handoffToCoding(
+async function handoff(
 	ctx: JobRunContext,
 	cfg: AssetGenerationConfig,
 	specPath: string,
 	entries: EntryOutcome[]
 ): Promise<string> {
-	const { job, runId } = ctx;
-	if (!cfg.coding_run) {
-		return 'Nothing chained — this run carried no coding configuration.';
-	}
-	if (ctx.trigger !== 'chained' && cfg.hand_off === false) {
-		return 'Nothing chained — this run was started by hand, with the coding handoff off.';
-	}
-
 	// The coding run's preflight can see which art is missing, so it plans
 	// around a gap instead of writing code that loads a file nobody made.
 	const missing = entries.filter((e) => e.status !== 'done' && e.status !== 'skipped' && !e.kept);
@@ -501,44 +489,34 @@ async function handoffToCoding(
 		? ` ${missing.length} asset(s) could not be produced and are NOT on disk: ` +
 			`${missing.map((e) => e.id).join(', ')}.`
 		: '';
+	const toCoding = () =>
+		handoffToCoding(ctx, {
+			codingRun: cfg.coding_run,
+			handOff: cfg.hand_off,
+			baseName: cfg.chain_base_name,
+			codingModel: cfg.chain_coding_model,
+			extraConfig: {
+				// Set here, not carried: this run is the thing that knows where
+				// the spec ended up, and the preflight checks the plan's asset ids
+				// against it.
+				asset_spec_path: specPath,
+				// Still listed in the spec, but no file was written.
+				missing_assets: missing.map((e) => e.id)
+			},
+			description:
+				`Started automatically by asset-generation run ${ctx.runId}. ` +
+				`The asset spec is at ${specPath}.`,
+			missingNote: note,
+			specPath
+		});
 
-	const codingJobId = await createJob({
-		name: `${cfg.chain_base_name ?? job.name} — coding`,
-		description:
-			`Started automatically by asset-generation run ${runId}. ` +
-			`The asset spec is at ${specPath}.${note}`,
-		working_dir: job.working_dir,
-		auto_approve_tools: true,
-		schedule_kind: 'manual',
-		schedule_config: null,
-		next_due_at: null,
-		job_type: 'autonomous_coding',
-		parent_job_id: job.id,
-		parent_run_id: runId,
-		// The coding stage's model as the planning job resolved it, so an
-		// asset-stage override never leaks into the code. A hand-made asset
-		// job carries none and hands on its own.
-		...(cfg.chain_coding_model ?? modelColumnsOf(job)),
-		type_config: JSON.stringify({
-			...cfg.coding_run,
-			// Set here, not carried: this run is the thing that knows where the
-			// spec ended up, and the preflight checks the plan's asset ids
-			// against it.
-			asset_spec_path: specPath,
-			// Still listed in the spec, but no file was written.
-			missing_assets: missing.map((e) => e.id)
-		})
-	});
-	if (codingJobId === null) return 'Could not create the coding job — nothing was started.';
-
-	const codingRunId = await ctx.startChainedRun(codingJobId);
-	if (codingRunId === null) {
-		return (
-			`Created coding job ${codingJobId}, but it could not be started — ` +
-			`autonomous coding may be unavailable on this platform.${note}`
-		);
-	}
-	return `Started coding job ${codingJobId} (run ${codingRunId}) against ${specPath}.${note}`;
+	const nextId = cfg.chain_next_job_id;
+	if (nextId === null) return toCoding();
+	const skipped = handoffSkipped(ctx, cfg.coding_run, cfg.hand_off);
+	if (skipped) return skipped;
+	const started = await handoffToNextJob(ctx, nextId);
+	if (started) return started;
+	return `Could not start job ${nextId}. ${await toCoding()}`;
 }
 
 export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<void> {
@@ -894,7 +872,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(HANDOFF);
 		abortIfCancelled();
-		finishStep(HANDOFF, await handoffToCoding(ctx, cfg, specPath, entries));
+		finishStep(HANDOFF, await handoff(ctx, cfg, specPath, entries));
 
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {

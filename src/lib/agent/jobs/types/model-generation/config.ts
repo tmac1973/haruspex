@@ -1,6 +1,11 @@
 /** 3D models job `type_config` JSON shape. */
 
-import { parseChainModel, type ChainModel } from '#lib/agent/jobs/chainModel.ts';
+import {
+	parseChainModel,
+	parseModelColumns,
+	type ChainModel,
+	type ModelColumns
+} from '#lib/agent/jobs/chainModel.ts';
 import { DEFAULT_MODELS_SPEC_PATH } from '#lib/models3d/spec/paths.ts';
 import { clampInt } from '#lib/utils/clampInt.ts';
 
@@ -44,6 +49,20 @@ export interface ModelGenerationConfig {
 	rounds: number;
 	/** Use git at all. On by default, as the 2D job. */
 	use_git: boolean;
+	/**
+	 * An autonomous-coding configuration to start after this job, carried the
+	 * way the 2D job carries it. Null for a standalone run.
+	 */
+	coding_run: Record<string, unknown> | null;
+	/**
+	 * Whether a run started by hand still starts the coding run. A chained run
+	 * always does. Null means yes, so a broken chain is resumed by re-running.
+	 */
+	hand_off: boolean | null;
+	/** Set by a chain: the planning job's name, for the coding job's name. */
+	chain_base_name: string | null;
+	/** Set by a chain: the coding stage's model as the planning job resolved it. */
+	chain_coding_model: ModelColumns | null;
 }
 
 /** A number rounded into `[lo, hi]`, or `fallback` for anything that isn't one. */
@@ -81,7 +100,14 @@ export function parseModelGenerationConfig(json: string | null): ModelGeneration
 		create_turns: intOr(raw.create_turns, MIN_STAGE_TURNS, MAX_STAGE_TURNS, DEFAULT_STAGE_TURNS),
 		animate_turns: intOr(raw.animate_turns, MIN_STAGE_TURNS, MAX_STAGE_TURNS, DEFAULT_STAGE_TURNS),
 		rounds: intOr(raw.rounds, MIN_ROUNDS, MAX_ROUNDS, DEFAULT_ROUNDS),
-		use_git: raw.use_git !== false
+		use_git: raw.use_git !== false,
+		coding_run:
+			raw.coding_run && typeof raw.coding_run === 'object' && !Array.isArray(raw.coding_run)
+				? (raw.coding_run as Record<string, unknown>)
+				: null,
+		hand_off: typeof raw.hand_off === 'boolean' ? raw.hand_off : null,
+		chain_base_name: text(raw.chain_base_name),
+		chain_coding_model: parseModelColumns(raw.chain_coding_model)
 	};
 }
 

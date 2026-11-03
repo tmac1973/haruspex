@@ -12,13 +12,17 @@ describe('editor round trip', () => {
 			plan_dir: 'plan/x/',
 			open_findings: ['(d) phase-07: two rules conflict'],
 			asset_spec_path: 'plan/x/assets.json',
-			missing_assets: ['tower_entrance']
+			missing_assets: ['tower_entrance'],
+			models_spec_path: 'plan/x/models.json',
+			missing_models: ['tree']
 		});
 		const state = autonomousCodingJobType.configFromJob(stored);
 		const saved = JSON.parse(autonomousCodingJobType.configToJson(state)!);
 		expect(saved.open_findings).toEqual(['(d) phase-07: two rules conflict']);
 		expect(saved.asset_spec_path).toBe('plan/x/assets.json');
 		expect(saved.missing_assets).toEqual(['tower_entrance']);
+		expect(saved.models_spec_path).toBe('plan/x/models.json');
+		expect(saved.missing_models).toEqual(['tree']);
 	});
 
 	it('writes none of them for a hand-made job', () => {
@@ -27,5 +31,6 @@ describe('editor round trip', () => {
 		expect(saved).not.toHaveProperty('open_findings');
 		expect(saved).not.toHaveProperty('asset_spec_path');
 		expect(saved).not.toHaveProperty('missing_assets');
+		expect(saved).not.toHaveProperty('models_spec_path');
 	});
 });

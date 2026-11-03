@@ -2,8 +2,7 @@
  * The 3D models run.
  *
  * Stages, declared here so their indices never move: Spec, Create, Animate,
- * Report. The handoff to a coding run goes last when it lands, so nothing
- * before it renumbers.
+ * Report, Hand off. The handoff goes last, so nothing before it renumbers.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -48,6 +47,8 @@ import {
 import { initialEntryStates } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { isAttended, reviewStage } from '#lib/agent/jobs/types/model-generation/review.ts';
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
+import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
+import { handoffToCoding } from '#lib/agent/jobs/chainCoding.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
 const MAX_DERIVE_ATTEMPTS = 2;
@@ -58,6 +59,7 @@ export const SPEC = 0;
 export const CREATE = 1;
 export const ANIMATE = 2;
 export const REPORT = 3;
+export const HANDOFF = 4;
 
 /** "4 models, 2 animated (Idle, Walk, Attack)". */
 export function specSummary(spec: ModelSpec): string {
@@ -179,6 +181,42 @@ async function specStage(
 	};
 }
 
+/**
+ * Start the coding run this run was chained ahead of, or say why not. Never
+ * throws: a run that built its models is not failed by a handoff.
+ *
+ * A model marked needs work has its GLB on disk, so the code loads it; only
+ * one with no GLB, or one the review skipped, is missing.
+ */
+async function handoff(
+	ctx: JobRunContext,
+	cfg: ModelGenerationConfig,
+	specPath: string,
+	states: EntryState[]
+): Promise<string> {
+	const missing = states.filter((s) => !s.glb || s.status === 'skipped').map((s) => s.id);
+	const open = states.filter((s) => s.glb && s.status === 'needs_work').map((s) => s.id);
+	const note =
+		(open.length ? ` Built with open problems: ${open.join(', ')}.` : '') +
+		(missing.length
+			? ` ${missing.length} model(s) were not built and are NOT on disk: ${missing.join(', ')}.`
+			: '');
+	return handoffToCoding(ctx, {
+		codingRun: cfg.coding_run,
+		handOff: cfg.hand_off,
+		baseName: cfg.chain_base_name,
+		codingModel: cfg.chain_coding_model,
+		// After coding_run, so an asset_spec_path a 2D run left there stays and
+		// the coding run knows both specs.
+		extraConfig: { models_spec_path: specPath, missing_models: missing },
+		description:
+			`Started automatically by 3D models run ${ctx.runId}. ` +
+			`The models spec is at ${specPath}.`,
+		missingNote: note,
+		specPath
+	});
+}
+
 export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<void> {
 	const { job, runId, abort } = ctx;
 	const cfg = parseModelGenerationConfig(job.type_config);
@@ -242,6 +280,10 @@ export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<vo
 		if (!states.some((s) => s.glb)) throw new Error(`No model built. See ${reportPath}.`);
 		// Needs work is not a failure: the report says what is open.
 		finishStep(REPORT, `${modelReportTable(spec, states)}\n\nReport: ${reportPath}`);
+
+		startStep(HANDOFF);
+		abortIfCancelled();
+		finishStep(HANDOFF, await handoff(ctx, cfg, specPath, states));
 
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {

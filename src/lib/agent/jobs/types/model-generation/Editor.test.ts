@@ -46,3 +46,15 @@ describe('3D models Editor', () => {
 		expect((screen.getByLabelText(/Allow textures/) as HTMLInputElement).checked).toBe(false);
 	});
 });
+
+describe('3D models Editor — chain', () => {
+	it('shows the coding handoff only for a job a chain made', () => {
+		mount();
+		expect(screen.queryByText('Start the coding run when done')).toBeNull();
+	});
+
+	it('shows it, on, for a chained job', () => {
+		mount({ coding_run: { plan_dir: 'plan/x/' } });
+		expect((screen.getByLabelText(/Start the coding run/) as HTMLInputElement).checked).toBe(true);
+	});
+});
