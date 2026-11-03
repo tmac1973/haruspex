@@ -1,6 +1,6 @@
 ---
 title: Helpers
-description: Helpers in the Code tab — tools the coding agent runs without a model, such as the 3D helper that builds a model, renders six views and reports size and problems. How to turn one on and what it does.
+description: Helpers in the Code tab — tools the coding agent runs without a model. The Search helper finds code from a plain-words question; the 3D helper builds and checks a 3D model.
 ---
 
 # Helpers
@@ -11,7 +11,15 @@ A helper is a tool the Code tab's agent runs with no model behind it. It does on
 
 Settings → Code → Helpers has a switch for each helper, all off. A helper's tool reaches the agent from the next message after you turn it on. Hover a helper for what it does.
 
-Helpers work in the Code tab only, not in a read-only session.
+Helpers work in the Code tab only. The 3D helper needs a session that can write; the Search helper also works in a read-only session.
+
+## The Search helper
+
+Turn on **Search** and the agent gets a `search_code` tool. It asks a question in plain words ("where does the message box grow as I type?") and gets back the six best snippets of code, each with its path and line numbers, best first. Snippets next to each other in one file are joined, so there can be fewer. The agent then reads around the best one or greps for a name it saw.
+
+It searches the text files in the session's folder, fresh on every call. Files your `.gitignore` skips, binaries, lockfiles and files over 1 MB are left out; tests and generated files are kept but ranked lower. The agent can narrow a search to one subfolder.
+
+It works in a read-only session, since it changes nothing.
 
 ## The 3D helper
 
@@ -44,6 +52,7 @@ Three.js comes with the app, so the 3D helper needs no network. The agent sees t
 ## What it doesn't do
 
 - No model: a helper can't make anything on its own; the agent writes the code.
+- Search matches words, not meaning or code structure: it knows nothing of calls, types or imports, and a question worded unlike the code can miss.
 - It can't tell whether a motion looks good, only what's physically wrong. You can play the clips in the file's 3D view (**Animation**).
 - It finds knees and elbows by name only (knee, shin, elbow, forearm and so on).
 - It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
