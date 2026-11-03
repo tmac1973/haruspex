@@ -24,6 +24,8 @@ const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
 vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
+const question = vi.hoisted(() => ({ ask: vi.fn() }));
+vi.mock('#lib/stores/userQuestion.svelte.ts', () => ({ askUserQuestion: question.ask }));
 
 const SPEC_PATH = DEFAULT_MODELS_SPEC_PATH;
 
@@ -168,6 +170,7 @@ beforeEach(() => {
 	written = [];
 	bytesWritten = [];
 	tauri.invoke.mockImplementation(routes());
+	question.ask.mockResolvedValue({ kind: 'selected', labels: ['Keep'] });
 	verdict.judgeModel.mockResolvedValue({
 		done: true,
 		problems: [],
@@ -201,7 +204,33 @@ describe('a run over an existing spec', () => {
 			'assets/generated/model/crate/sheet.png'
 		]);
 		expect(h.steps[CREATE].output).toContain('2 of 2 model(s) done.');
+		// Attended by default: one review question per model.
+		expect(question.ask.mock.calls.map(([q]) => q.question)).toEqual([
+			'Knight: keep this model?',
+			'Crate: keep this model?'
+		]);
 		for (const idx of [CREATE, ANIMATE, REPORT]) expect(h.steps[idx].status).toBe('succeeded');
+	});
+
+	it('never stops for a review when unattended', async () => {
+		files.set(SPEC_PATH, renderModelSpec(knightSpec()));
+		const h = harness({ config: { run_mode: 'unattended' } });
+
+		await runModelGenerationPipeline(h.ctx);
+
+		expect(h.finished?.status).toBe('succeeded');
+		expect(question.ask).not.toHaveBeenCalled();
+	});
+
+	it('cancels the run when the review is dismissed', async () => {
+		files.set(SPEC_PATH, renderModelSpec(knightSpec()));
+		question.ask.mockRejectedValue(new DOMException('Aborted', 'AbortError'));
+		const h = harness();
+
+		await runModelGenerationPipeline(h.ctx);
+
+		expect(h.finished).toEqual({ status: 'cancelled', error: null });
+		expect(h.steps[CREATE].status).toBe('cancelled');
 	});
 
 	it('reads the spec from the job’s own path', async () => {

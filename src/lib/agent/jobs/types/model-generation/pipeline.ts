@@ -37,6 +37,7 @@ import { validateModelSpec } from '#lib/models3d/spec/validate.ts';
 import { renderModelSpec } from '#lib/models3d/spec/write.ts';
 import { createStage, entrySummary } from '#lib/agent/jobs/types/model-generation/create.ts';
 import { initialEntryStates } from '#lib/agent/jobs/types/model-generation/state.ts';
+import { isAttended, reviewStage } from '#lib/agent/jobs/types/model-generation/review.ts';
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
@@ -204,6 +205,9 @@ export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<vo
 		startStep(CREATE);
 		const states = initialEntryStates(spec);
 		await createStage(ctx, cfg, spec, states, CREATE);
+		// The review belongs to creation: its rebuilds are creation turns, and
+		// the step stays live while the user answers.
+		if (isAttended(ctx, cfg)) await reviewStage(ctx, cfg, spec, states, CREATE);
 		finishStep(CREATE, entrySummary(spec, states));
 
 		// Started and finished rather than left pending, so the run view shows
