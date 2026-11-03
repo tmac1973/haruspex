@@ -23,7 +23,9 @@ describe('session usage totals', () => {
 			completionTokens: 300,
 			calls: 2,
 			costUsd: null,
-			estimated: false
+			estimated: false,
+			subagentTokens: 0,
+			subagentCalls: 0
 		});
 	});
 
@@ -40,6 +42,18 @@ describe('session usage totals', () => {
 		expect(t.estimated).toBe(true);
 		// Stays an estimate once any part of it is one.
 		expect(addCall(t, call(1, 1, 0.5), true, null).estimated).toBe(true);
+	});
+
+	it('counts a sub-agent’s call in the total and in its own share', () => {
+		let t = addCall(emptyUsage(), call(1000, 100), false, null);
+		t = addCall(t, call(500, 50), false, null, true);
+		expect(t).toMatchObject({
+			promptTokens: 1500,
+			completionTokens: 150,
+			calls: 2,
+			subagentTokens: 550,
+			subagentCalls: 1
+		});
 	});
 
 	it('reads catalogue prices, or none for an unknown model', () => {

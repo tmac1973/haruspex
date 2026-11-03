@@ -5,7 +5,7 @@
  * the text back as the tool result, and the session's background subtasks
  * (`backgroundSubtasks.ts`), which deliver it in a notification turn.
  */
-import type { BackendOverride } from '#lib/api.ts';
+import type { BackendOverride, Usage } from '#lib/api.ts';
 import type { CallStats } from '#lib/agent/loop.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
@@ -73,6 +73,8 @@ export interface SubtaskEnv {
 	stoppedByUser: () => boolean;
 	/** The card changed. */
 	onState: (state: SubtaskState) => void;
+	/** Each model call the subtask makes. */
+	onUsage?: (usage: Usage) => void;
 }
 
 export interface SubtaskRunResult {
@@ -200,7 +202,8 @@ export async function runSubtaskSpec(
 		signal: env.signal,
 		onAdmitted: () => publish(startedSubtask(state)),
 		onStep: (steps) => publish(withChildSteps(state, steps)),
-		onApprovalWait: (waiting) => publish(awaitingApproval(state, waiting))
+		onApprovalWait: (waiting) => publish(awaitingApproval(state, waiting)),
+		onUsage: env.onUsage
 	});
 	const applied = spec.wt ? await bringBack(spec.wt, res, env) : null;
 	if (applied) state = withApply(state, applied.state);

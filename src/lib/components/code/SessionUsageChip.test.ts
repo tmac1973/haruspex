@@ -17,12 +17,31 @@ describe('the session usage chip', () => {
 		expect(chip.textContent?.trim()).toBe('12k tok');
 		expect(chip.title).toMatch(/12,345 tokens over 3 model calls/);
 		expect(chip.title).not.toMatch(/Cost/);
+		expect(chip.title).not.toMatch(/Sub-agents/);
+	});
+
+	it('gives the sub-agents’ share on hover', () => {
+		render(SessionUsageChip, {
+			props: {
+				totals: {
+					...emptyUsage(),
+					promptTokens: 3000,
+					calls: 3,
+					subagentTokens: 1000,
+					subagentCalls: 2
+				}
+			}
+		});
+		expect(screen.getByTestId('session-usage').title).toMatch(
+			/Sub-agents: 1,000 tokens over 2 calls/
+		);
 	});
 
 	it('adds the cost, marked when part of it is estimated', () => {
 		render(SessionUsageChip, {
 			props: {
 				totals: {
+					...emptyUsage(),
 					promptTokens: 1000,
 					completionTokens: 0,
 					calls: 1,

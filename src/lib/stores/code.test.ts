@@ -824,6 +824,7 @@ describe('a Code session', () => {
 		await s.send('one');
 		await s.send('two');
 		expect(s.totals).toMatchObject({ promptTokens: 4400, completionTokens: 260, calls: 4 });
+		expect(s.totals.subagentCalls).toBe(0);
 		// A local model: no cost.
 		expect(s.totals.costUsd).toBeNull();
 		await closeSession(s.id);
@@ -1818,6 +1819,27 @@ describe('background subtasks', () => {
 			.find((st) => st.subtask?.id === 'd1');
 		expect(saved?.subtask?.status).toBe('done');
 		expect(s.backgroundSubtaskCount).toBe(0);
+	});
+
+	it('counts their model calls in the session’s tokens, and so do a turn’s own', async () => {
+		const usage = { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 };
+		mocks.runSubtaskSpec.mockImplementation(
+			async (spec: SubtaskSpec, env: SubtaskEnv, initial: SubtaskState) => {
+				env.onUsage?.(usage);
+				env.onState(finishedSubtask(initial, { status: 'done', report: 'r', steps: [] }));
+				return { text: 'r', failed: false, state: initial };
+			}
+		);
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			// A blocking `delegate` reports through the turn.
+			o.onSubtaskUsage?.(usage);
+			await startsInBackground('d1')(o);
+		});
+		await s.send('look into it in the background');
+		await vi.waitFor(() => expect(s.totals.subagentCalls).toBe(2));
+		expect(s.totals.subagentTokens).toBe(220);
+		await vi.waitFor(() => expect(s.busy).toBe(false));
 	});
 
 	it('holds reports back while a turn runs, then delivers them together', async () => {

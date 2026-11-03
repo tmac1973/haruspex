@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
-	 * The session header's running count of tokens, and of cost on OpenRouter
-	 * (`code/usageTotals.ts`). Compact; the tooltip has the breakdown. Hidden
+	 * The session header's running count of tokens, sub-agents' included, and
+	 * of cost on OpenRouter (`code/usageTotals.ts`). Compact; the tooltip has the breakdown. Hidden
 	 * until the session's agent has made a call.
 	 */
 	import { formatCost, formatTokens, type SessionUsage } from '#lib/code/usageTotals.ts';
@@ -19,7 +19,10 @@
 			totals.costUsd === null
 				? null
 				: `Cost: $${totals.costUsd.toFixed(4)}${totals.estimated ? ' (part estimated from OpenRouter prices)' : ' (as OpenRouter reported it)'}`,
-			'Sub-agents, specialists and summaries are not counted.'
+			totals.subagentCalls > 0
+				? `Sub-agents: ${totals.subagentTokens.toLocaleString()} tokens over ${totals.subagentCalls.toLocaleString()} calls (included above).`
+				: null,
+			'Specialists and summaries are not counted.'
 		]
 			.filter(Boolean)
 			.join('\n')
