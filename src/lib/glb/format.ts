@@ -7,6 +7,11 @@ import type { Bounds, GlbReport } from '#lib/glb/report.ts';
 export interface FormatOptions {
 	/** The bounds before normalisation, when the GLB was normalised. */
 	normalisedFrom?: Bounds;
+	/** The clip checks, one line per clip under a heading (`formatClipLines`). */
+	clipLines?: string[];
+	/** One clip's detail (`formatClip`), and that clip's name. */
+	clipDetail?: string[];
+	clip?: string;
 }
 
 /** The text is kept under this many characters. */
@@ -51,19 +56,53 @@ function build(r: GlbReport, opts: FormatOptions, limit: number): string[] {
 	lines.push(...r.warnings.slice(0, limit).map((w) => `- ${w}`));
 	if (r.warnings.length > limit) lines.push(`- and ${r.warnings.length - limit} more warnings.`);
 	if (r.materials.length) lines.push(materialLine(r));
-	lines.push(
-		r.animations.length
-			? `Animations: ${r.animations.map((a) => `${a.name} ${a.duration.toFixed(1)} s (${a.tracks} track${a.tracks === 1 ? '' : 's'})`).join(', ')}.`
-			: 'No animation.'
-	);
+	if (opts.clipLines?.length) lines.push(...opts.clipLines, ...(opts.clipDetail ?? []));
+	else {
+		lines.push(
+			r.animations.length
+				? `Animations: ${r.animations.map((a) => `${a.name} ${a.duration.toFixed(1)} s (${a.tracks} track${a.tracks === 1 ? '' : 's'})`).join(', ')}.`
+				: 'No animation.'
+		);
+	}
 	return lines;
 }
 
-/** The report as text, under `MAX_REPORT_CHARS`. */
-export function formatReport(r: GlbReport, opts: FormatOptions = {}): string {
-	for (const limit of [LIST_LIMIT, 8, 3]) {
-		const text = build(r, opts, limit).join('\n');
-		if (text.length <= MAX_REPORT_CHARS || limit === 3) return text.slice(0, MAX_REPORT_CHARS);
+/**
+ * Drop clip lines from the end until `fits`, keeping the line for `keep`.
+ * The heading stays, and a last line says how many were dropped.
+ */
+function trimClips(lines: string[], keep: string | undefined, fits: (l: string[]) => boolean) {
+	const [heading, ...rest] = lines;
+	const kept = [...rest];
+	let dropped = 0;
+	const withNote = () => [
+		heading,
+		...kept,
+		...(dropped ? [`- and ${dropped} more clips (pass clip to check one).`] : [])
+	];
+	for (let i = kept.length - 1; i >= 0 && !fits(withNote()); i--) {
+		if (keep !== undefined && kept[i].startsWith(`- ${keep} (`)) continue;
+		kept.splice(i, 1);
+		dropped++;
 	}
-	return '';
+	return withNote();
+}
+
+/** The report as text, under `MAX_REPORT_CHARS`; clip lines go before the rest is cut. */
+export function formatReport(r: GlbReport, opts: FormatOptions = {}): string {
+	let text = '';
+	for (const limit of [LIST_LIMIT, 8, 3]) {
+		text = build(r, opts, limit).join('\n');
+		if (text.length <= MAX_REPORT_CHARS) return text;
+	}
+	if (opts.clipLines?.length) {
+		const base = build(r, { ...opts, clipLines: undefined, clipDetail: undefined }, 3)
+			.slice(0, -1)
+			.join('\n');
+		const detail = opts.clipDetail ?? [];
+		const fits = (clips: string[]) =>
+			[base, ...clips, ...detail].join('\n').length <= MAX_REPORT_CHARS;
+		text = [base, ...trimClips(opts.clipLines, opts.clip, fits), ...detail].join('\n');
+	}
+	return text.slice(0, MAX_REPORT_CHARS);
 }

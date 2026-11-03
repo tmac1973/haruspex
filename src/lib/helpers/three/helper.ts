@@ -6,7 +6,7 @@ registerHelper({
 	label: '3D',
 	summary: 'Builds and renders 3D models the agent writes.',
 	tooltip:
-		'Runs a Three.js build module or checks a .glb file, then shows the agent a six-view render and a size and parts report. Needs no model and no network.',
+		'Runs a Three.js build module or checks a .glb file, then shows the agent a six-view render, a size and parts report and checks on each animation clip, or one clip moving. Needs no model and no network.',
 	tools: ['check_3d'],
 	writes: true
 });

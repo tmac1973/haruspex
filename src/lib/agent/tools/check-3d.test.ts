@@ -23,7 +23,7 @@ vi.mock('#lib/glb/check.ts', () => glb);
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { TOOL_FAMILIES } from '#lib/agent/tools/families.ts';
 import { toolCategory } from '#lib/agent/tools/registry.ts';
-import { SHEET_NOTE } from './check-3d';
+import { MOTION_NOTE, SHEET_NOTE } from './check-3d';
 
 const GLB = new Uint8Array([103, 108, 84, 70]);
 const NORMALISED = new Uint8Array([9, 9]);
@@ -49,7 +49,7 @@ function call(args: Record<string, unknown>, c = ctx()) {
 beforeEach(() => {
 	files.clear();
 	io.write.mockClear();
-	runner.runBuildModule.mockReset().mockResolvedValue({ glb: GLB, errors: [] });
+	runner.runBuildModule.mockReset().mockResolvedValue({ glb: GLB, errors: [], missingTracks: [] });
 	glb.checkGlb
 		.mockReset()
 		.mockResolvedValue({ bytes: GLB, report: {}, text: 'Size: 1 m', png: PNG });
@@ -77,7 +77,12 @@ describe('check_3d', () => {
 			normalisedFrom: {}
 		});
 		await call({ path: 'a.js', out: 'b.glb', height: 1.8, ground: true, max_triangles: 500 });
-		expect(glb.checkGlb.mock.calls[0][1]).toEqual({ height: 1.8, ground: true, maxTriangles: 500 });
+		expect(glb.checkGlb.mock.calls[0][1]).toEqual({
+			height: 1.8,
+			ground: true,
+			maxTriangles: 500,
+			clip: undefined
+		});
 		expect(files.get('/proj/b.glb')).toEqual([...NORMALISED]);
 	});
 
@@ -164,6 +169,44 @@ describe('check_3d', () => {
 		const out = await call({ path: 'a.js' }, c);
 		expect(c.pendingImages).toEqual([]);
 		expect(out.result).not.toContain(SHEET_NOTE);
+	});
+
+	it('shows one clip moving when asked, with the motion note', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		glb.checkGlb.mockResolvedValueOnce({
+			bytes: GLB,
+			report: {},
+			text: 'Clip Walk: 1.00 s.',
+			png: PNG,
+			clip: 'Walk'
+		});
+		const out = await call({ path: 'a.js', clip: ' Walk ' });
+		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({ clip: 'Walk' });
+		expect(out.result).toBe(['Wrote a.glb.', 'Clip Walk: 1.00 s.', MOTION_NOTE].join('\n'));
+	});
+
+	it('passes clip through for a .glb, writing nothing', async () => {
+		files.set('/proj/b.glb', [...GLB]);
+		await call({ path: 'b.glb', clip: 'Idle' });
+		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({ clip: 'Idle' });
+		expect(io.write).not.toHaveBeenCalled();
+	});
+
+	it('refuses a blank clip', async () => {
+		expect((await call({ path: 'a.js', clip: '  ' })).result).toMatch(/clip must be/);
+	});
+
+	it('says which tracks name a node the model does not have', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		runner.runBuildModule.mockResolvedValueOnce({
+			glb: GLB,
+			errors: [],
+			missingTracks: ['Tail.quaternion', 'Wing_L.position']
+		});
+		const out = await call({ path: 'a.js' });
+		expect(out.result.split('\n')[1]).toBe(
+			"Tracks naming a node the model doesn't have (the exporter dropped them, so they do nothing): Tail.quaternion, Wing_L.position."
+		);
 	});
 
 	it('is a core tool, in no deferred family', () => {

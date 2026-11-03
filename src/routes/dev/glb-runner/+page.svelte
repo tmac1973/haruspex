@@ -26,11 +26,25 @@
 	let moduleRunning = $state(false);
 	let moduleResult = $state<ModuleRunResult | null>(null);
 	let moduleChecked = $state<GlbCheck | { problems: string[] } | null>(null);
+	/** The clip shown moving, or '' for the still sheet. */
+	let moduleClip = $state('');
+	const moduleClips = $derived(
+		moduleChecked && 'report' in moduleChecked
+			? moduleChecked.report.animations.map((a) => a.name)
+			: []
+	);
+
+	async function showClip(clip: string) {
+		moduleClip = clip;
+		if (moduleResult?.glb)
+			moduleChecked = await checkGlb(moduleResult.glb, { clip: clip || undefined });
+	}
 
 	async function runModule() {
 		moduleRunning = true;
 		moduleResult = null;
 		moduleChecked = null;
+		moduleClip = '';
 		try {
 			moduleResult = await runBuildModule(moduleSource);
 			if (moduleResult.glb) moduleChecked = await checkGlb(moduleResult.glb);
@@ -115,6 +129,14 @@
 					{#each moduleChecked.problems as p, i (i)}<li>{p}</li>{/each}
 				</ul>
 			{:else if moduleChecked}
+				{#if moduleClips.length}
+					<label
+						>Clip <select value={moduleClip} onchange={(e) => void showClip(e.currentTarget.value)}>
+							<option value="">Still sheet</option>
+							{#each moduleClips as name (name)}<option value={name}>{name}</option>{/each}
+						</select></label
+					>
+				{/if}
 				<pre class="stats">{moduleChecked.text}</pre>
 				{#if moduleChecked.png}<img
 						class="render"

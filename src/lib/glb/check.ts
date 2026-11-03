@@ -1,16 +1,22 @@
 /**
  * Everything a tool does with GLB bytes before it reports: load, inspect,
- * normalise when asked, draw the sheet and write the report's text. The GLB
- * specialist's check and `check_3d` both come through here.
+ * normalise when asked, check the clips, draw the sheet (or one clip's
+ * motion sheet) and write the report's text. The GLB specialist's check and
+ * `check_3d` both come through here.
  */
 import { formatReport } from '#lib/glb/format.ts';
-import { disposeTree, loadGlb } from '#lib/glb/load.ts';
+import { disposeTree, loadGlb, type LoadedGlb, type Three } from '#lib/glb/load.ts';
 import { normaliseGlb, type NormaliseOptions } from '#lib/glb/normalise.ts';
 import { inspectGlb, type Bounds, type GlbReport } from '#lib/glb/report.ts';
+import { inspectMotion } from '#lib/glb/motion.ts';
+import { formatClip, formatClipLines } from '#lib/glb/motionFormat.ts';
+import { renderMotionSheet } from '#lib/glb/motionSheet.ts';
 import { renderSheet } from '#lib/glb/sheet.ts';
 
 export interface CheckOptions extends NormaliseOptions {
 	maxTriangles?: number;
+	/** A clip to show moving: its motion sheet replaces the still sheet. */
+	clip?: string;
 }
 
 export interface GlbCheck {
@@ -22,6 +28,8 @@ export interface GlbCheck {
 	png: string | null;
 	/** The bounds before normalisation, when it was asked for. */
 	normalisedFrom?: Bounds;
+	/** The clip the sheet shows moving, when one was asked for. */
+	clip?: string;
 }
 
 /** Check GLB bytes; `problems` when they fail (no GLB to write). */
@@ -48,7 +56,41 @@ export async function checkGlb(
 		if ('error' in loaded) return { problems: [loaded.error] };
 		report = inspectGlb(loaded.THREE, loaded.gltf, inspect);
 	}
-	const png = renderSheet(loaded.THREE, loaded.gltf.scene, report.bounds);
-	disposeTree(loaded.gltf.scene);
-	return { bytes, report, text: formatReport(report, { normalisedFrom }), png, normalisedFrom };
+	const shown = describe(loaded, report, opts.clip, normalisedFrom);
+	if ('problems' in shown) return shown;
+	return { bytes, report, normalisedFrom, ...shown };
+}
+
+/**
+ * The sheet and the text: the still sheet with a line per clip, or `clip`'s
+ * motion sheet and detail. Disposes of the scene either way.
+ */
+function describe(
+	{ THREE, gltf }: { THREE: Three; gltf: LoadedGlb },
+	report: GlbReport,
+	clip: string | undefined,
+	normalisedFrom: Bounds | undefined
+): Pick<GlbCheck, 'text' | 'png' | 'clip'> | { problems: string[] } {
+	const anim = clip ? gltf.animations.find((a) => a.name === clip) : undefined;
+	if (clip && !anim) {
+		disposeTree(gltf.scene);
+		const names = gltf.animations.map((a) => a.name);
+		const has = names.length ? `Clips: ${names.join(', ')}.` : 'The GLB has no clips.';
+		return { problems: [`No clip named ${clip}. ${has}`] };
+	}
+	// After normalising, so the floor is where the written GLB has it.
+	const clips = inspectMotion(THREE, gltf);
+	const motion = anim && clips.find((c) => c.name === anim.name);
+	const png =
+		anim && motion
+			? renderMotionSheet(THREE, gltf.scene, anim, motion.fastest)
+			: renderSheet(THREE, gltf.scene, report.bounds);
+	disposeTree(gltf.scene);
+	const text = formatReport(report, {
+		normalisedFrom,
+		clipLines: formatClipLines(clips),
+		clipDetail: motion ? formatClip(motion, png !== null) : undefined,
+		clip: anim?.name
+	});
+	return { text, png, clip: anim?.name };
 }

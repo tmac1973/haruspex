@@ -46,4 +46,44 @@ describe('formatReport', () => {
 		expect(text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
 		expect(text).toMatch(/and \d+ more warnings/);
 	});
+
+	it('puts clip lines in place of the clip list, then the detail', () => {
+		const g = new THREE.Group();
+		g.add(box('Body', 0));
+		const r = inspectGlb(THREE, { scene: g, animations: [] });
+		const text = formatReport(r, {
+			clipLines: [
+				'Clip checks (pass clip to see one moving):',
+				'- Idle (2.00 s): no problems found.'
+			],
+			clipDetail: ['Clip Idle: 2.00 s, 1 tracks.'],
+			clip: 'Idle'
+		});
+		expect(text.split('\n').slice(-3)).toEqual([
+			'Clip checks (pass clip to see one moving):',
+			'- Idle (2.00 s): no problems found.',
+			'Clip Idle: 2.00 s, 1 tracks.'
+		]);
+		expect(text).not.toContain('No animation.');
+	});
+
+	it('drops clip lines first when too long, keeping the clip asked for', () => {
+		const g = new THREE.Group();
+		g.add(box('Body', 0));
+		const r = inspectGlb(THREE, { scene: g, animations: [] });
+		const lines = Array.from(
+			{ length: 40 },
+			(_, i) => `- Clip_${i} (1.00 s, 18 tracks, ends 1 cm from its start): ${'x'.repeat(60)}.`
+		);
+		const text = formatReport(r, {
+			clipLines: ['Clip checks (pass clip to see one moving):', ...lines],
+			clipDetail: ['Clip Clip_39: 1.00 s, 18 tracks.'],
+			clip: 'Clip_39'
+		});
+		expect(text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+		expect(text).toContain('Size: 1.00');
+		expect(text).toContain('- Clip_39 (');
+		expect(text).toMatch(/- and \d+ more clips \(pass clip to check one\)\./);
+		expect(text.endsWith('Clip Clip_39: 1.00 s, 18 tracks.')).toBe(true);
+	});
 });
