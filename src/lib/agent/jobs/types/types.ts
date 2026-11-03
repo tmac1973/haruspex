@@ -17,6 +17,7 @@ import type { EphemeralTurnOptions, EphemeralTurnResult } from '#lib/agent/runEp
 import type { JobStepInput, JobSummary, JobType, JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { RunStatus, RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ResultSchema } from '#lib/agent/jobs/cardResult.ts';
+import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
@@ -53,6 +54,12 @@ export interface JobRunContext {
 			 * step total but attributed to no kind.
 			 */
 			turnKind?: string;
+			/**
+			 * Run this turn on another model than the job's: its backend, its
+			 * inference slot lane, and (unless `visionSupported` is passed) its
+			 * vision. The job's reasoning and sampling policy still applies.
+			 */
+			model?: ModelColumns;
 		}
 	) => Promise<EphemeralTurnResult>;
 	patchStep: (stepIndex: number, patch: Partial<RunStepState>) => void;
@@ -70,6 +77,8 @@ export interface JobRunContext {
 	isLive: () => boolean;
 	contextSize: () => number;
 	visionSupported: () => boolean;
+	/** What a model a turn may run on is: its label for display, vision and context size. */
+	describeModel: (columns: ModelColumns) => { label: string; vision: boolean; contextSize: number };
 	finalizeRun: (status: RunStatus, error: string | null) => void;
 	/** Runner-owned cleanup (clear the active abort, drain the queue). Call exactly once, when the pipeline settles. */
 	onSettled: () => void;

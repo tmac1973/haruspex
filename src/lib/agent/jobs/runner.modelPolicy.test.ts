@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ModelColumns } from './chainModel.ts';
+import type { JobRunContext } from './types/types.ts';
 
 const {
 	mocks,
@@ -169,6 +171,113 @@ describe('jobs runner — guards', () => {
 			for (const [opts] of mocks.runEphemeralTurn.mock.calls) {
 				expect(opts.thinkingEnabled).toBe(false);
 			}
+		});
+	});
+
+	// A 3D run creates on one model and animates on another, so a pipeline
+	// can hand one turn a model of its own.
+	describe('per-turn model', () => {
+		const animator: ModelColumns = {
+			model_remote_base_url: 'http://animator:8000',
+			model_remote_api_key: null,
+			model_remote_api_key_id: null,
+			model_remote_model_id: 'argon-4',
+			model_remote_context_size: 65536,
+			model_remote_vision_supported: true,
+			model_advanced: null
+		};
+
+		/** A fresh runner whose research pipeline runs one turn with `turnOpts`. */
+		async function runnerWithTurn(turnOpts: { model?: ModelColumns; visionSupported?: boolean }) {
+			const runner = await freshRunner();
+			const { getJobType, registerJobType } = await import('#lib/agent/jobs/types/registry.ts');
+			const research = getJobType('research')!;
+			let ctx: JobRunContext | null = null;
+			registerJobType({
+				...research,
+				runPipeline: async (c) => {
+					ctx = c;
+					await c.runJobTurn({ userMessage: 'go', contextSize: 8192, ...turnOpts });
+					c.finalizeRun('succeeded', null);
+					c.onSettled();
+				}
+			});
+			return { ...runner, context: () => ctx! };
+		}
+
+		it("runs the turn on the model's backend under the job's policy", async () => {
+			mocks.getJob.mockResolvedValueOnce(
+				makeJob({
+					model_remote_base_url: 'http://job-server:3000',
+					model_remote_model_id: 'job-model',
+					model_advanced: JSON.stringify({ reasoning: { mode: 'off', effort: null } })
+				})
+			);
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await runnerWithTurn({ model: animator });
+			await enqueue(1);
+			await tick();
+
+			const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+			expect(opts.backend).toMatchObject({
+				baseUrl: 'http://animator:8000',
+				modelId: 'argon-4',
+				contextSize: 65536
+			});
+			// The slot is the model's lane, not the job's server.
+			const slotOpts = mocks.withInferenceSlot.mock.calls[0][0] as {
+				backend?: { baseUrl: string };
+			};
+			expect(slotOpts.backend?.baseUrl).toBe('http://animator:8000');
+			expect(opts.thinkingEnabled).toBe(false);
+			expect(opts.visionSupported).toBe(true);
+			// The runner's option, not runEphemeralTurn's.
+			expect(opts).not.toHaveProperty('model');
+		});
+
+		it("keeps the pipeline's own vision choice", async () => {
+			mocks.getJob.mockResolvedValueOnce(makeJob());
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await runnerWithTurn({ model: animator, visionSupported: false });
+			await enqueue(1);
+			await tick();
+
+			expect(mocks.runEphemeralTurn.mock.calls[0][0].visionSupported).toBe(false);
+		});
+
+		it("uses the job's backend for a turn without a model", async () => {
+			mocks.getJob.mockResolvedValueOnce(
+				makeJob({
+					model_remote_base_url: 'http://job-server:3000',
+					model_remote_model_id: 'job-model'
+				})
+			);
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue } = await runnerWithTurn({});
+			await enqueue(1);
+			await tick();
+
+			const opts = mocks.runEphemeralTurn.mock.calls[0][0];
+			expect(opts.backend?.baseUrl).toBe('http://job-server:3000');
+			expect(opts.visionSupported).toBeUndefined();
+		});
+
+		it('describes a model by its picker summary, vision and context', async () => {
+			mocks.getJob.mockResolvedValueOnce(makeJob());
+			mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+
+			const { enqueue, context } = await runnerWithTurn({});
+			await enqueue(1);
+			await tick();
+
+			expect(context().describeModel(animator)).toEqual({
+				label: 'Remote · argon-4',
+				vision: true,
+				contextSize: 65536
+			});
 		});
 	});
 });

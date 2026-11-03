@@ -324,6 +324,7 @@ export function fakeRun(invoke: Mock, opts: FakeRunOptions = {}): FakeRun {
 			isLive: () => true,
 			contextSize: () => 32_768,
 			visionSupported: () => false,
+			describeModel: () => ({ label: 'Settings default', vision: false, contextSize: 32768 }),
 			finalizeRun: (status, error) => {
 				run.result = { status, error };
 			},

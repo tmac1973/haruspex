@@ -69,6 +69,7 @@ function harness(replies: string[], accountIds = ['work', 'old']) {
 		isLive: () => true,
 		contextSize: () => 8192,
 		visionSupported: () => false,
+		describeModel: () => ({ label: 'Settings default', vision: false, contextSize: 32768 }),
 		finalizeRun: (status: string, error: string | null) => (h.finished = { status, error }),
 		onSettled: () => {},
 		startChainedRun: async () => null,

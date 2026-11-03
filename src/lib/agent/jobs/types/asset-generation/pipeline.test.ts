@@ -211,6 +211,7 @@ function harness(opts: {
 		isLive: () => true,
 		contextSize: () => 32768,
 		visionSupported: () => opts.vision ?? false,
+		describeModel: () => ({ label: 'Settings default', vision: false, contextSize: 32768 }),
 		finalizeRun: (status, error) => (h.finished = { status, error }),
 		onSettled: () => {},
 		startChainedRun: async (jobId) => {
