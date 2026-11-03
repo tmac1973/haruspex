@@ -196,6 +196,7 @@ async function judgeAndKeep(
 			await writeSheetPng(workdir, files.sheet, verdict.sheetPng);
 			state.sheet = verdict.sheetPng;
 		}
+		state.warnings = verdict.warnings;
 		return verdict.done ? [] : verdict.problems;
 	} catch (e) {
 		const { aborted, msg } = normalizeAbort(e);

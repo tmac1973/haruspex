@@ -125,3 +125,81 @@ export function createRepairPrompt(entry: ModelEntry, problems: string[]): strin
 		`Read ${f.build}. Fix ${entry.id}.js and check it again (path ${f.build}, out ${f.glb}).`
 	].join('\n');
 }
+
+/**
+ * The animation stage's system prompt: what an animation module is, which
+ * nodes it may move, and that the build module is not its to change.
+ */
+export function animateSystemPrompt(): string {
+	return [
+		'You animate one 3D model that is already built, with a Three.js animation module',
+		'checked by `check_3d`.',
+		'',
+		'The animation module:',
+		'- `export default function animate(THREE, object, kit)` returns an array of',
+		'  THREE.AnimationClip. No imports. `object` is what the build module returned.',
+		"- Find each pivot with `object.getObjectByName('Hip_L')`. Animate only the named",
+		'  pivots: QuaternionKeyframeTrack on `<name>.quaternion`, VectorKeyframeTrack on',
+		'  `<name>.position`. Start from each pivot’s rest pose (its current quaternion and',
+		'  position) and move away from it.',
+		'- One clip per name in the list, with that name and length in seconds.',
+		'- A looping clip ends on exactly its first pose.',
+		'- Units are metres, y is up, the front faces +z.',
+		'',
+		'The build module is not yours: do not edit it. A changed build module is put back.',
+		'',
+		'Process:',
+		'1. Write the animation module with `fs_write_text`.',
+		'2. For each clip, call `check_3d` with `path` = the build module, `anim` = the',
+		'   animation module, `out` = the .glb and `clip` = the clip name.',
+		'3. Fix what it reports and look at the motion sheet: the poses must do what the',
+		'   clip says. Check again after each change.',
+		'4. Stop when every clip checks clean. Write files only in the model’s folder.'
+	].join('\n');
+}
+
+/** The first animation message: the clips, and the build module so the hierarchy is in view. */
+export function animateEntryPrompt(entry: ModelEntry, buildSource: string): string {
+	const f = modelFiles(entry);
+	return [
+		`Animate: ${entry.title}`,
+		'',
+		entry.description,
+		'',
+		`Folder: ${entry.dir}`,
+		`Height: ${entry.height_m} m.`,
+		`Pivots: ${entry.parts.join(', ')}.`,
+		'',
+		'Clips:',
+		...entry.clips.map(
+			(c) => `- ${c.name}: ${c.seconds} s, ${c.loop ? 'loops' : 'plays once'}. ${c.action}`
+		),
+		'',
+		`Write ${f.anim}. Check each clip with check_3d (path ${f.build}, anim ${f.anim},`,
+		`out ${f.glb}, clip <name>). Do not edit ${entry.id}.js.`,
+		'',
+		`${f.build}:`,
+		'```js',
+		buildSource,
+		'```'
+	].join('\n');
+}
+
+/** The next animation round's message: what the last check found. */
+export function animateRepairPrompt(entry: ModelEntry, problems: string[]): string {
+	const f = modelFiles(entry);
+	return [
+		`The clips for ${entry.title} (${f.anim}) are not done yet. The last check found:`,
+		'',
+		...problems.map((p) => `- ${p}`),
+		'',
+		'Clips: ' +
+			entry.clips
+				.map((c) => `${c.name} (${c.seconds} s, ${c.loop ? 'loops' : 'once'})`)
+				.join(', ') +
+			'.',
+		'',
+		`Read ${f.anim} and ${f.build}. Fix ${entry.id}.anim.js only, and check each clip`,
+		`again (path ${f.build}, anim ${f.anim}, out ${f.glb}, clip <name>).`
+	].join('\n');
+}

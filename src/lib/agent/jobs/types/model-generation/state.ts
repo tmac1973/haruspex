@@ -7,6 +7,16 @@ import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 
 export type EntryStatus = 'pending' | 'done' | 'needs_work' | 'skipped';
 
+/** How an entry's clips went, once the animation stage has run on it. */
+export interface ClipsState {
+	status: 'pending' | 'done' | 'needs_work';
+	/** What kept the clips from done at their last check. */
+	problems: string[];
+	rounds: number;
+	/** The clips whose motion sheet was written. */
+	sheets: string[];
+}
+
 export interface EntryState {
 	id: string;
 	status: EntryStatus;
@@ -20,6 +30,10 @@ export interface EntryState {
 	sheet: string | null;
 	/** Whether `<id>.glb` was written by this run. */
 	glb: boolean;
+	/** What the last check reported that doesn't block. */
+	warnings: string[];
+	/** The animation stage's result; null when it did not animate this entry. */
+	clips: ClipsState | null;
 }
 
 /** One pending state per entry, in spec order. */
@@ -31,6 +45,8 @@ export function initialEntryStates(spec: ModelSpec): EntryState[] {
 		rounds: 0,
 		note: null,
 		sheet: null,
-		glb: false
+		glb: false,
+		warnings: [],
+		clips: null
 	}));
 }

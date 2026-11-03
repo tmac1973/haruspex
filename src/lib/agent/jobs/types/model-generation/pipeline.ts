@@ -3,8 +3,7 @@
  *
  * Stages, declared here so their indices never move: Spec, Create, Animate,
  * Report. The handoff to a coding run goes last when it lands, so nothing
- * before it renumbers. Spec and Create run; Animate and Report finish as
- * skipped until their phases fill them in.
+ * before it renumbers.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -35,7 +34,17 @@ import {
 import { parseModelSpec } from '#lib/models3d/spec/parse.ts';
 import { validateModelSpec } from '#lib/models3d/spec/validate.ts';
 import { renderModelSpec } from '#lib/models3d/spec/write.ts';
-import { createStage, entrySummary } from '#lib/agent/jobs/types/model-generation/create.ts';
+import {
+	createStage,
+	entrySummary,
+	stageModel
+} from '#lib/agent/jobs/types/model-generation/create.ts';
+import { animateStage, clipsSummary } from '#lib/agent/jobs/types/model-generation/animate.ts';
+import {
+	modelReportTable,
+	modelsReportPath,
+	renderModelReport
+} from '#lib/agent/jobs/types/model-generation/report.ts';
 import { initialEntryStates } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { isAttended, reviewStage } from '#lib/agent/jobs/types/model-generation/review.ts';
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
@@ -210,12 +219,29 @@ export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<vo
 		if (isAttended(ctx, cfg)) await reviewStage(ctx, cfg, spec, states, CREATE);
 		finishStep(CREATE, entrySummary(spec, states));
 
-		// Started and finished rather than left pending, so the run view shows
-		// what did not run, as guided planning does for a stage switched off.
-		for (const idx of [ANIMATE, REPORT]) {
-			startStep(idx);
-			finishStep(idx, 'Skipped — not built yet.');
-		}
+		startStep(ANIMATE);
+		await animateStage(ctx, cfg, spec, states, ANIMATE);
+		finishStep(ANIMATE, clipsSummary(spec, states));
+
+		startStep(REPORT);
+		abortIfCancelled();
+		const reportPath = modelsReportPath(specPath);
+		await writeWorkdirFile(
+			ctx,
+			reportPath,
+			renderModelReport({
+				spec,
+				states,
+				reportPath,
+				createLabel: stageModel(ctx, cfg.create_model).label,
+				animateLabel: stageModel(ctx, cfg.animate_model).label
+			})
+		);
+		// Written first: a run where nothing built still leaves the report
+		// that says why.
+		if (!states.some((s) => s.glb)) throw new Error(`No model built. See ${reportPath}.`);
+		// Needs work is not a failure: the report says what is open.
+		finishStep(REPORT, `${modelReportTable(spec, states)}\n\nReport: ${reportPath}`);
 
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {

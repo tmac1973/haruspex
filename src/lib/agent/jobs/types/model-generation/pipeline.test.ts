@@ -134,6 +134,10 @@ function harness(opts: { config?: Record<string, unknown>; turn?: Turn } = {}): 
 				const id = /^Build: (\w+)/m.exec(turnOpts.userMessage)?.[1]?.toLowerCase();
 				files.set(`assets/generated/model/${id}/${id}.js`, 'export default () => {}');
 			}
+			if (turnOpts.turnKind === 'models.animate') {
+				const id = /^Animate: (\w+)/m.exec(turnOpts.userMessage)?.[1]?.toLowerCase();
+				files.set(`assets/generated/model/${id}/${id}.anim.js`, 'export default () => []');
+			}
 			const call = opts.turn?.(turnOpts) ?? null;
 			if (call) turnOpts.onToolStart?.(call);
 			return {} as EphemeralTurnResult;
@@ -195,21 +199,54 @@ describe('a run over an existing spec', () => {
 			output: `${SPEC_PATH} — 2 model(s), 1 animated (Walk)`
 		});
 		expect(deriveTurns(h)).toEqual([]);
-		expect(h.turns.map((t) => t.turnKind)).toEqual(['models.create', 'models.create']);
-		expect(written).toEqual([]);
+		// Both built; only the knight has clips to animate.
+		expect(h.turns.map((t) => t.turnKind)).toEqual([
+			'models.create',
+			'models.create',
+			'models.animate'
+		]);
+		expect(files.get(SPEC_PATH)).toBe(renderModelSpec(knightSpec()));
+		expect(written).toEqual(['assets/REPORT-models.md']);
 		expect(bytesWritten).toEqual([
 			'assets/generated/model/knight/knight.glb',
 			'assets/generated/model/knight/sheet.png',
 			'assets/generated/model/crate/crate.glb',
-			'assets/generated/model/crate/sheet.png'
+			'assets/generated/model/crate/sheet.png',
+			'assets/generated/model/knight/knight.glb'
 		]);
 		expect(h.steps[CREATE].output).toContain('2 of 2 model(s) done.');
+		expect(h.steps[ANIMATE].output).toContain('1 of 1 animated model(s) done.');
+		expect(h.steps[REPORT].output).toContain('| Knight | done | 1.8 m |');
+		expect(h.steps[REPORT].output).toContain('Report: assets/REPORT-models.md');
+		expect(files.get('assets/REPORT-models.md')).toContain('# 3D models report');
 		// Attended by default: one review question per model.
 		expect(question.ask.mock.calls.map(([q]) => q.question)).toEqual([
 			'Knight: keep this model?',
 			'Crate: keep this model?'
 		]);
 		for (const idx of [CREATE, ANIMATE, REPORT]) expect(h.steps[idx].status).toBe('succeeded');
+	});
+
+	it('fails with the report written when no model built', async () => {
+		files.set(SPEC_PATH, renderModelSpec(knightSpec()));
+		verdict.judgeModel.mockResolvedValue({
+			done: false,
+			problems: ['build() exported nothing.'],
+			warnings: [],
+			text: '',
+			sheetPng: null,
+			clipSheets: {},
+			glb: null
+		});
+		const h = harness({ config: { run_mode: 'unattended', rounds: 1 } });
+
+		await runModelGenerationPipeline(h.ctx);
+
+		expect(h.finished?.status).toBe('failed');
+		expect(h.finished?.error).toMatch(/^No model built\./);
+		expect(h.steps[REPORT].status).toBe('failed');
+		expect(h.steps[ANIMATE].output).toBe('Skipped — no built model has clips.');
+		expect(files.get('assets/REPORT-models.md')).toContain('needs work');
 	});
 
 	it('never stops for a review when unattended', async () => {
@@ -299,7 +336,7 @@ describe('a run with no spec', () => {
 		expect(turn.model).toBeUndefined();
 		expect(turn.systemPrompt).toContain('a knight and a crate');
 
-		expect(written).toEqual([SPEC_PATH]);
+		expect(written).toEqual([SPEC_PATH, 'assets/REPORT-models.md']);
 		const parsed = parseModelSpec(files.get(SPEC_PATH)!);
 		if ('errors' in parsed) throw new Error(parsed.errors.join('; '));
 		expect(parsed.spec).toEqual(knightSpec());
@@ -352,7 +389,7 @@ describe('a run with no spec', () => {
 		expect(deriveTurns(h)[1].userMessage).toContain(
 			'knight: has clips but no parts for them to move.'
 		);
-		expect(written).toEqual([SPEC_PATH]);
+		expect(written).toEqual([SPEC_PATH, 'assets/REPORT-models.md']);
 	});
 
 	it('fails after two unusable submissions and writes nothing', async () => {
