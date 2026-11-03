@@ -48,15 +48,7 @@ If the file has an error, the agent gets it with its line number and fixes it. I
 
 The agent can also check a `.glb` made another way, for example with a Blender script. That writes nothing, unless it asks for a resized copy.
 
-The agent can ask the helper to:
-
-| Ask | What it does |
-|---|---|
-| `height` | scales the model to that many metres tall |
-| `ground` | puts the feet on the floor, centred |
-| `max_triangles` | warns when the model is over a triangle budget |
-| `clip` | shows that animation clip moving instead of the still views |
-| `anim` | adds the clips from an animation file to the model |
+For every argument, check and output, see the `3d-helper` page.
 
 Three.js comes with the app, so the 3D helper needs no network. The agent sees the render sheet only if its model can read images; the text report comes either way.
 
@@ -68,4 +60,4 @@ Three.js comes with the app, so the 3D helper needs no network. The agent sees t
 - It finds knees and elbows by name only (knee, shin, elbow, forearm and so on).
 - It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
 - It doesn't fix problems, rig or skin a character, unwrap UVs or make lower-detail copies.
-- Not in Chat, the Shell, jobs or subtasks.
+- Not in Chat, the Shell or subtasks. The 3D models job uses the 3D helper's checks itself; see the `3d-models` page.

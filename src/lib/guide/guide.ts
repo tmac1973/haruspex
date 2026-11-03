@@ -27,6 +27,7 @@ const ORDER = [
 	'code-windows',
 	'specialists',
 	'helpers',
+	'3d-helper',
 	'skills',
 	'write-skills',
 	'media-skills',
