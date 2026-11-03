@@ -312,7 +312,7 @@
 		// (a webview crash/reload doesn't fire the OS window-destroyed cleanup,
 		// so the Rust queue can hold a phantom "running" ticket). Runs for every
 		// window — including detached shells — before the bootstrap early-return.
-		void reclaimOwnWindowSlots();
+		const reclaimed = reclaimOwnWindowSlots();
 		if (detached) return;
 		void initServerStore();
 		void initChatStore();
@@ -346,12 +346,15 @@
 		// releaseStaleInhibit clears a sleep inhibit stranded by a previous
 		// renderer lifetime, for the same reason as reclaimOwnWindowSlots
 		// above — a webview reload would otherwise hold the machine awake
-		// until the app exits. Both must settle before the scheduler starts:
+		// until the app exits. The old window's queue tickets go too, or a due
+		// job queues behind a phantom one. All three settle before the scheduler starts:
 		// it fires a tick immediately, and a due job acquiring the inhibit
 		// mid-sweep would have that acquire undone by the late release, just
 		// as it would enqueue while the runner thinks the DB has a stale
 		// 'running' row.
-		void Promise.all([recoverOrphanRuns(), releaseStaleInhibit()]).then(() => startScheduler());
+		void Promise.all([recoverOrphanRuns(), releaseStaleInhibit(), reclaimed]).then(() =>
+			startScheduler()
+		);
 		// Home cards' Notify on new items. Main window only, like the scheduler
 		// whose runs it watches.
 		startCardWatch();

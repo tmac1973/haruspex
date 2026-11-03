@@ -130,10 +130,17 @@ function getWindowLabel(): string {
 	return windowLabel;
 }
 
+/**
+ * Marks this renderer's lifetime in its request ids. The Rust queue outlives
+ * a webview reload, and the counter restarts at 1, so without it a new
+ * `main:1` could meet the old one's ticket before `reclaimOwnWindowSlots`
+ * clears it, and fail as a duplicate id.
+ */
+let lifetime = `${Math.random().toString(36).slice(2, 8)}-`;
 let reqCounter = 0;
 function nextReqId(): string {
 	reqCounter += 1;
-	return `${getWindowLabel()}:${reqCounter}`;
+	return `${getWindowLabel()}:${lifetime}${reqCounter}`;
 }
 
 /**
@@ -467,6 +474,8 @@ export function createSlotLender(options: {
 /** Test-only hook to reset module state between cases. */
 export function _resetForTests(): void {
 	snapshot = [];
+	// Tests name requests `main:1`, `main:2`, …
+	lifetime = '';
 	reqCounter = 0;
 	windowLabel = null;
 	listenerStarted = false;
