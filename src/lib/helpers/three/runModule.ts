@@ -12,6 +12,8 @@ import { LATE_MS, type RunError } from '#lib/specialists/three/runHtml.ts';
 export interface ModuleRunResult {
 	glb: Uint8Array | null;
 	errors: RunError[];
+	/** Animation tracks naming a node the object doesn't have; the exporter drops them. */
+	missingTracks: string[];
 }
 
 export interface ModuleRunOptions {
@@ -66,6 +68,9 @@ const RUNNER = `(function () {
 			var object = out && out.isObject3D ? out : out && out.object;
 			var animations = out && out.isObject3D ? [] : (out && out.animations) || [];
 			if (!object || !object.isObject3D) throw own('build() must return an Object3D or { object, animations }.');
+			var PB = kit.THREE.PropertyBinding; var missing = [];
+			animations.forEach(function (clip) { (clip.tracks || []).forEach(function (t) { if (!PB.findNode(object, PB.parseTrackName(t.name).nodeName) && missing.indexOf(t.name) < 0) missing.push(t.name); }); });
+			if (missing.length) send({ t: 'hx-missing', tracks: missing });
 			var glb = await new kit.GLTFExporter().parseAsync(object, { binary: true, animations: animations });
 			send({ t: 'hx-glb', bytes: glb }, [glb]);
 		} catch (e) {
@@ -103,7 +108,7 @@ export async function runBuildModule(
 	opts: ModuleRunOptions = {}
 ): Promise<ModuleRunResult> {
 	const { signal, timeoutMs = 45_000 } = opts;
-	const result: ModuleRunResult = { glb: null, errors: [] };
+	const result: ModuleRunResult = { glb: null, errors: [], missingTracks: [] };
 	const settle = (ctl: FrameControl) => {
 		ctl.clearDeadline();
 		ctl.later(LATE_MS, () => ctl.done());
@@ -123,6 +128,8 @@ export async function runBuildModule(
 			if (data.t === 'hx-err') {
 				const line = typeof data.line === 'number' && data.line > 0 ? data.line : null;
 				result.errors.push({ kind: 'error', message: String(data.message ?? ''), line });
+			} else if (data.t === 'hx-missing' && Array.isArray(data.tracks)) {
+				result.missingTracks = data.tracks.map(String);
 			} else if (data.t === 'hx-glb' && data.bytes instanceof ArrayBuffer) {
 				result.glb = new Uint8Array(data.bytes);
 				settle(ctl);

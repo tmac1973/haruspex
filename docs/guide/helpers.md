@@ -21,7 +21,10 @@ Ask for a 3D asset as usual ("make a low-poly mana potion for my Godot game"). T
 - **size**: width, height and depth in metres, and where the feet sit;
 - **parts**: each named part, with parts that float free or hide inside others;
 - **problems**: faces that vanish from behind or point inward, missing normals, big textures;
-- **materials** and **animation clips**.
+- **materials**;
+- **clips**: for each animation clip, whether it goes through or off the floor, parts pass into others or come away, feet slide, knees or elbows bend the wrong way, and how far it ends from where it started.
+
+The agent can also ask to see one clip moving: eight frames from the side and the front, then all of them overlaid with trails of the parts that move most.
 
 If the file has an error, the agent gets it with its line number and fixes it. It usually checks a few times before it's done.
 
@@ -34,13 +37,15 @@ The agent can ask the helper to:
 | `height` | scales the model to that many metres tall |
 | `ground` | puts the feet on the floor, centred |
 | `max_triangles` | warns when the model is over a triangle budget |
+| `clip` | shows that animation clip moving instead of the still views |
 
 Three.js comes with the app, so the 3D helper needs no network. The agent sees the render sheet only if its model can read images; the text report comes either way.
 
 ## What it doesn't do
 
 - No model: a helper can't make anything on its own; the agent writes the code.
-- The agent sees a still pose: clips are saved and listed, not played to it. You can play them in the file's 3D view (**Animation**).
+- It can't tell whether a motion looks good, only what's physically wrong. You can play the clips in the file's 3D view (**Animation**).
+- It finds knees and elbows by name only (knee, shin, elbow, forearm and so on).
 - It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
-- It doesn't fix problems, rig a character, unwrap UVs or make lower-detail copies.
+- It doesn't fix problems, rig or skin a character, unwrap UVs or make lower-detail copies.
 - Not in Chat, the Shell, jobs or subtasks.

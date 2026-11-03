@@ -76,6 +76,18 @@ describe('runBuildModule', () => {
 		const r = (await run) as ModuleRunResult;
 		expect([...r.glb!]).toEqual([103, 108, 84, 70]);
 		expect(r.errors).toEqual([{ kind: 'error', message: 'late', line: 4 }]);
+		expect(r.missingTracks).toEqual([]);
+	});
+
+	it('reports tracks that name a missing node, found before export', async () => {
+		const { run, f } = await start();
+		f.send({ t: 'hx-missing', tracks: ['Tail.quaternion'] });
+		f.send({ t: 'hx-glb', bytes: new Uint8Array([103, 108, 84, 70]).buffer });
+		await vi.advanceTimersByTimeAsync(LATE_MS);
+		expect(((await run) as ModuleRunResult).missingTracks).toEqual(['Tail.quaternion']);
+		const page = modulePage('', 'tauri://localhost/helpers/three-kit.js');
+		expect(page.indexOf('PB.findNode')).toBeGreaterThan(0);
+		expect(page.indexOf('PB.findNode')).toBeLessThan(page.indexOf('GLTFExporter()'));
 	});
 
 	it('resolves with the errors when the module fails', async () => {
@@ -85,7 +97,8 @@ describe('runBuildModule', () => {
 		await vi.advanceTimersByTimeAsync(LATE_MS);
 		expect(await run).toEqual({
 			glb: null,
-			errors: [{ kind: 'error', message: "Unexpected token '}'", line: 7 }]
+			errors: [{ kind: 'error', message: "Unexpected token '}'", line: 7 }],
+			missingTracks: []
 		});
 	});
 
@@ -100,7 +113,8 @@ describe('runBuildModule', () => {
 					message: 'Timed out after 1 s waiting for build() to return.',
 					line: null
 				}
-			]
+			],
+			missingTracks: []
 		});
 		expect(document.querySelector('iframe')).toBeNull();
 	});

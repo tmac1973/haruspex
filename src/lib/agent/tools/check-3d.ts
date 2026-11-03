@@ -22,6 +22,8 @@ import { errMessage } from '#lib/utils/error.ts';
 
 export const SHEET_NOTE =
 	'The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): compare it with what you meant to make before you finish.';
+export const MOTION_NOTE =
+	'The motion sheet is attached (right and front frames, then all frames overlaid with trails of the parts that move most): check each frame is a pose you meant before you finish.';
 
 const DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid). A module imports nothing; its default export gets THREE (the app's three) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed), random(seed)) and returns an Object3D, or { object, animations } for clips:
 \`\`\`js
@@ -35,6 +37,7 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows that clip moving.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {
@@ -79,9 +82,12 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 	if (!MODULE.test(path) && !MODEL.test(path)) {
 		return 'path must be a .js or .mjs build module, or a .glb or .gltf file.';
 	}
-	const { height, ground, max_triangles: max } = args;
+	const { height, ground, max_triangles: max, clip } = args;
 	const bad = numberProblem(height, max);
 	if (bad) return bad;
+	if (clip !== undefined && !(typeof clip === 'string' && clip.trim())) {
+		return 'clip must be the name of an animation clip.';
+	}
 	const out = outPath(args.out, path, height !== undefined || ground === true);
 	if (typeof out === 'string') return out;
 	return {
@@ -90,7 +96,8 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 		opts: {
 			height: height as number | undefined,
 			ground: ground === true,
-			maxTriangles: max as number | undefined
+			maxTriangles: max as number | undefined,
+			clip: typeof clip === 'string' ? clip.trim() : undefined
 		}
 	};
 }
@@ -114,8 +121,14 @@ function failed(lines: string[], path: string): string {
 	return ['The check failed.', ...lines, `Fix ${path} and call check_3d again.`].join('\n');
 }
 
+interface Source {
+	glb: Uint8Array;
+	/** A module's tracks that name a node it doesn't have. */
+	missing: string[];
+}
+
 /** The GLB bytes to check: a module's export, or the file itself. */
-async function source(a: Args, abs: string, ctx: ToolContext): Promise<Uint8Array | string> {
+async function source(a: Args, abs: string, ctx: ToolContext): Promise<Source | string> {
 	let bytes: number[];
 	try {
 		bytes = await assetIo(ctx).read(abs);
@@ -126,7 +139,7 @@ async function source(a: Args, abs: string, ctx: ToolContext): Promise<Uint8Arra
 		if (/\.gltf$/i.test(a.path) && externalGltf(bytes)) {
 			return toolError('Export it as .glb, or embed its buffers and images in the .gltf.');
 		}
-		return new Uint8Array(bytes);
+		return { glb: new Uint8Array(bytes), missing: [] };
 	}
 	ctx.onProgress?.('Building');
 	const run = await runBuildModule(new TextDecoder().decode(new Uint8Array(bytes)), {
@@ -138,7 +151,7 @@ async function source(a: Args, abs: string, ctx: ToolContext): Promise<Uint8Arra
 		);
 		return failed(lines.length ? lines : ['- build() exported nothing.'], a.path);
 	}
-	return run.glb;
+	return { glb: run.glb, missing: run.missingTracks };
 }
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
@@ -150,7 +163,7 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	if (typeof got === 'string') return toolResult(got);
 
 	ctx.onProgress?.('Checking');
-	const checked = await checkGlb(got, a.opts);
+	const checked = await checkGlb(got.glb, a.opts);
 	if ('problems' in checked)
 		return toolResult(
 			failed(
@@ -173,10 +186,20 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	const sees = attachSheet(ctx, target ?? a.path, checked.png);
 	const lines = [
 		target ? `Wrote ${target}.` : `Checked ${a.path} (nothing written).`,
+		...missingLine(got.missing),
 		checked.text,
-		...(sees ? [SHEET_NOTE] : [])
+		...(sees ? [checked.clip ? MOTION_NOTE : SHEET_NOTE] : [])
 	];
 	return toolResult(lines.join('\n'), checked.png ?? undefined);
+}
+
+/** The line about tracks the exporter dropped, if there were any. */
+function missingLine(missing: string[]): string[] {
+	if (!missing.length) return [];
+	const names = missing.slice(0, 12).join(', ');
+	return [
+		`Tracks naming a node the model doesn't have (the exporter dropped them, so they do nothing): ${names}.`
+	];
 }
 
 /** Give the agent the sheet when its model can see it; whether it did. */
@@ -218,6 +241,11 @@ registerTool({
 					max_triangles: {
 						type: 'number',
 						description: 'Warn when the model has more triangles than this.'
+					},
+					clip: {
+						type: 'string',
+						description:
+							"An animation clip's name: show that clip moving instead of the still sheet."
 					}
 				},
 				required: ['path']
