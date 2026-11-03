@@ -21,9 +21,9 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 ## Read what the agent did
 
-- **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewrites don't ask first. A second whole rewrite in one turn needs a command (a test, say) run first.
-- **Commands** show as a card: command, exit code, time and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab, not run.
-- Searches and reads show as a step list.
+- **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** opens it. Unlike Chat, rewrites don't ask first. A second whole rewrite in one turn needs a command (a test, say) run first.
+- **Commands** show as a card: command, exit code, time and output (the last 20 lines until **Show all**). **Open in Shell** types it in a new Shell tab, not run.
+- Searches and reads show as steps.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step is above it in grey.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
 - **File names** inside the folder (`src/app.ts:42`), anywhere in the session, open the file in an editor window, at its top.
@@ -56,7 +56,7 @@ The header above the conversation holds:
 - **Effort** — how hard the model thinks, where it has levels;
 - **Extras** — see the `specialists` and `helpers` pages;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is;
-- tokens used, and the cost on OpenRouter (hover for details).
+- tokens used, sub-agents' included, and the OpenRouter cost (hover for more).
 
 Model, effort and extras apply from the next message.
 

@@ -15,7 +15,7 @@
  * Never throws: a stop or a failure comes back as the outcome.
  */
 
-import type { BackendOverride } from '#lib/api.ts';
+import type { BackendOverride, Usage } from '#lib/api.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { runTurnCore, type TurnLoopOptions } from '#lib/agent/runTurn.ts';
@@ -110,6 +110,8 @@ export interface SubtaskOptions {
 	onAdmitted?: () => void;
 	/** A command the child wants to run is waiting for the user's approval (true), or no longer (false). */
 	onApprovalWait?: (waiting: boolean) => void;
+	/** Each model call the child makes, for its session's token count. */
+	onUsage?: (usage: Usage) => void;
 }
 
 /** A write guard for a private worktree: nobody else writes there. */
@@ -153,6 +155,7 @@ function childLoop(
 		codeReadOnly: !writes,
 		codeWriteGuard: writes ? PRIVATE_FOLDER : undefined,
 		onApprovalWait: o.onApprovalWait,
+		onUsageUpdate: o.onUsage,
 		wslDistro: o.wslDistro ?? null,
 		contextSize: descriptor.contextSize,
 		maxIterations: SUBTASK_MAX_ROUNDS,

@@ -163,6 +163,8 @@ export interface CodeTurnOptions {
 	) => void;
 	/** A subtask's card changed, for `call`'s step (`AgentLoopOptions.onSubtaskUpdate`). */
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
+	/** Each model call a `delegate` subtask makes (`ToolContext.onSubtaskUsage`). */
+	onSubtaskUsage?: (usage: Usage) => void;
 	/** The session's stop handles for its subtasks. */
 	subtaskStops?: SubtaskStops;
 	/** Hand a background subtask to the session (`ToolContext.startBackgroundSubtask`). */
@@ -287,6 +289,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeSpecialists: o.specialists ?? null,
 					codeHelpers: o.helpers ?? null,
 					onSubtaskUpdate: o.onSubtaskUpdate,
+					onSubtaskUsage: o.onSubtaskUsage,
 					subtaskStops: o.subtaskStops,
 					startBackgroundSubtask: o.startBackgroundSubtask,
 					wslDistro: o.wslDistro ?? null,

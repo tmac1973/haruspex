@@ -1,8 +1,9 @@
 /**
  * A Code session's running count of tokens and cost: every model call its
- * own agent makes, summed across turns and saved with the thread (see
- * `CodeSessionSnapshot.usage`). Subtasks, specialists and compaction calls
- * are not counted.
+ * agent and its sub-agents (`delegate`, in a turn or in the background) make,
+ * summed across turns and saved with the thread (see
+ * `CodeSessionSnapshot.usage`). Specialists and compaction calls are not
+ * counted.
  *
  * Cost is known only for OpenRouter: the price it reports with each call,
  * or, when a call carries none, one worked out from the model's catalogue
@@ -19,6 +20,9 @@ export interface SessionUsage {
 	costUsd: number | null;
 	/** Some of `costUsd` was worked out from catalogue prices, not reported. */
 	estimated: boolean;
+	/** The part of the token count, and of `calls`, that sub-agents made. */
+	subagentTokens: number;
+	subagentCalls: number;
 }
 
 /** Per-token USD prices, as the OpenRouter catalogue gives them. */
@@ -28,34 +32,47 @@ export interface TokenPrices {
 }
 
 export function emptyUsage(): SessionUsage {
-	return { promptTokens: 0, completionTokens: 0, calls: 0, costUsd: null, estimated: false };
+	return {
+		promptTokens: 0,
+		completionTokens: 0,
+		calls: 0,
+		costUsd: null,
+		estimated: false,
+		subagentTokens: 0,
+		subagentCalls: 0
+	};
 }
 
 /**
  * `totals` with one more call. `paid`: the call went to OpenRouter; `prices`
  * is its model's catalogue entry, for a call that reports no cost.
+ * `subagent`: a sub-agent made it.
  */
 export function addCall(
 	totals: SessionUsage,
 	usage: Usage,
 	paid: boolean,
-	prices: TokenPrices | null
+	prices: TokenPrices | null,
+	subagent = false
 ): SessionUsage {
+	const prompt = usage.prompt_tokens || 0;
+	const completion = usage.completion_tokens || 0;
 	const next: SessionUsage = {
 		...totals,
-		promptTokens: totals.promptTokens + (usage.prompt_tokens || 0),
-		completionTokens: totals.completionTokens + (usage.completion_tokens || 0),
+		promptTokens: totals.promptTokens + prompt,
+		completionTokens: totals.completionTokens + completion,
 		calls: totals.calls + 1
 	};
+	if (subagent) {
+		next.subagentTokens = totals.subagentTokens + prompt + completion;
+		next.subagentCalls = totals.subagentCalls + 1;
+	}
 	if (!paid) return next;
 	if (typeof usage.cost === 'number' && Number.isFinite(usage.cost)) {
 		next.costUsd = (totals.costUsd ?? 0) + usage.cost;
 	} else {
 		// Unpriced too: the total is short, so it is marked as an estimate.
-		const cost = prices
-			? (usage.prompt_tokens || 0) * prices.prompt +
-				(usage.completion_tokens || 0) * prices.completion
-			: 0;
+		const cost = prices ? prompt * prices.prompt + completion * prices.completion : 0;
 		next.costUsd = (totals.costUsd ?? 0) + cost;
 		next.estimated = true;
 	}
@@ -76,7 +93,10 @@ export function decodeUsage(value: unknown): SessionUsage | null {
 		completionTokens: completion,
 		calls,
 		costUsd: count(u.costUsd),
-		estimated: u.estimated === true
+		estimated: u.estimated === true,
+		// Absent in a count saved before sub-agents were counted.
+		subagentTokens: count(u.subagentTokens) ?? 0,
+		subagentCalls: count(u.subagentCalls) ?? 0
 	};
 }
 

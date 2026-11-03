@@ -67,10 +67,18 @@ describe('code session persistence', () => {
 			completionTokens: 300,
 			calls: 2,
 			costUsd: 0.004,
-			estimated: false
+			estimated: false,
+			subagentTokens: 100,
+			subagentCalls: 1
 		};
 		expect(decodeCodeSession(encodeCodeSession(state({ usage })))?.usage).toEqual(usage);
 		const encoded = JSON.parse(encodeCodeSession(state()));
+		// One saved before sub-agents were counted has none of theirs.
+		encoded.usage = { promptTokens: 5, completionTokens: 1, calls: 1, costUsd: null };
+		expect(decodeCodeSession(JSON.stringify(encoded))?.usage).toMatchObject({
+			subagentTokens: 0,
+			subagentCalls: 0
+		});
 		encoded.usage = { promptTokens: 'lots' };
 		expect(decodeCodeSession(JSON.stringify(encoded))?.usage).toBeNull();
 	});

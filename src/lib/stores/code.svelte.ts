@@ -216,7 +216,7 @@ export class CodeSession {
 	usage = $state<{ promptTokens: number; completionTokens: number; contextSize: number } | null>(
 		null
 	);
-	/** Tokens and cost the session's agent has used, across every turn (saved). */
+	/** Tokens and cost the session's agent and sub-agents have used, across every turn (saved). */
 	totals = $state<SessionUsage>(emptyUsage());
 	/** The repo's AGENTS.md as the last turn carried it. */
 	agentsMd = $state<AgentsMd | null>(null);
@@ -313,7 +313,8 @@ export class CodeSession {
 				this.completedSubtasks = [...this.completedSubtasks, done];
 				this.backgroundSubtaskCount = this.backgroundSubtasks.active;
 				void this.flushWatchNotifications();
-			}
+			},
+			onUsage: (usage) => this.countCall(usage, true)
 		});
 		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
 		this.unwatchTasks = setTaskHandler(`code:${this.id}`, () => {
@@ -957,6 +958,7 @@ export class CodeSession {
 					};
 					this.countCall(usage);
 				},
+				onSubtaskUsage: (usage) => this.countCall(usage, true),
 				onContextManaged: (info) => {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
 				},
@@ -1136,15 +1138,15 @@ export class CodeSession {
 		this.messageSteps = { ...this.messageSteps, [at]: steps };
 	}
 
-	/** Add one model call of the session's agent to `totals`. */
-	private countCall(usage: Usage): void {
+	/** Add one model call of the session's agent, or of a sub-agent, to `totals`. */
+	private countCall(usage: Usage, subagent = false): void {
 		const descriptor = resolveBackendDescriptor(this.backend ?? undefined);
 		const paid = descriptor.kind === 'openrouter';
 		const prices =
 			paid && usage.cost === undefined
 				? catalogPrices(getOpenRouterCatalog(), descriptor.modelId)
 				: null;
-		this.totals = addCall(this.totals, usage, paid, prices);
+		this.totals = addCall(this.totals, usage, paid, prices, subagent);
 	}
 
 	/**

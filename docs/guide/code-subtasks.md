@@ -23,7 +23,7 @@ Writing subtasks need a git repository, and aren't offered in a read-only sessio
 
 ## Follow a subtask
 
-Each subtask shows as a card among the agent's steps: its name (hover for the full task), whether it is waiting for a slot, running or done, and how long it took. While it runs, the card lists its own steps; once it ends they fold away behind **Show N steps**, and **Report** holds what it handed back. Cards are saved with the session. Settings → Remote control's page shows each card with its status and report, without the steps.
+Each subtask shows as a card among the agent's steps: its name (hover for the full task), whether it is waiting for a slot, running or done, and how long it took. While it runs, the card lists its own steps; once it ends they fold away behind **Show N steps**, and **Report** holds what it handed back. Cards are saved with the session. A subtask's tokens and cost count toward its session's total in the header. Settings → Remote control's page shows each card with its status and report, without the steps.
 
 ## Run several at once
 

@@ -11,7 +11,7 @@
  * in a notification turn.
  */
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
-import type { BackendOverride } from '#lib/api.ts';
+import type { BackendOverride, Usage } from '#lib/api.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 import { finishedSubtask, type SubtaskState, type SubtaskStops } from '#lib/code/subtask.ts';
 import { discardQuietly } from '#lib/code/subtaskApply.ts';
@@ -51,6 +51,8 @@ export interface BackgroundSubtaskHost {
 	onState(state: SubtaskState): void;
 	/** One ended. */
 	onDone(done: CompletedSubtask): void;
+	/** Each model call one makes. */
+	onUsage?(usage: Usage): void;
 }
 
 interface Pending {
@@ -134,7 +136,8 @@ export class BackgroundSubtasks {
 			signal,
 			// Nothing but its card's stop, or closing the session, stops it.
 			stoppedByUser: () => signal.aborted,
-			onState: (s) => this.host.onState(s)
+			onState: (s) => this.host.onState(s),
+			onUsage: (u) => this.host.onUsage?.(u)
 		};
 		try {
 			const res = await runSubtaskSpec(spec, env, initial);

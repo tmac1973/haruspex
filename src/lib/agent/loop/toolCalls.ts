@@ -210,6 +210,7 @@ export async function executeToolCalls(
 				feedback: options.feedback,
 				toolCallId: call.id,
 				onSubtask: (state) => options.onSubtaskUpdate?.(call, state),
+				onSubtaskUsage: options.onSubtaskUsage,
 				subtaskStops: options.subtaskStops,
 				startBackgroundSubtask: options.startBackgroundSubtask,
 				jobSubtasks: options.jobSubtasks,

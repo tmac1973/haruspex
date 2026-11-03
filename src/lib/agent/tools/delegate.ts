@@ -155,7 +155,8 @@ export async function executeDelegate(
 				signal: stop.controller.signal,
 				// The subtask's own stop button, not the turn's Stop.
 				stoppedByUser: () => stop.controller.signal.aborted && !ctx.signal?.aborted,
-				onState: (state) => ctx.onSubtask?.(state)
+				onState: (state) => ctx.onSubtask?.(state),
+				onUsage: ctx.onSubtaskUsage
 			},
 			initial
 		);

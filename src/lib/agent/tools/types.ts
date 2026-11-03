@@ -1,4 +1,4 @@
-import type { BackendOverride, ChatMessage, ToolDefinition } from '#lib/api.ts';
+import type { BackendOverride, ChatMessage, ToolDefinition, Usage } from '#lib/api.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import type { JobSubtaskHost, SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import type { Artifact } from '#lib/sandbox/sandbox.ts';
@@ -282,6 +282,8 @@ export interface ToolContext {
 	toolCallId?: string;
 	/** A subtask's card changed (`delegate`); the loop routes it to the call's step. */
 	onSubtask?: (state: SubtaskState) => void;
+	/** Each model call a `delegate` subtask makes, for the Code session's token count. */
+	onSubtaskUsage?: (usage: Usage) => void;
 	/** Where a Code session keeps its running subtasks' stop handles. */
 	subtaskStops?: SubtaskStops;
 	/**

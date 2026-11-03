@@ -95,6 +95,15 @@ describe('runSubtask', () => {
 		expect(user).toEqual({ role: 'user', content: 'Find the callers of foo.' });
 	});
 
+	it('passes each model call’s usage up', async () => {
+		answers('done');
+		const onUsage = vi.fn();
+		await runSubtask({ ...base, onUsage });
+		const usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
+		loopOptions().onUsageUpdate?.(usage);
+		expect(onUsage).toHaveBeenCalledWith(usage);
+	});
+
 	it('follows a job’s model settings, and runs with nobody to answer', async () => {
 		answers('foo is called from bar.ts:3');
 		const onCallStats = vi.fn();
