@@ -141,7 +141,10 @@ export async function buildEntry(input: BuildEntryInput): Promise<void> {
 	if (!workdir) throw new Error('No working directory.');
 	const io = modelLoadIo(workdir);
 	const target = stageModel(ctx, cfg.create_model);
-	const systemPrompt = createSystemPrompt(spec, cfg.allow_textures);
+	const systemPrompt = createSystemPrompt(spec, {
+		textures: cfg.allow_textures,
+		noiseColour: cfg.noise_colour
+	});
 	const toolAllowlist = createToolAllowlist(cfg.allow_textures);
 
 	state.status = 'pending';

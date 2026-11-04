@@ -32,6 +32,7 @@ describe('parseModelGenerationConfig', () => {
 			create_model: null,
 			animate_model: null,
 			allow_textures: false,
+			noise_colour: false,
 			create_turns: DEFAULT_STAGE_TURNS,
 			animate_turns: DEFAULT_STAGE_TURNS,
 			rounds: DEFAULT_ROUNDS,
@@ -71,9 +72,11 @@ describe('parseModelGenerationConfig', () => {
 		expect(cfg('{"rounds": "4"}').rounds).toBe(DEFAULT_ROUNDS);
 	});
 
-	it('turns textures on only for an explicit true, and git off only for an explicit false', () => {
+	it('turns textures and noise colour on only for an explicit true, and git off only for an explicit false', () => {
 		expect(cfg('{"allow_textures": "yes"}').allow_textures).toBe(false);
 		expect(cfg('{"allow_textures": true}').allow_textures).toBe(true);
+		expect(cfg('{"noise_colour": 1}').noise_colour).toBe(false);
+		expect(cfg('{"noise_colour": true}').noise_colour).toBe(true);
 		expect(cfg('{"use_git": 0}').use_git).toBe(true);
 		expect(cfg('{"use_git": false}').use_git).toBe(false);
 	});

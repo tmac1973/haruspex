@@ -41,6 +41,11 @@ export interface ModelGenerationConfig {
 	animate_model: ChainModel | null;
 	/** Offer the creation model the code-drawn texture tool. Off by default. */
 	allow_textures: boolean;
+	/**
+	 * Let the creation model vary colours with kit.createNoise. Off by default:
+	 * noise suits rock and bark, and turns a creature's skin blotchy.
+	 */
+	noise_colour: boolean;
 	/** maxIterations for one creation turn. */
 	create_turns: number;
 	/** maxIterations for one animation turn. */
@@ -97,6 +102,7 @@ export function parseModelGenerationConfig(json: string | null): ModelGeneration
 		animate_model: parseChainModel(raw.animate_model),
 		// Opt-in: only an explicit true turns it on.
 		allow_textures: raw.allow_textures === true,
+		noise_colour: raw.noise_colour === true,
 		create_turns: intOr(raw.create_turns, MIN_STAGE_TURNS, MAX_STAGE_TURNS, DEFAULT_STAGE_TURNS),
 		animate_turns: intOr(raw.animate_turns, MIN_STAGE_TURNS, MAX_STAGE_TURNS, DEFAULT_STAGE_TURNS),
 		rounds: intOr(raw.rounds, MIN_ROUNDS, MAX_ROUNDS, DEFAULT_ROUNDS),
