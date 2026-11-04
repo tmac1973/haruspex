@@ -158,3 +158,10 @@ export function partCentre(THREE: Three, part: Part, stride: number) {
 	);
 	return n ? c.divideScalar(n) : c;
 }
+
+/** The median of `xs` (not empty). */
+export function median(xs: number[]): number {
+	const sorted = [...xs].sort((a, b) => a - b);
+	const k = sorted.length >> 1;
+	return sorted.length % 2 ? sorted[k] : (sorted[k - 1] + sorted[k]) / 2;
+}

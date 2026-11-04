@@ -21,6 +21,14 @@ function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 		reachPart: 'Mesh_Hand_R',
 		reachAt: 0.4,
 		height: 0.7,
+		loop: false,
+		locomotion: false,
+		airborne: false,
+		travel: 0,
+		travelDir: [0, 0],
+		travelTrack: '',
+		stance: null,
+		treadmill: false,
 		dead: [],
 		jumps: [],
 		sanity: [],
@@ -58,6 +66,61 @@ describe('formatClipLines', () => {
 describe('clipProblems', () => {
 	it('leaves small dips and lifts alone', () => {
 		expect(clipProblems(motion({ sink: 0.005, lift: 0.01 }))).toEqual([]);
+	});
+
+	it('reports a lift just over planted, so a foot cannot hover past the slide check', () => {
+		expect(clipProblems(motion({ lift: 0.013, liftAt: 0.2 }))).toEqual([
+			'off the floor by 1 cm at 0.20 s'
+		]);
+		expect(clipProblems(motion({ name: 'Jump', lift: 0.3, airborne: true }))).toEqual([]);
+	});
+
+	it('reports a loop whose last pose is not its first', () => {
+		const open = motion({ name: 'Idle', loop: true, seam: 0.09, seamPart: 'Finger_L' });
+		expect(clipProblems(open)).toEqual([
+			'loops but ends 9 cm from where it starts (Finger_L moves most): make its last pose its first'
+		]);
+		expect(clipProblems({ ...open, loop: false })).toEqual([]);
+	});
+
+	it('reports a looping walk that carries the body, and the track that does', () => {
+		const walk = motion({
+			loop: true,
+			locomotion: true,
+			seam: 0.6,
+			travel: 0.6,
+			travelDir: [0, 0.6],
+			travelTrack: 'Root.position',
+			stance: { x: 0, z: 0 }
+		});
+		expect(clipProblems(walk)).toEqual([
+			'carries the body 60 cm forward (Root.position): a game moves the model itself, so it would move twice and jump back each loop. Play it in place, with its planted feet moving back instead'
+		]);
+	});
+
+	it('wants a walk in place to move its planted feet back', () => {
+		const walk = motion({ loop: true, locomotion: true, stance: { x: 0, z: 0 } });
+		expect(clipProblems(walk)).toEqual([
+			'its planted feet stand still: in place, a walk moves them back (−z) at its walking speed, or they skate in a game'
+		]);
+		const back = { ...walk, stance: { x: 0, z: -1.2 }, treadmill: true };
+		expect(clipProblems(back)).toEqual([]);
+		expect(clipProblems({ ...back, stance: { x: 0, z: 1.2 } })[0]).toMatch(
+			/^its planted feet move forward \(\+z\)/
+		);
+		expect(clipProblems({ ...back, name: 'WalkBack', stance: { x: 0, z: 1.2 } })).toEqual([]);
+	});
+
+	it('words a slide on a treadmill as a slip against it', () => {
+		const slides = [{ part: 'Sole_L', cm: 7, from: 0.1, to: 0.4 }];
+		const walk = motion({ locomotion: true, stance: { x: 0, z: -1 }, treadmill: true, slides });
+		expect(clipProblems(walk)).toEqual([
+			'Sole_L slips 7 cm against the treadmill at 0.10 s–0.40 s'
+		]);
+		expect(formatClipLines([walk])[1]).toMatch(/^- Walk \(.*, in place at 1\.00 m\/s\): /);
+		expect(formatClip(walk, false)).toContain(
+			'In place: its planted feet move back at 1.00 m/s, the speed a game should move the model at.'
+		);
 	});
 
 	it('caps each kind of finding', () => {

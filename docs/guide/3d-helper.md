@@ -31,7 +31,7 @@ Checking a `.glb` writes nothing unless `height` or `ground` asks for a resized 
 
 ## What it checks
 
-A build error stops the check and reports the error with its line, in whichever file it came from. Otherwise:
+A build error stops the check and reports the error with its line, in whichever file it came from. So does a clip track whose values don't match its times, named by clip and track. Otherwise:
 
 - **Problems**: no meshes, zero size, broken vertex positions.
 - **Warnings**: missing normals, faces that vanish from behind, faces pointing inward, textures over 2048 px, more triangles than `max_triangles`.
@@ -40,12 +40,14 @@ A build error stops the check and reports the error with its line, in whichever 
 
 Vertex colours outside 0–1 are clamped before the `.glb` is written, and the report says how many.
 
-Each clip is sampled at 16 frames, and reports:
+Each clip is sampled at 16 frames. Clips named Idle, Walk, Run, Fly or Swim loop. A walk or run plays in place, since the game moves the model; its line gives the speed to move it at. Each clip reports:
 
-- going through the floor (over 1 cm) or the whole model leaving it (over 2 cm);
+- going through the floor or the whole model leaving it, each over 1 cm (runs, jumps and flying may leave it);
 - a clip that lasts 0 s, never moves, or has keys past its end;
 - a part passing into another, or coming away from the body;
 - a planted foot sliding over 3 cm;
+- a looping clip that ends over 1 cm (or 2% of the height) from where it starts, or carries the body across the floor, with the track that carries it;
+- a walk or run whose planted feet don't move back together at one speed, like a treadmill: they slip against it, stand still or move forward;
 - a knee or elbow bending the wrong way by over 10°;
 - a joint turning over 90° between two keys, and tracks that never move;
 - how far it ends from where it started, how far its key pose reaches, and how far it drifts.
@@ -66,5 +68,5 @@ The agent sees the sheets only if its model reads images; the report comes eithe
 - It can't tell whether a model looks right or a walk reads as a walk, only what is physically wrong.
 - It doesn't decide when the agent is done. The agent stops when it is satisfied, or at the session's step limit.
 - It keeps no history: each check replaces the `.glb` at `out`.
-- It finds knees and elbows by name only.
+- It finds knees and elbows, loops and walks by name only.
 - It doesn't rig, skin, unwrap UVs or make lower-detail copies.

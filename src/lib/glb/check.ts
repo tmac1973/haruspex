@@ -8,13 +8,13 @@ import { formatReport } from '#lib/glb/format.ts';
 import { disposeTree, loadGlb, type LoadedGlb, type Three } from '#lib/glb/load.ts';
 import { normaliseGlb, type NormaliseOptions } from '#lib/glb/normalise.ts';
 import { inspectGlb, type Bounds, type GlbReport } from '#lib/glb/report.ts';
-import { inspectMotion } from '#lib/glb/motion.ts';
+import { inspectMotion, type MotionOptions } from '#lib/glb/motion.ts';
 import { formatClip, formatClipLines } from '#lib/glb/motionFormat.ts';
 import { renderMotionSheet } from '#lib/glb/motionSheet.ts';
 import { renderSheet } from '#lib/glb/sheet.ts';
 import { validateGlb } from '#lib/glb/validate.ts';
 
-export interface CheckOptions extends NormaliseOptions {
+export interface CheckOptions extends NormaliseOptions, MotionOptions {
 	maxTriangles?: number;
 	/** A clip to show moving: its motion sheet replaces the still sheet. */
 	clip?: string;
@@ -62,7 +62,7 @@ export async function checkGlb(
 		if ('error' in loaded) return { problems: [loaded.error] };
 		report = inspectGlb(loaded.THREE, loaded.gltf, inspect);
 	}
-	const shown = describe(loaded, report, opts.clip, normalisedFrom);
+	const shown = describe(loaded, report, opts, normalisedFrom);
 	if ('problems' in shown) return shown;
 	const invalid = opts.clip ? [] : (await validateGlb(bytes)).lines;
 	const text = invalid.length
@@ -78,7 +78,7 @@ export async function checkGlb(
 function describe(
 	{ THREE, gltf }: { THREE: Three; gltf: LoadedGlb },
 	report: GlbReport,
-	clip: string | undefined,
+	{ clip, loops }: CheckOptions,
 	normalisedFrom: Bounds | undefined
 ): Pick<GlbCheck, 'text' | 'png' | 'clip'> | { problems: string[] } {
 	const anim = clip ? gltf.animations.find((a) => a.name === clip) : undefined;
@@ -89,7 +89,7 @@ function describe(
 		return { problems: [`No clip named ${clip}. ${has}`] };
 	}
 	// After normalising, so the floor is where the written GLB has it.
-	const clips = inspectMotion(THREE, gltf);
+	const clips = inspectMotion(THREE, gltf, { loops });
 	const motion = anim && clips.find((c) => c.name === anim.name);
 	const png =
 		anim && motion

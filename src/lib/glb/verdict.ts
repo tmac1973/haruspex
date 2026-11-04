@@ -26,9 +26,6 @@ import type { ModelEntry } from '#lib/models3d/spec/types.ts';
 /** How far the measured height may stray from the spec's, as a fraction. */
 export const HEIGHT_TOLERANCE = 0.1;
 
-/** The most a looping clip's last pose may sit from its first: this share of the height, or 1 cm. */
-export const LOOP_SEAM = 0.02;
-
 export type ModelStage = 'create' | 'animate';
 
 export interface ModelVerdict {
@@ -78,7 +75,8 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 		);
 	}
 
-	const checked = await checkGlb(run.glb, {});
+	const loops = Object.fromEntries(entry.clips.map((c) => [c.name, c.loop]));
+	const checked = await checkGlb(run.glb, { loops });
 	if ('problems' in checked) {
 		return notDone(
 			checked.problems,
@@ -96,7 +94,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 		);
 	}
 
-	const seen = await inspectNodes(checked.bytes, entry.parts);
+	const seen = await inspectNodes(checked.bytes, entry.parts, loops);
 	problems.push(...seen.problems);
 	problems.push(...checked.invalid.map((l) => `glTF validation: ${l.replace(/^- /, '')}`));
 	const clipSheets: Record<string, string> = {};
@@ -104,7 +102,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 		problems.push(...clipVerdict(entry, seen.clips, run.missing));
 		for (const c of entry.clips) {
 			if (!seen.clips.some((m) => m.name === c.name)) continue;
-			const shown = await checkGlb(checked.bytes, { clip: c.name });
+			const shown = await checkGlb(checked.bytes, { clip: c.name, loops });
 			if (!('problems' in shown) && shown.png !== null) clipSheets[c.name] = shown.png;
 		}
 	}
@@ -136,7 +134,8 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
  */
 async function inspectNodes(
 	glb: Uint8Array,
-	parts: string[]
+	parts: string[],
+	loops: Record<string, boolean>
 ): Promise<{ problems: string[]; clips: ClipMotion[] }> {
 	const loaded = await loadGlb(glb);
 	if ('error' in loaded) return { problems: [loaded.error], clips: [] };
@@ -147,12 +146,12 @@ async function inspectNodes(
 	const problems = parts
 		.filter((p) => !has(p))
 		.map((p) => `Missing part "${p}": name the pivot exactly so.`);
-	const clips = inspectMotion(THREE, gltf);
+	const clips = inspectMotion(THREE, gltf, { loops });
 	disposeTree(gltf.scene);
 	return { problems, clips };
 }
 
-/** What keeps the clips from done: missing ones, dropped tracks, motion faults, open loops. */
+/** What keeps the clips from done: missing ones, dropped tracks, motion faults (open loops among them). */
 function clipVerdict(entry: ModelEntry, clips: ClipMotion[], missing: string[]): string[] {
 	const out: string[] = [];
 	for (const c of entry.clips) {
@@ -163,13 +162,6 @@ function clipVerdict(entry: ModelEntry, clips: ClipMotion[], missing: string[]):
 	}
 	for (const m of clips) {
 		for (const p of clipProblems(m)) out.push(`Clip "${m.name}": ${p}.`);
-		const spec = entry.clips.find((c) => c.name === m.name);
-		const limit = Math.max(0.01, LOOP_SEAM * m.height);
-		if (spec?.loop && m.seam > limit) {
-			out.push(
-				`Clip "${m.name}" loops but ends ${Math.round(m.seam * 100)} cm from where it starts: make its last pose its first.`
-			);
-		}
 	}
 	return out;
 }

@@ -186,6 +186,38 @@ describe('foot slide', () => {
 		expect(c.slides).toEqual([]);
 	});
 
+	/** A foot planted from 0 to 0.5 s, moving back by `back` (m) over that, then lifted. */
+	const stance = (back: number[]) =>
+		move(
+			'Foot',
+			[0, 0.25, 0.5, 0.75, 1],
+			[
+				[0, 0.05, 0],
+				[0, 0.05, -back[0]],
+				[0, 0.05, -back[1]],
+				[0, 0.3, 0],
+				[0, 0.05, 0]
+			]
+		);
+	const named = (name: string, track: THREE.KeyframeTrack) =>
+		inspectMotion(THREE, gltf(scene(foot()), [clip(name, 1, track)]))[0];
+
+	it('takes a walk whose planted foot moves back steadily as a treadmill, not a slide', () => {
+		const w = named('Walk', stance([0.2, 0.4]));
+		expect(w.slides).toEqual([]);
+		expect(w.treadmill).toBe(true);
+		expect(w.stance!.z).toBeCloseTo(-0.8, 1);
+		// The same motion in a clip that isn't a walk slides.
+		expect(named('Wave', stance([0.2, 0.4])).slides).toHaveLength(1);
+	});
+
+	it('reports a walk foot that slips against the treadmill', () => {
+		const w = named('Walk', stance([0.05, 0.4]));
+		expect(w.treadmill).toBe(true);
+		expect(w.slides).toHaveLength(1);
+		expect(w.slides[0].part).toBe('Foot');
+	});
+
 	it('leaves a step alone: lift, move, land', () => {
 		const step = move(
 			'Foot',
