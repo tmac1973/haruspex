@@ -22,6 +22,7 @@
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
 	import OwnerApiSection from '#lib/components/settings/OwnerApiSection.svelte';
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
+	import LicencesSection from '#lib/components/settings/LicencesSection.svelte';
 	import type { Category } from '#lib/components/settings/categories.ts';
 	import { getSettingsNav, settingsNavHandled } from '#lib/stores/settingsNav.svelte.ts';
 	import { mcpAttentionCount } from '#lib/stores/mcpUpdate.svelte.ts';
@@ -180,6 +181,12 @@
 					label: 'Feedback',
 					subtitle: 'Report a bug or request a feature.',
 					icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>'
+				},
+				{
+					id: 'licences',
+					label: 'Licences',
+					subtitle: 'The open-source software Haruspex ships.',
+					icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line>'
 				}
 			]
 		}
@@ -315,6 +322,8 @@
 				<OwnerApiSection />
 			{:else if activeCategory === 'feedback'}
 				<FeedbackSection />
+			{:else if activeCategory === 'licences'}
+				<LicencesSection />
 			{/if}
 		</div>
 	</div>
