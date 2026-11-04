@@ -14,6 +14,8 @@
 	import {
 		cancel,
 		clearCurrentRun,
+		focusRun,
+		getActiveRuns,
 		getCurrentRun,
 		type RunStepState,
 		type StepThinkingStats
@@ -28,6 +30,8 @@
 	const { ondone, onhide }: Props = $props();
 
 	const run = $derived(getCurrentRun());
+	/** The other runs going now, to switch the view to. */
+	const others = $derived(getActiveRuns().filter((r) => r.id !== run?.id));
 
 	function runStatusLabel(): string {
 		if (!run) return '';
@@ -105,6 +109,19 @@
 			<div class="header-left">
 				<h3>{run.jobName}</h3>
 				<span class={runStatusClass()}>{runStatusLabel()}</span>
+				{#if others.length > 0}
+					<span class="others">
+						Also running:
+						{#each others as other (other.id)}
+							<button
+								type="button"
+								class="other"
+								title="Show this run"
+								onclick={() => focusRun(other.id)}>{other.jobName}</button
+							>
+						{/each}
+					</span>
+				{/if}
 			</div>
 			<div class="header-right">
 				{#if run.status === 'running'}
@@ -276,6 +293,29 @@
 		justify-content: space-between;
 		align-items: center;
 		gap: 12px;
+	}
+
+	.others {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+	}
+
+	.other {
+		padding: 2px 8px;
+		font-size: 0.78rem;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		cursor: pointer;
+	}
+
+	.other:hover {
+		border-color: var(--accent);
 	}
 
 	.header-left {

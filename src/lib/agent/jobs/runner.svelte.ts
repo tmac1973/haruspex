@@ -1,7 +1,10 @@
 /**
- * Job runner: owns run lifecycle — the FIFO queue, the reactive RunState the
- * UI subscribes to (getCurrentRun / currentStepIndex), abort, and persistence
+ * Job runner: owns run lifecycle — the queue, the reactive RunStates the UI
+ * subscribes to (getCurrentRun, getActiveRuns), abort, and persistence
  * mirroring into `job_runs` / `job_run_steps` via the jobRuns store.
+ *
+ * Runs start side by side when the model has room for them: see `canStart`.
+ * The Jobs tab's **One run at a time** turns that off, for benchmarks.
  *
  * What a run *does* is the job type's business: the runner builds a
  * JobRunContext (run-scoped capabilities) and dispatches to the type's
@@ -19,7 +22,7 @@ import {
 	type EphemeralTurnResult
 } from '#lib/agent/runEphemeralTurn.ts';
 import type { Usage } from '#lib/api.ts';
-import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { laneConcurrency, laneKey, withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
 import { jobSandboxId, releaseSandbox } from '#lib/sandbox/sandbox.ts';
 import { forgetWorkingDir, setWorkingDirState } from '#lib/stores/session.svelte.ts';
@@ -27,7 +30,9 @@ import { getJob, type JobWithSteps, type JobType } from '#lib/stores/jobs.svelte
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	getActiveLocalModelFilename,
+	getLiveSettings,
 	getSettings,
+	updateSettings,
 	type SamplingParams
 } from '#lib/stores/settings.ts';
 import { parseModelAdvanced } from '#lib/agent/jobs/modelAdvanced.ts';
@@ -181,9 +186,7 @@ function runJobTurn(
 		model?: ModelColumns;
 	}
 ): Promise<EphemeralTurnResult> {
-	if (current && current.id === runId) {
-		current = { ...current, waitingForSlot: true };
-	}
+	updateRun(runId, (r) => ({ ...r, waitingForSlot: true }));
 	// A turn on its own model takes that model's backend, so it queues on that
 	// server's slot lane and its context size rides on the override. Vision is
 	// the model's too, unless the pipeline decided it.
@@ -193,22 +196,18 @@ function runJobTurn(
 	}
 	return withInferenceSlot(
 		{
-			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
+			consumer: { kind: 'job', jobName: liveRun(runId)?.jobName ?? `Job ${job.id}` },
 			backend,
 			priority: slotPriority(job),
 			signal: abort.signal,
-			onAdmitted: () => {
-				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
-			},
-			onRequeue: (t) => {
-				if (current && current.id === runId) current = { ...current, waitingForSlot: t !== null };
-			}
+			onAdmitted: () => updateRun(runId, (r) => ({ ...r, waitingForSlot: false })),
+			onRequeue: (t) => updateRun(runId, (r) => ({ ...r, waitingForSlot: t !== null }))
 		},
 		async (slot) => {
 			// Set for the duration of the turn so onCallStats can attribute each
 			// call, and always cleared — a leaked kind would mis-label the next
 			// turn's calls, which is worse than not labelling them at all.
-			currentTurnKind = opts.turnKind ?? null;
+			turnKinds.set(runId, opts.turnKind ?? null);
 			try {
 				const observability = observabilityCallbacks(runId);
 				const policy = jobTurnPolicy(job);
@@ -242,7 +241,7 @@ function runJobTurn(
 					})
 				);
 			} finally {
-				currentTurnKind = null;
+				turnKinds.delete(runId);
 			}
 		}
 	);
@@ -457,9 +456,10 @@ function wireKinds(byKind: Record<string, KindThinkingStats>): Record<string, Tu
 // The store closes steps for every job type; the totals live here. Registering
 // once means a job type added later records its tokens without touching any of
 // the nine finish call sites. See `setStepStatsProvider`.
-setStepStatsProvider((runId, ordering) =>
-	current && current.id === runId ? stepStatsWire(current.steps[ordering]?.thinking ?? null) : null
-);
+setStepStatsProvider((runId, ordering) => {
+	const run = liveRun(runId);
+	return run ? stepStatsWire(run.steps[ordering]?.thinking ?? null) : null;
+});
 
 /**
  * The inverse of `stepStatsWire`: a persisted row read back into the same
@@ -575,9 +575,27 @@ export interface PendingQueueEntry {
 	trigger: RunTrigger;
 }
 
-let current = $state<RunState | null>(null);
+/**
+ * Every run started this session that hasn't settled, plus the focused run
+ * after it ends, so the run view can show its result until Close.
+ */
+let runs = $state<RunState[]>([]);
+/** The run the Jobs tab's run view follows. See `getCurrentRun`. */
+let focusedId = $state<number | null>(null);
 let pending = $state<QueuedRun[]>([]);
-let activeAbort: AbortController | null = null;
+// Bookkeeping the UI never renders, so plain Maps, not SvelteMaps.
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
+const aborts = new Map<number, AbortController>();
+
+/** What a started run holds until it settles, for `canStart` to weigh. */
+interface Admitted {
+	jobId: number;
+	lane: string;
+	workingDir: string;
+	asksUser: boolean;
+}
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
+const admitted = new Map<number, Admitted>();
 
 // Hold the machine awake for as long as there is work. The scheduler ticker
 // and every pipeline are JS in the webview, so an OS suspend doesn't just
@@ -586,17 +604,55 @@ let activeAbort: AbortController | null = null;
 // 'running' until someone notices. A module-level $effect.root (same pattern
 // as the queued-send watcher in stores/chat.svelte.ts) derives the intent
 // from the state that already exists rather than from calls sprinkled
-// through startRun / finalizeRun / drainNext, so no path can forget one.
+// through startRun / finalizeRun / drain, so no path can forget one.
 // Batching is a bonus: a finish that immediately drains the next queued run
 // settles as a single no-op instead of a release/acquire round trip.
 $effect.root(() => {
 	$effect(() => {
-		setKeepAwake(current?.status === 'running' || pending.length > 0);
+		setKeepAwake(runs.some((r) => r.status === 'running') || pending.length > 0);
 	});
 });
 
+function liveRun(runId: number): RunState | undefined {
+	return runs.find((r) => r.id === runId);
+}
+
+function updateRun(runId: number, change: (run: RunState) => RunState): void {
+	if (!liveRun(runId)) return;
+	runs = runs.map((r) => (r.id === runId ? change(r) : r));
+}
+
+function isActive(run: RunState): boolean {
+	return run.status === 'running' || run.status === 'needs_input';
+}
+
+/**
+ * The run the Jobs tab's run view shows: the first run started while no
+ * other was in view, kept after it ends until Close or the next run takes
+ * its place. Other runs going at the same time are in `getActiveRuns`.
+ */
 export function getCurrentRun(): RunState | null {
-	return current;
+	return runs.find((r) => r.id === focusedId) ?? null;
+}
+
+/** Runs going now (running or waiting on the user), oldest first. */
+export function getActiveRuns(): RunState[] {
+	return runs.filter(isActive);
+}
+
+/** A run this session holds: one going now, or the run view's finished one. */
+export function getRun(runId: number): RunState | null {
+	return liveRun(runId) ?? null;
+}
+
+/** A job's run that is going now, or null. */
+export function getActiveRunForJob(jobId: number): RunState | null {
+	return runs.find((r) => r.jobId === jobId && isActive(r)) ?? null;
+}
+
+/** Show `runId` in the run view, when it is a run this session holds. */
+export function focusRun(runId: number): void {
+	if (liveRun(runId)) focusedId = runId;
 }
 
 export function getPendingQueue(): PendingQueueEntry[] {
@@ -631,14 +687,27 @@ export function removeQueuedRunsForJob(jobId: number): number {
 	return before - pending.length;
 }
 
-/** The id of the run in progress, or null. Its row must not be deleted. */
-export function getRunningRunId(): number | null {
-	return current?.status === 'running' ? current.id : null;
+/** Whether `runId` is in progress. Its row must not be deleted. */
+export function isRunRunning(runId: number): boolean {
+	return liveRun(runId)?.status === 'running';
 }
 
+/** Close the run view's finished run; it moves to another run going now, if any. */
 export function clearCurrentRun(): void {
-	if (current?.status === 'running') return;
-	current = null;
+	const shown = getCurrentRun();
+	if (shown?.status === 'running') return;
+	if (shown && !admitted.has(shown.id)) runs = runs.filter((r) => r.id !== shown.id);
+	focusedId = getActiveRuns().find((r) => r.id !== shown?.id)?.id ?? null;
+}
+
+/** Jobs tab → One run at a time: no run starts beside another while it's on. */
+export function getOneRunAtATime(): boolean {
+	return getLiveSettings().jobsOneAtATime;
+}
+
+export function setOneRunAtATime(on: boolean): void {
+	updateSettings({ jobsOneAtATime: on });
+	if (!on) drain();
 }
 
 /**
@@ -704,7 +773,7 @@ export async function enqueue(
 
 	const queued: QueuedRun = { runId, job, trigger };
 
-	if (current?.status === 'running') {
+	if (!canStart(job)) {
 		if (trigger === 'chained') {
 			// A chain's next stage goes ahead of runs queued by hand: it is the
 			// rest of a run already under way. Behind any chained run already
@@ -728,10 +797,46 @@ export async function enqueue(
 	return runId;
 }
 
+function admission(job: JobWithSteps): Admitted {
+	return {
+		jobId: job.id,
+		lane: laneKey(jobBackendOverride(job)),
+		workingDir: job.working_dir ?? '',
+		// The types that can't be scheduled are the ones that interview the user.
+		asksUser: getJobType(job.job_type)?.supportsSchedule === false
+	};
+}
+
+/**
+ * Whether `job` may start now, beside the runs already going. Alone it
+ * always may. Beside others it waits when:
+ * - One run at a time is on, or lean mode is (it runs research alone).
+ * - The same job is running: a second run of it would only race the first.
+ * - Its lane has no free slot: Settings → Inference → Parallel streams for
+ *   the local model, the server's slots for a remote one. A run on another
+ *   lane never waits for this one.
+ * - A run going now works in the same folder: two runs writing one checkout
+ *   would trip over each other.
+ * - Both may ask the user something: two interviews at once is one too many.
+ */
+function canStart(job: JobWithSteps): boolean {
+	if (admitted.size === 0) return true;
+	const settings = getLiveSettings();
+	if (settings.jobsOneAtATime || settings.leanMode) return false;
+	const me = admission(job);
+	const others = [...admitted.values()];
+	if (others.some((o) => o.jobId === me.jobId)) return false;
+	if (me.asksUser && others.some((o) => o.asksUser)) return false;
+	if (me.workingDir && others.some((o) => o.workingDir === me.workingDir)) return false;
+	const limit = laneConcurrency(jobBackendOverride(job));
+	return limit === null || others.filter((o) => o.lane === me.lane).length < limit;
+}
+
 function startRun(queued: QueuedRun): void {
 	const { runId, job } = queued;
 	const abort = new AbortController();
-	activeAbort = abort;
+	aborts.set(runId, abort);
+	admitted.set(runId, admission(job));
 	// The run's Python sandbox saves into the job's folder, not a chat's.
 	setWorkingDirState(jobSandboxId(runId), job.working_dir ? job.working_dir : null);
 
@@ -740,7 +845,7 @@ function startRun(queued: QueuedRun): void {
 	// Fire-and-forget: a failed environment write costs the stats card its
 	// model label, which must never be a reason a run does not start.
 	void setRunEnvironment(runId, environment);
-	current = {
+	const run: RunState = {
 		id: runId,
 		jobId: job.id,
 		jobName: job.name,
@@ -776,19 +881,33 @@ function startRun(queued: QueuedRun): void {
 		startedAt: Date.now(),
 		finishedAt: null
 	};
+	// The run view moves to a new run unless it is showing one still going.
+	// A finished run it showed goes with it, unless that run is still settling.
+	const shown = getCurrentRun();
+	if (shown && isActive(shown)) {
+		runs = [...runs, run];
+	} else {
+		runs = [...runs.filter((r) => r.id !== shown?.id || admitted.has(r.id)), run];
+		focusedId = runId;
+	}
 
 	void runPipeline(queued, abort);
 }
 
-function drainNext(): void {
-	const next = pending.shift();
-	if (next) startRun(next);
+/** Start every queued run that may start now, in queue order. */
+function drain(): void {
+	for (const next of [...pending]) {
+		if (!canStart(next.job)) continue;
+		pending = pending.filter((q) => q !== next);
+		startRun(next);
+	}
 }
 
 function patchStep(runId: number, stepIndex: number, patch: Partial<RunStepState>): void {
-	if (!current || current.id !== runId) return;
-	const steps = current.steps.map((s, i) => (i === stepIndex ? { ...s, ...patch } : s));
-	current = { ...current, steps };
+	updateRun(runId, (r) => ({
+		...r,
+		steps: r.steps.map((s, i) => (i === stepIndex ? { ...s, ...patch } : s))
+	}));
 }
 
 /**
@@ -803,40 +922,47 @@ function patchStep(runId: number, stepIndex: number, patch: Partial<RunStepState
  * already would.
  */
 /**
- * The kind of turn currently in flight, or null when the pipeline did not say.
+ * Each run's kind of turn in flight; absent when the pipeline did not say.
  *
- * A module cursor rather than a parameter: `onCallStats` fires from inside the
- * agent loop, several frames below the call that knows what kind of turn this
- * is. Runs are serialized through the inference slot, so there is exactly one
- * turn in flight at a time and no interleaving to confuse it.
+ * A cursor rather than a parameter: `onCallStats` fires from inside the agent
+ * loop, several frames below the call that knows what kind of turn this is.
+ * Keyed by run, since runs go side by side; a run makes one turn at a time.
  */
-let currentTurnKind: string | null = null;
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
+const turnKinds = new Map<number, string | null>();
 
 function observabilityCallbacks(runId: number) {
-	const liveStep = () => (current && current.id === runId ? current.currentStepIndex : 0);
+	const liveStep = () => liveRun(runId)?.currentStepIndex ?? 0;
 	return {
 		onUsageUpdate: (usage: Usage) =>
 			patchStep(runId, liveStep(), {
 				usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens }
 			}),
 		onCallStats: (stats: CallStats) => {
-			if (!current || current.id !== runId) return;
-			const idx = liveStep();
+			const run = liveRun(runId);
+			if (!run) return;
+			const idx = run.currentStepIndex;
 			patchStep(runId, idx, {
-				thinking: addCallStats(current.steps[idx]?.thinking ?? null, stats, currentTurnKind)
+				thinking: addCallStats(
+					run.steps[idx]?.thinking ?? null,
+					stats,
+					turnKinds.get(runId) ?? null
+				)
 			});
 		},
 		onContextManaged: (info: ContextManagedInfo) => {
-			if (!current || current.id !== runId) return;
-			const idx = liveStep();
+			const run = liveRun(runId);
+			if (!run) return;
+			const idx = run.currentStepIndex;
 			patchStep(runId, idx, {
-				thinking: addContextEvent(current.steps[idx]?.thinking ?? null, info)
+				thinking: addContextEvent(run.steps[idx]?.thinking ?? null, info)
 			});
 		},
 		onReasoning: (reasoning: string) => {
-			if (!current || current.id !== runId) return;
-			const idx = liveStep();
-			const prev = current.steps[idx]?.reasoning ?? '';
+			const run = liveRun(runId);
+			if (!run) return;
+			const idx = run.currentStepIndex;
+			const prev = run.steps[idx]?.reasoning ?? '';
 			// One step is many model calls; separate them so the disclosure
 			// reads as a sequence of thoughts rather than one run-on block.
 			patchStep(runId, idx, { reasoning: prev ? `${prev}\n\n---\n\n${reasoning}` : reasoning });
@@ -848,16 +974,14 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 	return {
 		onAssistantDelta: (full: string) => patchStep(runId, stepIndex, { streaming: full }),
 		onSubtaskUpdate: (call: ResolvedToolCall, subtask: SubtaskState) => {
-			if (!current || current.id !== runId) return;
-			const step = current.steps[stepIndex];
+			const step = liveRun(runId)?.steps[stepIndex];
 			if (!step) return;
 			patchStep(runId, stepIndex, {
 				searchSteps: step.searchSteps.map((s) => (s.id === call.id ? { ...s, subtask } : s))
 			});
 		},
 		onToolStart: (call: ResolvedToolCall) => {
-			if (!current || current.id !== runId) return;
-			const step = current.steps[stepIndex];
+			const step = liveRun(runId)?.steps[stepIndex];
 			if (!step) return;
 			patchStep(runId, stepIndex, {
 				searchSteps: [...step.searchSteps, newRunningStep(call)]
@@ -870,8 +994,7 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 			artifacts?: Artifact[],
 			lintIssues?: LintIssue[]
 		) => {
-			if (!current || current.id !== runId) return;
-			const step = current.steps[stepIndex];
+			const step = liveRun(runId)?.steps[stepIndex];
 			if (!step) return;
 			patchStep(runId, stepIndex, {
 				searchSteps: markStepDone(
@@ -889,10 +1012,10 @@ function buildStreamCallbacks(runId: number, stepIndex: number) {
 
 /**
  * The run-scoped capabilities a pipeline executes against — never the
- * runner's module state. `onSettled` owns the post-pipeline transition: if
- * there's a queued run it swaps the center pane straight into the next one;
- * if the queue is empty, `current` stays on the terminal state so the user
- * can read the result and dismiss it via Close (clearCurrentRun).
+ * runner's module state. `onSettled` owns the post-pipeline transition: it
+ * starts the queued runs that now may start, and the run view moves to the
+ * first of them; otherwise the shown run stays on its terminal state so the
+ * user can read the result and dismiss it via Close (clearCurrentRun).
  */
 function buildRunContext(
 	job: JobWithSteps,
@@ -909,11 +1032,11 @@ function buildRunContext(
 		patchStep: (stepIndex, patch) => patchStep(runId, stepIndex, patch),
 		buildStreamCallbacks: (stepIndex) => buildStreamCallbacks(runId, stepIndex),
 		setCurrentStepIndex: (stepIndex) => {
-			if (current && current.id === runId) current = { ...current, currentStepIndex: stepIndex };
+			updateRun(runId, (r) => ({ ...r, currentStepIndex: stepIndex }));
 		},
-		liveStepIndex: () => (current && current.id === runId ? current.currentStepIndex : 0),
-		stepAuthored: (stepIndex) => current?.steps[stepIndex]?.promptAuthored ?? '',
-		isLive: () => current?.id === runId,
+		liveStepIndex: () => liveRun(runId)?.currentStepIndex ?? 0,
+		stepAuthored: (stepIndex) => liveRun(runId)?.steps[stepIndex]?.promptAuthored ?? '',
+		isLive: () => liveRun(runId) !== undefined,
 		contextSize: () => jobDescriptor(job).contextSize,
 		visionSupported: () => jobDescriptor(job).vision,
 		describeModel,
@@ -922,10 +1045,14 @@ function buildRunContext(
 			void reflectOnRun(job, runId, status, error);
 		},
 		onSettled: () => {
-			if (activeAbort === abort) activeAbort = null;
+			aborts.delete(runId);
+			admitted.delete(runId);
 			releaseSandbox(jobSandboxId(runId));
 			forgetWorkingDir(jobSandboxId(runId));
-			if (pending.length > 0) queueMicrotask(drainNext);
+			// A run the view isn't showing has nothing left to show; its
+			// result is in the run history.
+			if (focusedId !== runId) runs = runs.filter((r) => r.id !== runId);
+			if (pending.length > 0) queueMicrotask(drain);
 		},
 		startChainedRun: (jobId) => enqueue(jobId, 'chained'),
 		setResult: async (value) => {
@@ -947,9 +1074,7 @@ async function runPipeline(queued: QueuedRun, abort: AbortController): Promise<v
 
 function finalizeRun(runId: number, jobId: number, status: RunStatus, error: string | null): void {
 	const finishedAt = Date.now();
-	if (current && current.id === runId) {
-		current = { ...current, status, error, finishedAt };
-	}
+	updateRun(runId, (r) => ({ ...r, status, error, finishedAt }));
 	void markRunFinished(runId, jobId, status as JobRunStatus, finishedAt, error);
 }
 
@@ -1020,7 +1145,6 @@ async function reflectOnRun(
 }
 
 export function cancel(runId: number): void {
-	if (!current || current.id !== runId) return;
-	if (current.status !== 'running') return;
-	activeAbort?.abort();
+	if (!isRunRunning(runId)) return;
+	aborts.get(runId)?.abort();
 }

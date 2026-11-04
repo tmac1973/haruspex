@@ -172,7 +172,7 @@ describe('the web store', () => {
 				title: 'Jobs',
 				payload: {
 					type: 'jobs',
-					current: { jobName: 'Digest', line: 'Step 1 of 2', status: 'running', progress: 0.5 },
+					runs: [{ jobName: 'Digest', line: 'Step 1 of 2', status: 'running', progress: 0.5 }],
 					queued: 2,
 					recent: []
 				}

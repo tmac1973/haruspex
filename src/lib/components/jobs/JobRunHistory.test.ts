@@ -21,8 +21,9 @@ vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	})
 }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
-	getRunningRunId: () => state.runningId,
-	getCurrentRun: () => (state.runningId ? { jobId: 1, status: 'running' } : null),
+	isRunRunning: (id: number) => id === state.runningId,
+	getActiveRunForJob: (jobId: number) =>
+		state.runningId && jobId === 1 ? { jobId: 1, status: 'running' } : null,
 	removeQueuedRun: vi.fn((id: number) => {
 		state.order.push(`unqueue ${id}`);
 		return true;

@@ -1,24 +1,24 @@
 <script lang="ts">
-	/** The Jobs card: the run going now, the queue, and the latest runs. */
+	/** The Jobs card: the runs going now, the queue, and the latest runs. */
 	import type { HomeCardPayload } from '#lib/engine/types.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 
 	let { payload }: { payload: Extract<HomeCardPayload, { type: 'jobs' }> } = $props();
 </script>
 
-{#if payload.current}
+{#each payload.runs as run, i (i)}
 	<p class="current">
-		<span class="name">{payload.current.jobName}</span>
-		<span class="detail">{payload.current.line}</span>
+		<span class="name">{run.jobName}</span>
+		<span class="detail">{run.line}</span>
 	</p>
-	{#if payload.current.progress !== null}
+	{#if run.progress !== null}
 		<div class="bar">
-			<span style:width="{Math.round(payload.current.progress * 100)}%"></span>
+			<span style:width="{Math.round(run.progress * 100)}%"></span>
 		</div>
 	{/if}
 {:else}
 	<p class="muted">Nothing running.</p>
-{/if}
+{/each}
 {#if payload.queued > 0}
 	<p class="muted"><span class="count">{payload.queued}</span> queued</p>
 {/if}

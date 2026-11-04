@@ -3,32 +3,26 @@
  *
  * Jobs run unattended; they can't pop a modal and wait for a human. Rather
  * than thread an `autoApprove` flag through every tool callsite, the runner
- * wraps each ephemeral turn in `runWithAutoApprove`. The two interactive
- * prompt sites (sandbox.ts run_python approval, fs-write.ts overwrite
- * conflict) consult `isAutoApproveActive()` and skip the modal when it's
- * set, defaulting to "allow" / "overwrite".
+ * wraps each ephemeral turn in `runWithAutoApprove`. The interactive prompt
+ * sites in `tools/code.ts` consult `isAutoApproveActive()` together with
+ * `ctx.interactive`, and refuse rather than ask when both say nobody is there.
  *
- * Safe because the agent loop serializes tool calls within a turn and the
- * runner serializes runs — there is never more than one active auto-approve
- * scope at a time. If that invariant ever changes, this needs a stack.
+ * Job runs go side by side when the model has room, so scopes overlap: the
+ * switch is on while any scope is open. It is a count, not a stack, because
+ * no caller needs to know which scope it is in.
  */
 
-let active = false;
+let open = 0;
 
 export function isAutoApproveActive(): boolean {
-	return active;
+	return open > 0;
 }
 
 export async function runWithAutoApprove<T>(fn: () => Promise<T>): Promise<T> {
-	if (active) {
-		throw new Error(
-			'runWithAutoApprove is non-reentrant: another auto-approve scope is already active.'
-		);
-	}
-	active = true;
+	open += 1;
 	try {
 		return await fn();
 	} finally {
-		active = false;
+		open -= 1;
 	}
 }

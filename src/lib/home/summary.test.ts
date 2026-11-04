@@ -14,7 +14,7 @@ function meeting(summary: string, start: number, end: number, allDay = false): M
 }
 
 function input(over: Partial<SummaryInput> = {}): SummaryInput {
-	return { run: null, queued: 0, attention: 0, emails: null, meetings: [], ...over };
+	return { runs: [], queued: 0, attention: 0, emails: null, meetings: [], ...over };
 }
 
 describe('greeting', () => {
@@ -33,7 +33,7 @@ describe('summaryFacts', () => {
 
 	it('names a running job, the queue, sessions and email, each once', () => {
 		const facts = summaryFacts(
-			input({ run: { status: 'running' }, queued: 2, attention: 1, emails: 3 }),
+			input({ runs: [{ status: 'running' }], queued: 2, attention: 1, emails: 3 }),
 			NOW
 		);
 		expect(facts.map((f) => [f.count, f.label, f.target])).toEqual([
@@ -45,11 +45,11 @@ describe('summaryFacts', () => {
 	});
 
 	it('leaves out a run that has finished', () => {
-		expect(summaryFacts(input({ run: { status: 'succeeded' } }), NOW)).toEqual([]);
+		expect(summaryFacts(input({ runs: [{ status: 'succeeded' }] }), NOW)).toEqual([]);
 	});
 
 	it('says a job is waiting on an answer', () => {
-		expect(summaryFacts(input({ run: { status: 'needs_input' } }), NOW)[0].label).toBe(
+		expect(summaryFacts(input({ runs: [{ status: 'needs_input' }] }), NOW)[0].label).toBe(
 			'job needs your answer'
 		);
 	});

@@ -210,12 +210,12 @@ describe('jobs runner — FIFO queue', () => {
 			})
 		);
 
-		const { enqueue, getCurrentRun, getQueueDepth, removeQueuedRun, getRunningRunId } =
+		const { enqueue, getCurrentRun, getQueueDepth, removeQueuedRun, isRunRunning } =
 			await freshRunner();
 		await enqueue(1);
 		const second = await enqueue(1);
 		expect(getQueueDepth()).toBe(1);
-		expect(getRunningRunId()).toBe(100);
+		expect(isRunRunning(100)).toBe(true);
 
 		expect(removeQueuedRun(second!)).toBe(true);
 		expect(getQueueDepth()).toBe(0);
@@ -226,7 +226,7 @@ describe('jobs runner — FIFO queue', () => {
 		await tick();
 		expect(getCurrentRun()?.id).toBe(100);
 		expect(getCurrentRun()?.status).toBe('succeeded');
-		expect(getRunningRunId()).toBeNull();
+		expect(isRunRunning(100)).toBe(false);
 		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(1);
 	});
 

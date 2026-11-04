@@ -20,7 +20,7 @@
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
-	import { enqueue, getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { enqueue, getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 
 	const cards = $derived(getHomeCards());
@@ -29,9 +29,7 @@
 	let removing = $state<HomeCard | null>(null);
 	let alsoDeleteJob = $state(false);
 	const removingJobRuns = $derived(
-		removing !== null &&
-			getCurrentRun()?.status === 'running' &&
-			getCurrentRun()?.jobId === removing.job_id
+		removing?.job_id != null && getActiveRunForJob(removing.job_id)?.status === 'running'
 	);
 
 	onMount(() => {
@@ -96,8 +94,7 @@
 	/** A judged card's job is running or queued: its ↻ spins. */
 	function jobBusy(jobId: number | null): boolean {
 		if (jobId === null) return false;
-		const run = getCurrentRun();
-		if (run?.jobId === jobId && run.status === 'running') return true;
+		if (getActiveRunForJob(jobId)?.status === 'running') return true;
 		return getPendingQueue().some((q) => q.jobId === jobId);
 	}
 

@@ -9,7 +9,7 @@
 	import { getJob, getJobs, type JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 	import JobRunStats from '#lib/components/jobs/JobRunStats.svelte';
 	import {
-		getCurrentRun,
+		getActiveRunForJob,
 		getPendingQueue,
 		stepStatsFromWire
 	} from '#lib/agent/jobs/runner.svelte.ts';
@@ -47,7 +47,7 @@
 	/** Already running or waiting: a second copy would only run it twice. */
 	const jobBusy = $derived(
 		!!run &&
-			(getCurrentRun()?.jobId === run.job_id ||
+			(getActiveRunForJob(run.job_id) !== null ||
 				getPendingQueue().some((q) => q.jobId === run!.job_id))
 	);
 

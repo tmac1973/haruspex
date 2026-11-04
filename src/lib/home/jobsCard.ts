@@ -19,15 +19,6 @@ export function currentRunLine(run: RunState, background = false): string {
 }
 
 /**
- * The runner's current run while it is going (running, or waiting on an
- * answer). The runner keeps a finished run as current until the next one
- * starts, for the Jobs tab; Home's "now" must not show it.
- */
-export function activeRun<T extends { status: string }>(run: T | null): T | null {
-	return run?.status === 'running' || run?.status === 'needs_input' ? run : null;
-}
-
-/**
  * How far the run going now is, 0 to 1: its steps, and the current step's
  * checklist within them. Null when there's nothing to measure (one step, no
  * checklist), so the card shows no bar.

@@ -66,8 +66,22 @@ export const settingsState = {
 	imageLocalModelId: '' as string,
 	codeSubtasks: 'read' as 'off' | 'read' | 'write',
 	agentFeedbackEnabled: false,
-	leanMode: false
+	leanMode: false,
+	jobsOneAtATime: false
 };
+
+/**
+ * The lanes the stand-in queue reports: a job with a remote URL is on that
+ * server's lane, any other on the local one. Each admits `slots[lane]` turns,
+ * 1 when unset, so a test that doesn't care sees runs one at a time.
+ */
+export const laneState = {
+	slots: {} as Record<string, number | null>
+};
+
+function laneKeyOf(backend?: { baseUrl?: string }): string {
+	return backend?.baseUrl ? `remote:${backend.baseUrl}` : 'local';
+}
 
 /**
  * The image backend, mocked at the module rather than registered.
@@ -141,7 +155,11 @@ async function settingsModule(importOriginal: () => Promise<unknown>) {
 	return {
 		...actual,
 		// Lean mode pauses every job type but research (`types/lean.ts`).
-		getLiveSettings: () => ({ ...actual.getLiveSettings(), leanMode: settingsState.leanMode }),
+		getLiveSettings: () => ({
+			...actual.getLiveSettings(),
+			leanMode: settingsState.leanMode,
+			jobsOneAtATime: settingsState.jobsOneAtATime
+		}),
 		getSettings: () => ({
 			contextSize: 8192,
 			imageBackendKind: settingsState.imageBackendKind,
@@ -192,7 +210,14 @@ export const mockModules = {
 		runWithAutoApprove: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
 		isAutoApproveActive: () => false
 	}),
-	inferenceQueue: () => ({ withInferenceSlot: mocks.withInferenceSlot })
+	inferenceQueue: () => ({
+		withInferenceSlot: mocks.withInferenceSlot,
+		laneKey: laneKeyOf,
+		laneConcurrency: (backend?: { baseUrl?: string }) => {
+			const lane = laneKeyOf(backend);
+			return lane in laneState.slots ? laneState.slots[lane] : 1;
+		}
+	})
 };
 
 /** Answer `invoke` by command name from `routes`; anything else gets null. */
@@ -231,6 +256,8 @@ export function useRunnerFixtures() {
 		settingsState.codeSubtasks = 'read';
 		settingsState.agentFeedbackEnabled = false;
 		settingsState.leanMode = false;
+		settingsState.jobsOneAtATime = false;
+		laneState.slots = {};
 		mocks.runEphemeralTurn.mockReset();
 		mocks.getJob.mockReset();
 		mocks.createJob.mockReset().mockResolvedValue(900);

@@ -1,13 +1,13 @@
 <script lang="ts">
-	/** Home's Jobs card: the run going now, the queue, and the latest runs of any job. */
+	/** Home's Jobs card: the runs going now, the queue, and the latest runs of any job. */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import type { RecentRun } from '#lib/ipc/gen/RecentRun.ts';
-	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getActiveRuns, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { dbQuery } from '#lib/stores/dbCall.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
-	import { activeRun, currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
+	import { currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
 	import { getJobType } from '#lib/agent/jobs/types/index.ts';
 
 	// Home hands every card its row; a live card keeps nothing in it.
@@ -16,13 +16,12 @@
 
 	const RECENT = 5;
 
-	const current = $derived(activeRun(getCurrentRun()));
+	const active = $derived(getActiveRuns());
 	const queued = $derived(getQueueDepth());
-	const progress = $derived(current ? runProgress(current) : null);
 	let recent = $state<RecentRun[]>([]);
 
 	// A run starting, finishing or joining the queue changes one of these.
-	const runKey = $derived(`${current?.id ?? ''}:${current?.status ?? ''}:${queued}`);
+	const runKey = $derived(`${active.map((r) => `${r.id}${r.status}`).join(',')}:${queued}`);
 	$effect(() => {
 		void runKey;
 		let stale = false;
@@ -46,7 +45,8 @@
 	}
 </script>
 
-{#if current}
+{#each active as current (current.id)}
+	{@const progress = runProgress(current)}
 	<button class="row current" onclick={() => open(current.jobId, current.id)}>
 		<span class="name">{current.jobName}</span>
 		<span class="detail"
@@ -58,7 +58,7 @@
 	{/if}
 {:else}
 	<p class="muted">Nothing running.</p>
-{/if}
+{/each}
 {#if queued > 0}
 	<p class="muted"><span class="count">{queued}</span> queued</p>
 {/if}

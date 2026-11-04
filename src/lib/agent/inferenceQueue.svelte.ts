@@ -181,6 +181,11 @@ export function laneConcurrency(backend?: BackendOverride): number | null {
 	return laneFor(backend).maxParallel;
 }
 
+/** The lane `backend`'s turns queue on: two turns share a slot count when it matches. */
+export function laneKey(backend?: BackendOverride): string {
+	return laneFor(backend).lane;
+}
+
 // --- cross-window queue snapshot (event-mirrored) -------------------------
 
 interface RawTicket {

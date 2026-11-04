@@ -33,9 +33,9 @@ Models: `models.list` names Settings → Inference's model, the saved remote opt
 - `jobs.list`, `jobs.get` (`jobId`).
 - `jobs.create`: `job` with `name` and `job_type` (and `working_dir`, `description`, a model), `steps` as prompts, `config` laid over the type's defaults, and a `schedule` such as `{"kind":"daily","time":"09:00"}`.
 - `jobs.update` (`jobId`): changes only what it names; `steps`, when given, replaces them all. `jobs.duplicate`, `jobs.delete`.
-- `jobs.run` (`jobId`): runs now, or queues behind the run in progress. It answers with the `runId`.
+- `jobs.run` (`jobId`): runs now, or queues until its model is free. It answers with the `runId`.
 - `run.cancel` (`runId`): stops a run, or unqueues it.
-- `runs.list` (`jobId`), `runs.get` (`runId`; a running one carries its text and steps), `runs.current` (the run and the queue), `runs.delete`.
+- `runs.list` (`jobId`), `runs.get` (`runId`; a running one carries its text and steps), `runs.current` (the run in view and the queue), `runs.delete`.
 
 Events: `job-run` when a run's status or steps change, `job-run-live` with the running step's text, and `job-queue`. A guided-planning or asset job's question shows in `prompts.list` with its `runId`.
 

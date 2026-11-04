@@ -8,8 +8,8 @@ import type { Meeting } from '#lib/home/meetings.ts';
 export type MeetingTimes = Pick<Meeting, 'summary' | 'start' | 'end' | 'allDay'>;
 
 export interface SummaryInput {
-	/** The job run going now, or null. */
-	run: { status: string } | null;
+	/** The job runs going now. */
+	runs: { status: string }[];
 	queued: number;
 	/** Open Code sessions waiting on the user. */
 	attention: number;
@@ -51,10 +51,15 @@ function nextMeeting(meetings: MeetingTimes[], now: Date): string | null {
 
 export function summaryFacts(input: SummaryInput, now = new Date()): SummaryFact[] {
 	const facts: SummaryFact[] = [];
-	if (input.run?.status === 'needs_input') {
-		facts.push({ key: 'run', count: 1, label: 'job needs your answer', target: 'jobs' });
-	} else if (input.run?.status === 'running') {
-		facts.push({ key: 'run', count: 1, label: 'job running', target: 'jobs' });
+	const asking = input.runs.filter((r) => r.status === 'needs_input').length;
+	if (asking > 0) {
+		const label = asking === 1 ? 'job needs your answer' : 'jobs need your answer';
+		facts.push({ key: 'asking', count: asking, label, target: 'jobs' });
+	}
+	const running = input.runs.filter((r) => r.status === 'running').length;
+	if (running > 0) {
+		const label = running === 1 ? 'job running' : 'jobs running';
+		facts.push({ key: 'run', count: running, label, target: 'jobs' });
 	}
 	if (input.queued > 0) {
 		facts.push({ key: 'queued', count: input.queued, label: 'queued', target: 'jobs' });
