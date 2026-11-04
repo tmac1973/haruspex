@@ -16,9 +16,11 @@ import { untrack } from 'svelte';
 import {
 	cancel,
 	enqueue,
+	getActiveRunForJob,
 	getCurrentRun,
 	getPendingQueue,
-	getRunningRunId,
+	getRun,
+	isRunRunning,
 	removeQueuedRun,
 	removeQueuedRunsForJob,
 	type RunState
@@ -353,8 +355,8 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 		}
 		case 'jobs.delete': {
 			await mustGet(op.jobId);
-			const running = getCurrentRun();
-			if (running?.status === 'running' && running.jobId === op.jobId) {
+			const running = getActiveRunForJob(op.jobId);
+			if (running?.status === 'running') {
 				throw new Error(`run ${running.id} of this job is running: cancel it first`);
 			}
 			// Out of the queue first, so none of its runs starts in between.
@@ -368,10 +370,10 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 			if (refusal) throw new Error(refusal);
 			const runId = await enqueue(op.jobId, op.trigger ?? 'manual');
 			if (runId === null) throw new Error(`job ${op.jobId} didn't start: see the debug log`);
-			return { runId, queued: getRunningRunId() !== runId };
+			return { runId, queued: !isRunRunning(runId) };
 		}
 		case 'run.cancel': {
-			if (getRunningRunId() === op.runId) {
+			if (isRunRunning(op.runId)) {
 				cancel(op.runId);
 				return { cancelling: true };
 			}
@@ -389,17 +391,17 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 			return plain(getRunsForJob(op.jobId));
 		case 'runs.get': {
 			const run = await runOf(op.runId);
-			const current = getCurrentRun();
-			// The run in progress has what the database doesn't keep: the text
+			const live = getRun(op.runId);
+			// A run in progress has what the database doesn't keep: the text
 			// being written, reasoning and the tool steps.
-			return { ...plain(run), live: current?.id === op.runId ? plain(current) : null };
+			return { ...plain(run), live: live ? plain(live) : null };
 		}
 		case 'runs.current': {
 			const current = getCurrentRun();
 			return { run: current ? runLive(current) : null, queue: plain(getPendingQueue()) };
 		}
 		case 'runs.delete': {
-			if (getRunningRunId() === op.runId) {
+			if (isRunRunning(op.runId)) {
 				throw new Error(`run ${op.runId} is running: cancel it first`);
 			}
 			const run = await runOf(op.runId);

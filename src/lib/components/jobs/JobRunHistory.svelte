@@ -10,8 +10,8 @@
 	import { activatable } from '#lib/actions/activatable.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {
-		getCurrentRun,
-		getRunningRunId,
+		getActiveRunForJob,
+		isRunRunning,
 		removeQueuedRun,
 		removeQueuedRunsForJob
 	} from '#lib/agent/jobs/runner.svelte.ts';
@@ -29,8 +29,7 @@
 	const runs = $derived(getRunsForJob(jobId));
 	// The run in progress can't be deleted from under the runner — it is
 	// cancelled first — and so this job's history can't be cleared while it runs.
-	const runningId = $derived(getRunningRunId());
-	const jobRunning = $derived(runningId !== null && getCurrentRun()?.jobId === jobId);
+	const jobRunning = $derived(getActiveRunForJob(jobId)?.status === 'running');
 
 	$effect(() => {
 		void loadRunsForJob(jobId);
@@ -96,7 +95,7 @@
 		pendingDelete = null;
 		if (!pending) return;
 		if (pending.kind === 'run') {
-			if (pending.run.id === getRunningRunId()) return;
+			if (isRunRunning(pending.run.id)) return;
 			// Out of the queue first, so it can't start in between.
 			removeQueuedRun(pending.run.id);
 			const ok = await deleteJobRun(jobId, pending.run.id);
@@ -156,12 +155,12 @@
 						class="delete-btn"
 						data-no-activate
 						aria-label={run.status === 'queued' ? 'Remove from queue' : 'Delete run'}
-						title={run.id === runningId
+						title={isRunRunning(run.id)
 							? 'This run is in progress — cancel it first'
 							: run.status === 'queued'
 								? 'Remove from the queue'
 								: 'Delete this run'}
-						disabled={run.id === runningId}
+						disabled={isRunRunning(run.id)}
 						onclick={(e) => requestDeleteRun(run, e)}
 					>
 						×

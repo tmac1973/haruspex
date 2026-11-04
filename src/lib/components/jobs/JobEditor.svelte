@@ -29,7 +29,7 @@
 		type JobStepInput,
 		type JobType
 	} from '#lib/stores/jobs.svelte.ts';
-	import { getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getActiveRunForJob } from '#lib/agent/jobs/runner.svelte.ts';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -385,9 +385,7 @@
 	);
 
 	/** This job has a run going. It already ran from a snapshot taken at enqueue. */
-	const isRunning = $derived(
-		jobId !== 'new' && getCurrentRun()?.status === 'running' && getCurrentRun()?.jobId === jobId
-	);
+	const isRunning = $derived(jobId !== 'new' && getActiveRunForJob(jobId)?.status === 'running');
 
 	// Job delete awaits ConfirmDialog approval.
 	let confirmingDelete = $state(false);

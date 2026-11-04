@@ -464,15 +464,15 @@ export interface HomeMeetingGroup {
 export type HomeCardPayload =
 	| {
 			type: 'jobs';
-			/** The run going now, as a line ("Step 2 of 4 · Plan"). */
-			current: {
+			/** The runs going now, oldest first, each as a line ("Step 2 of 4 · Plan"). */
+			runs: {
 				jobName: string;
 				line: string;
 				/** The run's status: `running`, or `needs_input` while it waits on an answer. */
 				status: string;
 				/** How far it is, 0 to 1; null with nothing to measure. */
 				progress: number | null;
-			} | null;
+			}[];
 			queued: number;
 			recent: HomeRunLine[];
 	  }

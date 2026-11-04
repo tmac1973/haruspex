@@ -27,7 +27,7 @@
 		const waiting = sessionsNeedingAttention(Object.values(store.prompts));
 		return summaryFacts(
 			{
-				run: jobs?.current ?? null,
+				runs: jobs?.runs ?? [],
 				queued: jobs?.queued ?? 0,
 				attention: store.sessions.filter((s) => waiting.has(s.id)).length,
 				emails: emails.length === 0 ? null : emails.reduce((n, p) => n + (p.items?.length ?? 0), 0),

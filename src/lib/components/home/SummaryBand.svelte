@@ -9,7 +9,7 @@
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { isTrashed } from '#lib/home/trashedEmails.svelte.ts';
 	import { sessionsNeedingAttention } from '#lib/home/needsAttention.ts';
-	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getActiveRuns, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import { currentPrompts } from '#lib/engine/prompts.svelte.ts';
 	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
@@ -46,7 +46,7 @@
 		const waiting = sessionsNeedingAttention(currentPrompts('main'));
 		return summaryFacts(
 			{
-				run: getCurrentRun(),
+				runs: getActiveRuns(),
 				queued: getQueueDepth(),
 				attention: getOpenSessions().filter((s) => waiting.has(s.id)).length,
 				emails,

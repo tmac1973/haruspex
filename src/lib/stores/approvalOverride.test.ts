@@ -24,14 +24,16 @@ describe('approvalOverride', () => {
 		expect(isAutoApproveActive()).toBe(false);
 	});
 
-	it('rejects nested calls', async () => {
-		await expect(
-			runWithAutoApprove(async () => {
-				await runWithAutoApprove(async () => {
-					// unreachable
-				});
-			})
-		).rejects.toThrow(/non-reentrant/);
+	it('stays on while any of two overlapping scopes is open', async () => {
+		let finishFirst = () => {};
+		const first = runWithAutoApprove(() => new Promise<void>((resolve) => (finishFirst = resolve)));
+		let seenAfterFirstEnds = false;
+		await runWithAutoApprove(async () => {
+			finishFirst();
+			await first;
+			seenAfterFirstEnds = isAutoApproveActive();
+		});
+		expect(seenAfterFirstEnds).toBe(true);
 		expect(isAutoApproveActive()).toBe(false);
 	});
 

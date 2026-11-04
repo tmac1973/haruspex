@@ -9,7 +9,7 @@ The Home tab is the first tab: cards that show what Haruspex is doing and what n
 
 ## The cards you start with
 
-- **Jobs** — the job running now with its step and progress ("Step 2 of 4 · 3/7"), how many runs are queued, and the five latest runs. Click a run to open it.
+- **Jobs** — the jobs running now with their step and progress ("Step 2 of 4 · 3/7"), how many runs are queued, and the five latest runs. Click a run to open it.
 - **Code sessions** — sessions that are running, queued, waiting on a shell command, or waiting on you (**Needs attention**). Click one to open it. Idle sessions and ones in a detached Code window aren't listed.
 
 ## Pin a job

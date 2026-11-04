@@ -22,7 +22,20 @@ vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	getPendingQueue: () => [],
 	cancel: mocks.cancel,
 	clearCurrentRun: vi.fn(),
-	getRunningRunId: () => null,
+	getActiveRuns: () =>
+		mocks.currentRun && ['running', 'needs_input'].includes(mocks.currentRun.status as string)
+			? [mocks.currentRun]
+			: [],
+	getActiveRunForJob: (jobId: number) =>
+		mocks.currentRun?.jobId === jobId &&
+		['running', 'needs_input'].includes(mocks.currentRun.status as string)
+			? mocks.currentRun
+			: null,
+	isRunRunning: (id: number) =>
+		mocks.currentRun?.id === id && mocks.currentRun?.status === 'running',
+	focusRun: vi.fn(),
+	getOneRunAtATime: () => false,
+	setOneRunAtATime: vi.fn(),
 	removeQueuedRun: vi.fn(),
 	removeQueuedRunsForJob: vi.fn()
 }));

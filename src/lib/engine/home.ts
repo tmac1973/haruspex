@@ -8,12 +8,17 @@ import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { RecentRun } from '#lib/ipc/gen/RecentRun.ts';
 import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
 import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
-import { getCurrentRun, getPendingQueue, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+import {
+	getActiveRunForJob,
+	getActiveRuns,
+	getPendingQueue,
+	getQueueDepth
+} from '#lib/agent/jobs/runner.svelte.ts';
 import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getCardError, getCardNotice } from '#lib/home/fetchedCards.svelte.ts';
 import { GITHUB_EMPTY, githubConfigOf, scopeLine, type GitHubResult } from '#lib/home/github.ts';
-import { activeRun, currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
+import { currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
 import { finalOutput } from '#lib/home/latestRun.svelte.ts';
 import { isTrashed } from '#lib/home/trashedEmails.svelte.ts';
 import { groupOf, type MeetingGroup, type MeetingsResult } from '#lib/home/meetings.ts';
@@ -45,7 +50,6 @@ function parse<T>(json: string | null): T | null {
 }
 
 async function jobsPayload(): Promise<HomeCardPayload> {
-	const run = activeRun(getCurrentRun());
 	const recent = await dbQuery<RecentRun[]>({
 		cmd: 'db_job_runs_list_recent',
 		category: 'home',
@@ -55,14 +59,12 @@ async function jobsPayload(): Promise<HomeCardPayload> {
 	});
 	return {
 		type: 'jobs',
-		current: run
-			? {
-					jobName: run.jobName,
-					line: currentRunLine(run, getJobType(run.jobType)?.background ?? false),
-					status: run.status,
-					progress: runProgress(run)
-				}
-			: null,
+		runs: getActiveRuns().map((run) => ({
+			jobName: run.jobName,
+			line: currentRunLine(run, getJobType(run.jobType)?.background ?? false),
+			status: run.status,
+			progress: runProgress(run)
+		})),
 		queued: getQueueDepth(),
 		recent: recent.map((r) => ({
 			jobName: r.job_name,
@@ -83,8 +85,8 @@ async function jobState(jobId: number) {
 	});
 	const succeeded = runs.find((r) => r.status === 'succeeded');
 	const withSteps = succeeded ? await getJobRun(succeeded.id) : null;
-	const current = getCurrentRun();
-	const running = current !== null && current.jobId === jobId && current.status === 'running';
+	const current = getActiveRunForJob(jobId);
+	const running = current?.status === 'running';
 	const latest = runs[0] ?? null;
 	const state: HomeJobState = {
 		running,

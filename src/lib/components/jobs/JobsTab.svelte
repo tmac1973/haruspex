@@ -8,7 +8,12 @@
 	import LiveRunBar from '#lib/components/jobs/LiveRunBar.svelte';
 	import UnsavedChangesDialog from '#lib/components/jobs/UnsavedChangesDialog.svelte';
 	import { getJob, getJobs, isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
-	import { enqueue, getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
+	import {
+		enqueue,
+		focusRun,
+		getActiveRuns,
+		getCurrentRun
+	} from '#lib/agent/jobs/runner.svelte.ts';
 	import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 	import { setJobModelInView } from '#lib/stores/modelInView.svelte.ts';
 	import {
@@ -115,9 +120,11 @@
 		selectedRunId = null;
 		runViewOpen = false;
 		if (runId === null) return;
-		// The run view shows only the live run; any other run opens in detail.
-		if (runId === getCurrentRun()?.id) runViewOpen = true;
-		else selectedRunId = runId;
+		// The run view shows only runs this session holds; any other opens in detail.
+		if (runId === getCurrentRun()?.id || getActiveRuns().some((r) => r.id === runId)) {
+			focusRun(runId);
+			runViewOpen = true;
+		} else selectedRunId = runId;
 	}
 
 	// A job (and run) picked on a Home card, or a new job drafted there. Taken

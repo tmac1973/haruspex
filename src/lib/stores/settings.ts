@@ -1033,6 +1033,11 @@ export interface AppSettings {
 	codeSidebarOpen: boolean;
 	/** Jobs tab: the job list's width in px. */
 	jobsSidebarWidth: number;
+	/**
+	 * Jobs tab: start a run only when no other run is going, even when the
+	 * model has free slots. For benchmarks, so a run has the model to itself.
+	 */
+	jobsOneAtATime: boolean;
 }
 
 /** Exported for the chat store's one-time legacy working-dir migration. */
@@ -1233,6 +1238,7 @@ const defaults: AppSettings = {
 	codeSidebarWidth: 240,
 	codeSidebarOpen: true,
 	jobsSidebarWidth: 260,
+	jobsOneAtATime: false,
 	memoryEnabled: true,
 	memoryConfirmWrites: true,
 	skills: defaultSkills,

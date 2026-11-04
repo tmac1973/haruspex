@@ -6,7 +6,7 @@
 		type ActiveTab
 	} from '#lib/stores/activeTab.svelte.ts';
 	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
-	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getActiveRuns, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import TasksChip from '#lib/components/tasks/TasksChip.svelte';
 
 	interface Tab {
@@ -33,10 +33,10 @@
 	// Surface a small badge on the Jobs tab when work is in flight so
 	// users in the Chat tab still see queue depth at a glance.
 	const jobsBadge = $derived.by(() => {
-		const running = getCurrentRun()?.status === 'running';
+		const running = getActiveRuns().filter((r) => r.status === 'running').length;
 		const queued = getQueueDepth();
-		if (!running && queued === 0) return null;
-		if (running && queued > 0) return `${queued + 1}`;
+		if (running === 0 && queued === 0) return null;
+		if (running + queued > 1) return `${running + queued}`;
 		if (running) return '●';
 		return `${queued}`;
 	});

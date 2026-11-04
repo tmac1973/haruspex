@@ -15,7 +15,13 @@
 
 <script lang="ts">
 	import { getJobs, storedScheduleLabel, type JobSummary } from '#lib/stores/jobs.svelte.ts';
-	import { getCurrentRun, getPendingQueue, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+	import {
+		getActiveRuns,
+		getOneRunAtATime,
+		getPendingQueue,
+		getQueueDepth,
+		setOneRunAtATime
+	} from '#lib/agent/jobs/runner.svelte.ts';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
@@ -47,12 +53,14 @@
 
 	const { selectedId, onselect, onrun }: Props = $props();
 
-	const running = $derived(getCurrentRun()?.status === 'running');
-	const runningJobId = $derived(running ? (getCurrentRun()?.jobId ?? null) : null);
+	const runningRuns = $derived(getActiveRuns().filter((r) => r.status === 'running'));
+	const running = $derived(runningRuns.length > 0);
+	const runningJobIds = $derived(new Set(runningRuns.map((r) => r.jobId)));
+	const oneAtATime = $derived(getOneRunAtATime());
 	/** The badge's tooltip: what is running and what waits, in order. */
 	const queueTitle = $derived.by(() => {
 		const lines: string[] = [];
-		if (running) lines.push(`Running: ${getCurrentRun()?.jobName}`);
+		for (const r of runningRuns) lines.push(`Running: ${r.jobName}`);
 		getPendingQueue().forEach((q, i) => lines.push(`${i + 1}. ${q.jobName}`));
 		return lines.join('\n');
 	});
@@ -137,12 +145,24 @@
 			<span class="title">Jobs</span>
 			{#if running || queueDepth > 0}
 				<span class="queue-badge" title={queueTitle}>
-					{#if running}1 running{/if}{#if running && queueDepth > 0}
+					{#if running}{runningRuns.length} running{/if}{#if running && queueDepth > 0}
 						·
 					{/if}{#if queueDepth > 0}{queueDepth} queued{/if}
 				</span>
 			{/if}
 		</div>
+		<button
+			type="button"
+			class="one-btn"
+			aria-pressed={oneAtATime}
+			aria-label="One run at a time"
+			title={oneAtATime
+				? 'One run at a time: on. Runs wait for the one before, even when the model has room. Click to let them run side by side.'
+				: 'One run at a time: off. Runs start side by side when the model has room. Click to turn on, for benchmarks.'}
+			onclick={() => setOneRunAtATime(!oneAtATime)}
+		>
+			1×
+		</button>
 		<button
 			type="button"
 			class="new-btn"
@@ -207,9 +227,9 @@
 					{/if}
 					<div class="row-main">
 						<span class="name">
-							{#if job.id === runningJobId}
+							{#if runningJobIds.has(job.id)}
 								<span class="running-dot" role="img" aria-label="Running" title="Running"></span>
-							{:else if !open && runningJobId !== null && containsJob(node, runningJobId)}
+							{:else if !open && [...runningJobIds].some((id) => containsJob(node, id))}
 								<span
 									class="running-dot hollow"
 									role="img"
@@ -345,6 +365,28 @@
 	.new-btn.active {
 		background: var(--accent);
 		color: var(--accent-contrast);
+		border-color: var(--accent);
+	}
+
+	/* Next to New: the header's other side is the title and the queue. */
+	.one-btn {
+		margin-left: auto;
+		padding: 4px 6px;
+		font-size: 0.78rem;
+		border: 1px solid var(--border);
+		background: var(--bg-primary);
+		color: var(--text-secondary);
+		border-radius: 4px;
+		cursor: pointer;
+	}
+
+	.one-btn:hover {
+		border-color: var(--text-secondary);
+	}
+
+	.one-btn[aria-pressed='true'] {
+		background: var(--accent-soft);
+		color: var(--text-primary);
 		border-color: var(--accent);
 	}
 

@@ -29,7 +29,12 @@ vi.mock('#lib/home/latestRun.svelte.ts', async (importOriginal) => ({
 }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: m.enqueue,
-	getCurrentRun: () => m.current,
+	getActiveRuns: () =>
+		m.current && ['running', 'needs_input'].includes(m.current.status as string) ? [m.current] : [],
+	getActiveRunForJob: (jobId: number) =>
+		m.current?.jobId === jobId && ['running', 'needs_input'].includes(m.current.status as string)
+			? m.current
+			: null,
 	getPendingQueue: () => m.queue
 }));
 vi.mock('#lib/stores/jobsTabSelection.svelte.ts', () => ({ selectJob: m.selectJob }));

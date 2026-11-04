@@ -50,11 +50,14 @@ vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => ({
 
 const runner = vi.hoisted(() => ({
 	current: null as null | { jobId: number; jobName: string; status: string },
-	queue: [] as Array<{ jobName: string }>
+	queue: [] as Array<{ jobName: string }>,
+	oneAtATime: false
 }));
 
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
-	getCurrentRun: () => runner.current,
+	getActiveRuns: () => (runner.current ? [runner.current] : []),
+	getOneRunAtATime: () => runner.oneAtATime,
+	setOneRunAtATime: (on: boolean) => (runner.oneAtATime = on),
 	getQueueDepth: () => runner.queue.length,
 	getPendingQueue: () => runner.queue
 }));

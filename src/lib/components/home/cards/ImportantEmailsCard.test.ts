@@ -20,7 +20,12 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 vi.mock('#lib/home/latestRun.svelte.ts', () => ({ getLatestRun: () => m.latest }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: m.enqueue,
-	getCurrentRun: () => m.current,
+	getActiveRuns: () =>
+		m.current && ['running', 'needs_input'].includes(m.current.status as string) ? [m.current] : [],
+	getActiveRunForJob: (jobId: number) =>
+		m.current?.jobId === jobId && ['running', 'needs_input'].includes(m.current.status as string)
+			? m.current
+			: null,
 	getPendingQueue: () => []
 }));
 

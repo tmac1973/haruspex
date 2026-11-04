@@ -104,7 +104,10 @@ const find = (id: number) => fake.jobs.find((j) => j.id === id) ?? null;
 export const runner = {
 	getCurrentRun: () => fake.current,
 	getPendingQueue: () => fake.queue,
-	getRunningRunId: () => (fake.current?.status === 'running' ? fake.current.id : null),
+	isRunRunning: (runId: number) => fake.current?.status === 'running' && fake.current.id === runId,
+	getRun: (runId: number) => (fake.current?.id === runId ? fake.current : null),
+	getActiveRunForJob: (jobId: number) =>
+		fake.current?.status === 'running' && fake.current.jobId === jobId ? fake.current : null,
 	cancel: (runId: number) => void fake.cancelled.push(runId),
 	removeQueuedRun: (runId: number) => {
 		const before = fake.queue.length;

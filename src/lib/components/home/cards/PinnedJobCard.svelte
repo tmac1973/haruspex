@@ -2,7 +2,7 @@
 	/** A job pinned to Home: what its latest successful run produced, with Run now and Open. */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
-	import { enqueue, getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { enqueue, getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { finalOutput, getLatestRun } from '#lib/home/latestRun.svelte.ts';
@@ -13,8 +13,8 @@
 	const jobId = $derived(card.job_id);
 	const latestRun = $derived(jobId === null ? null : getLatestRun(jobId));
 	const live = $derived.by(() => {
-		const run = getCurrentRun();
-		return run && run.jobId === jobId && run.status === 'running' ? run : null;
+		const run = jobId === null ? null : getActiveRunForJob(jobId);
+		return run?.status === 'running' ? run : null;
 	});
 	const queued = $derived(getPendingQueue().some((q) => q.jobId === jobId));
 	const failed = $derived(latestRun?.latest?.status === 'failed' ? latestRun.latest : null);

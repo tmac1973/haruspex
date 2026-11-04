@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getActiveRuns, getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 
 	// The way back to a live run while you browse other jobs. Shown by the
 	// Jobs tab whenever a run is going and its view is hidden.
@@ -7,6 +7,7 @@
 
 	const run = $derived(getCurrentRun());
 	const queued = $derived(getQueueDepth());
+	const more = $derived(getActiveRuns().filter((r) => r.id !== run?.id).length);
 	const stepText = $derived(
 		run && run.steps.length > 0
 			? ` · step ${Math.min(run.currentStepIndex + 1, run.steps.length)} of ${run.steps.length}`
@@ -18,7 +19,9 @@
 	<button type="button" class="live-run-bar" onclick={onopen} title="Show the live run">
 		<span class="dot" aria-hidden="true"></span>
 		<span class="text">
-			Running: <strong>{run.jobName}</strong>{stepText}{queued > 0 ? ` · ${queued} queued` : ''}
+			Running: <strong>{run.jobName}</strong>{stepText}{more > 0
+				? ` · ${more} more running`
+				: ''}{queued > 0 ? ` · ${queued} queued` : ''}
 		</span>
 		<span class="open">Show</span>
 	</button>

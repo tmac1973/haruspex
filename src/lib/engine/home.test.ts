@@ -9,7 +9,7 @@ const m = vi.hoisted(() => ({
 	runs: {} as Record<number, unknown[]>,
 	runWithSteps: {} as Record<number, unknown>,
 	recent: [] as unknown[],
-	current: null as unknown,
+	current: null as Record<string, unknown> | null,
 	queue: [] as { jobId: number }[],
 	errors: {} as Record<string, string>
 }));
@@ -27,7 +27,12 @@ vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 }));
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({ getJobs: () => m.jobs }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
-	getCurrentRun: () => m.current,
+	getActiveRuns: () =>
+		m.current && ['running', 'needs_input'].includes(m.current.status as string) ? [m.current] : [],
+	getActiveRunForJob: (jobId: number) =>
+		m.current?.jobId === jobId && ['running', 'needs_input'].includes(m.current.status as string)
+			? m.current
+			: null,
 	getPendingQueue: () => m.queue,
 	getQueueDepth: () => m.queue.length
 }));
@@ -110,12 +115,14 @@ describe('home.cards', () => {
 			title: 'Jobs',
 			payload: {
 				type: 'jobs',
-				current: {
-					jobName: 'Digest',
-					line: 'Step 1 of 2 · Waiting for chat',
-					status: 'running',
-					progress: 0
-				},
+				runs: [
+					{
+						jobName: 'Digest',
+						line: 'Step 1 of 2 · Waiting for chat',
+						status: 'running',
+						progress: 0
+					}
+				],
 				queued: 1,
 				recent: [{ jobName: 'News', status: 'Failed', at: 9 }]
 			}

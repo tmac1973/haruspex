@@ -6,7 +6,7 @@
 	 */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
-	import { getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
@@ -21,11 +21,9 @@
 
 	const jobId = $derived(card.job_id);
 	const latestRun = $derived(jobId === null ? null : getLatestRun(jobId));
-	const running = $derived.by(() => {
-		const run = getCurrentRun();
-		return run !== null && run.jobId === jobId && run.status === 'running';
-	});
-	const waiting = $derived(running ? (getCurrentRun()?.waitingForSlot ?? false) : false);
+	const run = $derived(jobId === null ? null : getActiveRunForJob(jobId));
+	const running = $derived(run?.status === 'running');
+	const waiting = $derived(running && (run?.waitingForSlot ?? false));
 	const queued = $derived(getPendingQueue().some((q) => q.jobId === jobId));
 	const failed = $derived(latestRun?.latest?.status === 'failed' ? latestRun.latest : null);
 	const items = $derived.by((): ImportantEmail[] | null => {
