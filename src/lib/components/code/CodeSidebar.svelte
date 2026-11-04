@@ -33,6 +33,7 @@
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { tick } from 'svelte';
+	import { openModelFile, openModelFolder } from '#lib/editor/openModel.ts';
 
 	let { onNew }: { onNew: () => void } = $props();
 
@@ -120,6 +121,14 @@
 
 	// Right-click menu, rename and delete.
 	let menu = $state<{ x: number; y: number; session: CodeSessionSummary } | null>(null);
+	/** The 3D button's menu: open a model file or a folder of them. */
+	let modelMenu = $state<{ x: number; y: number } | null>(null);
+
+	function toggleModelMenu(e: MouseEvent): void {
+		e.stopPropagation();
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		modelMenu = modelMenu ? null : { x: r.left, y: r.bottom + 4 };
+	}
 	let renamingId = $state<string | null>(null);
 	let renameText = $state('');
 	let renameInput = $state<HTMLInputElement | null>(null);
@@ -239,9 +248,15 @@
 {/snippet}
 
 <svelte:window
-	onclick={() => (menu = null)}
+	onclick={() => {
+		menu = null;
+		modelMenu = null;
+	}}
 	onkeydown={(e) => {
-		if (e.key === 'Escape') menu = null;
+		if (e.key === 'Escape') {
+			menu = null;
+			modelMenu = null;
+		}
 	}}
 />
 
@@ -249,6 +264,13 @@
 	<aside class="sidebar" style="width: {width}px" aria-label="Code sessions">
 		<header>
 			<button class="new" onclick={onNew} title="Start a session in a folder">New session</button>
+			<button
+				class="collapse"
+				onclick={toggleModelMenu}
+				aria-haspopup="menu"
+				aria-expanded={modelMenu !== null}
+				title="Open a .glb file, or a folder of them, in the 3D viewer">3D</button
+			>
 			<button class="collapse" onclick={toggleOpen} title="Hide sessions" aria-label="Hide sessions"
 				>‹</button
 			>
@@ -299,6 +321,13 @@
 		<span class="rail-glyph">›</span>
 		<span class="rail-label">Sessions</span>
 	</button>
+{/if}
+
+{#if modelMenu}
+	<div class="menu" role="menu" style="left: {modelMenu.x}px; top: {modelMenu.y}px">
+		<button role="menuitem" onclick={() => void openModelFile()}>Open model…</button>
+		<button role="menuitem" onclick={() => void openModelFolder()}>Open folder…</button>
+	</div>
 {/if}
 
 {#if menu}

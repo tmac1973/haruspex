@@ -225,7 +225,11 @@
 		<div class="pane">
 			{#if active.viewer === 'glb'}
 				{#key active.relPath}
-					<GlbViewer workdir={root} relPath={active.relPath} />
+					<GlbViewer
+						workdir={root}
+						relPath={active.relPath}
+						onpick={(next) => void ws.replace(active.relPath, next)}
+					/>
 				{/key}
 			{:else if active.loaded && !active.failed}
 				{#key active.relPath}

@@ -4,7 +4,7 @@
  * own until the first model opens.
  */
 
-import type { Mesh, Object3D } from 'three';
+import type { AnimationClip, AnimationMixer, Mesh, Object3D } from 'three';
 import { disposeTree } from '#lib/glb/load.ts';
 
 export interface GlbStats {
@@ -22,17 +22,27 @@ export interface GlbView {
 	playClip(index: number | null): void;
 	/** Put the camera back where it started. */
 	resetCamera(): void;
+	/** Where the camera is, for the next model to start from. */
+	angle(): CameraAngle;
 	dispose(): void;
 }
 
+/** The camera's offset from the model's centre, in largest dimensions. */
+export type CameraAngle = readonly [number, number, number];
+
 /** The preview's framing: the camera sits this far from the centre, in largest dimensions. */
-const VIEW = [1.2, 0.8, 1.6] as const;
+const VIEW: CameraAngle = [1.2, 0.8, 1.6];
 
 /**
  * Show `bytes` in `canvas`, filling its parent, with drag to orbit, wheel to
- * zoom and right-drag to pan. Rejects when the GLB does not parse.
+ * zoom and right-drag to pan. `start` puts the camera where it was on the
+ * last model, scaled to this one. Rejects when the GLB does not parse.
  */
-export async function mountGlbView(canvas: HTMLCanvasElement, bytes: Uint8Array): Promise<GlbView> {
+export async function mountGlbView(
+	canvas: HTMLCanvasElement,
+	bytes: Uint8Array,
+	start: CameraAngle | null = null
+): Promise<GlbView> {
 	const THREE = await import('three');
 	const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
 	const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js');
@@ -67,21 +77,17 @@ export async function mountGlbView(canvas: HTMLCanvasElement, bytes: Uint8Array)
 	const camera = new THREE.PerspectiveCamera(40, 1, reach / 100, reach * 100);
 	const controls = new OrbitControls(camera, canvas);
 	controls.enableDamping = true;
-	function resetCamera(): void {
-		camera.position.set(at.x + VIEW[0] * reach, at.y + VIEW[1] * reach, at.z + VIEW[2] * reach);
+	function place(offset: CameraAngle): void {
+		camera.position
+			.set(...offset)
+			.multiplyScalar(reach)
+			.add(at);
 		controls.target.copy(at);
 		controls.update();
 	}
-	resetCamera();
+	place(start && start.every(Number.isFinite) ? start : VIEW);
 
-	const mixer = gltf.animations.length > 0 ? new THREE.AnimationMixer(root) : null;
-	const actions = mixer ? gltf.animations.map((clip) => mixer.clipAction(clip)) : [];
-	// One clip at a time: a walk and a run played together are neither.
-	function playClip(index: number | null): void {
-		mixer?.stopAllAction();
-		if (index !== null) actions[index]?.play();
-	}
-	playClip(actions.length ? 0 : null);
+	const { mixer, playClip } = clipPlayer(THREE, root, gltf.animations);
 	const clock = new THREE.Clock();
 
 	function resize(): void {
@@ -106,7 +112,11 @@ export async function mountGlbView(canvas: HTMLCanvasElement, bytes: Uint8Array)
 		stats: countStats(root, [sizes.x, sizes.y, sizes.z], gltf.animations.length),
 		clips: gltf.animations.map((clip, i) => clip.name || `Clip ${i + 1}`),
 		playClip,
-		resetCamera,
+		resetCamera: () => place(VIEW),
+		angle() {
+			const d = camera.position.clone().sub(controls.target).divideScalar(reach);
+			return [d.x, d.y, d.z];
+		},
 		dispose() {
 			renderer.setAnimationLoop(null);
 			observer.disconnect();
@@ -117,6 +127,22 @@ export async function mountGlbView(canvas: HTMLCanvasElement, bytes: Uint8Array)
 			renderer.dispose();
 		}
 	};
+}
+
+/** Loop one clip at a time, starting on the first: a walk and a run played together are neither. */
+function clipPlayer(
+	THREE: typeof import('three'),
+	root: Object3D,
+	animations: AnimationClip[]
+): { mixer: AnimationMixer | null; playClip(index: number | null): void } {
+	const mixer = animations.length > 0 ? new THREE.AnimationMixer(root) : null;
+	const actions = mixer ? animations.map((clip) => mixer.clipAction(clip)) : [];
+	function playClip(index: number | null): void {
+		mixer?.stopAllAction();
+		if (index !== null) actions[index]?.play();
+	}
+	playClip(actions.length ? 0 : null);
+	return { mixer, playClip };
 }
 
 function countStats(root: Object3D, size: [number, number, number], animations: number): GlbStats {
