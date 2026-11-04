@@ -52,6 +52,34 @@ describe('inspectMotion', () => {
 		expect(l.reach).toBeGreaterThan(0.2);
 	});
 
+	it('reads a loop and a walk from the name, unless told', () => {
+		const root = pivotRig();
+		const still = (name: string) => clip(name, 1, turn('Shoulder', [0, 0, 1], [0, 1], [0, 0]));
+		const [i, w, a] = inspectMotion(
+			THREE,
+			gltf(root, [still('Idle'), still('Walk'), still('Wave')]),
+			{
+				loops: { Wave: true }
+			}
+		);
+		expect([i.loop, i.locomotion]).toEqual([true, false]);
+		expect([w.loop, w.locomotion]).toEqual([true, true]);
+		expect([a.loop, a.locomotion]).toEqual([true, false]);
+	});
+
+	it("measures a walk's travel and names the track that carries it", () => {
+		const walk = clip('Walk', 1, move('Rig', [0, 1], [ROOT_AT(0), [0, 0, 0.5]]));
+		const [w] = inspectMotion(THREE, gltf(movable(), [walk]));
+		expect(w.travel).toBeCloseTo(0.5, 2);
+		expect(w.travelDir[1]).toBeGreaterThan(0.4);
+		expect(w.travelTrack).toBe('Rig.position');
+		// Out and back still travels, for a walk.
+		const there = clip('Walk', 1, move('Rig', [0, 0.5, 1], [ROOT_AT(0), [0, 0, 0.5], ROOT_AT(0)]));
+		expect(inspectMotion(THREE, gltf(movable(), [there]))[0].travel).toBeGreaterThan(0.45);
+		const lunge = clip('Lunge', 1, move('Rig', [0, 0.5, 1], [ROOT_AT(0), [0, 0, 0.5], ROOT_AT(0)]));
+		expect(inspectMotion(THREE, gltf(movable(), [lunge]))[0].travel).toBeLessThan(1e-4);
+	});
+
 	it('leaves the scene at rest', () => {
 		const root = pivotRig();
 		const arm = root.getObjectByName('Arm')!;

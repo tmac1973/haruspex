@@ -110,7 +110,11 @@ function runner() {
 	return { posted, named, run };
 }
 
-const clip = (name: string) => ({ name, tracks: [{ name: 'Body.quaternion' }] });
+const clip = (name: string, values = [0, 0, 0, 1]) => ({
+	name,
+	duration: 1,
+	tracks: [{ name: 'Body.quaternion', times: [0], values }]
+});
 
 describe('the runner with an animation module', () => {
 	afterEach(() => {
@@ -172,6 +176,45 @@ describe('the runner with an animation module', () => {
 		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
 			message: expect.stringContaining('no default export function animate'),
 			file: 'anim'
+		});
+	});
+
+	it('names a track whose values do not match its times, before the exporter crashes on it', async () => {
+		const { posted, named, run } = runner();
+		await run(
+			{ default: () => named('Body') },
+			{ default: () => [clip('Idle', [0, 0, 0, 1, 0, 0, 0, 1])] }
+		);
+		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
+			message:
+				'Clip "Idle", track Body.quaternion: 1 times but 8 values, and each time takes 4 (4 in all). Give it one key per time.',
+			file: 'anim'
+		});
+		expect(posted.some((m) => m.t === 'exported')).toBe(false);
+	});
+
+	it('names a value that is not a number', async () => {
+		const { posted, named, run } = runner();
+		await run({
+			default: () => ({ object: named('Body'), animations: [clip('Idle', [0, NaN, 0, 1])] })
+		});
+		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
+			message: 'Clip "Idle", track Body.quaternion: value 1 is not a number (NaN or Infinity).',
+			file: 'build'
+		});
+	});
+
+	it('says what to look for when the exporter fails', async () => {
+		const { posted, named, run } = runner();
+		const w = window as unknown as { HaruspexThreeKit: { GLTFExporter: unknown } };
+		w.HaruspexThreeKit.GLTFExporter = class {
+			async parseAsync() {
+				throw new RangeError('Invalid array length');
+			}
+		};
+		await run({ default: () => named('Body') });
+		expect(posted.find((m) => m.t === 'hx-err')).toMatchObject({
+			message: expect.stringMatching(/^The GLB export failed: Invalid array length\. Look for/)
 		});
 	});
 

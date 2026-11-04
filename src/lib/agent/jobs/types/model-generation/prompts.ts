@@ -158,6 +158,8 @@ export function animateSystemPrompt(): string {
 		'  position) and move away from it.',
 		'- One clip per name in the list, with that name and length in seconds.',
 		'- A looping clip ends on exactly its first pose.',
+		'- A walk or run plays in place, since the game moves the model: the body stays over',
+		'  the origin, and each planted foot moves back (−z) at one steady speed, then lifts.',
 		'- Units are metres, y is up, the front faces +z.',
 		'',
 		'The build module is not yours: do not edit it. A changed build module is put back.',

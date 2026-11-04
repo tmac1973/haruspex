@@ -126,7 +126,7 @@ describe('judgeModel', () => {
 
 		await builds([clip('Wave', 1, turn('Shoulder', [0, 0, 1], [0, 1], [0, 60]))]);
 		const open = await judgeModel({ entry: golem, files: paths, stage: 'animate', io });
-		expect(open.problems.some((p) => p.startsWith('Clip "Wave" loops but ends'))).toBe(true);
+		expect(open.problems.some((p) => p.startsWith('Clip "Wave": loops but ends'))).toBe(true);
 
 		// The same clip as a one-shot needs no seam.
 		const once = entry({ clips: [{ name: 'Wave', seconds: 1, loop: false, action: 'waves' }] });

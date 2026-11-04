@@ -2,7 +2,13 @@
  * The clip checks as text: one line per clip for every report, and one
  * clip's detail when the model asked to see it move.
  */
-import { FLOOR_LIFT, FLOOR_SINK, type ClipMotion, type TimeSpan } from '#lib/glb/motion.ts';
+import {
+	FLOOR_LIFT,
+	FLOOR_SINK,
+	LOOP_SEAM,
+	type ClipMotion,
+	type TimeSpan
+} from '#lib/glb/motion.ts';
 
 /** At most this many of each kind of finding per clip. */
 const EACH = 6;
@@ -17,12 +23,56 @@ function capped<T>(items: T[], say: (x: T) => string, more: string): string[] {
 	return out;
 }
 
+const speed = (v: { x: number; z: number }) => `${Math.hypot(v.x, v.z).toFixed(2)} m/s`;
+
+/** Which way a floor offset points, in the model's own terms (the front is +z). */
+function way([x, z]: [number, number]): string {
+	if (Math.abs(x) > Math.abs(z)) return 'sideways';
+	return z > 0 ? 'forward' : 'back';
+}
+
+/** How far a looping clip's last pose may sit from its first (m). */
+export const seamLimit = (c: Pick<ClipMotion, 'height'>) => Math.max(0.01, LOOP_SEAM * c.height);
+
+/** Whether a looping clip carries the body across the floor instead of playing in place. */
+export const travels = (c: ClipMotion) => c.loop && c.travel > seamLimit(c);
+
+/** Loops that don't close, and walks that don't play in place. */
+function loopProblems(c: ClipMotion): string[] {
+	const out: string[] = [];
+	if (travels(c)) {
+		const track = c.travelTrack ? ` (${c.travelTrack})` : '';
+		const feet = c.locomotion ? ', with its planted feet moving back instead' : '';
+		out.push(
+			`carries the body ${cm(c.travel)} ${way(c.travelDir)}${track}: a game moves the model itself, so it would move twice and jump back each loop. Play it in place${feet}`
+		);
+	} else if (c.loop && c.seam > seamLimit(c)) {
+		const part = c.seamPart ? ` (${c.seamPart} moves most)` : '';
+		out.push(
+			`loops but ends ${cm(c.seam)} from where it starts${part}: make its last pose its first`
+		);
+	}
+	if (!c.locomotion || !c.stance || travels(c)) return out;
+	if (!c.treadmill) {
+		out.push(
+			'its planted feet stand still: in place, a walk moves them back (−z) at its walking speed, or they skate in a game'
+		);
+	} else if (c.stance.z > 0 && c.stance.z >= Math.abs(c.stance.x) && !/back/i.test(c.name)) {
+		out.push(
+			'its planted feet move forward (+z): in place, a forward walk moves them back (−z). Does the front face +z?'
+		);
+	}
+	return out;
+}
+
 /** What is wrong with a clip, as short phrases; empty when nothing is. */
 export function clipProblems(c: ClipMotion): string[] {
 	const out: string[] = [];
 	if (c.sink > FLOOR_SINK) out.push(`through the floor by ${cm(c.sink)} at ${sec(c.sinkAt)}`);
-	if (c.lift > FLOOR_LIFT) out.push(`off the floor by ${cm(c.lift)} at ${sec(c.liftAt)}`);
-	out.push(...c.sanity);
+	if (c.lift > FLOOR_LIFT && !c.airborne) {
+		out.push(`off the floor by ${cm(c.lift)} at ${sec(c.liftAt)}`);
+	}
+	out.push(...c.sanity, ...loopProblems(c));
 	out.push(
 		...capped(
 			c.passes,
@@ -36,7 +86,10 @@ export function clipProblems(c: ClipMotion): string[] {
 		),
 		...capped(
 			c.slides,
-			(s) => `${s.part} slides ${s.cm} cm while planted at ${span(s)}`,
+			(s) =>
+				c.treadmill
+					? `${s.part} slips ${s.cm} cm against the treadmill at ${span(s)}`
+					: `${s.part} slides ${s.cm} cm while planted at ${span(s)}`,
 			'sliding parts'
 		),
 		...capped(
@@ -61,7 +114,8 @@ export function formatClipLines(clips: ClipMotion[]): string[] {
 		'Clip checks (pass clip to see one moving):',
 		...clips.map((c) => {
 			const p = clipProblems(c);
-			return `- ${c.name} (${c.duration.toFixed(2)} s, ${c.tracks} tracks, ends ${cm(c.seam)} from its start): ${p.length ? p.join('; ') : 'no problems found'}.`;
+			const inPlace = c.treadmill && c.stance ? `, in place at ${speed(c.stance)}` : '';
+			return `- ${c.name} (${c.duration.toFixed(2)} s, ${c.tracks} tracks, ends ${cm(c.seam)} from its start${inPlace}): ${p.length ? p.join('; ') : 'no problems found'}.`;
 		})
 	];
 }
@@ -87,9 +141,16 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 			? `Key pose: ${c.reachPart} gets ${cm(c.reach)} from where it starts (${Math.round((100 * c.reach) / (c.height || 1))}% of the model's height), at ${sec(c.reachAt)}. A timid key pose reads as no motion in a game: push it further if it is.`
 			: 'Nothing moves.',
 		`The model's centre wanders ${cm(c.drift)} across the floor.`,
+		...(c.treadmill && c.stance
+			? [
+					`In place: its planted feet move back at ${speed(c.stance)}, the speed a game should move the model at.`
+				]
+			: []),
 		...(c.slides.length
 			? [
-					'A planted part should stay put: turn the joint above it against the body, or lift it off the floor.'
+					c.treadmill
+						? 'A planted foot should move back steadily at that speed, as on a treadmill, and leave the floor before it slows.'
+						: 'A planted part should stay put: turn the joint above it against the body, or lift it off the floor.'
 				]
 			: []),
 		p.length ? `Problems: ${p.join('; ')}.` : 'No problems found.'

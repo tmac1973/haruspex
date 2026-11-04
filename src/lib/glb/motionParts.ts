@@ -7,7 +7,7 @@
 import type { Mesh, Object3D, SkinnedMesh } from 'three';
 import type { Three } from '#lib/glb/load.ts';
 import type { ClipMotion, TimeSpan } from '#lib/glb/motion.ts';
-import { forEachWorldVertex, isSkinned, posedBox, type Part } from '#lib/glb/motionPose.ts';
+import { forEachWorldVertex, isSkinned, median, posedBox, type Part } from '#lib/glb/motionPose.ts';
 import { isClosedOpaque, RAY } from '#lib/glb/report.ts';
 
 /** Vertices sampled from a part to test whether it is inside another. */
@@ -19,11 +19,15 @@ const FRAME_INSIDE = 0.25;
 /** A part's box grows by this share of the asset's size before testing contact. */
 const CONTACT_SLACK = 0.01;
 /** Within this of the floor (m), a vertex is planted. */
-const PLANTED = 0.01;
+export const PLANTED = 0.01;
 /** Fewer planted vertices than this is a graze, not a part standing on the floor. */
 const MIN_PLANTED = 3;
 /** A stance sliding more than this (m) is reported. */
 const SLIDE = 0.03;
+/** A walk's planted feet moving back slower than this share of its height a second stand still. */
+export const TREADMILL_MIN = 0.05;
+/** A planted step may stray this share of the treadmill's step before it slips. */
+const SLIP_TOLERANCE = 0.25;
 /** A fold past this many degrees the wrong way is reported. */
 const WRONG_FOLD = 10;
 
@@ -144,22 +148,47 @@ export function contactTracker(THREE: Three, meshes: Mesh[], stride: number, wel
 	};
 }
 
+/** A planted step: how far the planted vertices moved (m) over `dt` (s). */
+interface Step {
+	dx: number;
+	dz: number;
+	dt: number;
+}
+
+/** The component-wise median of the planted steps' velocities (m/s), or null for none. */
+export function stanceVelocity(steps: Step[]): { x: number; z: number } | null {
+	const moving = steps.filter((s) => s.dt > 0);
+	if (!moving.length) return null;
+	return {
+		x: median(moving.map((s) => s.dx / s.dt)),
+		z: median(moving.map((s) => s.dz / s.dt))
+	};
+}
+
 /**
  * Planted parts sliding across the floor. Follows the same vertices from one
  * frame to the next, so a foot rolling onto its toes isn't a slide.
+ *
+ * A walk or run plays in place, so its planted feet move back together at the
+ * walking speed (a treadmill). For one (`locomotion`), the clip's stance speed
+ * is the median of every planted step, and a slide is a step's distance from
+ * that speed, past `SLIP_TOLERANCE` of it; for any other clip it is the step.
  */
-export function slideTracker(THREE: Three, parts: Part[], stride: number, floor: number) {
+export function slideTracker(
+	THREE: Three,
+	parts: Part[],
+	stride: number,
+	floor: number,
+	opts: { locomotion: boolean; height: number }
+) {
 	const planted = new Map<string, Map<number, [number, number]>>();
-	const open = new Map<string, { from: number; slid: number }>();
-	const worst = new Map<string, { part: string; slid: number } & TimeSpan>();
+	const open = new Map<string, { from: number; steps: Step[] }>();
+	const stances: ({ part: string; steps: Step[] } & TimeSpan)[] = [];
 	let lastT = 0;
 	const close = (name: string) => {
 		const s = open.get(name);
 		open.delete(name);
-		const w = worst.get(name);
-		if (s && s.slid > SLIDE && (!w || s.slid > w.slid)) {
-			worst.set(name, { part: name, slid: s.slid, from: s.from, to: lastT });
-		}
+		if (s?.steps.length) stances.push({ part: name, steps: s.steps, from: s.from, to: lastT });
 	};
 	return {
 		frame(t: number) {
@@ -184,31 +213,60 @@ export function slideTracker(THREE: Three, parts: Part[], stride: number, floor:
 					close(part.name);
 					continue;
 				}
-				let step = 0;
+				let dx = 0;
+				let dz = 0;
 				let n = 0;
 				for (const [i, [x, z]] of now) {
 					const p = before?.get(i);
 					if (!p) continue;
-					step += Math.hypot(x - p[0], z - p[1]);
+					dx += x - p[0];
+					dz += z - p[1];
 					n++;
 				}
 				const s = open.get(part.name);
-				if (s) s.slid += n ? step / n : 0;
-				else open.set(part.name, { from: t, slid: 0 });
+				if (s)
+					s.steps.push(n ? { dx: dx / n, dz: dz / n, dt: t - lastT } : { dx: 0, dz: 0, dt: 0 });
+				else open.set(part.name, { from: t, steps: [] });
 			}
 			lastT = t;
 		},
-		result(): Pick<ClipMotion, 'slides'> {
+		result(): Pick<ClipMotion, 'slides' | 'stance' | 'treadmill'> {
 			for (const name of [...open.keys()]) close(name);
-			return {
-				slides: [...worst.values()].map(({ part, slid, from, to }) => ({
-					part,
-					cm: Math.round(slid * 100),
-					from,
-					to
-				}))
-			};
+			return judgeStances(stances, opts);
 		}
+	};
+}
+
+/** Each part's worst stance, judged against the treadmill when there is one. */
+function judgeStances(
+	stances: ({ part: string; steps: Step[] } & TimeSpan)[],
+	opts: { locomotion: boolean; height: number }
+): Pick<ClipMotion, 'slides' | 'stance' | 'treadmill'> {
+	const stance = opts.locomotion ? stanceVelocity(stances.flatMap((s) => s.steps)) : null;
+	const speed = stance ? Math.hypot(stance.x, stance.z) : 0;
+	const treadmill = speed >= TREADMILL_MIN * opts.height;
+	const slip = (s: Step) => {
+		if (!treadmill || !stance) return Math.hypot(s.dx, s.dz);
+		const off = Math.hypot(s.dx - stance.x * s.dt, s.dz - stance.z * s.dt);
+		return Math.max(0, off - SLIP_TOLERANCE * speed * s.dt);
+	};
+	const worst = new Map<string, { part: string; slid: number } & TimeSpan>();
+	for (const s of stances) {
+		const slid = s.steps.reduce((sum, step) => sum + slip(step), 0);
+		const w = worst.get(s.part);
+		if (slid > SLIDE && (!w || slid > w.slid)) {
+			worst.set(s.part, { part: s.part, slid, from: s.from, to: s.to });
+		}
+	}
+	return {
+		slides: [...worst.values()].map(({ part, slid, from, to }) => ({
+			part,
+			cm: Math.round(slid * 100),
+			from,
+			to
+		})),
+		stance,
+		treadmill
 	};
 }
 

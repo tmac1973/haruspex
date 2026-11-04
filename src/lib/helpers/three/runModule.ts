@@ -92,6 +92,27 @@ const RUNNER = `(function () {
 		if (!clips) throw own('animate() must return an array of AnimationClip.', 'anim');
 		return extra;
 	};
+	var sizes = { quaternion: 4, position: 3, scale: 3 };
+	var trackFault = function (clip, t) {
+		var times = t.times || [], values = t.values || [], n = times.length;
+		var at = 'Clip "' + clip.name + '", track ' + t.name + ': ';
+		if (!n) return at + 'it has no keys.';
+		var size = sizes[String(t.name).split('.').pop()] || 0;
+		if (size && values.length !== n * size) return at + n + ' times but ' + values.length + ' values, and each time takes ' + size + ' (' + n * size + ' in all). Give it one key per time.';
+		if (!size && values.length % n) return at + n + ' times but ' + values.length + ' values, not a whole number per time.';
+		for (var i = 0; i < n; i++) {
+			if (!isFinite(times[i])) return at + 'a time is not a number.';
+			if (i && times[i] < times[i - 1]) return at + 'its times go backwards at ' + times[i] + ' s; keep them in order.';
+		}
+		for (var j = 0; j < values.length; j++) if (!isFinite(values[j])) return at + 'value ' + j + ' is not a number (NaN or Infinity).';
+		return null;
+	};
+	var clipFault = function (clip) {
+		if (!isFinite(clip.duration)) return 'Clip "' + clip.name + '": its duration is not a number.';
+		var tracks = clip.tracks || [];
+		for (var i = 0; i < tracks.length; i++) { var f = trackFault(clip, tracks[i]); if (f) return f; }
+		return null;
+	};
 	window.__hxRun = async function (mod, anim) {
 		started = true;
 		try {
@@ -106,6 +127,8 @@ const RUNNER = `(function () {
 				extra.forEach(function (c) { if (animations.some(function (b) { return b.name === c.name; })) throw own('Clip "' + c.name + '" comes from both modules.', 'anim'); });
 				animations = animations.concat(extra);
 			}
+			/* A track whose values don't match its times crashes the exporter with a bare 'Invalid array length': name it first. */
+			animations.forEach(function (clip) { var f = clipFault(clip); if (f) throw own(f, extra && extra.indexOf(clip) >= 0 ? 'anim' : 'build'); });
 			var PB = kit.THREE.PropertyBinding; var missing = [];
 			animations.forEach(function (clip) { (clip.tracks || []).forEach(function (t) { if (!PB.findNode(object, PB.parseTrackName(t.name).nodeName) && missing.indexOf(t.name) < 0) missing.push(t.name); }); });
 			if (missing.length) send({ t: 'hx-missing', tracks: missing });
@@ -124,7 +147,9 @@ const RUNNER = `(function () {
 				if (n) { clamped += n; c.needsUpdate = true; clampedIn.push(o.name || o.type); }
 			});
 			if (clamped) send({ t: 'hx-clamped', count: clamped, meshes: clampedIn });
-			var glb = await new kit.GLTFExporter().parseAsync(object, { binary: true, animations: animations });
+			var glb;
+			try { glb = await new kit.GLTFExporter().parseAsync(object, { binary: true, animations: animations }); }
+			catch (e) { throw own('The GLB export failed: ' + (e && e.message ? e.message : String(e)) + '. Look for a geometry attribute or clip track whose length is wrong.'); }
 			send({ t: 'hx-glb', bytes: glb }, [glb]);
 		} catch (e) {
 			err(e && e.message ? e.message : String(e), e && e.hxOwn ? { line: null, file: e.hxOwn } : where(e && e.stack));
