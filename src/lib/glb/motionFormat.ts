@@ -48,16 +48,15 @@ export const hitches = (c: ClipMotion) =>
 /** One-shots that start or end away from the rest pose, so a game's blend into or out of them pops. */
 function restProblems(c: ClipMotion): string[] {
 	if (c.loop) return [];
-	const out: string[] = [];
 	const r = c.fromRest;
-	const why =
-		'a one-shot starts and ends at the rest pose, so the game can blend into and out of it';
-	if (r.start > seamLimit(c))
-		out.push(`starts ${cm(r.start)} from the rest pose (${r.startPart}): ${why}`);
-	if (r.end > seamLimit(c) && !ENDS_DOWN.test(c.name)) {
-		out.push(`ends ${cm(r.end)} from the rest pose (${r.endPart}): ${why}`);
-	}
-	return out;
+	const starts = r.start > seamLimit(c);
+	const ends = r.end > seamLimit(c) && !ENDS_DOWN.test(c.name);
+	const parts = [...new Set([starts && r.startPart, ends && r.endPart].filter(Boolean))].join(', ');
+	const where = [starts && `starts ${cm(r.start)}`, ends && `ends ${cm(r.end)}`].filter(Boolean);
+	if (!where.length) return [];
+	return [
+		`${where.join(' and ')} from the rest pose (${parts}): a one-shot starts and ends at the rest pose, so the game can blend into and out of it`
+	];
 }
 
 /** What the clip's keys could do better, which never fails it: too sparse, or too dense. */

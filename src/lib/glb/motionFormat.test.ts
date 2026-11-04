@@ -130,8 +130,7 @@ describe('clipProblems', () => {
 		const why =
 			'a one-shot starts and ends at the rest pose, so the game can blend into and out of it';
 		expect(clipProblems(motion({ name: 'Attack', fromRest }))).toEqual([
-			`starts 6 cm from the rest pose (Sword): ${why}`,
-			`ends 20 cm from the rest pose (Torso): ${why}`
+			`starts 6 cm and ends 20 cm from the rest pose (Sword, Torso): ${why}`
 		]);
 		expect(clipProblems(motion({ name: 'Die', fromRest }))).toEqual([
 			`starts 6 cm from the rest pose (Sword): ${why}`
