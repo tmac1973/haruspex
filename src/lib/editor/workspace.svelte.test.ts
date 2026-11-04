@@ -30,6 +30,19 @@ describe('EditorWorkspace', () => {
 		expect(io.read).toHaveBeenCalledTimes(2);
 	});
 
+	it('shows the next model in the same tab', async () => {
+		const { ws } = setup();
+		await ws.open(['a.glb', 'b.ts']);
+		await ws.replace('a.glb', 'm/c.glb');
+		expect(ws.tabs.map((t) => t.relPath)).toEqual(['m/c.glb', 'b.ts']);
+		expect(ws.activePath).toBe('m/c.glb');
+
+		// Already open elsewhere: focus that tab, keep this one.
+		await ws.replace('m/c.glb', 'b.ts');
+		expect(ws.tabs.map((t) => t.relPath)).toEqual(['m/c.glb', 'b.ts']);
+		expect(ws.activePath).toBe('b.ts');
+	});
+
 	it('routes a change on disk to the tab showing that file', async () => {
 		const { ws, disk } = setup();
 		await ws.open(['a.ts', 'b.ts']);

@@ -33,7 +33,7 @@ registerTool({
 					page: {
 						type: 'string',
 						enum: GUIDE_PAGES.map((p) => p.name),
-						description: 'The page. Leave it out for the setup status and the page list.'
+						description: 'The page; omit for the setup status and page list.'
 					}
 				},
 				required: []

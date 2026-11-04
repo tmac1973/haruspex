@@ -64,7 +64,7 @@ Every model gets its own folder, `assets/generated/model/<id>/`:
 - `<id>.anim.js` — the clips, when the model has any.
 - `<id>.glb` — the model with its clips, ready for the game to load.
 - `sheet.png` and `clip-<name>.png` — the render and motion sheets.
-- `attempts/create-NN/` and `attempts/animate-NN/` — every attempt's file, GLB, sheets and problems. The report names the one kept.
+- `attempts/create-NN/` and `attempts/animate-NN/` — every attempt's file, GLB, sheets and problems. The report names the one kept. To compare the models, open the folder in the 3D viewer (see the `3d-viewer` page).
 
 ## What it doesn't do
 

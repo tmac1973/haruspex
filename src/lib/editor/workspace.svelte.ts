@@ -59,6 +59,21 @@ export class EditorWorkspace {
 		await Promise.all(added.map((d) => d.load()));
 	}
 
+	/**
+	 * Show `next` in the tab that has `relPath`: the 3D viewer stepping
+	 * through a folder, which would otherwise leave a tab per model. A tab
+	 * with unsaved changes stays, and `next` gets a tab of its own.
+	 */
+	async replace(relPath: string, next: string): Promise<void> {
+		const i = this.tabs.findIndex((t) => t.relPath === relPath);
+		if (i < 0 || this.tab(next) || this.tabs[i].dirty) return this.open([next]);
+		const doc = new EditorDocument(this.root, next, this.io);
+		this.tabs[i].close();
+		this.tabs = this.tabs.map((t, j) => (j === i ? doc : t));
+		this.activePath = next;
+		await doc.load();
+	}
+
 	select(relPath: string): void {
 		if (this.tab(relPath)) this.activePath = relPath;
 	}

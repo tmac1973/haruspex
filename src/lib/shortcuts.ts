@@ -77,7 +77,8 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: '⌥ + ↑ / ↓', action: 'Move the line up / down (Shift copies it)' },
 			{ keys: 'Ctrl / ⌘ + Shift + K', action: 'Delete the line' },
 			{ keys: 'Ctrl / ⌘ + /', action: 'Comment or uncomment' },
-			{ keys: 'Tab / Shift + Tab', action: 'Indent / outdent (Esc, then Tab, leaves the editor)' }
+			{ keys: 'Tab / Shift + Tab', action: 'Indent / outdent (Esc, then Tab, leaves the editor)' },
+			{ keys: '← / →', action: 'Previous / next model in the 3D viewer' }
 		]
 	},
 	{
