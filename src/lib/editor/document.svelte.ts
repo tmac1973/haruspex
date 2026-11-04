@@ -47,11 +47,16 @@ export interface EditorIO {
  */
 export type DiskState = 'same' | 'changed' | 'deleted' | 'new';
 
-/** Files a tab shows in a viewer rather than as text, by extension. */
-export type FileViewer = 'glb';
+/**
+ * Files a tab shows in a viewer rather than as text, by extension. Keep in
+ * step with `VIEWABLE_EXTS` in `fs_tools/editor.rs`, which lists them.
+ */
+export type FileViewer = 'glb' | 'image';
 
 export function viewerFor(relPath: string): FileViewer | null {
-	return /\.glb$/i.test(relPath) ? 'glb' : null;
+	if (/\.glb$/i.test(relPath)) return 'glb';
+	if (/\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(relPath)) return 'image';
+	return null;
 }
 
 export class EditorDocument {

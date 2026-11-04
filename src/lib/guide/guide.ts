@@ -28,7 +28,7 @@ const ORDER = [
 	'specialists',
 	'helpers',
 	'3d-helper',
-	'3d-viewer',
+	'viewers',
 	'skills',
 	'write-skills',
 	'media-skills',
