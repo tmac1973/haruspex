@@ -51,35 +51,49 @@ export const RIG_RULE =
 	'meshes it moves, nested parent → child (Hip_L > Knee_L). Animation rotates these pivots ' +
 	'and nothing else.';
 
+/** What the creation model may colour with: the job's Allow textures and Noise colour. */
+export interface ColourOptions {
+	textures: boolean;
+	noiseColour: boolean;
+}
+
+/** How to colour a model, in the creation prompt. */
+function colourRule({ textures, noiseColour }: ColourOptions): string {
+	const base = noiseColour
+		? 'Colour with materials and vertex colours, kit.createNoise for variation.'
+		: 'Colour each part with a plain material colour: no noise or speckle in colours.';
+	if (!textures) return `${base} No textures.`;
+	return [
+		base,
+		`For a surface that needs a pattern, call \`${DRAW_TEXTURE_TOOL}\` with path`,
+		"`<folder>textures/<name>.png`, <folder> being the model's folder, then use",
+		"`kit.texture('textures/<name>.png')` in the module (a string literal)."
+	].join('\n');
+}
+
 /**
  * The creation stage's system prompt, the same for every entry and every
  * round: what a build module is, the units, the rig rule and the check loop.
  * The entry itself goes in the user message.
  */
-export function createSystemPrompt(spec: ModelSpec, allowTextures: boolean): string {
+export function createSystemPrompt(spec: ModelSpec, colour: ColourOptions): string {
 	return [
 		'You build one 3D model in code: a Three.js build module, checked with `check_3d`.',
 		'',
 		'The build module:',
 		'- `export default function build(THREE, kit)` returns one Object3D. No imports.',
 		'- kit: mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry,',
-		'  ParametricGeometry, createNoise(seed), random(seed)' +
-			(allowTextures ? ', texture(path).' : '.'),
+		'  ParametricGeometry, random(seed) (a function giving [0, 1)), createNoise(seed)',
+		'  (an object: noise2(x, y) and noise3(x, y, z), each in [-1, 1])' +
+			(colour.textures ? ', texture(path).' : '.'),
 		'- Units are metres, y is up, the front faces +z, the feet stand on y = 0.',
 		'- Name every mesh.',
 		'- No clips: build returns the object only. Another stage animates it.',
 		...(spec.style ? ['', `Style for every model in this set: ${spec.style}`] : []),
 		'',
 		`Rig: ${RIG_RULE}`,
-		allowTextures
-			? [
-					'',
-					'Colour with materials and vertex colours, kit.createNoise for variation. For a',
-					`surface that needs a pattern, call \`${DRAW_TEXTURE_TOOL}\` with path`,
-					"`<folder>textures/<name>.png`, <folder> being the model's folder, then use",
-					"`kit.texture('textures/<name>.png')` in the module (a string literal)."
-				].join('\n')
-			: '\nColour with materials and vertex colours, kit.createNoise for variation. No textures.',
+		'',
+		colourRule(colour),
 		'',
 		'Process:',
 		'1. Write the module with `fs_write_text`.',

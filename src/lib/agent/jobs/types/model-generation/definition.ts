@@ -29,6 +29,7 @@ export interface ModelGenerationEditorState {
 	chain_create_model: JobModelForm | null;
 	chain_animate_model: JobModelForm | null;
 	allow_textures: boolean;
+	noise_colour: boolean;
 	create_turns: number;
 	animate_turns: number;
 	rounds: number;
@@ -101,6 +102,7 @@ export const modelGenerationJobType: JobTypeDefinition = {
 		chain_create_model: null,
 		chain_animate_model: null,
 		allow_textures: false,
+		noise_colour: false,
 		create_turns: DEFAULT_STAGE_TURNS,
 		animate_turns: DEFAULT_STAGE_TURNS,
 		rounds: DEFAULT_ROUNDS,
@@ -119,6 +121,7 @@ export const modelGenerationJobType: JobTypeDefinition = {
 			chain_create_model: c.create_model ? modelFormFromColumns(c.create_model) : null,
 			chain_animate_model: c.animate_model ? modelFormFromColumns(c.animate_model) : null,
 			allow_textures: c.allow_textures,
+			noise_colour: c.noise_colour,
 			create_turns: c.create_turns,
 			animate_turns: c.animate_turns,
 			rounds: c.rounds,
@@ -138,6 +141,7 @@ export const modelGenerationJobType: JobTypeDefinition = {
 			create_model: stageModelJson(s.chain_create_model),
 			animate_model: stageModelJson(s.chain_animate_model),
 			allow_textures: s.allow_textures,
+			noise_colour: s.noise_colour,
 			create_turns: s.create_turns,
 			animate_turns: s.animate_turns,
 			rounds: s.rounds,

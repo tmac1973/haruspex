@@ -1944,8 +1944,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				run_mode: runMode3d,
 				create_model: stageModelColumns(job, cfg.chain_models.models_create),
 				animate_model: stageModelColumns(job, cfg.chain_models.models_animate),
-				// The 3D job's default; the user turns it on in that job.
+				// The 3D job's defaults; the user turns them on in that job.
 				allow_textures: false,
+				noise_colour: false,
 				...chain
 			})
 		});

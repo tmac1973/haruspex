@@ -96,6 +96,14 @@
 			text="The creation model may draw tiling textures and map them with kit.texture."
 		/>
 	</label>
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.noise_colour} />
+		<span>Noise colour</span>
+		<Tooltip
+			label="About noise colour"
+			text="The creation model may vary colours with noise. Suits rock and bark; it makes creatures blotchy."
+		/>
+	</label>
 </div>
 
 {#if cfg.coding_run}

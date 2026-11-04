@@ -30,7 +30,7 @@ import {
 
 export { MOTION_NOTE, SHEET_NOTE };
 
-const DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid). A module imports nothing; its default export gets THREE (the app's three) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed), random(seed)) and returns an Object3D, or { object, animations } for clips:
+const DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid). A module imports nothing; its default export gets THREE (the app's three) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed) → {noise2, noise3}, random(seed)) and returns an Object3D, or { object, animations } for clips:
 \`\`\`js
 export default function build(THREE, kit) {
   const asset = new THREE.Group();

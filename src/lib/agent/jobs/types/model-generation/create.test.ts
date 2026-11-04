@@ -254,6 +254,19 @@ describe('createStage', () => {
 		expect(on.turns[0].systemPrompt).toContain("kit.texture('textures/<name>.png')");
 	});
 
+	it('asks for plain colours unless Noise colour is on', async () => {
+		verdict.judgeModel.mockResolvedValue(pass());
+		const off = harness();
+		await off.run();
+		expect(off.turns[0].systemPrompt).toContain('plain material colour');
+		expect(off.turns[0].systemPrompt).not.toContain('kit.createNoise for variation');
+
+		const on = harness({ noise_colour: true });
+		await on.run();
+		expect(on.turns[0].systemPrompt).toContain('kit.createNoise for variation');
+		expect(on.turns[0].systemPrompt).not.toContain('plain material colour');
+	});
+
 	it('stops before a turn once cancelled', async () => {
 		const h = harness();
 		h.ctx.abort.abort();
