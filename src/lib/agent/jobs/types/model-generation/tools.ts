@@ -39,7 +39,8 @@ const ENTRY_PROPERTIES = {
 		items: { type: 'string' },
 		description:
 			'Animated models only: the pivot names at its joints, as Side_Part, ' +
-			'e.g. "Hip_L", "Knee_L", "Shoulder_R", "Neck". Empty for a static prop.'
+			'e.g. "Pelvis", "Hip_L", "Knee_L", "Foot_L", "Shoulder_R", "Hand_R", "Neck". ' +
+			'Empty for a static prop.'
 	},
 	clips: {
 		type: 'array',

@@ -3,6 +3,7 @@
 import { SUBMIT_MODEL_SPEC_TOOL } from '#lib/agent/jobs/types/model-generation/tools.ts';
 import { DRAW_TEXTURE_TOOL } from '#lib/agent/tools/draw-texture.ts';
 import { modelFiles } from '#lib/models3d/spec/paths.ts';
+import { RIG_PARTS_LINES } from '#lib/models3d/spec/rigs.ts';
 import { MAX_ENTRIES, type ModelEntry, type ModelSpec } from '#lib/models3d/spec/types.ts';
 
 /** The spec stage's system prompt: list the models from the user's description. */
@@ -23,8 +24,7 @@ export function modelSpecPrompt(description: string, specPath: string): string {
 		'   - height_m: its overall height in metres, so the set shares one scale',
 		'     (a door is about 2, a person 1.8, a crate 0.6).',
 		'   - parts and clips only for a model that moves. parts are the pivot names',
-		'     at its joints, written Side_Part: Hip_L, Knee_L, Hip_R, Knee_R,',
-		'     Shoulder_L, Elbow_L, Neck. Every pivot a clip moves must be listed.',
+		...RIG_PARTS_LINES,
 		'   - clips: name, seconds (0.2 to 10), loop, and action (what happens).',
 		'   - A static prop (crate, tree, rock) has no parts and no clips.',
 		'',
@@ -48,8 +48,8 @@ export function modelSpecRetryPrompt(problems: string[]): string {
 /** The rig rule, word for word in every creation prompt: animation depends on it. */
 export const RIG_RULE =
 	'Every name in Parts is an Object3D pivot placed at the joint it turns about, holding the ' +
-	'meshes it moves, nested parent → child (Hip_L > Knee_L). Animation rotates these pivots ' +
-	'and nothing else.';
+	'meshes it moves, nested parent → child (Pelvis > Hip_L > Knee_L > Foot_L). Animation ' +
+	'rotates these pivots and moves Pelvis, and nothing else.';
 
 /** What the creation model may colour with: the job's Allow textures and Noise colour. */
 export interface ColourOptions {
@@ -155,7 +155,9 @@ export function animateSystemPrompt(): string {
 		"- Find each pivot with `object.getObjectByName('Hip_L')`. Animate only the named",
 		'  pivots: QuaternionKeyframeTrack on `<name>.quaternion`, VectorKeyframeTrack on',
 		'  `<name>.position`. Start from each pivot’s rest pose (its current quaternion and',
-		'  position) and move away from it.',
+		'  position) and move away from it. Move Pelvis down and up so the hips drop with',
+		'  each step; turn each Foot to keep its sole flat while planted, and each Hand to',
+		'  finish a swing.',
 		'- One clip per name in the list, with that name and length in seconds.',
 		'- A looping clip ends on exactly its first pose, moving as it does at the start.',
 		'  A one-shot starts and ends at the rest pose, so the game can blend into it.',
