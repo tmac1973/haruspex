@@ -19,4 +19,5 @@ export type Category =
 	| 'videoEditing'
 	| 'remote'
 	| 'remoteControl'
-	| 'feedback';
+	| 'feedback'
+	| 'licences';

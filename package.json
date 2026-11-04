@@ -14,9 +14,10 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"scripts": {
-		"dev": "npm run build:three-kit && vite dev",
-		"build": "npm run build:three-kit && vite build",
+		"dev": "npm run build:three-kit && npm run build:licences && vite dev",
+		"build": "npm run build:three-kit && npm run build:licences && vite build",
 		"build:three-kit": "node scripts/build-three-kit.mjs",
+		"build:licences": "node scripts/build-licences.mjs",
 		"build:web": "vite build --config vite.web.config.ts",
 		"dev:web": "vite dev --config vite.web.config.ts",
 		"preview": "vite preview",

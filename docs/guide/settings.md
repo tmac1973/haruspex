@@ -9,7 +9,7 @@ Each section lists its main options, defaults and a page with more.
 
 ## Open Settings
 
-Click the gear in the header; again or **← Back** closes it.
+Click the gear in the header; again, or **← Back**, closes it.
 
 ## General
 
@@ -32,7 +32,7 @@ Where the model runs, which model, and defaults.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
 - **Parallel streams**: 1 (also 2 or 4). More let chats, jobs and subtasks run at once.
-- **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
+- **Extra llama-server arguments**: empty. They override Haruspex's own.
 - **Model defaults**: reasoning on, medium effort; replies up to 8192 tokens, 65536 for a file.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
@@ -46,7 +46,7 @@ What only the Chat tab uses.
 - **Default working directory**: none.
 - **Additional system prompt**: empty.
 - **Enable Python sandbox**: on. **Approval prompt**: Once per chat. **Network access**: Internet and local network. **Execution timeout**: 60 seconds.
-- **Pictures in answers** → **Include images in answers**: on.
+- **Include images in answers**: on.
 
 See the `chat` page.
 
@@ -130,7 +130,7 @@ The Shell tab's terminal and its assistant.
 - **Max output bytes per captured command**: 8192.
 - **Max steps per turn**: 40, both modes.
 - **Start new shells with Full access**: off.
-- **Command execution** (Full access): Auto: the terminal when capture works, else a process.
+- **Command execution** (Full access): Auto.
 - **Memory limit**: 50 % of RAM.
 
 See the `shell` page.
@@ -203,3 +203,7 @@ Report a bug or ask for a feature.
 - **Let the model report problems with Haruspex's tools**: off. See the `model-feedback` page.
 
 See the `troubleshooting` page.
+
+## Licences
+
+Every open-source package and program Haruspex ships, with its licence.
