@@ -22,6 +22,7 @@ import { KIND_RULE, TRANSITION_RULE } from '#lib/agent/jobs/types/asset-generati
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import { SUBMIT_PLAN_MODEL_SPEC_TOOL } from '#lib/agent/jobs/types/model-generation/tools.ts';
 import { derivePlanModelSpec } from '#lib/models3d/spec/derive.ts';
+import { RIG_PARTS_LINES } from '#lib/models3d/spec/rigs.ts';
 import { validateModelSpec } from '#lib/models3d/spec/validate.ts';
 import { renderModelSpec } from '#lib/models3d/spec/write.ts';
 import { MAX_ENTRIES } from '#lib/models3d/spec/types.ts';
@@ -946,8 +947,7 @@ export function planModelSpecPrompt(outDir: string, specPath: string): string {
 		'   - height_m: its overall height in metres, so the set shares one scale',
 		'     (a door is about 2, a person 1.8, a crate 0.6).',
 		'   - parts and clips only for a model that moves. parts are the pivot names',
-		'     at its joints, written Side_Part: Hip_L, Knee_L, Shoulder_R, Neck.',
-		'     Every pivot a clip moves must be listed.',
+		...RIG_PARTS_LINES,
 		'   - clips: name, seconds (0.2 to 10), loop, and action (what happens). Use',
 		'     the clip names the plan uses.',
 		'   - A static prop (crate, tree, rock) has no parts and no clips.',
