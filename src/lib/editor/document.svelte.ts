@@ -51,11 +51,12 @@ export type DiskState = 'same' | 'changed' | 'deleted' | 'new';
  * Files a tab shows in a viewer rather than as text, by extension. Keep in
  * step with `VIEWABLE_EXTS` in `fs_tools/editor.rs`, which lists them.
  */
-export type FileViewer = 'glb' | 'image';
+export type FileViewer = 'glb' | 'image' | 'audio';
 
 export function viewerFor(relPath: string): FileViewer | null {
 	if (/\.glb$/i.test(relPath)) return 'glb';
 	if (/\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(relPath)) return 'image';
+	if (/\.(wav|mp3|ogg|oga|opus|flac|m4a|aac)$/i.test(relPath)) return 'audio';
 	return null;
 }
 

@@ -168,6 +168,7 @@ describe('viewerFor', () => {
 		expect(viewerFor('a/b.glb.html')).toBeNull();
 		expect(viewerFor('sheet.PNG')).toBe('image');
 		expect(viewerFor('a.svg')).toBe('image');
+		expect(viewerFor('song.Flac')).toBe('audio');
 		expect(viewerFor('a.ts')).toBeNull();
 	});
 });

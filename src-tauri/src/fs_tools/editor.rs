@@ -548,9 +548,12 @@ pub struct ViewableListing {
 const MAX_VIEWABLE: usize = 2000;
 const MAX_VIEWABLE_DEPTH: usize = 8;
 /// What a viewer tab shows (`viewerFor` in `editor/document.svelte.ts`).
-const VIEWABLE_EXTS: &[&str] = &["glb", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"];
+const VIEWABLE_EXTS: &[&str] = &[
+    "glb", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "wav", "mp3", "ogg", "oga", "opus",
+    "flac", "m4a", "aac",
+];
 
-/// Every model and image under `root`, so the window can step through a
+/// Every model, image and sound under `root`, so the window can step through a
 /// folder of them. Hidden folders and `node_modules` are skipped;
 /// `.gitignore` is not honoured, since generated files are usually ignored.
 fn list_viewable(root: &Path) -> ViewableListing {
@@ -594,7 +597,7 @@ mod tests {
     use crate::test_util::temp_dir;
 
     #[test]
-    fn list_viewable_finds_nested_models_and_images_and_skips_hidden() {
+    fn list_viewable_finds_nested_models_images_and_sounds_and_skips_hidden() {
         let dir = temp_dir("viewable_list");
         let root: &Path = &dir;
         for rel in [
@@ -605,6 +608,7 @@ mod tests {
             "node_modules/z.glb",
             "a/x.gltf",
             "a/sheet.png",
+            "song.MP3",
             "notes.txt",
         ] {
             let p = root.join(rel);
@@ -618,7 +622,8 @@ mod tests {
                 "a/attempts/create-01/x.glb",
                 "a/sheet.png",
                 "a/x.GLB",
-                "b.glb"
+                "b.glb",
+                "song.MP3"
             ]
         );
         assert!(!listing.truncated);

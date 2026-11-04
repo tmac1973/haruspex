@@ -1,7 +1,7 @@
 /**
- * Code → Open: any file, in its folder's editor window (a model or image in
- * its viewer, anything else as text), or a folder, which opens on its first
- * model or image with the rest listed beside it.
+ * Code → Open: any file, in its folder's editor window (a model, image or
+ * sound in its viewer, anything else as text), or a folder, which opens on
+ * its first model, image or sound with the rest listed beside it.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -33,7 +33,7 @@ export async function openFolder(): Promise<void> {
 		const { files } = await invoke<ViewableListing>('editor_list_viewable', { workdir: root });
 		const first = firstFile(files);
 		if (!first) {
-			showToast(`No models or images in ${root}.`, { kind: 'error' });
+			showToast(`No models, images or sounds in ${root}.`, { kind: 'error' });
 			return;
 		}
 		await show(root, first);

@@ -121,7 +121,7 @@
 
 	// Right-click menu, rename and delete.
 	let menu = $state<{ x: number; y: number; session: CodeSessionSummary } | null>(null);
-	/** The Open menu: any file, or a folder of models and images. */
+	/** The Open menu: any file, or a folder of models, images and sounds. */
 	let modelMenu = $state<{ x: number; y: number } | null>(null);
 
 	function toggleModelMenu(e: MouseEvent): void {
@@ -269,7 +269,8 @@
 				onclick={toggleModelMenu}
 				aria-haspopup="menu"
 				aria-expanded={modelMenu !== null}
-				title="Open a file, or a folder of models and images, in an editor window">Open ▾</button
+				title="Open a file, or a folder of models, images and sounds, in an editor window"
+				>Open ▾</button
 			>
 			<button class="collapse" onclick={toggleOpen} title="Hide sessions" aria-label="Hide sessions"
 				>‹</button
@@ -327,12 +328,12 @@
 	<div class="menu" role="menu" style="left: {modelMenu.x}px; top: {modelMenu.y}px">
 		<button
 			role="menuitem"
-			title="A model or image opens in its viewer, anything else as text"
+			title="A model, image or sound opens in its viewer, anything else as text"
 			onclick={() => void openFile()}>File…</button
 		>
 		<button
 			role="menuitem"
-			title="Opens the first model or image, with the rest listed beside it"
+			title="Opens the first model, image or sound, with the rest listed beside it"
 			onclick={() => void openFolder()}>Folder…</button
 		>
 	</div>
