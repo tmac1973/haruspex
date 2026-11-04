@@ -67,6 +67,20 @@ describe('check_3d', () => {
 		expect(c.pendingImages).toEqual([{ path: 'assets/crate.glb', dataUrl: PNG }]);
 	});
 
+	it('says which vertex colours the runner clamped', async () => {
+		files.set('/proj/assets/crate.js', enc(MODULE));
+		runner.runBuildModule.mockResolvedValueOnce({
+			glb: GLB,
+			errors: [],
+			missingTracks: [],
+			clamped: { count: 7, meshes: ['Lid', 'Plank_1', 'Plank_2', 'Plank_3', 'Plank_4', 'Base'] }
+		});
+		const out = await call({ path: 'assets/crate.js' });
+		expect(out.result).toContain(
+			'7 vertex colours outside 0–1 in Lid, Plank_1, Plank_2, Plank_3 and 2 more were clamped (glTF allows only 0–1): keep shading within 0–1.'
+		);
+	});
+
 	it('passes normalisation and the budget through, and writes what it returns', async () => {
 		files.set('/proj/a.js', enc(MODULE));
 		glb.checkGlb.mockResolvedValueOnce({

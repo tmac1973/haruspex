@@ -12,6 +12,7 @@ import { inspectMotion } from '#lib/glb/motion.ts';
 import { formatClip, formatClipLines } from '#lib/glb/motionFormat.ts';
 import { renderMotionSheet } from '#lib/glb/motionSheet.ts';
 import { renderSheet } from '#lib/glb/sheet.ts';
+import { validateGlb } from '#lib/glb/validate.ts';
 
 export interface CheckOptions extends NormaliseOptions {
 	maxTriangles?: number;
@@ -30,6 +31,11 @@ export interface GlbCheck {
 	normalisedFrom?: Bounds;
 	/** The clip the sheet shows moving, when one was asked for. */
 	clip?: string;
+	/**
+	 * The glTF validator's issues, one line per kind; empty when it found none.
+	 * Not run for a clip's motion sheet: the file is the one the still check saw.
+	 */
+	invalid: string[];
 }
 
 /** Check GLB bytes; `problems` when they fail (no GLB to write). */
@@ -58,7 +64,11 @@ export async function checkGlb(
 	}
 	const shown = describe(loaded, report, opts.clip, normalisedFrom);
 	if ('problems' in shown) return shown;
-	return { bytes, report, normalisedFrom, ...shown };
+	const invalid = opts.clip ? [] : (await validateGlb(bytes)).lines;
+	const text = invalid.length
+		? `${shown.text}\nglTF validation (other engines reject or mis-draw these):\n${invalid.join('\n')}`
+		: shown.text;
+	return { bytes, report, normalisedFrom, ...shown, text, invalid };
 }
 
 /**

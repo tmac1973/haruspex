@@ -134,6 +134,42 @@ describe('judgeModel', () => {
 		expect(shot.problems).toEqual([]);
 	});
 
+	it('is not done while the glTF validator finds errors', async () => {
+		const rig = pivotRig();
+		const body = rig.getObjectByName('Body') as THREE.Mesh;
+		const n = body.geometry.attributes.position.count;
+		body.geometry.setAttribute(
+			'color',
+			new THREE.BufferAttribute(new Float32Array(n * 3).fill(2), 3)
+		);
+		const out = await new GLTFExporter().parseAsync(rig, { binary: true });
+		runner.runBuildModule.mockResolvedValue({
+			glb: new Uint8Array(out as ArrayBuffer),
+			errors: [],
+			missingTracks: [],
+			clamped: null
+		});
+		const v = await judgeModel({ entry: golem, files: paths, stage: 'create', io });
+		expect(v.done).toBe(false);
+		expect(v.problems).toEqual([
+			'glTF validation: Vertex colour values outside 0–1 ×72 in Body: keep colours within 0–1.'
+		]);
+	});
+
+	it('says when the runner clamped colours, without holding the model back', async () => {
+		runner.runBuildModule.mockResolvedValue({
+			glb: await glbOf(),
+			errors: [],
+			missingTracks: [],
+			clamped: { count: 40, meshes: ['Body'] }
+		});
+		const v = await judgeModel({ entry: golem, files: paths, stage: 'create', io });
+		expect(v.done).toBe(true);
+		expect(v.text).toContain(
+			'40 vertex colours outside 0–1 in Body were clamped (glTF allows only 0–1): keep shading within 0–1.'
+		);
+	});
+
 	it('reports a module that failed to build as problems, with no GLB', async () => {
 		runner.runBuildModule.mockResolvedValue({
 			glb: null,

@@ -17,7 +17,9 @@ import {
 	MODEL_FILE as MODEL,
 	MODULE_FILE as MODULE
 } from '#lib/helpers/three/output.ts';
+import type { ClampedColours } from '#lib/helpers/three/runModule.ts';
 import {
+	clampedLine,
 	failed,
 	loadModuleRun,
 	missingLine,
@@ -143,6 +145,7 @@ interface Source {
 	glb: Uint8Array;
 	/** A module's tracks that name a node it doesn't have. */
 	missing: string[];
+	clamped: ClampedColours | null;
 }
 
 /** The GLB bytes to check: a module's export, or the file itself. */
@@ -154,13 +157,13 @@ async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<So
 		if (/\.gltf$/i.test(a.path) && externalGltf(got.bytes)) {
 			return toolError('Export it as .glb, or embed its buffers and images in the .gltf.');
 		}
-		return { glb: new Uint8Array(got.bytes), missing: [] };
+		return { glb: new Uint8Array(got.bytes), missing: [], clamped: null };
 	}
 	ctx.onProgress?.('Building');
 	const run = await loadModuleRun({ build: a.path, anim: a.anim }, io, ctx.signal);
 	if ('refused' in run) return toolError(run.refused);
 	if (run.errors.length || !run.glb) return runFailure(run.errors, { build: a.path, anim: a.anim });
-	return { glb: run.glb, missing: run.missing };
+	return { glb: run.glb, missing: run.missing, clamped: run.clamped };
 }
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
@@ -196,6 +199,7 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	const lines = [
 		target ? `Wrote ${target}.` : `Checked ${a.path} (nothing written).`,
 		...missingLine(got.missing),
+		...clampedLine(got.clamped),
 		checked.text,
 		...(sees ? [checked.clip ? MOTION_NOTE : SHEET_NOTE] : [])
 	];

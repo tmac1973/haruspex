@@ -81,7 +81,10 @@ function runner() {
 	vi.spyOn(window, 'postMessage').mockImplementation((m: unknown) => {
 		posted.push(m as Record<string, unknown>);
 	});
-	const named = (name: string) => ({ isObject3D: true, name });
+	const named = (name: string, geometry?: unknown) => {
+		const o = { isObject3D: true, name, geometry, traverse: (fn: (x: unknown) => void) => fn(o) };
+		return o;
+	};
 	const w = window as unknown as Record<string, unknown>;
 	w.HaruspexThreeKit = {
 		THREE: {
@@ -114,6 +117,21 @@ describe('the runner with an animation module', () => {
 		const w = window as unknown as Record<string, unknown>;
 		delete w.HaruspexThreeKit;
 		delete w.__hxRun;
+	});
+
+	it('clamps vertex colours into 0..1 before export, and says how many and where', async () => {
+		const { posted, named, run } = runner();
+		const color = {
+			array: new Float32Array([1.2, 0.5, 0.5, 0.2, 0.2, 0.2, -0.1, 1, 1]),
+			itemSize: 3
+		};
+		await run({ default: () => named('Helmet', { attributes: { color } }) });
+		expect([...color.array].map((v) => Math.round(v * 10) / 10)).toEqual([
+			1, 0.5, 0.5, 0.2, 0.2, 0.2, 0, 1, 1
+		]);
+		expect(posted).toContainEqual({ t: 'hx-clamped', count: 2, meshes: ['Helmet'] });
+		const exported = posted.findIndex((m) => m.t === 'exported');
+		expect(posted.findIndex((m) => m.t === 'hx-clamped')).toBeLessThan(exported);
 	});
 
 	it('adds the clips animate() returns to the build clips', async () => {
@@ -233,6 +251,20 @@ describe('runBuildModule', () => {
 		expect(page.indexOf('PB.findNode')).toBeLessThan(page.indexOf('GLTFExporter()'));
 	});
 
+	it('reports vertex colours it clamped before export', async () => {
+		const { run, f } = await start();
+		f.send({ t: 'hx-clamped', count: 12, meshes: ['Helmet', 'Gauntlet_L'] });
+		f.send({ t: 'hx-glb', bytes: new Uint8Array([103, 108, 84, 70]).buffer });
+		await vi.advanceTimersByTimeAsync(LATE_MS);
+		expect(((await run) as ModuleRunResult).clamped).toEqual({
+			count: 12,
+			meshes: ['Helmet', 'Gauntlet_L']
+		});
+		const page = modulePage('', 'tauri://localhost/helpers/three-kit.js');
+		expect(page.indexOf('hx-clamped')).toBeGreaterThan(0);
+		expect(page.indexOf('hx-clamped')).toBeLessThan(page.indexOf('GLTFExporter()'));
+	});
+
 	it('keeps which module an error came from', async () => {
 		const { run, f } = await start({ anim: 'export default () => [];' });
 		expect(invoke).toHaveBeenCalledWith('artifact_register', {
@@ -254,7 +286,8 @@ describe('runBuildModule', () => {
 		expect(await run).toEqual({
 			glb: null,
 			errors: [{ kind: 'error', message: "Unexpected token '}'", line: 7, file: 'build' }],
-			missingTracks: []
+			missingTracks: [],
+			clamped: null
 		});
 	});
 
@@ -271,7 +304,8 @@ describe('runBuildModule', () => {
 					file: 'build'
 				}
 			],
-			missingTracks: []
+			missingTracks: [],
+			clamped: null
 		});
 		expect(document.querySelector('iframe')).toBeNull();
 	});

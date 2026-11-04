@@ -13,6 +13,7 @@ import {
 	errorLines,
 	failed,
 	loadModuleRun,
+	clampedLine,
 	missingLine,
 	runFailure,
 	SHEET_NOTE,
@@ -97,6 +98,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 
 	const seen = await inspectNodes(checked.bytes, entry.parts);
 	problems.push(...seen.problems);
+	problems.push(...checked.invalid.map((l) => `glTF validation: ${l.replace(/^- /, '')}`));
 	const clipSheets: Record<string, string> = {};
 	if (stage === 'animate') {
 		problems.push(...clipVerdict(entry, seen.clips, run.missing));
@@ -110,6 +112,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 	const text = [
 		`Wrote ${files.glb}.`,
 		...missingLine(run.missing),
+		...clampedLine(run.clamped),
 		checked.text,
 		// check_3d adds the note when it attaches the sheet for a model that can see.
 		...(checked.png !== null ? [SHEET_NOTE] : [])
