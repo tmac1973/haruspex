@@ -22,8 +22,11 @@
 	interface Props {
 		src: string;
 		title: string;
+		/** Start playing as soon as it can: an editor window stepping through a folder. */
+		autoplay?: boolean;
+		loop?: boolean;
 	}
-	let { src, title }: Props = $props();
+	let { src, title, autoplay = false, loop = false }: Props = $props();
 
 	let loaded = $state<string | undefined>(undefined);
 	let mime = $state('audio/mpeg');
@@ -230,6 +233,8 @@
 		onplaying={syncDuration}
 		ontimeupdate={syncDuration}
 		preload="metadata"
+		{autoplay}
+		{loop}
 		src={loaded}
 	></audio>
 </figure>

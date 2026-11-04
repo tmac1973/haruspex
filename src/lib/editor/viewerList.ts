@@ -1,5 +1,5 @@
 /**
- * An editor window's file list: every model and image under its folder
+ * An editor window's file list: every model, image and sound under its folder
  * (`editor_list_viewable`), one kind at a time, stepped through with ← / →.
  */
 
@@ -8,7 +8,8 @@ import { viewerFor, type FileViewer } from '#lib/editor/document.svelte.ts';
 /** The kinds, in the order the list offers them. */
 export const KINDS: { kind: FileViewer; label: string }[] = [
 	{ kind: 'glb', label: '3D' },
-	{ kind: 'image', label: 'Images' }
+	{ kind: 'image', label: 'Images' },
+	{ kind: 'audio', label: 'Audio' }
 ];
 
 /** A file the 3D models job kept from an earlier try (`attempts/create-NN/`). */

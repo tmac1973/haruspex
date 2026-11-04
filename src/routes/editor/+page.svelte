@@ -11,6 +11,7 @@
 	import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import GlbViewer from '#lib/components/GlbViewer.svelte';
+	import AudioViewer from '#lib/components/AudioViewer.svelte';
 	import ImageViewer from '#lib/components/ImageViewer.svelte';
 	import ViewerList from '#lib/components/ViewerList.svelte';
 	import { EditorWorkspace } from '#lib/editor/workspace.svelte.ts';
@@ -235,8 +236,10 @@
 					{#key active.relPath}
 						{#if active.viewer === 'glb'}
 							<GlbViewer workdir={root} relPath={active.relPath} />
-						{:else}
+						{:else if active.viewer === 'image'}
 							<ImageViewer workdir={root} relPath={active.relPath} />
+						{:else}
+							<AudioViewer workdir={root} relPath={active.relPath} />
 						{/if}
 					{/key}
 				</div>

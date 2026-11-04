@@ -30,11 +30,13 @@ describe('ViewerList', () => {
 	});
 
 	it('switches to the first file of another kind', async () => {
-		listing.files = ['a.glb', 'p.png', 'q.png'];
+		listing.files = ['a.glb', 'hit.wav', 'p.png', 'q.png'];
 		const onpick = vi.fn();
 		render(ViewerList, { workdir: '/proj', relPath: 'a.glb', onpick });
 		await fireEvent.click(await screen.findByText('Images 2'));
 		expect(onpick).toHaveBeenLastCalledWith('p.png');
+		await fireEvent.click(screen.getByText('Audio 1'));
+		expect(onpick).toHaveBeenLastCalledWith('hit.wav');
 	});
 
 	it('hides itself when the file is alone in its folder', async () => {

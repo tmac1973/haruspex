@@ -25,6 +25,8 @@ describe('viewerList', () => {
 		expect(firstFile(files)).toBe('a/a.glb');
 		expect(firstFile(['x/attempts/create-01/x.glb'])).toBe('x/attempts/create-01/x.glb');
 		expect(firstFile(['p.png', 'notes.txt'])).toBe('p.png');
+		expect(firstFile(['hit.wav', 'p.png'])).toBe('p.png');
+		expect(firstFile(['hit.wav'])).toBe('hit.wav');
 		expect(firstFile(['notes.txt'])).toBeNull();
 	});
 
