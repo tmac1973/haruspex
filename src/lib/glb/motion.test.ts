@@ -80,6 +80,37 @@ describe('inspectMotion', () => {
 		expect(inspectMotion(THREE, gltf(movable(), [lunge]))[0].travel).toBeLessThan(1e-4);
 	});
 
+	it('finds a loop that changes speed at its seam, and not one that turns there as it does halfway', () => {
+		const root = pivotRig();
+		const smooth = Array.from({ length: 33 }, (_, i) => i / 32);
+		const swing = (u: number) => 30 * Math.sin(2 * Math.PI * u);
+		// Eased in: the same poses, but slow out of the start and fast into the end.
+		const eased = clip(
+			'Idle',
+			1,
+			turn(
+				'Shoulder',
+				[0, 0, 1],
+				smooth,
+				smooth.map((u) => swing(u ** 1.6))
+			)
+		);
+		const even = clip('Idle', 1, turn('Shoulder', [0, 0, 1], smooth, smooth.map(swing)));
+		const triangle = clip('Idle', 1, turn('Shoulder', [0, 0, 1], [0, 0.5, 1], [0, 40, 0]));
+		const [e, v, t] = inspectMotion(THREE, gltf(root, [eased, even, triangle]));
+		expect(e.hitch?.part).toBe('Arm');
+		expect(v.hitch).toBeNull();
+		expect(t.hitch).toBeNull();
+	});
+
+	it('measures how far a clip starts and ends from the rest pose', () => {
+		const raise = clip('Wave', 1, turn('Shoulder', [0, 0, 1], [0, 1], [30, 0]));
+		const [r] = inspectMotion(THREE, gltf(pivotRig(), [raise]));
+		expect(r.fromRest.start).toBeGreaterThan(0.1);
+		expect(r.fromRest.startPart).toBe('Arm');
+		expect(r.fromRest.end).toBeLessThan(1e-4);
+	});
+
 	it('leaves the scene at rest', () => {
 		const root = pivotRig();
 		const arm = root.getObjectByName('Arm')!;

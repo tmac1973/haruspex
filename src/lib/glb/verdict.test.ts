@@ -128,10 +128,12 @@ describe('judgeModel', () => {
 		const open = await judgeModel({ entry: golem, files: paths, stage: 'animate', io });
 		expect(open.problems.some((p) => p.startsWith('Clip "Wave": loops but ends'))).toBe(true);
 
-		// The same clip as a one-shot needs no seam.
+		// The same clip as a one-shot needs no seam, but it should end at rest.
 		const once = entry({ clips: [{ name: 'Wave', seconds: 1, loop: false, action: 'waves' }] });
 		const shot = await judgeModel({ entry: once, files: paths, stage: 'animate', io });
-		expect(shot.problems).toEqual([]);
+		expect(shot.problems).toEqual([
+			'Clip "Wave": ends 25 cm from the rest pose (Arm): a one-shot starts and ends at the rest pose, so the game can blend into and out of it.'
+		]);
 	});
 
 	it('is not done while the glTF validator finds errors', async () => {

@@ -8,7 +8,7 @@
 import { checkGlb } from '#lib/glb/check.ts';
 import { disposeTree, loadGlb } from '#lib/glb/load.ts';
 import { inspectMotion, type ClipMotion } from '#lib/glb/motion.ts';
-import { clipProblems } from '#lib/glb/motionFormat.ts';
+import { clipNotes, clipProblems } from '#lib/glb/motionFormat.ts';
 import {
 	errorLines,
 	failed,
@@ -118,7 +118,12 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 	return {
 		done: problems.length === 0,
 		problems,
-		warnings: [...checked.report.warnings],
+		warnings: [
+			...checked.report.warnings,
+			...(stage === 'animate'
+				? seen.clips.flatMap((m) => clipNotes(m).map((n) => `Clip "${m.name}": ${n}.`))
+				: [])
+		],
 		text,
 		sheetPng: checked.png,
 		clipSheets,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClipMotion } from './motion';
-import { clipProblems, formatClip, formatClipLines } from './motionFormat';
+import { clipNotes, clipProblems, formatClip, formatClipLines } from './motionFormat';
 
 function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 	return {
@@ -29,6 +29,10 @@ function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 		travelTrack: '',
 		stance: null,
 		treadmill: false,
+		hitch: null,
+		fromRest: { start: 0, startPart: '', end: 0, endPart: '' },
+		sparse: { tracks: [], gap: 0 },
+		dense: { tracks: 0, perSecond: 0 },
 		dead: [],
 		jumps: [],
 		sanity: [],
@@ -109,6 +113,42 @@ describe('clipProblems', () => {
 			/^its planted feet move forward \(\+z\)/
 		);
 		expect(clipProblems({ ...back, name: 'WalkBack', stance: { x: 0, z: 1.2 } })).toEqual([]);
+	});
+
+	it('reports a loop that hitches, only when it loops', () => {
+		const hitch = { part: 'Arm', jump: 1.2, speed: 0.8 };
+		const idle = motion({ name: 'Idle', loop: true, hitch });
+		expect(clipProblems(idle)).toEqual([
+			'hitches at the loop point: Arm changes speed by 1.20 m/s there, against a mean speed of 0.80 m/s, and most parts change too. Make its last keys lead into its first'
+		]);
+		expect(clipProblems({ ...idle, loop: false })).toEqual([]);
+		expect(clipProblems({ ...idle, hitch: { ...hitch, jump: 0.05 } })).toEqual([]);
+	});
+
+	it('wants a one-shot to start and end at rest, except one that ends lying down', () => {
+		const fromRest = { start: 0.06, startPart: 'Sword', end: 0.2, endPart: 'Torso' };
+		const why =
+			'a one-shot starts and ends at the rest pose, so the game can blend into and out of it';
+		expect(clipProblems(motion({ name: 'Attack', fromRest }))).toEqual([
+			`starts 6 cm and ends 20 cm from the rest pose (Sword, Torso): ${why}`
+		]);
+		expect(clipProblems(motion({ name: 'Die', fromRest }))).toEqual([
+			`starts 6 cm from the rest pose (Sword): ${why}`
+		]);
+		expect(clipProblems(motion({ name: 'Idle', loop: true, fromRest }))).toEqual([]);
+	});
+
+	it('notes sparse and dense keys without calling them problems', () => {
+		const c = motion({
+			sparse: { tracks: ['Spine.quaternion', 'Neck.quaternion'], gap: 0.6 },
+			dense: { tracks: 13, perSecond: 120 }
+		});
+		expect(clipProblems(c)).toEqual([]);
+		expect(clipNotes(c)).toEqual([
+			'keys up to 0.60 s apart on Spine.quaternion and 1 more: straight lines between them read as mechanical, so key at least every 0.25 s',
+			'120 keys a second on 13 tracks: 30 is plenty for a game and keeps the file small'
+		]);
+		expect(formatClipLines([c])[1]).toMatch(/: no problems found\. Note: keys up to 0\.60 s/);
 	});
 
 	it('words a slide on a treadmill as a slip against it', () => {

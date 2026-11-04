@@ -34,6 +34,49 @@ function way([x, z]: [number, number]): string {
 /** How far a looping clip's last pose may sit from its first (m). */
 export const seamLimit = (c: Pick<ClipMotion, 'height'>) => Math.max(0.01, LOOP_SEAM * c.height);
 
+/** A change of speed at the seam under this share of the height a second is too small to see. */
+const HITCH_MIN = 0.1;
+/** One-shots that end away from the rest pose on purpose. */
+const ENDS_DOWN = /die|death|dead|fall|sit|sleep|lie|knock|faint/i;
+
+const mps = (v: number) => `${v.toFixed(2)} m/s`;
+
+/** Whether a loop changes speed at its seam: it hitches each time it repeats. */
+export const hitches = (c: ClipMotion) =>
+	c.loop && !!c.hitch && c.hitch.jump > HITCH_MIN * Math.max(1, c.height);
+
+/** One-shots that start or end away from the rest pose, so a game's blend into or out of them pops. */
+function restProblems(c: ClipMotion): string[] {
+	if (c.loop) return [];
+	const r = c.fromRest;
+	const starts = r.start > seamLimit(c);
+	const ends = r.end > seamLimit(c) && !ENDS_DOWN.test(c.name);
+	const parts = [...new Set([starts && r.startPart, ends && r.endPart].filter(Boolean))].join(', ');
+	const where = [starts && `starts ${cm(r.start)}`, ends && `ends ${cm(r.end)}`].filter(Boolean);
+	if (!where.length) return [];
+	return [
+		`${where.join(' and ')} from the rest pose (${parts}): a one-shot starts and ends at the rest pose, so the game can blend into and out of it`
+	];
+}
+
+/** What the clip's keys could do better, which never fails it: too sparse, or too dense. */
+export function clipNotes(c: ClipMotion): string[] {
+	const out: string[] = [];
+	const { sparse, dense } = c;
+	if (sparse.tracks.length) {
+		const more = sparse.tracks.length > 1 ? ` and ${sparse.tracks.length - 1} more` : '';
+		out.push(
+			`keys up to ${sec(sparse.gap)} apart on ${sparse.tracks[0]}${more}: straight lines between them read as mechanical, so key at least every 0.25 s`
+		);
+	}
+	if (dense.tracks) {
+		out.push(
+			`${Math.round(dense.perSecond)} keys a second on ${dense.tracks} track${dense.tracks === 1 ? '' : 's'}: 30 is plenty for a game and keeps the file small`
+		);
+	}
+	return out;
+}
+
 /** Whether a looping clip carries the body across the floor instead of playing in place. */
 export const travels = (c: ClipMotion) => c.loop && c.travel > seamLimit(c);
 
@@ -51,7 +94,17 @@ function loopProblems(c: ClipMotion): string[] {
 		out.push(
 			`loops but ends ${cm(c.seam)} from where it starts${part}: make its last pose its first`
 		);
+	} else if (hitches(c) && c.hitch) {
+		out.push(
+			`hitches at the loop point: ${c.hitch.part} changes speed by ${mps(c.hitch.jump)} there, against a mean speed of ${mps(c.hitch.speed)}, and most parts change too. Make its last keys lead into its first`
+		);
 	}
+	return [...out, ...treadmillProblems(c)];
+}
+
+/** A walk in place whose planted feet don't move back. */
+function treadmillProblems(c: ClipMotion): string[] {
+	const out: string[] = [];
 	if (!c.locomotion || !c.stance || travels(c)) return out;
 	if (!c.treadmill) {
 		out.push(
@@ -72,7 +125,7 @@ export function clipProblems(c: ClipMotion): string[] {
 	if (c.lift > FLOOR_LIFT && !c.airborne) {
 		out.push(`off the floor by ${cm(c.lift)} at ${sec(c.liftAt)}`);
 	}
-	out.push(...c.sanity, ...loopProblems(c));
+	out.push(...c.sanity, ...loopProblems(c), ...restProblems(c));
 	out.push(
 		...capped(
 			c.passes,
@@ -115,7 +168,9 @@ export function formatClipLines(clips: ClipMotion[]): string[] {
 		...clips.map((c) => {
 			const p = clipProblems(c);
 			const inPlace = c.treadmill && c.stance ? `, in place at ${speed(c.stance)}` : '';
-			return `- ${c.name} (${c.duration.toFixed(2)} s, ${c.tracks} tracks, ends ${cm(c.seam)} from its start${inPlace}): ${p.length ? p.join('; ') : 'no problems found'}.`;
+			const notes = clipNotes(c);
+			const note = notes.length ? ` Note: ${notes.join('; ')}.` : '';
+			return `- ${c.name} (${c.duration.toFixed(2)} s, ${c.tracks} tracks, ends ${cm(c.seam)} from its start${inPlace}): ${p.length ? p.join('; ') : 'no problems found'}.${note}`;
 		})
 	];
 }
@@ -137,6 +192,7 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 			? `Joints checked: ${c.jointsChecked.join(', ')}.`
 			: 'No knee or elbow joints found by name.',
 		`Ends ${cm(c.seam)} from where it starts${c.seamPart ? ` (${c.seamPart} moves most)` : ''}: a loop needs this near 0.`,
+		`Starts ${cm(c.fromRest.start)} and ends ${cm(c.fromRest.end)} from the rest pose.`,
 		c.reachPart
 			? `Key pose: ${c.reachPart} gets ${cm(c.reach)} from where it starts (${Math.round((100 * c.reach) / (c.height || 1))}% of the model's height), at ${sec(c.reachAt)}. A timid key pose reads as no motion in a game: push it further if it is.`
 			: 'Nothing moves.',
@@ -153,7 +209,8 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 						: 'A planted part should stay put: turn the joint above it against the body, or lift it off the floor.'
 				]
 			: []),
-		p.length ? `Problems: ${p.join('; ')}.` : 'No problems found.'
+		p.length ? `Problems: ${p.join('; ')}.` : 'No problems found.',
+		...clipNotes(c).map((n) => `Note: ${n}.`)
 	);
 	return lines;
 }
