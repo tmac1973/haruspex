@@ -44,7 +44,7 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
-Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. A walk or run plays in place: the body stays over the origin and planted feet move back (-z) at one steady speed. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. kit.texture('textures/bark.png') gives a Texture from a PNG next to the module; pass the path as a string literal. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. A walk or run plays in place: the body stays over the origin and planted feet move back (-z) at one steady speed. A loop ends on its first pose at the same speed; a one-shot starts and ends at rest. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. kit.texture('textures/bark.png') gives a Texture from a PNG next to the module; pass the path as a string literal. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {

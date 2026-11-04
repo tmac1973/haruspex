@@ -25,8 +25,45 @@ describe('trackChecks', () => {
 		expect(trackChecks(clip('c', 1, late)).sanity).toEqual(['keys run past its end']);
 	});
 
+	it('notes keys too far apart to read as anything but straight lines', () => {
+		const sparse = trackChecks(clip('c', 2, turn('Arm', [0, 0, 1], [0, 1, 2], [0, 45, 0])));
+		expect(sparse.sparse).toEqual({ tracks: ['Arm.quaternion'], gap: 1 });
+		const times = Array.from({ length: 9 }, (_, i) => i / 4);
+		const fine = trackChecks(
+			clip(
+				'c',
+				2,
+				turn(
+					'Arm',
+					[0, 0, 1],
+					times,
+					times.map((t) => t * 10)
+				)
+			)
+		);
+		expect(fine.sparse.tracks).toEqual([]);
+	});
+
+	it('notes tracks keyed more often than a game needs', () => {
+		const times = Array.from({ length: 121 }, (_, i) => i / 120);
+		const r = trackChecks(
+			clip(
+				'c',
+				1,
+				turn(
+					'Arm',
+					[0, 0, 1],
+					times,
+					times.map((t) => t * 45)
+				)
+			)
+		);
+		expect(r.dense.tracks).toBe(1);
+		expect(Math.round(r.dense.perSecond)).toBe(120);
+	});
+
 	it('finds nothing wrong with a plain clip', () => {
 		const r = trackChecks(clip('c', 1, turn('Arm', [0, 0, 1], [0, 1], [0, 45])));
-		expect(r).toEqual({ dead: [], jumps: [], sanity: [] });
+		expect(r).toMatchObject({ dead: [], jumps: [], sanity: [], dense: { tracks: 0 } });
 	});
 });
