@@ -120,7 +120,7 @@ export function createEntryPrompt(entry: ModelEntry, note: string | null = null)
 			? `Parts (pivots, named exactly so): ${entry.parts.join(', ')}.`
 			: 'Parts: none; a static model.',
 		'',
-		`Write ${f.build}, then check it with check_3d (path ${f.build}, out ${f.glb}).`,
+		`Write ${f.build}, then check it with check_3d (path ${f.build}, out ${f.glb}, spec_height ${entry.height_m}).`,
 		...(note ? ['', `${f.build} may already exist: read it, then change what the note asks.`] : [])
 	].join('\n');
 }

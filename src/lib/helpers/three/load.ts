@@ -22,6 +22,9 @@ import { errMessage } from '#lib/utils/error.ts';
 
 export const SHEET_NOTE =
 	'The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): compare it with what you meant to make before you finish.';
+/** The note for a close-up sheet of `label`. */
+export const closeUpNote = (label: string) =>
+	`The close-up of ${label} is attached (the same six views, framed on it and what is near it): check its detail before you finish.`;
 export const MOTION_NOTE =
 	"The motion sheet is attached (right and front frames, then all frames overlaid with trails of the parts that move most). 'No problems found' only means nothing is physically wrong: check the key pose reads at a glance from the side and the front, fix what you see, and call check_3d again before you finish.";
 

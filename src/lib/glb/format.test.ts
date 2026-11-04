@@ -25,7 +25,7 @@ describe('formatReport', () => {
 		expect(text).toBe(
 			[
 				'Size: 6.00 × 1.00 × 1.00 m (x × y × z). Feet at y = 0.00; centre offset x 2.50, z 0.00. Normalised from 2.00 × 4.00 × 2.00 m.',
-				'2 meshes, 24 triangles. Heaviest: Body 12, Hat 12.',
+				'2 meshes, 24 triangles, 2 draw calls. Heaviest: Body 12, Hat 12.',
 				'Floating (touch nothing): Body, Hat.',
 				'Materials: Skin (Standard, #a62821).',
 				'Animations: Idle 2.0 s (1 track).'

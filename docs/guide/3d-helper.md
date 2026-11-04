@@ -23,7 +23,9 @@ An **animation module** keeps clips in a file of their own. Its `animate(THREE, 
 | `anim`          | an animation module to run with the build module            |
 | `out`           | where to save the `.glb`; a module defaults to its own name |
 | `clip`          | show that clip moving instead of the still views            |
+| `view`          | show one part close up: a mesh or pivot name, or `head`     |
 | `height`        | scale the model to this many metres tall                    |
+| `spec_height`   | warn when the model is over 10% off this height             |
 | `ground`        | put the feet on the floor, centred                          |
 | `max_triangles` | warn above this many triangles                              |
 
@@ -34,9 +36,10 @@ Checking a `.glb` writes nothing unless `height` or `ground` asks for a resized 
 A build error stops the check and reports the error with its line, in whichever file it came from. So does a clip track whose values don't match its times, named by clip and track. Otherwise:
 
 - **Problems**: no meshes, zero size, broken vertex positions.
-- **Warnings**: missing normals, faces that vanish from behind, faces pointing inward, textures over 2048 px, more triangles than `max_triangles`.
+- **Warnings**: missing normals, faces that vanish from behind, faces pointing inward, textures over 2048 px, more triangles than `max_triangles`, a height off `spec_height`.
+- **In a game**: over 32 draw calls when merging meshes that share a material and move together would save a quarter, materials with no name, and a front that seems to face away from +z, read from parts named like eyes, a nose or toes.
 - **Parts**: floating free, hidden inside another part, or tiny next to the rest.
-- **glTF validation**: the Khronos glTF Validator's errors, one line per kind, such as rotation keys that aren't unit quaternions or skin weights that don't sum to 1. three.js draws these anyway; other engines may not.
+- **glTF validation**: the Khronos glTF Validator's errors, one line per kind, such as rotation keys that aren't unit quaternions. three.js draws these anyway; other engines may not.
 
 Vertex colours outside 0–1 are clamped before the `.glb` is written, and the report says how many.
 
@@ -56,19 +59,17 @@ Each clip is sampled at 16 frames. Clips named Idle, Walk, Run, Fly or Swim loop
 
 ## What it returns
 
-| Output       | What it is                                                                                                                            |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `.glb`       | the model and its clips, saved at `out`                                                                                               |
-| report       | size in metres, where the feet sit, mesh and triangle counts, the heaviest parts, problems, warnings, materials and one line per clip |
-| render sheet | a 1200 × 800 image: front, right, back, left, top and three-quarter views over a floor grid, height marked                            |
-| motion sheet | with `clip`: 8 frames from the side, 8 from the front, then all frames overlaid with trails of the parts that move most               |
+- The `.glb`, with its clips, saved at `out`.
+- The report: size in metres, where the feet sit, mesh, triangle and draw-call counts, the heaviest parts, problems, warnings, materials and one line per clip.
+- The render sheet: a 1200 × 800 image of front, right, back, left, top and three-quarter views over a floor grid, height marked. With `view`, the same views framed on that part, drawing only what is near it.
+- The motion sheet, with `clip`: 8 frames from the side, 8 from the front, then all frames overlaid with trails of the parts that move most.
 
 The agent sees the sheets only if its model reads images; the report comes either way.
 
 ## What it doesn't do
 
 - It can't tell whether a model looks right or a walk reads as a walk, only what is physically wrong.
-- It doesn't decide when the agent is done. The agent stops when it is satisfied, or at the session's step limit.
+- It doesn't decide when the agent is done: the agent does, or the session's step limit.
 - It keeps no history: each check replaces the `.glb` at `out`.
 - It finds knees and elbows, loops and walks by name only.
 - It doesn't rig, skin, unwrap UVs or make lower-detail copies.

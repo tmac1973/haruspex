@@ -1,12 +1,13 @@
 /**
  * What a model should learn about a GLB before it calls the asset done: its
  * size and where it stands, each part's bounds, parts that float free or hide
- * inside others, faces that vanish from behind or point inward, and its
- * materials, textures and clips. Pure: it reads a loaded scene and draws
+ * inside others, faces that vanish from behind or point inward, its draw
+ * calls and which way it faces, and its materials, textures and clips. Pure: it reads a loaded scene and draws
  * nothing, so it runs on anyone's GLB without running anyone's code.
  */
 import type { BufferGeometry, Material, Mesh, Object3D, Texture } from 'three';
 import type { LoadedGlb, Three } from '#lib/glb/load.ts';
+import { drawCallsOf, facingOf, unnamedMaterials, worthMerging } from '#lib/glb/gameReady.ts';
 
 export type Vec3 = [number, number, number];
 
@@ -45,6 +46,9 @@ export interface GlbReport {
 	centreOffset: [number, number];
 	meshes: number;
 	triangles: number;
+	/** What a game draws it in, and what merging what can be merged would leave. */
+	drawCalls: number;
+	mergedDrawCalls: number;
 	parts: PartInfo[];
 	/** Parts whose box touches no other part's. */
 	floating: string[];
@@ -66,7 +70,12 @@ export interface GlbReport {
 export interface InspectOptions {
 	/** Warn when the asset has more triangles than this. */
 	maxTriangles?: number;
+	/** The height it should be (m), as a spec says: warn when it is off by over `HEIGHT_TOLERANCE`. */
+	specHeight?: number;
 }
+
+/** How far the measured height may stray from the spec's, as a fraction. */
+export const HEIGHT_TOLERANCE = 0.1;
 
 /** Past this, a texture is warned about. */
 export const MAX_TEXTURE_EDGE = 2048;
@@ -319,6 +328,47 @@ function readMeshes(THREE: Three, meshes: Mesh[], weld: number) {
 	return { problems, warnings, parts, closed, materials, textures };
 }
 
+const metres = (m: number) => `${m.toFixed(2)} m`;
+
+/** What would trip it up in a game: draw calls, unnamed materials, the wrong front, the wrong height. */
+function gameWarnings(
+	THREE: Three,
+	root: Object3D,
+	calls: ReturnType<typeof drawCallsOf>,
+	b: Bounds,
+	opts: InspectOptions
+): string[] {
+	const out: string[] = [];
+	if (worthMerging(calls)) {
+		out.push(
+			`${calls.drawCalls} draw calls: merging meshes that share a material and move together (kit.mergeGeometries) would make it ${calls.merged}.`
+		);
+	}
+	const unnamed = unnamedMaterials(root);
+	if (unnamed) {
+		out.push(
+			`${unnamed} material${unnamed === 1 ? ' has' : 's have'} no name: name each, since engines list materials by name.`
+		);
+	}
+	const facing = facingOf(THREE, root, b.size);
+	if (facing && facing.faces !== '+z') {
+		const named = facing.parts.slice(0, 3).join(', ');
+		out.push(
+			`The front seems to face ${facing.faces}: ${named} sit toward ${facing.faces} of the parts around them. Turn it so the front faces +z.`
+		);
+	}
+	const h = b.size[1];
+	if (
+		opts.specHeight !== undefined &&
+		Math.abs(h - opts.specHeight) > HEIGHT_TOLERANCE * opts.specHeight
+	) {
+		out.push(
+			`Height is ${metres(h)}; the spec says ${metres(opts.specHeight)} (±${HEIGHT_TOLERANCE * 100}%). Pass height to scale it, or rebuild it to size.`
+		);
+	}
+	return out;
+}
+
 /** Read a loaded GLB's measurements and checks. */
 export function inspectGlb(THREE: Three, gltf: LoadedGlb, opts: InspectOptions = {}): GlbReport {
 	const root = gltf.scene;
@@ -346,6 +396,8 @@ export function inspectGlb(THREE: Three, gltf: LoadedGlb, opts: InspectOptions =
 		}
 	}
 	const triangles = parts.reduce((n, p) => n + p.triangles, 0);
+	const calls = drawCallsOf(THREE, gltf);
+	warnings.push(...gameWarnings(THREE, root, calls, bounds, opts));
 	if (opts.maxTriangles !== undefined && triangles > opts.maxTriangles) {
 		warnings.push(`${triangles} triangles is over the budget of ${opts.maxTriangles}.`);
 	}
@@ -364,6 +416,8 @@ export function inspectGlb(THREE: Three, gltf: LoadedGlb, opts: InspectOptions =
 		centreOffset: [(bounds.min[0] + bounds.max[0]) / 2, (bounds.min[2] + bounds.max[2]) / 2],
 		meshes: meshes.length,
 		triangles,
+		drawCalls: calls.drawCalls,
+		mergedDrawCalls: calls.merged,
 		parts,
 		...relations,
 		heaviest: [...parts]
