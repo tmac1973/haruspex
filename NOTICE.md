@@ -48,11 +48,11 @@ user to install a toolchain. The pinned versions live in `NODE_VERSION` and
 `UV_VERSION` at the repository root; `scripts/fetch-node.sh` and
 `scripts/fetch-uv.sh` download them from the upstream releases unmodified.
 
-| Component | Upstream | License |
-|---|---|---|
-| Node.js | <https://nodejs.org/> | [MIT](https://github.com/nodejs/node/blob/main/LICENSE) |
-| npm CLI | <https://github.com/npm/cli> | [Artistic License 2.0](https://github.com/npm/cli/blob/latest/LICENSE) |
-| uv | <https://github.com/astral-sh/uv> | [MIT](https://github.com/astral-sh/uv/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/astral-sh/uv/blob/main/LICENSE-APACHE), at your option |
+| Component | Upstream                          | License                                                                                                                                                |
+| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Node.js   | <https://nodejs.org/>             | [MIT](https://github.com/nodejs/node/blob/main/LICENSE)                                                                                                |
+| npm CLI   | <https://github.com/npm/cli>      | [Artistic License 2.0](https://github.com/npm/cli/blob/latest/LICENSE)                                                                                 |
+| uv        | <https://github.com/astral-sh/uv> | [MIT](https://github.com/astral-sh/uv/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/astral-sh/uv/blob/main/LICENSE-APACHE), at your option |
 
 The npm CLI ships inside the Node.js distribution but is licensed separately,
 under the Artistic License 2.0 rather than Node's MIT. Node's own `LICENSE`
@@ -66,3 +66,15 @@ own tree. Both are bundled as application resources.
 
 Neither runtime is modified. `uv` provisions its own CPython on demand, so no
 Python distribution is bundled with Haruspex.
+
+## Bundled libraries
+
+| Component      | Upstream                                         | License                                                                        |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| glTF Validator | <https://github.com/KhronosGroup/glTF-Validator> | [Apache-2.0](https://github.com/KhronosGroup/glTF-Validator/blob/main/LICENSE) |
+
+The 3D helper's checks (`src/lib/glb/validate.ts`) run the Khronos glTF
+Validator, from the `gltf-validator` npm package, unmodified, in the app's
+webview. It is compiled from Dart, so it also carries code from the Dart SDK
+and Dart packages under BSD-style licenses; the package's `NOTICES` file lists
+them.

@@ -36,6 +36,9 @@ A build error stops the check and reports the error with its line, in whichever 
 - **Problems**: no meshes, zero size, broken vertex positions.
 - **Warnings**: missing normals, faces that vanish from behind, faces pointing inward, textures over 2048 px, more triangles than `max_triangles`.
 - **Parts**: floating free, hidden inside another part, or tiny next to the rest.
+- **glTF validation**: the Khronos glTF Validator's errors, one line per kind, such as rotation keys that aren't unit quaternions or skin weights that don't sum to 1. three.js draws these anyway; other engines may not.
+
+Vertex colours outside 0–1 are clamped before the `.glb` is written, and the report says how many.
 
 Each clip is sampled at 16 frames, and reports:
 

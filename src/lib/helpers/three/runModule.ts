@@ -24,6 +24,15 @@ export interface ModuleRunResult {
 	errors: ModuleError[];
 	/** Animation tracks naming a node the object doesn't have; the exporter drops them. */
 	missingTracks: string[];
+	/** Vertex colours outside 0..1, clamped before export (glTF allows only 0..1). */
+	clamped: ClampedColours | null;
+}
+
+export interface ClampedColours {
+	/** Vertices with a colour component outside 0..1. */
+	count: number;
+	/** The meshes they were in. */
+	meshes: string[];
 }
 
 export interface ModuleRunOptions {
@@ -100,6 +109,21 @@ const RUNNER = `(function () {
 			var PB = kit.THREE.PropertyBinding; var missing = [];
 			animations.forEach(function (clip) { (clip.tracks || []).forEach(function (t) { if (!PB.findNode(object, PB.parseTrackName(t.name).nodeName) && missing.indexOf(t.name) < 0) missing.push(t.name); }); });
 			if (missing.length) send({ t: 'hx-missing', tracks: missing });
+			/* glTF holds vertex colours to 0..1 (three draws past it): clamp, and say where. */
+			var seenColour = new Set(); var clamped = 0; var clampedIn = [];
+			object.traverse(function (o) {
+				var c = o.geometry && o.geometry.attributes && o.geometry.attributes.color;
+				if (!c || !(c.array instanceof Float32Array) || seenColour.has(c)) return;
+				seenColour.add(c);
+				var a = c.array, k = c.itemSize, n = 0;
+				for (var i = 0; i < a.length; i += k) {
+					var out = false;
+					for (var j = i; j < i + k; j++) { if (a[j] > 1) { a[j] = 1; out = true; } else if (a[j] < 0) { a[j] = 0; out = true; } }
+					if (out) n++;
+				}
+				if (n) { clamped += n; c.needsUpdate = true; clampedIn.push(o.name || o.type); }
+			});
+			if (clamped) send({ t: 'hx-clamped', count: clamped, meshes: clampedIn });
 			var glb = await new kit.GLTFExporter().parseAsync(object, { binary: true, animations: animations });
 			send({ t: 'hx-glb', bytes: glb }, [glb]);
 		} catch (e) {
@@ -180,7 +204,7 @@ export async function runBuildModule(
 	opts: ModuleRunOptions = {}
 ): Promise<ModuleRunResult> {
 	const { signal, timeoutMs = 45_000, anim, textures } = opts;
-	const result: ModuleRunResult = { glb: null, errors: [], missingTracks: [] };
+	const result: ModuleRunResult = { glb: null, errors: [], missingTracks: [], clamped: null };
 	const settle = (ctl: FrameControl) => {
 		ctl.clearDeadline();
 		ctl.later(LATE_MS, () => ctl.done());
@@ -204,6 +228,9 @@ export async function runBuildModule(
 				result.errors.push({ kind: 'error', message: String(data.message ?? ''), line, file });
 			} else if (data.t === 'hx-missing' && Array.isArray(data.tracks)) {
 				result.missingTracks = data.tracks.map(String);
+			} else if (data.t === 'hx-clamped' && typeof data.count === 'number') {
+				const meshes = Array.isArray(data.meshes) ? data.meshes.map(String) : [];
+				result.clamped = { count: data.count, meshes };
 			} else if (data.t === 'hx-glb' && data.bytes instanceof ArrayBuffer) {
 				result.glb = new Uint8Array(data.bytes);
 				settle(ctl);

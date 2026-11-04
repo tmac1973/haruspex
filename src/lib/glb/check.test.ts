@@ -19,6 +19,14 @@ const bob = (name: string, node: string) =>
 		new THREE.VectorKeyframeTrack(`${node}.position`, [0, 0.5, 1], [0, 3, 0, 0, 3.2, 0, 0, 3, 0])
 	]);
 
+/** A box whose vertex colours go past 1, as a module could export without the runner. */
+function brightBox(name: string): THREE.Mesh {
+	const m = box(name);
+	const n = m.geometry.attributes.position.count;
+	m.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1.5), 3));
+	return m;
+}
+
 function box(name: string, h = 2): THREE.Mesh {
 	const m = new THREE.Mesh(new THREE.BoxGeometry(1, h, 1), new THREE.MeshStandardMaterial());
 	m.name = name;
@@ -101,6 +109,27 @@ describe('checkGlb', () => {
 		expect(await checkGlb(await glbOf(box('Crate')), { clip: 'Run' })).toEqual({
 			problems: ['No clip named Run. The GLB has no clips.']
 		});
+	});
+
+	it('adds the glTF validator’s issues, one line per kind, and none for a clean GLB', async () => {
+		const bad = await checkGlb(await glbOf(brightBox('Crate')));
+		if ('problems' in bad) throw new Error(bad.problems.join());
+		expect(bad.invalid).toEqual([
+			'- Vertex colour values outside 0–1 ×72 in Crate: keep colours within 0–1.'
+		]);
+		expect(bad.text).toContain('glTF validation (other engines reject or mis-draw these):');
+		const clean = await checkGlb(await glbOf(box('Crate')));
+		if ('problems' in clean) throw new Error(clean.problems.join());
+		expect(clean.invalid).toEqual([]);
+		expect(clean.text).not.toContain('glTF validation');
+	});
+
+	it('leaves validation out of a clip’s motion sheet', async () => {
+		const c = await checkGlb(await glbWith([bob('Idle', 'Crate')], brightBox('Crate')), {
+			clip: 'Idle'
+		});
+		if ('problems' in c) throw new Error(c.problems.join());
+		expect(c.invalid).toEqual([]);
 	});
 
 	it('measures clips on the normalised model', async () => {

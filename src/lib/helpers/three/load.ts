@@ -6,7 +6,11 @@
  * write about a run, so their text matches.
  */
 import { resolveShellPath } from '#lib/agent/tools/_helpers.ts';
-import { runBuildModule, type ModuleError } from '#lib/helpers/three/runModule.ts';
+import {
+	runBuildModule,
+	type ClampedColours,
+	type ModuleError
+} from '#lib/helpers/three/runModule.ts';
 import {
 	MAX_TEXTURE_BYTES,
 	MAX_TEXTURES,
@@ -41,6 +45,8 @@ export type ModuleLoad =
 			/** Tracks naming a node the model doesn't have. */
 			missing: string[];
 			errors: ModuleError[];
+			/** Vertex colours clamped into 0..1 before export. */
+			clamped: ClampedColours | null;
 	  }
 	| { refused: string };
 
@@ -118,7 +124,7 @@ export async function loadModuleRun(
 	const tex = await readTextures([source, anim ?? ''], paths.build, io);
 	if ('refused' in tex) return tex;
 	const run = await runBuildModule(source, { signal, anim, textures: tex.textures });
-	return { glb: run.glb, missing: run.missingTracks, errors: run.errors };
+	return { glb: run.glb, missing: run.missingTracks, errors: run.errors, clamped: run.clamped };
 }
 
 /** The failure lines for a module run's errors; those from the animation module name it. */
@@ -149,5 +155,15 @@ export function missingLine(missing: string[]): string[] {
 	const names = missing.slice(0, 12).join(', ');
 	return [
 		`Tracks naming a node the model doesn't have (the exporter dropped them, so they do nothing): ${names}.`
+	];
+}
+
+/** The line about vertex colours clamped into 0..1, if any were. */
+export function clampedLine(clamped: ClampedColours | null): string[] {
+	if (!clamped) return [];
+	const shown = clamped.meshes.slice(0, 4).join(', ');
+	const more = clamped.meshes.length > 4 ? ` and ${clamped.meshes.length - 4} more` : '';
+	return [
+		`${clamped.count} vertex colours outside 0–1 in ${shown}${more} were clamped (glTF allows only 0–1): keep shading within 0–1.`
 	];
 }

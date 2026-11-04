@@ -37,7 +37,7 @@ Each row is **Same as this job** until you press **Change…** and pick another 
 4. **Report**: `REPORT-models.md` beside the spec lists each model as done, needs work or skipped, with its render sheet, clip sheets and open problems.
 5. **Hand off**: a job that a plan chained starts the coding run, and tells it which models were not built (and, after an asset run, which images were not made). A standalone job does nothing here. A chained job you start by hand hands off too, unless you clear **Start the coding run when done**.
 
-A model is done when `check_3d` reports no errors and its height is within 10% of the spec. Clips are done when every clip the spec names is there and its motion check reports no errors. Each model and each clip set gets a few turns (**Limits → Turns per model**). Every check is kept as an attempt, and the best one stays: done first, then one that built, then the fewest problems. When the turns run out, the run marks the model needs work with the best attempt's problems and moves on.
+A model is done when `check_3d` reports no errors, glTF validation included, and its height is within 10% of the spec. Clips are done when every clip the spec names is there and its motion check reports no errors. Each model and each clip set gets a few turns (**Limits → Turns per model**). Every check is kept as an attempt, and the best one stays: done first, then one that built, then the fewest problems. When the turns run out, the run marks the model needs work with the best attempt's problems and moves on.
 
 ## Attended or unattended
 
