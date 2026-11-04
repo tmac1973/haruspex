@@ -1,7 +1,7 @@
 /**
- * Open any `.glb` in the 3D viewer, from Code → Open model: a file, which
- * opens in its folder's editor window, or a folder, which opens its first
- * model with the rest listed beside it.
+ * Code → Open: any file, in its folder's editor window (a `.glb` in the 3D
+ * viewer, anything else as text), or a folder of 3D models, which opens its
+ * first model with the rest listed beside it.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -19,11 +19,8 @@ export function splitFilePath(path: string): [string, string] {
 	return [cut === 0 ? path.slice(0, 1) : path.slice(0, cut), path.slice(cut + 1)];
 }
 
-export async function openModelFile(): Promise<void> {
-	const path = await open({
-		title: 'Open 3D model',
-		filters: [{ name: '3D model', extensions: ['glb'] }]
-	});
+export async function openFile(): Promise<void> {
+	const path = await open({ title: 'Open file' });
 	if (typeof path !== 'string') return;
 	const [root, file] = splitFilePath(path);
 	await show(root, file);
@@ -49,6 +46,6 @@ async function show(root: string, file: string): Promise<void> {
 	try {
 		await openInEditorWindows(root, [file]);
 	} catch (e) {
-		showToast(`The viewer could not open: ${errMessage(e)}`, { kind: 'error' });
+		showToast(`The editor window could not open: ${errMessage(e)}`, { kind: 'error' });
 	}
 }

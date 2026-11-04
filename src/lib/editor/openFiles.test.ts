@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
-import { splitFilePath } from './openModel';
+import { splitFilePath } from './openFiles';
 
 describe('splitFilePath', () => {
 	it('splits on either separator', () => {

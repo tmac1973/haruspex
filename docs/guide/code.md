@@ -36,9 +36,9 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files but not see your edits. A `.glb` opens in the 3D viewer; see the `3d-viewer` page.
+Files open in an editor window, one per folder, a tab per file. **Open** → **File…** above the sessions opens any file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files but not see your edits. A `.glb` opens in the 3D viewer; see the `3d-viewer` page.
 
-An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable**: outside changes won't show. Closing a window with unsaved edits asks first; the main window closes them all.
+An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable**: outside changes won't show. Closing a window with unsaved edits asks first.
 
 ## Steer or stop the agent
 

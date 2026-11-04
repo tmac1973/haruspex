@@ -9,10 +9,10 @@ A `.glb` opens in a 3D viewer inside an editor window, one window per folder. It
 
 ## Open a model
 
-- From the Code tab: click **3D** at the top of the sessions list, then **Open model…** to pick a `.glb` file, or **Open folder…** to pick a folder and see every model in it. Any folder works, not only a session's.
+- From the Code tab: click **Open** at the top of the sessions list, then **File…** to pick a `.glb`, or **Folder…** to pick a folder and see every model in it. Any folder works, not only a session's.
 - From a Code session: click a `.glb` file name in the transcript, or ask the agent to open it.
 
-A model picked with **Open model…** opens in its own folder's window, so the list beside it holds that folder and the folders inside it. To compare models spread over several folders, use **Open folder…** on the folder above them.
+A model picked with **File…** opens in its own folder's window, so the list beside it holds that folder and the folders inside it. To compare models spread over several folders, use **Folder…** on the folder above them.
 
 ## Look at it
 

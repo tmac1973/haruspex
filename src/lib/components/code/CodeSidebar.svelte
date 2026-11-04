@@ -33,7 +33,7 @@
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { tick } from 'svelte';
-	import { openModelFile, openModelFolder } from '#lib/editor/openModel.ts';
+	import { openFile, openModelFolder } from '#lib/editor/openFiles.ts';
 
 	let { onNew }: { onNew: () => void } = $props();
 
@@ -121,7 +121,7 @@
 
 	// Right-click menu, rename and delete.
 	let menu = $state<{ x: number; y: number; session: CodeSessionSummary } | null>(null);
-	/** The 3D button's menu: open a model file or a folder of them. */
+	/** The Open menu: any file, or a folder of 3D models. */
 	let modelMenu = $state<{ x: number; y: number } | null>(null);
 
 	function toggleModelMenu(e: MouseEvent): void {
@@ -269,7 +269,7 @@
 				onclick={toggleModelMenu}
 				aria-haspopup="menu"
 				aria-expanded={modelMenu !== null}
-				title="Open a .glb file, or a folder of them, in the 3D viewer">3D</button
+				title="Open a file, or a folder of 3D models, in an editor window">Open ▾</button
 			>
 			<button class="collapse" onclick={toggleOpen} title="Hide sessions" aria-label="Hide sessions"
 				>‹</button
@@ -325,8 +325,16 @@
 
 {#if modelMenu}
 	<div class="menu" role="menu" style="left: {modelMenu.x}px; top: {modelMenu.y}px">
-		<button role="menuitem" onclick={() => void openModelFile()}>Open model…</button>
-		<button role="menuitem" onclick={() => void openModelFolder()}>Open folder…</button>
+		<button
+			role="menuitem"
+			title="A .glb opens in the 3D viewer, anything else as text"
+			onclick={() => void openFile()}>File…</button
+		>
+		<button
+			role="menuitem"
+			title="Opens the first .glb, with the rest listed beside it"
+			onclick={() => void openModelFolder()}>Folder…</button
+		>
 	</div>
 {/if}
 
