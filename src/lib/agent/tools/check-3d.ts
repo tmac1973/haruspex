@@ -23,6 +23,7 @@ import {
 	failed,
 	loadModuleRun,
 	missingLine,
+	closeUpNote,
 	MOTION_NOTE,
 	readFile,
 	runFailure,
@@ -97,6 +98,21 @@ function animPath(raw: unknown, path: string): string | undefined | { problem: s
 	return anim;
 }
 
+/** Why `clip`, `view` or `spec_height` can't be used, or null. */
+function showProblem(clip: unknown, view: unknown, spec: unknown): string | null {
+	if (spec !== undefined && !(typeof spec === 'number' && Number.isFinite(spec) && spec > 0)) {
+		return 'spec_height must be a number of metres above 0.';
+	}
+	if (clip !== undefined && !(typeof clip === 'string' && clip.trim())) {
+		return 'clip must be the name of an animation clip.';
+	}
+	if (view !== undefined && !(typeof view === 'string' && view.trim())) {
+		return 'view must be a part\'s name, or "head".';
+	}
+	if (view !== undefined && clip !== undefined) return 'Pass view or clip, not both.';
+	return null;
+}
+
 /** The arguments, checked, or why they can't be used. */
 function parseArgs(args: Record<string, unknown>): Args | string {
 	const path = typeof args.path === 'string' ? args.path.trim() : '';
@@ -105,12 +121,9 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 	}
 	const anim = animPath(args.anim, path);
 	if (typeof anim === 'object') return anim.problem;
-	const { height, ground, max_triangles: max, clip } = args;
-	const bad = numberProblem(height, max);
+	const { height, ground, max_triangles: max, clip, view, spec_height: spec } = args;
+	const bad = numberProblem(height, max) ?? showProblem(clip, view, spec);
 	if (bad) return bad;
-	if (clip !== undefined && !(typeof clip === 'string' && clip.trim())) {
-		return 'clip must be the name of an animation clip.';
-	}
 	const out = outPath(args.out, path, height !== undefined || ground === true);
 	if (typeof out === 'string') return out;
 	return {
@@ -121,7 +134,9 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 			height: height as number | undefined,
 			ground: ground === true,
 			maxTriangles: max as number | undefined,
-			clip: typeof clip === 'string' ? clip.trim() : undefined
+			clip: typeof clip === 'string' ? clip.trim() : undefined,
+			view: typeof view === 'string' ? view.trim() : undefined,
+			specHeight: spec as number | undefined
 		}
 	};
 }
@@ -201,9 +216,15 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 		...missingLine(got.missing),
 		...clampedLine(got.clamped),
 		checked.text,
-		...(sees ? [checked.clip ? MOTION_NOTE : SHEET_NOTE] : [])
+		...(sees ? [sheetNote(checked)] : [])
 	];
 	return toolResult(lines.join('\n'), checked.png ?? undefined);
+}
+
+/** What the attached sheet is: the motion sheet, a close-up, or the render sheet. */
+function sheetNote(checked: { clip?: string; closeUp?: string }): string {
+	if (checked.clip) return MOTION_NOTE;
+	return checked.closeUp ? closeUpNote(checked.closeUp) : SHEET_NOTE;
 }
 
 /** Give the agent the sheet when its model can see it; whether it did. */
@@ -255,6 +276,16 @@ registerTool({
 						type: 'string',
 						description:
 							"An animation clip's name: show that clip moving instead of the still sheet."
+					},
+					view: {
+						type: 'string',
+						description:
+							'A part to see close up instead of the whole: a mesh or pivot name, or "head". The same six views, framed on it.'
+					},
+					spec_height: {
+						type: 'number',
+						description:
+							'The height the model should be, in metres: warns when it is off by over 10%.'
 					}
 				},
 				required: ['path']

@@ -2,8 +2,9 @@
  * One image a model can judge a 3D asset by: six views (front, right, back,
  * left, top, three-quarter) over a floor grid, with the asset's height marked
  * in the front view. `sheetLayout` is the pure framing; `renderSheet` draws it.
+ * A close-up frames one part the same way, and draws only what is near it.
  */
-import type { Object3D } from 'three';
+import type { Mesh, Object3D } from 'three';
 import type { Three } from '#lib/glb/load.ts';
 import type { Bounds, Vec3 } from '#lib/glb/report.ts';
 
@@ -168,9 +169,82 @@ function annotate(THREE: Three, ctx: CanvasRenderingContext2D, layout: SheetLayo
 	ctx.fillText(`${b.size[1].toFixed(2)} m`, rx + 8, (yBottom + yTop) / 2);
 }
 
-/** Draw the sheet as a PNG data URL, or null when WebGL can't. */
-export function renderSheet(THREE: Three, root: Object3D, b: Bounds): string | null {
+/** Names that stand for the head when no node is called `head`. */
+const HEAD = /head|helmet|skull|helm\b|face/i;
+/** A close-up also draws what lies within this share of the part's size around it. */
+const NEARBY = 0.5;
+
+const boundsOf = (box: { min: { x: number; y: number; z: number }; max: typeof box.min }) => {
+	const min: Vec3 = [box.min.x, box.min.y, box.min.z];
+	const max: Vec3 = [box.max.x, box.max.y, box.max.z];
+	return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as Vec3 };
+};
+
+/**
+ * What a close-up of `view` frames: the node of that name (or for "head", the
+ * first node named like one, else the top quarter of the asset), or why there
+ * is none.
+ */
+export function closeUpBounds(
+	THREE: Three,
+	root: Object3D,
+	view: string,
+	whole: Bounds
+): { bounds: Bounds; label: string } | { error: string } {
+	root.updateMatrixWorld(true);
+	let node =
+		root.getObjectByName(view) ??
+		root.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(view));
+	if (!node && /^head$/i.test(view)) {
+		root.traverse((o) => {
+			if (!node && o !== root && HEAD.test(o.name)) node = o;
+		});
+		if (!node) {
+			const min: Vec3 = [whole.min[0], whole.max[1] - whole.size[1] / 4, whole.min[2]];
+			const box = new THREE.Box3(new THREE.Vector3(...min), new THREE.Vector3(...whole.max));
+			return { bounds: boundsOf(box), label: 'the top quarter' };
+		}
+	}
+	if (!node) return { error: `No node named ${view}: pass a mesh or pivot name, or "head".` };
+	const box = new THREE.Box3().setFromObject(node);
+	if (box.isEmpty()) return { error: `${view} has no meshes under it to show.` };
+	return { bounds: boundsOf(box), label: node.name };
+}
+
+/**
+ * Hide the meshes that lie away from `b` (by more than `NEARBY` of its size),
+ * so they don't block a close-up; returns a function that shows them again.
+ */
+function hideAwayFrom(THREE: Three, root: Object3D, b: Bounds): () => void {
+	const pad = Math.max(...b.size) * NEARBY;
+	const near = new THREE.Box3(
+		new THREE.Vector3(...b.min),
+		new THREE.Vector3(...b.max)
+	).expandByScalar(pad);
+	const hidden: Mesh[] = [];
+	root.traverse((o) => {
+		const m = o as Mesh;
+		if (!m.isMesh || !m.visible) return;
+		if (!near.intersectsBox(new THREE.Box3().setFromObject(m))) {
+			m.visible = false;
+			hidden.push(m);
+		}
+	});
+	return () => hidden.forEach((m) => (m.visible = true));
+}
+
+/**
+ * Draw the sheet as a PNG data URL, or null when WebGL can't. With `closeUp`,
+ * `b` is one part's bounds and only what lies near it is drawn.
+ */
+export function renderSheet(
+	THREE: Three,
+	root: Object3D,
+	b: Bounds,
+	closeUp = false
+): string | null {
 	const layout = sheetLayout(b);
+	const show = closeUp ? hideAwayFrom(THREE, root, b) : () => {};
 	const glCanvas = document.createElement('canvas');
 	glCanvas.width = SHEET_WIDTH;
 	glCanvas.height = SHEET_HEIGHT;
@@ -214,6 +288,7 @@ export function renderSheet(THREE: Three, root: Object3D, b: Bounds): string | n
 		console.warn('GLB render sheet could not draw:', e);
 		return null;
 	} finally {
+		show();
 		renderer?.dispose();
 	}
 }

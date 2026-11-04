@@ -133,6 +133,24 @@ describe('inspectGlb', () => {
 		]);
 	});
 
+	it('warns when the height is off the spec by over 10%, and about unnamed materials', () => {
+		const tall = scene(box('a', 2, [0, 1, 0]));
+		expect(
+			inspectGlb(THREE, { scene: tall, animations: [] }, { specHeight: 2.1 }).warnings
+		).toEqual([]);
+		expect(
+			inspectGlb(THREE, { scene: tall, animations: [] }, { specHeight: 1.5 }).warnings
+		).toContain(
+			'Height is 2.00 m; the spec says 1.50 m (±10%). Pass height to scale it, or rebuild it to size.'
+		);
+		const plain = box('b');
+		(plain.material as THREE.Material).name = '';
+		expect(inspect(scene(plain)).warnings).toContain(
+			'1 material has no name: name each, since engines list materials by name.'
+		);
+		expect(inspect(scene(plain)).drawCalls).toBe(1);
+	});
+
 	it('warns over a triangle budget only when one is given', () => {
 		expect(inspect(scene(box('a')), [], 10).warnings).toContain(
 			'12 triangles is over the budget of 10.'

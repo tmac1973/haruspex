@@ -24,6 +24,7 @@ import { executeTool } from '#lib/agent/tools/index.ts';
 import { TOOL_FAMILIES } from '#lib/agent/tools/families.ts';
 import { toolCategory } from '#lib/agent/tools/registry.ts';
 import { MOTION_NOTE, SHEET_NOTE } from './check-3d';
+import { closeUpNote } from '#lib/helpers/three/load.ts';
 
 const GLB = new Uint8Array([103, 108, 84, 70]);
 const NORMALISED = new Uint8Array([9, 9]);
@@ -95,7 +96,9 @@ describe('check_3d', () => {
 			height: 1.8,
 			ground: true,
 			maxTriangles: 500,
-			clip: undefined
+			clip: undefined,
+			view: undefined,
+			specHeight: undefined
 		});
 		expect(files.get('/proj/b.glb')).toEqual([...NORMALISED]);
 	});
@@ -204,6 +207,28 @@ describe('check_3d', () => {
 		await call({ path: 'b.glb', clip: 'Idle' });
 		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({ clip: 'Idle' });
 		expect(io.write).not.toHaveBeenCalled();
+	});
+
+	it('shows a part close up when asked, with the close-up note', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		glb.checkGlb.mockResolvedValueOnce({
+			bytes: GLB,
+			report: {},
+			text: 'Size: 1 m',
+			png: PNG,
+			closeUp: 'Helmet'
+		});
+		const out = await call({ path: 'a.js', view: ' head ', spec_height: 1.8 });
+		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({ view: 'head', specHeight: 1.8 });
+		expect(out.result.split('\n').at(-1)).toBe(closeUpNote('Helmet'));
+	});
+
+	it('refuses view with clip, a blank view and a bad spec_height', async () => {
+		expect((await call({ path: 'a.js', view: 'head', clip: 'Walk' })).result).toMatch(
+			/view or clip, not both/
+		);
+		expect((await call({ path: 'a.js', view: ' ' })).result).toMatch(/view must be/);
+		expect((await call({ path: 'a.js', spec_height: -1 })).result).toMatch(/spec_height must be/);
 	});
 
 	it('refuses a blank clip', async () => {

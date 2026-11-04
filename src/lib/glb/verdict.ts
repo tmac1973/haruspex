@@ -6,6 +6,7 @@
  * `check_3d` would have shown it. Writes nothing; the pipeline writes.
  */
 import { checkGlb } from '#lib/glb/check.ts';
+import { HEIGHT_TOLERANCE } from '#lib/glb/report.ts';
 import { disposeTree, loadGlb } from '#lib/glb/load.ts';
 import { inspectMotion, type ClipMotion } from '#lib/glb/motion.ts';
 import { clipNotes, clipProblems } from '#lib/glb/motionFormat.ts';
@@ -22,9 +23,6 @@ import {
 } from '#lib/helpers/three/load.ts';
 import type { ModelFiles } from '#lib/models3d/spec/paths.ts';
 import type { ModelEntry } from '#lib/models3d/spec/types.ts';
-
-/** How far the measured height may stray from the spec's, as a fraction. */
-export const HEIGHT_TOLERANCE = 0.1;
 
 export type ModelStage = 'create' | 'animate';
 

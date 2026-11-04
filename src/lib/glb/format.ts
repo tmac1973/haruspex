@@ -46,7 +46,9 @@ function build(r: GlbReport, opts: FormatOptions, limit: number): string[] {
 		opts.normalisedFrom ? `${size} Normalised from ${dims(opts.normalisedFrom.size)}.` : size
 	);
 	const heavy = r.heaviest.map((h) => `${h.name} ${h.triangles}`).join(', ');
-	lines.push(`${r.meshes} meshes, ${r.triangles} triangles.${heavy ? ` Heaviest: ${heavy}.` : ''}`);
+	lines.push(
+		`${r.meshes} meshes, ${r.triangles} triangles, ${r.drawCalls} draw calls.${heavy ? ` Heaviest: ${heavy}.` : ''}`
+	);
 	if (r.floating.length) lines.push(`Floating (touch nothing): ${list(r.floating, limit)}.`);
 	if (r.buried.length) {
 		const b = r.buried.map((x) => `${x.part} inside ${x.inside}`);
