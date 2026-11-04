@@ -13,7 +13,7 @@ The job reads a spec, `models.json`, from **Models spec** (by default `assets/ha
 
 - an id and a title, and a description of how it looks;
 - `height_m`, its height in metres, so the whole set shares one scale;
-- `parts`, the named pivots at its joints (`Hip_L`, `Knee_L`, `Shoulder_R`), for a model that moves;
+- `parts`, the named pivots at its joints, for a model that moves. A planned biped gets `Pelvis`, `Spine`, `Neck`, and `Shoulder`, `Elbow`, `Hand`, `Hip`, `Knee`, `Foot` per side (`Hip_L`); a quadruped gets `Shoulder` or `Hip`, `Knee`, `Foot` per leg (`Knee_FL`, `Foot_HR`). `Pelvis` moves too, so hips can drop;
 - `clips`, each with a name, a length in seconds, whether it loops, and what happens in it.
 
 A static prop such as a crate or a tree has no parts and no clips. If the spec file doesn't exist, the run writes one from **What to make**, on the job's own model. A spec that exists is read as it is and never rewritten; if it has problems, the run stops and lists them.
@@ -27,17 +27,17 @@ Building a model and animating it are different skills, so the job has two model
 - **Creation model** builds every model.
 - **Animation model** writes the clips for every model that has them.
 
-Each row is **Same as this job** until you press **Change…** and pick another server and model. The job's own model (under **Model**) only writes the spec. A row whose model can't see images says so in one line. The run still works, because `check_3d` reports in text as well as pictures, but a model that can see its render sheets usually does better.
+Each row is **Same as this job** until you press **Change…** and pick another model. The job's own model (under **Model**) only writes the spec. A row whose model can't see images says so in one line. It still works, since `check_3d` reports in text too, but a model that sees its sheets does better.
 
 ## How a run goes
 
 1. **Spec**: read `models.json`, or write it.
-2. **Create**: for each model, the creation model writes `<id>.js` and checks it with `check_3d` until the checks pass. A model with clips is built as rigid parts under the named pivots, nested parent to child (`Hip_L > Knee_L`).
-3. **Animate**: for each model with clips, the animation model writes `<id>.anim.js`, which takes the built model and returns its clips. It checks each clip's motion sheet. It never changes `<id>.js`; if it does, the run puts the file back.
+2. **Create**: for each model, the creation model writes `<id>.js` and checks it with `check_3d` until the checks pass. A model with clips is built as rigid parts under the named pivots, nested parent to child (`Pelvis > Hip_L > Knee_L > Foot_L`).
+3. **Animate**: for each model with clips, the animation model writes `<id>.anim.js`, which returns its clips, and checks each clip's motion sheet. It never changes `<id>.js`; if it does, the run puts the file back.
 4. **Report**: `REPORT-models.md` beside the spec lists each model as done, needs work or skipped, with its render sheet, clip sheets and open problems.
-5. **Hand off**: a job that a plan chained starts the coding run, and tells it which models were not built (and, after an asset run, which images were not made). A standalone job does nothing here. A chained job you start by hand hands off too, unless you clear **Start the coding run when done**.
+5. **Hand off**: a job that a plan chained starts the coding run, and tells it which models (and images) were not made. A chained job you start by hand hands off too, unless you clear **Start the coding run when done**.
 
-A model is done when `check_3d` reports no errors, glTF validation included, and its height is within 10% of the spec. Clips are done when every clip the spec names is there and its motion check reports no errors. Each model and each clip set gets a few turns (**Limits → Turns per model**). Every check is kept as an attempt, and the best one stays: done first, then one that built, then the fewest problems. When the turns run out, the run marks the model needs work with the best attempt's problems and moves on.
+A model is done when `check_3d` reports no errors, glTF validation included, and its height is within 10% of the spec. Clips are done when every clip the spec names is there and its motion check reports no errors. Each model and each clip set gets a few turns (**Limits → Turns per model**). Every check is kept as an attempt, and the best stays: done first, then one that built, then the fewest problems. Out of turns, the model is marked needs work and the run moves on.
 
 ## Attended or unattended
 
@@ -49,7 +49,7 @@ Both are off by default, and each model gets one plain colour per material. **No
 
 ## From guided planning
 
-Turn on **Also generate 3D models** in a guided planning job. After the asset stage, a **3D models** stage reads the finished plan and writes `plan/<slug>/models.json`, using the ids the plan already uses, and adds a "3D models" table to `overview.md`. **3D creation** and **3D animation** under the switch choose the new job's two models; each is **Same as this job** (the planning job) by default.
+Turn on **Also generate 3D models** in a guided planning job. After the asset stage, a **3D models** stage reads the finished plan and writes `plan/<slug>/models.json` with the plan's ids, and adds a "3D models" table to `overview.md`. **3D creation** and **3D animation** under the switch choose the new job's two models; each is **Same as this job** (the planning job) by default.
 
 - In _Unattended plan + code_, the run starts the 3D models job, unattended, and it starts the coding run when it finishes. With **Also generate assets** on too, the order is plan, assets, 3D models, coding. If a run in the chain can't start, the next one starts instead.
 - In every other mode, the run creates the 3D models job, _Attended_ and not started, for you to start from the Jobs tab.
