@@ -11,6 +11,8 @@
 	import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import GlbViewer from '#lib/components/GlbViewer.svelte';
+	import ImageViewer from '#lib/components/ImageViewer.svelte';
+	import ViewerList from '#lib/components/ViewerList.svelte';
 	import { EditorWorkspace } from '#lib/editor/workspace.svelte.ts';
 	import { watchedIO } from '#lib/editor/io.ts';
 	import {
@@ -223,14 +225,21 @@
 			<p class="error">{active.error}</p>
 		{/if}
 		<div class="pane">
-			{#if active.viewer === 'glb'}
-				{#key active.relPath}
-					<GlbViewer
+			{#if active.viewer}
+				<div class="viewing">
+					<ViewerList
 						workdir={root}
 						relPath={active.relPath}
 						onpick={(next) => void ws.replace(active.relPath, next)}
 					/>
-				{/key}
+					{#key active.relPath}
+						{#if active.viewer === 'glb'}
+							<GlbViewer workdir={root} relPath={active.relPath} />
+						{:else}
+							<ImageViewer workdir={root} relPath={active.relPath} />
+						{/if}
+					{/key}
+				</div>
 			{:else if active.loaded && !active.failed}
 				{#key active.relPath}
 					<CodeEditor
@@ -350,9 +359,14 @@
 		flex-direction: column;
 		padding: 6px;
 	}
-	.pane :global(.code-editor),
-	.pane :global(.glb-viewer) {
+	.pane :global(.code-editor) {
 		flex: 1;
+	}
+	.viewing {
+		flex: 1;
+		display: flex;
+		gap: 8px;
+		min-height: 0;
 	}
 	.unwatched {
 		font-size: 0.75rem;

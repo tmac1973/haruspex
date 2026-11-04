@@ -166,6 +166,8 @@ describe('viewerFor', () => {
 	it('picks the viewer by extension', () => {
 		expect(viewerFor('a/b.glb')).toBe('glb');
 		expect(viewerFor('a/b.glb.html')).toBeNull();
+		expect(viewerFor('sheet.PNG')).toBe('image');
+		expect(viewerFor('a.svg')).toBe('image');
 		expect(viewerFor('a.ts')).toBeNull();
 	});
 });

@@ -534,27 +534,30 @@ pub fn editor_find_open(
         .collect())
 }
 
-/// The GLBs under an editor window's folder, for the 3D viewer's list.
+/// The files under an editor window's folder that open in a viewer, for the
+/// window's file list.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
-pub struct GlbListing {
+pub struct ViewableListing {
     /// Relative to the folder, `/`-separated, sorted.
     pub files: Vec<String>,
-    /// More than `MAX_GLB_LIST` were found; `files` has the first ones.
+    /// More than `MAX_VIEWABLE` were found; `files` has the first ones.
     pub truncated: bool,
 }
 
-const MAX_GLB_LIST: usize = 2000;
-const MAX_GLB_DEPTH: usize = 8;
+const MAX_VIEWABLE: usize = 2000;
+const MAX_VIEWABLE_DEPTH: usize = 8;
+/// What a viewer tab shows (`viewerFor` in `editor/document.svelte.ts`).
+const VIEWABLE_EXTS: &[&str] = &["glb", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"];
 
-/// Every `.glb` under `root`, so the viewer can step through a folder of
-/// models. Hidden folders and `node_modules` are skipped; `.gitignore` is not
-/// honoured, since generated models are usually ignored.
-fn list_glb(root: &Path) -> GlbListing {
+/// Every model and image under `root`, so the window can step through a
+/// folder of them. Hidden folders and `node_modules` are skipped;
+/// `.gitignore` is not honoured, since generated files are usually ignored.
+fn list_viewable(root: &Path) -> ViewableListing {
     let walk = ignore::WalkBuilder::new(root)
         .standard_filters(false)
         .hidden(true)
-        .max_depth(Some(MAX_GLB_DEPTH))
+        .max_depth(Some(MAX_VIEWABLE_DEPTH))
         .filter_entry(|d| d.file_name() != "node_modules")
         .build();
     let mut files: Vec<String> = walk
@@ -563,26 +566,26 @@ fn list_glb(root: &Path) -> GlbListing {
         .filter(|d| {
             d.path()
                 .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("glb"))
+                .is_some_and(|e| VIEWABLE_EXTS.iter().any(|v| e.eq_ignore_ascii_case(v)))
         })
         .filter_map(|d| {
             let rel = d.path().strip_prefix(root).ok()?;
             Some(rel.to_string_lossy().replace('\\', "/"))
         })
-        .take(MAX_GLB_LIST + 1)
+        .take(MAX_VIEWABLE + 1)
         .collect();
-    let truncated = files.len() > MAX_GLB_LIST;
-    files.truncate(MAX_GLB_LIST);
+    let truncated = files.len() > MAX_VIEWABLE;
+    files.truncate(MAX_VIEWABLE);
     files.sort();
-    GlbListing { files, truncated }
+    ViewableListing { files, truncated }
 }
 
 #[tauri::command]
-pub async fn editor_list_glb(workdir: String) -> Result<GlbListing, String> {
+pub async fn editor_list_viewable(workdir: String) -> Result<ViewableListing, String> {
     let root = workdir_path(&workdir)?;
-    tokio::task::spawn_blocking(move || list_glb(&root))
+    tokio::task::spawn_blocking(move || list_viewable(&root))
         .await
-        .map_err(|e| format!("Listing models failed: {e}"))
+        .map_err(|e| format!("Listing files failed: {e}"))
 }
 
 #[cfg(test)]
@@ -591,8 +594,8 @@ mod tests {
     use crate::test_util::temp_dir;
 
     #[test]
-    fn list_glb_finds_nested_models_and_skips_hidden() {
-        let dir = temp_dir("glb_list");
+    fn list_viewable_finds_nested_models_and_images_and_skips_hidden() {
+        let dir = temp_dir("viewable_list");
         let root: &Path = &dir;
         for rel in [
             "b.glb",
@@ -601,15 +604,22 @@ mod tests {
             ".cache/y.glb",
             "node_modules/z.glb",
             "a/x.gltf",
+            "a/sheet.png",
+            "notes.txt",
         ] {
             let p = root.join(rel);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(&p, b"glTF").unwrap();
         }
-        let listing = list_glb(root);
+        let listing = list_viewable(root);
         assert_eq!(
             listing.files,
-            vec!["a/attempts/create-01/x.glb", "a/x.GLB", "b.glb"]
+            vec![
+                "a/attempts/create-01/x.glb",
+                "a/sheet.png",
+                "a/x.GLB",
+                "b.glb"
+            ]
         );
         assert!(!listing.truncated);
     }

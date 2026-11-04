@@ -597,7 +597,7 @@ pub fn run() {
             fs_tools::editor::editor_save_file,
             fs_tools::editor::editor_unwatch_file,
             fs_tools::editor::editor_find_open,
-            fs_tools::editor::editor_list_glb,
+            fs_tools::editor::editor_list_viewable,
             code_tools::run_command_capture,
             code_tools::run_command_cancel,
             code_tools::code_write_overflow,

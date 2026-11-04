@@ -1,14 +1,14 @@
 /**
- * Code → Open: any file, in its folder's editor window (a `.glb` in the 3D
- * viewer, anything else as text), or a folder of 3D models, which opens its
- * first model with the rest listed beside it.
+ * Code → Open: any file, in its folder's editor window (a model or image in
+ * its viewer, anything else as text), or a folder, which opens on its first
+ * model or image with the rest listed beside it.
  */
 
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openInEditorWindows } from '#lib/editor/windows.ts';
-import type { GlbListing } from '#lib/ipc/gen/GlbListing.ts';
-import { visibleModels } from '#lib/editor/glbList.ts';
+import type { ViewableListing } from '#lib/ipc/gen/ViewableListing.ts';
+import { firstFile } from '#lib/editor/viewerList.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -26,19 +26,19 @@ export async function openFile(): Promise<void> {
 	await show(root, file);
 }
 
-export async function openModelFolder(): Promise<void> {
-	const root = await open({ title: 'Open a folder of 3D models', directory: true });
+export async function openFolder(): Promise<void> {
+	const root = await open({ title: 'Open a folder', directory: true });
 	if (typeof root !== 'string') return;
 	try {
-		const { files } = await invoke<GlbListing>('editor_list_glb', { workdir: root });
-		const first = visibleModels(files, '', false)[0] ?? files[0];
+		const { files } = await invoke<ViewableListing>('editor_list_viewable', { workdir: root });
+		const first = firstFile(files);
 		if (!first) {
-			showToast(`No .glb files in ${root}.`, { kind: 'error' });
+			showToast(`No models or images in ${root}.`, { kind: 'error' });
 			return;
 		}
 		await show(root, first);
 	} catch (e) {
-		showToast(`Couldn't list the models: ${errMessage(e)}`, { kind: 'error' });
+		showToast(`Couldn't list the folder: ${errMessage(e)}`, { kind: 'error' });
 	}
 }
 
