@@ -11,6 +11,7 @@ import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { checkGlb, type CheckOptions } from '#lib/glb/check.ts';
+import type { GlbReport } from '#lib/glb/report.ts';
 import {
 	check3dFile,
 	defaultGlbPath,
@@ -161,6 +162,8 @@ interface Source {
 	/** A module's tracks that name a node it doesn't have. */
 	missing: string[];
 	clamped: ClampedColours | null;
+	/** An animation module beside the build module that wasn't passed as `anim`. */
+	animBeside: string | null;
 }
 
 /** The GLB bytes to check: a module's export, or the file itself. */
@@ -172,13 +175,26 @@ async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<So
 		if (/\.gltf$/i.test(a.path) && externalGltf(got.bytes)) {
 			return toolError('Export it as .glb, or embed its buffers and images in the .gltf.');
 		}
-		return { glb: new Uint8Array(got.bytes), missing: [], clamped: null };
+		return { glb: new Uint8Array(got.bytes), missing: [], clamped: null, animBeside: null };
 	}
 	ctx.onProgress?.('Building');
 	const run = await loadModuleRun({ build: a.path, anim: a.anim }, io, ctx.signal);
 	if ('refused' in run) return toolError(run.refused);
 	if (run.errors.length || !run.glb) return runFailure(run.errors, { build: a.path, anim: a.anim });
-	return { glb: run.glb, missing: run.missing, clamped: run.clamped };
+	const animBeside = a.anim === undefined ? await animModuleBeside(a.path, io) : null;
+	return { glb: run.glb, missing: run.missing, clamped: run.clamped, animBeside };
+}
+
+/**
+ * `knight.anim.js` beside `knight.js`, when it exists. A model that checks its
+ * build module alone gets "No animation." and may not see why: in the
+ * 2026-11-04 tests one called check_3d 21 times without `anim`, sure it had
+ * passed it.
+ */
+async function animModuleBeside(build: string, io: LoadIo): Promise<string | null> {
+	const beside = build.replace(/\.(m?js)$/i, '.anim.$1');
+	if (beside === build) return null;
+	return 'bytes' in (await readFile(beside, io)) ? beside : null;
 }
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
@@ -216,9 +232,16 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 		...missingLine(got.missing),
 		...clampedLine(got.clamped),
 		checked.text,
+		...animBesideLine(got.animBeside, checked.report),
 		...(sees ? [sheetNote(checked)] : [])
 	];
 	return toolResult(lines.join('\n'), checked.png ?? undefined);
+}
+
+/** The line pointing at an unpassed animation module, when the GLB came out with no clips. */
+function animBesideLine(beside: string | null, report: GlbReport): string[] {
+	if (!beside || report.animations.length > 0) return [];
+	return [`${beside} was not passed: add anim: "${beside}" to check its clips.`];
 }
 
 /** What the attached sheet is: the motion sheet, a close-up, or the render sheet. */

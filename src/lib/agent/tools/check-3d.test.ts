@@ -68,6 +68,22 @@ describe('check_3d', () => {
 		expect(c.pendingImages).toEqual([{ path: 'assets/crate.glb', dataUrl: PNG }]);
 	});
 
+	it('points at an animation module beside the build module when it was not passed', async () => {
+		files.set('/proj/models/bear/bear.js', enc(MODULE));
+		files.set('/proj/models/bear/bear.anim.js', enc('export default () => [];'));
+		const still = { bytes: GLB, report: { animations: [] }, text: 'No animation.', png: PNG };
+		glb.checkGlb.mockResolvedValue(still);
+		const hint =
+			'models/bear/bear.anim.js was not passed: add anim: "models/bear/bear.anim.js" to check its clips.';
+
+		expect((await call({ path: 'models/bear/bear.js', spec_height: 1.2 })).result).toContain(hint);
+		// Passed, it is no news; with no module beside it there is nothing to point at.
+		const passed = await call({ path: 'models/bear/bear.js', anim: 'models/bear/bear.anim.js' });
+		expect(passed.result).not.toContain('was not passed');
+		files.delete('/proj/models/bear/bear.anim.js');
+		expect((await call({ path: 'models/bear/bear.js' })).result).not.toContain('was not passed');
+	});
+
 	it('says which vertex colours the runner clamped', async () => {
 		files.set('/proj/assets/crate.js', enc(MODULE));
 		runner.runBuildModule.mockResolvedValueOnce({
