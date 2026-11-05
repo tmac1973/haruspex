@@ -71,7 +71,10 @@ registerSpecialistKind({
 	defaultDescription:
 		'Makes a low-poly 3D asset (props, characters, buildings) as a GLB file for a game engine. Send a short English request.',
 	defaultSystemPrompt: GLB_SYSTEM_PROMPT,
-	defaultSampling: { temperature: 0.8, top_p: 0.95, top_k: 40, min_p: 0, max_tokens: 24000 },
+	// 48k, not 24k: the 2026-11-02 checkpoint writes long pages. In the 2026-11-04
+	// tests half its drafts were cut off at 24k mid-page (a well ran to 80,000
+	// characters), with thinking on or off.
+	defaultSampling: { temperature: 0.8, top_p: 0.95, top_k: 40, min_p: 0, max_tokens: 48000 },
 	writes: true,
 	params: HTML_KIND_PARAMS,
 	requestRequired: false,

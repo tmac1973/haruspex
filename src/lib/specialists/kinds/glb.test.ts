@@ -128,7 +128,7 @@ describe('the glb kind', () => {
 
 	it('says when the model ran out of tokens or wrote no page', async () => {
 		call.callSpecialist.mockResolvedValueOnce({ content: '', finishReason: 'length' });
-		expect((await run({ path: 'a.glb' }, 'x')).result).toMatch(/ran out of tokens \(max 24000\)/);
+		expect((await run({ path: 'a.glb' }, 'x')).result).toMatch(/ran out of tokens \(max 48000\)/);
 		call.callSpecialist.mockResolvedValueOnce({ content: 'Sorry, no.', finishReason: 'stop' });
 		expect((await run({ path: 'a.glb' }, 'x')).result).toMatch(/without an HTML page: Sorry, no\./);
 		expect(files.size).toBe(0);
