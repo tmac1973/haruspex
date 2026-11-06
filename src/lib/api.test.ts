@@ -9,6 +9,7 @@ import {
 	mergeLeadingSystemMessages
 } from '#lib/api.ts';
 import type { ChatMessage } from '#lib/api.ts';
+import { clearDebugLogs, getDebugLogs, setVerbosePayloads } from '#lib/debugLog.ts';
 
 // Mock the settings module so resolveChatEndpoint (via resolveBackendDescriptor)
 // sees the backend we want. vi.hoisted ensures the mock fns are available when
@@ -283,6 +284,42 @@ describe('chatCompletion', () => {
 		expect(result.finish_reason).toBe('stop');
 
 		vi.unstubAllGlobals();
+	});
+
+	/**
+	 * A reply can echo an email or a tool result, and the debug log goes into
+	 * the diagnostics bundle. Only its length is logged unless verbose
+	 * payloads are on.
+	 */
+	it('logs the reply only by length unless verbose payloads are on', async () => {
+		const reply = () => ({
+			ok: true,
+			json: async () => ({
+				choices: [
+					{ message: { content: 'Secret reply', role: 'assistant' }, finish_reason: 'stop' }
+				]
+			})
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockImplementation(async () => reply())
+		);
+		clearDebugLogs();
+
+		await chatCompletion({ messages: [] });
+		const quiet = getDebugLogs().join('\n');
+		expect(quiet).toContain('"content_len":12');
+		expect(quiet).not.toContain('Secret reply');
+
+		setVerbosePayloads(true);
+		try {
+			clearDebugLogs();
+			await chatCompletion({ messages: [] });
+			expect(getDebugLogs().join('\n')).toContain('Secret reply');
+		} finally {
+			setVerbosePayloads(false);
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('retries a transient 5xx then returns the recovered response', async () => {

@@ -20,6 +20,7 @@ import {
 	renderMemorySection,
 	type RecalledMemory
 } from './recall';
+import { logDebug, setVerbosePayloads } from '#lib/debugLog.ts';
 
 function memory(over: Partial<RecalledMemory> = {}): RecalledMemory {
 	return {
@@ -177,6 +178,39 @@ describe('recallForTurn — results', () => {
 		expect(out).toEqual([
 			{ id: 'mem-1', content: 'Prefers tabs.', category: 'preference', score: 0.8 }
 		]);
+	});
+
+	/**
+	 * A memory is something the user said. The debug log is mirrored to disk
+	 * and goes into the diagnostics bundle, so it gets the memory only when
+	 * verbose payloads are on.
+	 */
+	it('keeps the recalled memory out of the log unless verbose payloads are on', async () => {
+		const hit = { id: 'mem-1', content: 'Prefers tabs.', category: 'preference', score: 0.8 };
+		mocks.invoke
+			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
+			.mockResolvedValueOnce([hit]);
+		await recallForTurn(base);
+		expect(logDebug).toHaveBeenCalledWith(
+			'memory',
+			'recall',
+			expect.objectContaining({ top: undefined })
+		);
+
+		setVerbosePayloads(true);
+		try {
+			mocks.invoke
+				.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
+				.mockResolvedValueOnce([hit]);
+			await recallForTurn(base);
+			expect(logDebug).toHaveBeenLastCalledWith(
+				'memory',
+				'recall',
+				expect.objectContaining({ top: 'Prefers tabs.' })
+			);
+		} finally {
+			setVerbosePayloads(false);
+		}
 	});
 
 	it('searches with the similarity floor and k', async () => {
