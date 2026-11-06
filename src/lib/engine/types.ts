@@ -487,7 +487,12 @@ export type HomeCardPayload =
 			truncated: boolean;
 	  })
 	/** `items` is null before the first successful run. */
-	| (HomeJobState & { type: 'important_emails'; items: HomeEmailItem[] | null })
+	| (HomeJobState & {
+			type: 'important_emails';
+			/** The addresses of the accounts the job reads; null when none is left. */
+			accounts: string | null;
+			items: HomeEmailItem[] | null;
+	  })
 	| (HomeJobState & { type: 'news'; items: HomeNewsItem[] | null })
 	| {
 			type: 'upcoming_meetings';

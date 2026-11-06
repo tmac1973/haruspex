@@ -8,6 +8,7 @@ import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { RecentRun } from '#lib/ipc/gen/RecentRun.ts';
 import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
 import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
+import { emailCardAccountsOf } from '#lib/home/emailCard.ts';
 import {
 	getActiveRunForJob,
 	getActiveRuns,
@@ -159,9 +160,9 @@ async function judgedPayload(
 	const job = card.job_id === null ? null : await jobState(card.job_id);
 	const state = job?.state ?? IDLE;
 	const json = job?.run?.result_json ?? null;
-	return type === 'important_emails'
-		? { type, ...state, items: emailItems(json) }
-		: { type, ...state, items: newsItems(json) };
+	if (type === 'news') return { type, ...state, items: newsItems(json) };
+	const accounts = card.job_id === null ? null : await emailCardAccountsOf(card.job_id);
+	return { type, ...state, accounts, items: emailItems(json) };
 }
 
 const MEETING_ORDER: MeetingGroup[] = ['Now', 'Later today', 'Tomorrow', 'Later'];

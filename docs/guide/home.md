@@ -14,21 +14,21 @@ The Home tab is the first tab: cards that show what Haruspex is doing and what n
 
 ## Pin a job
 
-**Add card → Pinned job…** shows a job's latest result: the last step's output of its newest successful run, and the newest run's error above it if that run failed. **Run now** starts a run; **Open** shows it in the Jobs tab. If the job is deleted, the card says so and can only be removed.
+**Add card → Pinned job…** shows a job's latest result: the last step's output of its newest successful run, and the newest run's error above it if it failed. **Run now** starts a run; **Open** shows it in the Jobs tab. If the job is deleted, the card says so and can only be removed.
 
 ## See the email that matters
 
-**Add card → Important emails…** needs an email account (see the `integrations` page). Pick the accounts, say what counts as important ("from my manager, or about invoices"), how far back to look, how many to show and how often to check (every 30 minutes to start).
+**Add card → Important emails…** needs an email account (see the `integrations` page). Pick the accounts (named at the top of the card), say what counts as important ("from my manager, or about invoices"), how far back to look, how many to show and how often to check (every 30 minutes to start).
 
-Each check lists your unread inbox mail and the model picks the ones that fit your rule, reading only sender, subject and first lines. Subject, sender and age come straight from your mail; the model's short reason sits under each, with a coloured edge, and it can't change what a message says it is. Read mail drops off at the next check, and checking never marks anything as read. **↻** checks now.
+Each check lists your unread inbox mail and the model picks the ones that fit your rule, reading only sender, subject and first lines. Subject, sender and age come straight from your mail; the model's short reason sits under each, with a coloured edge, and can't change what a message says it is. Read mail drops off at the next check; checking marks nothing as read. **↻** checks now.
 
 ## Follow the news you care about
 
-**Add card → News…** asks for RSS or Atom feeds (tick listed ones or paste your own) and your interests ("local politics, Rust, space"). Each morning at 7, or on **↻**, it reads the feeds and the model picks the stories that match, each with a one-line summary. Headlines, sources and links come from the feeds. A feed that can't be read is skipped.
+**Add card → News…** asks for RSS or Atom feeds (tick listed ones or paste your own) and your interests ("local politics, Rust, space"). Each morning at 7, or on **↻**, it reads the feeds and the model picks the stories that match, each with a one-line summary. Headlines, sources and links come from the feeds; a feed that can't be read is skipped.
 
 ## See your next meetings and the weather
 
-**Add card → Upcoming meetings…** needs a calendar account. Tick calendars, or none for all, and say how far ahead to look (12 hours to start). Events show under Now, Later today and Tomorrow, with **Join** for Meet, Zoom, Teams, Webex, Whereby and Jitsi links. It reads every 10 minutes, with no model, and names a calendar it can't read.
+**Add card → Upcoming meetings…** needs a calendar account. Tick calendars, or none for all, and say how far ahead to look (12 hours to start). Events show under Now, Later today and Tomorrow, with **Join** for Meet, Zoom, Teams, Webex, Whereby and Jitsi links. It reads every 10 minutes, with no model, naming a calendar it can't read.
 
 **Add card → Weather…** looks up a town or city, in °C or °F. The forecast comes from Open-Meteo (no account) through Settings → Network → Network Proxy, which is sent only the place's coordinates. Now, today and tomorrow; every 30 minutes.
 

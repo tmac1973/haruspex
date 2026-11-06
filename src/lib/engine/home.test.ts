@@ -37,6 +37,9 @@ vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	getQueueDepth: () => m.queue.length
 }));
 vi.mock('#lib/agent/jobs/types/index.ts', () => ({ getJobType: () => ({ background: true }) }));
+vi.mock('#lib/home/emailCard.ts', () => ({
+	emailCardAccountsOf: (id: number) => Promise.resolve(id === 7 ? 'tim@work.example' : null)
+}));
 vi.mock('#lib/home/fetchedCards.svelte.ts', () => ({
 	getCardError: (id: string) => m.errors[id] ?? null,
 	getCardNotice: (id: string) => (id === 'gh' ? 'Start GitHub in Settings → MCP servers.' : null)
@@ -172,6 +175,7 @@ describe('home.cards', () => {
 		const view = await only(card({ card_type: 'important_emails', job_id: 7 }));
 		expect(view.payload).toEqual({
 			type: 'important_emails',
+			accounts: 'tim@work.example',
 			running: false,
 			waiting: false,
 			queued: false,

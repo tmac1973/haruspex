@@ -16,6 +16,8 @@
 	import DraftReply from '#lib/components/home/DraftReply.svelte';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { isTrashed, trashEmail } from '#lib/home/trashedEmails.svelte.ts';
+	import { emailCardAccountsOf } from '#lib/home/emailCard.ts';
+	import { getJobs } from '#lib/stores/jobs.svelte.ts';
 
 	let { card }: { card: HomeCard } = $props();
 
@@ -35,6 +37,24 @@
 		} catch {
 			return null;
 		}
+	});
+
+	/** The accounts the job reads, read again whenever the job is saved. */
+	let accounts = $state<string | null>(null);
+	const jobSaved = $derived(getJobs().find((j) => j.id === jobId)?.updated_at);
+	$effect(() => {
+		const id = jobId;
+		void jobSaved;
+		if (id === null) return;
+		let live = true;
+		void emailCardAccountsOf(id)
+			.then((names) => {
+				if (live) accounts = names;
+			})
+			.catch((e: unknown) => console.warn('Important emails: reading the job failed', e));
+		return () => {
+			live = false;
+		};
 	});
 
 	/** The message open in the reader, and the one with a draft panel under it. */
@@ -94,6 +114,9 @@
 {#if jobId === null}
 	<p class="muted">This card's job was deleted. Remove the card and add it again.</p>
 {:else}
+	{#if accounts}
+		<p class="accounts" title={accounts}>{accounts}</p>
+	{/if}
 	{#if running}
 		<p class="muted">{waiting ? 'Waiting for chat…' : 'Checking your mail…'}</p>
 	{:else if queued}
@@ -186,6 +209,15 @@
 		font-weight: 600;
 	}
 
+	.accounts {
+		margin: 0 0 6px;
+		font-size: 0.75rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.accounts,
 	.date,
 	.from,
 	.muted {
