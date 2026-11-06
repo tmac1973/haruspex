@@ -12,6 +12,9 @@
 	}
 </script>
 
+{#if payload.accounts}
+	<p class="accounts muted" title={payload.accounts}>{payload.accounts}</p>
+{/if}
 <JobStatus state={payload} doing="Checking your mail…" />
 {#if payload.items && payload.items.length > 0}
 	<ul>
