@@ -1,12 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	ready: vi.fn(),
 	backend: 'llama-toolchest'
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		task_create: (args) => ({
+			id: 'video-1',
+			kind: 'video',
+			owner: args!.owner,
+			label: args!.label,
+			state: 'pending',
+			follower: 'frontend',
+			spec: args!.spec,
+			startedMs: 1,
+			noticeDelivered: false
+		})
+	})
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -26,7 +39,8 @@ import { noticeFor } from '#lib/tasks/noticeText.ts';
 import { _resetTasksForTests, getTask } from '#lib/tasks/store.svelte.ts';
 import type { VideoLimits } from '#lib/toolchest/models.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs } from '#lib/testing/invoke.ts';
 
 const limits: VideoLimits = {
 	defaultFps: 24,
@@ -50,21 +64,7 @@ beforeEach(() => {
 	_resetTasksForTests();
 	state.backend = 'llama-toolchest';
 	state.ready.mockReset().mockResolvedValue(ti2v);
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			task_create: (args) => ({
-				id: 'video-1',
-				kind: 'video',
-				owner: args!.owner,
-				label: args!.label,
-				state: 'pending',
-				follower: 'frontend',
-				spec: args!.spec,
-				startedMs: 1,
-				noticeDelivered: false
-			})
-		})
-	);
+	vi.mocked(invoke).mockReset();
 });
 
 describe('fitting a clip to the instance', () => {
@@ -112,7 +112,7 @@ describe('generate_video', () => {
 			{ prompt: 'a red fox in the snow', title: 'Fox', seconds: 5, seed: 7 },
 			chat
 		);
-		const [, created] = state.invoke.mock.calls.find(([c]) => c === 'task_create')!;
+		const created = invokeArgs<{ spec: { notes: string[] } }>(vi.mocked(invoke), 'task_create');
 		expect(created).toMatchObject({
 			kind: 'video',
 			owner: 'chat:c1',
@@ -146,7 +146,7 @@ describe('generate_video', () => {
 		expect(out.result).toMatch(/ti2v is stopped/);
 		const bad = await executeTool('generate_video', { prompt: 'x', path: 'a.mp4' }, chat);
 		expect(bad.result).toMatch(/must end in \.webm/);
-		expect(state.invoke.mock.calls.some(([c]) => c === 'task_create')).toBe(false);
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'task_create')).toBe(false);
 	});
 
 	it('is offered only with a backend and a chat or Code session to own the task', () => {

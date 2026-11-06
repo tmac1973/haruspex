@@ -8,13 +8,15 @@ const state = vi.hoisted(() => ({
 	mcp: [] as { label: string }[]
 }));
 
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => state.settings,
-	hasEnabledEmailAccount: () => state.email,
-	hasEnabledCalendarAccount: () => state.calendar,
-	hasEnabledContactsAccount: () => state.contacts,
-	startableMcpServers: () => state.mcp
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => state.settings,
+		hasEnabledEmailAccount: () => state.email,
+		hasEnabledCalendarAccount: () => state.calendar,
+		hasEnabledContactsAccount: () => state.contacts,
+		startableMcpServers: () => state.mcp
+	})
+);
 
 import { pausedIntegrations } from './pausedIntegrations';
 

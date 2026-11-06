@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const invoke = vi.fn();
-vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+import { invoke } from '@tauri-apps/api/core';
+
+// One mock for every fresh import: `fresh` resets modules, and each copy of
+// localServerKey.ts has to get the `invoke` this test drives.
+const tauri = await vi.hoisted(async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+vi.mock('@tauri-apps/api/core', () => tauri);
 
 async function fresh() {
 	vi.resetModules();
@@ -10,12 +16,12 @@ async function fresh() {
 
 describe('localServerKey', () => {
 	beforeEach(() => {
-		invoke.mockReset();
+		vi.mocked(invoke).mockReset();
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 	});
 
 	it('reads the key once per run', async () => {
-		invoke.mockResolvedValue('abc123');
+		vi.mocked(invoke).mockResolvedValue('abc123');
 		const m = await fresh();
 		expect(m.localServerKey()).toBeUndefined();
 		await m.localServerKeyReady();
@@ -26,7 +32,7 @@ describe('localServerKey', () => {
 	});
 
 	it('tries again after a failed read', async () => {
-		invoke.mockRejectedValueOnce(new Error('not yet')).mockResolvedValueOnce('later');
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('not yet')).mockResolvedValueOnce('later');
 		const m = await fresh();
 		await m.localServerKeyReady();
 		expect(m.localServerKey()).toBeUndefined();

@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs, invokeRouter } from '#lib/testing/invoke.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const dav = vi.hoisted(() => ({
 	accounts: [
@@ -10,10 +12,12 @@ const dav = vi.hoisted(() => ({
 		{ id: 'home', label: 'Home' }
 	]
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	enabledDavAccounts: () => dav.accounts,
-	getSettings: () => ({ proxy: null })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: { proxy: null },
+		enabledDavAccounts: () => dav.accounts
+	})
+);
 
 import { fetchMeetings, groupOf, joinUrl, type Meeting } from './meetings';
 
@@ -80,11 +84,11 @@ describe('fetchMeetings', () => {
 	});
 
 	beforeEach(() => {
-		tauri.invoke.mockReset();
+		vi.mocked(invoke).mockReset();
 	});
 
 	it('asks for the next hours of the chosen accounts and drops cancelled and ended events', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				dav_list_events: () => ({
 					events: [
@@ -98,7 +102,9 @@ describe('fetchMeetings', () => {
 			})
 		);
 		const out = await fetchMeetings({ hours: 6, accountIds: ['work'] }, now);
-		const args = tauri.invoke.mock.calls[0][1];
+		const [args] = allInvokeArgs<{ accounts: unknown[]; start: string; end: string }>(
+			vi.mocked(invoke)
+		);
 		expect(args.accounts).toEqual([{ id: 'work', label: 'Work' }]);
 		expect(args.start).toBe('2026-11-02T10:00:00.000Z');
 		expect(args.end).toBe('2026-11-02T16:00:00.000Z');
@@ -107,11 +113,11 @@ describe('fetchMeetings', () => {
 	});
 
 	it('reads every account when none is chosen, and says when there is none', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ dav_list_events: { events: [], problems: [] } })
 		);
 		await fetchMeetings({ hours: 6, accountIds: [] }, now);
-		expect(tauri.invoke.mock.calls[0][1].accounts).toHaveLength(2);
+		expect(allInvokeArgs<{ accounts: unknown[] }>(vi.mocked(invoke))[0].accounts).toHaveLength(2);
 
 		await expect(fetchMeetings({ hours: 6, accountIds: ['gone'] }, now)).rejects.toThrow(
 			/Settings → Integrations/

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs, invokeRouter } from '#lib/testing/invoke.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const asked = vi.hoisted(() => ({ answers: [] as string[], questions: 0 }));
 vi.mock('#lib/stores/userQuestion.svelte.ts', () => ({
@@ -95,17 +97,19 @@ beforeEach(() => {
 	backend.requests.length = 0;
 	asked.answers.length = 0;
 	asked.questions = 0;
-	invoke.mockReset().mockImplementation(
-		invokeRouter(
-			{
-				image_split_sheet: { pieces: [], keyed: false, palette: PALETTE },
-				image_palette_spread: { ok: true, dominant_fraction: 0.2, buckets_used: 5 },
-				image_store_bytes: 'hash',
-				image_extract_palette: [0xff0000ff]
-			},
-			undefined
-		)
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter(
+				{
+					image_split_sheet: { pieces: [], keyed: false, palette: PALETTE },
+					image_palette_spread: { ok: true, dominant_fraction: 0.2, buckets_used: 5 },
+					image_store_bytes: 'hash',
+					image_extract_palette: [0xff0000ff]
+				},
+				undefined
+			)
+		);
 });
 
 describe('anchorSheetPlan', () => {
@@ -136,9 +140,11 @@ describe('a sheet anchor', () => {
 	it('takes its palette from the CUT sheet, not the raw image', async () => {
 		const r = await establishAnchor(spec(), deps().deps, 1024);
 		expect(r.spec.normalize.palette).toEqual(PALETTE);
-		const split = invoke.mock.calls.find(([cmd]) => cmd === 'image_split_sheet');
-		expect(split![1].paletteSize).toBe(16);
-		expect(invoke.mock.calls.some(([cmd]) => cmd === 'image_extract_palette')).toBe(false);
+		const split = invokeArgs<{ paletteSize: number }>(vi.mocked(invoke), 'image_split_sheet');
+		expect(split.paletteSize).toBe(16);
+		expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === 'image_extract_palette')).toBe(
+			false
+		);
 	});
 
 	it('records which sheet and entries it is in the recipe', async () => {
@@ -186,7 +192,7 @@ describe('a sheet anchor', () => {
 
 	it('is not re-rolled for a palette that leans on one colour', async () => {
 		// Its palette is imposed on nothing: each sheet takes its own.
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					image_split_sheet: { pieces: [], keyed: false, palette: PALETTE },

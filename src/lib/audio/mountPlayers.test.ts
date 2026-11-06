@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{},
+		(_cmd: string, args: { hash: string }) => {
+			if (args.hash === 'f'.repeat(64)) throw 'Audio not found';
+			return new Uint8Array([0xff, 0xfb]).buffer;
+		}
+	)
+);
 
+import { invoke } from '@tauri-apps/api/core';
 import { installAudioPlayers } from './mountPlayers';
 import { renderMarkdown } from '#lib/markdown.ts';
 
@@ -11,10 +19,7 @@ const answer = () => renderMarkdown(`Here:\n\n![Rain](haruspex-audio://localhost
 
 beforeEach(() => {
 	URL.createObjectURL = vi.fn(() => 'blob:song');
-	tauri.invoke.mockReset().mockImplementation(async (_cmd: string, args: { hash: string }) => {
-		if (args.hash === 'f'.repeat(64)) throw 'Audio not found';
-		return new Uint8Array([0xff, 0xfb]).buffer;
-	});
+	vi.mocked(invoke).mockReset();
 });
 
 describe('installAudioPlayers', () => {
@@ -54,7 +59,7 @@ describe('installAudioPlayers', () => {
 		await vi.waitFor(() =>
 			expect(host.querySelector('video')?.getAttribute('src')).toBe('blob:song')
 		);
-		expect(tauri.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: clip });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('audio_read_bytes', { hash: clip });
 		expect(document.querySelector('.chat-audio')).toBeNull();
 		stop();
 	});

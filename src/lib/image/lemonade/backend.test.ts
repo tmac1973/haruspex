@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const settings = vi.hoisted(() => ({
 	imageLemonadeBaseUrl: 'http://box:13305',
 	imageLemonadeApiKey: '',
@@ -15,7 +16,15 @@ import health from './fixtures/health.json';
 import systemInfo from './fixtures/system-info.json';
 import models from './fixtures/models.json';
 import { lemonadeBackend, TRANSPARENCY_LOST } from './backend';
-import { httpCalls, httpRouter, invokeRouter, type HttpCall } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import {
+	httpCalls,
+	httpRouter,
+	invokeArgs,
+	invokeCalls,
+	invokeRouter,
+	type HttpCall
+} from '#lib/testing/invoke.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 
 const catalogue = [
@@ -35,8 +44,14 @@ interface Call extends HttpCall {
 	timeout_ms: number;
 }
 
+/** What `lemonade_upload` carries: the request, and the form's file parts. */
+interface Upload {
+	call: HttpCall & { body: Record<string, unknown> };
+	files: Array<Record<string, unknown> & { field: string }>;
+}
+
 const generations = () =>
-	httpCalls<Call>(tauri.invoke, 'lemonade_json').filter(
+	httpCalls<Call>(vi.mocked(invoke), 'lemonade_json').filter(
 		(c) => c.path === '/api/v1/images/generations'
 	);
 
@@ -54,20 +69,22 @@ beforeEach(() => {
 
 describe('lemonade backend', () => {
 	beforeEach(() => {
-		tauri.invoke.mockReset().mockImplementation(
-			invokeRouter({
-				lemonade_catalogue: catalogue,
-				image_clear_canvas: [1, 2, 3],
-				image_seam_inputs: { rolled: [4, 5, 6], mask: [7, 8, 9] },
-				image_seam_finish: [9, 9, 9],
-				lemonade_json: httpRouter({
-					'GET /api/v1/health': health,
-					'GET /api/v1/system-info': systemInfo,
-					'GET /api/v1/models?show_all=true': models,
-					'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(
+				invokeRouter({
+					lemonade_catalogue: catalogue,
+					image_clear_canvas: [1, 2, 3],
+					image_seam_inputs: { rolled: [4, 5, 6], mask: [7, 8, 9] },
+					image_seam_finish: [9, 9, 9],
+					lemonade_json: httpRouter({
+						'GET /api/v1/health': health,
+						'GET /api/v1/system-info': systemInfo,
+						'GET /api/v1/models?show_all=true': models,
+						'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+					})
 				})
-			})
-		);
+			);
 	});
 
 	it('probes a real server’s answers into one sentence and the Model list', async () => {
@@ -119,11 +136,16 @@ describe('lemonade backend', () => {
 	});
 
 	it('says so when a transparent Ming request comes back with no transparency', async () => {
-		const plain = tauri.invoke.getMockImplementation()!;
+		const plain = vi.mocked(invoke).getMockImplementation()!;
 		const answer = (clear: number) =>
-			tauri.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) =>
-				cmd === 'image_transparent_fraction' ? clear : plain(cmd, args)
-			);
+			vi
+				.mocked(invoke)
+				.mockImplementation(
+					invokeRouter(
+						{ image_transparent_fraction: clear },
+						(cmd: string, args?: Record<string, unknown>) => plain(cmd, args)
+					)
+				);
 		const coin = { prompt: 'a coin', width: 1024, height: 1024, seed: 5, transparent: true };
 		answer(0);
 		expect((await lemonadeBackend.generate(coin)).meta.transparencyFailed).toBe(TRANSPARENCY_LOST);
@@ -133,7 +155,7 @@ describe('lemonade backend', () => {
 		answer(0);
 		const opaque = await lemonadeBackend.generate({ ...coin, transparent: false });
 		expect(opaque.meta.transparencyFailed).toBeUndefined();
-		const checks = tauri.invoke.mock.calls.filter(([c]) => c === 'image_transparent_fraction');
+		const checks = invokeCalls(vi.mocked(invoke), 'image_transparent_fraction');
 		expect(checks).toHaveLength(2);
 	});
 
@@ -175,7 +197,7 @@ describe('lemonade backend', () => {
 		// One opaque draw: no seam pass, whose start image would crash sd-server.
 		expect(generations()).toHaveLength(1);
 		expect(extrasOf(generations()[0])).not.toHaveProperty('init_image');
-		expect(tauri.invoke).not.toHaveBeenCalledWith('image_seam_inputs', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('image_seam_inputs', expect.anything());
 		expect(r.meta.seamFailed).toMatch(/cannot make tiling textures/);
 	});
 
@@ -201,7 +223,7 @@ describe('lemonade backend', () => {
 	});
 
 	it('passes Lemonade’s own refusal on in words', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				lemonade_catalogue: catalogue,
 				lemonade_json: httpRouter({
@@ -235,22 +257,24 @@ describe('lemonade options from an older Haruspex', () => {
 				? { ...m, recipe_options: { sdcpp_args: '--tokenizer /t.json --backend te=cpu' } }
 				: m
 		);
-		tauri.invoke.mockReset().mockImplementation(
-			invokeRouter({
-				lemonade_catalogue: catalogue,
-				lemonade_sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling',
-				lemonade_json: httpRouter({
-					'GET /api/v1/health': health,
-					'GET /api/v1/system-info': systemInfo,
-					'GET /api/v1/models?show_all=true': { data },
-					'POST /api/v1/models/user.Ming-Image-0.1-Design-GGUF/options': {},
-					'POST /api/v1/unload': {},
-					'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(
+				invokeRouter({
+					lemonade_catalogue: catalogue,
+					lemonade_sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling',
+					lemonade_json: httpRouter({
+						'GET /api/v1/health': health,
+						'GET /api/v1/system-info': systemInfo,
+						'GET /api/v1/models?show_all=true': { data },
+						'POST /api/v1/models/user.Ming-Image-0.1-Design-GGUF/options': {},
+						'POST /api/v1/unload': {},
+						'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+					})
 				})
-			})
-		);
+			);
 		await lemonadeBackend.generate({ prompt: 'a coin', width: 512, height: 512, seed: 1 });
-		const paths = httpCalls(tauri.invoke, 'lemonade_json');
+		const paths = httpCalls(vi.mocked(invoke), 'lemonade_json');
 		const options = paths.find((c) => c.path.endsWith('/options'))!;
 		expect(options.body).toEqual({ sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling' });
 		// The recorded server has Ming loaded, so it is unloaded to take them.
@@ -276,19 +300,22 @@ describe('lemonade edits and upscaling', () => {
 		]
 	};
 	const use = (list: unknown) =>
-		tauri.invoke.mockReset().mockImplementation(
-			invokeRouter({
-				lemonade_catalogue: catalogue,
-				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
-				lemonade_upload: () => ({ data: [{ b64_json: 'BAUG' }] }),
-				lemonade_json: httpRouter({
-					'GET /api/v1/health': health,
-					'GET /api/v1/system-info': systemInfo,
-					'GET /api/v1/models?show_all=true': list,
-					'POST /api/v1/images/upscale': { data: [{ b64_json: 'BwgJ' }] }
+		vi
+			.mocked(invoke)
+			.mockReset()
+			.mockImplementation(
+				invokeRouter({
+					lemonade_catalogue: catalogue,
+					image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+					lemonade_upload: () => ({ data: [{ b64_json: 'BAUG' }] }),
+					lemonade_json: httpRouter({
+						'GET /api/v1/health': health,
+						'GET /api/v1/system-info': systemInfo,
+						'GET /api/v1/models?show_all=true': list,
+						'POST /api/v1/images/upscale': { data: [{ b64_json: 'BwgJ' }] }
+					})
 				})
-			})
-		);
+			);
 	const edit = {
 		prompt: 'make it night',
 		width: 1024,
@@ -314,7 +341,7 @@ describe('lemonade edits and upscaling', () => {
 		use(withEditing);
 		const r = await lemonadeBackend.generate(edit);
 		expect(Array.from(r.images[0].bytes)).toEqual([4, 5, 6]);
-		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'lemonade_upload')!;
+		const args = invokeArgs<Upload>(vi.mocked(invoke), 'lemonade_upload');
 		expect(args.call.path).toBe('/api/v1/images/edits');
 		expect(args.call.body).toMatchObject({
 			model: 'user.Qwen-Image-2.1-Turbo-GGUF',
@@ -334,8 +361,8 @@ describe('lemonade edits and upscaling', () => {
 		use(withEditing);
 		const mask = { name: 'mask.png', hash: 'b'.repeat(64) };
 		await lemonadeBackend.generate({ ...edit, edit: { ...edit.edit!, mask } });
-		const [, args] = tauri.invoke.mock.calls.findLast(([c]) => c === 'lemonade_upload')!;
-		expect(args.files.map((f: { field: string }) => f.field)).toEqual(['image[]', 'mask']);
+		const args = invokeArgs<Upload>(vi.mocked(invoke), 'lemonade_upload', -1);
+		expect(args.files.map((f) => f.field)).toEqual(['image[]', 'mask']);
 		expect(args.files[1]).toMatchObject({ hash: 'b'.repeat(64), cache: 'image' });
 	});
 
@@ -352,9 +379,9 @@ describe('lemonade edits and upscaling', () => {
 		use(withEditing);
 		const out = await lemonadeBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) });
 		expect(Array.from(out)).toEqual([7, 8, 9]);
-		const call = tauri.invoke.mock.calls.find(
-			([c, a]) => c === 'lemonade_json' && a.call.path === '/api/v1/images/upscale'
+		const call = httpCalls(vi.mocked(invoke), 'lemonade_json').find(
+			(c) => c.path === '/api/v1/images/upscale'
 		)!;
-		expect(call[1].call.body).toEqual({ model: 'RealESRGAN-x4plus', image: 'AQID' });
+		expect(call.body).toEqual({ model: 'RealESRGAN-x4plus', image: 'AQID' });
 	});
 });

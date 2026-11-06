@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	runEphemeralTurn: vi.fn(),
 	withInferenceSlot: vi.fn(),
 	slot: { held: true, release: () => {}, reacquire: async () => {} },
@@ -14,7 +13,9 @@ const mocks = vi.hoisted(() => ({
 	noteExternalConversation: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }));
 vi.mock('#lib/agent/runEphemeralTurn.ts', () => ({ runEphemeralTurn: mocks.runEphemeralTurn }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
@@ -42,7 +43,8 @@ import {
 	REMOTE_TOOLS
 } from '#lib/remote/driver.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 const prompt = { sessionId: 'guest1', turnId: 'guest1#0', message: 'what is a haruspex?' };
 
@@ -56,12 +58,20 @@ function turnOptions(): EphemeralTurnOptions {
 	return mocks.runEphemeralTurn.mock.calls[0][0] as EphemeralTurnOptions;
 }
 
+/** What the driver sends the guest: the fields these tests read. */
+interface Sent {
+	turnId: string;
+	text: string;
+	step: { status: string };
+	question: { id: string; question: string; options: { label: string }[] };
+}
+
 function calls(command: string) {
-	return mocks.invoke.mock.calls.filter(([name]) => name === command).map(([, args]) => args);
+	return invokeCalls<Sent>(vi.mocked(invoke), command);
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset().mockResolvedValue(undefined);
+	vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
 	mocks.runEphemeralTurn
 		.mockReset()
 		.mockResolvedValue({ finalText: 'an answer', rawText: 'an answer' });
@@ -176,7 +186,7 @@ describe('the remote turn driver', () => {
 	});
 
 	it('survives a client that vanished mid-stream', async () => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					remote_turn_delta: () => {

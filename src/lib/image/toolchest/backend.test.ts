@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const settings = vi.hoisted(() => ({
 	imageToolchestBaseUrl: 'http://box:3000',
 	imageToolchestApiKeyId: 'k1' as string | null,
@@ -22,9 +23,11 @@ import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
 import klein from '#lib/toolchest/fixtures/models-asmodean-klein.json';
 import { _resetForTests, toolchestBackend, toolchestInstance } from './backend';
 import { backendForEntry } from '#lib/image/registry.ts';
+import { invoke } from '@tauri-apps/api/core';
 import {
 	httpCalls,
 	httpRouter,
+	invokeArgs,
 	invokeRouter,
 	type HttpAnswer,
 	type HttpCall
@@ -39,8 +42,17 @@ interface Call extends HttpCall {
 
 type Answer = HttpAnswer<Call>;
 
+/** What `toolchest_upload` carries: the request, and the form's parts. */
+interface Upload {
+	call: Call & { body: Record<string, unknown> };
+	fields: boolean;
+	files: unknown[];
+}
+
 const calls = () =>
-	httpCalls(tauri.invoke, 'toolchest_json', 'toolchest_bytes').map((c) => `${c.method} ${c.path}`);
+	httpCalls(vi.mocked(invoke), 'toolchest_json', 'toolchest_bytes').map(
+		(c) => `${c.method} ${c.path}`
+	);
 
 /** A job that is queued behind one, then draws, then is done. */
 function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
@@ -59,15 +71,17 @@ function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
 }
 
 function use(answers: Record<string, Answer>) {
-	tauri.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			image_clear_canvas: [1, 2, 3],
-			comfy_cancel: null,
-			toolchest_json: httpRouter(answers),
-			toolchest_upload: httpRouter(answers),
-			toolchest_bytes: () => new Uint8Array([137, 80, 78, 71]).buffer
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				image_clear_canvas: [1, 2, 3],
+				comfy_cancel: null,
+				toolchest_json: httpRouter(answers),
+				toolchest_upload: httpRouter(answers),
+				toolchest_bytes: () => new Uint8Array([137, 80, 78, 71]).buffer
+			})
+		);
 }
 
 const request = { prompt: 'a fox', width: 512, height: 512, seed: 5 };
@@ -88,7 +102,7 @@ describe('llama-toolchest image backend', () => {
 			detail: 'Connected — qwen-turbo-local on box:3000, image jobs.',
 			models: [{ name: 'qwen-turbo-local', label: 'qwen-turbo-local' }]
 		});
-		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_json')!;
+		const args = invokeArgs<{ call: Call }>(vi.mocked(invoke), 'toolchest_json');
 		expect(args.call.api_key).toBe('sekrit');
 	});
 
@@ -259,9 +273,9 @@ describe('llama-toolchest image backend', () => {
 		const result = await toolchestBackend.resume!(onHandle.mock.calls[0][0]);
 		expect(calls()).not.toContain('POST /v1/images/jobs');
 		expect(calls()).toContain('GET /v1/images/jobs/j1/image/0');
-		const urls = tauri.invoke.mock.calls
-			.filter(([c]) => c === 'toolchest_json')
-			.map(([, a]) => a.call.base_url);
+		const urls = httpCalls<Call & { base_url: string }>(vi.mocked(invoke), 'toolchest_json').map(
+			(c) => c.base_url
+		);
 		expect(new Set(urls)).toEqual(new Set(['http://box:3000']));
 		expect(result.meta).toMatchObject({ seed: 5, model: 'qwen-turbo-local' });
 		expect(result.images[0]).toMatchObject({ width: 512, height: 512 });
@@ -335,7 +349,7 @@ describe('llama-toolchest image backend', () => {
 			use({ 'GET /v1/models': klein, 'POST /v1/images/edits': { data: [{ b64_json: b64 }] } });
 			const result = await toolchestBackend.generate(edit);
 			expect(result.images[0]).toMatchObject({ width: 1024, height: 768 });
-			const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_upload')!;
+			const args = invokeArgs<Upload>(vi.mocked(invoke), 'toolchest_upload');
 			expect(args.fields).toBe(true);
 			expect(args.call.body).toMatchObject({
 				model: 'klein',
@@ -373,7 +387,7 @@ describe('llama-toolchest image backend', () => {
 				onHandle: (h) => handles.push(h.id)
 			});
 			expect(result.images[0]).toMatchObject({ width: 1024, height: 768 });
-			const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_upload')!;
+			const args = invokeArgs<Upload>(vi.mocked(invoke), 'toolchest_upload');
 			expect(args.call.path).toBe('/v1/images/jobs');
 			expect(args.fields).toBe(true);
 			expect(args.call.body).toMatchObject({ model: 'klein', size: '1024x768', n: '1' });
@@ -459,7 +473,7 @@ describe('llama-toolchest image backend', () => {
 			});
 			const out = await toolchestBackend.upscale!(picture);
 			expect([...out]).toEqual([7, 8, 9]);
-			const sent = httpCalls<Call>(tauri.invoke, 'toolchest_json').find(
+			const sent = httpCalls<Call>(vi.mocked(invoke), 'toolchest_json').find(
 				(c) => c.path === '/v1/images/upscale'
 			)!;
 			expect(sent.body).toEqual({ model: 'real-esrgan', image: 'AQID' });

@@ -1,12 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	generate: vi.fn(),
 	resume: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
+		audio_store_bytes: { hash: 'f'.repeat(64), mime: 'audio/wav', bytes: 3 },
+		task_create: (args) => ({
+			id: 'music-1',
+			kind: 'music',
+			owner: args!.owner,
+			label: args!.label,
+			state: 'pending',
+			follower: 'frontend',
+			spec: args!.spec,
+			startedMs: 1,
+			noticeDelivered: false
+		})
+	})
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -39,7 +54,14 @@ import {
 } from './_musicJob.ts';
 import { _resetTasksForTests, getTask } from '#lib/tasks/store.svelte.ts';
 import type { MusicJobHandle, MusicRequest } from '#lib/music/types.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs } from '#lib/testing/invoke.ts';
+
+/** What a background song asks Rust to create. */
+interface TaskCreate {
+	owner: string;
+	spec: { request: { seed: unknown }; save: { path: string } };
+}
 
 const HASH = 'e'.repeat(64);
 const URL = `haruspex-audio://localhost/${HASH}`;
@@ -77,32 +99,16 @@ function spec(over: Partial<MusicTaskSpec> = {}): MusicTaskSpec {
 
 beforeEach(() => {
 	_resetTasksForTests();
-	for (const f of [state.invoke, state.generate, state.resume]) f.mockReset();
+	vi.mocked(invoke).mockReset();
+	for (const f of [state.generate, state.resume]) f.mockReset();
 	state.generate.mockResolvedValue(made);
 	state.resume.mockResolvedValue(made);
-	state.invoke.mockImplementation(
-		invokeRouter({
-			audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
-			audio_store_bytes: { hash: 'f'.repeat(64), mime: 'audio/wav', bytes: 3 },
-			task_create: (args) => ({
-				id: 'music-1',
-				kind: 'music',
-				owner: args!.owner,
-				label: args!.label,
-				state: 'pending',
-				follower: 'frontend',
-				spec: args!.spec,
-				startedMs: 1,
-				noticeDelivered: false
-			})
-		})
-	);
 });
 
 describe('runMusicJob', () => {
 	it("puts the song's measured length in a background task's result", async () => {
 		state.generate.mockResolvedValueOnce(made);
-		state.invoke.mockResolvedValue(new ArrayBuffer(8));
+		vi.mocked(invoke).mockResolvedValue(new ArrayBuffer(8));
 		vi.stubGlobal(
 			'OfflineAudioContext',
 			class {
@@ -165,7 +171,7 @@ describe('runMusicJob', () => {
 			spec({ save: { mode: 'chat', workdir: '/w', path: 'rain.mp3', overwrite: false } }),
 			{}
 		);
-		expect(state.invoke).toHaveBeenCalledWith('fs_write_bytes', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_write_bytes', {
 			workdir: '/w',
 			relPath: 'rain.mp3',
 			bytes: [9, 9],
@@ -178,12 +184,12 @@ describe('runMusicJob', () => {
 
 describe('measuredSong', () => {
 	beforeEach(() => {
-		state.invoke.mockReset().mockResolvedValue(new ArrayBuffer(8));
+		vi.mocked(invoke).mockReset().mockResolvedValue(new ArrayBuffer(8));
 	});
 
 	it("reports the file's length, not the one the server echoed, and says when it is short", async () => {
 		const out = await measuredSong({ ...made, durationSec: 30 }, 30, async () => 22.248);
-		expect(state.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: HASH });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('audio_read_bytes', { hash: HASH });
 		expect(out.made.durationSec).toBe(22.248);
 		expect(out.notes).toEqual([
 			'It came out 22 s long, shorter than the 30 s asked for: tell the user.'
@@ -200,7 +206,7 @@ describe('measuredSong', () => {
 
 	it('keeps what the server said when the song cannot be read', async () => {
 		expect(await measuredSong(made, 45, async () => null)).toEqual({ made, notes: [] });
-		state.invoke.mockRejectedValue(new Error('not in the cache'));
+		vi.mocked(invoke).mockRejectedValue(new Error('not in the cache'));
 		expect(await measuredSong(made, 45, async () => 10)).toEqual({ made, notes: [] });
 	});
 });
@@ -230,7 +236,7 @@ describe('hashedSong', () => {
 			name: 'take.wav',
 			hash: 'f'.repeat(64)
 		});
-		expect(state.invoke).toHaveBeenCalledWith('audio_store_bytes', new Uint8Array([1, 2, 3]), {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('audio_store_bytes', new Uint8Array([1, 2, 3]), {
 			headers: { 'x-mime': 'audio/wav', 'x-conversation-id': 'c1' }
 		});
 	});
@@ -246,7 +252,7 @@ describe('background: true', () => {
 			chat
 		);
 		expect(state.generate).not.toHaveBeenCalled();
-		const [, created] = state.invoke.mock.calls.find(([c]) => c === 'task_create')!;
+		const created = invokeArgs<TaskCreate>(vi.mocked(invoke), 'task_create');
 		expect(created).toMatchObject({
 			kind: 'music',
 			owner: 'chat:c1',
@@ -277,7 +283,7 @@ describe('background: true', () => {
 			{ caption: 'x', path: 'audio/x.mp3', background: true },
 			code
 		);
-		const [, created] = state.invoke.mock.calls.find(([c]) => c === 'task_create')!;
+		const created = invokeArgs<TaskCreate>(vi.mocked(invoke), 'task_create');
 		expect(created.owner).toBe('code:s1');
 		expect(created.spec.save).toMatchObject({ mode: 'chat', workdir: '/proj', overwrite: false });
 		expect(created.spec.save.path).toMatch(/audio\/x\.mp3$/);

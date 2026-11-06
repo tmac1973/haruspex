@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'llama-toolchest',
-	invoke: vi.fn(),
 	generate: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageBackendKind: state.backend }),
@@ -20,7 +21,8 @@ import { editSize, resolveImage } from './_imageSource';
 import { latestUserImages } from '#lib/agent/loop/context.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs, invokeRouter } from '#lib/testing/invoke.ts';
 
 const SRC = 'a'.repeat(64);
 const SRC_URL = `haruspex-img://localhost/${SRC}`;
@@ -41,13 +43,15 @@ beforeEach(() => {
 	state.backend = 'llama-toolchest';
 	// The webview measures a picture by decoding it; jsdom can't.
 	vi.stubGlobal('createImageBitmap', async () => ({ ...sizes, close: () => {} }));
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
-			fs_read_bytes: [4, 5, 6],
-			image_store_bytes: OUT
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+				fs_read_bytes: [4, 5, 6],
+				image_store_bytes: OUT
+			})
+		);
 	state.generate.mockReset().mockResolvedValue({
 		bytes: new Uint8Array([9]),
 		width: 1184,
@@ -95,7 +99,7 @@ describe('edit_image', () => {
 			{ name: 'image.png', hash: SRC },
 			{ name: 'cat.jpg', bytes: [4, 5, 6] }
 		]);
-		expect(state.invoke).toHaveBeenCalledWith('fs_read_bytes', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_bytes', {
 			workdir: '/pics',
 			relPath: 'cat.jpg'
 		});
@@ -159,8 +163,8 @@ describe('edit_image with an area', () => {
 	const MASK = 'd'.repeat(64);
 
 	beforeEach(() => {
-		const plain = state.invoke.getMockImplementation()!;
-		state.invoke.mockImplementation(
+		const plain = vi.mocked(invoke).getMockImplementation()!;
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					image_mask_prepare: { canvas: CANVAS, mask: MASK, width: 2400, height: 1200 },
@@ -172,16 +176,16 @@ describe('edit_image with an area', () => {
 	});
 
 	it('says when the part that was to change came back nearly as it was', async () => {
-		const plain = state.invoke.getMockImplementation()!;
+		const plain = vi.mocked(invoke).getMockImplementation()!;
 		const measured = (change: number) =>
-			state.invoke.mockImplementation(invokeRouter({ image_mask_change: change }, plain));
+			vi.mocked(invoke).mockImplementation(invokeRouter({ image_mask_change: change }, plain));
 		const args = { image: SRC_URL, prompt: 'red sky', area: { x: 0, y: 0, width: 1, height: 0.4 } };
 		measured(2.5);
 		const flat = await executeTool('edit_image', args, chat);
 		expect(flat.result).toMatch(/came back nearly as it was/);
-		const [, edited, opts] = state.invoke.mock.calls.find(([c]) => c === 'image_mask_change')!;
+		const [, edited, opts] = vi.mocked(invoke).mock.calls.find(([c]) => c === 'image_mask_change')!;
 		expect(Array.from(edited as Uint8Array)).toEqual([9]);
-		expect(opts.headers).toEqual({ 'x-canvas-hash': CANVAS, 'x-mask-hash': MASK });
+		expect(opts?.headers).toEqual({ 'x-canvas-hash': CANVAS, 'x-mask-hash': MASK });
 		measured(40);
 		expect((await executeTool('edit_image', args, chat)).result).not.toMatch(/nearly as it was/);
 	});
@@ -192,7 +196,7 @@ describe('edit_image with an area', () => {
 			{ image: SRC_URL, prompt: 'make the sky red', area: { x: 0, y: 0, width: 1, height: 0.4 } },
 			chat
 		);
-		const prep = state.invoke.mock.calls.find(([c]) => c === 'image_mask_prepare')![1];
+		const prep = invokeArgs(vi.mocked(invoke), 'image_mask_prepare');
 		expect(prep).toEqual({
 			source: { hash: SRC },
 			area: { x: 0, y: 0, width: 1, height: 0.4 },
@@ -206,10 +210,10 @@ describe('edit_image with an area', () => {
 		});
 		// Sized from the canvas, with the prompt as given.
 		expect(req).toMatchObject({ prompt: 'make the sky red', width: 1456, height: 720 });
-		const [, edited, opts] = state.invoke.mock.calls.find(([c]) => c === 'image_mask_finish')!;
+		const [, edited, opts] = vi.mocked(invoke).mock.calls.find(([c]) => c === 'image_mask_finish')!;
 		expect(Array.from(edited as Uint8Array)).toEqual([9]);
-		expect(opts.headers).toEqual({ 'x-canvas-hash': CANVAS, 'x-mask-hash': MASK });
-		const stored = state.invoke.mock.calls.find(([c]) => c === 'image_store_bytes')![1];
+		expect(opts?.headers).toEqual({ 'x-canvas-hash': CANVAS, 'x-mask-hash': MASK });
+		const stored = invokeArgs(vi.mocked(invoke), 'image_store_bytes');
 		expect(stored).toMatchObject({ bytes: [7, 7], width: 2400, height: 1200 });
 		expect(out.result).toMatch(/^Edited \(2400×1200/);
 	});
@@ -220,7 +224,7 @@ describe('edit_image with an area', () => {
 			{ image: SRC_URL, prompt: 'a beach at noon', extend: { left: 0.25, right: 0.25 } },
 			chat
 		);
-		const prep = state.invoke.mock.calls.find(([c]) => c === 'image_mask_prepare')![1];
+		const prep = invokeArgs(vi.mocked(invoke), 'image_mask_prepare');
 		expect(prep).toMatchObject({
 			area: null,
 			extend: { left: 0.25, right: 0.25, top: 0, bottom: 0 }
@@ -236,7 +240,7 @@ describe('edit_image with an area', () => {
 				mask: { name: 'mask.png', hash: MASK }
 			}
 		});
-		expect(state.invoke.mock.calls.some(([c]) => c === 'image_mask_finish')).toBe(true);
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'image_mask_finish')).toBe(true);
 	});
 
 	it('says what is wrong with an area before drawing', async () => {

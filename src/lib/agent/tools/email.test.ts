@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	chatCompletion: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 // _helpers.runSubAgent drives the summarizer through chatCompletion.
 vi.mock('#lib/api.ts', () => ({
@@ -20,7 +19,8 @@ import { executeTool } from '#lib/agent/tools/registry.ts';
 import { setEmailAccounts, type EmailAccount } from '#lib/stores/settings.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs, invokeHandler, invokeRouter } from '#lib/testing/invoke.ts';
 
 const ctx: ToolContext = makeToolContext();
 
@@ -56,7 +56,7 @@ const listing = (id: string, date: string, accountId = 'acct-1') => ({
 });
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.chatCompletion.mockReset();
 	setEmailAccounts([]);
 });
@@ -67,7 +67,7 @@ describe('email_list_recent', () => {
 		expect(JSON.parse(out.result)).toEqual({
 			error: 'No email accounts are enabled. Ask the user to add one in Settings → Integrations.'
 		});
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 
 	it('fans out to every enabled account when account_id is omitted', async () => {
@@ -75,12 +75,12 @@ describe('email_list_recent', () => {
 		const home = account({ id: 'acct-2', label: 'Home' });
 		const disabled = account({ id: 'acct-3', label: 'Old', enabled: false });
 		setEmailAccounts([work, home, disabled]);
-		mocks.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 
 		await executeTool('email_list_recent', {}, ctx);
 
-		expect(mocks.invoke).toHaveBeenCalledTimes(2);
-		expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'email_list_recent', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
+		expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'email_list_recent', {
 			account: work,
 			hours: null,
 			sinceDate: null,
@@ -89,7 +89,7 @@ describe('email_list_recent', () => {
 			maxResults: null,
 			callId: expect.any(String)
 		});
-		expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'email_list_recent', {
+		expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'email_list_recent', {
 			account: home,
 			hours: null,
 			sinceDate: null,
@@ -104,23 +104,23 @@ describe('email_list_recent', () => {
 		const work = account({ id: 'acct-1', label: 'Work' });
 		const home = account({ id: 'acct-2', label: 'Home' });
 		setEmailAccounts([work, home]);
-		mocks.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 
 		await executeTool('email_list_recent', { account_id: 'acct-2' }, ctx);
 
-		expect(mocks.invoke).toHaveBeenCalledTimes(1);
-		expect(mocks.invoke.mock.calls[0][1]).toMatchObject({ account: home });
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ account: home });
 	});
 
 	it('targets a single account by case-insensitive label', async () => {
 		const work = account({ id: 'acct-1', label: 'Work' });
 		setEmailAccounts([work]);
-		mocks.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 
 		await executeTool('email_list_recent', { account_id: '  wOrK ' }, ctx);
 
-		expect(mocks.invoke).toHaveBeenCalledTimes(1);
-		expect(mocks.invoke.mock.calls[0][1]).toMatchObject({ account: work });
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ account: work });
 	});
 
 	it('errors for an unknown selector without invoking the backend', async () => {
@@ -131,12 +131,12 @@ describe('email_list_recent', () => {
 		expect(JSON.parse(out.result)).toEqual({
 			error: 'No enabled email account with id nope.'
 		});
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 
 	it('maps filter args through to the invoke payload', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 
 		await executeTool(
 			'email_list_recent',
@@ -150,7 +150,7 @@ describe('email_list_recent', () => {
 			ctx
 		);
 
-		expect(mocks.invoke).toHaveBeenCalledWith('email_list_recent', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('email_list_recent', {
 			account: account(),
 			hours: 6,
 			sinceDate: '10-Apr-2026',
@@ -165,7 +165,7 @@ describe('email_list_recent', () => {
 		const work = account({ id: 'acct-1', label: 'Work' });
 		const home = account({ id: 'acct-2', label: 'Home' });
 		setEmailAccounts([work, home]);
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockRejectedValueOnce('imap.example.com did not answer LOGIN within 20 s')
 			.mockResolvedValueOnce([
 				listing('m1', '2026-06-01', 'acct-2'),
@@ -185,7 +185,7 @@ describe('email_list_recent', () => {
 		const work = account({ id: 'acct-1', label: 'Work' });
 		const home = account({ id: 'acct-2', label: 'Home' });
 		setEmailAccounts([work, home]);
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce([listing('old', '2026-06-01'), listing('newest', '2026-06-10')])
 			.mockResolvedValueOnce([listing('middle', '2026-06-05', 'acct-2')]);
 
@@ -202,7 +202,9 @@ describe('email_list_recent', () => {
 	it('queries the accounts at once, not one after another', async () => {
 		setEmailAccounts([account({ id: 'acct-1' }), account({ id: 'acct-2', label: 'Home' })]);
 		const pending: ((v: unknown) => void)[] = [];
-		mocks.invoke.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
+		vi.mocked(invoke).mockImplementation(
+			invokeHandler(() => new Promise((resolve) => pending.push(resolve)))
+		);
 
 		const run = executeTool('email_list_recent', {}, ctx);
 		await vi.waitFor(() => expect(pending).toHaveLength(2));
@@ -214,7 +216,7 @@ describe('email_list_recent', () => {
 		setEmailAccounts([account()]);
 		const ctrl = new AbortController();
 		let rejectList: (e: unknown) => void = () => {};
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ email_list_recent: () => new Promise((_, reject) => (rejectList = reject)) },
 				undefined
@@ -222,13 +224,13 @@ describe('email_list_recent', () => {
 		);
 
 		const run = executeTool('email_list_recent', {}, { ...ctx, signal: ctrl.signal });
-		await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
-		const callId = mocks.invoke.mock.calls[0][1].callId;
+		await vi.waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1));
+		const [{ callId }] = allInvokeArgs<{ callId: string }>(vi.mocked(invoke));
 		ctrl.abort();
 		rejectList('Cancelled');
 
 		await expect(run).rejects.toThrow(/Abort/);
-		expect(mocks.invoke).toHaveBeenCalledWith('email_cancel', { callId });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('email_cancel', { callId });
 	});
 });
 
@@ -248,7 +250,7 @@ describe('email_read_full', () => {
 			body: 'full body',
 			hasAttachments: false
 		};
-		mocks.invoke.mockResolvedValue(msg);
+		vi.mocked(invoke).mockResolvedValue(msg);
 
 		const out = await executeTool(
 			'email_read_full',
@@ -256,7 +258,7 @@ describe('email_read_full', () => {
 			ctx
 		);
 
-		expect(mocks.invoke).toHaveBeenCalledWith('email_read_full', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('email_read_full', {
 			account: acct,
 			messageId: 'm1',
 			callId: expect.any(String)
@@ -280,7 +282,7 @@ describe('email_read_full', () => {
 
 	it('turns an invoke rejection into a tool error string instead of throwing', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockRejectedValue(new Error('mailbox gone'));
+		vi.mocked(invoke).mockRejectedValue(new Error('mailbox gone'));
 
 		const out = await executeTool(
 			'email_read_full',
@@ -305,7 +307,7 @@ describe('email_summarize_message', () => {
 
 	it('prepares the message then summarizes it via the sub-agent', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockResolvedValue(prepared);
+		vi.mocked(invoke).mockResolvedValue(prepared);
 		mocks.chatCompletion.mockResolvedValue({ content: '  Alice shared Q2 numbers.  ' });
 
 		const out = await executeTool(
@@ -314,7 +316,7 @@ describe('email_summarize_message', () => {
 			ctx
 		);
 
-		expect(mocks.invoke).toHaveBeenCalledWith('email_prepare_summary', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('email_prepare_summary', {
 			account: account(),
 			messageId: 'm1',
 			callId: expect.any(String)
@@ -341,7 +343,7 @@ describe('email_summarize_message', () => {
 
 	it('returns a tool error string when email_prepare_summary fails', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockRejectedValue(new Error('UID not found'));
+		vi.mocked(invoke).mockRejectedValue(new Error('UID not found'));
 
 		const out = await executeTool(
 			'email_summarize_message',
@@ -357,7 +359,7 @@ describe('email_summarize_message', () => {
 
 	it('short-circuits on an empty body without calling the sub-agent', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockResolvedValue({ ...prepared, body: '   ' });
+		vi.mocked(invoke).mockResolvedValue({ ...prepared, body: '   ' });
 
 		const out = await executeTool(
 			'email_summarize_message',
@@ -372,7 +374,7 @@ describe('email_summarize_message', () => {
 
 	it('falls back to a body preview when the summarizer returns nothing', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockResolvedValue(prepared);
+		vi.mocked(invoke).mockResolvedValue(prepared);
 		mocks.chatCompletion.mockResolvedValue({ content: '   ' });
 
 		const out = await executeTool(
@@ -388,7 +390,7 @@ describe('email_summarize_message', () => {
 
 	it('turns a sub-agent failure into a tool error string instead of throwing', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockResolvedValue(prepared);
+		vi.mocked(invoke).mockResolvedValue(prepared);
 		mocks.chatCompletion.mockRejectedValue(new Error('inference backend down'));
 
 		const out = await executeTool(
@@ -404,7 +406,7 @@ describe('email_summarize_message', () => {
 
 	it('rethrows an abort from the sub-agent so the loop can cancel cleanly', async () => {
 		setEmailAccounts([account()]);
-		mocks.invoke.mockResolvedValue(prepared);
+		vi.mocked(invoke).mockResolvedValue(prepared);
 		mocks.chatCompletion.mockRejectedValue(new DOMException('Aborted', 'AbortError'));
 
 		await expect(

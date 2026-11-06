@@ -178,7 +178,6 @@ const db = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
 	chatCompletion: vi.fn(),
-	invoke: vi.fn(),
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
 	nameSession: vi.fn(),
@@ -195,7 +194,12 @@ const mocks = vi.hoisted(() => ({
 	runSubtaskSpec: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{},
+		(cmd: string, args?: Record<string, unknown>) => db.handle(cmd, args)
+	)
+);
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	WebviewWindow: {
 		getByLabel: async (label: string) => ({
@@ -279,6 +283,8 @@ import {
 	openSession,
 	setActiveSession
 } from '#lib/stores/code.svelte.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls, invokeHandler } from '#lib/testing/invoke.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
 import { STOPPED_STEP_RESULT } from '#lib/code/commandResult.ts';
 import { reportShellWait } from '#lib/code/shellBridge.ts';
@@ -329,7 +335,7 @@ function held() {
 
 /** The arguments of the last `code_notices_take`. */
 function lastTake() {
-	return mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'code_notices_take').at(-1)?.[1];
+	return invokeCalls(vi.mocked(invoke), 'code_notices_take').at(-1);
 }
 
 function storedThread(id: string) {
@@ -339,11 +345,7 @@ function storedThread(id: string) {
 beforeEach(async () => {
 	for (const s of [...getOpenSessions()]) await closeSession(s.id);
 	db.reset();
-	mocks.invoke
-		.mockReset()
-		.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
-			db.handle(cmd, args)
-		);
+	vi.mocked(invoke).mockReset();
 	mocks.runAgentLoop.mockReset().mockImplementation(answers('ok'));
 	mocks.withInferenceSlot
 		.mockReset()
@@ -880,7 +882,7 @@ describe('closing a session', () => {
 		const s = await newSession('/proj');
 		approveSession(codeApprovalKey(s.id));
 		await closeSession(s.id);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_stop_owner', { owner: s.id });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_bg_stop_owner', { owner: s.id });
 		expect(mocks.clearCodeWatches).toHaveBeenCalledWith(s.id);
 		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(false);
 		expect(mocks.watchHandlers.has(s.id)).toBe(false);
@@ -1101,7 +1103,7 @@ describe('one window per session', () => {
 		mocks.takeCodeWatches.mockReturnValueOnce([watch]);
 		expect(await handOffSession(s.id)).toBe(true);
 		expect(getOpenSessions()).toHaveLength(0);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop_owner', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('code_bg_stop_owner', expect.anything());
 		expect(db.owners.has(s.id)).toBe(false);
 		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ draft: null, watches: [watch] });
 
@@ -1194,7 +1196,7 @@ describe('one window per session', () => {
 	it('removes the copies its subtasks kept when the session is deleted', async () => {
 		const s = await newSession('/proj');
 		await deleteSession(s.id);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_subtask_worktrees_discard_session', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_subtask_worktrees_discard_session', {
 			folder: '/proj',
 			sessionId: s.id,
 			wslDistro: null
@@ -1246,8 +1248,8 @@ describe('fork from a message', () => {
 		const s = await twoTurns();
 		const fork = (await forkAndOpen(s.id, 1))!;
 		expect(mocks.takeCodeWatches).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_status', { owner: fork.id });
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_bg_status', { owner: fork.id });
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
 	});
 
 	it('will not fork while a turn runs, or from a tool message', async () => {
@@ -1357,7 +1359,7 @@ describe('sharing a folder', () => {
 		// Shown above the message it came with, and not saved into it.
 		expect(s.fileNotes).toEqual([{ text: expect.stringContaining('src/a.ts'), at: 2 }]);
 		expect(storedThread(s.id)?.messages[2].content).toBe('carry on');
-		expect(mocks.invoke).toHaveBeenCalledWith('code_notices_take', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_notices_take', {
 			folder: '/proj',
 			wslDistro: null,
 			sessionId: s.id,
@@ -1367,7 +1369,7 @@ describe('sharing a folder', () => {
 		await s.send('more');
 		const next = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
 		expect(String(next.messages.at(-1)!.content)).toBe('more');
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith(
 			'code_notices_take',
 			expect.objectContaining({ since: 99 })
 		);
@@ -1383,22 +1385,22 @@ describe('sharing a folder', () => {
 			o.onComplete();
 		});
 		await s.send('edit');
-		const leaseCalls = mocks.invoke.mock.calls.filter((c) => c[0] === 'code_lease_take');
+		const leaseCalls = invokeCalls(vi.mocked(invoke), 'code_lease_take');
 		expect(leaseCalls).toHaveLength(1);
-		expect(leaseCalls[0][1]).toEqual({
+		expect(leaseCalls[0]).toEqual({
 			folder: '/proj',
 			wslDistro: null,
 			sessionId: s.id,
 			title: ''
 		});
-		expect(mocks.invoke).toHaveBeenCalledWith('code_notice_record', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_notice_record', {
 			folder: '/proj',
 			wslDistro: null,
 			sessionId: s.id,
 			title: '',
 			files: ['/proj/src/a.ts', '/proj/b.ts']
 		});
-		expect(mocks.invoke).toHaveBeenCalledWith('code_lease_release', { sessionId: s.id });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_lease_release', { sessionId: s.id });
 	});
 
 	it('refuses a write while another session holds the folder', async () => {
@@ -1414,7 +1416,7 @@ describe('sharing a folder', () => {
 			'Another session (Fix login) is editing this folder right now; wait for it to finish, or work in a worktree.'
 		);
 		// Never held, so nothing to give back at the end of the turn.
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_notice_record', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('code_notice_record', expect.anything());
 	});
 
 	it('deletes a worktree session with its worktree when asked', async () => {
@@ -1422,7 +1424,7 @@ describe('sharing a folder', () => {
 		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
 		const done = await deleteSession(fork.id, { removeWorktree: fork.worktree });
 		expect(done).toEqual({ worktree: { kind: 'removed' } });
-		expect(mocks.invoke).toHaveBeenCalledWith('code_git_worktree_remove', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_git_worktree_remove', {
 			path: '/wt/s2',
 			wslDistro: null
 		});
@@ -1432,10 +1434,12 @@ describe('sharing a folder', () => {
 	it('keeps the worktree when the removal fails', async () => {
 		const s = await answered();
 		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
-		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'code_git_worktree_remove') throw 'git exploded';
-			return db.handle(cmd, args);
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeHandler((cmd, args) => {
+				if (cmd === 'code_git_worktree_remove') throw 'git exploded';
+				return db.handle(cmd, args);
+			})
+		);
 		const done = await deleteSession(fork.id, { removeWorktree: '/wt/s2' });
 		expect(done).toEqual({ worktree: { kind: 'kept', reason: 'git exploded' } });
 	});
@@ -1448,7 +1452,7 @@ describe("the Shell's Open in Code", () => {
 		const s = getActiveSession();
 		expect(s?.root).toBe('/home/tim/app');
 		expect(s?.messages).toEqual([]);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_session_claim', { id: s?.id });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_session_claim', { id: s?.id });
 		expect(getActiveTab()).toBe('code');
 	});
 });
@@ -1475,7 +1479,7 @@ describe('a session whose folder is gone', () => {
 		expect(mocks.runAgentLoop).not.toHaveBeenCalled();
 		expect(s.messages).toEqual([]);
 		expect(s.takeReturnedSteering()).toEqual(['hello']);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_session_save', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('code_session_save', expect.anything());
 	});
 
 	it('is marked once a turn that lost its folder ends, not during it', async () => {
@@ -1509,7 +1513,7 @@ describe('a session whose folder is gone', () => {
 		const s = await newSession('/home/tim/proj', { wslDistro: 'Ubuntu' });
 		expect(s.wslDistro).toBe('Ubuntu');
 		await s.checkFolder();
-		expect(mocks.invoke).toHaveBeenCalledWith('code_folder_exists', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_folder_exists', {
 			path: '/home/tim/proj',
 			wslDistro: 'Ubuntu'
 		});
@@ -1524,7 +1528,7 @@ describe('a session whose folder is gone', () => {
 		await s.checkFolder();
 		expect(s.folderMissing).toBe(true);
 		await s.moveTo('/found');
-		expect(mocks.invoke).toHaveBeenCalledWith('code_session_set_root', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_session_set_root', {
 			id: s.id,
 			root: '/found',
 			wslDistro: null
@@ -1572,7 +1576,7 @@ describe('stopping a queued session', () => {
 		mocks.runAgentLoop.mockImplementationOnce(answers('ok'));
 		await s.send('hello');
 		const saves = () =>
-			mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'code_session_save').length;
+			vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'code_session_save').length;
 		const savedBefore = saves();
 		db.folders.notices = [{ session_id: 'o', title: 'Other', files: ['/proj/a.ts'], at: 5 }];
 		db.folders.now = 150;

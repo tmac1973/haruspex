@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'llama-toolchest',
-	invoke: vi.fn(),
 	generate: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		audio_read_bytes: () => new Uint8Array([9, 9]).buffer
+	})
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		overDefaults: true,
@@ -25,7 +28,16 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { parseMusicArgs } from './music-gen';
 import { MusicBackendError } from '#lib/music/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs } from '#lib/testing/invoke.ts';
+
+/** The args of every byte write, whichever flavour of the command, in order. */
+function byteWrites() {
+	const args = allInvokeArgs<{ dryRun: boolean; bytes: number[] }>(vi.mocked(invoke));
+	return vi
+		.mocked(invoke)
+		.mock.calls.flatMap(([c], i) => (c.startsWith('fs_write_bytes') ? [args[i]] : []));
+}
 
 const HASH = 'e'.repeat(64);
 const URL = `haruspex-audio://localhost/${HASH}`;
@@ -44,9 +56,7 @@ const paramsOf = (o: Parameters<typeof getToolSchemas>[0]) =>
 
 beforeEach(() => {
 	state.backend = 'llama-toolchest';
-	state.invoke
-		.mockReset()
-		.mockImplementation(invokeRouter({ audio_read_bytes: () => new Uint8Array([9, 9]).buffer }));
+	vi.mocked(invoke).mockReset();
 	state.generate.mockReset().mockResolvedValue({
 		hash: HASH,
 		url: URL,
@@ -163,13 +173,13 @@ describe('generate_music', () => {
 		});
 		const out = await executeTool('generate_music', { caption: 'x', path: 'rain.mp3' }, withFolder);
 		// Chat checks for an existing file (and would ask) instead of a dry run.
-		expect(state.invoke).toHaveBeenCalledWith('fs_path_exists', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_path_exists', {
 			workdir: '/home/me/music',
 			relPath: 'rain.mp3'
 		});
-		const writes = state.invoke.mock.calls.filter(([c]) => String(c).startsWith('fs_write_bytes'));
+		const writes = byteWrites();
 		expect(writes).toHaveLength(1);
-		expect(writes[0][1]).toMatchObject({
+		expect(writes[0]).toMatchObject({
 			workdir: '/home/me/music',
 			relPath: 'rain.mp3',
 			bytes: [9, 9],
@@ -186,9 +196,9 @@ describe('generate_music', () => {
 			workingDir: '/proj'
 		});
 		const out = await executeTool('generate_music', { caption: 'x', path: 'assets/bgm.mp3' }, code);
-		const writes = state.invoke.mock.calls.filter(([c]) => String(c).startsWith('fs_write_bytes'));
-		expect(writes.map(([, a]) => a.dryRun)).toEqual([true, false]);
-		expect(writes[1][1].bytes).toEqual([9, 9]);
+		const writes = byteWrites();
+		expect(writes.map((a) => a.dryRun)).toEqual([true, false]);
+		expect(writes[1].bytes).toEqual([9, 9]);
 		expect(state.generate.mock.calls[0][1]).toMatchObject({ codeSessionId: 'cs-1' });
 		expect(out.result).toContain('Wrote');
 	});

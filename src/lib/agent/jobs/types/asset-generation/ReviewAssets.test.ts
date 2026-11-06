@@ -19,33 +19,40 @@ const spec = {
 };
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	enqueue: vi.fn(async () => 7),
 	probe: vi.fn(async () => ({ ok: true, detail: 'Connected.' }))
 }));
 vi.mock('#lib/image/index.ts', () => ({ resolveImageBackend: () => ({ probe: mocks.probe }) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({ enqueue: mocks.enqueue }));
 
 import ReviewAssets from './ReviewAssets.svelte';
+import { invoke } from '@tauri-apps/api/core';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+
+/** The first file write, read as what fs_write_text takes. */
+const firstWrite = () => invokeCalls<{ content: string }>(vi.mocked(invoke), 'fs_write_text')[0];
 
 beforeEach(() => {
 	mocks.enqueue.mockClear();
 	mocks.probe.mockReset().mockResolvedValue({ ok: true, detail: 'Connected.' });
-	mocks.invoke.mockReset().mockImplementation(
-		invokeRouter(
-			{
-				fs_read_text_full: () => JSON.stringify(spec),
-				fs_read_bytes: (args) => {
-					if (String(args?.relPath).includes('grass')) throw new Error('Not a file');
-					return [137, 80, 78, 71];
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter(
+				{
+					fs_read_text_full: () => JSON.stringify(spec),
+					fs_read_bytes: (args) => {
+						if (String(args?.relPath).includes('grass')) throw new Error('Not a file');
+						return [137, 80, 78, 71];
+					},
+					fs_path_exists: true
 				},
-				fs_path_exists: true
-			},
-			undefined
-		)
-	);
+				undefined
+			)
+		);
 	URL.createObjectURL = vi.fn(() => 'blob:x');
 	URL.revokeObjectURL = vi.fn();
 });
@@ -72,7 +79,7 @@ describe('ReviewAssets', () => {
 		screen.getByText('not made');
 		// Loaded once, not in a loop.
 		await new Promise((r) => setTimeout(r, 50));
-		expect(invokeCalls(mocks.invoke, 'fs_read_text_full')).toHaveLength(1);
+		expect(invokeCalls(vi.mocked(invoke), 'fs_read_text_full')).toHaveLength(1);
 	});
 
 	it('moves the marked file aside, keeps the note, and runs the job', async () => {
@@ -83,12 +90,12 @@ describe('ReviewAssets', () => {
 		await fireEvent.input(note, { target: { value: 'no coin' } });
 		await fireEvent.click(screen.getByRole('button', { name: /Make 1 again/ }));
 		await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledWith(18, 'manual'));
-		const written = mocks.invoke.mock.calls.find(([c]) => c === 'fs_write_text');
-		expect(JSON.parse(String(written?.[1]?.content)).entries[0].prompt).toBe(
+		const written = firstWrite();
+		expect(JSON.parse(String(written?.content)).entries[0].prompt).toBe(
 			'a hooded adventurer, no coin'
 		);
-		const moved = mocks.invoke.mock.calls.find(([c]) => c === 'fs_move_in_workdir');
-		expect(moved?.[1]).toMatchObject({
+		const [moved] = invokeCalls(vi.mocked(invoke), 'fs_move_in_workdir');
+		expect(moved).toMatchObject({
 			fromRel: 'assets/generated/sprite/player.png',
 			toRel: expect.stringMatching(
 				/^assets\/generated\/sprite\/\.history\/player-\d{8}-\d{6}\.png$/
@@ -110,7 +117,7 @@ describe('ReviewAssets', () => {
 		const make = screen.getByRole('button', { name: /Make 1 again/ }) as HTMLButtonElement;
 		expect(make.disabled).toBe(true);
 		await fireEvent.click(make);
-		expect(mocks.invoke.mock.calls.some(([c]) => c === 'fs_move_in_workdir')).toBe(false);
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'fs_move_in_workdir')).toBe(false);
 		expect(mocks.enqueue).not.toHaveBeenCalled();
 	});
 
@@ -129,7 +136,7 @@ describe('ReviewAssets', () => {
 				}
 			]
 		};
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					fs_read_text_full: () => JSON.stringify(withSet),
@@ -145,11 +152,11 @@ describe('ReviewAssets', () => {
 		screen.getByLabelText('Note for shore');
 		await fireEvent.click(screen.getByRole('button', { name: /Make 1 again/ }));
 		await waitFor(() => expect(mocks.enqueue).toHaveBeenCalled());
-		const written = mocks.invoke.mock.calls.find(([c]) => c === 'fs_write_text');
-		expect(JSON.parse(String(written?.[1]?.content)).transitions[0]).not.toHaveProperty('edge');
-		const moved = mocks.invoke.mock.calls
-			.filter(([c]) => c === 'fs_move_in_workdir')
-			.map(([, a]) => a?.fromRel);
+		const written = firstWrite();
+		expect(JSON.parse(String(written?.content)).transitions[0]).not.toHaveProperty('edge');
+		const moved = invokeCalls<{ fromRel: string }>(vi.mocked(invoke), 'fs_move_in_workdir').map(
+			(a) => a?.fromRel
+		);
 		expect(moved).toEqual([
 			'assets/generated/transition/shore.png',
 			'assets/generated/transition/shore.json'

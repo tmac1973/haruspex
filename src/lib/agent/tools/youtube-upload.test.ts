@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn(), ask: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+const state = vi.hoisted(() => ({ ask: vi.fn() }));
+// The routes read `plan` and `task` when called, after the module has run.
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		youtube_account: () => ({ email: 'tim@example.com' }),
+		youtube_upload_plan: () => plan,
+		youtube_upload_start: () => task
+	})
+);
 vi.mock('#lib/stores/youtubeUploadApproval.svelte.ts', () => ({ askYoutubeUpload: state.ask }));
 vi.mock('#lib/video/youtube.ts', () => ({ YOUTUBE_UPLOAD: true }));
 
@@ -16,7 +23,8 @@ import { executeTool } from '#lib/agent/tools/index.ts';
 import { changes, checkProposal, withChapters } from './youtube-upload';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 const found = { path: '/usr/bin/x', version: 'x', source: 'path' as const };
 const plan = {
@@ -41,13 +49,7 @@ const task = {
 
 beforeEach(() => {
 	state.ask.mockReset();
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			youtube_account: () => ({ email: 'tim@example.com' }),
-			youtube_upload_plan: () => plan,
-			youtube_upload_start: () => task
-		})
-	);
+	vi.mocked(invoke).mockReset();
 	_setVideoBinariesForTests({ ffmpeg: found, ffprobe: found, melt: found, hints: [] });
 });
 
@@ -114,8 +116,8 @@ describe('youtube_upload', () => {
 			description: 'About.\n\n0:00 Intro\n1:05 Building\n9:30 Outro',
 			thumbnailDataUrl: plan.thumbnailDataUrl
 		});
-		const start = state.invoke.mock.calls.find(([c]) => c === 'youtube_upload_start');
-		expect(start?.[1].request).toMatchObject({
+		const [start] = invokeCalls<{ request: unknown }>(vi.mocked(invoke), 'youtube_upload_start');
+		expect(start?.request).toMatchObject({
 			render: plan.render,
 			thumbnail: plan.thumbnail,
 			owner: 'chat:c1',
@@ -129,7 +131,7 @@ describe('youtube_upload', () => {
 		state.ask.mockResolvedValue({ kind: 'cancelled', reason: 'The user cancelled the upload.' });
 		const out = await executeTool('youtube_upload', { title: 'T', description: 'D' }, chat());
 		expect(out.result).toBe('The user cancelled the upload.');
-		expect(state.invoke.mock.calls.some(([c]) => c === 'youtube_upload_start')).toBe(false);
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'youtube_upload_start')).toBe(false);
 	});
 
 	it('refuses when unattended or signed out', async () => {
@@ -137,7 +139,7 @@ describe('youtube_upload', () => {
 		expect(
 			(await executeTool('youtube_upload', { title: 'T', description: 'D' }, job)).result
 		).toContain('conversation');
-		state.invoke.mockImplementation(invokeRouter({ youtube_account: () => null }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ youtube_account: () => null }));
 		const out = await executeTool('youtube_upload', { title: 'T', description: 'D' }, chat());
 		expect(out.result).toContain('Sign in to YouTube in Settings → Video editing');
 		expect(state.ask).not.toHaveBeenCalled();

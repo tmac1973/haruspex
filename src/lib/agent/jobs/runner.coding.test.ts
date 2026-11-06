@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_PHASE_REPAIR_CYCLES } from '#lib/agent/jobs/types/autonomous-coding/loopState.ts';
+import { invokeCalls } from '#lib/testing/invoke.ts';
 
 const {
 	mocks,
@@ -143,10 +144,9 @@ describe('jobs runner — autonomous coding', () => {
 		]);
 
 		// The runner owns the bookkeeping files.
-		const writes = mocks.invoke.mock.calls
-			.filter(([cmd]) => cmd === 'fs_write_text')
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			.map(([, a]: any[]) => a.relPath);
+		const writes = invokeCalls<{ relPath: string }>(mocks.invoke, 'fs_write_text').map(
+			(a) => a.relPath
+		);
 		expect(writes).toContain('plan/x/TODO-coding.md');
 		expect(writes).toContain('plan/x/PROGRESS-coding.md');
 	});

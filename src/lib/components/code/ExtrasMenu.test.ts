@@ -6,11 +6,12 @@ const settings = vi.hoisted(() => ({
 	specialists: [] as SpecialistEntry[],
 	codeHelpers: {} as Record<string, boolean>
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	getLiveSettings: () => settings
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings,
+		getLiveSettings: () => settings
+	})
+);
 const toasts = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 

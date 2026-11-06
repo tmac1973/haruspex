@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const settings = vi.hoisted(() => ({ imageLocalModelId: 'ming' }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -10,7 +11,14 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 );
 
 import { engineSetupMessage, localBackend } from './backend';
-import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs, invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+
+/** What `image_engine_request` carries: a path on sd-server and a JSON body. */
+interface EngineRequest {
+	path: string;
+	body: string;
+}
 
 describe('engineSetupMessage', () => {
 	it('says what is missing and what to do, not just a fragment', () => {
@@ -41,17 +49,17 @@ describe('generate', () => {
 			JSON.stringify({ images: ['AQID'], info: JSON.stringify({ seed: 5 }), args })
 	};
 	beforeEach(() => {
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(baseRoutes, undefined));
+		vi.mocked(invoke).mockReset().mockImplementation(invokeRouter(baseRoutes, undefined));
 	});
 	const sent = () => {
-		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
-		return { path: call[1].path as string, body: JSON.parse(call[1].body as string) };
+		const call = invokeArgs<EngineRequest>(vi.mocked(invoke), 'image_engine_request');
+		return { path: call.path, body: JSON.parse(call.body) };
 	};
 
 	it('starts the engine on the catalogue id, not a file path', async () => {
 		settings.imageLocalModelId = 'ming';
 		await localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 });
-		expect(tauri.invoke).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
 	});
 
 	it('makes Ming transparent from a clear canvas AND its RGBA phrase', async () => {
@@ -63,7 +71,10 @@ describe('generate', () => {
 			seed: 1,
 			transparent: true
 		});
-		expect(tauri.invoke).toHaveBeenCalledWith('image_clear_canvas', { width: 1024, height: 1024 });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_clear_canvas', {
+			width: 1024,
+			height: 1024
+		});
 		const { path, body } = sent();
 		expect(path).toBe('/sdapi/v1/img2img');
 		expect(body.init_images).toEqual(['AQID']);
@@ -86,7 +97,7 @@ describe('generate', () => {
 		expect(body.init_images).toBeUndefined();
 		expect(body.prompt).toMatch(/^This is an RGBA format image with transparency\. a coin/);
 		expect(body.steps).toBe(8);
-		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
 	});
 
 	it('tiles by rolling, repainting the seams through the mask, and blending back', async () => {
@@ -98,9 +109,9 @@ describe('generate', () => {
 			seed: 1,
 			seamless: true
 		});
-		const calls = invokeCalls(tauri.invoke, 'image_engine_request');
-		expect(calls.map((a) => a!.path)).toEqual(['/sdapi/v1/txt2img', '/sdapi/v1/img2img']);
-		const repaint = JSON.parse(calls[1]!.body as string);
+		const calls = invokeCalls<EngineRequest>(vi.mocked(invoke), 'image_engine_request');
+		expect(calls.map((a) => a.path)).toEqual(['/sdapi/v1/txt2img', '/sdapi/v1/img2img']);
+		const repaint = JSON.parse(calls[1].body);
 		expect(repaint).toMatchObject({
 			init_images: ['BAUG'],
 			mask: 'BwgJ',
@@ -109,8 +120,8 @@ describe('generate', () => {
 		});
 		// A seed of its own: the base's would redraw the base's layout.
 		expect(repaint.seed).toBe(6);
-		expect(tauri.invoke).toHaveBeenCalledWith('image_seam_inputs', { bytes: [1, 2, 3] });
-		expect(tauri.invoke).toHaveBeenCalledWith('image_seam_finish', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_seam_inputs', { bytes: [1, 2, 3] });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_seam_finish', {
 			rolled: [4, 5, 6],
 			repainted: [1, 2, 3]
 		});
@@ -120,7 +131,7 @@ describe('generate', () => {
 
 	it('returns the texture it drew, untiled and saying why, when the seam pass fails', async () => {
 		settings.imageLocalModelId = 'qwen21';
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					...baseRoutes,
@@ -155,7 +166,7 @@ describe('generate', () => {
 			seamless: true,
 			transparent: true
 		});
-		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
 		expect(sent().body.prompt).toBe('grass');
 	});
 
@@ -168,7 +179,7 @@ describe('generate', () => {
 					'{"error":"generate_image returned no results"}'
 			);
 			let fails = 2;
-			tauri.invoke.mockImplementation(
+			vi.mocked(invoke).mockImplementation(
 				invokeRouter(
 					{
 						...baseRoutes,
@@ -189,7 +200,7 @@ describe('generate', () => {
 			const settled = expect(failed).rejects.toThrow(/generate_image returned no results/);
 			await vi.runAllTimersAsync();
 			await settled;
-			expect(invokeCalls(tauri.invoke, 'image_engine_request').length).toBe(6);
+			expect(invokeCalls(vi.mocked(invoke), 'image_engine_request').length).toBe(6);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -197,7 +208,7 @@ describe('generate', () => {
 
 	it('does not retry other engine failures', async () => {
 		settings.imageLocalModelId = 'ming';
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					...baseRoutes,
@@ -211,7 +222,7 @@ describe('generate', () => {
 		await expect(
 			localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 })
 		).rejects.toThrow(/connection refused/);
-		expect(invokeCalls(tauri.invoke, 'image_engine_request').length).toBe(1);
+		expect(invokeCalls(vi.mocked(invoke), 'image_engine_request').length).toBe(1);
 	});
 
 	it('refuses an id it cannot run, before starting anything', async () => {
@@ -219,7 +230,7 @@ describe('generate', () => {
 		await expect(
 			localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 })
 		).rejects.toMatchObject({ kind: 'unconfigured' });
-		expect(tauri.invoke).not.toHaveBeenCalledWith('image_engine_start', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('image_engine_start', expect.anything());
 	});
 });
 
@@ -234,8 +245,8 @@ describe('edits', () => {
 		image_engine_request: () => JSON.stringify({ images: ['AQID'], info: '{}' })
 	});
 	const sent = () => {
-		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
-		return { path: call[1].path as string, body: JSON.parse(call[1].body as string) };
+		const call = invokeArgs<EngineRequest>(vi.mocked(invoke), 'image_engine_request');
+		return { path: call.path, body: JSON.parse(call.body) };
 	};
 	const edit = {
 		prompt: 'make it night',
@@ -253,9 +264,13 @@ describe('edits', () => {
 
 	it('says Qwen can edit once its vision weights are on disk, and Ming never', async () => {
 		settings.imageLocalModelId = 'qwen21';
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(true), undefined));
 		expect(await localBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 3 });
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(false), undefined));
 		expect(await localBackend.capabilities()).toMatchObject({ edit: false, maxEditImages: 0 });
 		settings.imageLocalModelId = 'ming';
 		expect(await localBackend.capabilities()).toMatchObject({ edit: false });
@@ -263,25 +278,29 @@ describe('edits', () => {
 
 	it('sends the pictures as extra_images on txt2img, with no clear start or RGBA phrase', async () => {
 		settings.imageLocalModelId = 'qwen21';
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(true), undefined));
 		await localBackend.generate(edit);
 		const { path, body } = sent();
 		expect(path).toBe('/sdapi/v1/txt2img');
 		expect(body.extra_images).toEqual(['AQID', 'BAUG']);
 		expect(body).toMatchObject({ prompt: 'make it night', width: 1024, height: 768, steps: 8 });
 		expect(body.init_images).toBeUndefined();
-		expect(tauri.invoke).toHaveBeenCalledWith('image_read_bytes', { hash: 'a'.repeat(64) });
-		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_read_bytes', { hash: 'a'.repeat(64) });
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
 	});
 
 	it('refuses an edit without the vision weights, saying where to get them', async () => {
 		settings.imageLocalModelId = 'qwen21';
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(false), undefined));
 		await expect(localBackend.generate(edit)).rejects.toMatchObject({
 			kind: 'unconfigured',
 			message: expect.stringContaining('Add editing')
 		});
-		expect(tauri.invoke.mock.calls.some(([c]) => c === 'image_engine_request')).toBe(false);
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'image_engine_request')).toBe(false);
 	});
 });
 
@@ -296,25 +315,33 @@ describe('upscale', () => {
 
 	it('says it can upscale once the upscaler is downloaded', async () => {
 		settings.imageLocalModelId = 'ming';
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(true), undefined));
 		expect(await localBackend.capabilities()).toMatchObject({ upscale: true });
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(false), undefined));
 		expect(await localBackend.capabilities()).toMatchObject({ upscale: false });
 	});
 
 	it('starts the engine and sends the cached picture to /sdcpp/v1/upscale', async () => {
 		settings.imageLocalModelId = 'ming';
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(true), undefined));
 		const out = await localBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) });
 		expect(Array.from(out)).toEqual([4, 5, 6]);
-		expect(tauri.invoke).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
-		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
-		expect(call[1].path).toBe('/sdcpp/v1/upscale');
-		expect(JSON.parse(call[1].body as string)).toEqual({ image: 'AQID' });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
+		const call = invokeArgs<EngineRequest>(vi.mocked(invoke), 'image_engine_request');
+		expect(call.path).toBe('/sdcpp/v1/upscale');
+		expect(JSON.parse(call.body)).toEqual({ image: 'AQID' });
 	});
 
 	it('refuses without the upscaler, saying where to get it', async () => {
-		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(invokeRouter(routes(false), undefined));
 		await expect(localBackend.upscale!({ name: 'a.png', bytes: [1] })).rejects.toMatchObject({
 			kind: 'unconfigured',
 			message: expect.stringContaining('Settings → Image → Bundled engine')

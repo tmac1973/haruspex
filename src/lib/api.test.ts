@@ -21,12 +21,13 @@ const { getSettingsMock, getApiKeyValueMock } = vi.hoisted(() => ({
 	})),
 	getApiKeyValueMock: vi.fn<() => string | undefined>(() => undefined)
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: getSettingsMock,
-	getApiKeyValue: getApiKeyValueMock,
-	getActiveLocalModelFilename: () => ''
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		getSettings: getSettingsMock,
+		getApiKeyValue: getApiKeyValueMock,
+		getActiveLocalModelFilename: () => ''
+	})
+);
 
 // restoreAllMocks leaves vi.fn() mocks alone: put back the local backend and
 // the missing key the OpenRouter cases swap in.

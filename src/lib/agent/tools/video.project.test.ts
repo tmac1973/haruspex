@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		overDefaults: true,
@@ -16,6 +16,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	})
 );
 
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs } from '#lib/testing/invoke.ts';
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { endClip, parseCut, parseOp } from '#lib/video/args.ts';
@@ -70,7 +72,7 @@ const summary: ProjectSummary = {
 };
 
 beforeEach(() => {
-	state.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	_setVideoBinariesForTests({ ffmpeg: found, ffprobe: found, melt: found, hints: [] });
 });
 
@@ -135,7 +137,7 @@ describe('the summary report', () => {
 
 describe('video_cut', () => {
 	it('sends the cut with Settings → Video editing and warns about Kdenlive', async () => {
-		state.invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			summary,
 			notes: ['Clips on other tracks did not move.'],
 			created: true
@@ -145,7 +147,7 @@ describe('video_cut', () => {
 			{ episode: 'ep010', intro: 'settings', items: [{ path: 'ep010/raw/obs.mp4', in_secs: 10 }] },
 			chat
 		);
-		expect(state.invoke).toHaveBeenCalledWith('video_project_cut', {
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('video_project_cut', {
 			workingDir: '/videos',
 			episode: 'ep010',
 			spec: {
@@ -172,7 +174,7 @@ describe('video_cut', () => {
 	});
 
 	it('returns a refusal from Rust as an error', async () => {
-		state.invoke.mockRejectedValue('Clips 2 and 3 are joined by a crossfade made in Kdenlive');
+		vi.mocked(invoke).mockRejectedValue('Clips 2 and 3 are joined by a crossfade made in Kdenlive');
 		const out = await executeTool('video_edit', { op: 'move', index: 3, to: 1 }, chat);
 		expect(out.result).toContain('crossfade made in Kdenlive');
 	});
@@ -180,13 +182,13 @@ describe('video_cut', () => {
 	it('bad arguments never reach Rust', async () => {
 		const out = await executeTool('video_cut', { items: [{}] }, chat);
 		expect(out.result).toContain('exactly one of index');
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 });
 
 describe('video_render', () => {
 	it('starts in the background, names its owner and attaches the card', async () => {
-		state.invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			id: 'render-9',
 			kind: 'video_render',
 			label: 'Rendering ep010',
@@ -199,9 +201,10 @@ describe('video_render', () => {
 		});
 		const ctx = makeToolContext({ interactive: true, workingDir: '/videos', conversationId: 'c9' });
 		const out = await executeTool('video_render', { episode: 'ep010' }, ctx);
-		const call = state.invoke.mock.calls[0];
-		expect(call[0]).toBe('video_render_start');
-		expect(call[1].request).toMatchObject({
+		const [cmd] = vi.mocked(invoke).mock.calls[0];
+		const [args] = allInvokeArgs<{ request: unknown }>(vi.mocked(invoke));
+		expect(cmd).toBe('video_render_start');
+		expect(args.request).toMatchObject({
 			episode: 'ep010',
 			owner: 'chat:c9',
 			encoder: 'libx264'

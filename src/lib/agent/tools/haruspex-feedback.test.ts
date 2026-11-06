@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import '#lib/agent/tools/haruspex-feedback.ts';
 import { MAX_REPORTS_PER_TURN } from '#lib/agent/tools/haruspex-feedback.ts';
@@ -10,6 +10,8 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
 import { REMOTE_TOOLS } from '#lib/remote/driver.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs } from '#lib/testing/invoke.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { FeedbackEntry } from '#lib/harnessFeedback/report.ts';
 
@@ -47,11 +49,11 @@ const transcript: ChatMessage[] = [
 	}
 ];
 
-const written = () => mocks.invoke.mock.calls.at(-1)?.[1].entry as FeedbackEntry;
+const written = () => allInvokeArgs<{ entry: FeedbackEntry }>(vi.mocked(invoke)).at(-1)!.entry;
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
-	mocks.invoke.mockResolvedValue('/data/agent_feedback/2026-10.jsonl');
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue('/data/agent_feedback/2026-10.jsonl');
 	updateSettings({ agentFeedbackEnabled: false });
 });
 
@@ -89,7 +91,7 @@ describe('a report', () => {
 	it('is refused while the setting is off, whatever the model guessed', async () => {
 		const out = await executeTool(NAME, report, makeToolContext());
 		expect(JSON.parse(out.result).error).toContain('Settings → Feedback');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 
 	it('is written with the calls that led to it', async () => {
@@ -100,7 +102,7 @@ describe('a report', () => {
 			makeToolContext({ codeMode: true, codeSessionId: 's1', transcript: () => transcript })
 		);
 		expect(out.result).toContain('Recorded');
-		expect(mocks.invoke).toHaveBeenCalledWith('agent_feedback_append', expect.anything());
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('agent_feedback_append', expect.anything());
 		const entry = written();
 		expect(entry).toMatchObject({
 			origin: 'tool',
@@ -141,12 +143,12 @@ describe('a report', () => {
 		}
 		const over = await executeTool(NAME, report, turn);
 		expect(JSON.parse(over.result).error).toContain('Enough reports');
-		expect(mocks.invoke).toHaveBeenCalledTimes(MAX_REPORTS_PER_TURN);
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(MAX_REPORTS_PER_TURN);
 	});
 
 	it('lets the model carry on when it cannot be saved', async () => {
 		updateSettings({ agentFeedbackEnabled: true });
-		mocks.invoke.mockRejectedValue(new Error('disk full'));
+		vi.mocked(invoke).mockRejectedValue(new Error('disk full'));
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const out = await executeTool(NAME, report, makeToolContext());
 		expect(out.result).toContain('Carry on');

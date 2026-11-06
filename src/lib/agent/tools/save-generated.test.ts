@@ -1,13 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	ask: vi.fn(),
 	existing: new Set<string>()
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () => {
+	const { mockTauriCore } = await import('#lib/testing/invoke.ts');
+	return mockTauriCore({}, (cmd: string, args: Record<string, unknown>) => {
+		if (cmd === 'audio_read_bytes' || cmd === 'image_read_bytes') {
+			if (args.hash === 'f'.repeat(64)) throw 'not found';
+			return new Uint8Array(cmd === 'image_read_bytes' ? [137, 80] : [1, 2, 3]).buffer;
+		}
+		if (cmd === 'fs_save_cached_image' && args.hash === 'f'.repeat(64)) {
+			throw 'That picture is no longer cached; make it again.';
+		}
+		if (cmd === 'fs_path_exists') return state.existing.has(String(args.relPath));
+		if (cmd === 'fs_find_available_path') return 'rain (1).mp3';
+		return null;
+	});
+});
 vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({ askFileConflict: state.ask }));
 
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls } from '#lib/testing/invoke.ts';
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
@@ -15,28 +30,13 @@ const SONG = `haruspex-audio://localhost/${'a'.repeat(64)}`;
 const PICTURE = `haruspex-img://localhost/${'b'.repeat(64)}`;
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
-const writes = () =>
-	state.invoke.mock.calls.filter(([c]) => c === 'fs_write_bytes').map(([, a]) => a);
-const copies = () =>
-	state.invoke.mock.calls.filter(([c]) => c === 'fs_save_cached_image').map(([, a]) => a);
+const writes = () => invokeCalls(vi.mocked(invoke), 'fs_write_bytes');
+const copies = () => invokeCalls(vi.mocked(invoke), 'fs_save_cached_image');
 
 beforeEach(() => {
 	state.existing = new Set();
 	state.ask.mockReset();
-	state.invoke
-		.mockReset()
-		.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-			if (cmd === 'audio_read_bytes' || cmd === 'image_read_bytes') {
-				if (args.hash === 'f'.repeat(64)) throw 'not found';
-				return new Uint8Array(cmd === 'image_read_bytes' ? [137, 80] : [1, 2, 3]).buffer;
-			}
-			if (cmd === 'fs_save_cached_image' && args.hash === 'f'.repeat(64)) {
-				throw 'That picture is no longer cached; make it again.';
-			}
-			if (cmd === 'fs_path_exists') return state.existing.has(String(args.relPath));
-			if (cmd === 'fs_find_available_path') return 'rain (1).mp3';
-			return null;
-		});
+	vi.mocked(invoke).mockReset();
 });
 
 describe('save_generated is offered', () => {

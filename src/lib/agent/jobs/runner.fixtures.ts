@@ -20,7 +20,8 @@
 import { afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
-import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
+import { invokeRouter, mockTauriCore, type InvokeRoute } from '#lib/testing/invoke.ts';
+import { mockSettingsModule } from '#lib/testing/settings.ts';
 
 /** The slot the stand-in `withInferenceSlot` hands each turn. */
 export const fakeSlot = { held: true, release: () => {}, reacquire: async () => {} };
@@ -39,6 +40,13 @@ async function passThroughSlot<T>(
 	return fn(fakeSlot);
 }
 
+/**
+ * The stand-in for `@tauri-apps/api/core`. One instance, made here and
+ * returned by every run of the `vi.mock` factory, so the `invoke` a test
+ * drives is the one a fresh runner gets after `vi.resetModules()`.
+ */
+const tauriCore = mockTauriCore();
+
 export const mocks = {
 	runEphemeralTurn: vi.fn(),
 	getJob: vi.fn(),
@@ -53,7 +61,7 @@ export const mocks = {
 	setRunResult: vi.fn(),
 	withInferenceSlot: vi.fn(passThroughSlot),
 	askUserQuestion: vi.fn(),
-	invoke: vi.fn()
+	invoke: tauriCore.invoke
 };
 
 /**
@@ -148,19 +156,15 @@ async function imageModule() {
 	return { resolveImageBackend: () => backend, routedImageBackend: () => backend };
 }
 
-async function settingsModule(importOriginal: () => Promise<unknown>) {
-	const actual = (await importOriginal()) as Record<string, unknown> & {
-		getLiveSettings: () => Record<string, unknown>;
-	};
-	return {
-		...actual,
+function settingsModule(importOriginal: <T>() => Promise<T>) {
+	return mockSettingsModule(importOriginal, (actual) => ({
 		// Lean mode pauses every job type but research (`types/lean.ts`).
 		getLiveSettings: () => ({
 			...actual.getLiveSettings(),
 			leanMode: settingsState.leanMode,
 			jobsOneAtATime: settingsState.jobsOneAtATime
 		}),
-		getSettings: () => ({
+		settings: () => ({
 			contextSize: 8192,
 			imageBackendKind: settingsState.imageBackendKind,
 			imageComfyCheckpoint: settingsState.imageComfyCheckpoint,
@@ -182,12 +186,12 @@ async function settingsModule(importOriginal: () => Promise<unknown>) {
 		// thing that identifies what answered.
 		getActiveLocalModelFilename: () => 'Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf',
 		getApiKeyValue: () => undefined
-	};
+	}));
 }
 
 /** The factory behind each `vi.mock` line of a runner test file. */
 export const mockModules = {
-	tauriCore: () => ({ invoke: mocks.invoke }),
+	tauriCore: () => tauriCore,
 	runEphemeralTurn: () => ({ runEphemeralTurn: mocks.runEphemeralTurn }),
 	userQuestion: () => ({ askUserQuestion: mocks.askUserQuestion }),
 	jobs: () => ({ getJob: mocks.getJob, createJob: mocks.createJob }),

@@ -42,26 +42,30 @@ vi.mock('#lib/agent/tools/index.ts', () => ({
 	coerceCallArguments: toolsMock.coerceCallArguments
 }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getChatTemplateKwargs: vi.fn(() => ({ enable_thinking: true })),
-	getSamplingParams: vi.fn(() => ({
-		temperature: 0.6,
-		top_p: 0.95,
-		top_k: 20,
-		min_p: 0.0,
-		presence_penalty: 1.0
-	})),
-	getOpenRouterReasoningParam: vi.fn(() => null),
-	getSettings: vi.fn(() => ({ contextSize: 32768, inferenceBackend: { mode: 'local' } })),
-	// Read by the real resolveBackendDescriptor when buildLoopContext resolves
-	// the per-turn descriptor.
-	getActiveLocalModelFilename: vi.fn(() => ''),
-	getApiKeyValue: vi.fn(() => undefined),
-	hasEnabledEmailAccount: vi.fn(() => false),
-	hasEnabledCalendarAccount: vi.fn(() => false),
-	hasEnabledContactsAccount: vi.fn(() => false)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		getChatTemplateKwargs: vi.fn(() => ({ enable_thinking: true })),
+		getSamplingParams: vi.fn(() => ({
+			temperature: 0.6,
+			top_p: 0.95,
+			top_k: 20,
+			min_p: 0.0,
+			presence_penalty: 1.0
+		})),
+		getOpenRouterReasoningParam: vi.fn(() => null),
+		getSettings: vi.fn(() => ({
+			contextSize: 32768,
+			inferenceBackend: { mode: 'local' as const }
+		})),
+		// Read by the real resolveBackendDescriptor when buildLoopContext resolves
+		// the per-turn descriptor.
+		getActiveLocalModelFilename: vi.fn(() => ''),
+		getApiKeyValue: vi.fn(() => undefined),
+		hasEnabledEmailAccount: vi.fn(() => false),
+		hasEnabledCalendarAccount: vi.fn(() => false),
+		hasEnabledContactsAccount: vi.fn(() => false)
+	})
+);
 
 vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 	// Keep the real reasoning splitter: it is pure, it defines the

@@ -2,22 +2,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext } from './types';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	renderPdfPages: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfPages: mocks.renderPdfPages }));
 
 import { IMAGE_EXT_RE, MAX_PENDING_IMAGES } from './fs-read';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeHandler } from '#lib/testing/invoke.ts';
 
 let ctx: ToolContext;
 
 beforeEach(() => {
 	ctx = makeToolContext({ workingDir: '/tmp/work' });
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.renderPdfPages.mockReset();
 });
 
@@ -32,9 +35,11 @@ function errorOf(out: { result: string }): string {
 
 /** Every invoke fails with `e`. */
 function invokeRejects(e: unknown) {
-	mocks.invoke.mockImplementation(async () => {
-		throw e;
-	});
+	vi.mocked(invoke).mockImplementation(
+		invokeHandler(() => {
+			throw e;
+		})
+	);
 }
 
 describe('IMAGE_EXT_RE', () => {
@@ -55,7 +60,7 @@ describe('IMAGE_EXT_RE', () => {
 
 describe('fs_list_dir', () => {
 	it('formats files, directories and sizes', async () => {
-		mocks.invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			path: 'src',
 			entries: [
 				{ name: 'lib', is_dir: true, size: 4096 },
@@ -68,12 +73,12 @@ describe('fs_list_dir', () => {
 	});
 
 	it('says when a directory is empty', async () => {
-		mocks.invoke.mockResolvedValue({ path: 'empty', entries: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValue({ path: 'empty', entries: [], truncated: false });
 		expect((await call('fs_list_dir', { path: 'empty' })).result).toBe('Directory: empty\n(empty)');
 	});
 
 	it('notes a truncated listing', async () => {
-		mocks.invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			path: '.',
 			entries: [{ name: 'a', is_dir: false, size: 1 }],
 			truncated: true
@@ -84,11 +89,13 @@ describe('fs_list_dir', () => {
 	});
 
 	it('lists the working directory root when no path is given', async () => {
-		mocks.invoke.mockImplementation(async (_cmd: string, a: { relPath: string }) => ({
-			path: a.relPath,
-			entries: [],
-			truncated: false
-		}));
+		vi.mocked(invoke).mockImplementation(
+			invokeHandler<{ relPath: string }>((_cmd, a) => ({
+				path: a.relPath,
+				entries: [],
+				truncated: false
+			}))
+		);
 		expect((await call('fs_list_dir', {})).result).toBe('Directory: .\n(empty)');
 	});
 
@@ -109,9 +116,7 @@ describe('fs_list_dir', () => {
 describe('fs_read_text', () => {
 	/** Echo the arguments back as the file content, so the result shows them. */
 	function echoArgs() {
-		mocks.invoke.mockImplementation(async (cmd: string, a: Record<string, unknown>) =>
-			JSON.stringify({ cmd, ...a })
-		);
+		vi.mocked(invoke).mockImplementation(invokeHandler((cmd, a) => JSON.stringify({ cmd, ...a })));
 	}
 
 	it('reads a workdir-relative path', async () => {
@@ -177,7 +182,7 @@ describe('document readers', () => {
 	it.each(['fs_read_pdf', 'fs_read_docx', 'fs_read_xlsx'])(
 		'%s returns the extracted text',
 		async (tool) => {
-			mocks.invoke.mockResolvedValue('extracted');
+			vi.mocked(invoke).mockResolvedValue('extracted');
 			expect((await call(tool, { path: 'x' })).result).toBe('extracted');
 		}
 	);
@@ -191,8 +196,8 @@ describe('document readers', () => {
 	);
 
 	it('fs_read_xlsx passes the sheet name through', async () => {
-		mocks.invoke.mockImplementation(
-			async (_cmd: string, a: { sheet?: string }) => `sheet=${a.sheet}`
+		vi.mocked(invoke).mockImplementation(
+			invokeHandler<{ sheet?: string }>((_cmd, a) => `sheet=${a.sheet}`)
 		);
 		expect((await call('fs_read_xlsx', { path: 'b.xlsx', sheet: 'Q3' })).result).toBe('sheet=Q3');
 		expect((await call('fs_read_xlsx', { path: 'b.xlsx' })).result).toBe('sheet=undefined');
@@ -201,7 +206,7 @@ describe('document readers', () => {
 
 describe('fs_read_image', () => {
 	it('loads the image, queues it for the model and returns a thumbnail', async () => {
-		mocks.invoke.mockResolvedValue('data:image/png;base64,AAA');
+		vi.mocked(invoke).mockResolvedValue('data:image/png;base64,AAA');
 		const out = await call('fs_read_image', { path: 'pics/cat.png' });
 		expect(out.result).toMatch(/^Image loaded: pics\/cat\.png\./);
 		expect(out.thumbDataUrl).toBe('data:image/png;base64,AAA');
@@ -214,7 +219,7 @@ describe('fs_read_image', () => {
 		for (let i = 0; i < MAX_PENDING_IMAGES; i++) {
 			ctx.pendingImages.push({ path: `${i}.png`, dataUrl: 'x' });
 		}
-		mocks.invoke.mockResolvedValue('data:image/png;base64,BBB');
+		vi.mocked(invoke).mockResolvedValue('data:image/png;base64,BBB');
 		const out = await call('fs_read_image', { path: 'one-more.png' });
 		expect(errorOf(out)).toMatch(
 			new RegExp(`^Too many images pending \\(${MAX_PENDING_IMAGES}\\)`)

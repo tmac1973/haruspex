@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
+import { invokeCalls } from '#lib/testing/invoke.ts';
 
 const {
 	mocks,
@@ -328,9 +329,9 @@ describe('guided_planning — planning skill', () => {
 		await enqueue(1);
 		await tick();
 
-		const reads = mocks.invoke.mock.calls.filter((c: unknown[]) => c[0] === 'skill_read');
+		const reads = invokeCalls(mocks.invoke, 'skill_read');
 		expect(reads).toHaveLength(1);
-		expect(reads[0][1]).toMatchObject({ name: 'plan-2d-game', projectRoot: null });
+		expect(reads[0]).toMatchObject({ name: 'plan-2d-game', projectRoot: null });
 
 		const overview = prompts().find((p) => p.includes('STAGE 1 of'))!;
 		expect(overview).toContain('<skill_content name="plan-2d-game">');
