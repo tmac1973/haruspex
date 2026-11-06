@@ -17,6 +17,7 @@
 pub mod commands;
 
 use crate::db::Database;
+use crate::sync_util::LockExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -254,7 +255,7 @@ impl BackgroundTasks {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
-        self.inner.tasks.lock().unwrap_or_else(|p| p.into_inner())
+        self.inner.tasks.lock_or_recover()
     }
 
     fn save(&self, t: &BackgroundTask) {

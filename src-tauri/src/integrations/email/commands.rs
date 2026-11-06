@@ -18,6 +18,7 @@ use super::parser::{EmailListing, NormalizedMessage};
 use super::provider::{saves_sent_copy, EmailProviderPreset, PRESETS};
 use super::smtp_client::{self, OutgoingMessage, ReplyContext};
 use super::sub_agent::{self, SummarizerInput};
+use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::future::Future;
@@ -37,7 +38,7 @@ async fn cancellable<T: Send + 'static>(
     work: impl Future<Output = Result<T, String>> + Send + 'static,
 ) -> Result<T, String> {
     let task = tokio::spawn(work);
-    let lock = || running().lock().unwrap_or_else(|p| p.into_inner());
+    let lock = || running().lock_or_recover();
     if let Some(id) = &call_id {
         lock().insert(id.clone(), task.abort_handle());
     }
@@ -55,11 +56,7 @@ async fn cancellable<T: Send + 'static>(
 /// Stop a call. An unknown id has already finished.
 #[tauri::command]
 pub fn email_cancel(call_id: String) {
-    if let Some(h) = running()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .remove(&call_id)
-    {
+    if let Some(h) = running().lock_or_recover().remove(&call_id) {
         h.abort();
     }
 }

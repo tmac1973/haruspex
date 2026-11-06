@@ -16,6 +16,7 @@
 //! For a privacy-focused app, a background HTTP fetch from Hugging Face is
 //! not something to do on the user's behalf without asking.
 
+use crate::sync_util::LockExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -168,10 +169,7 @@ fn lock() -> std::sync::MutexGuard<'static, Option<TextEmbedding>> {
     // A panic inside an embed would otherwise poison this for the rest of the
     // session, turning one bad input into permanently broken memory. The
     // model itself stays valid across an unwind.
-    EMBEDDER.lock().unwrap_or_else(|poisoned| {
-        log::warn!("recovered from a poisoned embedder mutex");
-        poisoned.into_inner()
-    })
+    EMBEDDER.lock_or_recover()
 }
 
 #[cfg(test)]

@@ -15,6 +15,7 @@ use super::loudness::MAX_GAIN;
 use super::project::VideoSettings;
 use super::{binaries, encode, kdenlive, paths, project};
 use crate::orphans::{self, RunningServer};
+use crate::sync_util::LockExt;
 use crate::tasks::{BackgroundTask, BackgroundTasks, TaskFollower, TaskKind, TaskPatch, TaskState};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -445,7 +446,7 @@ pub async fn start_upload(
                 } else {
                     0.0
                 };
-                let mut l = last.lock().unwrap_or_else(|e| e.into_inner());
+                let mut l = last.lock_or_recover();
                 if l.elapsed() < EMIT_EVERY && sent < total {
                     return;
                 }
