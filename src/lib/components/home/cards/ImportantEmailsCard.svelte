@@ -134,13 +134,24 @@
 		<ul>
 			{#each items as item (item.id)}
 				<li>
-					<div class="head">
-						<span class="subject">{item.source.subject || '(no subject)'}</span>
-						<span class="date">{when(item.source.date)}</span>
-						<ItemActions label={item.source.subject} actions={actions(item)} />
+					<div class="row">
+						<!-- The row opens the message, as ⋯ → Open does. -->
+						<button
+							class="open"
+							aria-label={`Open ${item.source.subject || '(no subject)'}`}
+							title={accountOf(item) ? 'Open' : 'This account was removed from Settings'}
+							disabled={!accountOf(item)}
+							onclick={() => (reading = item)}
+						>
+							<span class="subject">{item.source.subject || '(no subject)'}</span>
+							<span class="from">{item.source.from}</span>
+							<span class="why">{item.why}</span>
+						</button>
+						<div class="side">
+							<span class="date">{when(item.source.date)}</span>
+							<ItemActions label={item.source.subject} actions={actions(item)} />
+						</div>
 					</div>
-					<div class="from">{item.source.from}</div>
-					<div class="why">{item.why}</div>
 					{#if drafting === item.id && accountOf(item)}
 						<DraftReply
 							account={accountOf(item)!}
@@ -195,10 +206,41 @@
 		border-top: 1px solid var(--border);
 	}
 
-	.head {
+	.row {
 		display: flex;
-		justify-content: space-between;
+		align-items: flex-start;
 		gap: 8px;
+	}
+
+	.open {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		min-width: 0;
+		margin: -2px -4px;
+		padding: 2px 4px;
+		border: none;
+		border-radius: 4px;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.open:hover:not(:disabled) {
+		background: var(--bg-primary);
+	}
+
+	.open:disabled {
+		cursor: default;
+	}
+
+	.side {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 4px;
 	}
 
 	.subject {

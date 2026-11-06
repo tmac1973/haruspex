@@ -45,7 +45,7 @@ An issue's **⋯** also has **Open code session**, which puts the issue in a new
 Each email, story, meeting and GitHub item has a **⋯** menu.
 
 - **Ask about this** opens a new chat with the item quoted in the box, for you to add a question and send. For an email it quotes what the card shows.
-- **Open** shows a whole email. Clicking a headline opens the story; **Join** opens a meeting.
+- **Open**, or clicking the email, shows all of it. Clicking a headline opens the story; **Join** a meeting.
 - **Delete** moves an email to its account's Trash, after asking.
 - **Draft reply** writes a reply to an email. Say how to reply ("decline politely") if you like, then edit the draft. **Review & send** opens the Review email window, and only its **Send** sends. It needs **Allow sending** on the account (Settings → Integrations → Email).
 
