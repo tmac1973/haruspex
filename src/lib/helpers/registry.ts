@@ -33,9 +33,10 @@ export interface HelperDef {
 	writes: boolean;
 	/**
 	 * Its line in the Code system prompt's TOOLS list (`- tool — …`), while a
-	 * session offers it. Without one the model has only the tool's schema.
+	 * session offers it, or a function that picks it from the helper's settings
+	 * as each turn starts. Without one the model has only the tool's schema.
 	 */
-	prompt?: string;
+	prompt?: string | (() => string);
 	/** Its own settings, if it has any. A lazy component, so this file pulls in no Svelte. */
 	settings?: HelperSettings<unknown>;
 }
@@ -84,6 +85,11 @@ export function helperConfig<T>(id: string): T | undefined {
 	const def = registered.get(id);
 	if (!def?.settings) return undefined;
 	return def.settings.parse(getSettings().codeHelperConfig?.[id]) as T;
+}
+
+/** Helper `def`'s TOOLS line for a turn starting now. */
+export function helperPrompt(def: Pick<HelperDef, 'prompt'>): string | undefined {
+	return typeof def.prompt === 'function' ? def.prompt() : def.prompt;
 }
 
 /** For tests: forget every helper. */

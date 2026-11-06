@@ -1,4 +1,5 @@
 /** The Search helper's settings (Settings → Code → Helpers → Search). */
+import { helperConfig } from '#lib/helpers/registry.ts';
 import type { RerankEndpoint } from '#lib/rerank.ts';
 
 export interface SearchConfig {
@@ -17,4 +18,9 @@ export function parseSearchConfig(raw: unknown): SearchConfig {
 	return {
 		rerank: { url: r.url, model: r.model, keyId: typeof r.keyId === 'string' ? r.keyId : null }
 	};
+}
+
+/** Whether the Search helper has a reranker set (Settings → Code → Helpers → Search). */
+export function searchReranked(): boolean {
+	return helperConfig<SearchConfig>('search')?.rerank != null;
 }

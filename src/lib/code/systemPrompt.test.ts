@@ -14,11 +14,13 @@ describe('Code tab prompt', () => {
 		expect(tab()).not.toContain('READ-ONLY');
 	});
 
-	it('leads TOOLS with the session helpers’ lines, and searches first with Search on', () => {
+	it('leads TOOLS with the session helpers’ lines, and searches first only when told to', () => {
 		const search = { id: 'search', prompt: '- search_code — find code.' };
 		const text = tab({ helpers: [{ id: '3d' }, search] });
 		expect(text).toContain('TOOLS:\n- search_code — find code.\n- code_grep');
-		expect(text).toContain('locate code with search_code (a question in plain words)');
+		expect(text).toContain('- Explore before editing: grep/glob to locate code,');
+		const first = tab({ helpers: [search], searchFirst: true });
+		expect(first).toContain('locate code with search_code (a question in plain words)');
 		const without = tab({ helpers: [{ id: '3d' }] });
 		expect(without).not.toContain('search_code');
 		expect(without).toContain('- Explore before editing: grep/glob to locate code,');

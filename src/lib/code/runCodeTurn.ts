@@ -66,7 +66,8 @@ export { withNotice };
 import { logDebug } from '#lib/debugLog.ts';
 import { compactCodeThread, compactionDue, modelThread } from '#lib/code/compaction.ts';
 import type { CodeCompaction } from '#lib/code/session.ts';
-import { sessionHelpers } from '#lib/helpers/registry.ts';
+import { helperPrompt, sessionHelpers } from '#lib/helpers/registry.ts';
+import { searchReranked } from '#lib/helpers/search/config.ts';
 
 export interface CodeTurnOptions {
 	sessionId: string;
@@ -468,6 +469,8 @@ export async function prepareSystem(
 	o.onProject?.(project);
 	const skills = await prepareTurnSkills({ backend, projectRoot: project.root, codeMode: true });
 	const turnTools = tools && resolveTurnTools({ ...tools, skills });
+	// A subtask gets no helpers (its prompt is built apart and ignores these).
+	const helpers = o.subtask ? [] : sessionHelpers(o.helpers);
 	const system = buildCodeSystemPrompt({
 		root: o.root,
 		skillsSection: skillsPromptSection(skills),
@@ -480,8 +483,8 @@ export async function prepareSystem(
 		delegate: delegateModes(o),
 		subtask: o.subtask,
 		deferred: turnTools?.deferredTools,
-		// A subtask gets no helpers (its prompt is built apart and ignores these).
-		helpers: o.subtask ? [] : sessionHelpers(o.helpers)
+		helpers: helpers.map((h) => ({ id: h.id, prompt: helperPrompt(h) })),
+		searchFirst: helpers.some((h) => h.id === 'search') && searchReranked()
 	});
 	return { system, skills, turnTools };
 }
