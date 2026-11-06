@@ -31,6 +31,7 @@
 //! **Nothing auto-restarts.** A server that crashes on startup would spin
 //! forever, burning CPU and filling the log ring. Restart is a user action.
 
+use crate::sync_util::LockExt;
 use log::{info, warn};
 use rmcp::transport::TokioChildProcess;
 use serde::{Deserialize, Serialize};
@@ -185,7 +186,7 @@ struct InFlight {
 
 impl InFlight {
     fn start(counts: &Arc<std::sync::Mutex<HashMap<String, u32>>>, id: &str) -> Self {
-        let mut map = counts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = counts.lock_or_recover();
         *map.entry(id.to_string()).or_insert(0) += 1;
         Self {
             counts: Arc::clone(counts),
@@ -196,7 +197,7 @@ impl InFlight {
 
 impl Drop for InFlight {
     fn drop(&mut self) {
-        let mut map = self.counts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.counts.lock_or_recover();
         if let Some(n) = map.get_mut(&self.id) {
             *n = n.saturating_sub(1);
             if *n == 0 {
@@ -219,7 +220,7 @@ impl McpSupervisor {
     /// How many tool calls to this server are under way. Every tool call any
     /// part of the app makes goes through [`Self::call_tool`].
     pub fn calls_in_flight(&self, id: &str) -> u32 {
-        let map = self.in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        let map = self.in_flight.lock_or_recover();
         map.get(id).copied().unwrap_or(0)
     }
 

@@ -4,8 +4,16 @@
  */
 import { settingSecret } from '#lib/stores/settingSecrets.ts';
 
-export const braveApiKey = settingSecret('brave:key', 'braveApiKey', 'braveApiKeySaved');
+const braveApiKey = settingSecret('brave:key', 'braveApiKey', 'braveApiKeySaved');
 
-export const saveBraveApiKey = (value: string) => braveApiKey.save(value);
-export const removeBraveApiKey = () => braveApiKey.remove();
-export const migrateBraveApiKey = () => braveApiKey.migrate();
+export function saveBraveApiKey(value: string): Promise<void> {
+	return braveApiKey.save(value);
+}
+
+export function removeBraveApiKey(): Promise<void> {
+	return braveApiKey.remove();
+}
+
+export function migrateBraveApiKey(): Promise<void> {
+	return braveApiKey.migrate();
+}

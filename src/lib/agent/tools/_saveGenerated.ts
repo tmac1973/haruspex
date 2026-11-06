@@ -15,6 +15,7 @@
  * path, or a user who cancels, costs no GPU minutes.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { IPC } from '#lib/ipc/commands.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { ctxCwd, fsWorkdir, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
@@ -40,7 +41,7 @@ export function generatedFromUrl(url: string): Generated | null {
 
 /** Its bytes from the cache. Throws when the cache no longer has it. */
 export async function generatedBytes(g: Generated): Promise<Uint8Array> {
-	const command = g.kind === 'image' ? 'image_read_bytes' : 'audio_read_bytes';
+	const command = g.kind === 'image' ? IPC.image_read_bytes : IPC.audio_read_bytes;
 	return new Uint8Array(await invoke<ArrayBuffer>(command, { hash: g.hash }));
 }
 

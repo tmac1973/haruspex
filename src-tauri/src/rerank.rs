@@ -2,8 +2,8 @@
 //! the capabilities it reports.
 //!
 //! Neither is tied to code search: the Search helper reranks keyword
-//! candidates with `rerank_documents`, and memory recall can do the same
-//! later. `list_server_models` lets Settings offer only rerank (or embedding)
+//! candidates with `rerank_run`, and memory recall can do the same
+//! later. `server_models_list` lets Settings offer only rerank (or embedding)
 //! models. It reads `GET /v1/models` rather than the inference probe, because
 //! for llama-toolchest the probe lists only the models chat completions will
 //! serve, while `/v1/models` lists every one with `meta.capabilities` such as
@@ -60,7 +60,7 @@ pub struct ServerModel {
 /// Rank `documents` by how well each answers `query`, with the rerank model
 /// `model` at `base_url`.
 #[tauri::command]
-pub async fn rerank_documents(
+pub async fn rerank_run(
     base_url: String,
     api_key: Option<String>,
     model: String,
@@ -95,7 +95,7 @@ pub async fn rerank_documents(
 
 /// The models a server lists at `GET /v1/models`, sorted by id.
 #[tauri::command]
-pub async fn list_server_models(
+pub async fn server_models_list(
     base_url: String,
     api_key: Option<String>,
 ) -> Result<Vec<ServerModel>, String> {
@@ -330,7 +330,7 @@ mod tests {
         let (base, seen) = serve(Duration::ZERO).await;
         let long = "a".repeat(4_500);
         // A trailing `/v1` is normalized away, not doubled.
-        let got = rerank_documents(
+        let got = rerank_run(
             format!("{base}/v1/"),
             Some("sk-test".into()),
             "rr".into(),
@@ -353,7 +353,7 @@ mod tests {
     #[tokio::test]
     async fn no_key_sends_no_header() {
         let (base, seen) = serve(Duration::ZERO).await;
-        rerank_documents(
+        rerank_run(
             base,
             Some("  ".into()),
             "rr".into(),
@@ -371,7 +371,7 @@ mod tests {
         let (base, _) = serve(Duration::from_secs(5)).await;
         // 10 ms is clamped up to the 1 s floor, still well under the delay.
         let started = std::time::Instant::now();
-        let err = rerank_documents(base, None, "rr".into(), "q".into(), vec![], Some(10))
+        let err = rerank_run(base, None, "rr".into(), "q".into(), vec![], Some(10))
             .await
             .unwrap_err();
         assert!(err.starts_with("Rerank request to"), "{err}");
@@ -381,11 +381,11 @@ mod tests {
     #[tokio::test]
     async fn the_model_list_sends_the_key() {
         let (base, _) = serve(Duration::ZERO).await;
-        let got = list_server_models(base.clone(), Some("k".into()))
+        let got = server_models_list(base.clone(), Some("k".into()))
             .await
             .unwrap();
         assert_eq!(got[0].capabilities, Some(vec!["rerank".to_string()]));
-        let refused = list_server_models(base, None).await.unwrap_err();
+        let refused = server_models_list(base, None).await.unwrap_err();
         assert!(refused.contains("HTTP 401"), "{refused}");
     }
 }

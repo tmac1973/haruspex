@@ -13,7 +13,18 @@ const secrets = accountSecrets<DavAccount>(
 	setDavAccounts
 );
 
-export const davSecretKey = secrets.key;
-export const withStoredDavPassword = secrets.withStoredPassword;
-export const forgetDavPassword = secrets.forget;
-export const migrateDavSecrets = secrets.migrate;
+export function davSecretKey(accountId: string): string {
+	return secrets.key(accountId);
+}
+
+export function withStoredDavPassword(account: DavAccount, password: string): Promise<DavAccount> {
+	return secrets.withStoredPassword(account, password);
+}
+
+export function forgetDavPassword(account: DavAccount): Promise<void> {
+	return secrets.forget(account);
+}
+
+export function migrateDavSecrets(): Promise<void> {
+	return secrets.migrate();
+}

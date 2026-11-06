@@ -54,9 +54,11 @@
 		if (!open || !folder) return;
 		let current = true;
 		const timer = setTimeout(() => {
-			void gitStatus(folder, wsl).then((st) => {
-				if (current) inRepo = st !== null;
-			});
+			void gitStatus(folder, wsl)
+				.catch(() => null)
+				.then((st) => {
+					if (current) inRepo = st !== null;
+				});
 		}, 250);
 		return () => {
 			current = false;

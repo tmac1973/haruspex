@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { IpcCommand } from '#lib/ipc/commands.ts';
 import {
 	fsWorkdir,
 	labelArg,
@@ -50,7 +51,7 @@ function formatDirListing(listing: DirListing): string {
 
 /** Generic read wrapper — deduplicates the identical try/catch/invoke pattern. */
 async function fsRead(
-	command: string,
+	command: IpcCommand,
 	workdir: string,
 	relPath: string,
 	extra?: Record<string, unknown>
@@ -68,7 +69,7 @@ async function fsRead(
  * enforces this.
  */
 async function fsReadAbsolute(
-	command: string,
+	command: IpcCommand,
 	path: string,
 	extra?: Record<string, unknown>
 ): Promise<string> {

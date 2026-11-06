@@ -158,7 +158,7 @@ export function parseOpenRouterCatalog(data: unknown): OpenRouterModel[] {
 		const id = typeof r.id === 'string' ? r.id : null;
 		const name = typeof r.name === 'string' ? r.name : id;
 		if (!id) continue;
-		const context_length =
+		const contextLength =
 			typeof r.context_length === 'number'
 				? r.context_length
 				: ((r.top_provider as { context_length?: number } | undefined)?.context_length ?? 0);
@@ -172,7 +172,7 @@ export function parseOpenRouterCatalog(data: unknown): OpenRouterModel[] {
 		models.push({
 			id,
 			name: name ?? id,
-			context_length,
+			context_length: contextLength,
 			architecture: {
 				input_modalities: Array.isArray(arch.input_modalities)
 					? (arch.input_modalities as string[])

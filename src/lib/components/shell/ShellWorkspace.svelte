@@ -30,8 +30,15 @@
 		// Adopt shells handed back from detached windows (this is the main
 		// window — ShellWorkspace only mounts here).
 		let unlistenReattach: UnlistenFn | null = null;
-		void listenForReattach().then((un) => (unlistenReattach = un));
+		let unmounted = false;
+		void listenForReattach()
+			.then((un) => {
+				if (unmounted) un();
+				else unlistenReattach = un;
+			})
+			.catch((e: unknown) => console.warn('Detached shells cannot be handed back:', e));
 		return () => {
+			unmounted = true;
 			document.body.classList.remove('shell-tab-active');
 			unlistenReattach?.();
 		};
