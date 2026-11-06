@@ -8,7 +8,7 @@
 //! same escape-rejection rules (no `..`, no symlink-out, no absolute paths
 //! outside the workdir) apply uniformly.
 
-use crate::fs_tools::resolve_in_workdir;
+use crate::fs_tools::{ensure_parent_dir, resolve_in_workdir};
 use serde::Serialize;
 use std::path::PathBuf;
 use tokio::fs;
@@ -58,14 +58,10 @@ async fn save_capped(
     let workdir_path = PathBuf::from(workdir);
     let resolved = resolve_in_workdir(&workdir_path, rel_path)?;
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
+    ensure_parent_dir(&resolved).await?;
 
+    // A plain write, not `write_atomic`: replacing the file by rename would
+    // drop its mode, and on Windows fail while another program has it open.
     let bytes_written = content.len();
     fs::write(&resolved, content)
         .await

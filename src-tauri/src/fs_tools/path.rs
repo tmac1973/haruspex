@@ -380,17 +380,14 @@ pub(super) async fn read_text_at(
     limit: Option<u32>,
     binary_msg: &str,
 ) -> Result<String, String> {
-    let metadata = fs::metadata(resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_READ_LOAD_BYTES {
-        return Err(format!(
+    stat_within(resolved, MAX_READ_LOAD_BYTES, |len| {
+        format!(
             "File too large to load ({} bytes, max {} MB). Read it in slices with the offset/limit parameters or via the shell (head/sed).",
-            metadata.len(),
+            len,
             MAX_READ_LOAD_BYTES / 1_048_576
-        ));
-    }
+        )
+    })
+    .await?;
 
     let bytes = fs::read(resolved)
         .await
@@ -406,17 +403,14 @@ pub(super) async fn read_text_at(
 /// rewriting a windowed read back to disk destroys the tail. Model-facing
 /// reads stay on [`read_text_at`]'s windowing.
 pub(super) async fn read_text_full_at(resolved: &Path) -> Result<String, String> {
-    let metadata = fs::metadata(resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_READ_LOAD_BYTES {
-        return Err(format!(
+    stat_within(resolved, MAX_READ_LOAD_BYTES, |len| {
+        format!(
             "File too large to load ({} bytes, max {} MB).",
-            metadata.len(),
+            len,
             MAX_READ_LOAD_BYTES / 1_048_576
-        ));
-    }
+        )
+    })
+    .await?;
 
     fs::read_to_string(resolved)
         .await
@@ -434,17 +428,13 @@ pub(super) async fn edit_text_at(
     new_str: &str,
     display: &str,
 ) -> Result<EditResult, String> {
-    let metadata = fs::metadata(resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_TEXT_READ_BYTES {
-        return Err(format!(
+    stat_within(resolved, MAX_TEXT_READ_BYTES, |len| {
+        format!(
             "File too large to edit ({} bytes). Maximum is {} bytes.",
-            metadata.len(),
-            MAX_TEXT_READ_BYTES
-        ));
-    }
+            len, MAX_TEXT_READ_BYTES
+        )
+    })
+    .await?;
 
     let content = fs::read_to_string(resolved)
         .await
@@ -461,16 +451,28 @@ pub(super) async fn edit_text_at(
 /// format in the message (e.g. "PDF" / "xlsx" / "docx"). The read-size guard
 /// every document reader opens with.
 pub(super) async fn stat_within_limit(resolved: &Path, max: u64, fmt: &str) -> Result<(), String> {
+    stat_within(resolved, max, |len| {
+        format!(
+            "{} too large ({} bytes). Maximum is {} bytes.",
+            fmt, len, max
+        )
+    })
+    .await
+}
+
+/// Stat `resolved` and error with `too_large(size)` if it exceeds `max`
+/// bytes. [`stat_within_limit`] with the caller's own message, for readers
+/// whose refusal says what to do instead.
+pub(super) async fn stat_within(
+    resolved: &Path,
+    max: u64,
+    too_large: impl FnOnce(u64) -> String,
+) -> Result<(), String> {
     let metadata = fs::metadata(resolved)
         .await
         .map_err(|e| format!("Failed to stat file: {}", e))?;
     if metadata.len() > max {
-        return Err(format!(
-            "{} too large ({} bytes). Maximum is {} bytes.",
-            fmt,
-            metadata.len(),
-            max
-        ));
+        return Err(too_large(metadata.len()));
     }
     Ok(())
 }
@@ -481,6 +483,14 @@ pub(super) async fn stat_within_limit(resolved: &Path, max: u64, fmt: &str) -> R
 /// Shared by every writer in this module (text, pdf, docx, xlsx, odt, pptx,
 /// odp), so the atomicity guarantee in [`write_atomic`] reaches all of them.
 pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Result<(), String> {
+    ensure_parent_dir(resolved).await?;
+    write_atomic(resolved, bytes).await
+}
+
+/// Create `resolved`'s parent directory, and any above it, when missing: what
+/// a write does first, for writers that save some other way than
+/// [`write_bytes_to_workdir`].
+pub(crate) async fn ensure_parent_dir(resolved: &Path) -> Result<(), String> {
     if let Some(parent) = resolved.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)
@@ -488,7 +498,7 @@ pub(super) async fn write_bytes_to_workdir(resolved: &Path, bytes: &[u8]) -> Res
                 .map_err(|e| format!("Failed to create parent directory: {}", e))?;
         }
     }
-    write_atomic(resolved, bytes).await
+    Ok(())
 }
 
 /// Read a directory's immediate children into `DirEntry`s sorted directories-
@@ -905,6 +915,36 @@ mod tests {
         assert!(result.is_err());
         let result = resolve_in_workdir(&dir, "nope/../inside.txt");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn ensure_parent_dir_makes_missing_parents_and_leaves_existing_ones() {
+        let dir = temp_dir("ensure_parent");
+        let deep = dir.join("a/b/c.txt");
+        ensure_parent_dir(&deep).await.unwrap();
+        assert!(dir.join("a/b").is_dir());
+        assert!(!deep.exists(), "only the directories are made");
+        fs::write(dir.join("a/b/keep.txt"), b"x").unwrap();
+        ensure_parent_dir(&deep).await.unwrap();
+        assert_eq!(fs::read(dir.join("a/b/keep.txt")).unwrap(), b"x");
+    }
+
+    #[tokio::test]
+    async fn stat_within_passes_the_size_to_the_message() {
+        let dir = temp_dir("stat_within");
+        let file = dir.join("f.bin");
+        fs::write(&file, [0u8; 10]).unwrap();
+        assert!(stat_within(&file, 10, |_| unreachable!()).await.is_ok());
+        let err = stat_within(&file, 9, |len| format!("{len} is too many"))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "10 is too many");
+        let err = stat_within_limit(&file, 9, "Image").await.unwrap_err();
+        assert_eq!(err, "Image too large (10 bytes). Maximum is 9 bytes.");
+        assert!(stat_within(&dir.join("missing"), 9, |_| String::new())
+            .await
+            .unwrap_err()
+            .starts_with("Failed to stat file:"));
     }
 
     #[tokio::test]

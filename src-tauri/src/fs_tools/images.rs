@@ -8,12 +8,11 @@
 use super::markdown_inline::{
     escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
 };
-use super::path::{resolve_in_workdir, workdir_path};
+use super::path::{resolve_in_workdir, stat_within, stat_within_limit, workdir_path};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use std::collections::{BTreeSet, HashMap};
 use std::io::Cursor;
 use std::path::Path;
-use tokio::fs;
 
 /// Max source-file size for `fs_read_image` before the agent gets an
 /// error. Vision contexts can't usefully consume larger images anyway.
@@ -398,17 +397,13 @@ pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, 
         return Err(format!("Not a file: {}", rel_path));
     }
 
-    let metadata = fs::metadata(&resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_IMAGE_BYTES {
-        return Err(format!(
+    stat_within(&resolved, MAX_IMAGE_BYTES, |len| {
+        format!(
             "Image too large ({} bytes). Maximum source image is {} bytes.",
-            metadata.len(),
-            MAX_IMAGE_BYTES
-        ));
-    }
+            len, MAX_IMAGE_BYTES
+        )
+    })
+    .await?;
 
     tokio::task::spawn_blocking(move || encode_resized_jpeg_data_url(&resolved))
         .await
@@ -426,17 +421,7 @@ pub async fn read_dropped_image(path: String) -> Result<String, String> {
         return Err(format!("Not a file: {}", path));
     }
 
-    let metadata = fs::metadata(&resolved)
-        .await
-        .map_err(|e| format!("Failed to stat file: {}", e))?;
-
-    if metadata.len() > MAX_IMAGE_BYTES {
-        return Err(format!(
-            "Image too large ({} bytes). Maximum is {} bytes.",
-            metadata.len(),
-            MAX_IMAGE_BYTES
-        ));
-    }
+    stat_within_limit(&resolved, MAX_IMAGE_BYTES, "Image").await?;
 
     tokio::task::spawn_blocking(move || encode_resized_jpeg_data_url(&resolved))
         .await
