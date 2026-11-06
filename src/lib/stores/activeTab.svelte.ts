@@ -12,11 +12,14 @@ export function mainTabs(): ActiveTab[] {
 
 /**
  * The tabs the window shows: Chat and Jobs alone in lean mode (Settings →
- * General → Lean mode), all five otherwise. `mainTabs` keeps its fixed
- * order, so Ctrl / ⌘ + 2 and 3 mean the same tab in either.
+ * General → Lean mode), all five otherwise, less Home when Settings →
+ * General → Home tab is off. `mainTabs` keeps its fixed order, so
+ * Ctrl / ⌘ + 2 and 3 mean the same tab in each.
  */
 export function visibleTabs(): ActiveTab[] {
-	return getLiveSettings().leanMode ? ['chat', 'jobs'] : mainTabs();
+	const s = getLiveSettings();
+	if (s.leanMode) return ['chat', 'jobs'];
+	return s.homeTab ? mainTabs() : mainTabs().filter((t) => t !== 'home');
 }
 
 function load(): ActiveTab {
@@ -32,8 +35,9 @@ function load(): ActiveTab {
 let activeTab = $state<ActiveTab>(load());
 
 /**
- * The tab on screen. In lean mode a Home, Code or Shell tab reads as Chat, but
- * stays remembered: turning lean mode off goes back to it.
+ * The tab on screen. A hidden tab (Home, Code or Shell in lean mode, Home
+ * with the Home tab off) reads as Chat, but stays remembered: showing it
+ * again goes back to it.
  */
 export function getActiveTab(): ActiveTab {
 	return visibleTabs().includes(activeTab) ? activeTab : 'chat';

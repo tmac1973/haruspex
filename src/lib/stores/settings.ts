@@ -603,6 +603,11 @@ export interface AppSettings {
 	 */
 	leanMode: boolean;
 	/**
+	 * Show the Home tab. Off hides it and pauses its cards: fetched cards stop
+	 * reading and their jobs skip scheduled runs. Settings → General → Home tab.
+	 */
+	homeTab: boolean;
+	/**
 	 * Lean mode also offers Chat `fs_write_text` and `fs_write_document`
 	 * (`LEAN_WRITE_TOOLS`), so research can end in a file. Read only while
 	 * `leanMode` is on. Settings → General → Lean mode → Lean + files.
@@ -1187,6 +1192,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
+	homeTab: true,
 	leanFileWrites: false,
 	deferTools: 'auto',
 	leanNoticeShown: false,

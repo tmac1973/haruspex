@@ -98,6 +98,14 @@ describe('the web store', () => {
 		expect(old.tab).toBe('home');
 	});
 
+	it("follows the desktop's Home tab setting", async () => {
+		const d = fakeDesktop({ 'app.mode': { lean: false, home: false }, 'chats.list': [] });
+		const store = new WebStore(d.transport);
+		await store.refreshMode();
+		expect(store.homeOff).toBe(true);
+		expect(store.tab).toBe('code');
+	});
+
 	it('reads Home again on a home-card event, and leaves the prompts alone', async () => {
 		vi.useFakeTimers();
 		const card = { id: 'k1', size: 'normal', title: 'Jobs', payload: { type: 'code_sessions' } };

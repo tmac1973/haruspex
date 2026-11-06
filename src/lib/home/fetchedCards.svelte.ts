@@ -139,14 +139,16 @@ function stopTimer(): void {
 }
 
 /**
- * Start the refresher. Main window only; it runs outside lean mode, stopping
- * when lean mode goes on and starting again when it goes off.
+ * Start the refresher. Main window only; it runs while Home is shown (outside
+ * lean mode, with Settings → General → Home tab on), stopping when Home is
+ * hidden and starting again when it comes back.
  */
 export function startFetchedCards(): void {
 	if (stopWatch) return;
 	stopWatch = $effect.root(() => {
 		$effect(() => {
-			if (getLiveSettings().leanMode) stopTimer();
+			const s = getLiveSettings();
+			if (s.leanMode || !s.homeTab) stopTimer();
 			else startTimer();
 		});
 	});

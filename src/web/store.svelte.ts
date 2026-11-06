@@ -53,6 +53,8 @@ export class WebStore {
 	tab = $state<'home' | 'code' | 'chat'>('home');
 	/** The desktop's lean mode is on: Chat only, as there (`app.mode`). */
 	lean = $state(false);
+	/** The desktop's Settings → General → Home tab is off: no Home here either. */
+	homeOff = $state(false);
 	/** Home's cards, read-only; null until first read. */
 	homeCards = $state<HomeCardView[] | null>(null);
 	chats = $state<ChatListItem[]>([]);
@@ -180,17 +182,23 @@ export class WebStore {
 	}
 
 	/**
-	 * Ask the desktop whether lean mode is on. Quietly: a desktop from before
-	 * `app.mode` answers that it doesn't know the operation, which means no.
+	 * Ask the desktop whether lean mode is on, and whether it shows Home.
+	 * Quietly: a desktop from before `app.mode` answers that it doesn't know
+	 * the operation, which means not lean, with Home.
 	 */
 	async refreshMode(): Promise<void> {
 		try {
-			const mode = await this.transport.op<{ lean: boolean }>({ type: 'app.mode' });
+			const mode = await this.transport.op<{ lean: boolean; home?: boolean }>({
+				type: 'app.mode'
+			});
 			this.lean = mode.lean === true;
+			this.homeOff = mode.home === false;
 		} catch {
 			this.lean = false;
+			this.homeOff = false;
 		}
 		if (this.lean) this.tab = 'chat';
+		else if (this.homeOff && this.tab === 'home') this.tab = 'code';
 	}
 
 	async refreshChats(): Promise<void> {

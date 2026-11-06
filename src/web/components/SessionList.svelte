@@ -60,13 +60,15 @@
 
 <div class="head">
 	<div class="segmented tabs">
-		<!-- The desktop's lean mode hides Home and Code there, and here. -->
+		<!-- The desktop's lean mode hides Home and Code there, and here; its Home tab setting, Home. -->
 		{#if !store.lean}
-			<button
-				class:active={store.tab === 'home'}
-				title="Your computer's Home cards, read-only."
-				onclick={() => store.showHome()}>Home</button
-			>
+			{#if !store.homeOff}
+				<button
+					class:active={store.tab === 'home'}
+					title="Your computer's Home cards, read-only."
+					onclick={() => store.showHome()}>Home</button
+				>
+			{/if}
 			<button
 				class:active={store.tab === 'code'}
 				title="Your Code sessions."

@@ -130,10 +130,13 @@ beforeEach(() => {
 });
 
 describe('dispatch: lean mode', () => {
-	it('says whether lean mode is on', async () => {
-		expect(await dispatch(op({ type: 'app.mode' }), MAIN_WINDOW)).toEqual({ lean: false });
+	it('says whether lean mode is on, and whether Home is shown', async () => {
+		expect(await dispatch(op({ type: 'app.mode' }), MAIN_WINDOW)).toEqual({
+			lean: false,
+			home: true
+		});
 		mocks.lean = true;
-		expect(await dispatch(op({ type: 'app.mode' }), MAIN_WINDOW)).toEqual({ lean: true });
+		expect(await dispatch(op({ type: 'app.mode' }), MAIN_WINDOW)).toMatchObject({ lean: true });
 	});
 
 	it('refuses to open, start or drive a Code session', async () => {
