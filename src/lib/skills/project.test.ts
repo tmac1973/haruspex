@@ -5,11 +5,12 @@ const settings = vi.hoisted(() => ({
 	repos: {} as Record<string, RepoTrust>,
 	updateSkills: vi.fn()
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ skills: { trustedRepos: settings.repos } }),
-	updateSkills: settings.updateSkills
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ skills: { trustedRepos: settings.repos } }),
+		updateSkills: settings.updateSkills
+	})
+);
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );

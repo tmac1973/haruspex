@@ -12,10 +12,11 @@ const accounts = vi.hoisted(() => [
 	{ id: 'work', label: 'Work', enabled: true },
 	{ id: 'old', label: 'Old', enabled: false }
 ]);
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ integrations: { email: { accounts } } })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ integrations: { email: { accounts } } })
+	})
+);
 vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	markRunStarted: vi.fn(async () => {}),
 	markRunStepStarted: vi.fn(async () => {}),

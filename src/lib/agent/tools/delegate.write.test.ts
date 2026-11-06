@@ -19,10 +19,12 @@ vi.mock('#lib/code/subtaskGit.ts', () => ({
 	applySubtaskPatch: mocks.apply,
 	discardSubtaskWorktree: mocks.discard
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const real = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return { ...real, getSettings: () => ({ ...real.getSettings(), ...mocks.settings }) };
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({ ...mocks.settings })
+	})
+);
 
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { executeDelegate } from '#lib/agent/tools/delegate.ts';

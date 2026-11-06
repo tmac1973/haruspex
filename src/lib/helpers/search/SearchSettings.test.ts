@@ -10,11 +10,13 @@ const setCodeHelperConfig = vi.hoisted(() =>
 	})
 );
 vi.mock('#lib/rerank.ts', () => ({ listServerModels }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => ({ codeHelperConfig: state.config }),
-	getApiKeys: () => [],
-	setCodeHelperConfig
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ codeHelperConfig: state.config }),
+		getApiKeys: () => [],
+		setCodeHelperConfig
+	})
+);
 
 import SearchSettings from './SearchSettings.svelte';
 

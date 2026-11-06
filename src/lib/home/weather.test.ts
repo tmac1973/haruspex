@@ -5,9 +5,11 @@ import { invokeRouter } from '#lib/testing/invoke.ts';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => ({ proxy: { mode: 'manual', url: 'http://proxy:3128' } })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ proxy: { mode: 'manual', url: 'http://proxy:3128' } })
+	})
+);
 
 import { fetchWeather, forecastUrl, geocode, parseForecast, weatherLabel } from './weather';
 

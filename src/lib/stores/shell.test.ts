@@ -26,23 +26,24 @@ vi.mock('#lib/shell/systemPrompt.ts', () => ({
 const bridge = vi.hoisted(() => ({ openCodeAt: vi.fn(async (root: string) => void root) }));
 vi.mock('#lib/code/bridge.ts', () => bridge);
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		shellFullAccessDefault: false,
-		shellMaxIterations: 33,
-		maxResponseTokensFileWrite: 65536,
-		shellHistoryTurnsForPrompt: 3,
-		shellMaxBytesPerCapture: 1000,
-		contextSize: 8192,
-		inferenceBackend: { mode: 'local' },
-		skills: { extraDirs: [], disabled: [], autonomous: 'auto', trustedRepos: {} }
-	}),
-	// Read by resolveBackendDescriptor, which the shell store now uses for
-	// the turn's context size.
-	getActiveLocalModelFilename: () => '',
-	getApiKeyValue: () => undefined
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			shellFullAccessDefault: false,
+			shellMaxIterations: 33,
+			maxResponseTokensFileWrite: 65536,
+			shellHistoryTurnsForPrompt: 3,
+			shellMaxBytesPerCapture: 1000,
+			contextSize: 8192,
+			inferenceBackend: { mode: 'local' },
+			skills: { extraDirs: [], disabled: [], autonomous: 'auto', trustedRepos: {} }
+		}),
+		// Read by resolveBackendDescriptor, which the shell store now uses for
+		// the turn's context size.
+		getActiveLocalModelFilename: () => '',
+		getApiKeyValue: () => undefined
+	})
+);
 
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
 // Repo trust and AGENTS.md have their own tests (skills/turn.test.ts); here the

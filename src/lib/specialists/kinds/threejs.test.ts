@@ -25,10 +25,11 @@ const runner = vi.hoisted(() => ({ runAssetHtml: vi.fn() }));
 vi.mock('#lib/specialists/three/runHtml.ts', () => runner);
 const snapshot = vi.hoisted(() => ({ snapshotProblems: vi.fn() }));
 vi.mock('#lib/specialists/three/snapshot.ts', () => snapshot);
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ specialists: [] })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ specialists: [] })
+	})
+);
 
 import { specialistKind } from '#lib/specialists/kinds.ts';
 import '#lib/specialists/kinds/index.ts';

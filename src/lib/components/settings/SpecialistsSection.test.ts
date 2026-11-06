@@ -11,16 +11,17 @@ const settings = vi.hoisted(() => ({
 	apiKeys: [] as unknown[]
 }));
 const saved = vi.hoisted(() => ({ calls: [] as unknown[] }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	getApiKeys: () => [],
-	setSpecialistEntries: vi.fn((list: SpecialistEntry[]) => {
-		saved.calls.push(list);
-		// What commit() does: keep a plain copy.
-		settings.specialists = structuredClone(list);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => settings,
+		getApiKeys: () => [],
+		setSpecialistEntries: vi.fn((list: SpecialistEntry[]) => {
+			saved.calls.push(list);
+			// What commit() does: keep a plain copy.
+			settings.specialists = structuredClone(list);
+		})
 	})
-}));
+);
 const call = vi.hoisted(() => ({
 	callSpecialist: vi.fn(),
 	listSpecialistModels: vi.fn()

@@ -8,11 +8,13 @@ const m = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => m.settings,
-	markLeanHinted: vi.fn(),
-	setLeanMode: vi.fn()
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => m.settings,
+		markLeanHinted: vi.fn(),
+		setLeanMode: vi.fn()
+	})
+);
 
 import { shouldHintFull, shouldOfferLean } from './nudges';
 import type { AppSettings } from '#lib/stores/settings.ts';

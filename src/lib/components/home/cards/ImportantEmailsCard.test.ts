@@ -13,12 +13,13 @@ const m = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<object>()),
-	getSettings: () => ({
-		integrations: { email: { accounts: [{ id: 'acc', label: 'Work', sendEnabled: false }] } }
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			integrations: { email: { accounts: [{ id: 'acc', label: 'Work', sendEnabled: false }] } }
+		})
 	})
-}));
+);
 vi.mock('#lib/home/latestRun.svelte.ts', () => ({ getLatestRun: () => m.latest }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: m.enqueue,

@@ -13,10 +13,12 @@ const setCodeHelper = vi.hoisted(() =>
 		state.codeHelpers = { ...state.codeHelpers, [id]: on };
 	})
 );
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => ({ codeHelpers: state.codeHelpers }),
-	setCodeHelper
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ codeHelpers: state.codeHelpers }),
+		setCodeHelper
+	})
+);
 
 import HelpersSection from './HelpersSection.svelte';
 import FakeEditor from './HelpersSection.fixture.svelte';

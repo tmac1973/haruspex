@@ -21,22 +21,23 @@ const mocks = vi.hoisted(() => ({
 	eventHandler: undefined as ((e: { payload: unknown }) => void) | undefined
 }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		contextSize: 32768,
-		inferenceBackend: {
-			mode: mocks.mode,
-			remoteBaseUrl: mocks.remoteBaseUrl,
-			allowParallelInference: mocks.allowParallelInference,
-			remoteBackendKind: mocks.backendKind,
-			remoteParallel: mocks.remoteParallel
-		}
-	}),
-	// Read by resolveBackendDescriptor, which laneFor now delegates to.
-	getActiveLocalModelFilename: () => '',
-	getApiKeyValue: () => undefined
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			contextSize: 32768,
+			inferenceBackend: {
+				mode: mocks.mode,
+				remoteBaseUrl: mocks.remoteBaseUrl,
+				allowParallelInference: mocks.allowParallelInference,
+				remoteBackendKind: mocks.backendKind,
+				remoteParallel: mocks.remoteParallel
+			}
+		}),
+		// Read by resolveBackendDescriptor, which laneFor now delegates to.
+		getActiveLocalModelFilename: () => '',
+		getApiKeyValue: () => undefined
+	})
+);
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })

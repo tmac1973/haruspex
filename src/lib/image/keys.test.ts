@@ -10,10 +10,12 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: async (cmd: string, args: { key: string }) =>
 		cmd === 'secret_get' ? (state.secrets[args.key] ?? null) : null
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => state.settings,
-	updateSettings: (patch: object) => Object.assign(state.settings, patch)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => state.settings,
+		updateSettings: (patch: object) => Object.assign(state.settings, patch)
+	})
+);
 vi.mock('#lib/stores/apiKeySecrets.ts', () => ({
 	apiKeysReady: () => Promise.resolve(),
 	addStoredApiKey: async (name: string, value: string) => {

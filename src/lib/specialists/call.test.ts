@@ -13,10 +13,11 @@ const descriptor = vi.hoisted(() => ({
 vi.mock('#lib/inference/descriptor.ts', () => descriptor);
 const probe = vi.hoisted(() => ({ probeInferenceServer: vi.fn() }));
 vi.mock('#lib/inferenceProbe.ts', () => probe);
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ specialists: [] })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ specialists: [] })
+	})
+);
 
 import '#lib/specialists/kinds/index.ts';
 import { callOptionsFrom, callSpecialist, listSpecialistModels } from './call';

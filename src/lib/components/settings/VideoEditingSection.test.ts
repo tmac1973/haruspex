@@ -26,11 +26,12 @@ const settings = vi.hoisted(() => ({
 	videoOutroPath: '',
 	videoEncoder: 'libx264'
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	updateSettings: vi.fn((patch: object) => Object.assign(settings, patch))
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => settings,
+		updateSettings: vi.fn((patch: object) => Object.assign(settings, patch))
+	})
+);
 
 import VideoEditingSection from './VideoEditingSection.svelte';
 import { updateSettings } from '#lib/stores/settings.ts';

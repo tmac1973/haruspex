@@ -20,18 +20,19 @@ vi.mock('#lib/skills/turn.ts', () => ({
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: () => ({ contextSize: 16384, vision: false })
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		codeMaxIterations: 33,
-		codeAutoApprove: false,
-		codeRunCommandTimeoutSecs: 30,
-		codeSubtasks: 'read',
-		imageBackendKind: 'none',
-		codeCustomSystemPrompt: ''
-	}),
-	getChatTemplateKwargs: () => ({})
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			codeMaxIterations: 33,
+			codeAutoApprove: false,
+			codeRunCommandTimeoutSecs: 30,
+			codeSubtasks: 'read',
+			imageBackendKind: 'none',
+			codeCustomSystemPrompt: ''
+		}),
+		getChatTemplateKwargs: () => ({})
+	})
+);
 
 import {
 	capReport,

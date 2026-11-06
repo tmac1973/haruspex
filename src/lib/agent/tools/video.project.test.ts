@@ -3,20 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const state = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({
-			...actual.getSettings(),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({
 			videoEditingEnabled: true,
 			videoIntroPath: '/elsewhere/intro.mp4',
 			videoOutroPath: '',
 			videoPreset: '1440p60',
 			videoEncoder: 'libx264'
 		})
-	};
-});
+	})
+);
 
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';

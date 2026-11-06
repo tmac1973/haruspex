@@ -8,10 +8,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#lib/code/runSubtask.ts', () => ({ runSubtask: mocks.runSubtask }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const real = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return { ...real, getSettings: () => ({ ...real.getSettings(), ...mocks.settings }) };
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({ ...mocks.settings })
+	})
+);
 
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { executeDelegate, subtaskLabel, SUBTASKS_PER_TURN } from '#lib/agent/tools/delegate.ts';

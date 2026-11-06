@@ -7,10 +7,11 @@ import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ proxy: null })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ proxy: null })
+	})
+);
 vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	markRunStarted: vi.fn(async () => {}),
 	markRunStepStarted: vi.fn(async () => {}),

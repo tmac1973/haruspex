@@ -17,13 +17,14 @@ vi.mock('#lib/stores/memory.svelte.ts', () => ({
 	memoryActive: mocks.memoryActive
 }));
 vi.mock('#lib/stores/session.svelte.ts', () => ({ getActiveConversationId: () => 'conv-7' }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => mocks.settings,
-	hasEnabledEmailAccount: () => false,
-	hasEnabledCalendarAccount: () => false,
-	hasEnabledContactsAccount: () => false
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => mocks.settings,
+		hasEnabledEmailAccount: () => false,
+		hasEnabledCalendarAccount: () => false,
+		hasEnabledContactsAccount: () => false
+	})
+);
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );

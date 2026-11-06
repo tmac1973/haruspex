@@ -11,14 +11,13 @@ vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({ ...actual.getSettings(), ...mocks.settings }),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({ ...mocks.settings }),
 		getSearchProxy: () => ({ mode: 'none', url: '', bypass: '' })
-	};
-});
+	})
+);
 
 vi.mock('./_helpers', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./_helpers')>()),

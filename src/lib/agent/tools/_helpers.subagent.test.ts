@@ -4,12 +4,13 @@ const api = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
 vi.mock('#lib/api.ts', () => ({ chatCompletion: api.chatCompletion }));
 const descriptor = vi.hoisted(() => ({ resolveBackendDescriptor: vi.fn(() => ({ kind: 'x' })) }));
 vi.mock('#lib/inference/descriptor.ts', () => descriptor);
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({}),
-	getSamplingParams: () => ({}),
-	getChatTemplateKwargs: () => ({})
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({}),
+		getSamplingParams: () => ({}),
+		getChatTemplateKwargs: () => ({})
+	})
+);
 
 import { runSubAgent } from './_helpers';
 

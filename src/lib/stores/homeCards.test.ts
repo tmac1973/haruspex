@@ -8,10 +8,12 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 
 const settings = vi.hoisted(() => ({ homeSeeded: false }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => settings,
-	updateSettings: (partial: Partial<typeof settings>) => Object.assign(settings, partial)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => settings,
+		updateSettings: (partial: Partial<typeof settings>) => Object.assign(settings, partial)
+	})
+);
 
 const jobs = vi.hoisted(() => ({ deleteJob: vi.fn(async () => true) }));
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({ deleteJob: jobs.deleteJob }));

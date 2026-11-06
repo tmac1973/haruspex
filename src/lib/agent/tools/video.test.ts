@@ -10,18 +10,16 @@ const state = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({
-			...actual.getSettings(),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({
 			videoEditingEnabled: state.enabled,
 			videoIntroPath: state.intro,
 			videoOutroPath: state.outro
 		})
-	};
-});
+	})
+);
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { clipLine, formatDuration, mixNotes, probeReport } from '#lib/video/report.ts';

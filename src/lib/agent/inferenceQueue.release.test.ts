@@ -11,21 +11,22 @@ const mocks = vi.hoisted(() => ({
 	acquire: new Map<string, { resolve: () => void; reject: (e: unknown) => void }>()
 }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		contextSize: 32768,
-		inferenceBackend: {
-			mode: 'local',
-			remoteBaseUrl: '',
-			allowParallelInference: false,
-			remoteBackendKind: null,
-			remoteParallel: null
-		}
-	}),
-	getActiveLocalModelFilename: () => '',
-	getApiKeyValue: () => undefined
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			contextSize: 32768,
+			inferenceBackend: {
+				mode: 'local',
+				remoteBaseUrl: '',
+				allowParallelInference: false,
+				remoteBackendKind: null,
+				remoteParallel: null
+			}
+		}),
+		getActiveLocalModelFilename: () => '',
+		getApiKeyValue: () => undefined
+	})
+);
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })

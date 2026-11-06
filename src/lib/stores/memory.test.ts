@@ -12,14 +12,15 @@ vi.mock('@tauri-apps/api/core', async () =>
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => mocks.settings,
-	updateSettings: (patch: Record<string, unknown>) => {
-		Object.assign(mocks.settings, patch);
-		mocks.updateSettings(patch);
-	}
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => mocks.settings,
+		updateSettings: (patch: Record<string, unknown>) => {
+			Object.assign(mocks.settings, patch);
+			mocks.updateSettings(patch);
+		}
+	})
+);
 
 import {
 	__resetMemoryStateForTests,
