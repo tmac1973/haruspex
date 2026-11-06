@@ -148,3 +148,82 @@ describe('video_transcribe', () => {
 		await running;
 	});
 });
+
+describe('when Rust refuses', () => {
+	const ctx = () => makeToolContext({ interactive: true, workingDir: '/videos' });
+	const errorOf = (out: { result: string }) => (JSON.parse(out.result) as { error: string }).error;
+	const refuse = (cmd: string, why: string) =>
+		state.invoke.mockImplementation(
+			invokeRouter({
+				[cmd]: () => {
+					throw why;
+				}
+			})
+		);
+
+	it('video_transcribe reports the error', async () => {
+		refuse('video_transcribe', 'no whisper model');
+		expect(errorOf(await executeTool('video_transcribe', { episode: 'ep010' }, ctx()))).toBe(
+			'no whisper model'
+		);
+	});
+
+	it('video_transcribe passes a stop through instead of reporting it', async () => {
+		const controller = new AbortController();
+		state.invoke.mockImplementation(
+			invokeRouter({
+				video_transcribe: () => {
+					controller.abort();
+					throw 'cancelled';
+				}
+			})
+		);
+		await expect(
+			executeTool(
+				'video_transcribe',
+				{ episode: 'ep010' },
+				makeToolContext({ interactive: true, workingDir: '/videos', signal: controller.signal })
+			)
+		).rejects.toBe('cancelled');
+	});
+
+	it('video_silences needs a path, and reports the error', async () => {
+		expect(errorOf(await executeTool('video_silences', {}, ctx()))).toBe(
+			'video_silences needs "path", a clip.'
+		);
+		refuse('video_silences', 'ffmpeg failed');
+		expect(errorOf(await executeTool('video_silences', { path: 'a.mp4' }, ctx()))).toBe(
+			'ffmpeg failed'
+		);
+	});
+
+	it('video_silences lists what it found, in the clip’s time', async () => {
+		state.invoke.mockImplementation(invokeRouter({ video_silences: [{ start: 65, end: 70 }] }));
+		expect((await executeTool('video_silences', { path: 'a.mp4' }, ctx())).result).toBe(
+			"1 silences in a.mp4, 0:05 in all, in the clip's own time:\n1:05–1:10 (5.0 s)"
+		);
+		state.invoke.mockImplementation(invokeRouter({ video_silences: [] }));
+		expect((await executeTool('video_silences', { path: 'a.mp4' }, ctx())).result).toBe(
+			'No silences of 1.5 s or more in a.mp4.'
+		);
+	});
+
+	it('video_captions reports the error', async () => {
+		refuse('video_write_captions', 'no transcripts yet');
+		expect(errorOf(await executeTool('video_captions', { episode: 'ep010' }, ctx()))).toBe(
+			'no transcripts yet'
+		);
+	});
+
+	it('video_chapters checks its chapters first, then reports the error', async () => {
+		expect(
+			errorOf(await executeTool('video_chapters', { chapters: [{ title: 'x' }] }, ctx()))
+		).toContain('"title" and "at"');
+		refuse('video_write_chapters', 'the first chapter must be at 0:00');
+		expect(
+			errorOf(
+				await executeTool('video_chapters', { chapters: [{ title: 'Intro', at: '0:05' }] }, ctx())
+			)
+		).toBe('the first chapter must be at 0:00');
+	});
+});
