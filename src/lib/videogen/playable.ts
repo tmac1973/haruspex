@@ -7,8 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { videoSrc } from '#lib/videogen/url.ts';
-
-const WEB = import.meta.env.VITE_HARUSPEX_WEB === '1';
+import { isWebClient } from '#lib/buildFlags.ts';
 
 export interface PlayableClip {
 	url: string;
@@ -24,7 +23,7 @@ export function sniffVideoMime(b: Uint8Array): string {
 }
 
 async function clipBytes(hash: string): Promise<ArrayBuffer> {
-	if (!WEB) return invoke<ArrayBuffer>('audio_read_bytes', { hash });
+	if (!isWebClient) return invoke<ArrayBuffer>('audio_read_bytes', { hash });
 	const r = await fetch(videoSrc(hash) ?? '', { credentials: 'same-origin' });
 	if (!r.ok) throw new Error(`Video not found (${r.status})`);
 	return r.arrayBuffer();

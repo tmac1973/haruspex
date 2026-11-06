@@ -5,10 +5,10 @@
  * control's server, whose audio route serves any cached file.
  */
 
+import { isWebClient } from '#lib/buildFlags.ts';
 import { customSchemeBase } from '#lib/utils/customScheme.ts';
 
-const BASE =
-	import.meta.env.VITE_HARUSPEX_WEB === '1' ? '/api/v1/audio/' : customSchemeBase('haruspex-video');
+const BASE = isWebClient ? '/api/v1/audio/' : customSchemeBase('haruspex-video');
 
 const HASH_RE = /^[0-9a-f]{64}$/;
 

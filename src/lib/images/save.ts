@@ -6,6 +6,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
+import { isWebClient } from '#lib/buildFlags.ts';
 import { imageSrc } from '#lib/images/url.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -35,7 +36,7 @@ export function imageFileName(alt: string, ext: string): string {
 export type ImageSaveResult = { kind: 'saved'; path: string } | { kind: 'cancelled' };
 
 export async function saveImageAs(hash: string, alt: string): Promise<ImageSaveResult> {
-	if (import.meta.env.VITE_HARUSPEX_WEB === '1') {
+	if (isWebClient) {
 		const r = await fetch(imageSrc(hash) ?? '', { credentials: 'same-origin' });
 		if (!r.ok) throw new Error(`Image not found (${r.status})`);
 		const bytes = new Uint8Array(await r.arrayBuffer());
@@ -66,7 +67,7 @@ export async function saveImageAs(hash: string, alt: string): Promise<ImageSaveR
 export async function saveDataUrlImageAs(dataUrl: string, alt: string): Promise<ImageSaveResult> {
 	const bytes = dataUrlBytes(dataUrl);
 	if (!bytes) throw new Error('The picture has no data to save.');
-	if (import.meta.env.VITE_HARUSPEX_WEB === '1') {
+	if (isWebClient) {
 		const a = document.createElement('a');
 		a.href = dataUrl;
 		a.download = imageFileName(alt, imageExtension(bytes));

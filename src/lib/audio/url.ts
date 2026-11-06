@@ -5,10 +5,10 @@
  * instead.
  */
 
+import { isWebClient } from '#lib/buildFlags.ts';
 import { customSchemeBase } from '#lib/utils/customScheme.ts';
 
-const BASE =
-	import.meta.env.VITE_HARUSPEX_WEB === '1' ? '/api/v1/audio/' : customSchemeBase('haruspex-audio');
+const BASE = isWebClient ? '/api/v1/audio/' : customSchemeBase('haruspex-audio');
 
 /** Exactly 64 lowercase hex characters — mirrors `image_cache::is_valid_hash`. */
 const HASH_RE = /^[0-9a-f]{64}$/;
