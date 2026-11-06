@@ -467,6 +467,8 @@ pub fn run() {
             whisper::get_whisper_status,
             whisper::get_whisper_logs,
             whisper::clear_whisper_logs,
+            whisper::whisper_video_logs,
+            whisper::whisper_video_clear_logs,
             whisper::transcribe_audio,
             image_engine::image_engine_start,
             image_engine::image_engine_stop,

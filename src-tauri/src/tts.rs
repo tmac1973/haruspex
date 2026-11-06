@@ -2,7 +2,7 @@ use crate::audio_cache::MAX_AUDIO_BYTES;
 use crate::db::Database;
 use crate::sidecar_process::SidecarChild;
 use futures_util::StreamExt;
-use log::{error, info, warn};
+use log::{error, info, warn, Level};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -158,6 +158,7 @@ impl TtsEngine {
             args,
             env,
             ready_markers: &["listening", "Listening"],
+            stderr_level: Level::Warn,
             health_url: format!("{}/", base_url(TTS_PORT)),
             accept_any: true,
         };

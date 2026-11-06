@@ -138,6 +138,7 @@ const TABLE: Record<string, Handler> = {
 	// The log viewer: nothing logged yet.
 	get_app_logs: empty,
 	image_engine_logs: empty,
+	whisper_video_logs: empty,
 	comfy_logs: empty,
 	// Settings → Image asks whether to offer the bundled engine.
 	image_engine_status: () => ({ status: { type: 'Stopped' }, model: null, available: true }),

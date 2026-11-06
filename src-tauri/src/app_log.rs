@@ -26,19 +26,23 @@ struct AppLogger {
 
 /// Message prefixes that indicate the line is sidecar stdout/stderr
 /// being passed through the `log` crate. These already appear in their
-/// own dedicated log viewer tabs (LLM / Whisper / TTS), so we filter them
-/// out of the App log tab to keep it focused on the main app's own
-/// activity (PDF extraction, file tools, agent loop, errors, etc.).
+/// own dedicated log viewer tabs (LLM / Whisper / Video whisper / TTS /
+/// Image), so we filter them out of the App log tab to keep it focused on
+/// the main app's own activity (PDF extraction, file tools, agent loop,
+/// errors, etc.).
 ///
 /// Note: this only affects the in-memory buffer that the App tab reads.
 /// The lines are still printed to stderr for dev / terminal users, and
 /// they still flow into the per-sidecar ring buffers in server.rs /
-/// whisper.rs / tts.rs.
+/// whisper.rs / tts.rs / image_engine.rs. App messages about a sidecar must
+/// not start with one of these, or they vanish from the App tab.
 const SIDECAR_PASSTHROUGH_PREFIXES: &[&str] = &[
     "llama-server:",
     "llama-server stderr:",
     "whisper-server:",
+    "whisper-video:",
     "koko:",
+    "sd-server:",
 ];
 
 fn is_sidecar_passthrough(message: &str) -> bool {
@@ -252,7 +256,7 @@ mod tests {
     // Calendar math moved to crate::time_util — tested there.
 
     #[test]
-    fn sidecar_passthrough_filter_catches_all_three_sidecars() {
+    fn sidecar_passthrough_filter_catches_every_sidecar() {
         assert!(is_sidecar_passthrough(
             "llama-server: srv  log_server: model loaded"
         ));
@@ -263,6 +267,10 @@ mod tests {
             "whisper-server: whisper_init_from_file_no_state"
         ));
         assert!(is_sidecar_passthrough("koko: starting kokoros"));
+        assert!(is_sidecar_passthrough(
+            "whisper-video: [00:00:01.000 --> 00:00:03.000]  Hello"
+        ));
+        assert!(is_sidecar_passthrough("sd-server: loading model"));
     }
 
     #[test]
