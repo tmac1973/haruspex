@@ -11,6 +11,7 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { save } from '@tauri-apps/plugin-dialog';
+	import { isWebClient } from '#lib/buildFlags.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { videoHashFromUrl } from '#lib/videogen/url.ts';
 	import { clipFileName, playableClip } from '#lib/videogen/playable.ts';
@@ -49,7 +50,7 @@
 	async function saveAs() {
 		if (!hash || !loaded) return;
 		const name = clipFileName(title, mime);
-		if (import.meta.env.VITE_HARUSPEX_WEB === '1') {
+		if (isWebClient) {
 			const a = document.createElement('a');
 			a.href = loaded;
 			a.download = name;

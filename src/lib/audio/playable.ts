@@ -14,8 +14,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { audioSrc } from '#lib/audio/url.ts';
-
-const WEB = import.meta.env.VITE_HARUSPEX_WEB === '1';
+import { isWebClient } from '#lib/buildFlags.ts';
 
 /** A song ready for a player: its blob URL and its type. */
 export interface PlayableSong {
@@ -37,7 +36,7 @@ export function sniffAudioMime(b: Uint8Array): string {
 
 /** A song's bytes: over IPC on the desktop, the HTTP route on the web client. */
 async function songBytes(hash: string): Promise<ArrayBuffer> {
-	if (!WEB) return invoke<ArrayBuffer>('audio_read_bytes', { hash });
+	if (!isWebClient) return invoke<ArrayBuffer>('audio_read_bytes', { hash });
 	const r = await fetch(audioSrc(hash) ?? '', { credentials: 'same-origin' });
 	if (!r.ok) throw new Error(`Audio not found (${r.status})`);
 	return r.arrayBuffer();

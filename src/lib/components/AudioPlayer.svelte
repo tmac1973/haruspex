@@ -15,6 +15,7 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { save } from '@tauri-apps/plugin-dialog';
+	import { isWebClient } from '#lib/buildFlags.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { audioHashFromUrl } from '#lib/audio/url.ts';
 	import { audioExtension, playableSong, songFileName } from '#lib/audio/playable.ts';
@@ -58,7 +59,7 @@
 	async function saveAs() {
 		if (!hash || !loaded) return;
 		const name = songFileName(title, mime);
-		if (import.meta.env.VITE_HARUSPEX_WEB === '1') {
+		if (isWebClient) {
 			const a = document.createElement('a');
 			a.href = loaded;
 			a.download = name;
