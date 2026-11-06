@@ -13,8 +13,9 @@
 	import GlbViewer from '#lib/components/GlbViewer.svelte';
 	import AudioViewer from '#lib/components/AudioViewer.svelte';
 	import ImageViewer from '#lib/components/ImageViewer.svelte';
-	import ViewerList from '#lib/components/ViewerList.svelte';
+	import FileTree from '#lib/components/FileTree.svelte';
 	import { EditorWorkspace } from '#lib/editor/workspace.svelte.ts';
+	import type { EditorDocument } from '#lib/editor/document.svelte.ts';
 	import { watchedIO } from '#lib/editor/io.ts';
 	import {
 		OPEN_EVENT,
@@ -81,6 +82,14 @@
 		if (!doc || doc.dirty) return;
 		await openInEditorWindows(root, [relPath], true);
 		ws.closeTab(relPath);
+	}
+
+	/** The file last shown from the list, which leaves the keyboard with the list. */
+	let picked = $state<string | null>(null);
+
+	async function pick(from: EditorDocument, next: string): Promise<void> {
+		picked = next;
+		await ws.replace(from.relPath, next);
 	}
 
 	function onKeydown(e: KeyboardEvent): void {
@@ -226,34 +235,29 @@
 			<p class="error">{active.error}</p>
 		{/if}
 		<div class="pane">
-			{#if active.viewer}
-				<div class="viewing">
-					<ViewerList
-						workdir={root}
-						relPath={active.relPath}
-						onpick={(next) => void ws.replace(active.relPath, next)}
-					/>
-					{#key active.relPath}
-						{#if active.viewer === 'glb'}
-							<GlbViewer workdir={root} relPath={active.relPath} />
-						{:else if active.viewer === 'image'}
-							<ImageViewer workdir={root} relPath={active.relPath} />
-						{:else}
-							<AudioViewer workdir={root} relPath={active.relPath} />
-						{/if}
-					{/key}
-				</div>
-			{:else if active.loaded && !active.failed}
-				{#key active.relPath}
+			<FileTree
+				workdir={root}
+				relPath={active.relPath}
+				onpick={(next) => void pick(active, next)}
+			/>
+			{#key active.relPath}
+				{#if active.viewer === 'glb'}
+					<GlbViewer workdir={root} relPath={active.relPath} />
+				{:else if active.viewer === 'image'}
+					<ImageViewer workdir={root} relPath={active.relPath} />
+				{:else if active.viewer === 'audio'}
+					<AudioViewer workdir={root} relPath={active.relPath} />
+				{:else if active.loaded && !active.failed}
 					<CodeEditor
 						value={active.draft}
 						label={active.relPath}
 						path={active.relPath}
+						autofocus={active.relPath !== picked}
 						onchange={(v) => active.edit(v)}
 						onsave={() => void active.save()}
 					/>
-				{/key}
-			{/if}
+				{/if}
+			{/key}
 		</div>
 		<div class="status">
 			<span class="path" title={root}>{active.relPath}</span>
@@ -359,17 +363,12 @@
 		flex: 1 1 auto;
 		min-height: 0;
 		display: flex;
-		flex-direction: column;
+		gap: 8px;
 		padding: 6px;
 	}
 	.pane :global(.code-editor) {
 		flex: 1;
-	}
-	.viewing {
-		flex: 1;
-		display: flex;
-		gap: 8px;
-		min-height: 0;
+		min-width: 0;
 	}
 	.unwatched {
 		font-size: 0.75rem;

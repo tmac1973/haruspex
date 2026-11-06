@@ -17,8 +17,18 @@
 		label?: string;
 		/** The file's path, for its highlighter; none means markdown. */
 		path?: string;
+		/** Take the keyboard on load. Off when stepping through a folder, so the arrow keys keep stepping. */
+		autofocus?: boolean;
 	}
-	let { value, onchange, onsave, readonly = false, label = 'Editor', path }: Props = $props();
+	let {
+		value,
+		onchange,
+		onsave,
+		readonly = false,
+		label = 'Editor',
+		path,
+		autofocus = true
+	}: Props = $props();
 
 	let host: HTMLDivElement;
 	let editor = $state<EditorHandle | null>(null);
@@ -36,7 +46,7 @@
 					onChange: (v) => onchange?.(v),
 					onSave: () => onsave?.()
 				});
-				editor.focus();
+				if (autofocus) editor.focus();
 			})
 			.catch((e) => (failed = String(e)));
 		return () => {

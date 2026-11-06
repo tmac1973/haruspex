@@ -534,59 +534,99 @@ pub fn editor_find_open(
         .collect())
 }
 
-/// The files under an editor window's folder that open in a viewer, for the
-/// window's file list.
+/// The files under an editor window's folder, for the window's file list.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
-pub struct ViewableListing {
+pub struct FileListing {
     /// Relative to the folder, `/`-separated, sorted.
     pub files: Vec<String>,
-    /// More than `MAX_VIEWABLE` were found; `files` has the first ones.
+    /// More than `MAX_LISTED` of one sort were found; `files` has the first ones.
     pub truncated: bool,
 }
 
-const MAX_VIEWABLE: usize = 2000;
-const MAX_VIEWABLE_DEPTH: usize = 8;
+/// Per sort: models, images and sounds, then text files.
+const MAX_LISTED: usize = 2000;
+const MAX_LISTED_DEPTH: usize = 8;
 /// What a viewer tab shows (`viewerFor` in `editor/document.svelte.ts`).
 const VIEWABLE_EXTS: &[&str] = &[
     "glb", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "wav", "mp3", "ogg", "oga", "opus",
     "flac", "m4a", "aac",
 ];
+/// How much of a file is read to tell text from binary.
+const SNIFF_BYTES: usize = 8192;
 
-/// Every model, image and sound under `root`, so the window can step through a
-/// folder of them. Hidden folders and `node_modules` are skipped;
-/// `.gitignore` is not honoured, since generated files are usually ignored.
-fn list_viewable(root: &Path) -> ViewableListing {
-    let walk = ignore::WalkBuilder::new(root)
+fn is_viewable(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| VIEWABLE_EXTS.iter().any(|v| e.eq_ignore_ascii_case(v)))
+}
+
+/// Opens as text: small enough to load, no NUL in its first bytes.
+fn looks_like_text(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    if file
+        .metadata()
+        .map_or(true, |m| m.len() > MAX_READ_LOAD_BYTES)
+    {
+        return false;
+    }
+    let mut head = Vec::with_capacity(SNIFF_BYTES);
+    if file
+        .take(SNIFF_BYTES as u64)
+        .read_to_end(&mut head)
+        .is_err()
+    {
+        return false;
+    }
+    !head.contains(&0)
+}
+
+/// The files under `root` that pass `keep`, relative and `/`-separated, at
+/// most `MAX_LISTED + 1` of them. Hidden folders and `node_modules` are
+/// skipped; `.gitignore` only when `gitignore` is set.
+fn walk_files(root: &Path, gitignore: bool, keep: impl Fn(&Path) -> bool) -> Vec<String> {
+    ignore::WalkBuilder::new(root)
         .standard_filters(false)
         .hidden(true)
-        .max_depth(Some(MAX_VIEWABLE_DEPTH))
+        .git_ignore(gitignore)
+        .git_exclude(gitignore)
+        .require_git(false)
+        .max_depth(Some(MAX_LISTED_DEPTH))
         .filter_entry(|d| d.file_name() != "node_modules")
-        .build();
-    let mut files: Vec<String> = walk
+        .build()
         .filter_map(|d| d.ok())
         .filter(|d| d.file_type().is_some_and(|t| t.is_file()))
-        .filter(|d| {
-            d.path()
-                .extension()
-                .is_some_and(|e| VIEWABLE_EXTS.iter().any(|v| e.eq_ignore_ascii_case(v)))
-        })
+        .filter(|d| keep(d.path()))
         .filter_map(|d| {
             let rel = d.path().strip_prefix(root).ok()?;
             Some(rel.to_string_lossy().replace('\\', "/"))
         })
-        .take(MAX_VIEWABLE + 1)
-        .collect();
-    let truncated = files.len() > MAX_VIEWABLE;
-    files.truncate(MAX_VIEWABLE);
+        .take(MAX_LISTED + 1)
+        .collect()
+}
+
+/// Every model, image, sound and text file under `root`, so the window can
+/// step through a folder of them. Models, images and sounds ignore
+/// `.gitignore`, since generated files are usually ignored; text files
+/// honour it, or a repository's build output would fill the list.
+fn list_files(root: &Path) -> FileListing {
+    let mut media = walk_files(root, false, is_viewable);
+    let mut text = walk_files(root, true, |p| !is_viewable(p) && looks_like_text(p));
+    let truncated = media.len() > MAX_LISTED || text.len() > MAX_LISTED;
+    media.truncate(MAX_LISTED);
+    text.truncate(MAX_LISTED);
+    let mut files = media;
+    files.append(&mut text);
     files.sort();
-    ViewableListing { files, truncated }
+    FileListing { files, truncated }
 }
 
 #[tauri::command]
-pub async fn editor_list_viewable(workdir: String) -> Result<ViewableListing, String> {
+pub async fn editor_list_files(workdir: String) -> Result<FileListing, String> {
     let root = workdir_path(&workdir)?;
-    tokio::task::spawn_blocking(move || list_viewable(&root))
+    tokio::task::spawn_blocking(move || list_files(&root))
         .await
         .map_err(|e| format!("Listing files failed: {e}"))
 }
@@ -597,32 +637,39 @@ mod tests {
     use crate::test_util::temp_dir;
 
     #[test]
-    fn list_viewable_finds_nested_models_images_and_sounds_and_skips_hidden() {
-        let dir = temp_dir("viewable_list");
+    fn list_files_finds_nested_media_and_text_and_skips_hidden_and_binary() {
+        let dir = temp_dir("file_list");
         let root: &Path = &dir;
-        for rel in [
-            "b.glb",
-            "a/x.GLB",
-            "a/attempts/create-01/x.glb",
-            ".cache/y.glb",
-            "node_modules/z.glb",
-            "a/x.gltf",
-            "a/sheet.png",
-            "song.MP3",
-            "notes.txt",
+        for (rel, body) in [
+            ("b.glb", &b"glTF\0"[..]),
+            ("a/x.GLB", b"glTF"),
+            ("a/attempts/create-01/x.glb", b"glTF"),
+            (".cache/y.glb", b"glTF"),
+            ("node_modules/z.glb", b"glTF"),
+            ("a/x.gltf", b"{}"),
+            ("a/sheet.png", b"png"),
+            ("song.MP3", b"mp3"),
+            ("notes.txt", b"hello"),
+            ("blob.bin", b"\0\x01\x02"),
+            (".gitignore", b"out/\n"),
+            ("out/build.log", b"ignored text"),
+            ("out/render.png", b"kept media"),
         ] {
             let p = root.join(rel);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(&p, b"glTF").unwrap();
+            std::fs::write(&p, body).unwrap();
         }
-        let listing = list_viewable(root);
+        let listing = list_files(root);
         assert_eq!(
             listing.files,
             vec![
                 "a/attempts/create-01/x.glb",
                 "a/sheet.png",
                 "a/x.GLB",
+                "a/x.gltf",
                 "b.glb",
+                "notes.txt",
+                "out/render.png",
                 "song.MP3"
             ]
         );

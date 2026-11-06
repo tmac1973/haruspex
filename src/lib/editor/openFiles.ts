@@ -1,14 +1,15 @@
 /**
  * Code → Open: any file, in its folder's editor window (a model, image or
  * sound in its viewer, anything else as text), or a folder, which opens on
- * its first model, image or sound with the rest listed beside it.
+ * its first model, image or sound, else its first text file, with the rest
+ * listed beside it.
  */
 
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openInEditorWindows } from '#lib/editor/windows.ts';
-import type { ViewableListing } from '#lib/ipc/gen/ViewableListing.ts';
-import { firstFile } from '#lib/editor/viewerList.ts';
+import type { FileListing } from '#lib/ipc/gen/FileListing.ts';
+import { firstFile } from '#lib/editor/fileTree.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -30,10 +31,10 @@ export async function openFolder(): Promise<void> {
 	const root = await open({ title: 'Open a folder', directory: true });
 	if (typeof root !== 'string') return;
 	try {
-		const { files } = await invoke<ViewableListing>('editor_list_viewable', { workdir: root });
+		const { files } = await invoke<FileListing>('editor_list_files', { workdir: root });
 		const first = firstFile(files);
 		if (!first) {
-			showToast(`No models, images or sounds in ${root}.`, { kind: 'error' });
+			showToast(`No files to open in ${root}.`, { kind: 'error' });
 			return;
 		}
 		await show(root, first);

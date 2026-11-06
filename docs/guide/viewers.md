@@ -1,6 +1,6 @@
 ---
 title: Viewers for models, images and sounds
-description: Looking at .glb models, images and sounds — opening any file or folder, stepping through a folder with the arrow keys, orbiting a model, playing a sound, and what the viewers don't do.
+description: Looking at .glb models, images and sounds — opening a file or folder, the folder tree and its arrow keys, orbiting a model, playing a sound, and what the viewers don't do.
 ---
 
 # Viewers for models, images and sounds
@@ -12,14 +12,16 @@ A `.glb` model, an image (`.png`, `.jpg`, `.webp`, `.gif`, `.bmp`, `.svg`) or a 
 - From the Code tab: click **Open** at the top of the sessions list, then **File…** to pick any file, or **Folder…** to pick a folder. Any folder works, not only a session's.
 - From a Code session: click a file name in the transcript, or ask the agent to open it.
 
-**Folder…** opens on the folder's first model, else its first image, else its first sound. A file picked with **File…** opens in its own folder's window, so the list beside it holds that folder and the folders inside it. To compare files spread over several folders, use **Folder…** on the folder above them.
+**Folder…** opens on the folder's first model, else its first image, else its first sound, else its first text file. A file picked with **File…** opens in its own folder's window, so the list beside it holds that folder and the folders inside it. To compare files spread over several folders, use **Folder…** on the folder above them.
 
 ## Step through a folder
 
-When the window's folder holds more than one model, image or sound, a list sits beside the viewer, with each file's folder under its name. Folders inside it count too, up to eight deep; hidden folders and `node_modules` are skipped.
+When the window's folder holds more than one file of a kind, a tree of them sits beside the tab, text files included. Folders inside it count too, up to eight deep; hidden folders and `node_modules` are skipped. Text files also skip what `.gitignore` lists; models, images and sounds don't, since generated files are often ignored. Files that aren't text, such as `.bin` or `.zip`, are left out.
 
-- Click a file, press ← or →, or use **‹** and **›**, to show the previous or next one in the same tab. The list wraps round.
-- The list shows one kind at a time. When the folder has more than one kind, **3D**, **Images** and **Audio** switch between them.
+- Click a file, press ↑ / ↓ or ← / →, or use **‹** and **›**, to show the previous or next one in the same tab. The list wraps round. A text tab with unsaved changes stays, and the next file opens in a tab of its own.
+- In a text tab the arrow keys move the cursor while it's in the text. Click a file in the tree, and they step through the folder again.
+- Click a folder to fold it away; stepping into it opens it again.
+- The tree shows one kind at a time. When the folder has more than one kind, **3D**, **Images**, **Audio** and **Text** switch between them.
 - **Attempts** adds the earlier tries the 3D models job keeps in `attempts/` folders. It only shows when there are some. See the `3d-models` page.
 - **↻** looks again for files added since the list was made.
 
@@ -54,4 +56,4 @@ When the window's folder holds more than one model, image or sound, a list sits 
 - Play video.
 - Edit, trim, convert or export a file.
 - Open a file from your file manager, or by dropping it on the window.
-- List more than 2,000 files in one folder.
+- List more than 2,000 models, images and sounds, or 2,000 text files, in one folder.

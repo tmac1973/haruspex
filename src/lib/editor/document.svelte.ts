@@ -49,7 +49,8 @@ export type DiskState = 'same' | 'changed' | 'deleted' | 'new';
 
 /**
  * Files a tab shows in a viewer rather than as text, by extension. Keep in
- * step with `VIEWABLE_EXTS` in `fs_tools/editor.rs`, which lists them.
+ * step with `VIEWABLE_EXTS` in `fs_tools/editor.rs`, which lists them
+ * apart from text files.
  */
 export type FileViewer = 'glb' | 'image' | 'audio';
 

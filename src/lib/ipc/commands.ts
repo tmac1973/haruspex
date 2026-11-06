@@ -153,7 +153,7 @@ export const IPC = {
 	download_status: 'download_status',
 	download_whisper_model: 'download_whisper_model',
 	editor_find_open: 'editor_find_open',
-	editor_list_viewable: 'editor_list_viewable',
+	editor_list_files: 'editor_list_files',
 	editor_read_file: 'editor_read_file',
 	editor_save_file: 'editor_save_file',
 	editor_unwatch_file: 'editor_unwatch_file',

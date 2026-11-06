@@ -78,7 +78,7 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: 'Ctrl / ⌘ + Shift + K', action: 'Delete the line' },
 			{ keys: 'Ctrl / ⌘ + /', action: 'Comment or uncomment' },
 			{ keys: 'Tab / Shift + Tab', action: 'Indent / outdent (Esc, then Tab, leaves the editor)' },
-			{ keys: '← / →', action: 'Previous / next file in a viewer' }
+			{ keys: '↑ / ↓ or ← / →', action: 'Previous / next file in an editor window' }
 		]
 	},
 	{
