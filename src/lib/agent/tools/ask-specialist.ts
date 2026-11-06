@@ -16,16 +16,13 @@ import { sessionSpecialists } from '#lib/specialists/session.ts';
 import type { SpecialistEntry, SpecialistImage, SpecialistKind } from '#lib/specialists/types.ts';
 import { bytesToBase64 } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { extOf, imageMime } from '#lib/utils/mime.ts';
 
 export const MAX_IMAGES = 3;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-const IMAGE_TYPES: Record<string, string> = {
-	png: 'image/png',
-	jpg: 'image/jpeg',
-	jpeg: 'image/jpeg',
-	webp: 'image/webp'
-};
+/** The pictures a specialist takes. */
+const IMAGE_TYPES = ['png', 'jpg', 'jpeg', 'webp'] as const;
 
 /** The tool's own fields; everything else belongs to a kind. */
 const OWN = new Set(['name', 'request', 'images']);
@@ -121,7 +118,7 @@ async function readImages(
 	const io = assetIo(ctx);
 	const images: SpecialistImage[] = [];
 	for (const path of paths) {
-		const mime = IMAGE_TYPES[path.split('.').pop()?.toLowerCase() ?? ''];
+		const mime = imageMime(extOf(path), IMAGE_TYPES);
 		if (!mime) return `${path}: send a PNG, JPEG or WebP.`;
 		let bytes: number[];
 		try {

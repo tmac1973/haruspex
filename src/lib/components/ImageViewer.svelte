@@ -5,20 +5,11 @@
 	 * Reload; nothing here writes.
 	 */
 	import { onMount } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 	import { formatBytes } from '#lib/utils/format.ts';
+	import { extOf, imageMime } from '#lib/utils/mime.ts';
+	import { blobUrlOf, readViewerBytes, viewerError } from '#lib/editor/viewerFile.ts';
 
 	let { workdir, relPath }: { workdir: string; relPath: string } = $props();
-
-	const MIME: Record<string, string> = {
-		png: 'image/png',
-		jpg: 'image/jpeg',
-		jpeg: 'image/jpeg',
-		webp: 'image/webp',
-		gif: 'image/gif',
-		bmp: 'image/bmp',
-		svg: 'image/svg+xml'
-	};
 
 	let url = $state('');
 	let bytes = $state(0);
@@ -64,12 +55,11 @@
 		error = '';
 		release();
 		try {
-			const data = await invoke<number[]>('fs_read_bytes', { workdir, relPath });
-			const ext = relPath.split('.').pop()?.toLowerCase() ?? '';
+			const data = await readViewerBytes(workdir, relPath);
 			bytes = data.length;
-			url = URL.createObjectURL(new Blob([new Uint8Array(data)], { type: MIME[ext] ?? '' }));
+			url = blobUrlOf(data, imageMime(extOf(relPath)) ?? '');
 		} catch (e) {
-			error = `Could not show ${relPath}: ${e instanceof Error ? e.message : String(e)}`;
+			error = viewerError('show', relPath, e);
 			loading = false;
 		}
 	}

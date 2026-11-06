@@ -11,8 +11,8 @@
 	 * it. Read fresh on mount and on Reload; nothing here writes.
 	 */
 	import { onMount } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 	import { mountGlbView, type GlbView } from '#lib/editor/glbViewer.ts';
+	import { readViewerBytes, viewerError } from '#lib/editor/viewerFile.ts';
 
 	let { workdir, relPath }: { workdir: string; relPath: string } = $props();
 
@@ -35,11 +35,10 @@
 		view?.dispose();
 		view = null;
 		try {
-			const bytes = await invoke<number[]>('fs_read_bytes', { workdir, relPath });
-			view = await mountGlbView(canvas, new Uint8Array(bytes), lastAngle);
+			view = await mountGlbView(canvas, await readViewerBytes(workdir, relPath), lastAngle);
 			clip = view.clips.length ? '0' : '';
 		} catch (e) {
-			error = `Could not show ${relPath}: ${e instanceof Error ? e.message : String(e)}`;
+			error = viewerError('show', relPath, e);
 		}
 		loading = false;
 	}
