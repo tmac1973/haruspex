@@ -24,7 +24,7 @@ import {
 	type JobSummary
 } from '#lib/stores/jobs.svelte.ts';
 import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
-import { getHomeCards, loadHomeCards } from '#lib/stores/homeCards.svelte.ts';
+import { cardUsesExistingJob, getHomeCards, loadHomeCards } from '#lib/stores/homeCards.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { logDebug } from '#lib/debugLog.ts';
@@ -119,10 +119,13 @@ async function processDueJob(job: JobSummary, now: number): Promise<void> {
  * Whether the job belongs to a Home card (Important emails, News) while
  * Settings → General → Home tab is off. Nobody would see its result, so its
  * scheduled run is skipped; Run now in the Jobs tab still runs it. A pinned
- * job is the user's own and keeps its schedule.
+ * job, or one a card was given (Add card → Use a job), is the user's own and
+ * keeps its schedule.
  */
 async function pausedWithHome(jobId: number): Promise<boolean> {
 	if (getSettings().homeTab) return false;
 	await loadHomeCards();
-	return getHomeCards().some((c) => c.job_id === jobId && c.card_type !== 'pinned_job');
+	return getHomeCards().some(
+		(c) => c.job_id === jobId && c.card_type !== 'pinned_job' && !cardUsesExistingJob(c)
+	);
 }

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 	setJobNextDueAt: vi.fn(),
 	enqueue: vi.fn(),
 	homeTab: true,
-	cards: [] as { job_id: number | null; card_type: string }[]
+	cards: [] as { job_id: number | null; card_type: string; config?: string }[]
 }));
 
 vi.mock('#lib/stores/settings.ts', () => ({
@@ -15,7 +15,8 @@ vi.mock('#lib/stores/settings.ts', () => ({
 
 vi.mock('#lib/stores/homeCards.svelte.ts', () => ({
 	loadHomeCards: () => Promise.resolve(),
-	getHomeCards: () => mocks.cards
+	getHomeCards: () => mocks.cards,
+	cardUsesExistingJob: (c: { config?: string }) => c.config === '{"existingJob":true}'
 }));
 
 vi.mock('#lib/stores/jobs.svelte.ts', async () => {
@@ -122,21 +123,26 @@ describe('scheduler tick', () => {
 	it("skips a Home card's job while the Home tab is off, but not a pinned one", async () => {
 		mocks.cards = [
 			{ job_id: 1, card_type: 'important_emails' },
-			{ job_id: 2, card_type: 'pinned_job' }
+			{ job_id: 2, card_type: 'pinned_job' },
+			{ job_id: 3, card_type: 'news', config: '{"existingJob":true}' }
 		];
-		mocks.listDueJobs.mockResolvedValue([dueJob({ id: 1 }), dueJob({ id: 2 })]);
+		mocks.listDueJobs.mockResolvedValue([dueJob({ id: 1 }), dueJob({ id: 2 }), dueJob({ id: 3 })]);
 		mocks.homeTab = false;
 		await tick();
-		expect(mocks.enqueue.mock.calls).toEqual([[2, 'scheduled']]);
+		expect(mocks.enqueue.mock.calls).toEqual([
+			[2, 'scheduled'],
+			[3, 'scheduled']
+		]);
 		// Its next due time still moves on, so it isn't due again every tick.
-		expect(mocks.setJobNextDueAt).toHaveBeenCalledTimes(2);
+		expect(mocks.setJobNextDueAt).toHaveBeenCalledTimes(3);
 
 		mocks.enqueue.mockClear();
 		mocks.homeTab = true;
 		await tick();
 		expect(mocks.enqueue.mock.calls).toEqual([
 			[1, 'scheduled'],
-			[2, 'scheduled']
+			[2, 'scheduled'],
+			[3, 'scheduled']
 		]);
 	});
 

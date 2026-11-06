@@ -6,7 +6,7 @@
 	import JobPicker from '#lib/components/home/JobPicker.svelte';
 	import { cardTypes, type CardType } from '#lib/home/cardTypes.ts';
 	import { addCard } from '#lib/stores/homeCards.svelte.ts';
-	import { createCardJob } from '#lib/home/cardJobs.ts';
+	import { addCardForJob, createCardJob, existingJobsFor } from '#lib/home/cardJobs.ts';
 	import { refreshCard } from '#lib/home/fetchedCards.svelte.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import type { Schedule } from '#lib/stores/jobs.svelte.ts';
@@ -40,6 +40,10 @@
 		const card = await addCard(type.id, config, null, type.defaultSize);
 		if (card) void refreshCard(card);
 		return card !== null;
+	}
+
+	async function useJob(type: CardType, jobId: number): Promise<boolean> {
+		return (await addCardForJob(type.id, jobId)) !== null;
 	}
 
 	function pick(jobId: number) {
@@ -83,6 +87,8 @@
 		open
 		defaultSchedule={type.defaultSchedule ?? { kind: 'interval', minutes: 30 }}
 		onadd={(config, schedule) => addFromForm(type, config, schedule)}
+		existingJobs={type.jobType ? existingJobsFor(type.id) : undefined}
+		onuse={(jobId) => useJob(type, jobId)}
 		ondone={() => (filling = null)}
 	/>
 {/if}
