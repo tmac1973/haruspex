@@ -82,7 +82,7 @@ beforeEach(async () => {
 	mocks.sleep.mockImplementation(async () => {
 		vi.setSystemTime(Date.now() + 100);
 	});
-	const { resetNestedShellHooks } = await import('./pty-exec');
+	const { resetNestedShellHooks } = await import('./_ptyExec');
 	resetNestedShellHooks();
 });
 
@@ -93,7 +93,7 @@ afterEach(() => {
 describe('run_command with a shell the user opened by hand', () => {
 	it('sources the hook into it and then runs the command', async () => {
 		const writes = mockPty({ pending: 'bash' });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
 
 		// Hook first, command second.
@@ -106,21 +106,21 @@ describe('run_command with a shell the user opened by hand', () => {
 
 	it('asks for the hook matching the nested shell', async () => {
 		mockPty({ pending: '/usr/bin/zsh -l' });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		await runInPty(1, 'echo hi', 30, undefined);
 		expect(mocks.invoke).toHaveBeenCalledWith('shell_integration_hook', { shell: 'zsh' });
 	});
 
 	it('single-quotes the hook path so a space in it survives', async () => {
 		const writes = mockPty({ pending: 'bash' });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		await runInPty(1, 'echo hi', 30, undefined);
 		expect(writes[0]).toContain(`'${HOOK_PATH}'`);
 	});
 
 	it('refuses with advice when the hook does not take, and does not run the command', async () => {
 		const writes = mockPty({ pending: 'bash', hookTakes: false });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
 
 		expect(out).toContain('`bash` open inside it');
@@ -130,7 +130,7 @@ describe('run_command with a shell the user opened by hand', () => {
 
 	it('does not re-source a hook that already failed for this shell', async () => {
 		mockPty({ pending: 'bash', hookTakes: false });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		await runInPty(1, 'echo hi', 30, undefined);
 		const firstAttempts = invokeCalls(mocks.invoke, 'shell_integration_hook').length;
 		await runInPty(1, 'echo there', 30, undefined);
@@ -141,7 +141,7 @@ describe('run_command with a shell the user opened by hand', () => {
 
 	it('does not try to hook a shell we ship no hook for', async () => {
 		mockPty({ pending: 'fish' });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
 		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_integration_hook', expect.anything());
 		expect(out).toContain('`fish` open inside it');
@@ -150,7 +150,7 @@ describe('run_command with a shell the user opened by hand', () => {
 
 	it('still reports a remote session as a remote session, not a nested shell', async () => {
 		mockPty({ pending: 'ssh box' });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
 		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_integration_hook', expect.anything());
 		expect(out).toContain('a remote host (box)');
@@ -158,7 +158,7 @@ describe('run_command with a shell the user opened by hand', () => {
 
 	it('still reports a genuinely busy terminal as busy', async () => {
 		mockPty({ pending: 'npm run dev' });
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
 		expect(out).toContain('busy running `npm run dev`');
 		expect(out).toContain('shell_interrupt');
@@ -187,13 +187,13 @@ describe('run_command in a terminal with a memory limit', () => {
 
 	it('tells the model when the system killed what the command ran', async () => {
 		withMemory(true);
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'go test ./...', 30, undefined);
 		expect(out).toContain('Killed: this command went over its 8.0 GB memory limit');
 	});
 
 	it('says nothing more when nothing was killed, or there is no limit', async () => {
-		const { runInPty } = await import('./pty-exec');
+		const { runInPty } = await import('./_ptyExec');
 		for (const killed of [false, null]) {
 			withMemory(killed);
 			const out = await runInPty(1, 'echo hi', 30, undefined);

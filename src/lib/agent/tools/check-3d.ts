@@ -6,7 +6,7 @@
  */
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
 import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
-import { READ_ONLY_REFUSAL } from '#lib/agent/tools/codeTabProfile.ts';
+import { READ_ONLY_REFUSAL } from '#lib/agent/tools/_codeTabProfile.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';

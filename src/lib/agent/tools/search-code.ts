@@ -13,7 +13,7 @@ import type { SearchConfig } from '#lib/helpers/search/config.ts';
 import { rerankDocuments } from '#lib/rerank.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { urlForReport } from '#lib/utils/http.ts';
-import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';
+import { withLocalScopeNote } from '#lib/agent/tools/_nestedSession.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolExecOutput } from '#lib/agent/tools/types.ts';
 import type { SearchCandidates } from '#lib/ipc/gen/SearchCandidates.ts';

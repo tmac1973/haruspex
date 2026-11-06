@@ -21,7 +21,7 @@ const glb = vi.hoisted(() => ({ checkGlb: vi.fn() }));
 vi.mock('#lib/glb/check.ts', () => glb);
 
 import { executeTool } from '#lib/agent/tools/index.ts';
-import { TOOL_FAMILIES } from '#lib/agent/tools/families.ts';
+import { TOOL_FAMILIES } from '#lib/agent/tools/_families.ts';
 import { toolCategory } from '#lib/agent/tools/registry.ts';
 import { MOTION_NOTE, SHEET_NOTE } from './check-3d';
 import { closeUpNote } from '#lib/helpers/three/load.ts';

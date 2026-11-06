@@ -46,7 +46,7 @@ vi.mock('#lib/sandbox/availability.ts', async (importOriginal) => ({
 import { buildSystemPrompt, injectMessageHints } from './systemPrompt';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
-import { leanOffers } from '#lib/agent/tools/leanProfile.ts';
+import { leanOffers } from '#lib/agent/tools/_leanProfile.ts';
 import { skillsPromptSection } from '#lib/skills/turn.ts';
 
 function leanPrompt(leanFileWrites = false): string {

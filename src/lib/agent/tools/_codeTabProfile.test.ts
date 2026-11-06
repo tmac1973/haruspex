@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
-import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, isCodeWriteTool } from './codeTabProfile';
+import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, isCodeWriteTool } from './_codeTabProfile';
 
 /** The tab's own tools every turn gets: ask_specialist also needs a specialist on (ask-specialist.test.ts). */
 const ALWAYS_TAB_ONLY = [...CODE_TAB_ONLY].filter((t) => t !== 'ask_specialist');

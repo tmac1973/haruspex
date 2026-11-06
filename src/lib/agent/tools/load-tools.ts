@@ -1,6 +1,6 @@
 /**
  * `load_tools` and `use_tool`, the two tools deferred loading adds to a turn
- * (`deferred.ts`). Neither is offered by the registry's filters:
+ * (`_deferred.ts`). Neither is offered by the registry's filters:
  * `splitTurnTools` adds them to a turn that defers.
  */
 
@@ -12,7 +12,7 @@ import {
 	USE_TOOL,
 	USE_TOOL_SCHEMA,
 	familyResult
-} from '#lib/agent/tools/deferred.ts';
+} from '#lib/agent/tools/_deferred.ts';
 
 /** Where the user turns a family on, for a family this turn is not offered. */
 const TURN_ON: Record<string, string> = {

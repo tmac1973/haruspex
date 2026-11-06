@@ -1,7 +1,46 @@
 import js from '@eslint/js';
 import ts from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
+import path from 'node:path';
 import globals from 'globals';
+
+/**
+ * `src/lib/agent/tools/` file names (CLAUDE.md): a module that registers tools
+ * is kebab-case after them (`fs-write.ts`); every other module is
+ * `_camelCase` (`_helpers.ts`). The folder's own `index`, `registry` and
+ * `types` keep their names.
+ *
+ * @type {import('eslint').Rule.RuleModule}
+ */
+const toolFileNames = {
+	meta: { type: 'suggestion', schema: [] },
+	create(context) {
+		const name = path.basename(context.filename, '.ts');
+		if (['index', 'registry', 'types'].includes(name)) return {};
+		let registers = false;
+		return {
+			CallExpression(node) {
+				const callee = node.callee;
+				if (callee.type === 'Identifier' && /^registerTool(Alias)?$/.test(callee.name)) {
+					registers = true;
+				}
+			},
+			'Program:exit'(program) {
+				if (registers && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+					context.report({
+						node: program,
+						message: 'A module that registers tools is named kebab-case after them (fs-write.ts).'
+					});
+				} else if (!registers && !/^_[a-z][a-zA-Z0-9]*$/.test(name)) {
+					context.report({
+						node: program,
+						message: 'A module here that registers no tools is named _camelCase (_helpers.ts).'
+					});
+				}
+			}
+		};
+	}
+};
 
 export default ts.config(
 	js.configs.recommended,
@@ -110,6 +149,14 @@ export default ts.config(
 					message: 'Mark a fire-and-forget promise with `void`, even with a `.catch`.'
 				}
 			]
+		}
+	},
+	{
+		files: ['src/lib/agent/tools/*.ts'],
+		ignores: ['**/*.test.ts'],
+		plugins: { haruspex: { rules: { 'tool-file-names': toolFileNames } } },
+		rules: {
+			'haruspex/tool-file-names': 'error'
 		}
 	},
 	{

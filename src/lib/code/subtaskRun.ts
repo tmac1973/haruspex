@@ -9,7 +9,7 @@ import type { BackendOverride, Usage } from '#lib/api.ts';
 import type { CallStats } from '#lib/agent/loop.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
-import { spillIfLarge } from '#lib/agent/tools/pty-exec.ts';
+import { spillIfLarge } from '#lib/agent/tools/_ptyExec.ts';
 import { runSubtask, type SubtaskResult } from '#lib/code/runSubtask.ts';
 import {
 	awaitingApproval,

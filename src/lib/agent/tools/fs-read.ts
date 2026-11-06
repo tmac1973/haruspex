@@ -8,8 +8,8 @@ import {
 	wslDistroArg
 } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
-import { isSpillFile } from '#lib/agent/tools/pty-exec.ts';
-import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';
+import { isSpillFile } from '#lib/agent/tools/_ptyExec.ts';
+import { withLocalScopeNote } from '#lib/agent/tools/_nestedSession.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 
 // Max images per turn. Each ~1024px image is ~500-800 image tokens for

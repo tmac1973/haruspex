@@ -19,7 +19,7 @@ import {
 	type McpRuntimeState
 } from './mcpServers.svelte';
 import { registeredMcpToolNames } from '#lib/agent/tools/mcp.ts';
-import { mcpDefaultTools } from '#lib/agent/tools/mcpNames.ts';
+import { mcpDefaultTools } from '#lib/agent/tools/_mcpNames.ts';
 import { setMcpServers } from './settings';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
 import { invokeRouter } from '#lib/testing/invoke.ts';

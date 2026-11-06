@@ -11,9 +11,9 @@
 
 import type { ToolDefinition } from '#lib/api.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
-import { allFamilies, isCore } from '#lib/agent/tools/families.ts';
+import { allFamilies, isCore } from '#lib/agent/tools/_families.ts';
 import { toolCategory } from '#lib/agent/tools/registry.ts';
-import { familyNotes } from '#lib/agent/tools/familyNotes.ts';
+import { familyNotes } from '#lib/agent/tools/_familyNotes.ts';
 import { parseParamsB } from '#lib/agent/mcpBudget.ts';
 import type { DeferTools } from '#lib/stores/settings.ts';
 

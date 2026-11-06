@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coerceArgsToSchema } from './coerce';
+import { coerceArgsToSchema } from './_coerce';
 
 const schema = {
 	type: 'object',

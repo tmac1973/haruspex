@@ -598,7 +598,7 @@ export interface AppSettings {
 	legacyModelNoticeDismissed: boolean;
 	/**
 	 * Chat and research only, for small models and slow machines: Chat offers
-	 * a small fixed tool set (`leanProfile.ts`) and its prompt names nothing
+	 * a small fixed tool set (`_leanProfile.ts`) and its prompt names nothing
 	 * else. Settings → General → Lean mode.
 	 */
 	leanMode: boolean;

@@ -27,12 +27,12 @@ import {
 	runInPtyBackground,
 	shouldUsePty,
 	spillIfLarge
-} from '#lib/agent/tools/pty-exec.ts';
+} from '#lib/agent/tools/_ptyExec.ts';
 import { registerWatch } from '#lib/shell/backgroundWatch.ts';
 import { startCodeBackground } from '#lib/agent/tools/command.ts';
 import { ttyHintFor } from '#lib/code/ttyHint.ts';
 import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
-import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';
+import { withLocalScopeNote } from '#lib/agent/tools/_nestedSession.ts';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';

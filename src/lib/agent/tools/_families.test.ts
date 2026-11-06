@@ -51,7 +51,7 @@ import {
 	familyOf,
 	isCore,
 	mcpFamilies
-} from './families';
+} from './_families';
 
 afterEach(() => unregisterMcpServer('gh'));
 

@@ -1,5 +1,5 @@
 /**
- * What a loaded tool family looks like in the messages (`deferred.ts`). Apart
+ * What a loaded tool family looks like in the messages (`_deferred.ts`). Apart
  * from it so the loop can read it without pulling in the registry.
  */
 

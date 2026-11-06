@@ -3,7 +3,7 @@ import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import type { McpCallOutcome } from '#lib/ipc/gen/McpCallOutcome.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import { setMcpServers } from '#lib/stores/settings.ts';
-import { mcpToolName, parseMcpToolName } from './mcpNames';
+import { mcpToolName, parseMcpToolName } from './_mcpNames';
 import {
 	registerMcpTools,
 	unregisterMcpServer,
@@ -16,7 +16,7 @@ import {
 	setToolFailureHook
 } from './mcp';
 import { MAX_PENDING_IMAGES } from './fs-read';
-import { isSpillFile } from './pty-exec';
+import { isSpillFile } from './_ptyExec';
 import { getToolSchemas, executeTool } from './registry';
 import {
 	forgetAllApprovals,

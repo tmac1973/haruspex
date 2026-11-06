@@ -40,7 +40,7 @@ export {
 	FETCH_FAILURE_PREFIXES,
 	isFetchFailureResult,
 	isToolErrorResult
-} from '#lib/agent/tools/toolResult.ts';
+} from '#lib/agent/tools/_toolResult.ts';
 
 /**
  * Resolve a tool `path` argument for Shell-mode dispatch. The Shell

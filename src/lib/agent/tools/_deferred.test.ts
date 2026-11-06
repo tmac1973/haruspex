@@ -59,7 +59,7 @@ import {
 	loadedMarker,
 	splitTurnTools,
 	type DeferTurn
-} from './deferred';
+} from './_deferred';
 
 afterEach(() => {
 	flags.full = true;

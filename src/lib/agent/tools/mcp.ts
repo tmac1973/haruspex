@@ -34,7 +34,7 @@ import {
 	clearMcpDefaultTools,
 	mcpToolName,
 	setMcpDefaultTools
-} from '#lib/agent/tools/mcpNames.ts';
+} from '#lib/agent/tools/_mcpNames.ts';
 import {
 	toolResult,
 	toolError,
@@ -49,7 +49,7 @@ import {
 } from '#lib/stores/mcpApproval.svelte.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
-import { capWithSpill } from '#lib/agent/tools/pty-exec.ts';
+import { capWithSpill } from '#lib/agent/tools/_ptyExec.ts';
 import {
 	OVERSIZED_MESSAGE_MAX_TOKENS,
 	TOKEN_BYTES_RATIO,
