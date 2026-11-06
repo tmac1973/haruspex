@@ -38,9 +38,8 @@ import {
 } from '#lib/image/types.ts';
 import { FAMILY_SAMPLER } from '#lib/image/local/adapter.ts';
 import { randomSeed } from '#lib/utils/random.ts';
-import { base64Of, transparentStart } from '#lib/image/sdcpp.ts';
-import { fromBase64 } from '#lib/image/local/adapter.ts';
-import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
+import { transparentStart } from '#lib/image/sdcpp.ts';
+import { editUploads, imagesFrom, upscaleVia } from '#lib/image/openaiImages.ts';
 import { familyOfRecipe, type ToolchestInstance } from '#lib/toolchest/models.ts';
 import {
 	ToolchestError,
@@ -363,26 +362,20 @@ async function upscaleWith(
 		);
 	}
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
-	let payload: unknown;
-	try {
-		payload = await toolchestJson(
-			cfg,
-			{
-				method: 'POST',
-				path: ROUTES.upscale,
-				body: { model: upscaler.id, image: await base64Of(input) },
-				timeoutMs: SYNC_TIMEOUT_MS
-			},
-			opts.signal
-		);
-	} catch (e) {
-		throw asImageError(e);
-	}
-	const b64 = (payload as { images?: Array<{ b64_json?: unknown }> })?.images?.[0]?.b64_json;
-	if (typeof b64 !== 'string') {
-		throw new ImageBackendError('rejected', 'llama-toolchest returned no upscaled picture.');
-	}
-	return fromBase64(b64);
+	return upscaleVia(
+		(body) =>
+			toolchestJson(
+				cfg,
+				{ method: 'POST', path: ROUTES.upscale, body, timeoutMs: SYNC_TIMEOUT_MS },
+				opts.signal
+			).catch((e) => {
+				throw asImageError(e);
+			}),
+		upscaler.id,
+		input,
+		'images',
+		'llama-toolchest'
+	);
 }
 
 /** A job's handle, which lets `resume` pick it up after the app restarts. */

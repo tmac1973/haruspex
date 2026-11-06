@@ -32,10 +32,9 @@ import {
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
-import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { FAMILY_SAMPLER, familyOfId } from '#lib/image/local/adapter.ts';
-import { base64Of, retryEmptyResult, transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
-import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
+import { retryEmptyResult, transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
+import { editUploads, imagesFrom, upscaleVia } from '#lib/image/openaiImages.ts';
 import { randomSeed } from '#lib/utils/random.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 import {
@@ -325,21 +324,19 @@ async function upscaleWith(
 	opts: GenerateOptions = {}
 ): Promise<Uint8Array> {
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
-	const payload = await lemonadeJson(
-		await configOf(entry),
-		{
-			method: 'POST',
-			path: ROUTES.upscale,
-			body: { model: UPSCALER, image: await base64Of(input) },
-			timeoutMs: GENERATE_TIMEOUT_MS
-		},
-		opts.signal
+	const cfg = await configOf(entry);
+	return upscaleVia(
+		(body) =>
+			lemonadeJson(
+				cfg,
+				{ method: 'POST', path: ROUTES.upscale, body, timeoutMs: GENERATE_TIMEOUT_MS },
+				opts.signal
+			),
+		UPSCALER,
+		input,
+		'data',
+		'Lemonade'
 	);
-	const out = (payload as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
-	if (typeof out !== 'string') {
-		throw new ImageBackendError('rejected', 'Lemonade returned no upscaled picture.');
-	}
-	return fromBase64(out);
 }
 
 registerImageBackendKind('lemonade', lemonadeFor);
