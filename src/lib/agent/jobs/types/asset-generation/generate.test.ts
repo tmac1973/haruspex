@@ -5,10 +5,16 @@ import { SPRITES_HINT } from './codeTexture';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
-import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs, invokeCalls, invokeRouter, withArgs } from '#lib/testing/invoke.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+
+/** What the image commands this file reads take. */
+type ProfileArgs = { profile: NormalizeProfile; kind: string };
+type SplitArgs = { background: unknown; paletteSize: number };
 
 function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 	return {
@@ -119,10 +125,9 @@ function harness(over: Partial<GenerateDeps> = {}, present: string[] = []): Harn
 const baseRoutes = {
 	// A texture's resolved profile really differs from the base — otherwise
 	// "did it use the resolver?" is unobservable and the test is vacuous.
-	image_effective_profile: (args?: Record<string, unknown>) => {
-		const base = args?.profile as NormalizeProfile;
-		return args?.kind === 'texture' ? { ...base, upscale: 8 } : base;
-	},
+	image_effective_profile: withArgs<ProfileArgs>(({ profile, kind }) =>
+		kind === 'texture' ? { ...profile, upscale: 8 } : profile
+	),
 	image_normalize: { bytes: [1, 2, 3, 4], stats: STATS },
 	image_check: () => {
 		const v =
@@ -133,7 +138,7 @@ const baseRoutes = {
 
 beforeEach(() => {
 	checkQueue.length = 0;
-	invoke.mockReset().mockImplementation(invokeRouter(baseRoutes, undefined));
+	vi.mocked(invoke).mockReset().mockImplementation(invokeRouter(baseRoutes, undefined));
 });
 
 describe('escapesWorkdir', () => {
@@ -200,14 +205,14 @@ describe('a texture the backend could not tile', () => {
 		expect(r.outcome.status).toBe('done');
 		expect(h.written).toEqual(['out/e0.png']);
 		expect(r.outcome.degraded).toEqual(['not seamless']);
-		const check = invoke.mock.calls.find(([cmd]) => cmd === 'image_check');
-		expect((check![1].profile as NormalizeProfile).checks.seam_max).toBeUndefined();
+		const check = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_check');
+		expect(check.profile.checks.seam_max).toBeUndefined();
 	});
 
 	it('still gates the seam on a texture that did tile', async () => {
 		await generateEntries(specOf([{ kind: 'texture', seamless: true }]), harness().deps);
-		const check = invoke.mock.calls.find(([cmd]) => cmd === 'image_check');
-		expect((check![1].profile as NormalizeProfile).checks.seam_max).toBe(3);
+		const check = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_check');
+		expect(check.profile.checks.seam_max).toBe(3);
 	});
 });
 
@@ -222,14 +227,16 @@ describe('per-kind profiles', () => {
 			{ kind: 'icon' }
 		]);
 		await generateEntries(spec, harness().deps);
-		const kinds = invokeCalls(invoke, 'image_effective_profile').map((args) => args!.kind);
+		const kinds = invokeCalls<ProfileArgs>(vi.mocked(invoke), 'image_effective_profile').map(
+			(args) => args.kind
+		);
 		expect(kinds.sort()).toEqual(['icon', 'sprite', 'texture']);
 	});
 
 	it('normalizes with the entry kind, so the texture branch applies', async () => {
 		await generateEntries(specOf([{ kind: 'texture' }]), harness().deps);
-		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
-		expect(call![1].kind).toBe('texture');
+		const call = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_normalize');
+		expect(call.kind).toBe('texture');
 	});
 
 	it('builds the request from the RESOLVED profile, not the base', async () => {
@@ -244,8 +251,8 @@ describe('per-kind profiles', () => {
 
 	it('normalizes with the resolved profile too', async () => {
 		await generateEntries(specOf([{ kind: 'texture' }]), harness().deps);
-		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
-		expect((call![1].profile as NormalizeProfile).upscale).toBe(8);
+		const call = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_normalize');
+		expect(call.profile.upscale).toBe(8);
 	});
 });
 
@@ -518,7 +525,7 @@ describe('the quality gate', () => {
 			{ passed: false, failed: ['alpha_low', 'entropy', 'palette_distance'] }
 		]);
 		let n = 0;
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ ...baseRoutes, image_normalize: () => ({ bytes: [++n], stats: STATS }) },
 				undefined
@@ -560,7 +567,7 @@ describe('the quality gate', () => {
 		// "Nothing left after removing the background" is a rejection like any
 		// other — a blank generation, caught one step earlier.
 		let n = 0;
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					image_effective_profile: (args) => args?.profile,
@@ -580,7 +587,7 @@ describe('the quality gate', () => {
 	});
 
 	it('records unresolved with the refusal when normalization never succeeds', async () => {
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					image_effective_profile: (args) => args?.profile,
@@ -676,7 +683,7 @@ describe('sheets', () => {
 
 	beforeEach(() => {
 		splits.length = 0;
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					...baseRoutes,
@@ -887,9 +894,9 @@ describe('sheets', () => {
 		const h = harness({ caps: SHEETS, onSheet: (o) => seen.push(o) });
 		await generateEntries(specOf([{}, {}, {}]), h.deps);
 		expect(seen[0].keyed).toBe(true);
-		const split = invoke.mock.calls.find(([cmd]) => cmd === 'image_split_sheet');
+		const split = invokeArgs<SplitArgs>(vi.mocked(invoke), 'image_split_sheet');
 		// The background goes with the call, so an opaque sheet can be keyed.
-		expect(split![1].background).toBeDefined();
+		expect(split.background).toBeDefined();
 	});
 
 	it('re-queues a sheet once when the backend is briefly unreachable', async () => {
@@ -973,12 +980,12 @@ describe('sheets', () => {
 		const spec = specOf([{}, {}, {}]);
 		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
 		await generateEntries(spec, harness({ caps: SHEETS }).deps);
-		const split = invoke.mock.calls.find(([cmd]) => cmd === 'image_split_sheet');
-		expect(split![1].paletteSize).toBe(16);
-		const normalized = invokeCalls(invoke, 'image_normalize');
+		const split = invokeArgs<SplitArgs>(vi.mocked(invoke), 'image_split_sheet');
+		expect(split.paletteSize).toBe(16);
+		const normalized = invokeCalls<ProfileArgs>(vi.mocked(invoke), 'image_normalize');
 		expect(normalized).toHaveLength(3);
 		for (const args of normalized) {
-			expect((args!.profile as NormalizeProfile).palette).toEqual([0x123456ff]);
+			expect(args.profile.palette).toEqual([0x123456ff]);
 		}
 	});
 
@@ -986,16 +993,16 @@ describe('sheets', () => {
 		const spec = specOf([{ kind: 'texture' }]);
 		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
 		await generateEntries(spec, harness({ caps: SHEETS }).deps);
-		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
-		expect((call![1].profile as NormalizeProfile).palette).toEqual([]);
+		const call = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_normalize');
+		expect(call.profile.palette).toEqual([]);
 	});
 
 	it('still imposes the anchor palette on the one-image-per-entry path', async () => {
 		const spec = specOf([{}]);
 		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
 		await generateEntries(spec, harness({ caps: FULL }).deps);
-		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
-		expect((call![1].profile as NormalizeProfile).palette).toEqual([0xff0000ff]);
+		const call = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_normalize');
+		expect(call.profile.palette).toEqual([0xff0000ff]);
 	});
 
 	it('keeps the sprite palette off textures on that path', async () => {
@@ -1003,8 +1010,8 @@ describe('sheets', () => {
 		const spec = specOf([{ kind: 'texture' }]);
 		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
 		await generateEntries(spec, harness({ caps: FULL }).deps);
-		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
-		expect((call![1].profile as NormalizeProfile).palette).toEqual([]);
+		const call = invokeArgs<ProfileArgs>(vi.mocked(invoke), 'image_normalize');
+		expect(call.profile.palette).toEqual([]);
 	});
 });
 

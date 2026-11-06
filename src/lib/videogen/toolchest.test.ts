@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const settings = vi.hoisted(() => ({
 	videoGenToolchestBaseUrl: 'http://box:3000/',
 	videoGenToolchestApiKeyId: 'k1' as string | null,
@@ -17,7 +18,15 @@ vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.res
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
-import { httpRouter, invokeRouter, type HttpAnswer, type HttpCall } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import {
+	httpRouter,
+	invokeArgs,
+	invokeCalls,
+	invokeRouter,
+	type HttpAnswer,
+	type HttpCall
+} from '#lib/testing/invoke.ts';
 import { parseGenerationModels } from '#lib/toolchest/models.ts';
 import {
 	generateVideo,
@@ -32,6 +41,13 @@ interface Call extends HttpCall {
 	api_key: string;
 }
 type Answer = HttpAnswer<Call>;
+
+/** What a `toolchest_*` command carries: the request, and an upload's form parts. */
+interface Sent {
+	call: Call & { body: Record<string, unknown> };
+	fields?: boolean;
+	files?: unknown[];
+}
 
 const HASH = 'c'.repeat(64);
 const ID = 'a1b2c3d4e5f60718';
@@ -105,18 +121,20 @@ function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
 }
 
 function use(answers: Record<string, Answer>) {
-	tauri.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			comfy_cancel: null,
-			audio_store_url: { hash: HASH, mime: 'video/webm', bytes: 123456 },
-			toolchest_json: httpRouter(answers),
-			toolchest_upload: httpRouter(answers)
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				comfy_cancel: null,
+				audio_store_url: { hash: HASH, mime: 'video/webm', bytes: 123456 },
+				toolchest_json: httpRouter(answers),
+				toolchest_upload: httpRouter(answers)
+			})
+		);
 }
 
 function calls(command: string) {
-	return tauri.invoke.mock.calls.filter(([c]) => c === command).map(([, a]) => a);
+	return invokeCalls<Sent>(vi.mocked(invoke), command);
 }
 
 const request: VideoRequest = {
@@ -227,7 +245,10 @@ describe('making a clip', () => {
 			conversationId: 'chat-1',
 			codeSessionId: null
 		});
-		expect(calls('toolchest_json').at(-1).call).toMatchObject({ method: 'DELETE', path: JOB });
+		expect(invokeArgs<Sent>(vi.mocked(invoke), 'toolchest_json', -1).call).toMatchObject({
+			method: 'DELETE',
+			path: JOB
+		});
 		expect(result).toMatchObject({ hash: HASH, width: 832, frames: 33, fps: 24, seed: 7 });
 		expect(result.url).toBe(`haruspex-video://localhost/${HASH}`);
 	});

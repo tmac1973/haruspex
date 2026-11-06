@@ -1,21 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	getSettings: vi.fn(),
 	updateSettings: vi.fn(),
 	startRemoteDriver: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: mocks.getSettings,
-	updateSettings: mocks.updateSettings
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		getSettings: mocks.getSettings,
+		updateSettings: mocks.updateSettings
+	})
+);
 vi.mock('#lib/remote/driver.ts', () => ({ startRemoteDriver: mocks.startRemoteDriver }));
 
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls } from '#lib/testing/invoke.ts';
 import { syncRemoteServer } from '#lib/remote/service.ts';
 import { qrPath, remoteLink, generateRemoteToken, linkHostName } from '#lib/remote/api.ts';
 
@@ -34,12 +38,17 @@ function settings(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+/** What the service hands Rust: the fields these tests read. */
+interface Sent {
+	config: { token: string; access: { extraHost: string } };
+}
+
 function invocations(command: string) {
-	return mocks.invoke.mock.calls.filter(([name]) => name === command).map(([, args]) => args);
+	return invokeCalls<Sent>(vi.mocked(invoke), command);
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset().mockResolvedValue(RUNNING);
+	vi.mocked(invoke).mockReset().mockResolvedValue(RUNNING);
 	mocks.updateSettings.mockReset();
 	mocks.startRemoteDriver.mockReset().mockResolvedValue(undefined);
 	mocks.getSettings.mockReset().mockReturnValue(settings());
@@ -48,7 +57,7 @@ beforeEach(() => {
 describe('turning remote access on and off', () => {
 	it('starts nothing at all when the setting is off', async () => {
 		mocks.getSettings.mockReturnValue(settings({ remoteAccessEnabled: false }));
-		mocks.invoke.mockResolvedValue(STOPPED);
+		vi.mocked(invoke).mockResolvedValue(STOPPED);
 
 		await syncRemoteServer();
 		expect(invocations('remote_stop')).toHaveLength(1);
@@ -110,7 +119,7 @@ describe('turning remote access on and off', () => {
 	});
 
 	it('survives a port that is already taken', async () => {
-		mocks.invoke.mockRejectedValue(new Error('address in use'));
+		vi.mocked(invoke).mockRejectedValue(new Error('address in use'));
 		// Remote access stays off; the app does not come down with it.
 		await expect(syncRemoteServer()).resolves.toBeNull();
 	});

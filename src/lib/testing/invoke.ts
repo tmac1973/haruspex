@@ -78,9 +78,56 @@ export function unexpectedInvoke(cmd: string): never {
 	throw new Error(`unexpected invoke: ${cmd}`);
 }
 
-/** The args of every call `invoke` received for `cmd`, in order. */
-export function invokeCalls(invoke: Mock, cmd: string): Args[] {
-	return invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c[1] as Args);
+/**
+ * The args of every call `invoke` received for `cmd`, in order, read as `A`:
+ * the shape the command takes. Tauri types them loosely (`InvokeArgs`, which
+ * includes `number[]`), so through `vi.mocked(invoke)` every read would need
+ * a cast; the test knows the command, so it names the shape once here.
+ */
+export function invokeCalls<A = Record<string, unknown>>(invoke: Mock, cmd: string): A[] {
+	return invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c[1] as A);
+}
+
+/**
+ * The args of one call to `cmd`, read as `A`: the first by default, and `at`
+ * counts from the end when negative (-1 is the latest). Throws when there is
+ * no such call, so a test fails on the missing call, not on reading its args.
+ */
+export function invokeArgs<A = Record<string, unknown>>(invoke: Mock, cmd: string, at = 0): A {
+	const calls = invokeCalls<A>(invoke, cmd);
+	if (at >= calls.length || -at > calls.length) {
+		throw new Error(`no invoke of ${cmd} at ${at} (${calls.length} made)`);
+	}
+	return calls.at(at) as A;
+}
+
+/**
+ * The args of every call, of any command, in order, read as `A`. For a test
+ * that checks the commands' order itself and then reads one call by index.
+ */
+export function allInvokeArgs<A = Record<string, unknown>>(invoke: Mock): A[] {
+	return invoke.mock.calls.map((c) => c[1] as A);
+}
+
+/**
+ * A route that reads its args as `A`, for `invokeRouter` or `mockTauriCore`:
+ *
+ *   mockTauriCore({ task_update: withArgs<{ id: string }>((args) => args.id) })
+ */
+export function withArgs<A>(route: (args: A) => unknown): (args: Args) => unknown {
+	return route as (args: Args) => unknown;
+}
+
+/**
+ * An `invoke` implementation from one function of the command and its args
+ * (read as `A`), typed like Tauri's own, for
+ * `vi.mocked(invoke).mockImplementation(...)`. It answers through
+ * `invokeRouter`, so it is async like the real one.
+ */
+export function invokeHandler<A = Record<string, unknown>>(
+	handle: (cmd: string, args: A) => unknown
+): <T = unknown>(cmd: string, args?: InvokeArgs) => Promise<T> {
+	return invokeRouter({}, handle as (cmd: string, args: Args) => unknown);
 }
 
 /** An HTTP request a backend hands to Rust as `invoke(cmd, { call })`. */

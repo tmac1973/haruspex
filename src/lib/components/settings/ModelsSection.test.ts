@@ -22,15 +22,16 @@ vi.mock('#lib/stores/llamaServer.svelte.ts', () => ({
 	stopServer: vi.fn()
 }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getActiveLocalModelFilename: vi.fn(() => 'a.gguf'),
-	getLegacyModelNoticeDismissed: vi.fn(() => true),
-	getSettings: vi.fn(() => ({ contextSize: 8192, mtpEnabled: true })),
-	setActiveLocalModel: vi.fn(),
-	setLegacyModelNoticeDismissed: vi.fn(),
-	updateSettings: vi.fn()
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		getActiveLocalModelFilename: vi.fn(() => 'a.gguf'),
+		getLegacyModelNoticeDismissed: vi.fn(() => true),
+		getSettings: vi.fn(() => ({ contextSize: 8192, mtpEnabled: true })),
+		setActiveLocalModel: vi.fn(),
+		setLegacyModelNoticeDismissed: vi.fn(),
+		updateSettings: vi.fn()
+	})
+);
 
 const models: ModelInfo[] = [
 	{

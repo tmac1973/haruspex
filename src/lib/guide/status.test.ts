@@ -23,32 +23,33 @@ vi.mock('#lib/inference/descriptor.ts', () => ({
 }));
 vi.mock('#lib/skills/client.ts', () => ({ skillsAutonomous: () => true }));
 vi.mock('#lib/stores/memory.svelte.ts', () => ({ memoryActive: () => true }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		leanMode: settingsBackend.lean,
-		leanFileWrites: settingsBackend.files,
-		sandboxEnabled: false,
-		imageBackendKind: 'comfyui',
-		screenCaptureEnabled: true,
-		commandMemoryLimitPercent: 0,
-		allowSpillToSystemRam: true,
-		skills: { autonomous: 'on' },
-		integrations: {
-			email: {
-				accounts: [
-					{ enabled: true, address: 'tim@secret.example', password: 'hunter2' },
-					{ enabled: false, address: 'old@secret.example' }
-				]
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			leanMode: settingsBackend.lean,
+			leanFileWrites: settingsBackend.files,
+			sandboxEnabled: false,
+			imageBackendKind: 'comfyui',
+			screenCaptureEnabled: true,
+			commandMemoryLimitPercent: 0,
+			allowSpillToSystemRam: true,
+			skills: { autonomous: 'on' },
+			integrations: {
+				email: {
+					accounts: [
+						{ enabled: true, address: 'tim@secret.example', password: 'hunter2' },
+						{ enabled: false, address: 'old@secret.example' }
+					]
+				}
 			}
-		}
-	}),
-	getActiveLocalModelFilename: () => 'local.gguf',
-	enabledDavAccounts: () => [
-		{ address: 'https://dav.secret.example', username: 'tim', password: 'hunter2' }
-	],
-	startableMcpServers: () => [{ label: 'GitHub', env: { TOKEN: 'ghp_SECRET' } }]
-}));
+		}),
+		getActiveLocalModelFilename: () => 'local.gguf',
+		enabledDavAccounts: () => [
+			{ address: 'https://dav.secret.example', username: 'tim', password: 'hunter2' }
+		],
+		startableMcpServers: () => [{ label: 'GitHub', env: { TOKEN: 'ghp_SECRET' } }]
+	})
+);
 
 import { guideStatus } from './status';
 

@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, { messageId: 'new@example.com' })
+);
 
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs } from '#lib/testing/invoke.ts';
 import EmailReviewModal from './EmailReviewModal.svelte';
 import {
 	askEmailReview,
@@ -54,7 +57,7 @@ const field = (label: string) => screen.getByLabelText(label) as HTMLInputElemen
 beforeEach(() => {
 	// A draft left open by an earlier test.
 	resolveEmailReview({ kind: 'discarded', note: '' });
-	state.invoke.mockReset().mockResolvedValue({ messageId: 'new@example.com' });
+	vi.mocked(invoke).mockReset();
 });
 
 describe('EmailReviewModal', () => {
@@ -66,7 +69,8 @@ describe('EmailReviewModal', () => {
 		await fireEvent.click(screen.getByText('Send'));
 
 		expect(await outcome).toMatchObject({ kind: 'sent', messageId: 'new@example.com' });
-		const [cmd, args] = state.invoke.mock.calls[0];
+		const [cmd] = vi.mocked(invoke).mock.calls[0];
+		const [args] = allInvokeArgs<{ account: { id: string }; message: unknown }>(vi.mocked(invoke));
 		expect(cmd).toBe('email_send');
 		expect(args.account.id).toBe('a1');
 		expect(args.message).toMatchObject({
@@ -85,7 +89,7 @@ describe('EmailReviewModal', () => {
 	});
 
 	it('stays open with the error when sending fails', async () => {
-		state.invoke.mockRejectedValueOnce('smtp.example.com refused the login');
+		vi.mocked(invoke).mockRejectedValueOnce('smtp.example.com refused the login');
 		await open();
 		await fireEvent.click(screen.getByText('Send'));
 		await screen.findByText(/refused the login/);
@@ -100,6 +104,6 @@ describe('EmailReviewModal', () => {
 		await waitFor(async () =>
 			expect(await outcome).toEqual({ kind: 'discarded', note: 'not now' })
 		);
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 });

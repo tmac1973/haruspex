@@ -8,7 +8,8 @@
  * which piece ended up written.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls, invokeHandler, invokeRouter } from '#lib/testing/invoke.ts';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { ImageResult } from '#lib/image/types.ts';
@@ -18,8 +19,9 @@ import type { EntryOutcome, SheetOutcome } from './types';
 import type { GenerateDeps } from './generate';
 import type { AssetJudgement } from './tools';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const cut = vi.hoisted(() => ({ rounds: [] as CellResult[][], sizes: [] as number[] }));
 vi.mock('#lib/agent/jobs/types/asset-generation/sheets.ts', async (importOriginal) => ({
@@ -173,8 +175,8 @@ function outcomeOf(h: Harness, index: number) {
 beforeEach(() => {
 	cut.rounds = [];
 	cut.sizes = [];
-	invoke.mockReset();
-	invoke.mockImplementation(
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			image_split_sheet: { pieces: [], keyed: false, palette: [0x112233ff] },
 			image_normalize: (args) => {
@@ -227,8 +229,8 @@ describe('runSheet', () => {
 		const { h, plan } = harness({ n: 1 });
 		cut.rounds = [[ok(1)]];
 		await runSheet(plan, h.ctx);
-		const [norm] = invokeCalls(invoke, 'image_normalize');
-		expect((norm?.profile as NormalizeProfile).palette).toEqual([0x112233ff]);
+		const [norm] = invokeCalls<{ profile: NormalizeProfile }>(vi.mocked(invoke), 'image_normalize');
+		expect(norm?.profile.palette).toEqual([0x112233ff]);
 	});
 
 	it('skips an entry already on disk and fails one whose path escapes the folder', async () => {
@@ -337,15 +339,17 @@ describe('runSheet', () => {
 
 	it('counts a piece normalization rejects and tries it again', async () => {
 		const { h, plan } = harness({ n: 1 });
-		const route = invoke.getMockImplementation()!;
+		const route = vi.mocked(invoke).getMockImplementation()!;
 		let first = true;
-		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'image_normalize' && first) {
-				first = false;
-				throw new Error('not a PNG');
-			}
-			return route(cmd, args);
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeHandler<Record<string, unknown> | undefined>((cmd, args) => {
+				if (cmd === 'image_normalize' && first) {
+					first = false;
+					throw new Error('not a PNG');
+				}
+				return route(cmd, args);
+			})
+		);
 		cut.rounds = [[ok(1)], [ok(2)]];
 		await runSheet(plan, h.ctx);
 		expect(h.sheets.map((s) => s.rejected)).toEqual([1, 0]);

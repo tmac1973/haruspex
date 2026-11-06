@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{},
+		(_cmd: string, args: { hash: string }) => {
+			if (args.hash === 'f'.repeat(64)) throw 'Audio not found';
+			return new Uint8Array([0xff, 0xfb, 0x90]).buffer;
+		}
+	)
+);
 
+import { invoke } from '@tauri-apps/api/core';
 import { playableUrl, sniffAudioMime, songFileName } from './playable';
 
 const bytes = (s: string) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
@@ -14,10 +22,7 @@ beforeEach(() => {
 		made.push(b);
 		return `blob:song-${made.length}`;
 	});
-	tauri.invoke.mockReset().mockImplementation(async (_cmd: string, args: { hash: string }) => {
-		if (args.hash === 'f'.repeat(64)) throw 'Audio not found';
-		return new Uint8Array([0xff, 0xfb, 0x90]).buffer;
-	});
+	vi.mocked(invoke).mockReset();
 });
 
 describe('sniffAudioMime', () => {
@@ -35,8 +40,8 @@ describe('playableUrl', () => {
 		const hash = 'a'.repeat(64);
 		expect(await playableUrl(hash)).toBe('blob:song-1');
 		expect(await playableUrl(hash)).toBe('blob:song-1');
-		expect(tauri.invoke).toHaveBeenCalledTimes(1);
-		expect(tauri.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash });
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('audio_read_bytes', { hash });
 		expect(made[0].type).toBe('audio/mpeg');
 	});
 
@@ -44,7 +49,7 @@ describe('playableUrl', () => {
 		const gone = 'f'.repeat(64);
 		await expect(playableUrl(gone)).rejects.toBe('Audio not found');
 		await expect(playableUrl(gone)).rejects.toBe('Audio not found');
-		expect(tauri.invoke).toHaveBeenCalledTimes(2);
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
 	});
 });
 

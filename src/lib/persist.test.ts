@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs, invokeHandler } from '#lib/testing/invoke.ts';
 
-const invoke = vi.fn();
-vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+// One mock for every fresh import: `loadPersist` resets modules, and each
+// copy of persist.ts has to get the `invoke` this test drives.
+const tauri = await vi.hoisted(async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+vi.mock('@tauri-apps/api/core', () => tauri);
 
 /** A fresh copy of the module, its saved items loaded. */
 async function loadPersist() {
@@ -14,7 +20,7 @@ async function loadPersist() {
 describe('persist', () => {
 	beforeEach(() => {
 		localStorage.clear();
-		invoke.mockReset();
+		vi.mocked(invoke).mockReset();
 		(globalThis as { isTauri?: boolean }).isTauri = true;
 	});
 	afterEach(() => {
@@ -25,7 +31,7 @@ describe('persist', () => {
 		localStorage.setItem('haruspex-settings', '{"old":true}');
 		localStorage.setItem('haruspex.activeTab', 'jobs');
 		localStorage.setItem('unrelated', 'kept');
-		invoke.mockResolvedValueOnce({ 'haruspex-settings': '{"new":true}' });
+		vi.mocked(invoke).mockResolvedValueOnce({ 'haruspex-settings': '{"new":true}' });
 		await loadPersist();
 		expect(localStorage.getItem('haruspex-settings')).toBe('{"new":true}');
 		expect(localStorage.getItem('haruspex.activeTab')).toBeNull();
@@ -35,7 +41,11 @@ describe('persist', () => {
 	it('seeds the file from localStorage when there is none', async () => {
 		localStorage.setItem('haruspex-settings', '{"a":1}');
 		localStorage.setItem('unrelated', 'x');
-		invoke.mockResolvedValueOnce(null).mockImplementationOnce((_cmd, args) => args.items);
+		vi.mocked(invoke)
+			.mockResolvedValueOnce(null)
+			.mockImplementationOnce(
+				invokeHandler<{ items: Record<string, string> }>((_cmd, args) => args.items)
+			);
 		await loadPersist();
 		expect(invoke).toHaveBeenLastCalledWith('webview_store_seed', {
 			items: { 'haruspex-settings': '{"a":1}' }
@@ -46,24 +56,28 @@ describe('persist', () => {
 	it('keeps localStorage when the file can’t be read', async () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		localStorage.setItem('haruspex.activeTab', 'code');
-		invoke.mockRejectedValueOnce(new Error('no backend'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('no backend'));
 		await loadPersist();
 		expect(localStorage.getItem('haruspex.activeTab')).toBe('code');
 	});
 
 	it('writes through, in order, newest value per key', async () => {
-		invoke.mockResolvedValueOnce({});
+		vi.mocked(invoke).mockResolvedValueOnce({});
 		const { persistItem } = await loadPersist();
 		let release = () => {};
-		invoke.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
-		invoke.mockResolvedValue(undefined);
+		vi.mocked(invoke).mockImplementationOnce(
+			invokeHandler(() => new Promise<void>((r) => (release = r)))
+		);
+		vi.mocked(invoke).mockResolvedValue(undefined);
 		persistItem('haruspex.activeTab', 'chat');
 		persistItem('haruspex.activeTab', 'jobs');
 		persistItem('haruspex.activeTab', 'code');
 		expect(localStorage.getItem('haruspex.activeTab')).toBe('code');
 		release();
 		await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(3));
-		const sets = invoke.mock.calls.slice(1).map((c) => c[1].value);
+		const sets = allInvokeArgs<{ value: string }>(vi.mocked(invoke))
+			.slice(1)
+			.map((a) => a.value);
 		expect(sets).toEqual(['chat', 'code']);
 	});
 

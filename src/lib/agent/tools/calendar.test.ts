@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-	invoke: vi.fn()
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
-
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs } from '#lib/testing/invoke.ts';
 // Side-effect import registers the calendar tools in the shared registry.
 import '#lib/agent/tools/calendar.ts';
 import { formatEvent, formatResult, resolveDavAccounts } from '#lib/agent/tools/calendar.ts';
@@ -58,7 +56,7 @@ function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	setDavAccounts([]);
 });
 
@@ -99,7 +97,7 @@ describe('calendar_list_events', () => {
 	it('errors without touching the backend when no account is set up', async () => {
 		const out = await executeTool('calendar_list_events', {}, ctx);
 		expect(JSON.parse(out.result).error).toContain('Settings → Integrations');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 
 	it('sends every enabled account in one call, with the window left open', async () => {
@@ -108,12 +106,13 @@ describe('calendar_list_events', () => {
 		const work = account({ id: 'dav-1' });
 		const home = account({ id: 'dav-2', label: 'Home' });
 		setDavAccounts([work, home]);
-		mocks.invoke.mockResolvedValue({ events: [], problems: [] });
+		vi.mocked(invoke).mockResolvedValue({ events: [], problems: [] });
 
 		await executeTool('calendar_list_events', {}, ctx);
 
-		expect(mocks.invoke).toHaveBeenCalledTimes(1);
-		const [name, args] = mocks.invoke.mock.calls[0];
+		expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+		const [name] = vi.mocked(invoke).mock.calls[0];
+		const [args] = allInvokeArgs(vi.mocked(invoke));
 		expect(name).toBe('dav_list_events');
 		expect(args.accounts).toEqual([work, home]);
 		expect(args).toMatchObject({ start: null, end: null, calendar: null });
@@ -122,7 +121,7 @@ describe('calendar_list_events', () => {
 
 	it('passes a named calendar and window through', async () => {
 		setDavAccounts([account()]);
-		mocks.invoke.mockResolvedValue({ events: [], problems: [] });
+		vi.mocked(invoke).mockResolvedValue({ events: [], problems: [] });
 
 		await executeTool(
 			'calendar_list_events',
@@ -130,7 +129,7 @@ describe('calendar_list_events', () => {
 			ctx
 		);
 
-		expect(mocks.invoke.mock.calls[0][1]).toMatchObject({
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({
 			start: '2026-09-07',
 			end: '2026-09-08',
 			calendar: 'Work'
@@ -140,7 +139,7 @@ describe('calendar_list_events', () => {
 	it('reports a backend failure rather than an empty calendar', async () => {
 		// "You have nothing on" is a worse answer than "the server refused".
 		setDavAccounts([account()]);
-		mocks.invoke.mockRejectedValue('401 Unauthorized');
+		vi.mocked(invoke).mockRejectedValue('401 Unauthorized');
 
 		const out = await executeTool('calendar_list_events', {}, ctx);
 		expect(JSON.parse(out.result).error).toContain('401 Unauthorized');
@@ -152,12 +151,12 @@ describe('calendar_search', () => {
 		setDavAccounts([account()]);
 		const out = await executeTool('calendar_search', { query: '   ' }, ctx);
 		expect(JSON.parse(out.result).error).toContain('search for');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 
 	it('suggests widening the window when nothing matched', async () => {
 		setDavAccounts([account()]);
-		mocks.invoke.mockResolvedValue({ events: [], problems: [] });
+		vi.mocked(invoke).mockResolvedValue({ events: [], problems: [] });
 
 		const out = await executeTool('calendar_search', { query: 'dentist' }, ctx);
 		expect(out.result).toContain('start and end');

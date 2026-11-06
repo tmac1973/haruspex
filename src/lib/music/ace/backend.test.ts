@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const settings = vi.hoisted(() => ({
 	musicAceBaseUrl: 'http://box:8083/',
 	musicAceModel: ''
@@ -14,7 +15,16 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 import asmodean from './fixtures/props-asmodean.json';
 import composed from './fixtures/lm-result.json';
 import { aceMusicBackend } from './backend';
-import { httpRouter, invokeRouter, type HttpAnswer } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import {
+	allInvokeArgs,
+	httpCalls,
+	httpRouter,
+	invokeArgs,
+	invokeRouter,
+	type HttpAnswer,
+	type HttpCall
+} from '#lib/testing/invoke.ts';
 import {
 	MusicBackendError,
 	type MusicJobHandle,
@@ -28,14 +38,16 @@ const HASH = 'c'.repeat(64);
 const DIT = 'acestep-v15-xl-sft-Q8_0.gguf';
 
 function use(answers: Record<string, Answer>) {
-	tauri.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			comfy_cancel: null,
-			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
-			ace_json: httpRouter(answers, NOPE),
-			ace_upload: httpRouter(answers, NOPE)
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				comfy_cancel: null,
+				audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
+				ace_json: httpRouter(answers, NOPE),
+				ace_upload: httpRouter(answers, NOPE)
+			})
+		);
 }
 
 const NOPE = '{"error":"nope"}';
@@ -58,10 +70,9 @@ function songRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> 
 }
 
 function sent(method: string, path: string) {
-	const found = tauri.invoke.mock.calls.find(
-		([c, a]) => c === 'ace_json' && a.call.method === method && a.call.path === path
-	);
-	return found?.[1].call.body as Record<string, unknown> | undefined;
+	return httpCalls(vi.mocked(invoke), 'ace_json').find(
+		(c) => c.method === method && c.path === path
+	)?.body;
 }
 
 const request: MusicRequest = {
@@ -105,7 +116,7 @@ describe('ace-server music backend', () => {
 			key: 'C major',
 			model: DIT
 		});
-		const [, stored] = tauri.invoke.mock.calls.find(([c]) => c === 'audio_store_url')!;
+		const stored = invokeArgs(vi.mocked(invoke), 'audio_store_url');
 		expect(stored).toEqual({
 			url: 'http://box:8083/job?id=syn&result=1',
 			apiKey: null,
@@ -136,9 +147,11 @@ describe('ace-server music backend', () => {
 		await expect(
 			aceMusicBackend.generate(request, { signal: controller.signal })
 		).rejects.toMatchObject({ kind: 'cancelled' });
-		expect(tauri.invoke.mock.calls.some(([, a]) => a?.call?.path === '/job?id=lm&cancel=1')).toBe(
-			true
-		);
+		expect(
+			allInvokeArgs<{ call?: HttpCall }>(vi.mocked(invoke)).some(
+				(a) => a?.call?.path === '/job?id=lm&cancel=1'
+			)
+		).toBe(true);
 		expect(sent('POST', '/synth')).toBeUndefined();
 	});
 
@@ -191,7 +204,10 @@ describe('ace-server music backend', () => {
 		);
 		expect(sent('POST', '/lm')).toBeUndefined();
 		expect([...new Set(seen.map((p) => p.phase))]).toEqual(['synthesizing', 'saving']);
-		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'ace_upload')!;
+		const args = invokeArgs<{ call: HttpCall; files: Array<{ field: string }> }>(
+			vi.mocked(invoke),
+			'ace_upload'
+		);
 		expect(args.call).toMatchObject({ method: 'POST', path: '/synth' });
 		expect(args.call.body).toEqual({
 			caption: 'lo-fi, rain',
@@ -202,7 +218,7 @@ describe('ace-server music backend', () => {
 			repainting_start: 30,
 			repainting_end: 50
 		});
-		expect(args.files.map((f: { field: string }) => f.field)).toEqual(['audio', 'ref_audio']);
+		expect(args.files.map((f) => f.field)).toEqual(['audio', 'ref_audio']);
 		expect(result).toMatchObject({ durationSec: 50, seed: 42 });
 	});
 
@@ -299,7 +315,7 @@ describe('ace-server music jobs after a restart', () => {
 				request
 			)
 		).rejects.toMatchObject({ status: 404 });
-		const polls = tauri.invoke.mock.calls.filter(([c]) => c === 'ace_json');
+		const polls = vi.mocked(invoke).mock.calls.filter(([c]) => c === 'ace_json');
 		expect(polls).toHaveLength(1);
 	});
 });

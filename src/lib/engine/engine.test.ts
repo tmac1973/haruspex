@@ -79,12 +79,17 @@ const db = vi.hoisted(() => {
 });
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+// Every command goes to the stand-in database.
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{},
+		(cmd: string, args?: Record<string, unknown>) => db.handle(cmd, args)
+	)
+);
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
 vi.mock('#lib/agent/loop/turnTools.ts', () => ({ resolveTurnTools: () => ({ tools: [] }) }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
@@ -121,6 +126,7 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
 
+import { invoke } from '@tauri-apps/api/core';
 import { flushSync } from 'svelte';
 import { closeSession, getOpenSessions, newSession } from '#lib/stores/code.svelte.ts';
 import { askCommandApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
@@ -178,11 +184,7 @@ function mirrorOf(events: SessionEvent[]): Mirror {
 beforeEach(async () => {
 	for (const s of [...getOpenSessions()]) await closeSession(s.id);
 	db.reset();
-	mocks.invoke
-		.mockReset()
-		.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
-			db.handle(cmd, args)
-		);
+	vi.mocked(invoke).mockReset();
 	mocks.withInferenceSlot
 		.mockReset()
 		.mockImplementation(async (o: { onAdmitted?: () => void }, fn: () => Promise<unknown>) => {

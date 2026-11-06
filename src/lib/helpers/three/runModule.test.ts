@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const invoke = vi.fn();
-vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+
+import { invoke } from '@tauri-apps/api/core';
 
 import { LATE_MS } from '#lib/specialists/three/runHtml.ts';
 import { lineOf, modulePage, runBuildModule, type ModuleRunResult } from './runModule';
@@ -27,8 +30,8 @@ async function start(opts: Parameters<typeof runBuildModule>[1] = {}) {
 
 beforeEach(() => {
 	vi.useFakeTimers();
-	invoke.mockReset();
-	invoke.mockResolvedValue('doc-1');
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue('doc-1');
 });
 
 afterEach(() => {

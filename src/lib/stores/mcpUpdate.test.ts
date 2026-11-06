@@ -17,10 +17,12 @@ import {
 import { mcpState, removeMcpServer, startMcpServer } from './mcpServers.svelte';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
 import { dismissToast, getToasts } from './toasts.svelte';
+import { invoke } from '@tauri-apps/api/core';
 import { invokeCalls, invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const ID = 'srv-up';
@@ -98,7 +100,7 @@ function backend(
 	after = ['navigate', 'snapshot']
 ): void {
 	let swapped = false;
-	invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			mcp_update_status: [
 				{
@@ -146,19 +148,22 @@ function sequence(): string[] {
 		'mcp_update_commit',
 		'mcp_update_rollback'
 	]);
-	return invoke.mock.calls.map((c) => c[0] as string).filter((cmd) => interesting.has(cmd));
+	return vi
+		.mocked(invoke)
+		.mock.calls.map((c) => c[0])
+		.filter((cmd) => interesting.has(cmd));
 }
 
 async function runningServer(): Promise<void> {
 	await startMcpServer(config(), entry());
 	expect(mcpState(ID).status.type).toBe('Ready');
 	await refreshUpdateStatuses([config()]);
-	invoke.mockClear();
+	vi.mocked(invoke).mockClear();
 }
 
 beforeEach(async () => {
-	invoke.mockReset();
-	invoke.mockResolvedValue(null);
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue(null);
 	await removeMcpServer(ID);
 	backend();
 });
@@ -178,7 +183,7 @@ describe('updating a running server', () => {
 			'mcp_update_commit'
 		]);
 		// Only the browser download: the sign-in step is not run again.
-		expect(invokeCalls(invoke, 'mcp_run_setup_command')).toEqual([
+		expect(invokeCalls(vi.mocked(invoke), 'mcp_run_setup_command')).toEqual([
 			expect.objectContaining({ args: ['install-browser'] })
 		]);
 		expect(mcpState(ID).status.type).toBe('Ready');
@@ -212,7 +217,7 @@ describe('updating a running server', () => {
 			config({ addonProjects: ['/p/one', '/p/two'] }),
 			entry({ setup: [addon] })
 		);
-		expect(invokeCalls(invoke, 'mcp_install_addon')).toEqual([
+		expect(invokeCalls(vi.mocked(invoke), 'mcp_install_addon')).toEqual([
 			expect.objectContaining({ stepIndex: 0, targetDir: '/p/one' }),
 			expect.objectContaining({ stepIndex: 0, targetDir: '/p/two' })
 		]);
@@ -274,7 +279,7 @@ describe('an update that fails after the swap', () => {
 			'mcp_run_setup_command',
 			'mcp_start_server'
 		]);
-		expect(invokeCalls(invoke, 'mcp_run_setup_command').at(-1)).toMatchObject({
+		expect(invokeCalls(vi.mocked(invoke), 'mcp_run_setup_command').at(-1)).toMatchObject({
 			args: ['install-browser', '--old']
 		});
 		expect(mcpState(ID).status.type).toBe('Ready');
@@ -302,7 +307,7 @@ describe('an update that fails after the swap', () => {
 		expect(mcpUpdateResult(ID)?.detail).toContain('crashed on launch');
 		// The new version's browser step succeeded and may have removed the old
 		// browser, so the old version's step runs again.
-		expect(invokeCalls(invoke, 'mcp_run_setup_command').map((c) => c?.args)).toEqual([
+		expect(invokeCalls(vi.mocked(invoke), 'mcp_run_setup_command').map((c) => c?.args)).toEqual([
 			['install-browser'],
 			['install-browser', '--old']
 		]);
@@ -359,7 +364,7 @@ describe('an update that fails after the swap', () => {
 describe('servers that were not running', () => {
 	it('checks the new version starts, then stops it again', async () => {
 		await refreshUpdateStatuses([config()]);
-		invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await updateMcpServer(config(), entry());
 
 		expect(sequence()).toContain('mcp_start_server');
@@ -412,7 +417,7 @@ describe('around an update', () => {
 		expect(await existingAddonProjects(config({ addonProjects: ['/p/one', '/p/gone'] }))).toEqual([
 			'/p/one'
 		]);
-		invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		expect(await existingAddonProjects(config())).toEqual([]);
 		expect(invoke).not.toHaveBeenCalled();
 	});

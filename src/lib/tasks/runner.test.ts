@@ -4,14 +4,16 @@ const tauri = vi.hoisted(() => ({
 	updates: [] as { id: string; patch: Record<string, unknown> }[],
 	gone: new Set<string>()
 }));
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string, args: { id: string; patch: Record<string, unknown> }) => {
-		if (cmd !== 'task_update') return null;
-		if (tauri.gone.has(args.id)) throw 'TaskGone';
-		tauri.updates.push(args);
-		return { id: args.id, ...args.patch };
-	})
-}));
+vi.mock('@tauri-apps/api/core', async () => {
+	const { mockTauriCore, withArgs } = await import('#lib/testing/invoke.ts');
+	return mockTauriCore({
+		task_update: withArgs<{ id: string; patch: Record<string, unknown> }>((args) => {
+			if (tauri.gone.has(args.id)) throw 'TaskGone';
+			tauri.updates.push(args);
+			return { id: args.id, ...args.patch };
+		})
+	});
+});
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })

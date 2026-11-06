@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-	invoke: vi.fn()
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
-
+import { invoke } from '@tauri-apps/api/core';
+import { allInvokeArgs } from '#lib/testing/invoke.ts';
 // Side-effect import registers the contact tools in the shared registry.
 import '#lib/agent/tools/contacts.ts';
 import { formatBrief, formatFull, formatResult } from '#lib/agent/tools/contacts.ts';
@@ -66,7 +64,7 @@ const result = (over: Partial<ContactQueryResult> = {}): ContactQueryResult => (
 });
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	setDavAccounts([]);
 });
 
@@ -96,7 +94,7 @@ describe('the contacts gate', () => {
 		setDavAccounts([account({ hasContacts: false })]);
 		const out = await executeTool('contacts_search', { query: 'sarah' }, ctx);
 		expect(JSON.parse(out.result).error).toContain('Settings → Integrations');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 });
 
@@ -104,10 +102,11 @@ describe('contacts_search', () => {
 	beforeEach(() => setDavAccounts([account()]));
 
 	it('sends the query and every enabled account', async () => {
-		mocks.invoke.mockResolvedValue(result());
+		vi.mocked(invoke).mockResolvedValue(result());
 		await executeTool('contacts_search', { query: 'sarah' }, ctx);
 
-		const [name, args] = mocks.invoke.mock.calls[0];
+		const [name] = vi.mocked(invoke).mock.calls[0];
+		const [args] = allInvokeArgs<{ query: string; accounts: unknown[] }>(vi.mocked(invoke));
 		expect(name).toBe('dav_search_contacts');
 		expect(args.query).toBe('sarah');
 		expect(args.accounts).toHaveLength(1);
@@ -116,18 +115,18 @@ describe('contacts_search', () => {
 	it('refuses an empty query rather than listing the whole address book', async () => {
 		const out = await executeTool('contacts_search', { query: '  ' }, ctx);
 		expect(JSON.parse(out.result).error).toContain('search for');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
 
 	it('renders one line per person, not the whole card', async () => {
 		// Twenty full cards crowd out the conversation they were meant to serve.
-		mocks.invoke.mockResolvedValue(result());
+		vi.mocked(invoke).mockResolvedValue(result());
 		const out = await executeTool('contacts_search', { query: 'sarah' }, ctx);
 		expect(out.result).toBe('Sarah Okonjo — Example Ltd — sarah@example.com — +1 555 0100');
 	});
 
 	it('says the list was cut rather than implying it was complete', async () => {
-		mocks.invoke.mockResolvedValue(result({ totalMatched: 60 }));
+		vi.mocked(invoke).mockResolvedValue(result({ totalMatched: 60 }));
 		const out = await executeTool('contacts_search', { query: 'a' }, ctx);
 		expect(out.result).toContain('and 59 more');
 	});
@@ -135,7 +134,7 @@ describe('contacts_search', () => {
 	it('reports an unreachable address book instead of an empty one', async () => {
 		// "You know nobody there" and "the server did not answer" are different
 		// answers, and only one of them is true.
-		mocks.invoke.mockResolvedValue(
+		vi.mocked(invoke).mockResolvedValue(
 			result({ contacts: [], totalMatched: 0, problems: ['Work: 401'] })
 		);
 		const out = await executeTool('contacts_search', { query: 'sarah' }, ctx);
@@ -147,14 +146,16 @@ describe('contacts_get', () => {
 	beforeEach(() => setDavAccounts([account()]));
 
 	it('passes the identifier through', async () => {
-		mocks.invoke.mockResolvedValue(result());
+		vi.mocked(invoke).mockResolvedValue(result());
 		await executeTool('contacts_get', { identifier: 'sarah@example.com' }, ctx);
-		expect(mocks.invoke.mock.calls[0][0]).toBe('dav_get_contact');
-		expect(mocks.invoke.mock.calls[0][1].identifier).toBe('sarah@example.com');
+		expect(vi.mocked(invoke).mock.calls[0][0]).toBe('dav_get_contact');
+		expect(allInvokeArgs<{ identifier: string }>(vi.mocked(invoke))[0].identifier).toBe(
+			'sarah@example.com'
+		);
 	});
 
 	it('points at search when nobody matched', async () => {
-		mocks.invoke.mockResolvedValue(result({ contacts: [], totalMatched: 0 }));
+		vi.mocked(invoke).mockResolvedValue(result({ contacts: [], totalMatched: 0 }));
 		const out = await executeTool('contacts_get', { identifier: 'Nobody' }, ctx);
 		expect(out.result).toContain('contacts_search');
 	});

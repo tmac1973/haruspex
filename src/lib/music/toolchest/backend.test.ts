@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const settings = vi.hoisted(() => ({
 	musicToolchestBaseUrl: 'http://box:3000/',
 	musicToolchestApiKeyId: 'k1' as string | null,
@@ -21,7 +22,15 @@ import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import succeeded from './fixtures/job-succeeded.json';
 import refused from './fixtures/refused-not-running.json';
 import { toolchestMusicBackend } from './backend';
-import { httpRouter, invokeRouter, type HttpAnswer, type HttpCall } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import {
+	httpCalls,
+	httpRouter,
+	invokeArgs,
+	invokeRouter,
+	type HttpAnswer,
+	type HttpCall
+} from '#lib/testing/invoke.ts';
 import {
 	MusicBackendError,
 	type MusicJobHandle,
@@ -45,14 +54,16 @@ const HASH = 'c'.repeat(64);
 const JOB = '/v1/music/jobs/3f9a1c0d7e2b4a61';
 
 function use(answers: Record<string, Answer>) {
-	tauri.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			comfy_cancel: null,
-			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
-			toolchest_json: httpRouter(answers),
-			toolchest_upload: httpRouter(answers)
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				comfy_cancel: null,
+				audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
+				toolchest_json: httpRouter(answers),
+				toolchest_upload: httpRouter(answers)
+			})
+		);
 }
 
 function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
@@ -109,7 +120,7 @@ describe('llama-toolchest music backend', () => {
 			model: 'ace-gpu2'
 		});
 		expect(result.url).toContain(HASH);
-		const [, stored] = tauri.invoke.mock.calls.find(([c]) => c === 'audio_store_url')!;
+		const stored = invokeArgs(vi.mocked(invoke), 'audio_store_url');
 		expect(stored).toEqual({
 			url: `http://box:3000${JOB}/audio`,
 			apiKey: 'sekrit',
@@ -119,8 +130,8 @@ describe('llama-toolchest music backend', () => {
 			codeSessionId: null
 		});
 		// Kept in the audio cache, so the server can let go of it.
-		const last = tauri.invoke.mock.calls.filter(([c]) => c === 'toolchest_json').at(-1)!;
-		expect(`${last[1].call.method} ${last[1].call.path}`).toBe(`DELETE ${JOB}`);
+		const last = httpCalls(vi.mocked(invoke), 'toolchest_json').at(-1)!;
+		expect(`${last.method} ${last.path}`).toBe(`DELETE ${JOB}`);
 	});
 
 	it('cancels the job on the server when the turn is cancelled', async () => {
@@ -137,9 +148,9 @@ describe('llama-toolchest music backend', () => {
 		await expect(
 			toolchestMusicBackend.generate(request, { signal: controller.signal })
 		).rejects.toMatchObject({ kind: 'cancelled' });
-		const paths = tauri.invoke.mock.calls
-			.filter(([c]) => c === 'toolchest_json')
-			.map(([, a]) => `${a.call.method} ${a.call.path}`);
+		const paths = httpCalls(vi.mocked(invoke), 'toolchest_json').map(
+			(c) => `${c.method} ${c.path}`
+		);
 		expect(paths).toContain(`DELETE ${JOB}`);
 	});
 
@@ -195,7 +206,10 @@ describe('llama-toolchest music backend', () => {
 			instrumental: false,
 			source
 		});
-		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_upload')!;
+		const args = invokeArgs<{ call: HttpCall; files: unknown[] }>(
+			vi.mocked(invoke),
+			'toolchest_upload'
+		);
 		expect(args.call).toMatchObject({ method: 'POST', path: '/v1/music/jobs' });
 		expect(args.call.body).toMatchObject({
 			model: 'ace-gpu2',
@@ -208,9 +222,7 @@ describe('llama-toolchest music backend', () => {
 			{ field: 'audio', filename: 'song.mp3', hash: 'a'.repeat(64), cache: 'audio', bytes: null }
 		]);
 		expect(
-			tauri.invoke.mock.calls.some(
-				([c, a]) => c === 'toolchest_json' && a.call.path === '/v1/music/jobs'
-			)
+			httpCalls(vi.mocked(invoke), 'toolchest_json').some((c) => c.path === '/v1/music/jobs')
 		).toBe(false);
 	});
 
@@ -263,12 +275,12 @@ describe('llama-toolchest music jobs after a restart', () => {
 		});
 		expect(result).toMatchObject({ hash: HASH, model: 'ace-gpu2', bpm: 82 });
 		// Polls of the job, then its delete once the song is kept; nothing is sent again.
-		const calls = tauri.invoke.mock.calls
-			.filter(([c]) => c === 'toolchest_json')
-			.map(([, a]) => `${a.call.method} ${a.call.path}`);
+		const calls = httpCalls(vi.mocked(invoke), 'toolchest_json').map(
+			(c) => `${c.method} ${c.path}`
+		);
 		expect(new Set(calls)).toEqual(new Set([`GET ${JOB}`, `DELETE ${JOB}`]));
 		expect(calls.at(-1)).toBe(`DELETE ${JOB}`);
-		const [, stored] = tauri.invoke.mock.calls.find(([c]) => c === 'audio_store_url')!;
+		const stored = invokeArgs(vi.mocked(invoke), 'audio_store_url');
 		expect(stored).toMatchObject({
 			url: `http://box:3000${JOB}/audio`,
 			apiKey: 'sekrit',

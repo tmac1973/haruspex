@@ -2,33 +2,34 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const settingsMock = vi.hoisted(() => ({ agentFeedbackEnabled: false }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		customSystemPrompt: '',
-		sandboxEnabled: false,
-		agentFeedbackEnabled: settingsMock.agentFeedbackEnabled
-	}),
-	getResponseFormatPrompt: () => '',
-	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
-	hasEnabledEmailAccount: () => false,
-	hasEnabledCalendarAccount: () => false,
-	hasEnabledContactsAccount: () => false,
-	// registry.ts reads this through the mcpNames predicate when filtering
-	// schemas; the tool-description assertion below goes through getToolSchemas.
-	startableMcpServers: () => [
-		{
-			id: 'sp-srv-1',
-			label: 'GitHub',
-			enabled: true,
-			source: { kind: 'catalog', entryId: 'github' },
-			secrets: {},
-			toolEnabled: {},
-			proxyUse: 'auto',
-			setupComplete: true
-		}
-	]
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			customSystemPrompt: '',
+			sandboxEnabled: false,
+			agentFeedbackEnabled: settingsMock.agentFeedbackEnabled
+		}),
+		getResponseFormatPrompt: () => '',
+		getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
+		hasEnabledEmailAccount: () => false,
+		hasEnabledCalendarAccount: () => false,
+		hasEnabledContactsAccount: () => false,
+		// registry.ts reads this through the mcpNames predicate when filtering
+		// schemas; the tool-description assertion below goes through getToolSchemas.
+		startableMcpServers: () => [
+			{
+				id: 'sp-srv-1',
+				label: 'GitHub',
+				enabled: true,
+				source: { kind: 'catalog', entryId: 'github' },
+				secrets: {},
+				toolEnabled: {},
+				proxyUse: 'auto',
+				setupComplete: true
+			}
+		]
+	})
+);
 
 import { buildSystemPrompt, injectMessageHints } from './systemPrompt';
 import { renderSlashMessage } from '#lib/skills/content.ts';

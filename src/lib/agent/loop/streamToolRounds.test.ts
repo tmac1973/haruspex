@@ -39,18 +39,22 @@ vi.mock('#lib/agent/tools/index.ts', () => ({
 	coerceCallArguments: toolsMock.coerceCallArguments
 }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getChatTemplateKwargs: vi.fn(() => ({})),
-	getSamplingParams: vi.fn(() => ({})),
-	getOpenRouterReasoningParam: vi.fn(() => null),
-	getSettings: vi.fn(() => ({ contextSize: 32768, inferenceBackend: { mode: 'local' } })),
-	getActiveLocalModelFilename: vi.fn(() => ''),
-	getApiKeyValue: vi.fn(() => undefined),
-	hasEnabledEmailAccount: vi.fn(() => false),
-	hasEnabledCalendarAccount: vi.fn(() => false),
-	hasEnabledContactsAccount: vi.fn(() => false)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		getChatTemplateKwargs: vi.fn(() => ({})),
+		getSamplingParams: vi.fn(() => ({})),
+		getOpenRouterReasoningParam: vi.fn(() => null),
+		getSettings: vi.fn(() => ({
+			contextSize: 32768,
+			inferenceBackend: { mode: 'local' as const }
+		})),
+		getActiveLocalModelFilename: vi.fn(() => ''),
+		getApiKeyValue: vi.fn(() => undefined),
+		hasEnabledEmailAccount: vi.fn(() => false),
+		hasEnabledCalendarAccount: vi.fn(() => false),
+		hasEnabledContactsAccount: vi.fn(() => false)
+	})
+);
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {

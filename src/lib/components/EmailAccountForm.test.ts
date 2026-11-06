@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({ secret_available: true })
+);
 
 import EmailAccountForm from './EmailAccountForm.svelte';
 import type { EmailAccount } from '#lib/stores/settings.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	return {
@@ -28,7 +30,7 @@ function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	};
 }
 
-const commands = () => state.invoke.mock.calls.map((c) => c[0]);
+const commands = () => vi.mocked(invoke).mock.calls.map((c) => c[0]);
 
 function renderForm(acc = account()) {
 	const onChange = vi.fn();
@@ -38,7 +40,7 @@ function renderForm(acc = account()) {
 }
 
 beforeEach(() => {
-	state.invoke.mockReset().mockImplementation(invokeRouter({ secret_available: true }));
+	vi.mocked(invoke).mockReset();
 });
 
 describe('EmailAccountForm password', () => {
@@ -70,9 +72,12 @@ describe('EmailAccountForm password', () => {
 		// The form asks where secrets go when it opens; that touches no secret.
 		const secretCalls = commands().filter((c) => c !== 'secret_store_kind');
 		expect(secretCalls.slice(0, 1)).toEqual(['email_test_connection']);
-		const test = state.invoke.mock.calls.find((c) => c[0] === 'email_test_connection');
-		expect(test?.[1].account).toMatchObject({ password: 'new-pw' });
-		expect(state.invoke).toHaveBeenCalledWith('secret_set', { key: 'email:a1', value: 'new-pw' });
+		const [test] = invokeCalls<{ account: unknown }>(vi.mocked(invoke), 'email_test_connection');
+		expect(test?.account).toMatchObject({ password: 'new-pw' });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('secret_set', {
+			key: 'email:a1',
+			value: 'new-pw'
+		});
 		expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({
 			password: '',
 			passwordRef: 'email:a1'
@@ -81,7 +86,7 @@ describe('EmailAccountForm password', () => {
 	});
 
 	it('keeps nothing when the test fails', async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					email_test_connection: () => {
@@ -102,7 +107,7 @@ describe('EmailAccountForm password', () => {
 		renderForm();
 		await fireEvent.click(screen.getByText('Test connection'));
 		await waitFor(() => expect(commands()).toContain('email_test_connection'));
-		const sent = state.invoke.mock.calls.find((c) => c[0] === 'email_test_connection')?.[1];
+		const [sent] = invokeCalls<{ account: unknown }>(vi.mocked(invoke), 'email_test_connection');
 		expect(sent.account).toMatchObject({ password: '', passwordRef: 'email:a1' });
 	});
 });

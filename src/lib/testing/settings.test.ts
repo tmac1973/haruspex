@@ -41,3 +41,41 @@ describe('mockSettingsModule over the defaults', () => {
 		expect(mod.getSettings().proxy).toEqual(real.getSettings().proxy);
 	});
 });
+
+describe('mockSettingsModule stubs', () => {
+	const real = () =>
+		vi.importActual<typeof import('#lib/stores/settings.ts')>('#lib/stores/settings.ts');
+
+	it('takes a stub that answers with only some of the fields', async () => {
+		const { mockSettingsModule } = await import('./settings');
+		const actual = await real();
+		const mod = await mockSettingsModule(async <T>() => actual as T, {
+			settings: {},
+			startableMcpServers: () => [{ id: 'srv', enabled: true }]
+		});
+		expect(mod.startableMcpServers().map((s) => s.id)).toEqual(['srv']);
+	});
+
+	it('keeps a getSettings stub when no settings are given', async () => {
+		const { mockSettingsModule } = await import('./settings');
+		const actual = await real();
+		const getSettings = vi.fn(() => ({ contextSize: 2 }));
+		const mod = await mockSettingsModule(async <T>() => actual as T, { getSettings });
+		expect(mod.getSettings().contextSize).toBe(2);
+		expect(getSettings).toHaveBeenCalledOnce();
+	});
+
+	it('hands a function of the real module the real module', async () => {
+		const { mockSettingsModule } = await import('./settings');
+		const actual = await real();
+		const mod = await mockSettingsModule(
+			async <T>() => actual as T,
+			(r) => ({
+				getLiveSettings: () => ({ ...r.getLiveSettings(), leanMode: true })
+			})
+		);
+		expect(mod.getLiveSettings().leanMode).toBe(true);
+		expect(mod.getLiveSettings().proxy).toEqual(actual.getLiveSettings().proxy);
+		expect(mod.getSettings).toBe(actual.getSettings);
+	});
+});

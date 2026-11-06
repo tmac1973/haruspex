@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	sleep: vi.fn(),
 	listen: vi.fn(),
 	exitHandler: null as null | ((e: { payload: { session_id: number } }) => void)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 vi.mock('#lib/utils/async.ts', () => ({ sleep: mocks.sleep }));
 
+import { invoke } from '@tauri-apps/api/core';
+import { invokeHandler } from '#lib/testing/invoke.ts';
 import { openForCommand, type OpenedSession, type OpenerDeps } from './openForCommand';
 
 const PTY = 7;
@@ -56,25 +59,31 @@ function setup(
 		if (tick === 1) state.bound = true;
 		opts.onTick?.(state, tick);
 	});
-	mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-		if (state.gone) throw new Error('shell session not found');
-		switch (cmd) {
-			case 'shell_get_context':
-				return { completed_total: state.completedTotal, marker_total: state.markerTotal };
-			case 'shell_write':
-				state.writes.push(String(args?.data));
-				return null;
-			case 'shell_get_recent_commands':
-				return [
-					{
-						...(opts.region ?? { commandLine: 'sudo dnf install foo', output: 'ok', exitCode: 0 }),
-						cwd: '/proj',
-						truncated: false
-					}
-				];
-		}
-		throw new Error(`unexpected ${cmd}`);
-	});
+	vi.mocked(invoke).mockImplementation(
+		invokeHandler((cmd, args) => {
+			if (state.gone) throw new Error('shell session not found');
+			switch (cmd) {
+				case 'shell_get_context':
+					return { completed_total: state.completedTotal, marker_total: state.markerTotal };
+				case 'shell_write':
+					state.writes.push(String(args?.data));
+					return null;
+				case 'shell_get_recent_commands':
+					return [
+						{
+							...(opts.region ?? {
+								commandLine: 'sudo dnf install foo',
+								output: 'ok',
+								exitCode: 0
+							}),
+							cwd: '/proj',
+							truncated: false
+						}
+					];
+			}
+			throw new Error(`unexpected ${cmd}`);
+		})
+	);
 	return { state, session, deps };
 }
 
@@ -224,7 +233,7 @@ describe('openForCommand', () => {
 		);
 		expect(res).toEqual({ kind: 'aborted', shellName: 'Shell 3' });
 		expect(state.open).toBe(true);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_kill', expect.anything());
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('shell_kill', expect.anything());
 	});
 
 	it('returns at once when the shell sends no markers', async () => {

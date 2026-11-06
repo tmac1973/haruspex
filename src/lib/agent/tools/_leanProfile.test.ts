@@ -5,12 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // video backends, the sandbox, writable memory and an enabled MCP server.
 const lean = vi.hoisted(() => ({ on: true, files: false }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({
-			...actual.getSettings(),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({
 			leanMode: lean.on,
 			leanFileWrites: lean.files,
 			screenCaptureEnabled: true,
@@ -36,8 +34,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 				setupComplete: true
 			}
 		]
-	};
-});
+	})
+);
 vi.mock('#lib/stores/memory.svelte.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/memory.svelte.ts')>()),
 	memoryActive: () => true

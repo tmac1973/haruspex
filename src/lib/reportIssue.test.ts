@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));
 
 import { issueText, issueTitle, logTail, reportIssue } from '#lib/reportIssue.ts';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeArgs, invokeHandler, invokeRouter, withArgs } from '#lib/testing/invoke.ts';
 
-beforeEach(() => mocks.invoke.mockReset());
+beforeEach(() => vi.mocked(invoke).mockReset());
 
 describe('the issue text', () => {
 	it('keeps the newest log lines that fit', () => {
@@ -43,36 +45,39 @@ describe('the issue text', () => {
 describe('reportIssue', () => {
 	it('saves the bundle into Downloads, opens it, then opens the redacted issue', async () => {
 		const calls: string[] = [];
-		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			calls.push(cmd);
-			return invokeRouter({
-				get_diagnostics: {
-					app_version: '9.9.9',
-					os: 'linux',
-					arch: 'x86_64',
-					appimage: false,
-					app_log: [],
-					llama_log: [],
-					whisper_log: [],
-					tts_log: [],
-					crash_log: [],
-					image_engine_log: [],
-					comfy_log: [],
-					search_stats: {
-						session: {
-							engines: [],
-							globals: { cache_hits: 0, total_queries: 0, all_engines_failed: 0 }
-						},
-						lifetime: { engines: [], globals: {} }
-					}
-				},
-				feedback_redact: (a) =>
-					(a as { lines: string[] }).lines.map((l) => l.replace('sk-123', '[redacted]')),
-				feedback_save_download: '/home/me/Downloads/haruspex-diagnostics-x.md',
-				folder_open: undefined,
-				open_url: undefined
-			})(cmd, args);
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeHandler((cmd, args) => {
+				calls.push(cmd);
+				return invokeRouter({
+					get_diagnostics: {
+						app_version: '9.9.9',
+						os: 'linux',
+						arch: 'x86_64',
+						appimage: false,
+						app_log: [],
+						llama_log: [],
+						whisper_log: [],
+						tts_log: [],
+						crash_log: [],
+						image_engine_log: [],
+						comfy_log: [],
+						search_stats: {
+							session: {
+								engines: [],
+								globals: { cache_hits: 0, total_queries: 0, all_engines_failed: 0 }
+							},
+							lifetime: { engines: [], globals: {} }
+						}
+					},
+					feedback_redact: withArgs<{ lines: string[] }>((a) =>
+						a.lines.map((l) => l.replace('sk-123', '[redacted]'))
+					),
+					feedback_save_download: '/home/me/Downloads/haruspex-diagnostics-x.md',
+					folder_open: undefined,
+					open_url: undefined
+				})(cmd, args);
+			})
+		);
 		const path = await reportIssue({
 			where: 'Chat',
 			error: 'auth failed for sk-123',
@@ -80,12 +85,12 @@ describe('reportIssue', () => {
 		});
 		expect(path).toBe('/home/me/Downloads/haruspex-diagnostics-x.md');
 		expect(calls.indexOf('feedback_save_download')).toBeLessThan(calls.indexOf('open_url'));
-		const save = mocks.invoke.mock.calls.find((c) => c[0] === 'feedback_save_download')![1];
+		const save = invokeArgs(vi.mocked(invoke), 'feedback_save_download');
 		expect(save).toMatchObject({ extension: 'md' });
-		expect(mocks.invoke.mock.calls.find((c) => c[0] === 'folder_open')![1]).toEqual({
+		expect(invokeArgs(vi.mocked(invoke), 'folder_open')).toEqual({
 			path: '/home/me/Downloads'
 		});
-		const url = new URL(mocks.invoke.mock.calls.find((c) => c[0] === 'open_url')![1].url);
+		const url = new URL(invokeArgs<{ url: string }>(vi.mocked(invoke), 'open_url').url);
 		const body = url.searchParams.get('what-happened') ?? '';
 		expect(url.searchParams.get('title')).toBe('[Bug] Chat: auth failed for [redacted]');
 		expect(body).toContain('saved as haruspex-diagnostics-x.md');
