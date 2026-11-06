@@ -18,7 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { MemoryHit } from '#lib/ipc/gen/MemoryHit.ts';
 import type { MemoryCursor } from '#lib/ipc/gen/MemoryCursor.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
-import { logDebug } from '#lib/debugLog.ts';
+import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 
 /**
  * Cosine floor for a memory to be considered at all, applied before the
@@ -136,7 +136,9 @@ export async function recallForTurn(opts: {
 		logDebug('memory', 'recall', {
 			considered: recalled.length,
 			injected: kept.length,
-			top: kept[0]?.content.slice(0, 60)
+			// A memory is the user's own words, so it stays out of the log
+			// unless verbose payloads are on.
+			top: isVerbosePayloads() ? kept[0]?.content.slice(0, 60) : undefined
 		});
 		return kept;
 	} catch (e) {

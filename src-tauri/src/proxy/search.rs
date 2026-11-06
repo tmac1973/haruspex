@@ -8,14 +8,14 @@ use super::config::{
     ENGINE_COOLDOWN, ENGINE_COOLDOWN_SLOW, FETCH_TIMEOUT, RATE_LIMIT_INTERVAL,
     RATE_LIMIT_INTERVAL_SLOW,
 };
-use super::extract::{diagnostic_snippet, USER_AGENT};
+use super::extract::USER_AGENT;
 use super::relevance;
 use super::stats::{
     record_engine_result, record_global_both, AutoPosition, GlobalCounter, SearchFailure,
     SearchFailureKind, SearchStats, StatSink,
 };
 use super::{ProxyConfig, ProxyState, SearchResult};
-use log::{debug, info, warn};
+use log::{info, warn};
 use scraper::{ElementRef, Html, Selector};
 
 /// Every engine returns at most this many results per query.
@@ -160,20 +160,25 @@ pub(super) fn reject_if_irrelevant(
     ))
 }
 
-/// Log an anchored diagnostic snippet when a scrape parser finds nothing —
-/// this is what makes the empty-result log line actionable when an engine
-/// restructures its markup.
+/// Log an empty scrape: the page's size and which of the parser's markup
+/// anchors it still has, which is what tells a restructured page from an
+/// empty one. Not the HTML itself — a results page carries the query.
 fn warn_empty_scrape(label: &str, html: &str, needles: &[&str]) {
-    warn!(
-        "{} parser found 0 results ({} bytes of HTML)",
-        label,
+    warn!("{}", empty_scrape_summary(label, html, needles));
+}
+
+fn empty_scrape_summary(label: &str, html: &str, needles: &[&str]) -> String {
+    let anchor = needles
+        .iter()
+        .find_map(|n| {
+            html.find(n)
+                .map(|pos| format!("anchor {n:?} at byte {pos}"))
+        })
+        .unwrap_or_else(|| format!("none of the anchors {needles:?}"));
+    format!(
+        "{label} parser found 0 results ({} bytes of HTML; {anchor})",
         html.len()
-    );
-    debug!(
-        "{} anchored snippet of response: {}",
-        label,
-        diagnostic_snippet(html, needles, 3000)
-    );
+    )
 }
 
 /// Form body for DDG's HTML endpoint.
@@ -418,7 +423,7 @@ async fn scrape_engine(
 ///
 /// Split out of `scrape_engine` so an engine that needs a transport of its own
 /// — Yahoo's cookie handshake — still shares the challenge classification and
-/// the anchored diagnostic snippet, which are the parts worth keeping
+/// the empty-result log line, which are the parts worth keeping
 /// identical across engines.
 fn finish_scrape(
     html: &str,
@@ -1142,6 +1147,22 @@ pub(super) async fn search_searxng(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn empty_scrape_summary_names_the_anchor_not_the_page() {
+        let html = "<html><p>my secret query</p><div class=\"b_algo\"></div></html>";
+        let line = empty_scrape_summary("bing", html, &["missing", "b_algo"]);
+        assert!(line.contains("anchor \"b_algo\" at byte 40"), "{line}");
+        assert!(line.contains(&format!("{} bytes", html.len())));
+        assert!(!line.contains("secret query"));
+    }
+
+    #[test]
+    fn empty_scrape_summary_says_when_no_anchor_is_present() {
+        let line = empty_scrape_summary("bing", "<p>my secret query</p>", &["b_algo"]);
+        assert!(line.contains("none of the anchors [\"b_algo\"]"), "{line}");
+        assert!(!line.contains("secret query"));
+    }
 
     #[test]
     fn order_engines_all_healthy_preserves_rotation() {

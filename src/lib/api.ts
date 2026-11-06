@@ -761,7 +761,9 @@ export async function chatCompletion(
 						argsLen: c.function?.arguments?.length ?? 0
 					})
 				),
-		content: previewPayload(content),
+		// A reply can echo an email or a tool result, so only its
+		// length (content_len) is logged unless verbose payloads are on.
+		content: isVerbosePayloads() ? content : undefined,
 		usage: data.usage
 	});
 

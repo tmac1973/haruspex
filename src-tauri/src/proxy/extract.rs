@@ -17,21 +17,6 @@ use std::net::IpAddr;
 const MAX_FETCH_LENGTH: usize = 400_000;
 pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-pub(super) fn diagnostic_snippet(html: &str, needles: &[&str], window: usize) -> String {
-    for needle in needles {
-        if let Some(pos) = html.find(needle) {
-            let start = pos.saturating_sub(200);
-            // Walk forward from `start` until we hit a char boundary
-            let mut s = start;
-            while s < html.len() && !html.is_char_boundary(s) {
-                s += 1;
-            }
-            return html[s..].chars().take(window).collect();
-        }
-    }
-    html.chars().take(window).collect()
-}
-
 /// Equivalent fetch targets for a reddit URL, best first — or None for
 /// non-reddit URLs.
 ///
@@ -686,50 +671,6 @@ mod tests {
             </body></html>"#;
         let text = extract_text(html);
         assert!(text.contains("main article content"));
-    }
-
-    // -- diagnostic_snippet ------------------------------------------------
-
-    #[test]
-    fn diagnostic_snippet_starts_200_bytes_before_needle() {
-        let html = format!("{}NEEDLE{}", "a".repeat(300), "b".repeat(50));
-        let snippet = diagnostic_snippet(&html, &["NEEDLE"], 250);
-        // Needle is at byte 300, so the snippet starts at byte 100 and the
-        // needle sits 200 chars in.
-        assert!(snippet.starts_with("aaa"));
-        assert!(snippet.contains("NEEDLE"));
-        assert_eq!(snippet.chars().count(), 250);
-    }
-
-    #[test]
-    fn diagnostic_snippet_tries_needles_in_order() {
-        let html = "alpha beta gamma";
-        let snippet = diagnostic_snippet(html, &["missing", "beta"], 10);
-        assert!(snippet.starts_with("alpha beta"));
-    }
-
-    #[test]
-    fn diagnostic_snippet_falls_back_to_prefix_when_no_needle_matches() {
-        assert_eq!(diagnostic_snippet("hello world", &["zzz"], 5), "hello");
-        assert_eq!(diagnostic_snippet("hello", &[], 99), "hello");
-    }
-
-    #[test]
-    fn diagnostic_snippet_saturates_when_needle_is_near_the_start() {
-        let html = "NEEDLE then some trailing text";
-        let snippet = diagnostic_snippet(html, &["NEEDLE"], 11);
-        assert_eq!(snippet, "NEEDLE then");
-    }
-
-    #[test]
-    fn diagnostic_snippet_backs_off_mid_codepoint_start() {
-        // 100 3-byte chars put the needle at byte 300; start = 300 - 200 =
-        // 100, which is mid-codepoint ('€' boundaries are multiples of 3).
-        // Without the walk-forward loop, slicing html[100..] panics.
-        let html = format!("{}NEEDLE", "€".repeat(100));
-        let snippet = diagnostic_snippet(&html, &["NEEDLE"], 80);
-        assert!(snippet.starts_with('€'));
-        assert!(snippet.contains("NEEDLE"));
     }
 
     // -- strip_html_tags ---------------------------------------------------

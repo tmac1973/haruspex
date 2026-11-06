@@ -27,7 +27,7 @@ import {
 	type SubmittedMemory
 } from '#lib/agent/tools/memory.ts';
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
-import { logDebug } from '#lib/debugLog.ts';
+import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 import { typedText } from '#lib/skills/content.ts';
 import {
 	extractionSystemPrompt,
@@ -226,13 +226,23 @@ async function storeCandidates(
 		} catch (e) {
 			// One bad candidate must not abandon the rest of the batch.
 			logDebug('memory', 'storing a candidate failed', {
-				content: candidate.content.slice(0, 60),
+				content: candidateForLog(candidate),
 				error: errMessage(e)
 			});
 		}
 	}
 	if (toReview.length > 0) await applyReview(toReview, conversationId, counts);
 	return counts;
+}
+
+/**
+ * A candidate for an error entry: the start of the fact when verbose payloads
+ * are on, its length otherwise, since it is something the user said.
+ */
+function candidateForLog(candidate: SubmittedMemory): string {
+	return isVerbosePayloads()
+		? candidate.content.slice(0, 60)
+		: `string(${candidate.content.length})`;
 }
 
 async function addCandidate(
@@ -281,7 +291,7 @@ async function applyReview(
 			}
 		} catch (e) {
 			logDebug('memory', 'acting on a duplicate decision failed', {
-				content: item.candidate.content.slice(0, 60),
+				content: candidateForLog(item.candidate),
 				error: errMessage(e)
 			});
 		}

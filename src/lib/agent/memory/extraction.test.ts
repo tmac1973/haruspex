@@ -27,6 +27,7 @@ vi.mock('#lib/stores/memory.svelte.ts', () => ({
 import { collectNewTurns, extractMemories, renderTranscript } from './extraction';
 import { renderSlashMessage } from '#lib/skills/content.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
+import { logDebug } from '#lib/debugLog.ts';
 
 function message(sortOrder: number, role: string, content: string) {
 	return {
@@ -233,6 +234,21 @@ describe('extractMemories — storing', () => {
 
 		const result = await extractMemories('conv-1');
 		expect(result.added).toBe(1);
+	});
+
+	/** The fact is something the user said, so the failure logs its length. */
+	it('logs a failed candidate by length unless verbose payloads are on', async () => {
+		turnSubmits([{ content: 'First durable fact here.', category: 'fact' }]);
+		store({ failAdd: 'First durable fact here.' });
+
+		await extractMemories('conv-1');
+
+		expect(logDebug).toHaveBeenCalledWith(
+			'memory',
+			'storing a candidate failed',
+			expect.objectContaining({ content: 'string(24)' })
+		);
+		expect(JSON.stringify(vi.mocked(logDebug).mock.calls)).not.toContain('First durable fact');
 	});
 
 	/**
