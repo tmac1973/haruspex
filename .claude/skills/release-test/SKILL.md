@@ -26,7 +26,11 @@ what is loaded). The test machines are `haruspex-win` and `haruspex-mac`
 - In the worktree: `npm ci`; sidecars from the main checkout with
   `cp -as <main checkout>/src-tauri/binaries/. src-tauri/binaries/`;
   `npx playwright install chromium chromium-headless-shell` if a run says the
-  browser is missing.
+  browser is missing. If port 1430 is taken (another worktree's preview),
+  change `APP_PORT` in `playwright.config.ts` for the run and put it back.
+- The test machines' node must satisfy every dev dependency's `engines`
+  (`npm ci` stops on EBADENGINE): `brew upgrade node@22` on the Mac,
+  `winget install --id OpenJS.NodeJS.LTS --version <v>` on Windows.
 - **A private display.** Everything below runs headless. With `Xvfb` installed
   there is nothing to do. Without it (Tim's KDE box), start a virtual KWin
   and put an `Xvfb` stand-in on `PATH` that runs a rootful Xwayland inside it:
@@ -125,8 +129,17 @@ cancel it before clicking on.
 
 ## 3. Packaging
 
-`npm run tauri build` on Linux with the real sidecars: check the deb, rpm and
-AppImage are made and list `/usr/bin/haruspex-*` (`dpkg -c`, `rpm -qlp`).
+`npm run tauri build` on Linux with the real sidecars, with the Release
+workflow's environment, or linuxdeploy can't find the sidecars' libraries and
+the AppImage fails:
+
+```bash
+NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs" \
+    npm run tauri build -- --bundles appimage,deb,rpm
+```
+
+Check the deb, rpm and AppImage are made and list `/usr/bin/haruspex-*`
+(`dpkg -c`, `rpm -qlp`, or `bsdtar -tf` where those are missing).
 Installers for Windows and macOS are built by the Release workflow from the
 tag; they can't be checked before it.
 
