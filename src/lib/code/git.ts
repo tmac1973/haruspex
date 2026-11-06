@@ -2,6 +2,9 @@
  * Git for the Code tab: typed wrappers over `code_tools/git.rs`, and the
  * small rules the header's branch control follows. `wslDistro`: the session
  * is inside that WSL distro, and git runs there on its Linux paths.
+ *
+ * Every wrapper rejects when the command fails, with git's own message where
+ * there is one; a caller that only wants a best-effort read catches.
  */
 import { invoke } from '@tauri-apps/api/core';
 import type { GitStatus } from '#lib/ipc/gen/GitStatus.ts';
@@ -9,18 +12,15 @@ import type { WorktreeRemoval } from '#lib/ipc/gen/WorktreeRemoval.ts';
 
 export type { GitStatus, WorktreeRemoval };
 
-/** The folder's git state; null without git, outside a repo, or on failure. */
+/** The folder's git state; null without git or outside a repo. Rejects when the call fails. */
 export async function gitStatus(
 	folder: string,
 	wslDistro: string | null = null
 ): Promise<GitStatus | null> {
-	try {
-		return (await invoke<GitStatus | null>('code_git_status', { folder, wslDistro })) ?? null;
-	} catch {
-		return null;
-	}
+	return (await invoke<GitStatus | null>('code_git_status', { folder, wslDistro })) ?? null;
 }
 
+/** The local branches. Rejects when git fails. */
 export function gitBranches(folder: string, wslDistro: string | null = null): Promise<string[]> {
 	return invoke<string[]>('code_git_branches', { folder, wslDistro });
 }

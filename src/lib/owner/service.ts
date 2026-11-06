@@ -51,27 +51,42 @@ export function applyOwnerApi(): Promise<OwnerApiStatus> {
 	});
 }
 
-/** At startup: like `applyOwnerApi`, but a busy port is logged, not fatal. */
-export async function syncOwnerApi(): Promise<OwnerApiStatus | null> {
+/** At startup: like `applyOwnerApi`, but a busy port is logged, not fatal. Never rejects. */
+export async function syncOwnerApi(): Promise<void> {
 	try {
-		return await applyOwnerApi();
+		await applyOwnerApi();
 	} catch (e) {
 		logDebug('owner', 'could not start the owner API', { error: errMessage(e) });
-		return null;
 	}
 }
 
-export const ownerApiStatus = () => invoke<OwnerApiStatus>('owner_api_status');
-export const listOwnerClients = () => invoke<OwnerClient[]>('owner_clients_list');
-export const createOwnerClient = (name: string, scopes: Scope[]) =>
-	invoke<CreatedOwnerClient>('owner_client_create', { name, scopes });
-export const revokeOwnerClient = (id: string) => invoke<boolean>('owner_client_revoke', { id });
+// The wrappers below reject with what went wrong, like `applyOwnerApi`.
+
+export function ownerApiStatus(): Promise<OwnerApiStatus> {
+	return invoke<OwnerApiStatus>('owner_api_status');
+}
+
+export function listOwnerClients(): Promise<OwnerClient[]> {
+	return invoke<OwnerClient[]>('owner_clients_list');
+}
+
+export function createOwnerClient(name: string, scopes: Scope[]): Promise<CreatedOwnerClient> {
+	return invoke<CreatedOwnerClient>('owner_client_create', { name, scopes });
+}
+
+export function revokeOwnerClient(id: string): Promise<boolean> {
+	return invoke<boolean>('owner_client_revoke', { id });
+}
+
 /** A new pairing link for a device; it gets a new token, and the old one stops working. */
-export const pairOwnerClient = (id: string) =>
-	invoke<CreatedOwnerClient>('owner_client_pair', { id });
+export function pairOwnerClient(id: string): Promise<CreatedOwnerClient> {
+	return invoke<CreatedOwnerClient>('owner_client_pair', { id });
+}
 
 /** The trusted computers, and the addresses each was found at (none: not found). */
-export const ownerTrustedHosts = () => invoke<TrustedHost[]>('owner_trusted_hosts');
+export function ownerTrustedHosts(): Promise<TrustedHost[]> {
+	return invoke<TrustedHost[]>('owner_trusted_hosts');
+}
 
 /**
  * The link that pairs a browser: the web client, with the one-time code in

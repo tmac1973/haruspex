@@ -727,7 +727,7 @@ export class CodeSession {
 	/** Re-read the folder's branch and changes. */
 	refreshGit = async (): Promise<void> => {
 		if (this.closed) return;
-		const status = await gitStatus(this.root, this.wslDistro);
+		const status = await gitStatus(this.root, this.wslDistro).catch(() => null);
 		if (!this.closed) this.git = status;
 	};
 
