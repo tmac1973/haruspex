@@ -415,7 +415,7 @@ pub async fn image_model_recommended(vram_mb: u32) -> String {
 /// Download every file of one entry that is not already on disk, each
 /// verified. Progress arrives as `download-progress` events, one file at a time.
 #[tauri::command]
-pub async fn download_image_model(
+pub async fn image_model_download(
     app: AppHandle,
     state: tauri::State<'_, ModelManager>,
     id: String,
@@ -528,7 +528,7 @@ pub async fn image_upscaler_delete(state: tauri::State<'_, ModelManager>) -> Res
 /// Delete an entry's files. Stopping the engine first is the caller's job —
 /// the engine holds them open while it runs.
 #[tauri::command]
-pub async fn delete_image_model(
+pub async fn image_model_delete(
     state: tauri::State<'_, ModelManager>,
     id: String,
 ) -> Result<(), String> {

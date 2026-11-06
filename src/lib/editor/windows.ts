@@ -239,7 +239,10 @@ const tauriApi: WindowApi = {
 		await w.setFocus().catch(() => {});
 	},
 	onReady(cb) {
-		void listen<ReadyPayload>(READY_EVENT, (e) => cb(e.payload.label));
+		// The router lives as long as the app, so this listener never unlistens.
+		void listen<ReadyPayload>(READY_EVENT, (e) => cb(e.payload.label)).catch((e: unknown) =>
+			console.warn('Editor windows will not report ready:', e)
+		);
 	}
 };
 

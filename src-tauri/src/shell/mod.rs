@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
+use crate::sync_util::LockExt;
+
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -90,10 +92,7 @@ impl ShellManager {
             memory_limit_percent.and_then(crate::command_scope::limit_bytes),
         )?;
         let context = session.context.clone();
-        self.sessions
-            .lock()
-            .map_err(|e| e.to_string())?
-            .insert(id, session);
+        self.sessions.lock_or_recover().insert(id, session);
         Ok(ShellSpawnResult {
             session_id: id,
             context,
@@ -108,7 +107,7 @@ impl ShellManager {
         id: SessionId,
         f: impl FnOnce(&Session) -> Result<T, String>,
     ) -> Result<T, String> {
-        let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        let sessions = self.sessions.lock_or_recover();
         let session = sessions
             .get(&id)
             .ok_or_else(|| "shell session not found".to_string())?;
@@ -116,9 +115,7 @@ impl ShellManager {
     }
 
     pub fn shutdown_all(&self) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            sessions.clear();
-        }
+        self.sessions.lock_or_recover().clear();
     }
 }
 
@@ -259,7 +256,7 @@ pub fn shell_resize(
 
 #[tauri::command]
 pub fn shell_kill(state: State<'_, ShellManager>, session_id: SessionId) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let mut sessions = state.sessions.lock_or_recover();
     sessions.remove(&session_id);
     Ok(())
 }
@@ -288,7 +285,7 @@ pub fn shell_restart(
 ) -> Result<ShellSpawnResult, String> {
     // Drop the old session (its Drop impl kills the PTY + cleans tempdirs).
     {
-        let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+        let mut sessions = state.sessions.lock_or_recover();
         sessions.remove(&session_id);
     }
     state.spawn_session(
@@ -479,11 +476,7 @@ pub fn shell_stash_chat(
     session_id: SessionId,
     chat: String,
 ) -> Result<(), String> {
-    state
-        .chat_stash
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(session_id, chat);
+    state.chat_stash.lock_or_recover().insert(session_id, chat);
     Ok(())
 }
 
@@ -493,11 +486,7 @@ pub fn shell_take_chat(
     state: State<'_, ShellManager>,
     session_id: SessionId,
 ) -> Result<Option<String>, String> {
-    Ok(state
-        .chat_stash
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&session_id))
+    Ok(state.chat_stash.lock_or_recover().remove(&session_id))
 }
 
 /// Stash a serialized terminal-grid snapshot for cross-window handoff.
@@ -509,8 +498,7 @@ pub fn shell_stash_scrollback(
 ) -> Result<(), String> {
     state
         .scrollback_stash
-        .lock()
-        .map_err(|e| e.to_string())?
+        .lock_or_recover()
         .insert(session_id, data);
     Ok(())
 }
@@ -521,11 +509,7 @@ pub fn shell_take_scrollback(
     state: State<'_, ShellManager>,
     session_id: SessionId,
 ) -> Result<Option<String>, String> {
-    Ok(state
-        .scrollback_stash
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&session_id))
+    Ok(state.scrollback_stash.lock_or_recover().remove(&session_id))
 }
 
 /// The shells the user can pick in the toolbar: on Windows, PowerShell 7 /

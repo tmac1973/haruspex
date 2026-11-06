@@ -25,6 +25,7 @@ import {
 } from '#lib/stores/apiKeyMemory.ts';
 import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
 import { getJob, getJobs, loadJobs } from '#lib/stores/jobs.svelte.ts';
+import { dbMutate } from '#lib/stores/dbCall.ts';
 
 export function apiKeySecretKey(id: string): string {
 	return `apikey:${id}`;
@@ -124,7 +125,12 @@ export async function migrateJobApiKeys(): Promise<void> {
 		try {
 			const existing = getApiKeys().find((k) => (k.value || rememberedApiKey(k.id)) === inline);
 			const keyId = existing?.id ?? (await addStoredApiKey(`Job: ${job.name}`, inline));
-			await invoke('db_set_job_api_key_ref', { id: job.id, keyId });
+			await dbMutate({
+				cmd: 'db_set_job_api_key_ref',
+				args: { id: job.id, keyId },
+				onError: 'could not move a job API key out of the database',
+				ctx: { jobId: job.id }
+			});
 		} catch (e) {
 			console.warn(`Could not move the API key of job ${job.id} out of the database:`, e);
 		}

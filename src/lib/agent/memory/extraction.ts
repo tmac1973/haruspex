@@ -28,6 +28,7 @@ import {
 } from '#lib/agent/tools/memory.ts';
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
+import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 import { typedText } from '#lib/skills/content.ts';
 import {
 	extractionSystemPrompt,
@@ -134,14 +135,28 @@ export function renderTranscript(messages: TranscriptMessage[]): string {
 export async function extractMemories(conversationId: string): Promise<ExtractionResult> {
 	if (!memoryActive()) return { added: 0, deduped: 0, skipped: 'inactive' };
 
-	const cursor = await invoke<MemoryCursor>('conversation_memory_cursor', { conversationId });
+	const cursor = await dbQuery<MemoryCursor | null>({
+		cmd: 'conversation_memory_cursor',
+		category: 'memory',
+		args: { conversationId },
+		onError: 'reading the extraction cursor failed',
+		ctx: { conversationId },
+		fallback: null
+	});
+	if (!cursor) return { added: 0, deduped: 0, skipped: 'failed' };
 	// Incognito, or a conversation that has since been deleted (the cursor
 	// reads disabled for a row that isn't there).
 	if (!cursor.memory_enabled) return { added: 0, deduped: 0, skipped: 'incognito' };
 
-	const conversation = await invoke<ConversationWithMessages>('db_get_conversation', {
-		id: conversationId
+	const conversation = await dbQuery<ConversationWithMessages | null>({
+		cmd: 'db_get_conversation',
+		category: 'memory',
+		args: { id: conversationId },
+		onError: 'reading the conversation for extraction failed',
+		ctx: { conversationId },
+		fallback: null
 	});
+	if (!conversation) return { added: 0, deduped: 0, skipped: 'failed' };
 	const fresh = collectNewTurns(conversation, cursor.memory_extracted_to);
 	if (fresh.length < MIN_NEW_MESSAGES) return { added: 0, deduped: 0, skipped: 'too-short' };
 
@@ -184,9 +199,13 @@ export async function extractMemories(conversationId: string): Promise<Extractio
 
 	// Only now: a crash before this point re-reads the same turns next time,
 	// which dedupe absorbs. Advancing first would lose them silently.
-	await invoke('conversation_set_memory_extracted_to', {
-		conversationId,
-		sortOrder: highWater
+	// A failure here only means the same turns are read again next time.
+	await dbMutate({
+		cmd: 'conversation_set_memory_extracted_to',
+		category: 'memory',
+		args: { conversationId, sortOrder: highWater },
+		onError: 'advancing the extraction watermark failed',
+		ctx: { conversationId }
 	});
 	if (result.added > 0) void refreshMemoryCount();
 	logDebug('memory', 'extraction pass complete', { conversationId, ...result });

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { IpcCommand } from '#lib/ipc/commands.ts';
 import { isAbortError } from '#lib/utils/error.ts';
 import { type ChatMessage } from '#lib/api.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -77,7 +78,7 @@ export function resolveEmailAccounts(selector?: string): EmailAccount[] {
  * (and the IMAP session) until its own time limit.
  */
 export async function emailCall<T>(
-	command: string,
+	command: IpcCommand,
 	args: Record<string, unknown>,
 	signal?: AbortSignal
 ): Promise<T> {
