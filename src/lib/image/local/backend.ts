@@ -14,6 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import type { ImageEngineStatus } from '#lib/ipc/gen/ImageEngineStatus.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
+import { toImageResult } from '#lib/image/result.ts';
 import type { ImageBackend, GenerateOptions } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
@@ -285,26 +286,20 @@ async function generateWith(
 		}
 	}
 
-	return {
-		images: images.map((bytes) => ({
-			bytes,
-			mimeType: 'image/png',
-			width: req.width,
-			height: req.height
-		})),
-		meta: {
-			seed,
-			model: entry.model.trim(),
-			backend: 'local',
-			sampler,
-			// Echoed as RESOLVED: this build takes LoRAs from a directory
-			// rather than per request, so nothing was applied here and
-			// saying otherwise would put a lie in the anchor recipe.
-			loras: [],
-			durationMs: Date.now() - started,
-			...(seamFailed ? { seamFailed } : {})
-		}
-	};
+	return toImageResult(images, {
+		backend: 'local',
+		width: req.width,
+		height: req.height,
+		seed,
+		model: entry.model.trim(),
+		sampler,
+		// Echoed as RESOLVED: this build takes LoRAs from a directory
+		// rather than per request, so nothing was applied here and
+		// saying otherwise would put a lie in the anchor recipe.
+		loras: [],
+		started,
+		seamFailed
+	});
 }
 
 /**

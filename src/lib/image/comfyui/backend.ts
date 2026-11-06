@@ -13,7 +13,7 @@
 
 import { errMessage } from '#lib/utils/error.ts';
 import { randomSeed } from '#lib/utils/random.ts';
-import { pngSize } from '#lib/utils/png.ts';
+import { toImageResult } from '#lib/image/result.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -387,22 +387,18 @@ async function generateWith(
 		height: req.height,
 		extra: { clientId, outputNode, ...keyExtraOf(entry) }
 	}));
-	return {
+	return toImageResult(bytes, {
+		backend: 'comfyui',
 		// An edit is sized from its first picture, so read what came back.
-		images: bytes.map((b) => ({
-			bytes: b,
-			mimeType: 'image/png',
-			...(pngSize(b) ?? { width: req.width, height: req.height })
-		})),
-		meta: {
-			seed,
-			model,
-			backend: 'comfyui',
-			sampler,
-			loras,
-			durationMs: Date.now() - started
-		}
-	};
+		sizeFromPng: true,
+		width: req.width,
+		height: req.height,
+		seed,
+		model,
+		sampler,
+		loras,
+		started
+	});
 }
 
 /** `entry`'s server's Real-ESRGAN, run as a graph like any other. */
@@ -449,21 +445,16 @@ async function resumeWith(
 		? { baseUrl: handle.baseUrl, apiKey: await toolchestKeyFor(keyId) }
 		: await config(entry);
 	const bytes = await resumePrompt(base, handle, opts);
-	return {
-		images: bytes.map((b) => ({
-			bytes: b,
-			mimeType: 'image/png',
-			...(pngSize(b) ?? { width: handle.width, height: handle.height })
-		})),
-		meta: {
-			seed: handle.seed,
-			model: handle.model,
-			backend: 'comfyui',
-			sampler: { name: 'as sent', steps: 0, cfg: 0 },
-			loras: [],
-			durationMs: Date.now() - started
-		}
-	};
+	return toImageResult(bytes, {
+		backend: 'comfyui',
+		sizeFromPng: true,
+		width: handle.width,
+		height: handle.height,
+		seed: handle.seed,
+		model: handle.model,
+		sampler: { name: 'as sent', steps: 0, cfg: 0 },
+		started
+	});
 }
 
 registerImageBackendKind('comfyui', comfyUiFor);

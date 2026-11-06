@@ -21,6 +21,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
+import { toImageResult } from '#lib/image/result.ts';
 import { entryApiKey } from '#lib/image/entries.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
 import {
@@ -301,24 +302,17 @@ async function generateWith(
 	}
 	const transparencyFailed = clearStart ? await lostTransparency(images[0]) : undefined;
 
-	return {
-		images: images.map((bytes) => ({
-			bytes,
-			mimeType: 'image/png',
-			width: req.width,
-			height: req.height
-		})),
-		meta: {
-			seed,
-			model: id,
-			backend: 'lemonade',
-			sampler,
-			loras: [],
-			durationMs: Date.now() - started,
-			...(req.seamless ? { seamFailed: NO_TILING } : {}),
-			...(transparencyFailed ? { transparencyFailed } : {})
-		}
-	};
+	return toImageResult(images, {
+		backend: 'lemonade',
+		width: req.width,
+		height: req.height,
+		seed,
+		model: id,
+		sampler,
+		started,
+		seamFailed: req.seamless ? NO_TILING : undefined,
+		transparencyFailed
+	});
 }
 
 /**

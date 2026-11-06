@@ -19,6 +19,7 @@
 
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import { legacyEntryFor } from '#lib/image/entries.ts';
+import { toImageResult, type MadeImages } from '#lib/image/result.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
 import type {
 	GenerateOptions,
@@ -239,7 +240,7 @@ function toolchestFor(entry: ImageModelEntry): ImageBackend {
 			} catch (e) {
 				throw asImageError(e);
 			}
-			return toImageResult(images, {
+			return resultOf(images, {
 				width: handle.width,
 				height: handle.height,
 				seed: handle.seed,
@@ -420,7 +421,7 @@ async function finish(
 	} catch (e) {
 		throw asImageError(e);
 	}
-	return toImageResult(images, {
+	return resultOf(images, {
 		width: req.width,
 		height: req.height,
 		seed,
@@ -432,38 +433,11 @@ async function finish(
 }
 
 /** What a generation or a resumed job made, as a result; refused when it made nothing. */
-function toImageResult(
-	images: Uint8Array[],
-	made: {
-		width: number;
-		height: number;
-		seed: number;
-		model: string;
-		sampler: SamplerSettings;
-		started: number;
-		seamFailed?: string;
-	}
-): ImageResult {
+function resultOf(images: Uint8Array[], made: Omit<MadeImages, 'backend'>): ImageResult {
 	if (images.length === 0) {
 		throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
 	}
-	return {
-		images: images.map((bytes) => ({
-			bytes,
-			mimeType: 'image/png',
-			width: made.width,
-			height: made.height
-		})),
-		meta: {
-			seed: made.seed,
-			model: made.model,
-			backend: 'llama-toolchest',
-			sampler: made.sampler,
-			loras: [],
-			durationMs: Date.now() - made.started,
-			...(made.seamFailed ? { seamFailed: made.seamFailed } : {})
-		}
-	};
+	return toImageResult(images, { ...made, backend: 'llama-toolchest' });
 }
 
 registerImageBackendKind('llama-toolchest', toolchestFor);
