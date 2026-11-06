@@ -26,13 +26,13 @@ export function decodeSyncBody(body: ArrayBuffer): SyncBody {
 		new TextDecoder().decode(new Uint8Array(body, 4, headerLen))
 	) as SyncHeader;
 	let offset = 4 + headerLen;
-	const to_sync = header.to_sync.map((f) => {
+	const toSync = header.to_sync.map((f) => {
 		const bytes = new Uint8Array(body, offset, f.len);
 		offset += f.len;
 		return { path: f.path, abs_path: f.abs_path, bytes, mtime: f.mtime };
 	});
 	return {
-		to_sync,
+		to_sync: toSync,
 		deleted: header.deleted,
 		skipped: header.skipped,
 		workdir_abs: header.workdir_abs

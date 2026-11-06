@@ -11,7 +11,21 @@ const secrets = accountSecrets<EmailAccount>(
 	setEmailAccounts
 );
 
-export const emailSecretKey = secrets.key;
-export const withStoredEmailPassword = secrets.withStoredPassword;
-export const forgetEmailPassword = secrets.forget;
-export const migrateEmailSecrets = secrets.migrate;
+export function emailSecretKey(accountId: string): string {
+	return secrets.key(accountId);
+}
+
+export function withStoredEmailPassword(
+	account: EmailAccount,
+	password: string
+): Promise<EmailAccount> {
+	return secrets.withStoredPassword(account, password);
+}
+
+export function forgetEmailPassword(account: EmailAccount): Promise<void> {
+	return secrets.forget(account);
+}
+
+export function migrateEmailSecrets(): Promise<void> {
+	return secrets.migrate();
+}
