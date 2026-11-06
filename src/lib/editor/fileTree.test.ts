@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { countKinds, firstFile, isAttempt, splitPath, stepFile, visibleFiles } from './viewerList';
+import {
+	ancestors,
+	compareTree,
+	countKinds,
+	firstFile,
+	isAttempt,
+	stepFile,
+	treeRows,
+	visibleFiles
+} from './fileTree';
 
-describe('viewerList', () => {
+describe('fileTree', () => {
 	const files = ['a/attempts/create-01/a.glb', 'a/a.glb', 'a/sheet.png', 'b/b.glb'];
 
 	it('lists one kind, hiding attempts unless asked, but never the file showing', () => {
@@ -11,12 +20,18 @@ describe('viewerList', () => {
 		expect(visibleFiles(files, files[0], 'glb', false)).toEqual([files[0], 'a/a.glb', 'b/b.glb']);
 		expect(visibleFiles(files, 'b/b.glb', 'glb', true)).toEqual([files[0], 'a/a.glb', 'b/b.glb']);
 		expect(visibleFiles(files, 'a/a.glb', 'image', false)).toEqual(['a/a.glb', 'a/sheet.png']);
+		expect(visibleFiles(['n.md', 'a/x.ts', 'p.png'], 'p.png', 'text', false)).toEqual([
+			'a/x.ts',
+			'n.md',
+			'p.png'
+		]);
 	});
 
-	it('counts each kind', () => {
-		expect([...countKinds(files, false)]).toEqual([
+	it('counts each kind, text included', () => {
+		expect([...countKinds([...files, 'notes.txt'], false)]).toEqual([
 			['glb', 2],
-			['image', 1]
+			['image', 1],
+			['text', 1]
 		]);
 		expect(countKinds(files, true).get('glb')).toBe(3);
 	});
@@ -27,7 +42,8 @@ describe('viewerList', () => {
 		expect(firstFile(['p.png', 'notes.txt'])).toBe('p.png');
 		expect(firstFile(['hit.wav', 'p.png'])).toBe('p.png');
 		expect(firstFile(['hit.wav'])).toBe('hit.wav');
-		expect(firstFile(['notes.txt'])).toBeNull();
+		expect(firstFile(['notes.txt'])).toBe('notes.txt');
+		expect(firstFile([])).toBeNull();
 	});
 
 	it('steps both ways and wraps round', () => {
@@ -40,8 +56,28 @@ describe('viewerList', () => {
 		expect(stepFile(['a.glb'], 'a.glb', 1)).toBeNull();
 	});
 
-	it('splits a path into folder and name', () => {
-		expect(splitPath('m/knight/knight.glb')).toEqual({ dir: 'm/knight/', name: 'knight.glb' });
-		expect(splitPath('knight.glb')).toEqual({ dir: '', name: 'knight.glb' });
+	it('sorts folders before files, numbers by value', () => {
+		const sorted = ['z.txt', 'a/b/c.txt', 'a/z.txt', 'take-10.png', 'take-2.png', 'a/a/x.txt'];
+		expect(sorted.sort(compareTree)).toEqual([
+			'a/a/x.txt',
+			'a/b/c.txt',
+			'a/z.txt',
+			'take-2.png',
+			'take-10.png',
+			'z.txt'
+		]);
+	});
+
+	it('lays out folders once each, hiding what a collapsed one holds', () => {
+		expect(ancestors('a/b/c.png')).toEqual(['a/', 'a/b/']);
+		expect(ancestors('c.png')).toEqual([]);
+		const tree = ['a/b/c.txt', 'a/b/d.txt', 'a/e.txt', 'f.txt'];
+		const show = (collapsed: string[]) =>
+			treeRows(tree, new Set(collapsed)).map(
+				(r) => '  '.repeat(r.depth) + r.name + (r.dir ? '/' : '')
+			);
+		expect(show([])).toEqual(['a/', '  b/', '    c.txt', '    d.txt', '  e.txt', 'f.txt']);
+		expect(show(['a/b/'])).toEqual(['a/', '  b/', '  e.txt', 'f.txt']);
+		expect(show(['a/'])).toEqual(['a/', 'f.txt']);
 	});
 });

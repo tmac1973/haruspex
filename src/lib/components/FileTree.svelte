@@ -5,22 +5,26 @@
 
 <script lang="ts">
 	/**
-	 * Beside a viewer tab: the other files of its kind under the window's
-	 * folder, to step through with ← / → or a click, and a switch to the
-	 * other kinds the folder holds. Hidden while there is nothing else to show.
+	 * Beside a tab: the other files of its kind under the window's folder, as
+	 * a tree to step through with the arrow keys or a click, and a switch to
+	 * the other kinds the folder holds. Hidden while there is nothing else to
+	 * show.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { invoke } from '@tauri-apps/api/core';
-	import { viewerFor } from '#lib/editor/document.svelte.ts';
 	import {
 		KINDS,
+		ancestors,
 		countKinds,
 		isAttempt,
-		splitPath,
+		kindOf,
 		stepFile,
-		visibleFiles
-	} from '#lib/editor/viewerList.ts';
-	import type { ViewableListing } from '#lib/ipc/gen/ViewableListing.ts';
+		treeRows,
+		visibleFiles,
+		type ListKind
+	} from '#lib/editor/fileTree.ts';
+	import type { FileListing } from '#lib/ipc/gen/FileListing.ts';
 
 	let {
 		workdir,
@@ -33,17 +37,24 @@
 		onpick: (relPath: string) => void;
 	} = $props();
 
-	let listing = $state.raw<ViewableListing | null>(null);
+	let listing = $state.raw<FileListing | null>(null);
 	let attempts = $state(showAttempts);
-	const kind = $derived(viewerFor(relPath));
-	const files = $derived(
-		listing && kind ? visibleFiles(listing.files, relPath, kind, attempts) : []
-	);
+	/** Folders, `/`-ended, whose files are hidden. */
+	const collapsed = new SvelteSet<string>();
+	const kind = $derived(kindOf(relPath));
+	const files = $derived(listing ? visibleFiles(listing.files, relPath, kind, attempts) : []);
+	const rows = $derived(treeRows(files, collapsed));
 	const counts = $derived(listing ? countKinds(listing.files, attempts) : new Map());
 	const kinds = $derived(KINDS.filter((k) => k.kind === kind || counts.has(k.kind)));
 	const hasAttempts = $derived(listing?.files.some(isAttempt) ?? false);
 	const shown = $derived(files.length > 1 || kinds.length > 1);
 	let activeItem: HTMLElement | undefined = $state();
+
+	// Stepping into a collapsed folder opens it.
+	$effect(() => {
+		const open = ancestors(relPath);
+		untrack(() => open.forEach((d) => collapsed.delete(d)));
+	});
 
 	$effect(() => {
 		// jsdom has no scrollIntoView.
@@ -52,7 +63,7 @@
 
 	async function refresh(): Promise<void> {
 		try {
-			listing = await invoke<ViewableListing>('editor_list_viewable', { workdir });
+			listing = await invoke<FileListing>('editor_list_files', { workdir });
 		} catch (e) {
 			console.warn('Listing files failed', e);
 		}
@@ -60,24 +71,39 @@
 
 	onMount(() => void refresh());
 
+	// The tree stays up across tabs: a file it hasn't seen means the folder changed.
+	let lookedFor = '';
+	$effect(() => {
+		if (!listing || listing.files.includes(relPath) || lookedFor === relPath) return;
+		lookedFor = relPath;
+		void refresh();
+	});
+
 	function step(delta: number): void {
 		const next = stepFile(files, relPath, delta);
 		if (next) onpick(next);
 	}
 
-	function switchTo(to: string): void {
+	function switchTo(to: ListKind): void {
 		if (to === kind || !listing) return;
-		const first = listing.files.find((f) => viewerFor(f) === to && (attempts || !isAttempt(f)));
+		const first = visibleFiles(listing.files, '', to, attempts)[0];
 		if (first) onpick(first);
 	}
 
+	function toggle(dir: string): void {
+		if (!collapsed.delete(dir)) collapsed.add(dir);
+	}
+
+	const KEYS: Record<string, number> = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 };
+
 	function onKeydown(e: KeyboardEvent): void {
 		if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
-		if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+		const delta = KEYS[e.key];
+		if (!delta) return;
 		const t = e.target;
 		if (t instanceof Element && t.closest('input, select, textarea, [contenteditable]')) return;
 		e.preventDefault();
-		step(e.key === 'ArrowRight' ? 1 : -1);
+		step(delta);
 	}
 
 	function toggleAttempts(on: boolean): void {
@@ -102,9 +128,11 @@
 			</div>
 		{/if}
 		<div class="head">
-			<button onclick={() => step(-1)} title="Previous (←)" aria-label="Previous">‹</button>
-			<button onclick={() => step(1)} title="Next (→)" aria-label="Next">›</button>
-			<span class="count" title={listing?.truncated ? 'Only the first 2,000 are listed' : undefined}
+			<button onclick={() => step(-1)} title="Previous (↑ or ←)" aria-label="Previous">‹</button>
+			<button onclick={() => step(1)} title="Next (↓ or →)" aria-label="Next">›</button>
+			<span
+				class="count"
+				title={listing?.truncated ? 'Only the first 2,000 of each sort are listed' : undefined}
 				>{files.length}{listing?.truncated ? '+' : ''}</span
 			>
 			{#if hasAttempts}
@@ -125,18 +153,27 @@
 			>
 		</div>
 		<ul>
-			{#each files as file (file)}
-				{@const part = splitPath(file)}
-				<li>
-					{#if file === relPath}
-						<button class="active" aria-current="true" title={file} bind:this={activeItem}>
-							<span class="name">{part.name}</span>
-							{#if part.dir}<span class="dir">{part.dir}</span>{/if}
+			{#each rows as row (row.path)}
+				<li style:--depth={row.depth}>
+					{#if row.dir}
+						<button
+							class="dir"
+							aria-expanded={!collapsed.has(row.path)}
+							title={row.path}
+							onclick={() => toggle(row.path)}
+						>
+							<span class="caret">{collapsed.has(row.path) ? '▸' : '▾'}</span>
+							<span class="name">{row.name}</span>
+						</button>
+					{:else if row.path === relPath}
+						<button class="active" aria-current="true" title={row.path} bind:this={activeItem}>
+							<span class="caret"></span>
+							<span class="name">{row.name}</span>
 						</button>
 					{:else}
-						<button title={file} onclick={() => onpick(file)}>
-							<span class="name">{part.name}</span>
-							{#if part.dir}<span class="dir">{part.dir}</span>{/if}
+						<button title={row.path} onclick={() => onpick(row.path)}>
+							<span class="caret"></span>
+							<span class="name">{row.name}</span>
 						</button>
 					{/if}
 				</li>
@@ -147,7 +184,7 @@
 
 <style>
 	.files {
-		width: 200px;
+		width: 220px;
 		flex-shrink: 0;
 		display: flex;
 		flex-direction: column;
@@ -158,6 +195,7 @@
 	}
 	.kinds {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 4px;
 		padding: 6px 8px 0;
 	}
@@ -201,14 +239,16 @@
 	}
 	li button {
 		display: flex;
-		flex-direction: column;
+		align-items: baseline;
+		gap: 4px;
 		width: 100%;
 		appearance: none;
 		background: none;
 		border: 0;
 		border-radius: 4px;
-		padding: 4px 6px;
+		padding: 3px 6px 3px calc(6px + var(--depth) * 12px);
 		text-align: left;
+		font-size: 0.8rem;
 		color: var(--text-primary);
 		cursor: pointer;
 	}
@@ -220,17 +260,17 @@
 		box-shadow: inset 2px 0 0 var(--accent);
 		cursor: default;
 	}
-	.name,
-	.dir {
+	li button.dir {
+		color: var(--text-secondary);
+	}
+	.caret {
+		width: 0.8em;
+		flex-shrink: 0;
+		font-size: 0.7rem;
+	}
+	.name {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-	.name {
-		font-size: 0.8rem;
-	}
-	.dir {
-		font-size: 0.7rem;
-		color: var(--text-secondary);
 	}
 </style>
