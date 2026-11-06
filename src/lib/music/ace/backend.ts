@@ -12,7 +12,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings } from '#lib/stores/settings.ts';
-import { sleep } from '#lib/utils/async.ts';
 import { registerMusicBackend } from '#lib/music/registry.ts';
 import type { MusicBackend, ProbeResult } from '#lib/music/backend.ts';
 import {
@@ -46,10 +45,7 @@ import {
 	type AceStatus
 } from '#lib/music/ace/adapter.ts';
 import { errMessage } from '#lib/utils/error.ts';
-
-const POLL_MS = 1000;
-/** Polls in a row that may fail before the server counts as gone. */
-const MAX_FAILED_POLLS = 20;
+import { pollJob } from '#lib/utils/pollJob.ts';
 
 function baseUrl(): string {
 	return getSettings().musicAceBaseUrl.trim().replace(/\/+$/, '');
@@ -106,31 +102,18 @@ async function followAceJob(
 	phase: MusicProgress['phase'],
 	opts: MusicGenerateOptions
 ): Promise<void> {
-	const cancel = () =>
-		void aceJson(base, { method: 'POST', path: ROUTES.cancel(id) }).catch(() => {});
-	opts.signal?.addEventListener('abort', cancel, { once: true });
-	try {
-		let failed = 0;
-		for (;;) {
-			opts.onProgress?.({ phase });
-			await sleep(POLL_MS);
-			if (opts.signal?.aborted) throw new MusicBackendError('cancelled', 'Cancelled.');
-			let status;
-			try {
-				status = readStatus(await aceJson(base, { path: ROUTES.job(id) }, opts.signal));
-				failed = 0;
-			} catch (e) {
-				if (e instanceof MusicBackendError && e.kind === 'cancelled') throw e;
-				// A job the server doesn't know is gone, not a server that is down.
-				if (e instanceof MusicBackendError && e.status === 404) throw e;
-				if (++failed >= MAX_FAILED_POLLS) throw e;
-				continue;
-			}
-			if (finished(status, phase)) return;
-		}
-	} finally {
-		opts.signal?.removeEventListener('abort', cancel);
-	}
+	await pollJob<AceStatus>({
+		initial: 'running',
+		ended: (status) => finished(status, phase),
+		poll: async () => readStatus(await aceJson(base, { path: ROUTES.job(id) }, opts.signal)),
+		onWait: () => opts.onProgress?.({ phase }),
+		signal: opts.signal,
+		onAbort: () => void aceJson(base, { method: 'POST', path: ROUTES.cancel(id) }).catch(() => {}),
+		cancelled: () => new MusicBackendError('cancelled', 'Cancelled.'),
+		fatal: (e) =>
+			// A job the server doesn't know is gone, not a server that is down.
+			e instanceof MusicBackendError && (e.kind === 'cancelled' || e.status === 404) ? e : null
+	});
 }
 
 type Facts = NonNullable<MusicJobHandle['facts']>;
