@@ -14,6 +14,7 @@
 		setStoredApiKeyValue
 	} from '#lib/stores/apiKeySecrets.ts';
 	import type { StoredApiKey } from '#lib/stores/settings.ts';
+	import { secretStoreHint, secretStoreKind, type SecretStoreKind } from '#lib/stores/secrets.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 
 	let keys = $state<StoredApiKey[]>(getApiKeys());
@@ -22,6 +23,10 @@
 	/** What is being typed into an existing key's value field, per key. */
 	let drafts = $state<Record<string, string>>({});
 	const newValueWarning = $derived(apiKeyValueWarning(newValue));
+
+	/** Where keys are kept here; a weaker place than the keychain is said once. */
+	let storeKind = $state<SecretStoreKind>('keychain');
+	void secretStoreKind().then((k) => (storeKind = k));
 
 	// Key awaiting delete confirmation via ConfirmDialog.
 	let pendingDelete = $state<StoredApiKey | null>(null);
@@ -75,6 +80,15 @@
 		OpenRouter or remote server form references it by name — updating a key here updates it
 		everywhere it's used.
 	</p>
+	{#if storeKind === 'file'}
+		<p class="store-note" title={secretStoreHint(storeKind)}>
+			No system keychain works here, so keys are kept in Haruspex's encrypted file.
+		</p>
+	{:else if storeKind === 'none'}
+		<p class="store-note" title={secretStoreHint(storeKind)}>
+			No secret store works here, so keys are kept only until Haruspex closes.
+		</p>
+	{/if}
 
 	{#if keys.length > 0}
 		<div class="key-list">
@@ -149,6 +163,11 @@
 <style>
 	.hint {
 		margin: 0 0 12px 0;
+	}
+	.store-note {
+		margin: -6px 0 12px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
 	}
 	.key-warning {
 		margin: 2px 0 6px;
