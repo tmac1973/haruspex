@@ -15,6 +15,12 @@
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
 	let accent = $state<AccentColor>(getSettings().accentColor);
+	let homeTab = $state(getSettings().homeTab);
+
+	function setHomeTab(on: boolean) {
+		homeTab = on;
+		updateSettings({ homeTab: on });
+	}
 
 	function setTheme(mode: ThemeMode) {
 		theme = mode;
@@ -43,6 +49,24 @@
 
 <LeanModeSetting />
 <DeferToolsSetting />
+
+<section class="settings-section">
+	<h2>Home tab</h2>
+	<label
+		class="toggle-row"
+		title="Off hides the tab and pauses its cards: they stop reading, and their jobs skip scheduled runs. Your cards are kept."
+	>
+		<input
+			type="checkbox"
+			checked={homeTab}
+			onchange={(e) => setHomeTab(e.currentTarget.checked)}
+		/>
+		<div>
+			<strong>Show the Home tab</strong>
+			<span>Cards with your jobs, mail, meetings and more.</span>
+		</div>
+	</label>
+</section>
 
 <section class="settings-section">
 	<h2>Theme</h2>

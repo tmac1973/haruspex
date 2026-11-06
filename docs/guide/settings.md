@@ -9,12 +9,13 @@ Each section lists its main options, defaults and a page with more.
 
 ## Open Settings
 
-Click the gear in the header; again, or **← Back**, closes it.
+Click the gear in the header; again, or **← Back**, closes.
 
 ## General
 
-Appearance, replies, lean mode and tool loading.
+Appearance, Home, replies, lean mode and tool loading.
 
+- **Show the Home tab**: on.
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: Teal (default).
 - **Response Format**: Minimal, Standard (default) or Rich.
@@ -31,9 +32,9 @@ Where the model runs, which model, and defaults.
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More let chats, jobs and subtasks run at once.
-- **Extra llama-server arguments**: empty. They override Haruspex's own.
-- **Model defaults**: reasoning on, medium effort; replies up to 8192 tokens, 65536 for a file.
+- **Parallel streams**: 1 (also 2 or 4), for chats, jobs and subtasks at once.
+- **Extra llama-server arguments**: empty; they override Haruspex's.
+- **Model defaults**: reasoning on, medium effort; replies to 8192 tokens, 65536 for a file.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
@@ -54,9 +55,9 @@ See the `chat` page.
 
 What the assistant remembers between chats.
 
-- **Carry facts and preferences from one conversation into the next**: on. Needs a 65 MB embedding model.
+- **Carry facts and preferences from one conversation into the next**: on. Needs a 65 MB model.
 - **Ask before saving something you asked me to remember**: on.
-- **Find duplicates**: merges memories that say the same thing, once you approve.
+- **Find duplicates**: merges memories that say the same thing, if you approve.
 - A list of everything remembered, to edit or delete.
 
 See the `memory` page.

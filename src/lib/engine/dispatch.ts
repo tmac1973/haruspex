@@ -137,7 +137,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 	if (LEAN_REFUSED.has(op.type) && getSettings().leanMode) throw new Error(LEAN_SESSION_REFUSAL);
 	switch (op.type) {
 		case 'app.mode':
-			return { lean: getSettings().leanMode };
+			return { lean: getSettings().leanMode, home: getSettings().homeTab };
 		case 'sessions.list':
 			return listSessions(label);
 		case 'session.get':

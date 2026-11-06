@@ -5,7 +5,7 @@ description: The Home tab — cards for jobs, Code sessions, pinned jobs, import
 
 # Home
 
-The Home tab is the first tab: cards that show what Haruspex is doing and what needs you. The band at the top counts running and queued jobs, Code sessions waiting on you, important emails and your next meeting; a job or session count opens its tab. Ctrl / ⌘ + 1 opens it (see the `shortcuts` page). Home isn't shown in Lean or Lean + files (see the `lean-mode` page).
+The Home tab is the first tab: cards that show what Haruspex is doing and what needs you. The band at the top counts running and queued jobs, Code sessions waiting on you, important emails and your next meeting; a job or session count opens its tab. Ctrl / ⌘ + 1 opens it (see the `shortcuts` page). Home isn't shown in Lean or Lean + files (see the `lean-mode` page), or with Settings → General → **Show the Home tab** off. Off keeps your cards but pauses them.
 
 ## The cards you start with
 
@@ -44,17 +44,17 @@ An issue's **⋯** also has **Open code session**, which puts the issue in a new
 
 Each email, story, meeting and GitHub item has a **⋯** menu.
 
-- **Ask about this** opens a new chat with the item quoted in the box, for you to add a question and send. For an email it quotes what the card shows; ask the chat to read the whole message.
+- **Ask about this** opens a new chat with the item quoted in the box, for you to add a question and send. For an email it quotes what the card shows.
 - **Open** shows a whole email. Clicking a headline opens the story; **Join** opens a meeting.
 - **Delete** moves an email to its account's Trash, after asking.
 - **Draft reply** writes a reply to an email. Say how to reply ("decline politely") if you like, then edit the draft. **Review & send** opens the Review email window, and only its **Send** sends. It needs **Allow sending** on the account (Settings → Integrations → Email).
 
 ## Add, arrange and remove cards
 
-**Add card**, top right, adds a card at the end; drag a card by its title to move it. Cards are one height and scroll inside; a removed card can be added back. One that needs an account or server first is greyed out; hover it to see what to set up. Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (two columns) or **Normal width**, **Edit job** (its job's schedule and settings, in the Jobs tab) and **Remove**.
+**Add card**, top right, adds a card at the end; drag a card by its title to move it. Cards are one height and scroll inside. One that needs an account or server first is greyed out; hover it to see what's missing. Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (two columns) or **Normal width**, **Edit job** (its job's schedule and settings, in the Jobs tab) and **Remove**.
 
 The email and news cards make their own job, which has a **Home** badge in the Jobs tab. It waits while a chat or Code turn is using the model (the card says "Waiting for chat"), and like every job but research it doesn't run in lean mode. **⋯ → Notify on new items** sends a desktop notification naming what's new; it is off until you turn it on. Removing such a card deletes its job unless you untick **Also delete the job**; removing a pinned job's card keeps the job unless you tick it.
 
-Cards and their order are kept across restarts, and stack in one column on a narrow window. A card from a newer version of Haruspex shows as **Unknown card** and can only be removed.
+Cards and their order are kept across restarts and stack on a narrow window. A card from a newer Haruspex shows as **Unknown card**.
 
 Remote control's page shows Home too, read-only, from your phone or another computer (see the `remote-control` page).

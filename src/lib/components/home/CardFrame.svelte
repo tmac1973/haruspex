@@ -156,12 +156,17 @@
 		cursor: grab;
 	}
 
+	/* A band of the accent colour, so cards don't all read as one grey. */
 	header {
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 8px;
-		padding: 10px 12px 6px;
+		margin-bottom: 6px;
+		padding: 8px 12px 6px;
+		border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+		border-radius: 7px 7px 0 0;
+		background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary));
 	}
 
 	.heading {

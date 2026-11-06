@@ -4,7 +4,18 @@ import type { JobSummary } from '#lib/stores/jobs.svelte.ts';
 const mocks = vi.hoisted(() => ({
 	listDueJobs: vi.fn(),
 	setJobNextDueAt: vi.fn(),
-	enqueue: vi.fn()
+	enqueue: vi.fn(),
+	homeTab: true,
+	cards: [] as { job_id: number | null; card_type: string }[]
+}));
+
+vi.mock('#lib/stores/settings.ts', () => ({
+	getSettings: () => ({ homeTab: mocks.homeTab })
+}));
+
+vi.mock('#lib/stores/homeCards.svelte.ts', () => ({
+	loadHomeCards: () => Promise.resolve(),
+	getHomeCards: () => mocks.cards
 }));
 
 vi.mock('#lib/stores/jobs.svelte.ts', async () => {
@@ -51,6 +62,8 @@ beforeEach(() => {
 	mocks.listDueJobs.mockReset();
 	mocks.setJobNextDueAt.mockReset().mockResolvedValue(undefined);
 	mocks.enqueue.mockReset().mockResolvedValue(1);
+	mocks.homeTab = true;
+	mocks.cards = [];
 });
 
 afterEach(() => {
@@ -104,6 +117,27 @@ describe('scheduler tick', () => {
 		expect(mocks.enqueue).toHaveBeenCalledWith(4, 'scheduled');
 		const next = mocks.setJobNextDueAt.mock.calls[0][1] as number;
 		expect(next).toBeGreaterThan(now);
+	});
+
+	it("skips a Home card's job while the Home tab is off, but not a pinned one", async () => {
+		mocks.cards = [
+			{ job_id: 1, card_type: 'important_emails' },
+			{ job_id: 2, card_type: 'pinned_job' }
+		];
+		mocks.listDueJobs.mockResolvedValue([dueJob({ id: 1 }), dueJob({ id: 2 })]);
+		mocks.homeTab = false;
+		await tick();
+		expect(mocks.enqueue.mock.calls).toEqual([[2, 'scheduled']]);
+		// Its next due time still moves on, so it isn't due again every tick.
+		expect(mocks.setJobNextDueAt).toHaveBeenCalledTimes(2);
+
+		mocks.enqueue.mockClear();
+		mocks.homeTab = true;
+		await tick();
+		expect(mocks.enqueue.mock.calls).toEqual([
+			[1, 'scheduled'],
+			[2, 'scheduled']
+		]);
 	});
 
 	it('is a no-op when no jobs are due', async () => {

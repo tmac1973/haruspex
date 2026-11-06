@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const lean = vi.hoisted(() => ({ on: false }));
+const lean = vi.hoisted(() => ({ on: false, home: true }));
 
 vi.mock('#lib/stores/settings.ts', () => ({
-	getLiveSettings: () => ({ leanMode: lean.on })
+	getLiveSettings: () => ({ leanMode: lean.on, homeTab: lean.home })
 }));
 
 import { getActiveTab, mainTabs, setActiveTab, visibleTabs } from './activeTab.svelte';
@@ -11,6 +11,7 @@ import { getActiveTab, mainTabs, setActiveTab, visibleTabs } from './activeTab.s
 describe('active tab in lean mode', () => {
 	beforeEach(() => {
 		lean.on = false;
+		lean.home = true;
 		setActiveTab('chat');
 	});
 
@@ -34,6 +35,15 @@ describe('active tab in lean mode', () => {
 		expect(getActiveTab()).toBe('chat');
 		setActiveTab('jobs');
 		expect(getActiveTab()).toBe('jobs');
+	});
+
+	it('leaves out Home when the Home tab is off, and returns to it when it comes back', () => {
+		setActiveTab('home');
+		lean.home = false;
+		expect(visibleTabs()).toEqual(['chat', 'jobs', 'shell', 'code']);
+		expect(getActiveTab()).toBe('chat');
+		lean.home = true;
+		expect(getActiveTab()).toBe('home');
 	});
 
 	it('keeps a request made in lean mode for when it goes off', () => {
