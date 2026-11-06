@@ -117,10 +117,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 		}
 	})
 );
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: () => {}
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 import { flushSync } from 'svelte';
 import { closeSession, getOpenSessions, newSession } from '#lib/stores/code.svelte.ts';

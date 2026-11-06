@@ -47,11 +47,11 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	hasEnabledContactsAccount: vi.fn(() => false)
 }));
 
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: vi.fn(),
-	isVerbosePayloads: () => false
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
+		isVerbosePayloads: () => false
+	})
+);
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))

@@ -70,10 +70,9 @@ vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/markdown.ts')>())
 }));
 
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: vi.fn()
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))

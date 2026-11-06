@@ -25,10 +25,9 @@ vi.mock('#lib/agent/contextBudget.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/agent/contextBudget.ts')>()),
 	describeContextManaged: () => 'managed'
 }));
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: vi.fn()
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 import { openShellFromChat } from './fromChat';
 import { getShellSessions, closeShellSession, getActiveShellId } from '#lib/stores/shell.svelte.ts';
