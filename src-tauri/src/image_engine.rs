@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
-use log::{info, warn};
+use log::{info, warn, Level};
 use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
@@ -331,13 +331,13 @@ impl ImageEngine {
             let pin = self.wait_for_devices().await;
             *self.vk_devices.lock().await = Some(pin.clone());
             if let Some(ids) = pin {
-                info!("sd-server: pinning to discrete Vulkan device(s) {ids}");
+                info!("Pinning sd-server to discrete Vulkan device(s) {ids}");
                 // Stopped first: the old process's log reader marks the engine
                 // as errored when it exits, unless it was stopped on purpose —
                 // and that exit can land after the new process has started.
                 *self.status.lock().await = SidecarStatus::Stopped;
                 if let Err(e) = kill_child(&self.child, "sd-server").await {
-                    warn!("sd-server: {e}");
+                    warn!("{e}");
                 }
                 for _ in 0..30 {
                     if snapshot_logs(&self.log)
@@ -423,6 +423,7 @@ impl ImageEngine {
             Arc::clone(&self.status),
             Arc::clone(&self.log),
             &[],
+            Level::Warn,
         );
         Ok(())
     }
@@ -447,7 +448,7 @@ impl ImageEngine {
     /// Stop the engine. A no-op when nothing is running.
     pub async fn stop(&self) {
         if let Err(e) = kill_child(&self.child, "sd-server").await {
-            warn!("sd-server: {e}");
+            warn!("{e}");
         }
         *self.status.lock().await = SidecarStatus::Stopped;
         *self.model.lock().await = None;

@@ -9,7 +9,7 @@
 
 use crate::process_util::{kill_pid, Signal};
 use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
-use log::{error, info, warn};
+use log::{error, info, log, warn, Level};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -257,7 +257,9 @@ pub async fn kill_child(child: &Mutex<Option<SidecarChild>>, name: &str) -> Resu
 /// llama-server reader is richer — GPU classify, crash telemetry, fallback —
 /// and stays bespoke).
 ///
-/// - stdout/stderr lines are logged and pushed to `log`.
+/// - stdout/stderr lines are logged and pushed to `log`. Stderr goes at
+///   `stderr_level`: whisper-server writes routine progress there, while
+///   sd-server and koko write their errors there.
 /// - if a stdout line contains any `ready_markers` substring, status flips
 ///   `Starting → Ready` (koko's "listening" sniff; pass `&[]` to disable).
 /// - on `Terminated`, status flips to `Error` unless it was already `Stopped`.
@@ -267,6 +269,7 @@ pub fn spawn_log_reader(
     status: Arc<Mutex<SidecarStatus>>,
     log: LogBuffer,
     ready_markers: &'static [&'static str],
+    stderr_level: Level,
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -274,7 +277,7 @@ pub fn spawn_log_reader(
                 CommandEvent::Stderr(line) => {
                     let s = String::from_utf8_lossy(&line);
                     let trimmed = s.trim();
-                    warn!("{name}: {}", trimmed);
+                    log!(stderr_level, "{name}: {}", trimmed);
                     let mut buf = log.lock().await;
                     push_log(&mut buf, trimmed);
                 }
@@ -363,6 +366,8 @@ pub struct SidecarStart {
     pub env: Vec<(&'static str, String)>,
     /// Stdout substrings that mean ready; see `spawn_log_reader`.
     pub ready_markers: &'static [&'static str],
+    /// The level its stderr is logged at; see `spawn_log_reader`.
+    pub stderr_level: Level,
     pub health_url: String,
     /// Count any HTTP answer as up; see `watch_health`.
     pub accept_any: bool,
@@ -401,6 +406,7 @@ pub async fn start_sidecar(
         Arc::clone(status),
         Arc::clone(log),
         spec.ready_markers,
+        spec.stderr_level,
     );
     watch_health(
         status,
@@ -451,7 +457,7 @@ pub async fn kill_process_on_port(
     if std::net::TcpStream::connect(localhost(port)).is_err() {
         return Ok(());
     }
-    warn!("{name}: port {port} occupied, checking who holds it");
+    warn!("Port {port} for {name} is occupied, checking who holds it");
 
     let our_dir = std::env::current_exe()
         .ok()
@@ -466,7 +472,7 @@ pub async fn kill_process_on_port(
         let command = crate::orphans::pid_command(pid);
         if !is_ours(pid, command.as_deref(), &our_dir, &recorded) {
             let held_by = command.unwrap_or_else(|| format!("pid {pid}"));
-            warn!("{name}: port {port} is held by {held_by}, not ours — not killing it");
+            warn!("Port {port} for {name} is held by {held_by}, not ours — not killing it");
             return Err(format!(
                 "Port {port} is in use by another program ({held_by}), so {name} cannot start."
             ));

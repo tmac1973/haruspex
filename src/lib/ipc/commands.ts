@@ -449,6 +449,8 @@ export const IPC = {
 	webview_store_load: 'webview_store_load',
 	webview_store_seed: 'webview_store_seed',
 	webview_store_set: 'webview_store_set',
+	whisper_video_clear_logs: 'whisper_video_clear_logs',
+	whisper_video_logs: 'whisper_video_logs',
 	whisper_video_model_delete: 'whisper_video_model_delete',
 	whisper_video_model_download: 'whisper_video_model_download',
 	whisper_video_model_path: 'whisper_video_model_path',

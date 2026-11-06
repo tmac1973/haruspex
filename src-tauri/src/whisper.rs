@@ -1,5 +1,5 @@
 use crate::sidecar_process::SidecarChild;
-use log::info;
+use log::{info, Level};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
@@ -106,6 +106,8 @@ impl WhisperServer {
             args,
             env: Vec::new(),
             ready_markers: &[],
+            // Model loading and per-request progress, not errors.
+            stderr_level: Level::Info,
             health_url: health_url(self.port),
             accept_any: false,
         };
@@ -302,6 +304,18 @@ pub async fn get_whisper_logs(state: tauri::State<'_, WhisperServer>) -> Result<
 #[tauri::command]
 pub async fn clear_whisper_logs(state: tauri::State<'_, WhisperServer>) -> Result<(), ()> {
     state.clear_logs().await;
+    Ok(())
+}
+
+/// The video tools' whisper-server log, for its own log viewer tab.
+#[tauri::command]
+pub async fn whisper_video_logs(state: tauri::State<'_, VideoWhisper>) -> Result<Vec<String>, ()> {
+    Ok(state.0.get_logs().await)
+}
+
+#[tauri::command]
+pub async fn whisper_video_clear_logs(state: tauri::State<'_, VideoWhisper>) -> Result<(), ()> {
+    state.0.clear_logs().await;
     Ok(())
 }
 

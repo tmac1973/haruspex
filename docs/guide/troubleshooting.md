@@ -68,7 +68,7 @@ Turn Haruspex on in System Settings → Privacy & Security → Local Network and
 
 ## The model server will not start
 
-The status badge at the top of the window names the model of the chat, Code session or job in view, and for the Settings → Inference model the server's state: **Ready**, **Starting**, **Error** or **Stopped**. Click it to open the logs. Settings → Inference → Server has **Restart Server**, **Start Server** and **Stop Server**, and **Run Setup Wizard** to pick a model again.
+The status badge names the model of the chat, Code session or job in view, and for the Settings → Inference model the server's state: **Ready**, **Starting**, **Error** or **Stopped**. Click it to open the logs. Settings → Inference → Server has **Restart Server**, **Start Server** and **Stop Server**, and **Run Setup Wizard** to pick a model again.
 
 If you set Settings → Inference → **Extra llama-server arguments**, clear them and restart: a typo there stops the server.
 
@@ -78,7 +78,7 @@ Settings → Inference → API Keys marks a key the secret store has lost. Type 
 
 ## Find the logs
 
-Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or click the status badge. The log viewer lists its logs on the left: Haruspex's own (App, Debug, Tools, and search Stats), then the servers (LLM, TTS, Whisper, Image, MCP), then Crashes. **Image** shows the bundled engine's output or the calls made to ComfyUI. Each has **Copy all**.
+Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or the status badge. The log viewer lists Haruspex's own logs (App, Debug, Tools, search Stats), then the servers (LLM, TTS, Whisper, Video whisper, Image, MCP), then Crashes. **Video whisper** is the video tools' speech-to-text. **Image** shows the bundled engine or the calls made to ComfyUI. Each has **Copy all**.
 
 ## Report a bug
 

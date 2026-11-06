@@ -41,6 +41,7 @@ beforeEach(() => {
 			{
 				get_search_stats: stats,
 				image_engine_logs: ['sd-server listening'],
+				whisper_video_logs: ['whisper_init_from_file_with_params_no_state: loading model'],
 				comfy_logs: ['GET http://gpu.lan:8188/system_stats → ok in 9 ms, 512 bytes']
 			},
 			[]
@@ -58,6 +59,14 @@ describe('LogViewer', () => {
 		expect(await screen.findByText(/system_stats → ok in 9 ms/)).toBeTruthy();
 		await fireEvent.click(screen.getByText('Clear'));
 		await waitFor(() => expect(invoke).toHaveBeenCalledWith('comfy_clear_logs'));
+	});
+
+	it("gives the video tools' whisper-server its own tab", async () => {
+		render(LogViewer, { open: true, onclose: vi.fn() });
+		await fireEvent.click(screen.getByText('Video whisper'));
+		expect(await screen.findByText(/loading model/)).toBeTruthy();
+		await fireEvent.click(screen.getByText('Clear'));
+		await waitFor(() => expect(invoke).toHaveBeenCalledWith('whisper_video_clear_logs'));
 	});
 
 	it('shows search stats by day, newest first, with working out of tried', async () => {

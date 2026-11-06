@@ -15,7 +15,17 @@
 	import type { SearchFailureKind } from '#lib/ipc/gen/SearchFailureKind.ts';
 
 	type LogTab =
-		'app' | 'llm' | 'tts' | 'whisper' | 'image' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats';
+		| 'app'
+		| 'llm'
+		| 'tts'
+		| 'whisper'
+		| 'whisperVideo'
+		| 'image'
+		| 'mcp'
+		| 'crashes'
+		| 'debug'
+		| 'tools'
+		| 'stats';
 	/**
 	 * The Image tab's two sources: the bundled engine's own output, and the
 	 * calls Haruspex makes to a ComfyUI server (comfy.rs).
@@ -211,7 +221,8 @@
 		app: IPC.get_app_logs,
 		llm: IPC.get_server_logs,
 		tts: IPC.get_tts_logs,
-		whisper: IPC.get_whisper_logs
+		whisper: IPC.get_whisper_logs,
+		whisperVideo: IPC.whisper_video_logs
 	};
 
 	const clearCommands: Record<
@@ -221,7 +232,8 @@
 		app: IPC.clear_app_logs,
 		llm: IPC.clear_server_logs,
 		tts: IPC.clear_tts_logs,
-		whisper: IPC.clear_whisper_logs
+		whisper: IPC.clear_whisper_logs,
+		whisperVideo: IPC.whisper_video_clear_logs
 	};
 
 	/**
@@ -231,7 +243,7 @@
 	 */
 	const TAB_GROUPS: { label: string; tabs: LogTab[] }[] = [
 		{ label: 'Haruspex', tabs: ['app', 'debug', 'tools', 'stats'] },
-		{ label: 'Servers', tabs: ['llm', 'tts', 'whisper', 'image', 'mcp'] },
+		{ label: 'Servers', tabs: ['llm', 'tts', 'whisper', 'whisperVideo', 'image', 'mcp'] },
 		{ label: '', tabs: ['crashes'] }
 	];
 
@@ -240,6 +252,7 @@
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper',
+		whisperVideo: 'Video whisper',
 		image: 'Image',
 		mcp: 'MCP',
 		crashes: 'Crashes',
