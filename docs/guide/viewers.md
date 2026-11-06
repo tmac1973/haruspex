@@ -24,6 +24,7 @@ When the window's folder holds more than one file of a kind, a tree of them sits
 - The tree shows one kind at a time. When the folder has more than one kind, **3D**, **Images**, **Audio** and **Text** switch between them.
 - **Attempts** adds the earlier tries the 3D models job keeps in `attempts/` folders. It only shows when there are some. See the `3d-models` page.
 - **↻** looks again for files added since the list was made.
+- Drag the tree's right edge to make it wider or narrower. The width is kept for every window.
 
 ## Look at a model
 

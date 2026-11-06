@@ -70,6 +70,19 @@ describe('FileTree', () => {
 		expect(onpick).toHaveBeenLastCalledWith('hit.wav');
 	});
 
+	it('remembers the width it was dragged to', async () => {
+		listing.files = ['a.md', 'b.md'];
+		render(FileTree, { workdir: '/proj', relPath: 'a.md', onpick: vi.fn() });
+		const nav = await screen.findByLabelText('Files in this folder');
+		const handle = screen.getByLabelText('Drag to resize');
+		await fireEvent.mouseDown(handle, { clientX: 220 });
+		await fireEvent.mouseMove(window, { clientX: 320 });
+		await fireEvent.mouseUp(window);
+		expect(nav.style.width).toBe('320px');
+		expect(localStorage.getItem('haruspex-editor-tree-width')).toBe('320');
+		localStorage.removeItem('haruspex-editor-tree-width');
+	});
+
 	it('hides itself when the file is alone in its folder', async () => {
 		listing.files = ['crate.glb'];
 		render(FileTree, { workdir: '/proj', relPath: 'crate.glb', onpick: vi.fn() });

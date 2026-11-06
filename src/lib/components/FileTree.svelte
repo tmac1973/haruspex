@@ -1,6 +1,19 @@
 <script lang="ts" module>
 	/** Kept across tabs and windows: whether the job's earlier tries are listed. */
 	let showAttempts = false;
+
+	const WIDTH_KEY = 'haruspex-editor-tree-width';
+	const clampWidth = (w: number) => Math.max(140, Math.min(600, w));
+
+	function savedWidth(): number {
+		try {
+			const w = Number(localStorage.getItem(WIDTH_KEY));
+			if (w > 0) return clampWidth(w);
+		} catch {
+			// No storage: the default.
+		}
+		return 220;
+	}
 </script>
 
 <script lang="ts">
@@ -13,6 +26,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { invoke } from '@tauri-apps/api/core';
+	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import {
 		KINDS,
 		ancestors,
@@ -49,6 +63,23 @@
 	const hasAttempts = $derived(listing?.files.some(isAttempt) ?? false);
 	const shown = $derived(files.length > 1 || kinds.length > 1);
 	let activeItem: HTMLElement | undefined = $state();
+	let width = $state(savedWidth());
+
+	function startResize(event: MouseEvent): void {
+		startDragResize(event, {
+			width,
+			widens: 'right',
+			clamp: clampWidth,
+			onResize: (w) => (width = w),
+			onDone: (w) => {
+				try {
+					localStorage.setItem(WIDTH_KEY, String(w));
+				} catch {
+					// Kept for this window only.
+				}
+			}
+		});
+	}
 
 	// Stepping into a collapsed folder opens it.
 	$effect(() => {
@@ -115,7 +146,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if shown}
-	<nav class="files" aria-label="Files in this folder">
+	<nav class="files" aria-label="Files in this folder" style:width="{width}px">
 		{#if kinds.length > 1}
 			<div class="kinds" role="group" aria-label="Kind">
 				{#each kinds as k (k.kind)}
@@ -179,12 +210,18 @@
 				</li>
 			{/each}
 		</ul>
+		<button
+			class="resize-handle"
+			onmousedown={startResize}
+			aria-label="Drag to resize"
+			title="Drag to resize"
+		></button>
 	</nav>
 {/if}
 
 <style>
 	.files {
-		width: 220px;
+		position: relative;
 		flex-shrink: 0;
 		display: flex;
 		flex-direction: column;
@@ -192,6 +229,22 @@
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		overflow: hidden;
+	}
+	.resize-handle {
+		position: absolute;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		width: 5px;
+		background: transparent;
+		border: 0;
+		padding: 0;
+		cursor: col-resize;
+		z-index: 5;
+	}
+	.resize-handle:hover,
+	.resize-handle:active {
+		background: color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 	.kinds {
 		display: flex;
