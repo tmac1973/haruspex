@@ -14,17 +14,7 @@ import {
 	type ModelSpec
 } from '#lib/models3d/spec/types.ts';
 import { modelDir } from '#lib/models3d/spec/paths.ts';
-
-function str(v: unknown): string {
-	return typeof v === 'string' ? v.trim() : '';
-}
-
-/** NaN when absent, so validation reports it rather than a quiet zero. */
-function num(v: unknown): number {
-	if (typeof v === 'number') return v;
-	const n = typeof v === 'string' ? Number(v) : NaN;
-	return Number.isFinite(n) ? n : NaN;
-}
+import { parsedOrNaN, trimmed } from '#lib/utils/coerce.ts';
 
 /** The objects in a submitted list; anything else in it is dropped. */
 export function objects(v: unknown): Record<string, unknown>[] {
@@ -34,12 +24,12 @@ export function objects(v: unknown): Record<string, unknown>[] {
 }
 
 function clip(c: Record<string, unknown>): ModelClip {
-	const name = str(c.name);
+	const name = trimmed(c.name);
 	return {
 		name,
-		seconds: num(c.seconds),
+		seconds: parsedOrNaN(c.seconds),
 		loop: typeof c.loop === 'boolean' ? c.loop : LOOPING_CLIP.test(name),
-		action: str(c.action)
+		action: trimmed(c.action)
 	};
 }
 
@@ -50,10 +40,10 @@ function clip(c: Record<string, unknown>): ModelClip {
 export function modelEntryOf(e: Record<string, unknown>, id: string): ModelEntry {
 	return {
 		id,
-		title: str(e.title),
-		description: str(e.description),
-		height_m: num(e.height_m),
-		parts: Array.isArray(e.parts) ? e.parts.map(str).filter((p) => p.length > 0) : [],
+		title: trimmed(e.title),
+		description: trimmed(e.description),
+		height_m: parsedOrNaN(e.height_m),
+		parts: Array.isArray(e.parts) ? e.parts.map(trimmed).filter((p) => p.length > 0) : [],
 		clips: objects(e.clips).map(clip),
 		dir: modelDir(id)
 	};
@@ -78,7 +68,7 @@ export function derivePlanModelSpec(payload: Record<string, unknown>): PlanModel
 	const seen = new Set<string>();
 	const entries: ModelEntry[] = [];
 	for (const raw of objects(payload.entries)) {
-		const id = str(raw.id);
+		const id = trimmed(raw.id);
 		if (!ID_PATTERN.test(id) || seen.has(id)) {
 			rejected.push(id || '(an entry with no id)');
 			continue;
@@ -86,5 +76,5 @@ export function derivePlanModelSpec(payload: Record<string, unknown>): PlanModel
 		seen.add(id);
 		entries.push(modelEntryOf(raw, id));
 	}
-	return { spec: { version: 1, style: str(payload.style), entries }, rejected };
+	return { spec: { version: 1, style: trimmed(payload.style), entries }, rejected };
 }

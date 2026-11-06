@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { editUploads, imagesFrom } from './openaiImages';
+import { editUploads, imagesFrom, upscaleVia } from './openaiImages';
 
 describe('imagesFrom', () => {
 	it('reads OpenAI-style images, skipping URL entries', () => {
@@ -33,5 +33,31 @@ describe('editUploads', () => {
 	it('leaves the mask out when there is none', () => {
 		const parts = editUploads({ images: [{ name: 'a.png', hash: 'abc' }] } as never);
 		expect(parts.map((p) => p.field)).toEqual(['image[]']);
+	});
+});
+
+describe('upscaleVia', () => {
+	const input = { bytes: [1, 2, 3], name: 'in.png' };
+
+	it('posts the model and the picture as base64, and reads the answer under its key', async () => {
+		const sent: unknown[] = [];
+		const post = async (body: unknown) => {
+			sent.push(body);
+			return { images: [{ b64_json: 'BwgJ' }] };
+		};
+		expect(await upscaleVia(post, 'esrgan', input, 'images', 'S')).toEqual(
+			new Uint8Array([7, 8, 9])
+		);
+		expect(sent).toEqual([{ model: 'esrgan', image: 'AQID' }]);
+	});
+
+	it('refuses an answer with nothing under its key, naming the server', async () => {
+		const post = async () => ({ images: [{ b64_json: 'BwgJ' }] });
+		await expect(upscaleVia(post, 'm', input, 'data', 'Lemonade')).rejects.toThrow(
+			'Lemonade returned no upscaled picture.'
+		);
+		await expect(upscaleVia(async () => null, 'm', input, 'data', 'X')).rejects.toThrow(
+			'X returned no upscaled picture.'
+		);
 	});
 });

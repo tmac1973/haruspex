@@ -21,6 +21,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
+import { toImageResult } from '#lib/image/result.ts';
 import { entryApiKey } from '#lib/image/entries.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
 import {
@@ -31,10 +32,9 @@ import {
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
-import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { FAMILY_SAMPLER, familyOfId } from '#lib/image/local/adapter.ts';
-import { base64Of, retryEmptyResult, transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
-import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
+import { retryEmptyResult, transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
+import { editUploads, imagesFrom, upscaleVia } from '#lib/image/openaiImages.ts';
 import { randomSeed } from '#lib/utils/random.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 import {
@@ -301,24 +301,17 @@ async function generateWith(
 	}
 	const transparencyFailed = clearStart ? await lostTransparency(images[0]) : undefined;
 
-	return {
-		images: images.map((bytes) => ({
-			bytes,
-			mimeType: 'image/png',
-			width: req.width,
-			height: req.height
-		})),
-		meta: {
-			seed,
-			model: id,
-			backend: 'lemonade',
-			sampler,
-			loras: [],
-			durationMs: Date.now() - started,
-			...(req.seamless ? { seamFailed: NO_TILING } : {}),
-			...(transparencyFailed ? { transparencyFailed } : {})
-		}
-	};
+	return toImageResult(images, {
+		backend: 'lemonade',
+		width: req.width,
+		height: req.height,
+		seed,
+		model: id,
+		sampler,
+		started,
+		seamFailed: req.seamless ? NO_TILING : undefined,
+		transparencyFailed
+	});
 }
 
 /**
@@ -331,21 +324,19 @@ async function upscaleWith(
 	opts: GenerateOptions = {}
 ): Promise<Uint8Array> {
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
-	const payload = await lemonadeJson(
-		await configOf(entry),
-		{
-			method: 'POST',
-			path: ROUTES.upscale,
-			body: { model: UPSCALER, image: await base64Of(input) },
-			timeoutMs: GENERATE_TIMEOUT_MS
-		},
-		opts.signal
+	const cfg = await configOf(entry);
+	return upscaleVia(
+		(body) =>
+			lemonadeJson(
+				cfg,
+				{ method: 'POST', path: ROUTES.upscale, body, timeoutMs: GENERATE_TIMEOUT_MS },
+				opts.signal
+			),
+		UPSCALER,
+		input,
+		'data',
+		'Lemonade'
 	);
-	const out = (payload as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
-	if (typeof out !== 'string') {
-		throw new ImageBackendError('rejected', 'Lemonade returned no upscaled picture.');
-	}
-	return fromBase64(out);
 }
 
 registerImageBackendKind('lemonade', lemonadeFor);

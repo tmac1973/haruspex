@@ -40,13 +40,7 @@ pub(super) fn parse_bypass_list(raw: &str) -> Vec<BypassEntry> {
 /// call — some networks genuinely do proxy internal traffic — so those stay in
 /// the user's own Proxy Bypass List rather than being assumed here.
 fn is_loopback(host: &str) -> bool {
-    if host.eq_ignore_ascii_case("localhost") || host.to_lowercase().ends_with(".localhost") {
-        return true;
-    }
-    host.trim_start_matches('[')
-        .trim_end_matches(']')
-        .parse::<IpAddr>()
-        .is_ok_and(|ip| ip.is_loopback())
+    crate::net_util::is_loopback_host(host)
 }
 
 pub(super) fn should_bypass(target: &reqwest::Url, entries: &[BypassEntry]) -> bool {

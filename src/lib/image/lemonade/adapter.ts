@@ -142,16 +142,6 @@ export function buildEditFields(
 /** Lemonade's Real-ESRGAN, which `/api/v1/images/upscale` runs on sd-cpp. */
 export const UPSCALER = 'RealESRGAN-x4plus';
 
-/** Lemonade's own error sentence from a refusal's body, when it has one. */
-export function errorMessage(body: string): string | null {
-	try {
-		const msg = (JSON.parse(body) as { error?: { message?: unknown } })?.error?.message;
-		return typeof msg === 'string' && msg ? msg : null;
-	} catch {
-		return null;
-	}
-}
-
 // ---- Probe -------------------------------------------------------------------
 
 export interface ServerState {

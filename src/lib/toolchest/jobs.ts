@@ -9,7 +9,7 @@
  * good: deleted, or pruned.
  */
 
-import { sleep } from '#lib/utils/async.ts';
+import { pollJob } from '#lib/utils/pollJob.ts';
 import { ToolchestError, toolchestJson, type ToolchestConfig } from '#lib/toolchest/client.ts';
 
 /** What every job has. */
@@ -17,10 +17,6 @@ export interface JobLike {
 	id: string;
 	status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 }
-
-const POLL_MS = 1000;
-/** Polls in a row that may fail, while the server restarts, before it counts as gone. */
-const MAX_FAILED_POLLS = 20;
 
 export interface FollowOptions<J> {
 	signal?: AbortSignal;
@@ -55,29 +51,17 @@ export async function followJob<J extends JobLike>(
 	read: (v: unknown) => J | null,
 	opts: FollowOptions<J> = {}
 ): Promise<J> {
-	const cancel = () =>
-		void toolchestJson(cfg, { method: 'DELETE', path: path(created.id) }).catch(() => {});
-	opts.signal?.addEventListener('abort', cancel, { once: true });
-	try {
-		let job = created;
-		let failed = 0;
-		while (job.status === 'queued' || job.status === 'running') {
-			opts.onJob?.(job);
-			await sleep(POLL_MS);
-			if (opts.signal?.aborted) throw new ToolchestError('cancelled', 'Cancelled.');
-			try {
-				job = read(await toolchestJson(cfg, { path: path(job.id) }, opts.signal)) ?? job;
-				failed = 0;
-			} catch (e) {
-				const fatal = fatalPollError(e);
-				if (fatal) throw fatal;
-				if (++failed >= MAX_FAILED_POLLS) throw e;
-			}
-		}
-		return job;
-	} finally {
-		opts.signal?.removeEventListener('abort', cancel);
-	}
+	return pollJob({
+		initial: created,
+		ended: (job) => job.status !== 'queued' && job.status !== 'running',
+		poll: async (job) => read(await toolchestJson(cfg, { path: path(job.id) }, opts.signal)) ?? job,
+		onWait: opts.onJob,
+		signal: opts.signal,
+		onAbort: () =>
+			void toolchestJson(cfg, { method: 'DELETE', path: path(created.id) }).catch(() => {}),
+		cancelled: () => new ToolchestError('cancelled', 'Cancelled.'),
+		fatal: fatalPollError
+	});
 }
 
 /**

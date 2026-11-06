@@ -22,13 +22,10 @@ import {
 	type FeedbackKind
 } from '#lib/harnessFeedback/report.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { trimmed } from '#lib/utils/coerce.ts';
 
 /** Reports one turn may make. More than this is the tool getting in the way. */
 export const MAX_REPORTS_PER_TURN = 3;
-
-function str(v: unknown): string {
-	return typeof v === 'string' ? v.trim() : '';
-}
 
 function turnMode(ctx: ToolContext): string {
 	if (ctx.feedback?.origin === 'reflection') return 'job-review';
@@ -53,11 +50,11 @@ function feedbackEntry(
 	what: string,
 	expected: string
 ): FeedbackEntry {
-	const tool = str(args.tool) || 'unknown';
+	const tool = trimmed(args.tool) || 'unknown';
 	const kind = FEEDBACK_KINDS.includes(args.kind as FeedbackKind)
 		? (args.kind as FeedbackKind)
 		: 'other';
-	const suggestion = str(args.suggestion);
+	const suggestion = trimmed(args.suggestion);
 	return {
 		origin: ctx.feedback?.origin ?? 'tool',
 		tool,
@@ -104,10 +101,10 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => str(args.tool) || 'feedback',
+	displayLabel: (args) => trimmed(args.tool) || 'feedback',
 	async execute(args, ctx) {
-		const what = str(args.what_happened);
-		const expected = str(args.expected);
+		const what = trimmed(args.what_happened);
+		const expected = trimmed(args.expected);
 		if (!what || !expected) {
 			return toolResult(toolError('what_happened and expected are both needed.'));
 		}

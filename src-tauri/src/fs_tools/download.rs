@@ -1,8 +1,9 @@
 //! `fs_download_url` — sandboxed HTTP download into the working directory.
 
-use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path_for_write};
+use super::path::{
+    ensure_parent_dir, refuse_if_exists, resolve_in_workdir, workdir_path_for_write,
+};
 use crate::http_util::{stream_to_file, DownloadError};
-use tokio::fs;
 
 /// Max bytes we'll accept from a single HTTP download into the working
 /// directory. Generous enough for a typical image, PDF, or font file, and
@@ -116,13 +117,7 @@ pub async fn fs_download_url(
         }
     }
 
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
+    ensure_parent_dir(&resolved).await?;
 
     let total = stream_to_file(response, &resolved, Some(MAX_DOWNLOAD_BYTES), |_| async {
         true

@@ -291,15 +291,10 @@ fn catalogue() -> Vec<ComfyModelSet> {
 
 /// True for a base URL on this machine.
 fn is_loopback(base_url: &str) -> bool {
-    let Ok(url) = reqwest::Url::parse(base_url.trim()) else {
-        return false;
-    };
-    match url.host() {
-        Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-        None => false,
-    }
+    reqwest::Url::parse(base_url.trim()).is_ok_and(|url| {
+        url.host_str()
+            .is_some_and(crate::net_util::is_loopback_host)
+    })
 }
 
 /// A directory this process can write into.
@@ -537,7 +532,9 @@ mod tests {
         assert!(is_loopback("http://127.0.0.1:8188"));
         assert!(is_loopback("http://localhost:8188/"));
         assert!(is_loopback("http://[::1]:8188"));
+        assert!(is_loopback("http://comfy.localhost:8188"));
         assert!(!is_loopback("http://192.168.1.20:8188"));
+        assert!(!is_loopback("http://localhost.example.com:8188"));
         assert!(!is_loopback("http://gpu-box:8188"));
         assert!(!is_loopback("not a url"));
     }

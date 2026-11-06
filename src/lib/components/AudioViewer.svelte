@@ -16,10 +16,11 @@
 	 * controls). Read fresh on mount and on Reload; nothing here writes.
 	 */
 	import { onMount, tick } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 	import AudioPlayer from '#lib/components/AudioPlayer.svelte';
 	import { clock, peaks } from '#lib/editor/waveform.ts';
+	import { blobUrlOf, readViewerBytes, viewerError } from '#lib/editor/viewerFile.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
+	import { extOf } from '#lib/utils/mime.ts';
 
 	let { workdir, relPath }: { workdir: string; relPath: string } = $props();
 
@@ -64,15 +65,14 @@
 		position = 0;
 		release();
 		try {
-			const data = new Uint8Array(await invoke<number[]>('fs_read_bytes', { workdir, relPath }));
-			const ext = relPath.split('.').pop()?.toLowerCase() ?? '';
+			const data = await readViewerBytes(workdir, relPath);
 			bytes = data.length;
-			url = URL.createObjectURL(new Blob([data], { type: MIME[ext] ?? '' }));
+			url = blobUrlOf(data, MIME[extOf(relPath)] ?? '');
 			await tick();
 			watch();
 			await outline(data);
 		} catch (e) {
-			error = `Could not play ${relPath}: ${e instanceof Error ? e.message : String(e)}`;
+			error = viewerError('play', relPath, e);
 		}
 		loading = false;
 	}

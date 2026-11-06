@@ -19,14 +19,11 @@ import { ASSET_KINDS } from '#lib/assets/spec/types.ts';
 import { DEFAULT_ANCHOR_IMAGE, DEFAULT_ANCHOR_RECIPE } from '#lib/assets/spec/paths.ts';
 import type { LoraRef } from '#lib/image/types.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
+import { stringOr } from '#lib/utils/coerce.ts';
 
 export type ParseResult = { spec: AssetSpec } | { errors: string[] };
 
 const KNOWN_KEYS = new Set(['version', 'style', 'anchor', 'normalize', 'entries', 'transitions']);
-
-function str(v: unknown, fallback = ''): string {
-	return typeof v === 'string' ? v : fallback;
-}
 
 function optionalStr(v: unknown): string | undefined {
 	return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -40,7 +37,10 @@ function loras(v: unknown): LoraRef[] | undefined {
 	if (!Array.isArray(v)) return undefined;
 	const out = v
 		.filter((l): l is Record<string, unknown> => !!l && typeof l === 'object')
-		.map((l) => ({ name: str(l.name), strength: typeof l.strength === 'number' ? l.strength : 1 }))
+		.map((l) => ({
+			name: stringOr(l.name),
+			strength: typeof l.strength === 'number' ? l.strength : 1
+		}))
 		.filter((l) => l.name.length > 0);
 	return out.length > 0 ? out : undefined;
 }
@@ -55,16 +55,16 @@ function transition(raw: unknown): TransitionEntry | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const t = raw as Record<string, unknown>;
 	return {
-		id: str(t.id),
+		id: stringOr(t.id),
 		view: t.view === 'side' ? 'side' : 'top',
-		a: str(t.a),
-		...(optionalStr(t.b) ? { b: str(t.b) } : {}),
-		...(optionalStr(t.cap) ? { cap: str(t.cap) } : {}),
-		out: str(t.out),
+		a: stringOr(t.a),
+		...(optionalStr(t.b) ? { b: stringOr(t.b) } : {}),
+		...(optionalStr(t.cap) ? { cap: stringOr(t.cap) } : {}),
+		out: stringOr(t.out),
 		// Kept as written: Rust checks it when the set is drawn.
 		...(t.edge && typeof t.edge === 'object' ? { edge: t.edge as TransitionEdge } : {}),
-		...(optionalStr(t.rejected) ? { rejected: str(t.rejected) } : {}),
-		...(optionalStr(t.notes) ? { notes: str(t.notes) } : {})
+		...(optionalStr(t.rejected) ? { rejected: stringOr(t.rejected) } : {}),
+		...(optionalStr(t.notes) ? { notes: stringOr(t.notes) } : {})
 	};
 }
 
@@ -73,10 +73,10 @@ function entry(raw: unknown): AssetEntry | null {
 	const e = raw as Record<string, unknown>;
 	const k = kind(e.kind);
 	return {
-		id: str(e.id),
+		id: stringOr(e.id),
 		kind: k,
-		prompt: str(e.prompt),
-		out: str(e.out),
+		prompt: stringOr(e.prompt),
+		out: stringOr(e.out),
 		...(typeof e.size === 'number' ? { size: e.size } : {}),
 		// A texture is seamless unless it explicitly says otherwise; anything
 		// else is not unless it does.
@@ -86,16 +86,16 @@ function entry(raw: unknown): AssetEntry | null {
 				? { seamless: true }
 				: {}),
 		...(typeof e.seed === 'number' || e.seed === null ? { seed: e.seed as number | null } : {}),
-		...(optionalStr(e.negativePrompt) ? { negativePrompt: str(e.negativePrompt) } : {}),
-		...(optionalStr(e.notes) ? { notes: str(e.notes) } : {}),
-		...(optionalStr(e.sheet) ? { sheet: str(e.sheet) } : {}),
-		...(optionalStr(e.rejected) ? { rejected: str(e.rejected) } : {}),
+		...(optionalStr(e.negativePrompt) ? { negativePrompt: stringOr(e.negativePrompt) } : {}),
+		...(optionalStr(e.notes) ? { notes: stringOr(e.notes) } : {}),
+		...(optionalStr(e.sheet) ? { sheet: stringOr(e.sheet) } : {}),
+		...(optionalStr(e.rejected) ? { rejected: stringOr(e.rejected) } : {}),
 		// Shape is Rust's to check (`texture_validate`); a recipe here is only
 		// required to be an object.
 		...(e.recipe && typeof e.recipe === 'object' && !Array.isArray(e.recipe)
 			? { recipe: e.recipe as AssetEntry['recipe'] }
 			: {}),
-		...(optionalStr(e.drawn) ? { drawn: str(e.drawn) } : {}),
+		...(optionalStr(e.drawn) ? { drawn: stringOr(e.drawn) } : {}),
 		...(Array.isArray(e.variants) && e.variants.every((v) => typeof v === 'string')
 			? { variants: e.variants as string[] }
 			: {})
@@ -106,9 +106,9 @@ function style(raw: unknown): AssetStyle {
 	const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 	const l = loras(s.loras);
 	return {
-		prompt: str(s.prompt),
-		...(optionalStr(s.negativePrompt) ? { negativePrompt: str(s.negativePrompt) } : {}),
-		...(optionalStr(s.model) ? { model: str(s.model) } : {}),
+		prompt: stringOr(s.prompt),
+		...(optionalStr(s.negativePrompt) ? { negativePrompt: stringOr(s.negativePrompt) } : {}),
+		...(optionalStr(s.model) ? { model: stringOr(s.model) } : {}),
 		...(l ? { loras: l } : {})
 	};
 }
@@ -149,9 +149,9 @@ export function parseAssetSpec(json: string): ParseResult {
 		version: 1,
 		style: style(o.style),
 		anchor: {
-			image: str(anchor.image, DEFAULT_ANCHOR_IMAGE),
-			recipe: str(anchor.recipe, DEFAULT_ANCHOR_RECIPE),
-			...(optionalStr(anchor.sheet) ? { sheet: str(anchor.sheet) } : {})
+			image: stringOr(anchor.image, DEFAULT_ANCHOR_IMAGE),
+			recipe: stringOr(anchor.recipe, DEFAULT_ANCHOR_RECIPE),
+			...(optionalStr(anchor.sheet) ? { sheet: stringOr(anchor.sheet) } : {})
 		},
 		normalize: o.normalize as NormalizeProfile,
 		entries: o.entries.map(entry).filter((e): e is AssetEntry => e !== null),

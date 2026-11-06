@@ -1,15 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Slide, SlideImage } from '#lib/slides/types.ts';
+import { imageMime } from '#lib/utils/mime.ts';
 
 /** The largest picture a deck embeds, as for the document writers. */
 export const MAX_SLIDE_IMAGE_BYTES = 10 * 1024 * 1024;
 
-const MIME_BY_EXT: Record<string, SlideImage['mime']> = {
-	png: 'image/png',
-	jpg: 'image/jpeg',
-	jpeg: 'image/jpeg',
-	gif: 'image/gif'
-};
+const SLIDE_EXTS = ['png', 'jpg', 'jpeg', 'gif'] as const;
 
 /**
  * The formats PowerPoint and LibreOffice both show. Narrower than what
@@ -17,7 +13,7 @@ const MIME_BY_EXT: Record<string, SlideImage['mime']> = {
  */
 export function slideImageMime(path: string): SlideImage['mime'] | null {
 	const ext = /\.([^./\\]+)$/.exec(path)?.[1]?.toLowerCase() ?? '';
-	return MIME_BY_EXT[ext] ?? null;
+	return imageMime(ext, SLIDE_EXTS);
 }
 
 /** A picture's size in pixels, read from its header; null when it isn't one. */

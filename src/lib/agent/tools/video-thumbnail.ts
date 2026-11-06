@@ -10,10 +10,11 @@ import { imageEntries } from '#lib/image/entries.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
-import { parseTime, str, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { parseTime, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { generateOneImage } from '#lib/image/generateOne.ts';
 import { bytesToBase64 } from '#lib/utils/base64.ts';
 import type { ThumbnailWritten } from '#lib/ipc/gen/ThumbnailWritten.ts';
+import { trimmedOrNull } from '#lib/utils/coerce.ts';
 
 /** A 16:9 size the supported image models draw well; fitted to 1280×720 after. */
 const DRAW_WIDTH = 1344;
@@ -23,19 +24,19 @@ async function fromFrame(
 	args: Record<string, unknown>,
 	ctx: ToolContext
 ): Promise<ThumbnailWritten> {
-	const source = str(args.source);
+	const source = trimmedOrNull(args.source);
 	const at = parseTime(args.at);
 	if (at === null) throw new Error('A frame thumbnail needs "at", e.g. "4:10".');
 	return invoke<ThumbnailWritten>('video_thumbnail_from_frame', {
 		workingDir: ctx.workingDir,
 		episode: episodeArg(args),
-		project: str(args.project),
+		project: trimmedOrNull(args.project),
 		// No source: a moment of the cut.
 		path: source,
 		at: source ? at : null,
 		timelineAt: source ? null : at,
 		contain: args.fit === 'contain',
-		name: str(args.name),
+		name: trimmedOrNull(args.name),
 		settings: videoSettings()
 	});
 }
@@ -44,7 +45,7 @@ async function fromPrompt(
 	args: Record<string, unknown>,
 	ctx: ToolContext
 ): Promise<ThumbnailWritten> {
-	const prompt = str(args.prompt);
+	const prompt = trimmedOrNull(args.prompt);
 	if (!prompt) throw new Error('A generated thumbnail needs "prompt".');
 	if (imageEntries().length === 0) {
 		throw new Error(
@@ -63,10 +64,10 @@ async function fromPrompt(
 	return invoke<ThumbnailWritten>('video_thumbnail_from_image', {
 		workingDir: ctx.workingDir,
 		episode: episodeArg(args),
-		project: str(args.project),
+		project: trimmedOrNull(args.project),
 		imageBase64: bytesToBase64(image.bytes),
 		contain: args.fit === 'contain',
-		name: str(args.name)
+		name: trimmedOrNull(args.name)
 	});
 }
 

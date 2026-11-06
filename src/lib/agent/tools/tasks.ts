@@ -12,13 +12,10 @@ import { noticeFor } from '#lib/tasks/noticeText.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { hasEnded, type BackgroundTask } from '#lib/tasks/types.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
+import { trimmed } from '#lib/utils/coerce.ts';
 
 /** Ended tasks older than this are left out of `task_status`'s list. */
 const RECENT_MS = 24 * 60 * 60 * 1000;
-
-function str(v: unknown): string {
-	return typeof v === 'string' ? v.trim() : '';
-}
 
 /** One line on where a task has got to, or how it ended. */
 function describe(t: BackgroundTask): string {
@@ -44,7 +41,7 @@ function ownTasks(ctx: ToolContext): BackgroundTask[] {
 
 async function status(args: Record<string, unknown>, ctx: ToolContext) {
 	const mine = ownTasks(ctx);
-	const id = str(args.id);
+	const id = trimmed(args.id);
 	if (id) {
 		const t = mine.find((x) => x.id === id);
 		return t ? toolResult(describe(t)) : toolResult(toolError(`No task ${id} here.`));
@@ -54,7 +51,7 @@ async function status(args: Record<string, unknown>, ctx: ToolContext) {
 }
 
 async function cancel(args: Record<string, unknown>, ctx: ToolContext) {
-	const id = str(args.id);
+	const id = trimmed(args.id);
 	if (!id) return toolResult(toolError('task_cancel needs "id".'));
 	const t = ownTasks(ctx).find((x) => x.id === id);
 	if (!t) return toolResult(toolError(`No task ${id} here.`));

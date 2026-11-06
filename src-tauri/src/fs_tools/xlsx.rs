@@ -5,7 +5,8 @@
 
 use super::markdown_inline::escape_xml;
 use super::path::{
-    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
+    ensure_parent_dir, refuse_if_exists, resolve_in_workdir, workdir_path_for_write,
+    write_bytes_to_workdir,
 };
 
 #[derive(serde::Deserialize)]
@@ -130,13 +131,7 @@ pub async fn fs_write_xlsx(
 
     // rust_xlsxwriter saves straight to the path (no write_bytes_to_workdir
     // tail), so create any missing parent directories here.
-    if let Some(parent) = resolved.parent() {
-        if !parent.exists() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-        }
-    }
+    ensure_parent_dir(&resolved).await?;
 
     let resolved_str = resolved.to_string_lossy().to_string();
     tokio::task::spawn_blocking(move || -> Result<(), String> {

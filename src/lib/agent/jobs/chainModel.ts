@@ -8,6 +8,8 @@
  * strong model and code with a fast one.
  */
 
+import { nonEmptyOrNull } from '#lib/utils/coerce.ts';
+
 /** The job columns that choose a job's model, as `createJob` takes them. */
 export interface ModelColumns {
 	model_remote_base_url: string | null;
@@ -49,8 +51,6 @@ export function stageModelColumns(job: ModelColumns, override: ChainModel | null
 	return modelColumnsOf(override ?? job);
 }
 
-const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
-
 /**
  * A stored override, read defensively. Anything malformed is null ("same as
  * this job"), never a half-filled override: a stage silently pointed at a
@@ -63,8 +63,8 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 
 export function parseChainModel(raw: unknown): ChainModel | null {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 	const r = raw as Record<string, unknown>;
-	const baseUrl = str(r.model_remote_base_url);
-	const modelId = str(r.model_remote_model_id);
+	const baseUrl = nonEmptyOrNull(r.model_remote_base_url);
+	const modelId = nonEmptyOrNull(r.model_remote_model_id);
 	if ('model_remote_base_url' in r && r.model_remote_base_url === null && !modelId) {
 		return {
 			model_remote_base_url: null,
@@ -73,7 +73,7 @@ export function parseChainModel(raw: unknown): ChainModel | null {
 			model_remote_model_id: null,
 			model_remote_context_size: null,
 			model_remote_vision_supported: null,
-			model_advanced: str(r.model_advanced)
+			model_advanced: nonEmptyOrNull(r.model_advanced)
 		};
 	}
 	if (!baseUrl || !modelId) return null;
@@ -81,13 +81,13 @@ export function parseChainModel(raw: unknown): ChainModel | null {
 	const vision = r.model_remote_vision_supported;
 	return {
 		model_remote_base_url: baseUrl,
-		model_remote_api_key: str(r.model_remote_api_key),
-		model_remote_api_key_id: str(r.model_remote_api_key_id),
+		model_remote_api_key: nonEmptyOrNull(r.model_remote_api_key),
+		model_remote_api_key_id: nonEmptyOrNull(r.model_remote_api_key_id),
 		model_remote_model_id: modelId,
 		model_remote_context_size:
 			typeof ctx === 'number' && Number.isFinite(ctx) && ctx > 0 ? ctx : null,
 		model_remote_vision_supported: typeof vision === 'boolean' ? vision : null,
-		model_advanced: str(r.model_advanced)
+		model_advanced: nonEmptyOrNull(r.model_advanced)
 	};
 }
 
@@ -103,14 +103,14 @@ export function parseModelColumns(raw: unknown): ModelColumns | null {
 	const ctx = r.model_remote_context_size;
 	const vision = r.model_remote_vision_supported;
 	return {
-		model_remote_base_url: str(r.model_remote_base_url),
-		model_remote_api_key: str(r.model_remote_api_key),
-		model_remote_api_key_id: str(r.model_remote_api_key_id),
-		model_remote_model_id: str(r.model_remote_model_id),
+		model_remote_base_url: nonEmptyOrNull(r.model_remote_base_url),
+		model_remote_api_key: nonEmptyOrNull(r.model_remote_api_key),
+		model_remote_api_key_id: nonEmptyOrNull(r.model_remote_api_key_id),
+		model_remote_model_id: nonEmptyOrNull(r.model_remote_model_id),
 		model_remote_context_size:
 			typeof ctx === 'number' && Number.isFinite(ctx) && ctx > 0 ? ctx : null,
 		model_remote_vision_supported: typeof vision === 'boolean' ? vision : null,
-		model_advanced: str(r.model_advanced)
+		model_advanced: nonEmptyOrNull(r.model_advanced)
 	};
 }
 

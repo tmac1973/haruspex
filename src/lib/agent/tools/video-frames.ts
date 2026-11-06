@@ -9,11 +9,12 @@ import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
-import { num, parseTime, str, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { parseTime, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { formatTime } from '#lib/video/report.ts';
 import type { SceneCuts } from '#lib/ipc/gen/SceneCuts.ts';
 import type { ContactSheet } from '#lib/ipc/gen/ContactSheet.ts';
 import type { FrameRequest } from '#lib/ipc/gen/FrameRequest.ts';
+import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
 
 const MAX_FRAMES = 16;
 
@@ -25,9 +26,9 @@ function times(v: unknown): number[] | null {
 
 /** The tool's arguments as one of the three ways to pick frames. */
 export function parseFrames(args: Record<string, unknown>): FrameRequest | string {
-	const path = str(args.path);
+	const path = trimmedOrNull(args.path);
 	const at = times(args.times);
-	const every = num(args.every_secs);
+	const every = parsedFiniteOrNull(args.every_secs);
 	const timeline = times(args.timeline_times);
 	if (path && at && at.length > 0 && every === null) {
 		if (at.length > MAX_FRAMES) return `At most ${MAX_FRAMES} frames fit on a sheet.`;
@@ -43,21 +44,21 @@ export function parseFrames(args: Record<string, unknown>): FrameRequest | strin
 			times: null,
 			everySecs: null,
 			timelineTimes: timeline,
-			project: str(args.project)
+			project: trimmedOrNull(args.project)
 		};
 	}
 	return 'Give path with times or every_secs, or timeline_times for the cut (and only one of those).';
 }
 
 async function scenes(args: Record<string, unknown>, ctx: ToolContext) {
-	const path = str(args.path);
+	const path = trimmedOrNull(args.path);
 	if (!path) return toolResult(toolError('video_scenes needs "path", a clip.'));
 	ctx.onProgress?.(`Finding shot changes in ${path}`);
 	try {
 		const found = await invoke<SceneCuts>('video_scenes', {
 			workingDir: ctx.workingDir,
 			path,
-			threshold: num(args.threshold) ?? 0.3,
+			threshold: parsedFiniteOrNull(args.threshold) ?? 0.3,
 			settings: videoSettings()
 		});
 		if (found.cuts.length === 0) return toolResult(`No shot changes found in ${path}.`);
@@ -131,7 +132,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => `Finding shots in ${str(args.path) ?? 'a clip'}`,
+	displayLabel: (args) => `Finding shots in ${trimmedOrNull(args.path) ?? 'a clip'}`,
 	execute: scenes
 });
 
@@ -175,6 +176,6 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => `Looking at ${str(args.path) ?? 'the cut'}`,
+	displayLabel: (args) => `Looking at ${trimmedOrNull(args.path) ?? 'the cut'}`,
 	execute: frames
 });

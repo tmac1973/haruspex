@@ -10,6 +10,7 @@ import type { EndClip } from '#lib/ipc/gen/EndClip.ts';
 import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
 import type { VideoSettings } from '#lib/ipc/gen/VideoSettings.ts';
 import type { Chapter } from '#lib/ipc/gen/Chapter.ts';
+import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
 
 /** What the Rust side needs from Settings → Video editing. */
 export function videoSettings(): VideoSettings {
@@ -22,15 +23,6 @@ export function videoSettings(): VideoSettings {
 	};
 }
 
-export function num(v: unknown): number | null {
-	const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
-	return Number.isFinite(n) ? n : null;
-}
-
-export function str(v: unknown): string | null {
-	return typeof v === 'string' && v.trim() ? v.trim() : null;
-}
-
 /** The `episode` argument, or '' when there is none. */
 export function episodeArg(args: Record<string, unknown>): string {
 	return typeof args.episode === 'string' ? args.episode : '';
@@ -40,7 +32,7 @@ export function episodeArg(args: Record<string, unknown>): string {
 export function endClip(v: unknown): EndClip | null {
 	if (v === true) return true;
 	if (v === false) return false;
-	const s = str(v);
+	const s = trimmedOrNull(v);
 	if (!s) return null;
 	if (['settings', 'true', 'yes'].includes(s.toLowerCase())) return true;
 	if (['none', 'false', 'no'].includes(s.toLowerCase())) return false;
@@ -54,59 +46,59 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 	for (const [n, it] of raw.entries()) {
 		if (!it || typeof it !== 'object') return `items[${n}] must be an object.`;
 		const o = it as Record<string, unknown>;
-		const index = num(o.index);
-		const path = str(o.path);
+		const index = parsedFiniteOrNull(o.index);
+		const path = trimmedOrNull(o.path);
 		if ((index === null) === (path === null)) {
 			return `items[${n}] needs exactly one of index (a clip already in the cut, from 1) or path (a new clip).`;
 		}
 		items.push({
 			index: index === null ? null : Math.round(index),
 			path,
-			inSecs: num(o.in_secs),
-			outSecs: num(o.out_secs),
-			crossfadeSecs: num(o.crossfade_secs)
+			inSecs: parsedFiniteOrNull(o.in_secs),
+			outSecs: parsedFiniteOrNull(o.out_secs),
+			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs)
 		});
 	}
-	const preset = str(args.preset);
+	const preset = trimmedOrNull(args.preset);
 	if (preset && !VIDEO_PRESETS.some((p) => p.id === preset)) {
 		return `preset must be one of ${VIDEO_PRESETS.map((p) => p.id).join(', ')}.`;
 	}
 	return {
-		project: str(args.project),
+		project: trimmedOrNull(args.project),
 		preset,
 		intro: endClip(args.intro),
 		outro: endClip(args.outro),
 		items,
-		crossfadeSecs: num(args.crossfade_secs),
+		crossfadeSecs: parsedFiniteOrNull(args.crossfade_secs),
 		normalize: typeof args.normalize === 'boolean' ? args.normalize : null
 	};
 }
 
 /** `75`, `"1:15"`, `"1:15.5"` or `"0:01:15"` as seconds; null when it is none of those. */
 export function parseTime(v: unknown): number | null {
-	const n = num(v);
+	const n = parsedFiniteOrNull(v);
 	if (n !== null) return n;
-	const s = str(v);
+	const s = trimmedOrNull(v);
 	if (!s || !/^\d+(:\d{1,2}){1,2}(\.\d+)?$/.test(s)) return null;
 	return s.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
 }
 
 export function parseOp(args: Record<string, unknown>): ProjectOp | string {
-	const op = str(args.op);
+	const op = trimmedOrNull(args.op);
 	if (op === 'remove_silences') {
-		const index = num(args.index);
+		const index = parsedFiniteOrNull(args.index);
 		return {
 			op: 'removeSilences',
 			index: index === null ? null : Math.round(index),
-			minSecs: num(args.min_secs) ?? 1.5,
-			padSecs: num(args.pad_secs) ?? 0.25
+			minSecs: parsedFiniteOrNull(args.min_secs) ?? 1.5,
+			padSecs: parsedFiniteOrNull(args.pad_secs) ?? 0.25
 		};
 	}
-	const index = num(args.index);
+	const index = parsedFiniteOrNull(args.index);
 	if (index === null) return 'video_edit needs "index", the clip number from 1.';
 	if (op === 'trim') {
-		const inSecs = num(args.in_secs);
-		const outSecs = num(args.out_secs);
+		const inSecs = parsedFiniteOrNull(args.in_secs);
+		const outSecs = parsedFiniteOrNull(args.out_secs);
 		if (inSecs === null && outSecs === null) return 'A trim needs in_secs, out_secs or both.';
 		return { op: 'trim', index, inSecs, outSecs };
 	}
@@ -124,7 +116,7 @@ export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 		return { op: 'removeRanges', index, ranges };
 	}
 	if (op === 'move') {
-		const to = num(args.to);
+		const to = parsedFiniteOrNull(args.to);
 		if (to === null) return 'A move needs "to", the position from 1.';
 		return { op: 'move', from: index, to };
 	}
@@ -137,7 +129,7 @@ export function parseChapters(v: unknown): Chapter[] | string {
 	const out: Chapter[] = [];
 	for (const [n, c] of raw.entries()) {
 		const o = (c ?? {}) as Record<string, unknown>;
-		const title = str(o.title);
+		const title = trimmedOrNull(o.title);
 		const at = parseTime(o.at);
 		if (!title || at === null) return `chapters[${n}] needs "title" and "at" (a time like 1:23).`;
 		out.push({ title, atSecs: at });

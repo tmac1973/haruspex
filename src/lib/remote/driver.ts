@@ -30,6 +30,7 @@ import { noteExternalConversation } from '#lib/stores/chat.svelte.ts';
 import { conversationIdFor, prepareHistory, titleFor } from '#lib/remote/conversation.ts';
 import { noteAdmitted, noteAnswer, noteFinished, notePrompt } from '#lib/remote/activity.svelte.ts';
 import { logDebug } from '#lib/debugLog.ts';
+import { urlHost } from '#lib/utils/http.ts';
 
 export interface RemotePromptEvent {
 	sessionId: string;
@@ -138,7 +139,7 @@ export function describeToolCall(call: ResolvedToolCall): string {
 	const args = call.arguments ?? {};
 	const query = typeof args.query === 'string' ? args.query : null;
 	const url = typeof args.url === 'string' ? args.url : null;
-	const host = url ? hostOf(url) : null;
+	const host = url ? urlHost(url) : null;
 
 	switch (call.name) {
 		case 'web_search':
@@ -151,14 +152,6 @@ export function describeToolCall(call: ResolvedToolCall): string {
 			return 'Asking you a question';
 		default:
 			return 'Working';
-	}
-}
-
-function hostOf(url: string): string | null {
-	try {
-		return new URL(url).host || null;
-	} catch {
-		return null;
 	}
 }
 

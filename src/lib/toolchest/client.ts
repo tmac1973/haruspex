@@ -8,6 +8,7 @@
 import { BACKEND_UPLOAD_TIMEOUT_MS, invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { toolchestCall } from '#lib/toolchest/models.ts';
+import { errorBody, urlHost } from '#lib/utils/http.ts';
 
 export interface ToolchestConfig {
 	baseUrl: string;
@@ -34,19 +35,6 @@ export class ToolchestError extends Error {
 		this.kind = kind;
 		this.status = opts.status;
 		this.code = opts.code;
-	}
-}
-
-/** Toolchest's `{"error":{"message","code"}}`, when a refusal has one. */
-export function errorBody(body: string): { message: string | null; code: string | null } {
-	try {
-		const e = (JSON.parse(body) as { error?: { message?: unknown; code?: unknown } })?.error;
-		return {
-			message: typeof e?.message === 'string' && e.message ? e.message : null,
-			code: typeof e?.code === 'string' && e.code ? e.code : null
-		};
-	} catch {
-		return { message: null, code: null };
 	}
 }
 
@@ -148,11 +136,7 @@ export async function toolchestBytes(
 	return buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf);
 }
 
-/** The host a base URL names, for a sentence. */
+/** The host a base URL names, for a sentence; the URL itself when it names none. */
 export function hostOf(baseUrl: string): string {
-	try {
-		return new URL(baseUrl).host || baseUrl;
-	} catch {
-		return baseUrl;
-	}
+	return urlHost(baseUrl) ?? baseUrl;
 }

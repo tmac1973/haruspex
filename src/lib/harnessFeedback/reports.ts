@@ -98,7 +98,11 @@ const REPO = 'tmac1973/haruspex';
 const ISSUE_BODY_CHARS = 5_000;
 const LINE_CHARS = 220;
 
-function clip(text: string, max: number): string {
+/**
+ * `text` on one line within `max` characters, for the issue body's summary;
+ * unlike `report.ts`'s `clipCounted`, which keeps the text's shape.
+ */
+function clipToLine(text: string, max: number): string {
 	const flat = text.replace(/\s+/g, ' ').trim();
 	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
@@ -116,7 +120,7 @@ export function issueSummary(reports: readonly StoredReport[], zipName: string):
 	].join('\n\n');
 	let body = head;
 	for (const [i, r] of reports.entries()) {
-		const line = `\n- **${toolLabel(r.tool)}** (${kindLabel(r.kind)}): ${clip(r.what_happened, LINE_CHARS)}`;
+		const line = `\n- **${toolLabel(r.tool)}** (${kindLabel(r.kind)}): ${clipToLine(r.what_happened, LINE_CHARS)}`;
 		if (body.length + line.length > ISSUE_BODY_CHARS) {
 			body += `\n- …and ${reports.length - i} more in the zip.`;
 			break;

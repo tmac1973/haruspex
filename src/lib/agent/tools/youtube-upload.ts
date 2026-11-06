@@ -11,7 +11,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { str, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { videoSettings, episodeArg } from '#lib/video/args.ts';
 import { askYoutubeUpload } from '#lib/stores/youtubeUploadApproval.svelte.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
@@ -21,6 +21,7 @@ import type { VideoMeta } from '#lib/ipc/gen/VideoMeta.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { YoutubeAccount } from '#lib/ipc/gen/YoutubeAccount.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
+import { trimmedOrNull } from '#lib/utils/coerce.ts';
 
 /** YouTube's limits on what the model proposes. */
 export function checkProposal(title: string, description: string, tags: string[]): string[] {
@@ -63,11 +64,11 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 			toolError('Uploading needs the user here to confirm it; this run is unattended.')
 		);
 	}
-	const title = str(args.title) ?? '';
+	const title = trimmedOrNull(args.title) ?? '';
 	const tags = Array.isArray(args.tags)
 		? args.tags.filter((t): t is string => typeof t === 'string')
 		: [];
-	const categoryId = str(args.category_id) ?? '22';
+	const categoryId = trimmedOrNull(args.category_id) ?? '22';
 	try {
 		const account = await invoke<YoutubeAccount | null>('youtube_account');
 		if (!account)
@@ -75,9 +76,9 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 		const plan = await invoke<UploadPlan>('youtube_upload_plan', {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
-			project: str(args.project),
-			render: str(args.render),
-			thumbnail: str(args.thumbnail),
+			project: trimmedOrNull(args.project),
+			render: trimmedOrNull(args.render),
+			thumbnail: trimmedOrNull(args.thumbnail),
 			settings: videoSettings()
 		});
 		const description = withChapters(

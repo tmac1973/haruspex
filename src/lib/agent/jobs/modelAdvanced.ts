@@ -23,6 +23,7 @@ import type {
 	RemoteSamplingCaps,
 	SamplingParams
 } from '#lib/stores/settings.ts';
+import { finiteOrUndefined } from '#lib/utils/coerce.ts';
 
 /**
  * Where a job's sampling parameters come from.
@@ -167,17 +168,13 @@ export function parseSamplingParams(v: unknown): SamplingParams | null {
 	if (!v || typeof v !== 'object') return null;
 	const raw = v as Record<string, unknown>;
 	const out: SamplingParams = {
-		temperature: num(raw.temperature),
-		top_p: num(raw.top_p),
-		top_k: num(raw.top_k),
-		min_p: num(raw.min_p),
-		presence_penalty: num(raw.presence_penalty)
+		temperature: finiteOrUndefined(raw.temperature),
+		top_p: finiteOrUndefined(raw.top_p),
+		top_k: finiteOrUndefined(raw.top_k),
+		min_p: finiteOrUndefined(raw.min_p),
+		presence_penalty: finiteOrUndefined(raw.presence_penalty)
 	};
 	return Object.values(out).some((n) => n !== undefined) ? out : null;
-}
-
-function num(v: unknown): number | undefined {
-	return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
 function parseDiscovered(v: unknown): DiscoveredCaps | null {

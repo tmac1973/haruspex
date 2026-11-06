@@ -17,6 +17,7 @@
 	import { save } from '@tauri-apps/plugin-dialog';
 	import { isWebClient } from '#lib/buildFlags.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { persistItem } from '#lib/persist.ts';
 	import { audioHashFromUrl } from '#lib/audio/url.ts';
 	import { audioExtension, playableSong, songFileName } from '#lib/audio/playable.ts';
 
@@ -102,7 +103,7 @@
 		volume = Number((e.currentTarget as HTMLInputElement).value);
 		muted = volume === 0;
 		try {
-			localStorage.setItem(VOLUME_KEY, String(volume));
+			persistItem(VOLUME_KEY, String(volume));
 		} catch {
 			// Not kept; this player still has it.
 		}

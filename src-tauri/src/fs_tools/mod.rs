@@ -22,6 +22,7 @@ pub mod xlsx;
 #[cfg(test)]
 mod test_support;
 
+pub(crate) use path::ensure_parent_dir;
 pub use path::resolve_in_workdir;
 pub(crate) use path::workdir_path;
 pub use pdf_read::init_pdfium;

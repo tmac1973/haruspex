@@ -137,12 +137,3 @@ export function readStatus(v: unknown): AceStatus {
 	const s = obj(v).status;
 	return s === 'done' || s === 'failed' || s === 'cancelled' ? s : 'running';
 }
-
-/** ace-server's `{"error": "..."}`, when a refusal has one. */
-export function errorOf(body: string): string | null {
-	try {
-		return text(obj(JSON.parse(body)).error) ?? null;
-	} catch {
-		return null;
-	}
-}

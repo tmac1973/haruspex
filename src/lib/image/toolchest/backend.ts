@@ -19,6 +19,7 @@
 
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import { legacyEntryFor } from '#lib/image/entries.ts';
+import { toImageResult, type MadeImages } from '#lib/image/result.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
 import type {
 	GenerateOptions,
@@ -37,9 +38,8 @@ import {
 } from '#lib/image/types.ts';
 import { FAMILY_SAMPLER } from '#lib/image/local/adapter.ts';
 import { randomSeed } from '#lib/utils/random.ts';
-import { base64Of, transparentStart } from '#lib/image/sdcpp.ts';
-import { fromBase64 } from '#lib/image/local/adapter.ts';
-import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
+import { transparentStart } from '#lib/image/sdcpp.ts';
+import { editUploads, imagesFrom, upscaleVia } from '#lib/image/openaiImages.ts';
 import { familyOfRecipe, type ToolchestInstance } from '#lib/toolchest/models.ts';
 import {
 	ToolchestError,
@@ -239,7 +239,7 @@ function toolchestFor(entry: ImageModelEntry): ImageBackend {
 			} catch (e) {
 				throw asImageError(e);
 			}
-			return toImageResult(images, {
+			return resultOf(images, {
 				width: handle.width,
 				height: handle.height,
 				seed: handle.seed,
@@ -362,26 +362,20 @@ async function upscaleWith(
 		);
 	}
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
-	let payload: unknown;
-	try {
-		payload = await toolchestJson(
-			cfg,
-			{
-				method: 'POST',
-				path: ROUTES.upscale,
-				body: { model: upscaler.id, image: await base64Of(input) },
-				timeoutMs: SYNC_TIMEOUT_MS
-			},
-			opts.signal
-		);
-	} catch (e) {
-		throw asImageError(e);
-	}
-	const b64 = (payload as { images?: Array<{ b64_json?: unknown }> })?.images?.[0]?.b64_json;
-	if (typeof b64 !== 'string') {
-		throw new ImageBackendError('rejected', 'llama-toolchest returned no upscaled picture.');
-	}
-	return fromBase64(b64);
+	return upscaleVia(
+		(body) =>
+			toolchestJson(
+				cfg,
+				{ method: 'POST', path: ROUTES.upscale, body, timeoutMs: SYNC_TIMEOUT_MS },
+				opts.signal
+			).catch((e) => {
+				throw asImageError(e);
+			}),
+		upscaler.id,
+		input,
+		'images',
+		'llama-toolchest'
+	);
 }
 
 /** A job's handle, which lets `resume` pick it up after the app restarts. */
@@ -420,7 +414,7 @@ async function finish(
 	} catch (e) {
 		throw asImageError(e);
 	}
-	return toImageResult(images, {
+	return resultOf(images, {
 		width: req.width,
 		height: req.height,
 		seed,
@@ -432,38 +426,11 @@ async function finish(
 }
 
 /** What a generation or a resumed job made, as a result; refused when it made nothing. */
-function toImageResult(
-	images: Uint8Array[],
-	made: {
-		width: number;
-		height: number;
-		seed: number;
-		model: string;
-		sampler: SamplerSettings;
-		started: number;
-		seamFailed?: string;
-	}
-): ImageResult {
+function resultOf(images: Uint8Array[], made: Omit<MadeImages, 'backend'>): ImageResult {
 	if (images.length === 0) {
 		throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
 	}
-	return {
-		images: images.map((bytes) => ({
-			bytes,
-			mimeType: 'image/png',
-			width: made.width,
-			height: made.height
-		})),
-		meta: {
-			seed: made.seed,
-			model: made.model,
-			backend: 'llama-toolchest',
-			sampler: made.sampler,
-			loras: [],
-			durationMs: Date.now() - made.started,
-			...(made.seamFailed ? { seamFailed: made.seamFailed } : {})
-		}
-	};
+	return toImageResult(images, { ...made, backend: 'llama-toolchest' });
 }
 
 registerImageBackendKind('llama-toolchest', toolchestFor);

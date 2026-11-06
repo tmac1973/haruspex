@@ -28,6 +28,7 @@ import { savedLineOf } from '#lib/agent/tools/_musicJob.ts';
 import { audioSrc } from '#lib/audio/url.ts';
 import { TTS_VOICES } from '#lib/audio/voices.ts';
 import type { StoredSpeech } from '#lib/ipc/gen/StoredSpeech.ts';
+import { trimmed } from '#lib/utils/coerce.ts';
 
 /** About 15 minutes of speech, under the audio cache's 50 MB a file. */
 export const MAX_CHARS = 12_000;
@@ -46,8 +47,6 @@ export interface SpeechArgs {
 	notes: string[];
 }
 
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-
 /** A title from the text when none was given: its first six words. */
 function titleOf(text: string): string {
 	const words = text.split(/\s+/).filter(Boolean);
@@ -63,13 +62,13 @@ export function parseSpeechArgs(
 	args: Record<string, unknown>,
 	defaultVoice: string
 ): SpeechArgs | string {
-	const text = str(args.text);
+	const text = trimmed(args.text);
 	if (!text) return 'generate_speech needs the "text" to speak.';
 	if (text.length > MAX_CHARS) {
 		return `The text is ${text.length} characters; the most is ${MAX_CHARS}. Split it into parts.`;
 	}
 	const notes: string[] = [];
-	let voice = str(args.voice) || defaultVoice;
+	let voice = trimmed(args.voice) || defaultVoice;
 	if (!VOICE_IDS.includes(voice)) {
 		notes.push(`There is no voice "${voice}", so it used ${DEFAULT_TTS_VOICE}.`);
 		voice = DEFAULT_TTS_VOICE;
@@ -77,13 +76,13 @@ export function parseSpeechArgs(
 	const asked = typeof args.speed === 'number' && Number.isFinite(args.speed) ? args.speed : 1;
 	const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, asked));
 	if (speed !== asked) notes.push(`Speed set to ${speed} (${MIN_SPEED}–${MAX_SPEED}).`);
-	const path = str(args.path);
+	const path = trimmed(args.path);
 	if (path && !/\.wav$/i.test(path)) return 'path must end in .wav.';
 	return {
 		text,
 		voice,
 		speed,
-		title: str(args.title) || titleOf(text),
+		title: trimmed(args.title) || titleOf(text),
 		path,
 		overwrite: args.overwrite === true,
 		notes

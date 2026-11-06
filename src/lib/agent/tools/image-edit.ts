@@ -45,8 +45,7 @@ import type { ImageRequest } from '#lib/image/types.ts';
 import type { PreparedEdit } from '#lib/ipc/gen/PreparedEdit.ts';
 import { imageToolSchema, MODEL_PARAM, namedModel } from '#lib/agent/tools/_imageModel.ts';
 import { maxEditPictures } from '#lib/image/entries.ts';
-
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+import { trimmed } from '#lib/utils/coerce.ts';
 
 /**
  * Why `count` pictures are more than any image model combines, or null. With
@@ -64,11 +63,11 @@ function tooManyPictures(count: number): string | null {
 /** The picture references asked for: `image`, then `also`. */
 function refsOf(args: Record<string, unknown>): string[] {
 	const also = Array.isArray(args.also)
-		? args.also.map(str)
-		: str(args.also)
-			? [str(args.also)]
+		? args.also.map(trimmed)
+		: trimmed(args.also)
+			? [trimmed(args.also)]
 			: [];
-	return [str(args.image), ...also].filter(Boolean);
+	return [trimmed(args.image), ...also].filter(Boolean);
 }
 
 /**
@@ -244,7 +243,7 @@ registerTool({
 		}),
 	displayLabel: (args) => `edit: ${String(args.prompt ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
-		const prompt = str(args.prompt);
+		const prompt = trimmed(args.prompt);
 		if (!prompt) return toolResult(toolError('edit_image needs a "prompt" saying what to change.'));
 		const refs = refsOf(args);
 		if (refs.length === 0) return toolResult(toolError('edit_image needs an "image".'));

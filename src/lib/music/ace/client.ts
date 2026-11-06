@@ -12,7 +12,7 @@ import {
 } from '#lib/utils/backendCall.ts';
 import { MusicBackendError } from '#lib/music/types.ts';
 import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
-import { errorOf } from '#lib/music/ace/adapter.ts';
+import { errorText } from '#lib/utils/http.ts';
 
 const ace: Backend<MusicBackendError> = {
 	prefix: 'ace',
@@ -22,7 +22,7 @@ const ace: Backend<MusicBackendError> = {
 	rejected: (status, body, path) =>
 		new MusicBackendError(
 			'rejected',
-			`ace-server refused ${path}: ${errorOf(body) ?? `status ${status}`}`,
+			`ace-server refused ${path}: ${errorText(body) ?? `status ${status}`}`,
 			{ status }
 		)
 };

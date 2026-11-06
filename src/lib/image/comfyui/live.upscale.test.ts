@@ -16,7 +16,8 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-import { comfyUiBackend, pngSize } from './backend';
+import { comfyUiBackend } from './backend';
+import { pngSize } from '#lib/utils/png.ts';
 import { installViaManager, managerApi, missingFiles } from './provision';
 
 declare const process: { env: Record<string, string | undefined> };

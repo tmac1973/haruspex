@@ -27,6 +27,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { invoke } from '@tauri-apps/api/core';
 	import { startDragResize } from '#lib/utils/dragResize.ts';
+	import { persistItem } from '#lib/persist.ts';
 	import {
 		KINDS,
 		ancestors,
@@ -73,7 +74,7 @@
 			onResize: (w) => (width = w),
 			onDone: (w) => {
 				try {
-					localStorage.setItem(WIDTH_KEY, String(w));
+					persistItem(WIDTH_KEY, String(w));
 				} catch {
 					// Kept for this window only.
 				}

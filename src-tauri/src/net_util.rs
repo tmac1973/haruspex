@@ -30,6 +30,18 @@ pub fn reach(ip: IpAddr) -> Reach {
     }
 }
 
+/// True for a URL host on this machine: `localhost` or a name under it, or a
+/// loopback address (an IPv6 one with or without its URL brackets).
+pub fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") || host.to_lowercase().ends_with(".localhost") {
+        return true;
+    }
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
+}
+
 /// Anything but the open internet.
 pub fn is_non_public(ip: IpAddr) -> bool {
     reach(ip) != Reach::Public
@@ -158,6 +170,31 @@ mod tests {
             "2002:808:808::1",
         ] {
             assert_eq!(r(ip), Reach::Public, "{ip}");
+        }
+    }
+
+    #[test]
+    fn loopback_hosts_are_localhost_names_and_loopback_addresses() {
+        for host in [
+            "localhost",
+            "LocalHost",
+            "api.localhost",
+            "127.0.0.1",
+            "127.8.0.1",
+            "[::1]",
+            "::1",
+        ] {
+            assert!(is_loopback_host(host), "{host}");
+        }
+        for host in [
+            "localhost.example.com",
+            "notlocalhost",
+            "10.0.0.1",
+            "0.0.0.0",
+            "[::]",
+            "",
+        ] {
+            assert!(!is_loopback_host(host), "{host}");
         }
     }
 }
