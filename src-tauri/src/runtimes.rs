@@ -127,8 +127,10 @@ fn binary_in_source_tree(binaries_dir: &Path, stem: &str) -> Option<PathBuf> {
     let mut matches: Vec<PathBuf> = std::fs::read_dir(binaries_dir)
         .ok()?
         .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .map(|e| e.path())
+        // `is_file` follows links: a dev worktree's binaries are often
+        // symlinks to the main checkout's (`cp -as`).
+        .filter(|p| p.is_file())
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())

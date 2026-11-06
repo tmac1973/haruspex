@@ -225,7 +225,7 @@ sudo apt update && sudo apt install -y build-essential cmake pkg-config curl \
   libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libxcb1-dev \
   libvulkan-dev glslc spirv-headers libsonic-dev libpcaudio-dev libssl-dev libfuse2
 
-# Node.js 22 (distro packages are usually too old)
+# Node.js 22.23.4 or newer (distro packages are usually too old)
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
 
 # Rust (stable, via rustup)
