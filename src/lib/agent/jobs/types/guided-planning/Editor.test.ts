@@ -1,9 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), imageKind: 'none' }));
+const mocks = vi.hoisted(() => ({ imageKind: 'none' }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [],
 	getJob: vi.fn()
@@ -141,7 +144,7 @@ describe('guided-planning Editor', () => {
 		});
 
 		it('lists planning skills first, then the rest', async () => {
-			mocks.invoke.mockImplementation(
+			vi.mocked(invoke).mockImplementation(
 				invokeRouter({
 					skills_list: () => [summary('deploy', false), summary('plan-web-app', true)]
 				})
@@ -157,7 +160,7 @@ describe('guided-planning Editor', () => {
 		});
 
 		it('says when the chosen skill is gone', async () => {
-			mocks.invoke.mockImplementation(
+			vi.mocked(invoke).mockImplementation(
 				invokeRouter({ skills_list: () => [summary('plan-web-app', true)] })
 			);
 			mount({ planning_skill: 'plan-old' });

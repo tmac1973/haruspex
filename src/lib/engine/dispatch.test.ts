@@ -3,12 +3,12 @@
  * session list merges open and saved sessions, and how much of a file
  * `session.readFile` sends. The engine end to end is in `engine.test.ts`.
  */
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 import type { EngineOp } from './types';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	open: [] as Array<Record<string, unknown>>,
 	saved: [] as Array<Record<string, unknown>>,
 	openSession: vi.fn(),
@@ -25,7 +25,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	return { ...actual, getSettings: () => ({ ...actual.getSettings(), leanMode: mocks.lean }) };
 });
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/code.svelte.ts', () => ({
 	getOpenSessions: () => mocks.open,
 	openSession: mocks.openSession,
@@ -116,7 +118,7 @@ const op = (o: EngineOp) => o;
 beforeEach(() => {
 	mocks.open = [];
 	mocks.saved = [];
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.openSession.mockReset();
 	mocks.newSession.mockReset();
 	mocks.dispatchChat.mockReset();
@@ -390,7 +392,7 @@ describe('dispatch: turns', () => {
 describe('dispatch: session.readFile', () => {
 	function withFile(content: string, over: Partial<FakeSession> = {}) {
 		mocks.open = [session('a', over) as unknown as Record<string, unknown>];
-		mocks.invoke.mockImplementation(invokeRouter({ fs_read_text_full: content }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ fs_read_text_full: content }));
 	}
 
 	it('reads a file by relative or absolute path inside the folder', async () => {
@@ -399,7 +401,7 @@ describe('dispatch: session.readFile', () => {
 			await dispatch(op({ type: 'session.readFile', id: 'a', path: 'src/x.ts' }), 'w')
 		).toEqual({ path: 'src/x.ts', content: 'hello', truncated: false });
 		await dispatch(op({ type: 'session.readFile', id: 'a', path: '/proj/a/src/y.ts' }), 'w');
-		expect(invokeCalls(mocks.invoke, 'fs_read_text_full')).toEqual([
+		expect(invokeCalls(vi.mocked(invoke), 'fs_read_text_full')).toEqual([
 			{ workdir: '/proj/a', relPath: 'src/x.ts' },
 			{ workdir: '/proj/a', relPath: 'src/y.ts' }
 		]);
@@ -408,7 +410,7 @@ describe('dispatch: session.readFile', () => {
 	it("reads a WSL session's file through its distro's share", async () => {
 		withFile('x', { root: '/home/me/p', wslDistro: 'Ubuntu' });
 		await dispatch(op({ type: 'session.readFile', id: 'a', path: 'a.txt' }), 'w');
-		expect(invokeCalls(mocks.invoke, 'fs_read_text_full')).toEqual([
+		expect(invokeCalls(vi.mocked(invoke), 'fs_read_text_full')).toEqual([
 			{ workdir: '\\\\wsl.localhost\\Ubuntu\\home\\me\\p', relPath: 'a.txt' }
 		]);
 	});
@@ -420,7 +422,7 @@ describe('dispatch: session.readFile', () => {
 				"outside the session's folder"
 			);
 		}
-		expect(invokeCalls(mocks.invoke, 'fs_read_text_full')).toEqual([]);
+		expect(invokeCalls(vi.mocked(invoke), 'fs_read_text_full')).toEqual([]);
 	});
 
 	it('sends a file of exactly MAX_FILE_CHARS whole', async () => {
@@ -446,7 +448,7 @@ describe('dispatch: session.readFile', () => {
 
 	it('passes a read error through', async () => {
 		mocks.open = [session('a') as unknown as Record<string, unknown>];
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				fs_read_text_full: () => {
 					throw new Error('not a text file');

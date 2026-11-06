@@ -9,18 +9,14 @@ const mocks = vi.hoisted(() => ({
 	ask: vi.fn(async () => true)
 }));
 
-const { invokeRouter } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter({
-			skills_list: () => mocks.list,
-			skills_project_root: () => mocks.root,
-			skills_project_info: () => mocks.info,
-			skills_agents_md: () => mocks.agentsMd
-		})
-	)
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		skills_list: () => mocks.list,
+		skills_project_root: () => mocks.root,
+		skills_project_info: () => mocks.info,
+		skills_agents_md: () => mocks.agentsMd
+	})
+);
 vi.mock('#lib/stores/repoTrust.svelte.ts', () => ({ askRepoTrust: mocks.ask }));
 
 import { invoke } from '@tauri-apps/api/core';

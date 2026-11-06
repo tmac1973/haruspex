@@ -1,14 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { clearDebugLogs, logDebug } from '#lib/debugLog.ts';
 import { debugLog, jobReport, serverLog, worthReporting } from '#lib/reportLogs.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	clearDebugLogs();
 });
 
@@ -41,14 +43,14 @@ describe('the logs a report attaches', () => {
 	});
 
 	it("puts llama-server's crash log after its log, when there is one", async () => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				get_server_logs: ['loading model'],
 				get_llama_crash_log: 'SIGSEGV\nat ggml\n'
 			})
 		);
 		expect(await serverLog()).toEqual(['loading model', '--- crash log ---', 'SIGSEGV', 'at ggml']);
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ get_server_logs: ['ok'], get_llama_crash_log: '' })
 		);
 		expect(await serverLog()).toEqual(['ok']);

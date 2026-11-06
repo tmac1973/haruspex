@@ -73,9 +73,12 @@ const backend = vi.hoisted(() => {
 	};
 });
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string, args?: Record<string, unknown>) => backend.handle(cmd, args))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{},
+		(cmd: string, args?: Record<string, unknown>) => backend.handle(cmd, args)
+	)
+);
 
 import OwnerApiSection from './OwnerApiSection.svelte';
 

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
 const listing = vi.hoisted(() => ({ files: [] as string[], truncated: false }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => listing) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async () => listing)
+);
 
 import FileTree from './FileTree.svelte';
 

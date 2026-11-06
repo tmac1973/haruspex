@@ -1,9 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/memory.svelte.ts', () => ({ refreshMemoryCount: vi.fn() }));
 
 import MemoryRecallStep from './MemoryRecallStep.svelte';
@@ -27,7 +28,7 @@ const TABS = {
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	mocks.invoke.mockResolvedValue(undefined);
+	vi.mocked(invoke).mockResolvedValue(undefined);
 });
 
 describe('MemoryRecallStep', () => {
@@ -67,12 +68,12 @@ describe('MemoryRecallStep', () => {
 
 		await fireEvent.click(screen.getByText('Forget this'));
 
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' });
+		expect(invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' });
 		expect(screen.getByText(/future chats only/)).toBeTruthy();
 	});
 
 	it('leaves the row listed when the delete fails', async () => {
-		mocks.invoke.mockRejectedValueOnce(new Error('db locked'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('db locked'));
 		render(MemoryRecallStep, { step: step([TABS]) });
 		await fireEvent.click(screen.getByRole('button', { name: /Recalled 1/ }));
 

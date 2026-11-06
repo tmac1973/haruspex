@@ -1,8 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageBackendKind: 'none' }),
@@ -20,17 +21,19 @@ const context = () =>
 	makeToolContext({ codeMode: true, interactive: true, workingDir: '/home/u/game' });
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
-const writes = () => invokeCalls(state.invoke, 'fs_write_bytes').filter((a) => !a?.dryRun);
+const writes = () => invokeCalls(vi.mocked(invoke), 'fs_write_bytes').filter((a) => !a?.dryRun);
 
 beforeEach(() => {
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			shell_pending_command: () => null,
-			texture_validate: () => undefined,
-			texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
-			image_contact_sheet: [7, 7]
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				shell_pending_command: () => null,
+				texture_validate: () => undefined,
+				texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
+				image_contact_sheet: [7, 7]
+			})
+		);
 });
 
 describe('draw_texture', () => {
@@ -41,7 +44,7 @@ describe('draw_texture', () => {
 			{ prompt: 'bark', path: 'model/tree/textures/bark.png', recipe: RECIPE },
 			ctx
 		);
-		expect(invokeCalls(state.invoke, 'texture_validate')[0]).toEqual({ recipe: RECIPE });
+		expect(invokeCalls(vi.mocked(invoke), 'texture_validate')[0]).toEqual({ recipe: RECIPE });
 		expect(writes()).toEqual([
 			expect.objectContaining({
 				workdir: '/home/u/game',
@@ -68,7 +71,7 @@ describe('draw_texture', () => {
 			context()
 		);
 		expect(out.result).toMatch(/writes a PNG/);
-		expect(state.invoke).not.toHaveBeenCalledWith('texture_render', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('texture_render', expect.anything());
 		expect(writes()).toHaveLength(0);
 	});
 

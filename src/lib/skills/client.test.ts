@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue([]) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, [])
+);
 vi.mock('#lib/skills/needs.ts', async (original) => ({
 	...(await original<typeof import('#lib/skills/needs.ts')>()),
 	needsNotes: async (needs: string[]) => (needs.includes('image') ? ['Can: draw pictures.'] : [])

@@ -9,6 +9,7 @@
  * the working directory, and the coding job it hands on.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 import { renderAssetSpec } from '#lib/assets/spec/write.ts';
@@ -24,8 +25,9 @@ import type { EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import { ANCHOR, GENERATE, HANDOFF, REPORT, SPEC, reportPathFor } from './pipeline';
 import { runAssetGenerationPipeline } from './pipeline';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 /** The image backend the run reaches through `#lib/image/index.ts`. */
 const image = vi.hoisted(() => ({
@@ -242,7 +244,7 @@ beforeEach(() => {
 	image.kind = 'comfyui';
 	image.caps = { transparency: false, seamlessTiling: false, loras: false, maxLoras: 0 };
 	image.generate = async () => imageResult();
-	tauri.invoke.mockImplementation(routes());
+	vi.mocked(invoke).mockImplementation(routes());
 });
 
 describe('reportPathFor', () => {
@@ -465,7 +467,7 @@ describe('entries that do not come out', () => {
 		expect(h.steps[REPORT].output).toMatch(
 			/^1 asset\(s\) could not be produced — see assets\/REPORT-assets\.md\./
 		);
-		const [created] = invokeCalls(tauri.invoke, 'db_create_job');
+		const [created] = invokeCalls(vi.mocked(invoke), 'db_create_job');
 		const input = created!.input as Record<string, unknown>;
 		expect(input).toMatchObject({
 			name: 'Dungeon art — coding',
@@ -523,7 +525,7 @@ describe('the handoff', () => {
 		expect(h.steps[HANDOFF].output).toBe(
 			'Nothing chained — this run was started by hand, with the coding handoff off.'
 		);
-		expect(invokeCalls(tauri.invoke, 'db_create_job')).toEqual([]);
+		expect(invokeCalls(vi.mocked(invoke), 'db_create_job')).toEqual([]);
 	});
 
 	it('still succeeds when the coding run cannot be started', async () => {
@@ -538,7 +540,7 @@ describe('the handoff', () => {
 
 	it('still succeeds when the coding job cannot be created', async () => {
 		seedProject();
-		tauri.invoke.mockImplementation(async (cmd: string, args?: unknown) => {
+		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
 			if (cmd === 'db_create_job') throw 'db locked';
 			return routes()(cmd, args as Record<string, unknown>);
 		});

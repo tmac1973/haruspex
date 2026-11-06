@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { imageDimensions, loadSlideImages, MAX_SLIDE_IMAGE_BYTES, slideImageMime } from './images';
 import { gifHeader, jpegHeader, pngHeader } from './testImages';
@@ -49,17 +51,17 @@ describe('imageDimensions', () => {
 });
 
 describe('loadSlideImages', () => {
-	beforeEach(() => mocks.invoke.mockReset());
+	beforeEach(() => vi.mocked(invoke).mockReset());
 
 	it('reads each picture once, however many slides use it', async () => {
-		mocks.invoke.mockResolvedValue(Array.from(pngHeader(4, 3)));
+		vi.mocked(invoke).mockResolvedValue(Array.from(pngHeader(4, 3)));
 		const images = await loadSlideImages('/w', [
 			{ title: 'A', image: 'a.png' },
 			{ title: 'B' },
 			{ title: 'C', image: 'a.png' }
 		]);
-		expect(mocks.invoke).toHaveBeenCalledTimes(1);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_bytes', { workdir: '/w', relPath: 'a.png' });
+		expect(invoke).toHaveBeenCalledTimes(1);
+		expect(invoke).toHaveBeenCalledWith('fs_read_bytes', { workdir: '/w', relPath: 'a.png' });
 		expect(images.get('a.png')).toMatchObject({ mime: 'image/png', width: 4, height: 3 });
 	});
 
@@ -67,19 +69,19 @@ describe('loadSlideImages', () => {
 		await expect(loadSlideImages('/w', [{ title: 'A', image: 'a.webp' }])).rejects.toThrow(
 			"Unsupported image extension 'webp' for a.webp — only png, jpg, jpeg, gif are embeddable"
 		);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('refuses a picture past the size limit', async () => {
 		const big = new Array(MAX_SLIDE_IMAGE_BYTES + 1).fill(0);
-		mocks.invoke.mockResolvedValue(big);
+		vi.mocked(invoke).mockResolvedValue(big);
 		await expect(loadSlideImages('/w', [{ title: 'A', image: 'a.png' }])).rejects.toThrow(
 			/^Image a.png is too large/
 		);
 	});
 
 	it('refuses a file that is not the picture its name says', async () => {
-		mocks.invoke.mockResolvedValue(Array.from(new TextEncoder().encode('hello')));
+		vi.mocked(invoke).mockResolvedValue(Array.from(new TextEncoder().encode('hello')));
 		await expect(loadSlideImages('/w', [{ title: 'A', image: 'a.jpg' }])).rejects.toThrow(
 			'Image a.jpg is not a readable JPEG.'
 		);

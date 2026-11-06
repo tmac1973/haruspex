@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn().mockResolvedValue(null) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/window', () => ({
 	getCurrentWindow: () => ({ hide: async () => {}, show: async () => {}, setFocus: async () => {} })
 }));
@@ -133,7 +135,7 @@ describe('CodeComposer with the folder gone', () => {
 
 describe('CodeComposer camera button', () => {
 	it('attaches the captured window to the next message without sending it', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ capture_windows_list: [] },
 				{ kind: 'captured', capture: { dataUrl: 'data:image/jpeg;base64,AA' } }
@@ -148,7 +150,7 @@ describe('CodeComposer camera button', () => {
 				'data:image/jpeg;base64,AA'
 			)
 		);
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_window_click');
+		expect(invoke).toHaveBeenCalledWith('capture_window_click');
 		expect(session.send).not.toHaveBeenCalled();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -159,7 +161,7 @@ describe('CodeComposer camera button', () => {
 	});
 
 	it('lists the windows to pick from where the platform has no picker', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ capture_windows_list: [{ id: 7, title: 'Dark Times', app: 'darktimes' }] },
 				{ dataUrl: 'data:x' }
@@ -169,7 +171,7 @@ describe('CodeComposer camera button', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
 		await fireEvent.click(screen.getByRole('menuitem', { name: 'Window…' }));
 		await fireEvent.click(await screen.findByRole('option', { name: 'Dark Times — darktimes' }));
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_window', { id: 7 });
+		expect(invoke).toHaveBeenCalledWith('capture_window', { id: 7 });
 		await waitFor(() => expect(screen.getByAltText('attachment')).toBeTruthy());
 	});
 });

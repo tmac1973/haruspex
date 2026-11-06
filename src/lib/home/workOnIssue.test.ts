@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitHubItem } from '#lib/home/github.ts';
 
@@ -5,13 +6,14 @@ const m = vi.hoisted(() => ({
 	checkout: '/home/me/app' as string | null,
 	body: 'It crashes.' as string | Error,
 	session: { prefill: null as unknown },
-	invoke: vi.fn(),
 	openCodeSessionAt: vi.fn(),
 	newJobDraft: vi.fn(),
 	setActiveTab: vi.fn(),
 	showToast: vi.fn()
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: m.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/code/db.ts', () => ({
 	listCodeSessions: async () => [
 		{ root: '/old/app', updated_at: 1, wsl_distro: null },
@@ -54,14 +56,14 @@ beforeEach(() => {
 	m.checkout = '/home/me/app';
 	m.body = 'It crashes.';
 	m.session = { prefill: null };
-	m.invoke.mockImplementation(async () => m.checkout);
+	vi.mocked(invoke).mockImplementation(async () => m.checkout);
 	m.openCodeSessionAt.mockImplementation(async () => m.session);
 });
 
 describe('Work on this', () => {
 	it('looks for the checkout in host session folders, newest first, once each', async () => {
 		await openSessionOnIssue(issue);
-		expect(m.invoke).toHaveBeenCalledWith('code_checkout_find', {
+		expect(invoke).toHaveBeenCalledWith('code_checkout_find', {
 			repo: 'octocat/app',
 			roots: ['/home/me/app', '/old/app']
 		});

@@ -1,17 +1,17 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import SearchStep from './SearchStep.svelte';
 import type { SearchStep as Step } from '#lib/agent/loop.ts';
 import type { Artifact } from '#lib/sandbox/protocol.ts';
 
-const tauri = vi.hoisted(() => ({
-	invoke: vi.fn(async (cmd: string) => {
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (cmd: string) => {
 		if (cmd === 'artifact_register') return 'artifact-1';
 		if (cmd === 'audio_read_bytes') return new Uint8Array([0xff, 0xfb]).buffer;
 		return null;
 	})
-}));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+);
 
 function makeStep(artifacts: Artifact[], overrides: Partial<Step> = {}): Step {
 	return {
@@ -60,7 +60,7 @@ describe('SearchStep artifacts', () => {
 		expect(audio).toBeTruthy();
 		// The webview can't play the cache's scheme, so not that URL.
 		await waitFor(() => expect(audio.getAttribute('src')).toBe('blob:step-song'));
-		expect(tauri.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: 'a'.repeat(64) });
+		expect(invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: 'a'.repeat(64) });
 		expect(screen.getByText('Rain')).toBeTruthy();
 	});
 
@@ -109,7 +109,7 @@ describe('SearchStep artifacts', () => {
 		});
 		// Served by Rust with a CSP of its own, never inlined with srcdoc: a
 		// srcdoc document would inherit (and so loosen) the app's own policy.
-		expect(tauri.invoke).toHaveBeenCalledWith('artifact_register', { html: chartHtml });
+		expect(invoke).toHaveBeenCalledWith('artifact_register', { html: chartHtml });
 		expect(iframe.getAttribute('src')).toMatch(/haruspex-artifact.*\/artifact-1$/);
 		expect(iframe.hasAttribute('srcdoc')).toBe(false);
 		const sandbox = iframe.getAttribute('sandbox')!;

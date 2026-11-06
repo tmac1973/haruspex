@@ -1,7 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(), calls: [] as string[] }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const tauri = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/window', () => ({
 	getCurrentWindow: () => ({
 		hide: async () => void tauri.calls.push('hide'),
@@ -20,13 +23,13 @@ import {
 } from './captureWindow';
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	tauri.calls.length = 0;
 });
 
 describe('clicking a window where there is no list (Linux)', () => {
 	it('hands back the window clicked, with Haruspex hidden meanwhile', async () => {
-		tauri.invoke.mockImplementation(async (cmd: string) => {
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
 			tauri.calls.push(cmd);
 			return { kind: 'captured', capture: { dataUrl: 'data:w', width: 1, height: 1 } };
 		});
@@ -35,14 +38,14 @@ describe('clicking a window where there is no list (Linux)', () => {
 	});
 
 	it('reports Escape as cancelled, with nothing captured', async () => {
-		tauri.invoke.mockResolvedValue({ kind: 'cancelled' });
+		vi.mocked(invoke).mockResolvedValue({ kind: 'cancelled' });
 		expect(await clickWindow()).toEqual({ kind: 'cancelled' });
 		expect(tauri.calls).toEqual(['hide', 'show', 'focus']);
 	});
 
 	it('takes the screen for a region instead, without showing Haruspex in between', async () => {
 		const preview = { dataUrl: 'data:s', width: 2, height: 2 };
-		tauri.invoke.mockImplementation(async (cmd: string) => {
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
 			tauri.calls.push(cmd);
 			return cmd === 'capture_window_click' ? { kind: 'unavailable' } : preview;
 		});
@@ -59,15 +62,15 @@ describe('clicking a window where there is no list (Linux)', () => {
 
 describe('capturing a window for the Shell assistant', () => {
 	it('captures the window picked from the list by its id', async () => {
-		tauri.invoke.mockResolvedValue({ dataUrl: 'data:x', width: 1, height: 1 });
+		vi.mocked(invoke).mockResolvedValue({ dataUrl: 'data:x', width: 1, height: 1 });
 		await captureWindowImage(42);
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_window', { id: 42 });
+		expect(invoke).toHaveBeenCalledWith('capture_window', { id: 42 });
 	});
 
 	it('lists the windows through Rust', async () => {
-		tauri.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 		expect(await windowsToPick()).toEqual([]);
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_windows_list');
+		expect(invoke).toHaveBeenCalledWith('capture_windows_list');
 	});
 
 	it('sends what was typed, else a default ask', () => {

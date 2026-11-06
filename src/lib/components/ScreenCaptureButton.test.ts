@@ -1,14 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import ScreenCaptureButton from './ScreenCaptureButton.svelte';
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
-	tauri.invoke.mockResolvedValue({ dataUrl: 'data:image/jpeg;base64,AA' });
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue({ dataUrl: 'data:image/jpeg;base64,AA' });
 });
 
 describe('ScreenCaptureButton', () => {
@@ -18,7 +20,7 @@ describe('ScreenCaptureButton', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
 		await fireEvent.click(screen.getByRole('menuitem', { name: 'Screen' }));
 		await waitFor(() => expect(onCapture).toHaveBeenCalledWith('data:image/jpeg;base64,AA'));
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_screen', { target: 'screen' });
+		expect(invoke).toHaveBeenCalledWith('capture_screen', { target: 'screen' });
 	});
 
 	it('takes its title and label from the tab using it', () => {

@@ -1,14 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'llama-toolchest',
-	invoke: vi.fn(),
 	generate: vi.fn(),
 	tasks: vi.fn(),
 	seconds: 30 as number | null
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
 	return {
@@ -67,12 +69,14 @@ beforeEach(() => {
 			}
 		}
 	);
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
-			fs_read_bytes: [7, 7, 7]
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
+				fs_read_bytes: [7, 7, 7]
+			})
+		);
 	state.tasks.mockReset().mockResolvedValue(MUSIC_TASKS);
 	state.generate.mockReset().mockResolvedValue({
 		hash: OUT,
@@ -199,7 +203,7 @@ describe('edit_music', () => {
 	});
 
 	it('trims a song here, with no server, and keeps the cut as a WAV', async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
 				audio_store_bytes: { hash: OUT, mime: 'audio/wav', bytes: 10 }
@@ -212,7 +216,7 @@ describe('edit_music', () => {
 		);
 		expect(state.tasks).not.toHaveBeenCalled();
 		expect(state.generate).not.toHaveBeenCalled();
-		const store = state.invoke.mock.calls.find((c) => c[0] === 'audio_store_bytes')!;
+		const store = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'audio_store_bytes')!;
 		expect(store[2]).toEqual({
 			headers: { 'x-mime': 'audio/wav', 'x-conversation-id': 'chat-1' }
 		});
@@ -255,7 +259,7 @@ describe('edit_music', () => {
 			{ source: 'demo.wav', action: 'restyle', caption: 'jazz' },
 			ctx
 		);
-		expect(state.invoke).toHaveBeenCalledWith('fs_read_bytes', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_bytes', {
 			workdir: '/music',
 			relPath: 'demo.wav'
 		});

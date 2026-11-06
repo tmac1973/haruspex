@@ -1,13 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	calls: [] as string[]
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/window', () => ({
 	getCurrentWindow: () => ({
 		hide: async () => void mocks.calls.push('hide'),
@@ -37,8 +37,8 @@ const capture = {
 };
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
-	mocks.invoke.mockImplementation(async () => {
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockImplementation(async () => {
 		mocks.calls.push('capture');
 		return capture;
 	});
@@ -64,7 +64,7 @@ describe('the consent gate', () => {
 		// decision enforced only by the model's good behaviour.
 		const out = await executeTool('capture_screen', {}, context());
 		expect(JSON.parse(out.result).error).toContain('Settings → Screen');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('is hidden from a backend that cannot see images', () => {
@@ -90,12 +90,12 @@ describe('the prompt before each screenshot', () => {
 	it('captures only after the user says yes', async () => {
 		const { ctx, out } = await asked('window');
 		expect(getPendingScreenCapture()).toEqual({ target: 'window', chatId: null, sessionId: null });
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 
 		resolveScreenCapture('allow');
 		await out;
 
-		expect(mocks.invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
+		expect(invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
 		expect(ctx.pendingImages).toHaveLength(1);
 	});
 
@@ -105,21 +105,21 @@ describe('the prompt before each screenshot', () => {
 		const result = await out;
 
 		expect(result.result).toContain('declined');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 		expect(ctx.pendingImages).toHaveLength(0);
 	});
 
 	it('refuses when nobody is there to answer', async () => {
 		const out = await executeTool('capture_screen', {}, makeToolContext({ interactive: false }));
 		expect(JSON.parse(out.result).error).toContain('Settings → Screen');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('does not ask once the user turned it off', async () => {
 		updateSettings({ screenCaptureConfirm: false });
 		await executeTool('capture_screen', {}, makeToolContext({ interactive: true }));
 		expect(getPendingScreenCapture()).toBeNull();
-		expect(mocks.invoke).toHaveBeenCalledOnce();
+		expect(invoke).toHaveBeenCalledOnce();
 	});
 });
 
@@ -144,28 +144,28 @@ describe('capture_screen', () => {
 
 		const out = await executeTool('capture_screen', {}, ctx);
 
-		expect(mocks.invoke).toHaveBeenCalledWith('capture_screen', { target: 'screen' });
+		expect(invoke).toHaveBeenCalledWith('capture_screen', { target: 'screen' });
 		expect(ctx.pendingImages).toHaveLength(1);
 		expect(ctx.pendingImages[0].dataUrl).toBe(capture.dataUrl);
 		expect(out.thumbDataUrl).toBe(capture.dataUrl);
 	});
 
 	it('tells the model the display size it captured', async () => {
-		mocks.invoke.mockResolvedValue(capture);
+		vi.mocked(invoke).mockResolvedValue(capture);
 		const out = await executeTool('capture_screen', {}, context());
 		expect(out.result).toContain('3840x2160');
 	});
 
 	it('passes the window target through', async () => {
-		mocks.invoke.mockResolvedValue(capture);
+		vi.mocked(invoke).mockResolvedValue(capture);
 		await executeTool('capture_screen', { target: 'window' }, context());
-		expect(mocks.invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
+		expect(invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
 	});
 
 	it('relays the backend message rather than flattening it', async () => {
 		// "The screenshot was cancelled" and "grant Screen Recording" are the
 		// two things a user needs to read; "capture failed" is neither.
-		mocks.invoke.mockRejectedValue('The screenshot was cancelled.');
+		vi.mocked(invoke).mockRejectedValue('The screenshot was cancelled.');
 		const out = await executeTool('capture_screen', {}, context());
 		expect(JSON.parse(out.result).error).toContain('cancelled');
 	});
@@ -180,7 +180,7 @@ describe('capture_screen', () => {
 		const out = await executeTool('capture_screen', {}, ctx);
 
 		expect(JSON.parse(out.result).error).toContain('Too many images');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 

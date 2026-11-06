@@ -1,10 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-	invoke: vi.fn()
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
@@ -20,11 +19,14 @@ async function freshModule() {
 
 /** Names of the power commands invoked, in order. */
 function powerCalls(): string[] {
-	return mocks.invoke.mock.calls.map((c) => c[0] as string).filter((c) => c.startsWith('power_'));
+	return vi
+		.mocked(invoke)
+		.mock.calls.map((c) => c[0] as string)
+		.filter((c) => c.startsWith('power_'));
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset().mockResolvedValue(undefined);
+	vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -65,7 +67,7 @@ describe('setKeepAwake', () => {
 		// while it is still in flight — the finish-then-drain-next case.
 		let releaseFirst: () => void = () => {};
 		const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
-		mocks.invoke.mockImplementationOnce(async () => gate);
+		vi.mocked(invoke).mockImplementationOnce(async () => gate);
 
 		const { setKeepAwake } = await freshModule();
 
@@ -75,7 +77,7 @@ describe('setKeepAwake', () => {
 		expect(powerCalls()).toEqual(['power_inhibit_acquire']);
 
 		releaseFirst();
-		await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+		await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
 		// Desired is back to true and already applied, so nothing more is sent —
 		// no stray release can arrive after the next run's acquire.
 		expect(powerCalls()).toEqual(['power_inhibit_acquire']);
@@ -84,7 +86,7 @@ describe('setKeepAwake', () => {
 	it('applies a transition requested while an invoke was in flight', async () => {
 		let releaseFirst: () => void = () => {};
 		const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
-		mocks.invoke.mockImplementationOnce(async () => gate);
+		vi.mocked(invoke).mockImplementationOnce(async () => gate);
 
 		const { setKeepAwake } = await freshModule();
 
@@ -99,7 +101,7 @@ describe('setKeepAwake', () => {
 
 	it('swallows an unavailable inhibitor, warns once, and retries next time', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		mocks.invoke.mockRejectedValue(new Error('no session bus'));
+		vi.mocked(invoke).mockRejectedValue(new Error('no session bus'));
 
 		const { setKeepAwake } = await freshModule();
 
@@ -131,7 +133,7 @@ describe('releaseStaleInhibit', () => {
 	});
 
 	it('is quiet when the command is unavailable (browser dev mode)', async () => {
-		mocks.invoke.mockRejectedValue(new Error('not a tauri window'));
+		vi.mocked(invoke).mockRejectedValue(new Error('not a tauri window'));
 		const { releaseStaleInhibit } = await freshModule();
 
 		await expect(releaseStaleInhibit()).resolves.toBeUndefined();

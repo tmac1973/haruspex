@@ -51,30 +51,26 @@ vi.mock('@tauri-apps/api/event', () => ({
 	})
 }));
 
-const { invokeRouter } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter(
-			{
-				inference_acquire: (args) =>
-					new Promise<void>((resolve, reject) => {
-						mocks.acquire.set(args!.reqId as string, { resolve, reject });
-					}),
-				inference_cancel: (args) => {
-					// Mirror Rust: cancelling a waiting acquire rejects it.
-					const r = mocks.acquire.get(args!.reqId as string);
-					if (r) {
-						r.reject(new Error('inference request cancelled'));
-						mocks.acquire.delete(args!.reqId as string);
-					}
-				},
-				inference_queue_snapshot: () => []
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{
+			inference_acquire: (args) =>
+				new Promise<void>((resolve, reject) => {
+					mocks.acquire.set(args!.reqId as string, { resolve, reject });
+				}),
+			inference_cancel: (args) => {
+				// Mirror Rust: cancelling a waiting acquire rejects it.
+				const r = mocks.acquire.get(args!.reqId as string);
+				if (r) {
+					r.reject(new Error('inference request cancelled'));
+					mocks.acquire.delete(args!.reqId as string);
+				}
 			},
-			undefined
-		)
+			inference_queue_snapshot: () => []
+		},
+		undefined
 	)
-}));
+);
 
 import { invoke } from '@tauri-apps/api/core';
 import {

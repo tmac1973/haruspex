@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
@@ -37,7 +39,7 @@ const names = (opts: Parameters<typeof getToolSchemas>[0]) =>
 
 beforeEach(() => {
 	_resetTasksForTests();
-	state.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('the task tools', () => {
@@ -66,12 +68,12 @@ describe('the task tools', () => {
 		const ctx = makeToolContext({ interactive: true, conversationId: 'c9', askUser: ask });
 		const kept = await executeTool('task_cancel', { id: 'render-9' }, ctx);
 		expect(kept.result).toContain('kept the task going');
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 
 		ask.mockResolvedValue({ kind: 'selected', labels: ['Cancel it'] });
-		state.invoke.mockResolvedValue(true);
+		vi.mocked(invoke).mockResolvedValue(true);
 		const out = await executeTool('task_cancel', { id: 'render-9' }, ctx);
-		expect(state.invoke).toHaveBeenCalledWith('task_cancel', { id: 'render-9' });
+		expect(invoke).toHaveBeenCalledWith('task_cancel', { id: 'render-9' });
 		expect(out.result).toBe('Cancelled Rendering ep010.');
 	});
 
@@ -80,6 +82,6 @@ describe('the task tools', () => {
 		const ctx = makeToolContext({ interactive: true, conversationId: 'c9' });
 		const out = await executeTool('task_cancel', { id: 'render-9' }, ctx);
 		expect(out.result).toContain('already ended');
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });

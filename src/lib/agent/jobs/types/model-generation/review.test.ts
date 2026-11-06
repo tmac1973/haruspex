@@ -5,6 +5,7 @@
  * `judgeModel`, and the runner's context, whose `runJobTurn` is the model.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { ModelVerdict } from '#lib/glb/verdict.ts';
@@ -18,8 +19,9 @@ import { parseModelGenerationConfig } from './config';
 import { isAttended, reviewStage } from './review';
 import { initialEntryStates, type EntryState } from './state';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
 vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 const question = vi.hoisted(() => ({ ask: vi.fn() }));
@@ -78,7 +80,7 @@ const asked = () =>
 beforeEach(() => {
 	vi.clearAllMocks();
 	// Every build module exists, so a rebuild is judged.
-	tauri.invoke.mockImplementation(invokeRouter({ fs_read_bytes: [1], fs_write_bytes: null }));
+	vi.mocked(invoke).mockImplementation(invokeRouter({ fs_read_bytes: [1], fs_write_bytes: null }));
 	verdict.judgeModel.mockResolvedValue({
 		done: true,
 		problems: [],

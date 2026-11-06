@@ -1,15 +1,17 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 
 // Worker-manager pulls in a few app singletons; stub them so the manager is
 // exercised in isolation. getWorkingDir → null (unless a test sets one) keeps
 // the pre-run workdir sync a no-op (so runPython drives straight through to `send`).
-const invokeMock = vi.hoisted(() => vi.fn());
 const session = vi.hoisted(() => ({
 	workingDir: null as string | null,
 	folders: {} as Record<string, string | null>
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/session.svelte.ts', () => ({
 	getWorkingDir: () => session.workingDir,
 	getWorkingDirFor: (id: string) => session.folders[id] ?? null
@@ -174,7 +176,7 @@ describe('WorkerManager message dispatch', () => {
 		void wm.runPython('print(1)', {});
 		fake.emit({ kind: 'ready' });
 		await tick();
-		expect(invokeMock).toHaveBeenCalledWith('sandbox_set_network', {
+		expect(invoke).toHaveBeenCalledWith('sandbox_set_network', {
 			proxy: { mode: 'none' },
 			access: 'internet'
 		});
@@ -253,7 +255,7 @@ describe('WorkerManager message dispatch', () => {
 		new DataView(body.buffer).setUint32(0, json.length, true);
 		body.set(json, 4);
 		body.set([7, 8], 4 + json.length);
-		invokeMock.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ sandbox_sync_workdir: () => body.buffer }, undefined)
 		);
 		const wm = makeManager();
@@ -274,14 +276,14 @@ describe('WorkerManager message dispatch', () => {
 		// A turn in a chat that isn't open runs Python against that chat's folder.
 		session.workingDir = '/open';
 		session.folders = { b: '/b' };
-		invokeMock.mockImplementation(async () => {
+		vi.mocked(invoke).mockImplementation(async () => {
 			throw new Error('stop after the sync request');
 		});
 		const wm = makeManager(false, 'b');
 		void wm.runPython('print(1)').catch(() => {});
 		fake.emit({ kind: 'ready' });
 		await tick();
-		expect(invokeMock).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'sandbox_sync_workdir',
 			expect.objectContaining({ workdir: '/b' })
 		);

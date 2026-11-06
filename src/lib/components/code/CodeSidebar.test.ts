@@ -5,9 +5,11 @@ const ipc = vi.hoisted(() => ({
 	openIds: [] as string[],
 	claimsChanged: null as (() => void) | null
 }));
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string) => (cmd === 'code_session_open_ids' ? ipc.openIds : undefined))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (cmd: string) =>
+		cmd === 'code_session_open_ids' ? ipc.openIds : undefined
+	)
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async (event: string, cb: () => void) => {
 		if (event === 'code://claims') ipc.claimsChanged = cb;

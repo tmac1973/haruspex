@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import {
 	countBy,
@@ -33,7 +35,7 @@ function report(over: Partial<StoredReport> = {}): StoredReport {
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('summaries', () => {
@@ -77,7 +79,7 @@ describe('summaries', () => {
 
 describe('shareReports', () => {
 	it('saves the shown reports, opens their folder, then the issue', async () => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					feedback_redact: (args) =>
@@ -95,17 +97,20 @@ describe('shareReports', () => {
 			path: '/home/me/Downloads/haruspex-model-feedback-2026-10-26.zip',
 			count: 1
 		});
-		expect(mocks.invoke.mock.calls.map((c) => c[0])).toEqual([
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).toEqual([
 			'agent_feedback_export',
 			'folder_open',
 			'feedback_redact',
 			'open_url'
 		]);
-		const exported = mocks.invoke.mock.calls[0][1] as { summary: string; reports: StoredReport[] };
+		const exported = vi.mocked(invoke).mock.calls[0][1] as {
+			summary: string;
+			reports: StoredReport[];
+		};
 		expect(exported.reports).toHaveLength(1);
 		expect(exported.summary).toContain('# Haruspex model feedback');
-		expect(mocks.invoke.mock.calls[1][1]).toEqual({ path: '/home/me/Downloads' });
-		const url = new URL((mocks.invoke.mock.calls[3][1] as { url: string }).url);
+		expect(vi.mocked(invoke).mock.calls[1][1]).toEqual({ path: '/home/me/Downloads' });
+		const url = new URL((vi.mocked(invoke).mock.calls[3][1] as { url: string }).url);
 		const body = url.searchParams.get('what-happened') ?? '';
 		expect(body).toContain('Attach haruspex-model-feedback-2026-10-26.zip below');
 		expect(body).not.toContain('GitHub API');

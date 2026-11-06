@@ -1,9 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
+const mocks = vi.hoisted(() => ({ open: vi.fn() }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [],
@@ -35,7 +38,7 @@ function mount(overrides: Record<string, unknown> = {}, workingDir = '/repo') {
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset().mockRejectedValue(new Error('no fs in tests'));
+	vi.mocked(invoke).mockReset().mockRejectedValue(new Error('no fs in tests'));
 	mocks.open.mockReset();
 });
 

@@ -6,9 +6,9 @@ import { stopServer } from '#lib/stores/llamaServer.svelte.ts';
 import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn()
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async () => () => {})
 }));

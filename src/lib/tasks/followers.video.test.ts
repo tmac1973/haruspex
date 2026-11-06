@@ -5,13 +5,16 @@ const state = vi.hoisted(() => ({
 	generate: vi.fn(),
 	resume: vi.fn()
 }));
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string, args: { id: string; patch: Record<string, unknown> }) => {
-		if (cmd !== 'task_update') return null;
-		state.updates.push(args.patch);
-		return { id: args.id, ...args.patch };
-	})
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{},
+		async (cmd: string, args: { id: string; patch: Record<string, unknown> }) => {
+			if (cmd !== 'task_update') return null;
+			state.updates.push(args.patch);
+			return { id: args.id, ...args.patch };
+		}
+	)
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })

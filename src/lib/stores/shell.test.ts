@@ -3,9 +3,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Isolate the store from the Tauri boundary and the agent turn machinery —
 // here we're testing the registry + per-session state independence, not the
 // inference pipeline.
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn().mockResolvedValue(undefined)
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, undefined)
+);
 
 const runShellTurn = vi.hoisted(() => vi.fn());
 vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));

@@ -1,14 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import ApiKeysSection from './ApiKeysSection.svelte';
 
 function storeKind(kind: string) {
-	tauri.invoke.mockImplementation(invokeRouter({ secret_store_kind: kind }, true));
+	vi.mocked(invoke).mockImplementation(invokeRouter({ secret_store_kind: kind }, true));
 }
 
 describe('ApiKeysSection', () => {
@@ -26,7 +28,7 @@ describe('ApiKeysSection', () => {
 
 	it('says nothing about the store when the keychain works', async () => {
 		render(ApiKeysSection);
-		await vi.waitFor(() => expect(tauri.invoke).toHaveBeenCalledWith('secret_store_kind'));
+		await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('secret_store_kind'));
 		expect(screen.queryByText(/encrypted file/)).toBeNull();
 	});
 

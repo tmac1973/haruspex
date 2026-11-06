@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 const notifications = vi.hoisted(() => ({ notify: vi.fn(async () => {}) }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/notify.ts', () => notifications);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -39,13 +41,13 @@ import {
  */
 
 async function run(opts: FakeRunOptions = {}) {
-	const r = fakeRun(tauri.invoke, opts);
+	const r = fakeRun(vi.mocked(invoke), opts);
 	await runAutonomousCodingPipeline(r.ctx);
 	return r;
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	notifications.notify.mockClear();
 });
 

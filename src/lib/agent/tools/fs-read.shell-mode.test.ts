@@ -1,13 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const mocks = vi.hoisted(() => ({
-	invoke: vi.fn()
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const chatCtx = makeToolContext({
 	workingDir: '/tmp/work'
@@ -25,15 +22,15 @@ const shellCtxWritable = makeToolContext({
 });
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('fs_read tools in Chat mode', () => {
 	it('fs_read_text dispatches to the workdir-relative Tauri command', async () => {
-		mocks.invoke.mockResolvedValue('file contents');
+		vi.mocked(invoke).mockResolvedValue('file contents');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('fs_read_text', { path: 'config.json' }, chatCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_text', {
 			workdir: '/tmp/work',
 			relPath: 'config.json'
 		});
@@ -42,18 +39,18 @@ describe('fs_read tools in Chat mode', () => {
 
 	it('fs_read_text forwards offset/limit when provided, omits them otherwise', async () => {
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
-		mocks.invoke.mockResolvedValue('windowed');
+		vi.mocked(invoke).mockResolvedValue('windowed');
 		await executeTool('fs_read_text', { path: 'big.log', offset: 10, limit: 5 }, chatCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_text', {
 			workdir: '/tmp/work',
 			relPath: 'big.log',
 			offset: 10,
 			limit: 5
 		});
 		// No window args → call shape unchanged (no offset/limit keys).
-		mocks.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await executeTool('fs_read_text', { path: 'big.log' }, chatCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_text', {
 			workdir: '/tmp/work',
 			relPath: 'big.log'
 		});
@@ -70,10 +67,10 @@ describe('fs_read tools in Chat mode', () => {
 	});
 
 	it('fs_list_dir dispatches to the workdir-relative command', async () => {
-		mocks.invoke.mockResolvedValue({ path: '.', entries: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValue({ path: '.', entries: [], truncated: false });
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_list_dir', { path: '.' }, chatCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir', {
+		expect(invoke).toHaveBeenCalledWith('fs_list_dir', {
 			workdir: '/tmp/work',
 			relPath: '.'
 		});
@@ -82,71 +79,71 @@ describe('fs_read tools in Chat mode', () => {
 
 describe('fs_read tools in Shell mode', () => {
 	it('fs_read_text dispatches to the absolute-path Tauri command', async () => {
-		mocks.invoke.mockResolvedValue('NAME="Fedora Linux"\n');
+		vi.mocked(invoke).mockResolvedValue('NAME="Fedora Linux"\n');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('fs_read_text', { path: '/etc/os-release' }, shellCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
 			path: '/etc/os-release'
 		});
 		expect(out.result).toContain('Fedora');
 	});
 
 	it('fs_list_dir dispatches to the absolute-path command', async () => {
-		mocks.invoke.mockResolvedValue({ path: '/etc', entries: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValue({ path: '/etc', entries: [], truncated: false });
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_list_dir', { path: '/etc' }, shellCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir_absolute', { path: '/etc' });
+		expect(invoke).toHaveBeenCalledWith('fs_list_dir_absolute', { path: '/etc' });
 	});
 
 	it('fs_read_pdf dispatches to the absolute-path command', async () => {
-		mocks.invoke.mockResolvedValue('pdf body');
+		vi.mocked(invoke).mockResolvedValue('pdf body');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_read_pdf', { path: '/var/spool/file.pdf' }, shellCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_pdf_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_pdf_absolute', {
 			path: '/var/spool/file.pdf'
 		});
 	});
 
 	it('resolves a relative path against the shell cwd before dispatching', async () => {
-		mocks.invoke.mockResolvedValue('contents');
+		vi.mocked(invoke).mockResolvedValue('contents');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_read_text',
 			{ path: 'notes.txt' },
 			{ ...shellCtx, shellCwd: '/home/tim' }
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
 			path: '/home/tim/notes.txt'
 		});
 	});
 
 	it('leaves an absolute path untouched even when a shell cwd is known', async () => {
-		mocks.invoke.mockResolvedValue('contents');
+		vi.mocked(invoke).mockResolvedValue('contents');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_read_text',
 			{ path: '/etc/hosts' },
 			{ ...shellCtx, shellCwd: '/home/tim' }
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: '/etc/hosts' });
+		expect(invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: '/etc/hosts' });
 	});
 
 	it('passes a relative path through unchanged when no cwd is known (graceful fallback)', async () => {
-		mocks.invoke.mockResolvedValue('contents');
+		vi.mocked(invoke).mockResolvedValue('contents');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_read_text', { path: 'notes.txt' }, shellCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: 'notes.txt' });
+		expect(invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: 'notes.txt' });
 	});
 
 	it('fs_write_text resolves a relative path against the shell cwd', async () => {
-		mocks.invoke.mockResolvedValue(undefined);
+		vi.mocked(invoke).mockResolvedValue(undefined);
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'fs_write_text',
 			{ path: 'snake_game.py', content: 'print("hi")' },
 			{ ...shellCtxWritable, shellCwd: '/home/tim/games' }
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
 			path: '/home/tim/games/snake_game.py',
 			content: 'print("hi")',
 			overwrite: true
@@ -209,14 +206,14 @@ describe('fs_read tools in Shell mode', () => {
 	});
 
 	it('fs_write_text dispatches to the absolute command in shell-mode Code mode', async () => {
-		mocks.invoke.mockResolvedValue(undefined);
+		vi.mocked(invoke).mockResolvedValue(undefined);
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_write_text',
 			{ path: '/tmp/test.conf', content: 'foo', overwrite: true },
 			shellCtxWritable
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
 			path: '/tmp/test.conf',
 			content: 'foo',
 			overwrite: true
@@ -224,14 +221,14 @@ describe('fs_read tools in Shell mode', () => {
 	});
 
 	it('fs_edit_text dispatches to the absolute command in shell-mode Code mode', async () => {
-		mocks.invoke.mockResolvedValue(undefined);
+		vi.mocked(invoke).mockResolvedValue(undefined);
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_edit_text',
 			{ path: '/etc/hosts', old_str: 'old', new_str: 'new' },
 			shellCtxWritable
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
 			path: '/etc/hosts',
 			oldStr: 'old',
 			newStr: 'new'
@@ -245,25 +242,25 @@ describe('fs tools in a WSL Shell session', () => {
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
 			const { executeTool } = await import('#lib/agent/tools/index.ts');
-			mocks.invoke.mockResolvedValue({ path: '/home/tim', entries: [], truncated: false });
+			vi.mocked(invoke).mockResolvedValue({ path: '/home/tim', entries: [], truncated: false });
 			await executeTool('fs_list_dir', { path: '/home/tim' }, shellCtx);
-			expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir_absolute', {
+			expect(invoke).toHaveBeenCalledWith('fs_list_dir_absolute', {
 				path: '/home/tim',
 				wslDistro: 'Ubuntu-24.04'
 			});
-			mocks.invoke.mockResolvedValue('');
+			vi.mocked(invoke).mockResolvedValue('');
 			await executeTool('fs_read_text', { path: '/home/tim/.bashrc' }, shellCtx);
-			expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
+			expect(invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
 				path: '/home/tim/.bashrc',
 				wslDistro: 'Ubuntu-24.04'
 			});
-			mocks.invoke.mockResolvedValue(null);
+			vi.mocked(invoke).mockResolvedValue(null);
 			await executeTool(
 				'fs_write_text',
 				{ path: '/home/tim/a.txt', content: 'x' },
 				shellCtxWritable
 			);
-			expect(mocks.invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
+			expect(invoke).toHaveBeenCalledWith('fs_write_text_absolute', {
 				path: '/home/tim/a.txt',
 				content: 'x',
 				overwrite: true,

@@ -1,8 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(), save: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const tauri = vi.hoisted(() => ({ save: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: tauri.save }));
 
 import AudioPlayer from './AudioPlayer.svelte';
@@ -11,7 +14,9 @@ const SRC = `haruspex-audio://localhost/${'c'.repeat(64)}`;
 
 beforeEach(() => {
 	URL.createObjectURL = vi.fn(() => 'blob:song');
-	tauri.invoke.mockReset().mockResolvedValue(new Uint8Array([0xff, 0xfb]).buffer);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockResolvedValue(new Uint8Array([0xff, 0xfb]).buffer);
 });
 
 async function loaded() {
@@ -96,7 +101,7 @@ describe('AudioPlayer', () => {
 		tauri.save.mockResolvedValueOnce('/home/me/Rain.mp3');
 		await fireEvent.click(screen.getByRole('button', { name: 'Save Rain as…' }));
 		await vi.waitFor(() =>
-			expect(tauri.invoke).toHaveBeenCalledWith('audio_save_as', {
+			expect(invoke).toHaveBeenCalledWith('audio_save_as', {
 				hash: 'c'.repeat(64),
 				path: '/home/me/Rain.mp3'
 			})
@@ -110,6 +115,6 @@ describe('AudioPlayer', () => {
 		tauri.save.mockResolvedValueOnce(null);
 		await fireEvent.click(screen.getByRole('button', { name: 'Save Rain as…' }));
 		await Promise.resolve();
-		expect(tauri.invoke).not.toHaveBeenCalledWith('audio_save_as', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('audio_save_as', expect.anything());
 	});
 });

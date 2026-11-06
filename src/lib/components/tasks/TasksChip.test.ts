@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(async (): Promise<unknown> => null) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (): Promise<unknown> => null)
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const stores = vi.hoisted(() => ({
@@ -98,7 +100,7 @@ describe('TasksChip', () => {
 		render(TasksChip);
 		await fireEvent.click(screen.getByRole('button', { name: 'Tasks: 2' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-		expect(tauri.invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
+		expect(invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
 		await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
 		expect(stop).toHaveBeenCalled();
 	});

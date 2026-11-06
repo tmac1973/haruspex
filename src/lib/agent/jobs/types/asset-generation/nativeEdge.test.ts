@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const settings = vi.hoisted(() => ({
 	imageBackendKind: 'comfyui',
@@ -25,7 +27,7 @@ beforeEach(() => {
 	settings.imageBackendKind = 'comfyui';
 	settings.imageComfyCheckpoint = '';
 	settings.imageLocalModelId = '';
-	invoke.mockReset().mockResolvedValue(CATALOGUE);
+	vi.mocked(invoke).mockReset().mockResolvedValue(CATALOGUE);
 });
 
 describe('upscaleForEdge', () => {
@@ -87,7 +89,7 @@ describe('nativeEdgeFor', () => {
 	});
 
 	it('returns null rather than throwing when the catalogue is unavailable', async () => {
-		invoke.mockRejectedValue(new Error('no such command'));
+		vi.mocked(invoke).mockRejectedValue(new Error('no such command'));
 		settings.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
 		await expect(nativeEdgeFor(undefined)).resolves.toBeNull();
 	});

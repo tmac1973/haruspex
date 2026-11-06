@@ -1,7 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(async () => () => {}) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const tauri = vi.hoisted(() => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }));
 
 import { isTaskNotice, joinNotices, noticeFor } from './noticeText.ts';
@@ -69,7 +72,7 @@ const done: BackgroundTask = {
 beforeEach(() => {
 	_resetForTests();
 	_resetTasksForTests();
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('notices', () => {
@@ -168,9 +171,9 @@ describe('when a task ends', () => {
 	});
 
 	it('an owner takes its notices from the registry, as one turn', async () => {
-		tauri.invoke.mockResolvedValueOnce([done]);
+		vi.mocked(invoke).mockResolvedValueOnce([done]);
 		const notice = await takeNotices('chat:c1');
-		expect(tauri.invoke).toHaveBeenCalledWith('task_take_notices', { owner: 'chat:c1' });
+		expect(invoke).toHaveBeenCalledWith('task_take_notices', { owner: 'chat:c1' });
 		expect(notice.text).toContain('Video render finished');
 	});
 });
@@ -179,7 +182,7 @@ describe('loading the list', () => {
 	it('does not announce what ended before, but says who has notices waiting', async () => {
 		const chat = vi.fn();
 		setChatTaskHandler(chat);
-		tauri.invoke.mockResolvedValueOnce([
+		vi.mocked(invoke).mockResolvedValueOnce([
 			done,
 			{ ...done, id: 'r2', owner: 'chat:c2', noticeDelivered: true }
 		]);
@@ -236,14 +239,14 @@ describe('a background picture’s notice', () => {
 	});
 
 	it('reaches the model as a data URL', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ task_take_notices: () => [picture(true)] },
 				() => new Uint8Array([1, 2]).buffer
 			)
 		);
 		const notice = await takeNotices('chat:c1');
-		expect(tauri.invoke).toHaveBeenCalledWith('image_read_bytes', { hash });
+		expect(invoke).toHaveBeenCalledWith('image_read_bytes', { hash });
 		expect(notice.images).toEqual(['data:image/png;base64,AQI=']);
 	});
 });

@@ -1,13 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'local',
 	pending: null as string | null,
-	invoke: vi.fn(),
 	make: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageBackendKind: state.backend }),
@@ -37,26 +39,28 @@ function context(over: Partial<ToolContext> = {}): ToolContext {
 		...over
 	});
 }
-const calls = (cmd: string) => invokeCalls(state.invoke, cmd);
+const calls = (cmd: string) => invokeCalls(vi.mocked(invoke), cmd);
 const writes = () => calls('fs_write_bytes_absolute').filter((a) => !a?.dryRun);
 
 beforeEach(() => {
 	state.backend = 'local';
 	state.pending = null;
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			shell_pending_command: () => state.pending,
-			fs_read_bytes_absolute: () => Array.from(PNG),
-			fs_read_bytes: () => Array.from(PNG),
-			image_extract_palette: PALETTE,
-			texture_validate: () => undefined,
-			texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
-			image_contact_sheet: [7, 7],
-			texture_transition_validate: () => undefined,
-			texture_transition_render: [5, 5],
-			texture_transition_preview: [6, 6]
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				shell_pending_command: () => state.pending,
+				fs_read_bytes_absolute: () => Array.from(PNG),
+				fs_read_bytes: () => Array.from(PNG),
+				image_extract_palette: PALETTE,
+				texture_validate: () => undefined,
+				texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
+				image_contact_sheet: [7, 7],
+				texture_transition_validate: () => undefined,
+				texture_transition_render: [5, 5],
+				texture_transition_preview: [6, 6]
+			})
+		);
 	state.make.mockReset().mockResolvedValue({
 		bytes: PNG,
 		width: 32,
@@ -112,7 +116,7 @@ describe('make_asset transitions', () => {
 		);
 		expect(calls('texture_transition_render')[0]).toMatchObject({ view: 'side', other: GRASS });
 		expect(JSON.parse(bytesOf(writes()[1]))).toMatchObject({ a: 'solid', cap: 'cap' });
-		state.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await executeTool(
 			'make_asset',
 			top({ view: 'side', recipe_b: undefined, recipe: DIRT, overwrite: true }),
@@ -134,7 +138,7 @@ describe('make_asset transitions', () => {
 	});
 
 	it('names which recipe Rust refused', async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				texture_validate: (a: Record<string, unknown> | undefined) => {
 					if (a?.recipe === DIRT) throw 'base.ramp: give 2 to 8 colours';

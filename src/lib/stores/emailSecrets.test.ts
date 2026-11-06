@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	available: true,
-	invoke: vi.fn()
+	available: true
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { getSettings, setEmailAccounts, type EmailAccount } from './settings';
 import { forgetEmailPassword, migrateEmailSecrets, withStoredEmailPassword } from './emailSecrets';
@@ -30,11 +32,11 @@ function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	};
 }
 
-const calls = (cmd: string) => invokeCalls(state.invoke, cmd);
+const calls = (cmd: string) => invokeCalls(vi.mocked(invoke), cmd);
 
 beforeEach(() => {
 	state.available = true;
-	state.invoke
+	vi.mocked(invoke)
 		.mockReset()
 		.mockImplementation(invokeRouter({ secret_available: () => state.available }));
 	setEmailAccounts([]);
@@ -62,13 +64,13 @@ describe('migrateEmailSecrets', () => {
 	it('does nothing the second time', async () => {
 		setEmailAccounts([account()]);
 		await migrateEmailSecrets();
-		state.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await migrateEmailSecrets();
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('leaves an account that failed to move as it was', async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				secret_available: true,
 				secret_set: () => {
@@ -99,7 +101,7 @@ describe('saving and deleting', () => {
 	});
 
 	it('deletes the kept password, and never throws doing it', async () => {
-		state.invoke.mockRejectedValue('gone');
+		vi.mocked(invoke).mockRejectedValue('gone');
 		await forgetEmailPassword(account({ password: '', passwordRef: 'email:a1' }));
 		expect(calls('secret_delete')[0]).toEqual({ key: 'email:a1' });
 	});

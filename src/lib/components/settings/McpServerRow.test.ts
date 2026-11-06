@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 import McpServerRow from '#lib/components/settings/McpServerRow.svelte';
@@ -58,7 +60,7 @@ async function withStatus(
 	updateAvailable: boolean,
 	blockedReason: string | null = null
 ): Promise<void> {
-	invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			mcp_update_status: [
 				{
@@ -76,8 +78,8 @@ async function withStatus(
 }
 
 beforeEach(() => {
-	invoke.mockReset();
-	invoke.mockResolvedValue(null);
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue(null);
 });
 
 describe('the Update button', () => {

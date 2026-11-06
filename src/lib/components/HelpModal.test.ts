@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const invoke = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async () => undefined)
+);
 
 import HelpModal from './HelpModal.svelte';
 import { GUIDE_URL } from '#lib/guide/prompt.ts';

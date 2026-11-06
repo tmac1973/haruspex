@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	download: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/models/download.ts', () => ({ downloadModelWithProgress: mocks.download }));
 // The ready poll waits 500 ms a tick; the tests only care about the sequence.
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
@@ -39,7 +41,7 @@ import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 /** Route each IPC command to a handler; anything unlisted is a test bug. */
 function ipc(handlers: Record<string, (args?: Record<string, unknown>) => unknown>) {
-	mocks.invoke.mockImplementation(invokeRouter(handlers, unexpectedInvoke));
+	vi.mocked(invoke).mockImplementation(invokeRouter(handlers, unexpectedInvoke));
 }
 
 /** An OpenAI-style SSE stream of the given deltas. */
@@ -55,7 +57,7 @@ const fetchMock = vi.fn();
 
 beforeEach(() => {
 	resetSetup();
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.download.mockReset();
 	fetchMock.mockReset();
 	vi.stubGlobal('fetch', fetchMock);
@@ -207,7 +209,7 @@ describe('runTestQuery', () => {
 		fetchMock.mockImplementation(async () => sse([{ content: 'Hi, ' }, { content: 'I am Qwen.' }]));
 		await runTestQuery();
 		await runTestQuery();
-		const starts = mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'start_server');
+		const starts = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'start_server');
 		expect(starts).toHaveLength(1);
 		expect(getTestResult()).toBe('success');
 		expect(getTestResponse()).toBe('Hi, I am Qwen.');
@@ -223,7 +225,7 @@ describe('runTestQuery', () => {
 		fetchMock.mockResolvedValue(sse([{ content: 'ok' }]));
 		await runTestQuery();
 		const settings = getSettings();
-		expect(mocks.invoke).toHaveBeenCalledWith('start_server', {
+		expect(invoke).toHaveBeenCalledWith('start_server', {
 			modelPath: '/models/a.gguf',
 			ctxSize: settings.contextSize,
 			mtp: settings.mtpEnabled,
@@ -289,7 +291,7 @@ describe('runTestQuery', () => {
 		await startDownload();
 		await settle(() => getTestResult() === 'success');
 		expect(getTestResponse()).toBe('hello');
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'start_server',
 			expect.objectContaining({ modelPath: '/models/new.gguf' })
 		);
@@ -309,7 +311,7 @@ describe('runTestQuery', () => {
 		await useDownloadedModel();
 		await settle(() => getTestResult() === 'success');
 		expect(mocks.download).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'start_server',
 			expect.objectContaining({ modelPath: '/models/m.gguf' })
 		);

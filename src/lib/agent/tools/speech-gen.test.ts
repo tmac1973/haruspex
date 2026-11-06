@@ -1,8 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { MAX_CHARS, parseSpeechArgs, shortNote } from './speech-gen';
@@ -25,17 +26,19 @@ const paramsOf = (o: Parameters<typeof getToolSchemas>[0]) =>
 	);
 
 beforeEach(() => {
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			tts_synthesize_to_cache: () => ({
-				hash: HASH,
-				mime: 'audio/wav',
-				bytes: 4800044,
-				seconds: 100.4
-			}),
-			audio_read_bytes: () => new Uint8Array([1, 2]).buffer
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				tts_synthesize_to_cache: () => ({
+					hash: HASH,
+					mime: 'audio/wav',
+					bytes: 4800044,
+					seconds: 100.4
+				}),
+				audio_read_bytes: () => new Uint8Array([1, 2]).buffer
+			})
+		);
 });
 
 describe('generate_speech is offered', () => {
@@ -102,7 +105,7 @@ describe('generate_speech', () => {
 			{ text: 'Chapter one.', voice: 'bm_none', title: 'Intro', speed: 0.9 },
 			chat
 		);
-		expect(state.invoke).toHaveBeenCalledWith('tts_synthesize_to_cache', {
+		expect(invoke).toHaveBeenCalledWith('tts_synthesize_to_cache', {
 			text: 'Chapter one.',
 			voice: 'af_heart',
 			speed: 0.9,
@@ -117,7 +120,7 @@ describe('generate_speech', () => {
 	});
 
 	it('passes on what koko said when it fails', async () => {
-		state.invoke.mockRejectedValueOnce('TTS failed: no model');
+		vi.mocked(invoke).mockRejectedValueOnce('TTS failed: no model');
 		const out = await executeTool('generate_speech', { text: 'Hi.' }, chat);
 		expect(out.result).toContain('Could not make it: TTS failed: no model');
 	});

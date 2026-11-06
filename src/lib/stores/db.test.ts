@@ -1,13 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	logDebug: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
@@ -26,15 +26,15 @@ async function freshDb() {
 /** Import the module and run a successful initDb so `available` is true. */
 async function availableDb(summaries: unknown[] = []) {
 	const db = await freshDb();
-	mocks.invoke.mockResolvedValueOnce(summaries);
+	vi.mocked(invoke).mockResolvedValueOnce(summaries);
 	await db.initDb();
-	mocks.invoke.mockClear();
+	vi.mocked(invoke).mockClear();
 	return db;
 }
 
 beforeEach(() => {
 	vi.resetModules();
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.logDebug.mockReset();
 });
 
@@ -44,18 +44,18 @@ describe('initDb', () => {
 		expect(db.isDbAvailable()).toBe(false);
 
 		const summaries = [{ id: 'c1', title: 'Chat', created_at: 1, updated_at: 2 }];
-		mocks.invoke.mockResolvedValueOnce(summaries);
+		vi.mocked(invoke).mockResolvedValueOnce(summaries);
 
 		const result = await db.initDb();
 
-		expect(mocks.invoke).toHaveBeenCalledWith('db_list_conversations');
+		expect(invoke).toHaveBeenCalledWith('db_list_conversations');
 		expect(result).toEqual({ available: true, summaries });
 		expect(db.isDbAvailable()).toBe(true);
 	});
 
 	it('falls back to unavailable (with a debug log) when the backend fails', async () => {
 		const db = await freshDb();
-		mocks.invoke.mockRejectedValueOnce(new Error('schema mismatch'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('schema mismatch'));
 
 		const result = await db.initDb();
 
@@ -81,7 +81,7 @@ describe('no-op behavior when the store is unavailable', () => {
 		await db.dbClearAll();
 		await db.dbReplaceMessages('c1', [{ role: 'user', content: 'hi' }]);
 
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('readers return empty values without touching invoke', async () => {
@@ -89,14 +89,14 @@ describe('no-op behavior when the store is unavailable', () => {
 
 		expect(await db.dbLoadMessages('c1')).toEqual([]);
 		expect(await db.dbLoadMessageSteps('c1')).toEqual({});
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 
 describe('dbSaveMessage', () => {
 	it('maps the message onto the invoke payload', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
 
 		const toolCalls = [
 			{ id: '1', type: 'function' as const, function: { name: 'web_search', arguments: '{}' } }
@@ -107,7 +107,7 @@ describe('dbSaveMessage', () => {
 			'[{"toolName":"web_search"}]'
 		);
 
-		expect(mocks.invoke).toHaveBeenCalledWith('db_save_message', {
+		expect(invoke).toHaveBeenCalledWith('db_save_message', {
 			conversationId: 'c1',
 			role: 'assistant',
 			content: 'hi',
@@ -119,19 +119,19 @@ describe('dbSaveMessage', () => {
 
 	it('defaults steps to null and serializes multimodal content with the marker prefix', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
 
 		const content = [{ type: 'text' as const, text: 'look at this' }];
 		await db.dbSaveMessage('c1', { role: 'user', content });
 
-		const payload = mocks.invoke.mock.calls[0][1] as { content: string; steps: string | null };
+		const payload = vi.mocked(invoke).mock.calls[0][1] as { content: string; steps: string | null };
 		expect(payload.steps).toBeNull();
 		expect(payload.content).toBe(MM_PREFIX + JSON.stringify(content));
 	});
 
 	it('swallows an invoke rejection with a debug log instead of throwing', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockRejectedValueOnce(new Error('disk full'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('disk full'));
 
 		await expect(db.dbSaveMessage('c1', { role: 'user', content: 'hi' })).resolves.toBeUndefined();
 		expect(mocks.logDebug).toHaveBeenCalledWith(
@@ -145,7 +145,7 @@ describe('dbSaveMessage', () => {
 describe('dbReplaceMessages', () => {
 	it('sends per-index steps JSON when given a stepsByIndex map and null otherwise', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
 
 		const steps = [{ toolName: 'run_python', status: 'done' }];
 		await db.dbReplaceMessages(
@@ -157,7 +157,7 @@ describe('dbReplaceMessages', () => {
 			{ 1: steps }
 		);
 
-		expect(mocks.invoke).toHaveBeenCalledWith('db_replace_messages', {
+		expect(invoke).toHaveBeenCalledWith('db_replace_messages', {
 			conversationId: 'c1',
 			messages: [
 				{ role: 'user', content: 'run it', tool_calls: null, tool_call_id: null, steps: null },
@@ -174,20 +174,20 @@ describe('dbReplaceMessages', () => {
 
 	it('sends null steps for every message when stepsByIndex is omitted', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
 
 		await db.dbReplaceMessages('c1', [
 			{ role: 'user', content: 'a' },
 			{ role: 'assistant', content: 'b' }
 		]);
 
-		const payload = mocks.invoke.mock.calls[0][1] as { messages: { steps: string | null }[] };
+		const payload = vi.mocked(invoke).mock.calls[0][1] as { messages: { steps: string | null }[] };
 		expect(payload.messages.map((m) => m.steps)).toEqual([null, null]);
 	});
 
 	it('swallows an invoke rejection with a debug log', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockRejectedValueOnce(new Error('locked'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('locked'));
 
 		await expect(
 			db.dbReplaceMessages('c1', [{ role: 'user', content: 'a' }])
@@ -211,7 +211,7 @@ describe('dbLoadMessageSteps', () => {
 
 	it('maps steps JSON into an index-keyed record, ignoring corrupt or non-array rows', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			id: 'c1',
 			title: 'Chat',
 			created_at: 0,
@@ -227,7 +227,7 @@ describe('dbLoadMessageSteps', () => {
 
 		const out = await db.dbLoadMessageSteps('c1');
 
-		expect(mocks.invoke).toHaveBeenCalledWith('db_get_conversation', { id: 'c1' });
+		expect(invoke).toHaveBeenCalledWith('db_get_conversation', { id: 'c1' });
 		expect(out).toEqual({
 			0: [{ toolName: 'web_search' }],
 			4: []
@@ -236,7 +236,7 @@ describe('dbLoadMessageSteps', () => {
 
 	it('returns an empty record (with a debug log) when the invoke fails', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockRejectedValueOnce(new Error('row gone'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('row gone'));
 
 		expect(await db.dbLoadMessageSteps('c1')).toEqual({});
 		expect(mocks.logDebug).toHaveBeenCalledWith(
@@ -251,7 +251,7 @@ describe('dbLoadMessages', () => {
 	it('deserializes rows back into ChatMessages, including multimodal content', async () => {
 		const db = await availableDb();
 		const multimodal = [{ type: 'text', text: 'see attachment' }];
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			id: 'c1',
 			title: 'Chat',
 			created_at: 0,
@@ -291,7 +291,7 @@ describe('dbLoadMessages', () => {
 
 	it('returns [] (with a debug log) when the invoke fails', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockRejectedValueOnce(new Error('gone'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('gone'));
 
 		expect(await db.dbLoadMessages('c1')).toEqual([]);
 		expect(mocks.logDebug).toHaveBeenCalledWith(
@@ -309,7 +309,7 @@ describe('conversation CRUD wrappers', () => {
 		['dbDeleteConversation', 'db_delete_conversation', { id: 'c1' }]
 	] as const)('%s forwards to %s', async (fnName, command, payload) => {
 		const db = await availableDb();
-		mocks.invoke.mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(undefined);
 
 		if (fnName === 'dbDeleteConversation') {
 			await db.dbDeleteConversation('c1');
@@ -317,15 +317,15 @@ describe('conversation CRUD wrappers', () => {
 			await db[fnName]('c1', 'T');
 		}
 
-		expect(mocks.invoke).toHaveBeenCalledWith(command, payload);
+		expect(invoke).toHaveBeenCalledWith(command, payload);
 	});
 
 	it('dbClearAll forwards to db_clear_all_conversations and swallows failures', async () => {
 		const db = await availableDb();
-		mocks.invoke.mockRejectedValueOnce(new Error('nope'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('nope'));
 
 		await expect(db.dbClearAll()).resolves.toBeUndefined();
-		expect(mocks.invoke).toHaveBeenCalledWith('db_clear_all_conversations');
+		expect(invoke).toHaveBeenCalledWith('db_clear_all_conversations');
 		expect(mocks.logDebug).toHaveBeenCalledWith('db', 'dbClearAll failed', expect.anything());
 	});
 });

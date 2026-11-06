@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const m = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	settings: {} as Record<string, unknown>
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: m.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', () => ({
 	getSettings: () => m.settings,
 	markLeanHinted: vi.fn(),
@@ -30,23 +32,23 @@ const GOOD_GPU = { gpu_available: true, gpu_integrated_slow: false };
 
 describe('shouldOfferLean', () => {
 	beforeEach(() => {
-		m.invoke.mockReset();
+		vi.mocked(invoke).mockReset();
 		m.settings = settings() as unknown as Record<string, unknown>;
 	});
 
 	it('offers it for a 9B without asking about the hardware', async () => {
 		expect(await shouldOfferLean()).toBe(true);
-		expect(m.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('asks about the hardware once for a bigger local model', async () => {
 		m.settings = settings({ activeLocalModelFilename: 'Qwen3.6-35B-A3B-Q4.gguf' }) as never;
-		m.invoke.mockResolvedValueOnce({ gpu_available: false, gpu_integrated_slow: false });
+		vi.mocked(invoke).mockResolvedValueOnce({ gpu_available: false, gpu_integrated_slow: false });
 		expect(await shouldOfferLean()).toBe(true);
-		m.invoke.mockResolvedValueOnce(GOOD_GPU);
+		vi.mocked(invoke).mockResolvedValueOnce(GOOD_GPU);
 		expect(await shouldOfferLean()).toBe(false);
-		expect(m.invoke).toHaveBeenCalledTimes(2);
-		expect(m.invoke).toHaveBeenCalledWith('hardware_detect');
+		expect(invoke).toHaveBeenCalledTimes(2);
+		expect(invoke).toHaveBeenCalledWith('hardware_detect');
 	});
 
 	it('never asks about the hardware for a remote model', async () => {
@@ -54,13 +56,13 @@ describe('shouldOfferLean', () => {
 			inferenceBackend: { mode: 'remote', remoteModelId: 'gpt-oss' }
 		}) as never;
 		expect(await shouldOfferLean()).toBe(false);
-		expect(m.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('leaves a first run, with no model yet, to the wizard', async () => {
 		m.settings = settings({ activeLocalModelFilename: '' }) as never;
 		expect(await shouldOfferLean()).toBe(false);
-		expect(m.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('offers it once, and not to someone already lean', async () => {

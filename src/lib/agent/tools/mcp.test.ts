@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import type { McpCallOutcome } from '#lib/ipc/gen/McpCallOutcome.ts';
@@ -29,8 +30,9 @@ import {
 } from '#lib/stores/mcpApproval.svelte.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const SERVER = 'srv-1';
 const OTHER = 'srv-2';
@@ -87,7 +89,7 @@ async function answerApproval(choice: McpApprovalChoice): Promise<void> {
 }
 
 beforeEach(() => {
-	invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	forgetAllApprovals();
 	unregisterMcpServer(SERVER);
 	unregisterMcpServer(OTHER);
@@ -129,13 +131,13 @@ describe('dynamic registration', () => {
 		const names = registeredMcpToolNames();
 		expect(names).toEqual(['mcp__srv-1__search', 'mcp__srv-2__search']);
 
-		invoke.mockResolvedValue(complete('from one'));
+		vi.mocked(invoke).mockResolvedValue(complete('from one'));
 		await executeTool('mcp__srv-1__search', { q: 'x' }, ctx());
-		expect(invoke.mock.calls[0][1]).toMatchObject({ id: SERVER, name: 'search' });
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ id: SERVER, name: 'search' });
 
-		invoke.mockResolvedValue(complete('from two'));
+		vi.mocked(invoke).mockResolvedValue(complete('from two'));
 		await executeTool('mcp__srv-2__search', { q: 'x' }, ctx());
-		expect(invoke.mock.calls[1][1]).toMatchObject({ id: OTHER, name: 'search' });
+		expect(vi.mocked(invoke).mock.calls[1][1]).toMatchObject({ id: OTHER, name: 'search' });
 	});
 
 	it('unregisters exactly its own server', () => {
@@ -299,7 +301,7 @@ describe('approval flow', () => {
 
 	it('does not prompt for a read-only tool', async () => {
 		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
-		invoke.mockResolvedValue(complete('ok'));
+		vi.mocked(invoke).mockResolvedValue(complete('ok'));
 		const out = await executeTool('mcp__srv-1__search', {}, ctx());
 		expect(getPendingMcpApproval()).toBeNull();
 		expect(out.result).toBe('ok');
@@ -307,7 +309,7 @@ describe('approval flow', () => {
 
 	it('runs the call once allowed', async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
-		invoke.mockResolvedValue(complete('created'));
+		vi.mocked(invoke).mockResolvedValue(complete('created'));
 		const running = executeTool('mcp__srv-1__create_issue', { title: 'x' }, ctx());
 		await answerApproval('allow_once');
 		expect((await running).result).toBe('created');
@@ -315,7 +317,7 @@ describe('approval flow', () => {
 
 	it("gives the turn's slot back before it asks", async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
-		invoke.mockResolvedValue(complete('created'));
+		vi.mocked(invoke).mockResolvedValue(complete('created'));
 		const releaseSlot = vi.fn(() => expect(getPendingMcpApproval()).toBeNull());
 		const running = executeTool('mcp__srv-1__create_issue', {}, { ...ctx(), releaseSlot });
 		await answerApproval('allow_once');
@@ -335,7 +337,7 @@ describe('approval flow', () => {
 
 	it('remembers "always" and does not prompt a second time', async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
-		invoke.mockResolvedValue(complete('created'));
+		vi.mocked(invoke).mockResolvedValue(complete('created'));
 
 		const first = executeTool('mcp__srv-1__create_issue', {}, ctx());
 		await answerApproval('allow_always');
@@ -349,7 +351,7 @@ describe('approval flow', () => {
 
 	it('scopes "always" to one tool on one server', async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
-		invoke.mockResolvedValue(complete('created'));
+		vi.mocked(invoke).mockResolvedValue(complete('created'));
 		const first = executeTool('mcp__srv-1__create_issue', {}, ctx());
 		await answerApproval('allow_always');
 		await first;
@@ -362,7 +364,7 @@ describe('approval flow', () => {
 
 	it('forgets a server’s approvals when it is removed', async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
-		invoke.mockResolvedValue(complete('created'));
+		vi.mocked(invoke).mockResolvedValue(complete('created'));
 		const first = executeTool('mcp__srv-1__create_issue', {}, ctx());
 		await answerApproval('allow_always');
 		await first;
@@ -401,13 +403,15 @@ describe('multi round-trip requests', () => {
 
 	it('asks the user and retries with the answer', async () => {
 		registerMcpTools(SERVER, 'One', [askingTool], ['plan']);
-		invoke.mockResolvedValueOnce(inputRequired('state-1')).mockResolvedValueOnce(complete('done'));
+		vi.mocked(invoke)
+			.mockResolvedValueOnce(inputRequired('state-1'))
+			.mockResolvedValueOnce(complete('done'));
 
 		const askUser = vi.fn().mockResolvedValue({ kind: 'freeText', text: 'haruspex' });
 		const out = await executeTool('mcp__srv-1__plan', {}, ctx({ interactive: true, askUser }));
 
 		expect(askUser).toHaveBeenCalledWith({ question: 'Which project?', options: [] }, undefined);
-		expect(invoke.mock.calls[1][1]).toMatchObject({
+		expect(vi.mocked(invoke).mock.calls[1][1]).toMatchObject({
 			requestState: 'state-1',
 			inputResponses: { q1: { action: 'accept', content: { text: 'haruspex' } } }
 		});
@@ -418,7 +422,7 @@ describe('multi round-trip requests', () => {
 		// A scheduled or background run has no one to answer. Blocking there is
 		// the failure ask_user_question already refuses to have.
 		registerMcpTools(SERVER, 'One', [askingTool], ['plan']);
-		invoke.mockResolvedValue(inputRequired('state-1'));
+		vi.mocked(invoke).mockResolvedValue(inputRequired('state-1'));
 		const out = await executeTool('mcp__srv-1__plan', {}, ctx());
 		expect(out.result).toContain('nobody is available');
 		expect(invoke).toHaveBeenCalledTimes(1);
@@ -428,7 +432,7 @@ describe('multi round-trip requests', () => {
 		// A server that keeps asking is broken, not interactive, and every round
 		// is another modal in front of the user.
 		registerMcpTools(SERVER, 'One', [askingTool], ['plan']);
-		invoke.mockResolvedValue(inputRequired('state-n'));
+		vi.mocked(invoke).mockResolvedValue(inputRequired('state-n'));
 		const askUser = vi.fn().mockResolvedValue({ kind: 'freeText', text: 'x' });
 		const out = await executeTool('mcp__srv-1__plan', {}, ctx({ interactive: true, askUser }));
 
@@ -532,7 +536,7 @@ describe('images a tool returns', () => {
 
 	beforeEach(() => {
 		registerMcpTools(SERVER, 'One', [tool('screenshot')], ['screenshot']);
-		invoke.mockResolvedValue(shot());
+		vi.mocked(invoke).mockResolvedValue(shot());
 	});
 
 	it('hands the picture to the model and shows the user the same one', async () => {
@@ -570,13 +574,13 @@ describe('large results', () => {
 
 	beforeEach(() => {
 		registerMcpTools(SERVER, 'One', [tool('snapshot')], ['snapshot']);
-		invoke.mockImplementation(async (cmd: string) =>
+		vi.mocked(invoke).mockImplementation(async (cmd: string) =>
 			cmd === 'code_write_overflow' ? '/tmp/haruspex-run-output-1.txt' : complete(big)
 		);
 	});
 
 	it('passes a result under the cap through whole', async () => {
-		invoke.mockResolvedValue(complete('small'));
+		vi.mocked(invoke).mockResolvedValue(complete('small'));
 		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx());
 		expect(out.result).toBe('small');
 	});
@@ -603,7 +607,7 @@ describe('large results', () => {
 	});
 
 	it("leaves the server's own error text whole", async () => {
-		invoke.mockResolvedValue({ ...complete(big), isError: true });
+		vi.mocked(invoke).mockResolvedValue({ ...complete(big), isError: true });
 		const out = await executeTool('mcp__srv-1__snapshot', {}, ctx());
 		expect(out.result).not.toContain('middle truncated');
 	});
@@ -617,7 +621,7 @@ describe('failure handling', () => {
 		const seen: string[] = [];
 		setToolFailureHook((id) => seen.push(id));
 		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
-		invoke.mockRejectedValue('boom');
+		vi.mocked(invoke).mockRejectedValue('boom');
 		await executeTool('mcp__srv-1__search', {}, ctx());
 		expect(seen).toEqual([SERVER]);
 		setToolFailureHook(null);
@@ -628,7 +632,7 @@ describe('failure handling', () => {
 		const seen: string[] = [];
 		setToolFailureHook((id) => seen.push(id));
 		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
-		invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			type: 'complete',
 			content: [{ type: 'text', text: 'not found' }],
 			structuredContent: null,
@@ -641,7 +645,7 @@ describe('failure handling', () => {
 
 	it('turns a transport failure into a tool error, not an exception', async () => {
 		registerMcpTools(SERVER, 'One', [tool('search')], ['search']);
-		invoke.mockRejectedValue('server is not connected');
+		vi.mocked(invoke).mockRejectedValue('server is not connected');
 		const out = await executeTool('mcp__srv-1__search', {}, ctx());
 		expect(out.result).toContain('not connected');
 	});

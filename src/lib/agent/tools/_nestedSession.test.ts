@@ -1,14 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-const mocks = vi.hoisted(() => ({
-	invoke: vi.fn()
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 /** Shell tab, Code mode, bound to a live PTY — the configuration where the
  *  file tools and the terminal can drift onto different machines. */
@@ -21,11 +18,13 @@ const shellCodeCtx = makeToolContext({
 
 /** Route invokes by command name; `pending` is what the PTY is running. */
 function mockShell(pending: string | null, results: Record<string, unknown> = {}) {
-	mocks.invoke.mockImplementation(invokeRouter({ ...results, shell_pending_command: pending }));
+	vi.mocked(invoke).mockImplementation(
+		invokeRouter({ ...results, shell_pending_command: pending })
+	);
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('file tools while the terminal is inside an ssh session', () => {
@@ -39,7 +38,7 @@ describe('file tools while the terminal is inside an ssh session', () => {
 		);
 		expect(out.result).toContain('fs_write_text did not run');
 		expect(out.result).toContain('ssh box');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('fs_write_text_absolute', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('fs_write_text_absolute', expect.anything());
 	});
 
 	it('refuses fs_edit_text the same way', async () => {
@@ -51,7 +50,7 @@ describe('file tools while the terminal is inside an ssh session', () => {
 			shellCodeCtx
 		);
 		expect(out.result).toContain('fs_edit_text did not run');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('fs_edit_text_absolute', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('fs_edit_text_absolute', expect.anything());
 	});
 
 	it('labels a read as coming from the local machine', async () => {

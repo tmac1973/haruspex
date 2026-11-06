@@ -1,15 +1,17 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, expect, it, vi } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { blobUrlOf, readViewerBytes, viewerError } from './viewerFile';
 
 describe('readViewerBytes', () => {
 	it('reads the file fresh, as bytes', async () => {
-		tauri.invoke.mockResolvedValueOnce([1, 2, 3]);
+		vi.mocked(invoke).mockResolvedValueOnce([1, 2, 3]);
 		const data = await readViewerBytes('/w', 'a/b.png');
-		expect(tauri.invoke).toHaveBeenCalledWith('fs_read_bytes', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_bytes', {
 			workdir: '/w',
 			relPath: 'a/b.png'
 		});

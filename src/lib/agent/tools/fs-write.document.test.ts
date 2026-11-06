@@ -1,15 +1,17 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { MAX_DRAFT_REWRITES } from '#lib/agent/tools/_drafts.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	disk: new Set<string>(),
 	askFileConflict: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => false }));
 vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({ askFileConflict: mocks.askFileConflict }));
 
@@ -20,12 +22,12 @@ beforeEach(() => {
 	mocks.disk.clear();
 	mocks.askFileConflict.mockReset();
 	mocks.askFileConflict.mockResolvedValue('overwrite');
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	const write = (a?: Record<string, unknown>) => {
 		mocks.disk.add(String(a?.relPath));
 		return null;
 	};
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			fs_path_exists: (a) => mocks.disk.has(String(a?.relPath)),
 			fs_write_pdf: write,
@@ -39,7 +41,7 @@ async function write(args: Record<string, unknown>) {
 	return executeTool('fs_write_document', args, ctx);
 }
 
-const writes = () => mocks.invoke.mock.calls.filter((c) => c[0] !== 'fs_path_exists');
+const writes = () => vi.mocked(invoke).mock.calls.filter((c) => c[0] !== 'fs_path_exists');
 const DRAFT =
 	'# How Heat Pumps Work\n\n## The idea\n\nThey move heat.\n\n## The cycle\n\nFour parts.';
 const SHORTER = '# How Heat Pumps Work\n\n**The idea.** They move heat. **The cycle.** Four parts.';
@@ -69,7 +71,7 @@ describe('fs_write_document paths', () => {
 		expect(JSON.parse(out.result).error).toBe(
 			'fs_write_document needs a path ending in .docx, .odt, .pdf.'
 		);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('runs a use_tool call whose path sits beside its arguments', async () => {
@@ -141,7 +143,7 @@ describe('rewriting a document in the same turn', () => {
 	it('lets a copy the user kept beside the old file be revised', async () => {
 		mocks.disk.add('report.pdf');
 		mocks.askFileConflict.mockResolvedValue('counter');
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				fs_path_exists: (a) => mocks.disk.has(String(a?.relPath)),
 				fs_find_available_path: 'report (1).pdf',

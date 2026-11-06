@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(async (): Promise<unknown> => null) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (): Promise<unknown> => null)
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 import TaskCard from './TaskCard.svelte';
@@ -37,8 +39,8 @@ const card = () => render(TaskCard, { taskId: 't1', label: 'Rendering ep1' });
 
 beforeEach(() => {
 	_resetTasksForTests();
-	tauri.invoke.mockReset();
-	tauri.invoke.mockResolvedValue(null);
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue(null);
 });
 
 describe('TaskCard', () => {
@@ -55,7 +57,7 @@ describe('TaskCard', () => {
 		expect(screen.getByText(/42%, encoding · 1:30 left/)).toBeTruthy();
 		expect(container.querySelector('progress')?.getAttribute('value')).toBe('42');
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-		expect(tauri.invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
+		expect(invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
 	});
 
 	it('shows an unknown amount of progress, and a place in the queue', () => {
@@ -75,7 +77,7 @@ describe('TaskCard', () => {
 		card();
 		expect(screen.getByText('ep1/renders/a.mp4')).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Show in folder' }));
-		expect(tauri.invoke).toHaveBeenCalledWith('task_open', { id: 't1', folder: true });
+		expect(invoke).toHaveBeenCalledWith('task_open', { id: 't1', folder: true });
 	});
 
 	it('shows a finished picture, which opens in the viewer', async () => {
@@ -122,7 +124,7 @@ describe('TaskCard', () => {
 	});
 
 	it('says a task the registry no longer keeps is gone', async () => {
-		tauri.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 		card();
 		await waitFor(() => expect(screen.getByText('Task no longer available.')).toBeTruthy());
 		expect(screen.getByText('Rendering ep1')).toBeTruthy();

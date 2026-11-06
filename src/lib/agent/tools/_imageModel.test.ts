@@ -1,14 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ImageBackendCapabilities, ImageModelEntry } from '#lib/image/types.ts';
 
 const state = vi.hoisted(() => ({
 	models: [] as unknown[],
-	invoke: vi.fn(),
 	generate: vi.fn(),
 	upscale: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageModels: state.models }),
@@ -67,12 +69,14 @@ function params(tool: string) {
 beforeEach(() => {
 	state.models = [];
 	vi.stubGlobal('createImageBitmap', async () => ({ width: 1024, height: 1024, close: () => {} }));
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
-			image_store_bytes: () => 'b'.repeat(64)
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+				image_store_bytes: () => 'b'.repeat(64)
+			})
+		);
 	state.generate.mockReset().mockResolvedValue({
 		bytes: new Uint8Array([9]),
 		width: 1024,
@@ -127,7 +131,7 @@ describe('the model argument', () => {
 
 	it('sends a background task to the model named, not the first that can', async () => {
 		state.models = [ming, klein];
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				task_create: (args) => ({
 					id: 'image-1',
@@ -142,7 +146,7 @@ describe('the model argument', () => {
 			{ prompt: 'a fox', model: 'klein', background: true },
 			chat
 		);
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'task_create',
 			expect.objectContaining({
 				spec: expect.objectContaining({ named: 'klein', entry: klein })

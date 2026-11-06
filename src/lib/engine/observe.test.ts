@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	listener: null as ((e: { payload: unknown }) => void) | null
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: async (_name: string, fn: (e: { payload: unknown }) => void) => {
 		mocks.listener = fn;
@@ -36,7 +38,7 @@ const task = (id: string, owner: string, spec: unknown = {}) => ({
 
 beforeEach(() => {
 	clearDebugLogs();
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	settings.value = {};
 });
 
@@ -95,15 +97,15 @@ describe('debug.tail', () => {
 
 describe('the queue and the tasks', () => {
 	it("reads the inference queue's tickets", async () => {
-		mocks.invoke.mockResolvedValue([{ id: 't1', state: 'running' }]);
+		vi.mocked(invoke).mockResolvedValue([{ id: 't1', state: 'running' }]);
 		expect(await dispatchObserve({ type: 'inference.queue' }, 'main')).toEqual([
 			{ id: 't1', state: 'running' }
 		]);
-		expect(mocks.invoke).toHaveBeenCalledWith('inference_queue_snapshot');
+		expect(invoke).toHaveBeenCalledWith('inference_queue_snapshot');
 	});
 
 	it("lists tasks, or one owner's, with anything named like a secret blanked", async () => {
-		mocks.invoke.mockResolvedValue([
+		vi.mocked(invoke).mockResolvedValue([
 			task('a', 'chat:1', { job: { apiKey: 'sk-secret', prompt: 'a fox' } }),
 			task('b', 'code:2')
 		]);
@@ -120,11 +122,13 @@ describe('the queue and the tasks', () => {
 	});
 
 	it('cancels a task it knows, and says when there is none', async () => {
-		mocks.invoke.mockImplementation(invokeRouter({ task_list: () => [task('a', 'chat:1')] }, true));
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ task_list: () => [task('a', 'chat:1')] }, true)
+		);
 		expect(await dispatchObserve({ type: 'tasks.cancel', taskId: 'a' }, 'main')).toEqual({
 			cancelling: true
 		});
-		expect(mocks.invoke).toHaveBeenCalledWith('task_cancel', { id: 'a' });
+		expect(invoke).toHaveBeenCalledWith('task_cancel', { id: 'a' });
 		await expect(dispatchObserve({ type: 'tasks.cancel', taskId: 'z' }, 'main')).rejects.toThrow(
 			'no task z'
 		);

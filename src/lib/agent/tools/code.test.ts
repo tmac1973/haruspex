@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
@@ -8,7 +9,6 @@ import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	askCommandApproval: vi.fn(),
 	isSessionApproved: vi.fn(() => false),
 	approveSession: vi.fn(),
@@ -16,7 +16,9 @@ const mocks = vi.hoisted(() => ({
 	registerCodeBgWatch: vi.fn(() => 'watch-2')
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/codeCommandApproval.svelte.ts', () => ({
 	askCommandApproval: mocks.askCommandApproval,
 	isSessionApproved: mocks.isSessionApproved,
@@ -46,7 +48,7 @@ const okResult: RunCommandResult = {
 
 /** Answer `invoke` by command; any other command resolves to undefined. */
 function routeInvoke(routes: Record<string, InvokeRoute>): void {
-	mocks.invoke.mockImplementation(invokeRouter(routes, undefined));
+	vi.mocked(invoke).mockImplementation(invokeRouter(routes, undefined));
 }
 
 function runResultDefaults(over: Partial<RunCommandResult> = {}): RunCommandResult {
@@ -54,7 +56,7 @@ function runResultDefaults(over: Partial<RunCommandResult> = {}): RunCommandResu
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.askCommandApproval.mockReset();
 	mocks.isSessionApproved.mockReset().mockReturnValue(false);
 	mocks.approveSession.mockReset();
@@ -70,7 +72,7 @@ describe('run_command risk gate', () => {
 	it('runs a safe command without prompting', async () => {
 		const out = await executeTool('run_command', { command: 'ls -la' }, codeCtx);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'run_command_capture',
 			expect.objectContaining({ command: 'ls -la', cwd: '/work' })
 		);
@@ -87,7 +89,7 @@ describe('run_command risk gate', () => {
 				runResultDefaults({ exit_code: 1, stdout: 'signal: killed', out_of_memory: true })
 		});
 		const out = await executeTool('run_command', { command: 'go test ./...' }, codeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'run_command_capture',
 			expect.objectContaining({ memoryLimitPercent: 50 })
 		);
@@ -106,7 +108,7 @@ describe('run_command risk gate', () => {
 			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
 		);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(out.result).toContain('unattended');
 		expect(out.result).toContain('Do not retry');
 	});
@@ -136,14 +138,14 @@ describe('run_command risk gate', () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
 		const out = await executeTool('run_command', { command: 'rm -rf /' }, codeCtx);
 		expect(mocks.askCommandApproval).toHaveBeenCalled();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(out.result).toContain('denied');
 	});
 
 	it('runs after allow_once without flipping session approval', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
 		await executeTool('run_command', { command: 'sudo reboot' }, codeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(mocks.approveSession).not.toHaveBeenCalled();
 	});
 
@@ -171,14 +173,14 @@ describe('run_command risk gate', () => {
 			{ ...codeCtx, codeAutoApprove: true }
 		);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('skips the prompt when the session is already approved', async () => {
 		mocks.isSessionApproved.mockReturnValue(true);
 		await executeTool('run_command', { command: 'rm -rf /' }, codeCtx);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 });
 
@@ -206,21 +208,21 @@ describe('run_command output handling', () => {
 			code_write_overflow: '/tmp/overflow.txt'
 		});
 		const out = await executeTool('run_command', { command: 'cat big' }, codeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_write_overflow', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('code_write_overflow', expect.anything());
 		expect(out.result).toContain('/tmp/overflow.txt');
 		expect(out.result).toContain('fs_read_text');
 
 		// The Code tab can read that file back, though it is outside the folder.
-		mocks.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await executeTool('fs_read_text', { path: '/tmp/overflow.txt' }, codeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'fs_read_text_absolute',
 			expect.objectContaining({ path: '/tmp/overflow.txt' })
 		);
 		// Any other file outside it still goes through the folder's own check.
-		mocks.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await executeTool('fs_read_text', { path: '/tmp/other.txt' }, codeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'fs_read_text',
 			expect.objectContaining({ relPath: '/tmp/other.txt' })
 		);
@@ -239,7 +241,7 @@ describe('run_command output handling', () => {
 		// listener, then abort while the command is "running".
 		await new Promise((r) => setTimeout(r, 0));
 		controller.abort();
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_cancel', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_cancel', expect.anything());
 		resolveRun(runResultDefaults({ killed: true, exit_code: null }));
 		await p;
 	});
@@ -247,7 +249,7 @@ describe('run_command output handling', () => {
 
 describe('code_grep / code_glob formatting', () => {
 	it('formats grep matches as file:line: text', async () => {
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			matches: [{ path: 'src/a.rs', line: 12, text: 'fn needle()', is_match: true }],
 			truncated: false,
 			counts: [],
@@ -259,7 +261,7 @@ describe('code_grep / code_glob formatting', () => {
 	});
 
 	it('formats count mode as per-file totals + grand total', async () => {
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			matches: [],
 			truncated: false,
 			counts: [
@@ -274,7 +276,7 @@ describe('code_grep / code_glob formatting', () => {
 	});
 
 	it('formats files_only mode as a bare file list', async () => {
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			matches: [],
 			truncated: false,
 			counts: [],
@@ -286,7 +288,7 @@ describe('code_grep / code_glob formatting', () => {
 	});
 
 	it('marks context lines with a "-" separator (grep -C style)', async () => {
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			matches: [
 				{ path: 'a.rs', line: 1, text: 'fn main() {', is_match: false },
 				{ path: 'a.rs', line: 2, text: 'needle();', is_match: true },
@@ -302,13 +304,13 @@ describe('code_grep / code_glob formatting', () => {
 	});
 
 	it('reports no grep matches', async () => {
-		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValueOnce({ matches: [], truncated: false });
 		const out = await executeTool('code_grep', { pattern: 'zzz' }, codeCtx);
 		expect(out.result).toBe('No matches.');
 	});
 
 	it('surfaces the grep overflow note', async () => {
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			matches: [{ path: 'a', line: 1, text: 'x' }],
 			truncated: true
 		});
@@ -317,11 +319,11 @@ describe('code_grep / code_glob formatting', () => {
 	});
 
 	it('formats glob paths and the empty case', async () => {
-		mocks.invoke.mockResolvedValueOnce({ paths: ['src/a.ts', 'src/b.ts'], truncated: false });
+		vi.mocked(invoke).mockResolvedValueOnce({ paths: ['src/a.ts', 'src/b.ts'], truncated: false });
 		const out = await executeTool('code_glob', { pattern: '**/*.ts' }, codeCtx);
 		expect(out.result).toBe('src/a.ts\nsrc/b.ts');
 
-		mocks.invoke.mockResolvedValueOnce({ paths: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValueOnce({ paths: [], truncated: false });
 		const empty = await executeTool('code_glob', { pattern: '**/*.zzz' }, codeCtx);
 		expect(empty.result).toBe('No files match.');
 	});
@@ -340,9 +342,9 @@ describe('Shell + Code combined mode', () => {
 	};
 
 	it('code_grep roots at the live shell CWD', async () => {
-		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValueOnce({ matches: [], truncated: false });
 		await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'code_grep',
 			expect.objectContaining({ root: '/proj', pattern: 'x' })
 		);
@@ -352,39 +354,39 @@ describe('Shell + Code combined mode', () => {
 		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
-			mocks.invoke.mockResolvedValue({ matches: [], truncated: false });
+			vi.mocked(invoke).mockResolvedValue({ matches: [], truncated: false });
 			await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
-			expect(mocks.invoke).toHaveBeenCalledWith(
+			expect(invoke).toHaveBeenCalledWith(
 				'code_grep',
 				expect.objectContaining({ root: '/proj', wslDistro: 'Ubuntu-24.04' })
 			);
-			mocks.invoke.mockResolvedValue({ paths: [], truncated: false });
+			vi.mocked(invoke).mockResolvedValue({ paths: [], truncated: false });
 			await executeTool('code_glob', { pattern: '**/*.rs' }, shellCodeCtx);
-			expect(mocks.invoke).toHaveBeenCalledWith(
+			expect(invoke).toHaveBeenCalledWith(
 				'code_glob',
 				expect.objectContaining({ root: '/proj', wslDistro: 'Ubuntu-24.04' })
 			);
 			// A host-folder Code session has no distro, whatever the Shell tab picked.
-			mocks.invoke.mockClear();
+			vi.mocked(invoke).mockClear();
 			await executeTool('code_glob', { pattern: '**/*.rs' }, codeCtx);
-			expect(mocks.invoke.mock.calls[0][1]).not.toHaveProperty('wslDistro');
+			expect(vi.mocked(invoke).mock.calls[0][1]).not.toHaveProperty('wslDistro');
 			// A WSL Code session searches in its own distro.
-			mocks.invoke.mockClear();
+			vi.mocked(invoke).mockClear();
 			await executeTool('code_glob', { pattern: '**/*.rs' }, { ...codeCtx, wslDistro: 'Debian' });
-			expect(mocks.invoke.mock.calls[0][1]).toMatchObject({ wslDistro: 'Debian' });
+			expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ wslDistro: 'Debian' });
 		} finally {
 			updateSettings({ shellSelection: null });
 		}
 	});
 
 	it("reads a WSL Code session's files through its distro's share", async () => {
-		mocks.invoke.mockResolvedValueOnce('text');
+		vi.mocked(invoke).mockResolvedValueOnce('text');
 		await executeTool(
 			'fs_read_text',
 			{ path: 'src/a.ts' },
 			{ ...codeCtx, workingDir: '/home/tim/p', wslDistro: 'Debian' }
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'fs_read_text',
 			expect.objectContaining({
 				workdir: String.raw`\\wsl.localhost\Debian\home\tim\p`,
@@ -398,28 +400,28 @@ describe('Shell + Code combined mode', () => {
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
 			await executeTool('run_command', { command: 'ls' }, codeCtx);
-			expect(mocks.invoke).toHaveBeenCalledWith(
+			expect(invoke).toHaveBeenCalledWith(
 				'run_command_capture',
 				expect.objectContaining({ shell: null })
 			);
-			mocks.invoke.mockClear();
+			vi.mocked(invoke).mockClear();
 			await executeTool(
 				'run_command',
 				{ command: 'ls' },
 				{ ...codeCtx, workingDir: '/home/tim/p', wslDistro: 'Debian' }
 			);
-			expect(mocks.invoke).toHaveBeenCalledWith(
+			expect(invoke).toHaveBeenCalledWith(
 				'run_command_capture',
 				expect.objectContaining({ cwd: '/home/tim/p', shell: { kind: 'wsl', distro: 'Debian' } })
 			);
 			// The Shell tab's Code mode still follows its picker.
-			mocks.invoke.mockClear();
+			vi.mocked(invoke).mockClear();
 			await executeTool(
 				'run_command',
 				{ command: 'ls' },
 				{ ...shellCodeCtx, shellSessionId: null }
 			);
-			expect(mocks.invoke).toHaveBeenCalledWith(
+			expect(invoke).toHaveBeenCalledWith(
 				'run_command_capture',
 				expect.objectContaining({ shell: { kind: 'wsl', distro: 'Ubuntu-24.04' } })
 			);
@@ -429,14 +431,14 @@ describe('Shell + Code combined mode', () => {
 	});
 
 	it('fs_edit_text dispatches absolute (shell CWD) in Code mode', async () => {
-		mocks.invoke.mockResolvedValueOnce({
+		vi.mocked(invoke).mockResolvedValueOnce({
 			first_changed_line: 1,
 			line_before: 'a',
 			line_after: 'b',
 			used_fuzzy: false
 		});
 		await executeTool('fs_edit_text', { path: 'foo.ts', old_str: 'a', new_str: 'b' }, shellCodeCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
+		expect(invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
 			path: '/proj/foo.ts',
 			oldStr: 'a',
 			newStr: 'b'
@@ -450,23 +452,17 @@ describe('the Code tab root (codeMode without shellMode)', () => {
 	const tabCtx = { ...codeCtx, shellCwd: '/elsewhere' };
 
 	it('code_grep and code_glob root at the working directory, not the shell cwd', async () => {
-		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
+		vi.mocked(invoke).mockResolvedValueOnce({ matches: [], truncated: false });
 		await executeTool('code_grep', { pattern: 'x' }, tabCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
-			'code_grep',
-			expect.objectContaining({ root: '/work' })
-		);
-		mocks.invoke.mockResolvedValueOnce({ paths: [], truncated: false });
+		expect(invoke).toHaveBeenCalledWith('code_grep', expect.objectContaining({ root: '/work' }));
+		vi.mocked(invoke).mockResolvedValueOnce({ paths: [], truncated: false });
 		await executeTool('code_glob', { pattern: '*' }, tabCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
-			'code_glob',
-			expect.objectContaining({ root: '/work' })
-		);
+		expect(invoke).toHaveBeenCalledWith('code_glob', expect.objectContaining({ root: '/work' }));
 	});
 
 	it('run_command runs in the working directory', async () => {
 		await executeTool('run_command', { command: 'pwd' }, tabCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'run_command_capture',
 			expect.objectContaining({ cwd: '/work' })
 		);
@@ -504,13 +500,10 @@ describe('run_command PTY driving', () => {
 			]
 		});
 		const out = await executeTool('run_command', { command: 'ls' }, ptyCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
-			'shell_write',
-			expect.objectContaining({ sessionId: 1 })
-		);
+		expect(invoke).toHaveBeenCalledWith('shell_write', expect.objectContaining({ sessionId: 1 }));
 		expect(out.result).toContain('Exit code: 0');
 		expect(out.result).toContain('a.txt');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('falls back to one-shot when codeCommandExec is "oneshot"', async () => {
@@ -518,7 +511,7 @@ describe('run_command PTY driving', () => {
 		updateSettings({ codeCommandExec: 'oneshot' });
 		routeInvoke({ run_command_capture: () => runResultDefaults() });
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'run_command_capture',
 			expect.objectContaining({ cwd: '/proj' })
 		);
@@ -537,7 +530,7 @@ describe('run_command PTY driving', () => {
 		expect(out.result).toContain('busy running');
 		expect(out.result).toContain('go run main.go');
 		// Refused: never wrote the new command into the PTY.
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
 	});
 
 	it('falls back to one-shot when the platform is unsupported', async () => {
@@ -546,7 +539,7 @@ describe('run_command PTY driving', () => {
 			run_command_capture: () => runResultDefaults()
 		});
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('sends Ctrl-C to the PTY on abort', async () => {
@@ -565,10 +558,7 @@ describe('run_command PTY driving', () => {
 		await new Promise((r) => setTimeout(r, 50));
 		controller.abort();
 		await p;
-		expect(mocks.invoke).toHaveBeenCalledWith(
-			'shell_write',
-			expect.objectContaining({ data: '\x03' })
-		);
+		expect(invoke).toHaveBeenCalledWith('shell_write', expect.objectContaining({ data: '\x03' }));
 	});
 });
 
@@ -625,10 +615,7 @@ describe('run_command background / watch', () => {
 		expect(out.result).toContain('/tmp/hsp-bg-AAA');
 		expect(mocks.registerWatch).not.toHaveBeenCalled();
 		// The detaching wrapper is what got injected (not a plain foreground run).
-		expect(mocks.invoke).toHaveBeenCalledWith(
-			'shell_write',
-			expect.objectContaining({ sessionId: 1 })
-		);
+		expect(invoke).toHaveBeenCalledWith('shell_write', expect.objectContaining({ sessionId: 1 }));
 	});
 
 	it('watch:true also registers a watch for the owning session', async () => {
@@ -673,7 +660,7 @@ describe('run_command background / watch', () => {
 		expect(out.result).toContain('did not run this command');
 		expect(out.result).toContain("Unsupported use of '='");
 		expect(out.result).toContain('runs fish');
-		expect(mocks.invoke).toHaveBeenCalledWith('shell_output_since', { sessionId: 1, from: 100 });
+		expect(invoke).toHaveBeenCalledWith('shell_output_since', { sessionId: 1, from: 100 });
 	});
 
 	it('does not read a running command as rejected', async () => {
@@ -703,7 +690,7 @@ describe('run_command background / watch', () => {
 		});
 		const out = await executeTool('run_command', { command: 'sleep 1' }, ptyCtx);
 		expect(out.result).toContain('Exit code: 0');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_output_since', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('shell_output_since', expect.anything());
 	});
 
 	it('falls back to one-shot in auto mode when the shell never sent a marker', async () => {
@@ -713,8 +700,8 @@ describe('run_command background / watch', () => {
 			run_command_capture: () => runResultDefaults()
 		});
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
 	});
 
 	it('hands the background wrapper to bash under fish', async () => {
@@ -725,7 +712,7 @@ describe('run_command background / watch', () => {
 			ptyCtx
 		);
 		expect(out.result).toContain('Started in the background');
-		const writes = mocks.invoke.mock.calls.filter((c) => c[0] === 'shell_write');
+		const writes = vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'shell_write');
 		const data = String((writes[0][1] as { data: string }).data);
 		expect(data).toMatch(/echo [A-Za-z0-9+/=]+ \| base64 -d \| bash/);
 		const encoded = data.match(/echo ([A-Za-z0-9+/=]+)/)![1];
@@ -740,7 +727,7 @@ describe('run_command background / watch', () => {
 		);
 		expect(out.result).toContain('live terminal session');
 		expect(mocks.registerWatch).not.toHaveBeenCalled();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
 	});
 });
 
@@ -830,7 +817,7 @@ describe('run_command boundary', () => {
 		);
 		stop();
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(out.result).toContain("touches Haruspex's data directory");
 		expect(out.result).toContain('Do not retry');
 		// Heard by whoever is listening: the coding run puts it in its report.
@@ -904,7 +891,7 @@ describe('run_command without a terminal (Code session)', () => {
 			{ command: 'npm run dev', background: true },
 			sessionCtx
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'code_bg_start',
 			expect.objectContaining({ owner: 'sess-1', cwd: '/work', command: 'npm run dev' })
 		);
@@ -953,7 +940,7 @@ describe('run_command without a terminal (Code session)', () => {
 			codeCtx
 		);
 		expect(out.result).toContain('live terminal session');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
 	});
 
 	it('appends the terminal hint when a one-shot sudo fails for want of a TTY', async () => {
@@ -982,8 +969,8 @@ describe('run_command without a terminal (Code session)', () => {
 
 	it('command_output tails the log with a status line', async () => {
 		const out = await executeTool('command_output', { id: 'bg-1' }, sessionCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_status', { owner: 'sess-1' });
-		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-1', bytes: 8192 });
+		expect(invoke).toHaveBeenCalledWith('code_bg_status', { owner: 'sess-1' });
+		expect(invoke).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-1', bytes: 8192 });
 		expect(out.result).toContain('Running for');
 		expect(out.result).toContain('PID 4242');
 		expect(out.result).toContain('listening on :5173');
@@ -1003,19 +990,19 @@ describe('run_command without a terminal (Code session)', () => {
 		routeInvoke({ code_bg_status: [] });
 		const out = await executeTool('command_output', { id: 'bg-9' }, sessionCtx);
 		expect(out.result).toContain('No background command with id bg-9');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_tail', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('code_bg_tail', expect.anything());
 	});
 
 	it('command_stop stops the process', async () => {
 		const out = await executeTool('command_stop', { id: 'bg-1' }, sessionCtx);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_stop', { id: 'bg-1' });
+		expect(invoke).toHaveBeenCalledWith('code_bg_stop', { id: 'bg-1' });
 		expect(out.result).toContain('Stopped bg-1');
 	});
 
 	it('command_stop needs a Code session', async () => {
 		const out = await executeTool('command_stop', { id: 'bg-1' }, codeCtx);
 		expect(out.result).toContain('Code session');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('code_bg_stop', expect.anything());
 	});
 });
 
@@ -1049,14 +1036,14 @@ describe('run_command in a read-only session', () => {
 		);
 		// "For this session" is not remembered for a read-only session.
 		expect(mocks.approveSession).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('runs nothing the user denies', async () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
 		const out = await executeTool('run_command', { command: 'ls' }, readOnly);
 		expect(out.result).toContain('denied');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('refuses background commands without asking', async () => {
@@ -1077,7 +1064,7 @@ describe('run_command in a read-only session', () => {
 			const out = await executeTool(name, args, readOnly);
 			expect(out.result).toContain('read-only');
 		}
-		expect(mocks.invoke).not.toHaveBeenCalledWith('fs_edit_text', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('fs_edit_text', expect.anything());
 	});
 });
 
@@ -1106,7 +1093,7 @@ describe('one writer per folder', () => {
 			{ ...codeCtx, codeWriteGuard: g }
 		);
 		expect(out.result).toContain('Another session (X)');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('an edit takes the folder and reports the file it changed', async () => {
@@ -1131,7 +1118,7 @@ describe('one writer per folder', () => {
 		);
 		expect(out.result).toContain('busy');
 		expect(g.changed).not.toHaveBeenCalled();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('fs_write_text', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('fs_write_text', expect.anything());
 	});
 
 	it('a failed edit reports nothing changed', async () => {
@@ -1162,14 +1149,14 @@ describe('run_command in a read-only subtask', () => {
 	it('runs a command that only reads, without asking', async () => {
 		await executeTool('run_command', { command: 'git log --oneline -5' }, child);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('refuses any other command, without asking', async () => {
 		const out = await executeTool('run_command', { command: 'npm install' }, child);
 		expect(out.result).toContain('read-only subtask');
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('leaves a read-only session asking about reads as before', async () => {
@@ -1192,7 +1179,7 @@ describe('run_command in a writing subtask', () => {
 			const out = await executeTool('run_command', { command: 'npm run dev', [flag]: true }, child);
 			expect(out.result).toContain("Subtasks can't leave processes running");
 		}
-		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
 	});
 
 	it('says while an approval prompt is open', async () => {

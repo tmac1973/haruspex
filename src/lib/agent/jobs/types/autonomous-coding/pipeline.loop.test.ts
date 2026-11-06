@@ -1,8 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/notify.ts', () => ({ notify: vi.fn(async () => {}) }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -33,7 +34,7 @@ import {
  */
 
 async function run(opts: FakeRunOptions = {}) {
-	const r = fakeRun(tauri.invoke, opts);
+	const r = fakeRun(vi.mocked(invoke), opts);
 	await runAutonomousCodingPipeline(r.ctx);
 	return r;
 }
@@ -47,7 +48,7 @@ const reports =
 		r.callTool(o, 'submit_iteration_result', { item_id: itemId ?? assignedItem(o), status, note });
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('phase verification', () => {

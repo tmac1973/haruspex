@@ -1,8 +1,8 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	listen: vi.fn(),
 	unlisten: vi.fn(),
 	watchPrompts: vi.fn(),
@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
 	enabled: false
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ label: 'code-1' }) }));
 vi.mock('#lib/engine/dispatch.ts', () => ({
@@ -45,7 +47,7 @@ beforeEach(() => {
 	mocks.unlisten.mockReset();
 	mocks.watchPrompts.mockReset();
 	mocks.stopSessions.mockReset();
-	mocks.invoke
+	vi.mocked(invoke)
 		.mockReset()
 		.mockImplementation(invokeRouter({ engine_enabled: () => mocks.enabled }));
 	mocks.listen.mockReset().mockImplementation(async () => mocks.unlisten);
@@ -117,6 +119,6 @@ describe('startEngine', () => {
 		expect(mocks.watchPrompts).toHaveBeenCalledTimes(1);
 		// Removed once, though both the early start and startEngine reach for it.
 		expect(mocks.unlisten).toHaveBeenCalledTimes(1);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('engine_enabled');
+		expect(invoke).not.toHaveBeenCalledWith('engine_enabled');
 	});
 });

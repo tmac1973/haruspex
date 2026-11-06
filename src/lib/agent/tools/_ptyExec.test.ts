@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	sleep: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/utils/async.ts', () => ({ sleep: mocks.sleep }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -68,14 +70,14 @@ function ptyRoutes(opts: PtyOpts) {
 
 function mockPty(opts: PtyOpts) {
 	const { writes, routes } = ptyRoutes(opts);
-	mocks.invoke.mockImplementation(invokeRouter(routes));
+	vi.mocked(invoke).mockImplementation(invokeRouter(routes));
 	return writes;
 }
 
 beforeEach(async () => {
 	vi.useFakeTimers();
 	vi.setSystemTime(0);
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	// Every poll interval advances the clock the caller thinks has passed, so a
 	// hook that never takes hits its deadline without burning three real
 	// seconds of spinning.
@@ -108,7 +110,7 @@ describe('run_command with a shell the user opened by hand', () => {
 		mockPty({ pending: '/usr/bin/zsh -l' });
 		const { runInPty } = await import('./_ptyExec');
 		await runInPty(1, 'echo hi', 30, undefined);
-		expect(mocks.invoke).toHaveBeenCalledWith('shell_integration_hook', { shell: 'zsh' });
+		expect(invoke).toHaveBeenCalledWith('shell_integration_hook', { shell: 'zsh' });
 	});
 
 	it('single-quotes the hook path so a space in it survives', async () => {
@@ -132,9 +134,9 @@ describe('run_command with a shell the user opened by hand', () => {
 		mockPty({ pending: 'bash', hookTakes: false });
 		const { runInPty } = await import('./_ptyExec');
 		await runInPty(1, 'echo hi', 30, undefined);
-		const firstAttempts = invokeCalls(mocks.invoke, 'shell_integration_hook').length;
+		const firstAttempts = invokeCalls(vi.mocked(invoke), 'shell_integration_hook').length;
 		await runInPty(1, 'echo there', 30, undefined);
-		const totalAttempts = invokeCalls(mocks.invoke, 'shell_integration_hook').length;
+		const totalAttempts = invokeCalls(vi.mocked(invoke), 'shell_integration_hook').length;
 		expect(firstAttempts).toBe(1);
 		expect(totalAttempts).toBe(1);
 	});
@@ -143,7 +145,7 @@ describe('run_command with a shell the user opened by hand', () => {
 		mockPty({ pending: 'fish' });
 		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_integration_hook', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('shell_integration_hook', expect.anything());
 		expect(out).toContain('`fish` open inside it');
 		expect(out).toContain('Settings → Shell');
 	});
@@ -152,7 +154,7 @@ describe('run_command with a shell the user opened by hand', () => {
 		mockPty({ pending: 'ssh box' });
 		const { runInPty } = await import('./_ptyExec');
 		const out = await runInPty(1, 'echo hi', 30, undefined);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_integration_hook', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('shell_integration_hook', expect.anything());
 		expect(out).toContain('a remote host (box)');
 	});
 
@@ -170,7 +172,7 @@ describe('run_command in a terminal with a memory limit', () => {
 	function withMemory(killedByCommand: boolean | null) {
 		const { writes, routes } = ptyRoutes({ pending: null });
 		let kills = 0;
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				...routes,
 				shell_memory_status: () =>

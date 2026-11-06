@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import {
 	deleteSecret,
@@ -12,12 +14,12 @@ import {
 } from './secrets';
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('secret store helpers', () => {
 	it('report no store when Rust cannot be asked', async () => {
-		mocks.invoke.mockImplementation(async () => {
+		vi.mocked(invoke).mockImplementation(async () => {
 			throw new Error('no IPC');
 		});
 		expect(await secretStoreAvailable()).toBe(false);
@@ -34,7 +36,7 @@ describe('secret store helpers', () => {
 
 	it('do not throw when a delete fails', async () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
-		mocks.invoke.mockImplementation(async () => {
+		vi.mocked(invoke).mockImplementation(async () => {
 			throw new Error('locked');
 		});
 		await expect(deleteSecret('dav:a')).resolves.toBeUndefined();

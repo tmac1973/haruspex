@@ -1,12 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-	invoke: vi.fn()
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
@@ -16,23 +13,23 @@ import { lintPythonIfApplicable } from './_pythonLint';
 
 describe('lintPythonIfApplicable', () => {
 	beforeEach(() => {
-		mocks.invoke.mockReset();
+		vi.mocked(invoke).mockReset();
 	});
 
 	it('returns empty for non-python paths without invoking ruff', async () => {
 		const out = await lintPythonIfApplicable('/work', 'notes.md');
 		expect(out).toBe('');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('returns empty when working directory is null', async () => {
 		const out = await lintPythonIfApplicable(null, 'foo.py');
 		expect(out).toBe('');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('formats ruff diagnostics into a <diagnostics> block', async () => {
-		mocks.invoke.mockResolvedValueOnce(
+		vi.mocked(invoke).mockResolvedValueOnce(
 			JSON.stringify([
 				{
 					code: 'F821',
@@ -54,7 +51,7 @@ describe('lintPythonIfApplicable', () => {
 	});
 
 	it('returns empty string when ruff reports no diagnostics', async () => {
-		mocks.invoke.mockResolvedValueOnce('[]');
+		vi.mocked(invoke).mockResolvedValueOnce('[]');
 		const out = await lintPythonIfApplicable('/work', 'clean.py');
 		expect(out).toBe('');
 	});
@@ -65,27 +62,27 @@ describe('lintPythonIfApplicable', () => {
 			message: `dup ${i}`,
 			location: { row: i + 1, column: 1 }
 		}));
-		mocks.invoke.mockResolvedValueOnce(JSON.stringify(many));
+		vi.mocked(invoke).mockResolvedValueOnce(JSON.stringify(many));
 		const out = await lintPythonIfApplicable('/work', 'noisy.py');
 		expect(out).toContain('... 5 more');
 		expect((out.match(/F401/g) ?? []).length).toBe(20);
 	});
 
 	it('swallows invocation failures and returns empty', async () => {
-		mocks.invoke.mockRejectedValueOnce(new Error('sidecar missing'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('sidecar missing'));
 		const out = await lintPythonIfApplicable('/work', 'foo.py');
 		expect(out).toBe('');
 	});
 
 	it('swallows malformed JSON from ruff and returns empty', async () => {
-		mocks.invoke.mockResolvedValueOnce('not json');
+		vi.mocked(invoke).mockResolvedValueOnce('not json');
 		const out = await lintPythonIfApplicable('/work', 'foo.py');
 		expect(out).toBe('');
 	});
 
 	it('treats uppercase .PY as Python too', async () => {
-		mocks.invoke.mockResolvedValueOnce('[]');
+		vi.mocked(invoke).mockResolvedValueOnce('[]');
 		await lintPythonIfApplicable('/work', 'WEIRD.PY');
-		expect(mocks.invoke).toHaveBeenCalled();
+		expect(invoke).toHaveBeenCalled();
 	});
 });

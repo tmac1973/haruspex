@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	memoryActive: vi.fn(() => true)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
@@ -142,18 +144,18 @@ describe('recallForTurn — gates', () => {
 		// Recall must add zero latency to a chat that has memory disabled.
 		mocks.memoryActive.mockReturnValue(false);
 		expect(await recallForTurn(base)).toEqual([]);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('does not search an incognito conversation', async () => {
-		mocks.invoke.mockResolvedValueOnce({ memory_enabled: false, memory_extracted_to: -1 });
+		vi.mocked(invoke).mockResolvedValueOnce({ memory_enabled: false, memory_extracted_to: -1 });
 		expect(await recallForTurn(base)).toEqual([]);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_search', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('memory_search', expect.anything());
 	});
 
 	it('skips a conversation that has no id yet', async () => {
 		expect(await recallForTurn({ ...base, conversationId: null })).toEqual([]);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 
@@ -166,7 +168,7 @@ describe('recallForTurn — results', () => {
 	};
 
 	it('returns the hits the search found', async () => {
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce([
 				{ id: 'mem-1', content: 'Prefers tabs.', category: 'preference', score: 0.8 }
@@ -186,7 +188,7 @@ describe('recallForTurn — results', () => {
 	 */
 	it('keeps the recalled memory out of the log unless verbose payloads are on', async () => {
 		const hit = { id: 'mem-1', content: 'Prefers tabs.', category: 'preference', score: 0.8 };
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce([hit]);
 		await recallForTurn(base);
@@ -198,7 +200,7 @@ describe('recallForTurn — results', () => {
 
 		setVerbosePayloads(true);
 		try {
-			mocks.invoke
+			vi.mocked(invoke)
 				.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 				.mockResolvedValueOnce([hit]);
 			await recallForTurn(base);
@@ -213,13 +215,13 @@ describe('recallForTurn — results', () => {
 	});
 
 	it('searches with the similarity floor and k', async () => {
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce([]);
 
 		await recallForTurn(base);
 
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'memory_search',
 			expect.objectContaining({ k: 6, minSimilarity: 0.55 })
 		);
@@ -230,7 +232,7 @@ describe('recallForTurn — results', () => {
 	 * missing section, never a failed turn.
 	 */
 	it('returns nothing when the search fails', async () => {
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockRejectedValueOnce(new Error('model not loaded'));
 
@@ -244,7 +246,7 @@ describe('recallForTurn — results', () => {
 			category: 'fact',
 			score: 0.9
 		});
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce([long('a'), long('b'), long('c')]);
 

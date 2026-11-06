@@ -1,16 +1,18 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { LatestRun } from '#lib/home/latestRun.svelte.ts';
 
 const m = vi.hoisted(() => ({
-	invoke: vi.fn<(...args: unknown[]) => Promise<null>>(async () => null),
 	latest: { latest: null, latestSucceeded: null } as LatestRun,
 	current: null as Record<string, unknown> | null,
 	enqueue: vi.fn(async () => 1)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: m.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getSettings: () => ({
@@ -66,7 +68,7 @@ beforeEach(() => {
 	m.latest = { latest: null, latestSucceeded: null };
 	m.current = null;
 	m.enqueue.mockClear();
-	m.invoke.mockClear();
+	vi.mocked(invoke).mockClear();
 	_resetForTests();
 });
 
@@ -130,7 +132,7 @@ describe('ImportantEmailsCard', () => {
 		await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }));
 		await waitFor(() => expect(screen.queryByText('Invoice overdue')).toBeNull());
-		expect(m.invoke).toHaveBeenCalledWith('email_trash', {
+		expect(invoke).toHaveBeenCalledWith('email_trash', {
 			account: expect.objectContaining({ id: 'acc' }),
 			messageId: 'mid-a'
 		});

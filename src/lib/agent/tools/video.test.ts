@@ -1,13 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	enabled: true,
 	intro: '',
 	outro: ''
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
 	return {
@@ -60,7 +62,7 @@ const obs: ClipInfo = {
 };
 
 beforeEach(() => {
-	state.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	state.enabled = true;
 	state.intro = '';
 	state.outro = '';
@@ -102,7 +104,7 @@ describe('video_probe is offered', () => {
 		);
 		const chat = makeToolContext({ interactive: true, workingDir: '/videos' });
 		expect((await executeTool('video_probe', {}, chat)).result).toContain('turn them on');
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 
@@ -118,21 +120,21 @@ describe('video_probe refuses', () => {
 		expect((await executeTool('video_probe', {}, noFolder)).result).toContain('working folder');
 		const job = makeToolContext({ interactive: false, workingDir: '/videos' });
 		expect((await executeTool('video_probe', {}, job)).result).toContain('conversation');
-		expect(state.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 
 describe('video_probe', () => {
 	it('lists the clips with the Settings intro and the folder candidates', async () => {
 		state.intro = '/elsewhere/intro.mp4';
-		state.invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			clips: [obs],
 			unreadable: ['ep010/broken.mp4: moov atom not found'],
 			introCandidates: ['intro001/intro.mp4']
 		});
 		const chat = makeToolContext({ interactive: true, workingDir: '/videos' });
 		const out = await executeTool('video_probe', { episode: 'ep010' }, chat);
-		expect(state.invoke).toHaveBeenCalledWith('video_probe_folder', {
+		expect(invoke).toHaveBeenCalledWith('video_probe_folder', {
 			workingDir: '/videos',
 			episode: 'ep010',
 			overrides: { ffmpeg: '', ffprobe: '', melt: '' }
@@ -145,7 +147,7 @@ describe('video_probe', () => {
 	});
 
 	it('passes a Rust error back to the model', async () => {
-		state.invoke.mockRejectedValue('No folder named ep99 in the working folder.');
+		vi.mocked(invoke).mockRejectedValue('No folder named ep99 in the working folder.');
 		const chat = makeToolContext({ interactive: true, workingDir: '/videos' });
 		const out = await executeTool('video_probe', { episode: 'ep99' }, chat);
 		expect(out.result).toContain('No folder named ep99');

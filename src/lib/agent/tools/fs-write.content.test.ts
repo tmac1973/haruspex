@@ -1,16 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { pngHeader } from '#lib/slides/testImages.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	logDebug: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
@@ -23,7 +23,7 @@ const ctx = makeToolContext({
 });
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	// Each test is its own turn. Several of them write the same path (d.pptx),
 	// and fs-write refuses a repeat write within a turn — so a set carried over
 	// between tests would make every case after the first fail.
@@ -47,17 +47,17 @@ describe('text-content writers reject empty content', () => {
 		it(`${tool} ${path} rejects empty content`, async () => {
 			const out = await call(tool, { path, content: '' });
 			expect(JSON.parse(out.result).error).toMatch(/non-empty content/i);
-			expect(mocks.invoke).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
 		});
 
 		it(`${tool} ${path} rejects whitespace-only content`, async () => {
 			const out = await call(tool, { path, content: '   \n\t  ' });
 			expect(JSON.parse(out.result).error).toMatch(/non-empty content/i);
-			expect(mocks.invoke).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
 		});
 
 		it(`${tool} ${path} accepts real content and writes`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+			vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call(tool, {
 				path,
 				content: 'Real content here.'
@@ -76,7 +76,7 @@ describe('fs_write_slides slide validation', () => {
 	// A .pptx is built here and reads its pictures before the path check, so
 	// answer by command rather than by call order.
 	beforeEach(() => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ fs_path_exists: false, fs_read_bytes: Array.from(pngHeader(40, 30)) },
 				undefined
@@ -87,7 +87,7 @@ describe('fs_write_slides slide validation', () => {
 	/** The slides Rust was sent. Only .odp sends them: a .pptx goes as the
 	 *  built deck, and fs-write.slides.test.ts checks what reaches its builder. */
 	function odpSlides(): { layout?: string; bullets?: unknown }[] {
-		const call = mocks.invoke.mock.calls.find((c) => c[0] === 'fs_write_odp');
+		const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'fs_write_odp');
 		return (call![1] as { slides: { layout?: string; bullets?: unknown }[] }).slides;
 	}
 
@@ -98,10 +98,10 @@ describe('fs_write_slides slide validation', () => {
 			slides: [{ title: 'Chart', bullets: ['a point'], image: 'plot.png' }]
 		});
 		expect(out.result).toBe('Wrote: d.pptx');
-		const write = mocks.invoke.mock.calls.find((c) => c[0] === 'fs_write_pptx')!;
+		const write = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'fs_write_pptx')!;
 		const deck = write[1] as Uint8Array;
 		expect(Array.from(deck.subarray(0, 4))).toEqual([0x50, 0x4b, 3, 4]);
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_bytes', {
+		expect(invoke).toHaveBeenCalledWith('fs_read_bytes', {
 			workdir: '/tmp/work',
 			relPath: 'plot.png'
 		});
@@ -112,7 +112,7 @@ describe('fs_write_slides slide validation', () => {
 		it(`${path} rejects an empty slides array`, async () => {
 			const out = await call('fs_write_slides', { path, slides: [] });
 			expect(JSON.parse(out.result).error).toMatch(/non-empty array/i);
-			expect(mocks.invoke).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
 		});
 
 		it(`${path} rejects a slide with no title`, async () => {
@@ -121,7 +121,7 @@ describe('fs_write_slides slide validation', () => {
 				slides: [{ title: '', bullets: ['a'] }]
 			});
 			expect(JSON.parse(out.result).error).toMatch(/no title/i);
-			expect(mocks.invoke).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
 		});
 
 		it(`${path} treats a title-only slide as a section divider instead of erroring`, async () => {
@@ -148,7 +148,7 @@ describe('fs_write_slides slide validation', () => {
 				slides: [{}]
 			});
 			expect(JSON.parse(out.result).error).toMatch(/no title/i);
-			expect(mocks.invoke).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
 		});
 
 		it(`${path} rejects a placeholder-style bullet`, async () => {
@@ -157,7 +157,7 @@ describe('fs_write_slides slide validation', () => {
 				slides: [{ title: 'Topic', bullets: ['/content'] }]
 			});
 			expect(JSON.parse(out.result).error).toMatch(/placeholder/i);
-			expect(mocks.invoke).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
 		});
 
 		it(`${path} allows a section slide without bullets`, async () => {
@@ -217,7 +217,7 @@ describe('fs_write_slides slide validation', () => {
 });
 
 describe('the merged writers pick the format from the extension', () => {
-	const written = () => mocks.invoke.mock.calls.filter((c) => c[0] !== 'fs_path_exists');
+	const written = () => vi.mocked(invoke).mock.calls.filter((c) => c[0] !== 'fs_path_exists');
 
 	it('routes each document extension to its command, in any case', async () => {
 		for (const [path, command] of [
@@ -225,8 +225,8 @@ describe('the merged writers pick the format from the extension', () => {
 			['b.ODT', 'fs_write_odt'],
 			['c.Pdf', 'fs_write_pdf']
 		]) {
-			mocks.invoke.mockReset();
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+			vi.mocked(invoke).mockReset();
+			vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_document', { path, content: 'Body.' });
 			expect(out.result).toBe(`Wrote: ${path}`);
 			expect(written()[0][0]).toBe(command);
@@ -239,7 +239,7 @@ describe('the merged writers pick the format from the extension', () => {
 			'fs_write_document writes .docx, .odt, .pdf files: end the path with one of those. ' +
 				'For .md or .txt use fs_write_text.'
 		);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('refuses a path with no extension', async () => {
@@ -248,7 +248,7 @@ describe('the merged writers pick the format from the extension', () => {
 			sheets: [{ name: 'S', rows: [['a'], ['1']] }]
 		});
 		expect(JSON.parse(out.result).error).toMatch(/^fs_write_spreadsheet writes \.xlsx, \.ods/);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('does not take a dot in a folder name for an extension', async () => {
@@ -259,20 +259,20 @@ describe('the merged writers pick the format from the extension', () => {
 
 describe('the retired per-format tools still work', () => {
 	it('routes fs_write_pdf to fs_write_document as a PDF, adding the extension', async () => {
-		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await call('fs_write_pdf', { path: 'report', content: 'Body.' });
 		expect(out.result).toBe('Wrote: report.pdf');
-		expect(mocks.invoke).toHaveBeenLastCalledWith(
+		expect(invoke).toHaveBeenLastCalledWith(
 			'fs_write_pdf',
 			expect.objectContaining({ relPath: 'report.pdf' })
 		);
 	});
 
 	it('keeps a path that already has the extension', async () => {
-		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+		vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await call('fs_write_odp', { path: 'deck.ODP', slides: [{ title: 'T' }] });
 		expect(out.result).toBe('Wrote: deck.ODP');
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_odp', expect.any(Object));
+		expect(invoke).toHaveBeenCalledWith('fs_write_odp', expect.any(Object));
 	});
 
 	it('labels a retired call as its replacement does, and never offers it', async () => {
@@ -308,17 +308,17 @@ describe('writeRoot confinement applies to edits, not just writes', () => {
 			new_str: 'b'
 		});
 		expect(JSON.parse(out.result).error).toMatch(/may only write inside plan\/my-feature\//);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('allows an edit inside the write root', async () => {
-		mocks.invoke.mockResolvedValue({ first_changed_line: 12, used_fuzzy: false });
+		vi.mocked(invoke).mockResolvedValue({ first_changed_line: 12, used_fuzzy: false });
 		const out = await callRooted('fs_edit_text', {
 			path: 'plan/my-feature/phase-01.md',
 			old_str: 'a',
 			new_str: 'b'
 		});
 		expect(out.result).toContain('Edited plan/my-feature/phase-01.md');
-		expect(mocks.invoke).toHaveBeenCalled();
+		expect(invoke).toHaveBeenCalled();
 	});
 });

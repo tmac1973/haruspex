@@ -6,6 +6,7 @@
  * context, whose `runJobTurn` is the model.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { parseModelSpec } from '#lib/models3d/spec/parse.ts';
@@ -20,8 +21,9 @@ import type { EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import { ANIMATE, CREATE, HANDOFF, REPORT, SPEC, runModelGenerationPipeline } from './pipeline';
 import { SUBMIT_MODEL_SPEC_TOOL } from './tools';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
 vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 const question = vi.hoisted(() => ({ ask: vi.fn() }));
@@ -175,7 +177,7 @@ beforeEach(() => {
 	files = new Map();
 	written = [];
 	bytesWritten = [];
-	tauri.invoke.mockImplementation(routes());
+	vi.mocked(invoke).mockImplementation(routes());
 	question.ask.mockResolvedValue({ kind: 'selected', labels: ['Keep'] });
 	verdict.judgeModel.mockResolvedValue({
 		done: true,
