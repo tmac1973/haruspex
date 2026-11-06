@@ -8,7 +8,7 @@
 import { BACKEND_UPLOAD_TIMEOUT_MS, invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { toolchestCall } from '#lib/toolchest/models.ts';
-import { errorBody } from '#lib/utils/http.ts';
+import { errorBody, urlHost } from '#lib/utils/http.ts';
 
 export interface ToolchestConfig {
 	baseUrl: string;
@@ -136,11 +136,7 @@ export async function toolchestBytes(
 	return buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf);
 }
 
-/** The host a base URL names, for a sentence. */
+/** The host a base URL names, for a sentence; the URL itself when it names none. */
 export function hostOf(baseUrl: string): string {
-	try {
-		return new URL(baseUrl).host || baseUrl;
-	} catch {
-		return baseUrl;
-	}
+	return urlHost(baseUrl) ?? baseUrl;
 }

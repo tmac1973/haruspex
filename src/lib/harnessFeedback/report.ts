@@ -69,7 +69,11 @@ const RESULT_CHARS = 1500;
 /** An error is the evidence, so more of it is kept. */
 const ERROR_CHARS = 4000;
 
-function clip(text: string, max: number): string {
+/**
+ * `text` cut to `max` characters, line breaks kept, saying how much went:
+ * evidence, unlike `reports.ts`'s one-line `clipToLine`.
+ */
+function clipCounted(text: string, max: number): string {
 	return text.length > max ? `${text.slice(0, max)}… [${text.length - max} more chars]` : text;
 }
 
@@ -114,9 +118,11 @@ export function traceEntry(tool: string, args: unknown, result: string | undefin
 	const error = result !== undefined && isToolErrorResult(result);
 	return {
 		tool,
-		args: clip(argText, ARGS_CHARS),
+		args: clipCounted(argText, ARGS_CHARS),
 		result:
-			result === undefined ? '(no result yet)' : clip(result, error ? ERROR_CHARS : RESULT_CHARS),
+			result === undefined
+				? '(no result yet)'
+				: clipCounted(result, error ? ERROR_CHARS : RESULT_CHARS),
 		error
 	};
 }

@@ -35,6 +35,15 @@ export function errorText(body: string): string | null {
 	return nonEmpty(errorField(body));
 }
 
+/** A URL's `host` (with its port), or null when it has none or isn't a URL. */
+export function urlHost(url: string): string | null {
+	try {
+		return new URL(url).host || null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * A configured URL as it may appear in a log or a public issue: scheme, host,
  * port and path. Userinfo (`user:pass@`), the query string (`?key=…`) and the

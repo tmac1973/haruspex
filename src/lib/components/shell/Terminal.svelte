@@ -9,6 +9,7 @@
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '#lib/stores/settings.ts';
+	import { base64ToBytes } from '#lib/utils/base64.ts';
 	import { commandMemoryLimitPercent } from '#lib/shell/memoryLimit.ts';
 	import { isPtyBusy, ptyBusyCommand } from '#lib/stores/shellPtyBusy.svelte.ts';
 	import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
@@ -96,13 +97,6 @@
 	}
 	interface ExitEvent {
 		session_id: number;
-	}
-
-	function base64ToBytes(b64: string): Uint8Array {
-		const bin = atob(b64);
-		const out = new Uint8Array(bin.length);
-		for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-		return out;
 	}
 
 	function createTerminal(): { t: Terminal; fit: FitAddon } {

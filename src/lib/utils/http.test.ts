@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { errorBody, errorText, urlForReport } from './http';
+import { errorBody, errorText, urlForReport, urlHost } from './http';
 
 describe('errorBody', () => {
 	it('reads an OpenAI-style message and code', () => {
@@ -34,6 +34,18 @@ describe('errorText', () => {
 		expect(errorText('[1]')).toBeNull();
 		expect(errorText('null')).toBeNull();
 		expect(errorText('oops')).toBeNull();
+	});
+});
+
+describe('urlHost', () => {
+	it('names the host with its port', () => {
+		expect(urlHost('http://gpu.lan:8080/v1')).toBe('gpu.lan:8080');
+		expect(urlHost('https://example.com')).toBe('example.com');
+	});
+
+	it('answers null for no URL, or one without a host', () => {
+		expect(urlHost('not a url')).toBeNull();
+		expect(urlHost('file:///tmp/x')).toBeNull();
 	});
 });
 

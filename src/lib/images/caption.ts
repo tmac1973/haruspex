@@ -57,7 +57,7 @@ export function captionFor(row: ImageRow): Caption | null {
 
 	if (code === 'unknown') {
 		// Scraped from a page. Name the site, claim nothing about the licence.
-		const host = hostOf(row.source_url);
+		const host = siteOf(row.source_url);
 		if (!host) return null;
 		return { text: '', linkLabel: host, linkHref: href || row.source_url };
 	}
@@ -87,8 +87,8 @@ function licenseLabelFor(code: string): string {
 	return match[2] ? `${label} ${match[2]}` : label;
 }
 
-/** The site a web URL names, or '' for anything that is not http(s). */
-function hostOf(url: string): string {
+/** The site a web URL names, without its port or `www.`, for a caption; '' for anything that is not http(s). */
+function siteOf(url: string): string {
 	try {
 		const parsed = new URL(url);
 		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
