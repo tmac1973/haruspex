@@ -36,7 +36,7 @@ When the window's folder holds more than one file of a kind, a tree of them sits
 
 ## Look at an image
 
-- It's fitted to the window, never enlarged. **1:1** shows it at its real size, scrolling when it's larger; **Fit** goes back.
+- It's fitted to the window, never enlarged. **1:1** shows it at its real size; when it's larger, drag it around or use the scroll bars. **Fit** goes back.
 - A checkerboard shows through transparent parts.
 - The bar gives its size in pixels and on disk.
 
