@@ -17,7 +17,12 @@ import {
 	updateApiKey,
 	updateSettings
 } from '#lib/stores/settings.ts';
-import { forgetApiKey, rememberApiKey, rememberedApiKey } from '#lib/stores/apiKeyMemory.ts';
+import {
+	forgetApiKey,
+	markApiKeyProblem,
+	rememberApiKey,
+	rememberedApiKey
+} from '#lib/stores/apiKeyMemory.ts';
 import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
 import { getJob, getJobs, loadJobs } from '#lib/stores/jobs.svelte.ts';
 
@@ -34,8 +39,14 @@ export function apiKeysReady(): Promise<void> {
 			if (!k.stored || rememberedApiKey(k.id) !== undefined) continue;
 			try {
 				const value = await invoke<string | null>('secret_get', { key: apiKeySecretKey(k.id) });
-				if (value) rememberApiKey(k.id, value);
+				if (value) {
+					rememberApiKey(k.id, value);
+				} else {
+					markApiKeyProblem(k.id, 'missing');
+					console.warn(`The API key "${k.name}" is marked as stored, but the store has no value.`);
+				}
 			} catch (e) {
+				markApiKeyProblem(k.id, 'unreadable');
 				console.warn(`Could not read the API key "${k.name}":`, e);
 			}
 		}

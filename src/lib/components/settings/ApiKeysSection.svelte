@@ -4,9 +4,11 @@
 	 * settings section. Lets the user add, rename, update, and delete named
 	 * keys that are referenced by inference backends and per-job overrides.
 	 */
-	import { getApiKeys, updateApiKey } from '#lib/stores/settings.ts';
+	import { onMount } from 'svelte';
+	import { getApiKeyProblem, getApiKeys, updateApiKey } from '#lib/stores/settings.ts';
 	import {
 		addStoredApiKey,
+		apiKeysReady,
 		apiKeyValueWarning,
 		deleteStoredApiKey,
 		setStoredApiKeyValue
@@ -27,6 +29,11 @@
 	function refresh() {
 		keys = getApiKeys();
 	}
+
+	// A key the store had no value for is only known once the stored keys are read.
+	onMount(() => {
+		void apiKeysReady().then(refresh);
+	});
 
 	async function add() {
 		if (!newValue.trim()) return;
@@ -72,6 +79,7 @@
 	{#if keys.length > 0}
 		<div class="key-list">
 			{#each keys as k (k.id)}
+				{@const problem = getApiKeyProblem(k.id)?.problem}
 				<div class="key-row">
 					<input
 						type="text"
@@ -84,14 +92,31 @@
 						value=""
 						oninput={(e) => (drafts = { ...drafts, [k.id]: e.currentTarget.value })}
 						onblur={(e) => onValueBlur(k, e.currentTarget as HTMLInputElement)}
-						placeholder={k.stored || k.value ? 'Saved — type to replace' : 'Key value'}
+						placeholder={problem
+							? 'Missing — type the key again'
+							: k.stored || k.value
+								? 'Saved — type to replace'
+								: 'Key value'}
 					/>
 					<button class="btn btn-danger btn-small" onclick={() => (pendingDelete = k)}>
 						Delete
 					</button>
 				</div>
 				{@const warning = apiKeyValueWarning(drafts[k.id] ?? '')}
-				{#if warning}<p class="key-warning" role="alert">{warning}</p>{/if}
+				{#if warning}
+					<p class="key-warning" role="alert">{warning}</p>
+				{:else if problem}
+					<p
+						class="key-warning"
+						title={problem === 'missing'
+							? 'The secret store has nothing saved under this key, so requests that use it are refused.'
+							: 'The secret store refused to give Haruspex this key, so requests that use it are refused.'}
+					>
+						{problem === 'missing'
+							? 'This key is missing from the secret store. Type it again.'
+							: "Haruspex couldn't read this key from the secret store. Type it again."}
+					</p>
+				{/if}
 			{/each}
 		</div>
 	{:else}
