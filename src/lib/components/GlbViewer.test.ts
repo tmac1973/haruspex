@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => [1, 2, 3]) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, [1, 2, 3])
+);
 const view = vi.hoisted(() => ({
 	stats: { meshes: 2, triangles: 10, size: [1, 2, 1] as [number, number, number], animations: 0 },
 	clips: [] as string[],

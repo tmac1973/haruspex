@@ -2,6 +2,12 @@
  * Test helpers for code that calls Tauri's `invoke`. Not shipped: only test
  * files import this.
  *
+ *   vi.mock('@tauri-apps/api/core', async () =>
+ *     (await import('#lib/testing/invoke.ts')).mockTauriCore({ secret_available: true })
+ *   );
+ *
+ * or, with the mock in a hoisted object the test drives:
+ *
  *   const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
  *   vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
  *   tauri.invoke.mockImplementation(
@@ -9,7 +15,7 @@
  *   );
  */
 import type { InvokeArgs } from '@tauri-apps/api/core';
-import type { Mock } from 'vitest';
+import { vi, type Mock } from 'vitest';
 
 /** What a route sees: the command's named args. Commands that take raw bytes
  *  (`number[]`, `ArrayBuffer`) are routed by value, not inspected. */
@@ -51,6 +57,20 @@ export function invokeRouter(
 		const route = routes[cmd];
 		return (typeof route === 'function' ? route(args) : route) as T;
 	};
+}
+
+/**
+ * A stand-in for `@tauri-apps/api/core`, for a `vi.mock` factory: `invoke` is
+ * a `vi.fn` answering through `invokeRouter(routes, fallback)`, so a command
+ * with no route resolves to null, and `isTauri` says yes. A test that drives
+ * the mock imports `invoke` and takes `vi.mocked(invoke)`; `mockReset` puts
+ * the routes back.
+ */
+export function mockTauriCore(
+	routes: Record<string, InvokeRoute> = {},
+	...fallback: [InvokeFallback?]
+) {
+	return { invoke: vi.fn(invokeRouter(routes, ...fallback)), isTauri: () => true };
 }
 
 /** For a router's fallback: fail the test on any command it didn't expect. */

@@ -2,7 +2,9 @@ import { tick } from 'svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const mocks = vi.hoisted(() => ({
 	gitBranches: vi.fn(async () => ['feature', 'main']),
 	gitSwitch: vi.fn(async () => {}),
@@ -59,14 +61,14 @@ describe('CodeBranchControl', () => {
 
 	it('shows the branch, the ● for uncommitted work, and a detached HEAD by hash', () => {
 		const { unmount } = render(CodeBranchControl, { session: session() });
-		expect(screen.getByRole('button', { name: 'Branch main' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Branch main' });
 		expect(screen.queryByTestId('dirty-marker')).toBeNull();
 		unmount();
 		render(CodeBranchControl, { session: session({ git: repo({ branch: null, untracked: 1 }) }) });
 		expect(
 			screen.getByRole('button', { name: /Branch abc1234, uncommitted changes/ })
 		).toBeTruthy();
-		expect(screen.getByTestId('dirty-marker')).toBeTruthy();
+		screen.getByTestId('dirty-marker');
 	});
 
 	it('switches to another branch from the menu', async () => {
@@ -86,13 +88,13 @@ describe('CodeBranchControl', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /Branch main/ }));
 		const item = (await screen.findByRole('menuitem', { name: 'feature' })) as HTMLButtonElement;
 		expect(item.disabled).toBe(true);
-		expect(screen.getByText('1 file has uncommitted changes: commit or stash first.')).toBeTruthy();
+		screen.getByText('1 file has uncommitted changes: commit or stash first.');
 	});
 
 	it('will not switch while a turn runs', async () => {
 		render(CodeBranchControl, { session: session({ busy: true }) });
 		await fireEvent.click(screen.getByRole('button', { name: 'Branch main' }));
-		expect(await screen.findByText(/Wait for the turn to finish/)).toBeTruthy();
+		await screen.findByText(/Wait for the turn to finish/);
 	});
 
 	it("shows git's refusal when a switch fails", async () => {
@@ -160,6 +162,6 @@ describe('CodeBranchControl', () => {
 		mocks.openSessionsSharing.mockResolvedValueOnce([{ title: 'Fix login', root: '/p' }]);
 		render(CodeBranchControl, { session: session() });
 		await fireEvent.click(screen.getByRole('button', { name: 'Branch main' }));
-		expect(await screen.findByText(/Also open here: Fix login/)).toBeTruthy();
+		await screen.findByText(/Also open here: Fix login/);
 	});
 });

@@ -36,7 +36,9 @@ const LIVE = process.env.HARUSPEX_IMAGE_E2E === '1';
 const BACKEND_URL = process.env.HARUSPEX_IMAGE_BACKEND_URL ?? '';
 const live = LIVE && BACKEND_URL ? it : it.skip;
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 	return {

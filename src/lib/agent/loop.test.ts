@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, onTestFinished, type Mock } from 'vitest';
-import { NUDGE_NOTE, automaticCheck } from './loop/nudges';
+import { MAX_LENGTH_CONTINUE_RETRIES, NUDGE_NOTE, automaticCheck } from './loop/nudges';
 import type {
 	ChatCompletionResponse,
 	ChatMessage,
@@ -77,15 +77,17 @@ vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/markdown.ts')>())
 }));
 
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: vi.fn(),
-	isVerbosePayloads: () => false
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
+		isVerbosePayloads: () => false
+	})
+);
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn().mockRejectedValue(new Error('not available'))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, () => {
+		throw new Error('not available');
+	})
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -443,8 +445,8 @@ describe('runAgentLoop: truncation before any tool call', () => {
 
 		await runAgentLoop(options);
 
-		// 1 initial + MAX_LENGTH_CONTINUE_RETRIES (2) retries, then final synthesis.
-		expect(api.chatCompletion).toHaveBeenCalledTimes(3);
+		// The first call and its retries, then the final synthesis.
+		expect(api.chatCompletion).toHaveBeenCalledTimes(1 + MAX_LENGTH_CONTINUE_RETRIES);
 		expect(api.chatCompletionStream).toHaveBeenCalled();
 		const err = cb.onError.mock.calls[0][0] as Error;
 		expect(err.message).toContain('response limit');
@@ -1124,12 +1126,13 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 			toolCallResponse([{ id: 'c2', name: 'fetch_url', args: '{"url":"https://b.dev"}' }])
 		);
 		streamQueue.push([contentChunk('Summary of findings.', 'stop')]);
-		const { options, cb } = makeOptions({ maxIterations: 2 });
+		const maxIterations = 2;
+		const { options, cb } = makeOptions({ maxIterations });
 
 		await runAgentLoop(options);
 
 		// The cap: exactly maxIterations tool checks, then the synthesis.
-		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		expect(api.chatCompletion).toHaveBeenCalledTimes(maxIterations);
 		expect(api.chatCompletionStream).toHaveBeenCalled();
 		// Final synthesis keeps the tools, so the prompt stays a cached prefix,
 		// but may not call them.
@@ -1414,13 +1417,14 @@ describe('runAgentLoop: blocked web reads grant free retries', () => {
 		toolsMock.executeTool.mockResolvedValue({
 			result: 'Failed to fetch URL: Fetch failed with status: 403 Forbidden'
 		});
-		const { options, cb } = makeOptions({ maxIterations: 2 });
+		const maxIterations = 2;
+		const { options, cb } = makeOptions({ maxIterations });
 
 		await runAgentLoop(options);
 
-		// 2 free retries + 2 counted iterations = 4 tool-check calls, then the
+		// maxIterations free retries + maxIterations counted ones, then the
 		// forced final synthesis.
-		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2 * maxIterations);
 		expect(api.chatCompletionStream).toHaveBeenCalled();
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
 	});

@@ -25,12 +25,14 @@ const dbg = vi.hoisted(() => ({
 	lines: [] as Array<[string, Record<string, unknown> | undefined]>,
 	verbose: false
 }));
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: (_cat: string, msg: string, data?: Record<string, unknown>) =>
-		dbg.lines.push([msg, data]),
-	isVerbosePayloads: () => dbg.verbose
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
+		logDebug: (_cat, msg, data) => {
+			dbg.lines.push([msg, data as Record<string, unknown> | undefined]);
+		},
+		isVerbosePayloads: () => dbg.verbose
+	})
+);
 
 import { executeToolCalls } from './toolCalls';
 import { NudgeState } from './nudges';

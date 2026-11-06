@@ -19,10 +19,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 		settings: { proxy: { mode: 'none' }, sandboxNetAccess: 'internet' }
 	})
 );
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: () => {}
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 import { WorkerManager } from './workerManager';
 import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from './availability';

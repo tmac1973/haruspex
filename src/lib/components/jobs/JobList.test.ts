@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import JobList, { _resetForTests } from './JobList.svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn().mockRejectedValue(new Error('not available'))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, () => {
+		throw new Error('not available');
+	})
+);
 
 const job = {
 	id: 7,
@@ -165,17 +167,17 @@ describe('JobList', () => {
 		it('nests them under the job that started them, closed', async () => {
 			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
 			expect(screen.queryByText('Hangman plan — assets')).toBeNull();
-			expect(screen.getByText(/2 started/)).toBeTruthy();
+			screen.getByText(/2 started/);
 
 			await fireEvent.click(screen.getByLabelText('Show the jobs it started'));
-			expect(screen.getByText('Hangman plan — assets')).toBeTruthy();
+			screen.getByText('Hangman plan — assets');
 			// The asset job's own coding job stays closed under it.
 			expect(screen.queryByText('Hangman plan — coding')).toBeNull();
 		});
 
 		it('opens the way down to a selected job', () => {
 			render(JobList, { selectedId: 9, onselect: vi.fn(), onrun: vi.fn() });
-			expect(screen.getByText('Hangman plan — coding')).toBeTruthy();
+			screen.getByText('Hangman plan — coding');
 		});
 
 		it('marks a closed parent when a job below it is running', () => {
@@ -186,7 +188,7 @@ describe('JobList', () => {
 				{ ...coding, parent_job_id: 80 }
 			];
 			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
-			expect(screen.getByLabelText('A job it started is running')).toBeTruthy();
+			screen.getByLabelText('A job it started is running');
 		});
 
 		it('filters by name and keeps the jobs above a match', async () => {
@@ -194,7 +196,7 @@ describe('JobList', () => {
 			await fireEvent.input(screen.getByLabelText('Filter jobs'), {
 				target: { value: 'coding' }
 			});
-			expect(screen.getByText('Hangman plan — coding')).toBeTruthy();
+			screen.getByText('Hangman plan — coding');
 			expect(screen.queryByText('Morning headlines')).toBeNull();
 			expect(names()).toHaveLength(3);
 		});
@@ -205,7 +207,7 @@ describe('JobList', () => {
 			await fireEvent.input(input, { target: { value: 'news' } });
 			expect(names()).toHaveLength(1);
 			await fireEvent.keyDown(input, { key: 'Escape' });
-			expect(screen.getByText('Morning headlines')).toBeTruthy();
+			screen.getByText('Morning headlines');
 			expect(names().length).toBeGreaterThan(1);
 		});
 
@@ -214,12 +216,12 @@ describe('JobList', () => {
 			await fireEvent.input(screen.getByLabelText('Filter jobs'), {
 				target: { value: 'zzz' }
 			});
-			expect(screen.getByText('No jobs match.')).toBeTruthy();
+			screen.getByText('No jobs match.');
 		});
 	});
 
 	it('has a handle to resize the list', () => {
 		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
-		expect(screen.getByLabelText('Drag to resize')).toBeTruthy();
+		screen.getByLabelText('Drag to resize');
 	});
 });

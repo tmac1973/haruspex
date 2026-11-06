@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import type { SpecialistEntry } from '#lib/specialists/types.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const settings = vi.hoisted(() => ({
 	specialists: [] as SpecialistEntry[],
@@ -70,7 +72,7 @@ describe('Settings → Code → Specialists', () => {
 			.getAllByRole('option')
 			.map((o) => o.textContent);
 		expect(kinds).toEqual(['Add specialist…', 'Text', '3D asset (GLB)', 'Three.js scene']);
-		expect(screen.getByText('None yet.')).toBeTruthy();
+		screen.getByText('None yet.');
 	});
 
 	it('adds an entry only when its editor is saved', async () => {
@@ -109,10 +111,10 @@ describe('Settings → Code → Specialists', () => {
 		await addKind();
 		const name = field('Name');
 		await fireEvent.input(name, { target: { value: 'regex' } });
-		expect(screen.getByText('Another specialist has this name.')).toBeTruthy();
+		screen.getByText('Another specialist has this name.');
 		expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(true);
 		await fireEvent.input(name, { target: { value: '  ' } });
-		expect(screen.getByText('Give it a name.')).toBeTruthy();
+		screen.getByText('Give it a name.');
 	});
 
 	it('saves overrides, and null where a field is left to the kind', async () => {
@@ -168,16 +170,16 @@ describe('Settings → Code → Specialists', () => {
 		await fireEvent.click(screen.getByText('Regex'));
 		call.callSpecialist.mockResolvedValueOnce({ content: 'OK\nmore' });
 		await fireEvent.click(screen.getByText('Test'));
-		expect(await screen.findByText('Answered: OK')).toBeTruthy();
+		await screen.findByText('Answered: OK');
 		expect(call.callSpecialist.mock.calls[0][2]).toEqual({ maxTokens: 64 });
 
 		call.callSpecialist.mockResolvedValueOnce({ content: '' });
 		await fireEvent.click(screen.getByText('Test'));
-		expect(await screen.findByText(/set Thinking to Off/)).toBeTruthy();
+		await screen.findByText(/set Thinking to Off/);
 
 		call.callSpecialist.mockRejectedValueOnce(new Error('refused'));
 		await fireEvent.click(screen.getByText('Test'));
-		expect(await screen.findByText('Failed: refused')).toBeTruthy();
+		await screen.findByText('Failed: refused');
 		expect(saved.calls).toHaveLength(0);
 	});
 
@@ -187,9 +189,9 @@ describe('Settings → Code → Specialists', () => {
 		await fireEvent.click(screen.getByText('Regex'));
 		call.listSpecialistModels.mockResolvedValueOnce(['a', 'b']);
 		await fireEvent.click(screen.getByText('Fetch'));
-		expect(await screen.findByText('2 models')).toBeTruthy();
+		await screen.findByText('2 models');
 		call.listSpecialistModels.mockRejectedValueOnce(new Error('The server answered 401.'));
 		await fireEvent.click(screen.getByText('Fetch'));
-		expect(await screen.findByText(/Couldn't list models: The server answered 401/)).toBeTruthy();
+		await screen.findByText(/Couldn't list models: The server answered 401/);
 	});
 });

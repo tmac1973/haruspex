@@ -22,10 +22,9 @@ vi.mock('#lib/engine/attach.ts', () => ({
 	attachImages: async (refs?: string[]) => (refs ?? []).map((r) => `data:image/png;base64,${r}`),
 	slashFor: async () => slash.result
 }));
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: () => {}
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 import { flushSync } from 'svelte';
 import { chatState, dispatchChat, listChats, liveChatState, watchChats } from './chat.svelte.ts';

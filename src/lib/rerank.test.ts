@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const { getApiKeyValueMock, apiKeysReadyMock } = vi.hoisted(() => ({
 	getApiKeyValueMock: vi.fn<(id: string | null | undefined) => string | undefined>(),

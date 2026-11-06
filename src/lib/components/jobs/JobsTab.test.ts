@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const mocks = vi.hoisted(() => ({
 	enqueue: vi.fn<(jobId: number, trigger: string) => Promise<number | null>>(async () => 1),
@@ -12,7 +13,9 @@ const mocks = vi.hoisted(() => ({
 	createJob: vi.fn(async () => 9)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
@@ -98,8 +101,11 @@ async function openAndEdit() {
 	await fireEvent.click(screen.getByText('Hangman plan'));
 	const nameInput = await showName('Hangman plan');
 	// The baseline is captured a tick after load; edit once it exists.
-	await waitFor(() => expect(nameInput).toBeTruthy());
+	await tick();
 	await fireEvent.input(nameInput, { target: { value: 'Hangman plan v2' } });
+	// The editor counts the edit as unsaved: Duplicate waits for a save.
+	const duplicate = screen.getByRole('button', { name: 'Duplicate' }) as HTMLButtonElement;
+	await waitFor(() => expect(duplicate.disabled).toBe(true));
 	return nameInput;
 }
 
@@ -121,7 +127,7 @@ describe('JobsTab — running a job with unsaved edits', () => {
 
 		await fireEvent.click(screen.getAllByTitle('Run now')[0]);
 
-		expect(await screen.findByText('Unsaved changes')).toBeTruthy();
+		await screen.findByText('Unsaved changes');
 		expect(mocks.enqueue).not.toHaveBeenCalled();
 	});
 
@@ -158,7 +164,7 @@ describe('JobsTab — running a job with unsaved edits', () => {
 		expect(mocks.enqueue).not.toHaveBeenCalled();
 		expect(mocks.updateJob).not.toHaveBeenCalled();
 		// Still editing, edits intact.
-		expect(screen.getByDisplayValue('Hangman plan v2')).toBeTruthy();
+		screen.getByDisplayValue('Hangman plan v2');
 	});
 
 	it('runs straight away when there is nothing unsaved', async () => {
@@ -179,9 +185,9 @@ describe('JobsTab — switching jobs with unsaved edits', () => {
 
 		await fireEvent.click(screen.getByText('Other job'));
 
-		expect(await screen.findByText('Unsaved changes')).toBeTruthy();
+		await screen.findByText('Unsaved changes');
 		// Still on the job being edited.
-		expect(screen.getByDisplayValue('Hangman plan v2')).toBeTruthy();
+		screen.getByDisplayValue('Hangman plan v2');
 	});
 
 	it('switches after saving when asked', async () => {
@@ -236,19 +242,19 @@ describe('JobsTab — browsing while a run is live', () => {
 	it('opens on the live run when you arrive with one going', () => {
 		mocks.currentRun = liveRun();
 		render(JobsTab);
-		expect(screen.getByRole('button', { name: 'Hide' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Hide' });
 	});
 
 	it('shows the job you pick, with a bar back to the run, without cancelling it', async () => {
 		mocks.currentRun = liveRun();
 		render(JobsTab);
 		await fireEvent.click(screen.getByText('Hangman plan'));
-		expect(await showName('Hangman plan')).toBeTruthy();
-		expect(screen.getByText(/Running:/)).toBeTruthy();
+		await showName('Hangman plan');
+		screen.getByText(/Running:/);
 		expect(mocks.cancel).not.toHaveBeenCalled();
 
 		await fireEvent.click(screen.getByTitle('Show the live run'));
-		expect(screen.getByRole('button', { name: 'Hide' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Hide' });
 	});
 
 	it('Hide goes back to your jobs and leaves the run going', async () => {
@@ -256,7 +262,7 @@ describe('JobsTab — browsing while a run is live', () => {
 		render(JobsTab);
 		await fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
 		expect(screen.queryByRole('button', { name: 'Hide' })).toBeNull();
-		expect(screen.getByText(/Running:/)).toBeTruthy();
+		screen.getByText(/Running:/);
 		expect(mocks.cancel).not.toHaveBeenCalled();
 	});
 
@@ -264,13 +270,13 @@ describe('JobsTab — browsing while a run is live', () => {
 		mocks.currentRun = liveRun();
 		render(JobsTab);
 		await fireEvent.click(screen.getByText('+ New'));
-		expect(await screen.findByRole('combobox', { name: /job type/i })).toBeTruthy();
+		await screen.findByRole('combobox', { name: /job type/i });
 	});
 
 	it('shows a finished run until Close, with no "Running" bar', () => {
 		mocks.currentRun = liveRun('succeeded');
 		render(JobsTab);
-		expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Close' });
 		expect(screen.queryByText(/Running:/)).toBeNull();
 	});
 
@@ -282,7 +288,7 @@ describe('JobsTab — browsing while a run is live', () => {
 		const list = document.querySelector('.job-list') as HTMLElement;
 		await fireEvent.click(within(list).getByText('Hangman plan'));
 		await screen.findByText('Basics');
-		expect(screen.getByText('This job is running. Changes apply to its next run.')).toBeTruthy();
+		screen.getByText('This job is running. Changes apply to its next run.');
 		expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(
 			true
 		);
@@ -306,8 +312,8 @@ describe('JobsTab — required fields', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
 		expect(await screen.findAllByText('1 missing')).toHaveLength(2);
-		expect(screen.getByRole('combobox', { name: /job type/i })).toBeTruthy();
-		expect(screen.getByText('Name is required.')).toBeTruthy();
+		screen.getByRole('combobox', { name: /job type/i });
+		screen.getByText('Name is required.');
 	});
 });
 
@@ -327,14 +333,14 @@ describe('JobsTab — schedules on types that interview the user', () => {
 		await fireEvent.click(screen.getByText('Hangman plan'));
 		await openWhereSection();
 
-		expect(screen.getByText('Schedule')).toBeTruthy();
+		screen.getByText('Schedule');
 	});
 
 	it('hides it for guided planning, and says why', async () => {
 		render(JobsTab);
 		await fireEvent.click(screen.getByRole('button', { name: '+ New' }));
 		await openWhereSection();
-		expect(screen.getByText('Schedule')).toBeTruthy();
+		screen.getByText('Schedule');
 
 		// One section open at a time: back to Basics for the type, then here.
 		await fireEvent.click(screen.getByText('Basics'));
@@ -343,7 +349,7 @@ describe('JobsTab — schedules on types that interview the user', () => {
 		await openWhereSection();
 
 		await waitFor(() => expect(screen.queryByText('Schedule')).toBeNull());
-		expect(screen.getByText(/only run when you start them/)).toBeTruthy();
+		screen.getByText(/only run when you start them/);
 	});
 });
 
@@ -352,7 +358,7 @@ describe('JobsTab — a selection made from Home', () => {
 	it('opens a past run in its detail view', async () => {
 		selectJob(7, 31);
 		render(JobsTab);
-		expect(await screen.findByText('Run #31')).toBeTruthy();
+		await screen.findByText('Run #31');
 	});
 
 	it('opens the live run in the run view', async () => {
@@ -360,13 +366,13 @@ describe('JobsTab — a selection made from Home', () => {
 		render(JobsTab);
 		await fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
 		selectJob(8, 50);
-		expect(await screen.findByRole('button', { name: 'Hide' })).toBeTruthy();
+		await screen.findByRole('button', { name: 'Hide' });
 	});
 
 	it('opens the job alone when no run is given', async () => {
 		render(JobsTab);
 		selectJob(7);
-		expect(await showName('Hangman plan')).toBeTruthy();
+		await showName('Hangman plan');
 	});
 
 	it('opens a drafted new job filled in and unsaved', async () => {
@@ -377,8 +383,8 @@ describe('JobsTab — a selection made from Home', () => {
 			workingDir: '/home/me/app',
 			config: { initial_description: 'Crash on start\n\nIt crashes.' }
 		});
-		expect(await screen.findByDisplayValue(/^Crash on start\s+It crashes\.$/)).toBeTruthy();
-		expect(await showName('octocat/app#42')).toBeTruthy();
+		await screen.findByDisplayValue(/^Crash on start\s+It crashes\.$/);
+		await showName('octocat/app#42');
 		expect(screen.getByRole('combobox', { name: /job type/i })).toHaveProperty(
 			'value',
 			'guided_planning'
@@ -387,7 +393,7 @@ describe('JobsTab — a selection made from Home', () => {
 
 		// Nothing is saved, so leaving asks first.
 		await fireEvent.click(screen.getByText('Hangman plan'));
-		expect(await screen.findByText('Unsaved changes')).toBeTruthy();
+		await screen.findByText('Unsaved changes');
 	});
 
 	it('keeps only the last thing asked for', () => {
@@ -399,10 +405,10 @@ describe('JobsTab — a selection made from Home', () => {
 	it('asks first when the editor has unsaved changes', async () => {
 		await openAndEdit();
 		selectJob(8, 12);
-		expect(await screen.findByText('Unsaved changes')).toBeTruthy();
+		await screen.findByText('Unsaved changes');
 		expect(screen.queryByText('Run #12')).toBeNull();
 
 		await fireEvent.click(screen.getByText('Switch without saving'));
-		expect(await screen.findByText('Run #12')).toBeTruthy();
+		await screen.findByText('Run #12');
 	});
 });

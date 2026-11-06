@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => [1, 2, 3]) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, [1, 2, 3])
+);
 
 import AudioViewer from './AudioViewer.svelte';
 
@@ -17,7 +19,7 @@ describe('AudioViewer', () => {
 		const { container } = render(AudioViewer, { workdir: '/proj', relPath: 'sfx/hit.wav' });
 		await screen.findByText('hit.wav');
 		expect(container.querySelector('audio')?.getAttribute('src')).toBe('blob:sound');
-		expect(screen.getByText('3 B')).toBeTruthy();
+		screen.getByText('3 B');
 	});
 
 	it('loops when asked, and says so when the system cannot play it', async () => {
@@ -27,6 +29,6 @@ describe('AudioViewer', () => {
 		const audio = container.querySelector('audio')!;
 		expect(audio.loop).toBe(true);
 		await fireEvent.error(audio);
-		expect(screen.getByText(/no decoder for it/)).toBeTruthy();
+		screen.getByText(/no decoder for it/);
 	});
 });

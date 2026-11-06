@@ -8,7 +8,9 @@ import type { ToolDefinition } from '#lib/api.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { invoke } from '@tauri-apps/api/core';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 afterEach(() => resetShellPlatformSupported());
 

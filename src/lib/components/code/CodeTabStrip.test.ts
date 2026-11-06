@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const store = vi.hoisted(() => ({
 	closeSession: vi.fn(),
 	setActiveSession: vi.fn(),
@@ -40,8 +42,8 @@ describe('CodeTabStrip', () => {
 		const { container } = render(CodeTabStrip, { onNew: vi.fn() });
 		const dots = [...container.querySelectorAll('.dot')].map((d) => d.getAttribute('data-status'));
 		expect(dots).toEqual(['running', 'queued', 'waiting-shell']);
-		expect(screen.getByTitle('Queued behind another turn')).toBeTruthy();
-		expect(screen.getByTitle('Waiting for a command in the Shell tab')).toBeTruthy();
+		screen.getByTitle('Queued behind another turn');
+		screen.getByTitle('Waiting for a command in the Shell tab');
 		const idle = screen.getByRole('tab', { name: /Idle one/ });
 		expect(idle.querySelector('.dot')).toBeNull();
 		expect(idle.getAttribute('aria-selected')).toBe('true');
@@ -50,7 +52,7 @@ describe('CodeTabStrip', () => {
 	it('asks before closing a session whose background processes are running', async () => {
 		render(CodeTabStrip, { onNew: vi.fn() });
 		screen.getByRole('button', { name: 'Close Shell one' }).click();
-		expect(await screen.findByText('Close session?')).toBeTruthy();
+		await screen.findByText('Close session?');
 		expect(store.closeSession).not.toHaveBeenCalled();
 		screen.getByRole('button', { name: 'Close Idle one' }).click();
 		expect(store.closeSession).toHaveBeenCalledWith('s1');

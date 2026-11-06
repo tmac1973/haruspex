@@ -6,7 +6,9 @@ import SkillsSection from './SkillsSection.svelte';
 import { defaultSkills, getSettings, updateSettings, updateSkills } from '#lib/stores/settings.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/picked/skills') }));
 
 function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
@@ -55,10 +57,10 @@ beforeEach(() => {
 describe('Settings → Skills', () => {
 	it('lists skills with their source, problems and badges', async () => {
 		render(SkillsSection);
-		expect(await screen.findByText('deploy')).toBeTruthy();
-		expect(screen.getByText('Written by the model')).toBeTruthy();
-		expect(screen.getByText('Not usable: no description.')).toBeTruthy();
-		expect(screen.getByText('name does not match its folder "x"')).toBeTruthy();
+		await screen.findByText('deploy');
+		screen.getByText('Written by the model');
+		screen.getByText('Not usable: no description.');
+		screen.getByText('name does not match its folder "x"');
 		// Only skills in Haruspex's own folder can be deleted.
 		expect(screen.getAllByText('Delete')).toHaveLength(1);
 	});
@@ -84,8 +86,8 @@ describe('Settings → Skills', () => {
 			invokeRouter({ ...baseRoutes, skills_shipped: shipped }, undefined)
 		);
 		render(SkillsSection);
-		expect(await screen.findByText('Shipped with Haruspex')).toBeTruthy();
-		expect(screen.getByText('Shipped with Haruspex, edited')).toBeTruthy();
+		await screen.findByText('Shipped with Haruspex');
+		screen.getByText('Shipped with Haruspex, edited');
 		// Only the edited one has something to restore.
 		await fireEvent.click(screen.getByText('Restore'));
 		expect(invoke).toHaveBeenCalledWith('skill_restore_shipped', { name: 'plan-2d-game' });

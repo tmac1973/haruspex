@@ -22,10 +22,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	hasEnabledCalendarAccount: () => false,
 	hasEnabledContactsAccount: () => false
 }));
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: vi.fn()
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 const approval = vi.hoisted(() => ({ session: false }));
 vi.mock('#lib/stores/memoryApproval.svelte.ts', () => ({

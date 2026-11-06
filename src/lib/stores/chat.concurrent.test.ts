@@ -49,9 +49,11 @@ vi.mock('#lib/api.ts', async (importOriginal) => {
 	};
 });
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn().mockRejectedValue(new Error('not available'))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, () => {
+		throw new Error('not available');
+	})
+);
 
 // The task notices and store, reduced to what the chat store uses: the test
 // queues a notice and calls the handler the store registered.

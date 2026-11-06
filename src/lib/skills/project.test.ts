@@ -10,7 +10,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getSettings: () => ({ skills: { trustedRepos: settings.repos } }),
 	updateSkills: settings.updateSkills
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { invoke } from '@tauri-apps/api/core';
 import { knownShellProject, noteProjectSkill, trustApprovedAgentsMd } from './project';

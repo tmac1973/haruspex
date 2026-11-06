@@ -9,10 +9,11 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
-	logDebug: mocks.logDebug
-}));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
+		logDebug: mocks.logDebug
+	})
+);
 
 const MM_PREFIX = '\x00MM\x00';
 

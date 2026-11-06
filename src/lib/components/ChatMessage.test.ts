@@ -3,7 +3,9 @@ import { render, screen } from '@testing-library/svelte';
 import ChatMessage from './ChatMessage.svelte';
 import { renderSlashMessage } from '#lib/skills/content.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 describe('ChatMessage', () => {
 	it('renders user messages as escaped plain text', () => {
@@ -11,7 +13,7 @@ describe('ChatMessage', () => {
 			message: { role: 'user', content: '<img src=x onerror="alert(1)"> hello' }
 		});
 		// The payload must appear as literal text, not become an element
-		expect(screen.getByText(/hello/)).toBeTruthy();
+		screen.getByText(/hello/);
 		expect(document.querySelector('.message-content img')).toBeNull();
 	});
 
@@ -54,15 +56,15 @@ describe('ChatMessage', () => {
 			'/haiku about rain'
 		);
 		render(ChatMessage, { message: { role: 'user', content } });
-		expect(screen.getByText('/haiku about rain')).toBeTruthy();
+		screen.getByText('/haiku about rain');
 		expect(screen.queryByText(/SECRET INSTRUCTIONS/)).toBeNull();
 	});
 
 	it('labels user and assistant messages', () => {
 		render(ChatMessage, { message: { role: 'user', content: 'q' } });
-		expect(screen.getByText('You')).toBeTruthy();
+		screen.getByText('You');
 		render(ChatMessage, { message: { role: 'assistant', content: 'a' } });
-		expect(screen.getByText('Haruspex')).toBeTruthy();
+		screen.getByText('Haruspex');
 	});
 
 	it('shows the tok/s footer only when a positive rate is given', () => {
@@ -70,7 +72,7 @@ describe('ChatMessage', () => {
 			message: { role: 'assistant', content: 'x' },
 			tokensPerSecond: 42.4
 		});
-		expect(screen.getByText('42 tok/s')).toBeTruthy();
+		screen.getByText('42 tok/s');
 	});
 
 	describe('reasoning', () => {
@@ -84,16 +86,16 @@ describe('ChatMessage', () => {
 				message: { role: 'assistant', content: '<think>weighing the options' },
 				isStreaming: true
 			});
-			expect(screen.getByText('Thinking…')).toBeTruthy();
-			expect(screen.getByText(/weighing the options/)).toBeTruthy();
+			screen.getByText('Thinking…');
+			screen.getByText(/weighing the options/);
 		});
 
 		it('renders reasoning and answer as separate pieces', () => {
 			render(ChatMessage, {
 				message: { role: 'assistant', content: '<think>considered it</think>**Answer**' }
 			});
-			expect(screen.getByText('Reasoning')).toBeTruthy();
-			expect(screen.getByText(/considered it/)).toBeTruthy();
+			screen.getByText('Reasoning');
+			screen.getByText(/considered it/);
 			expect(document.querySelector('.message-content strong')?.textContent).toBe('Answer');
 		});
 

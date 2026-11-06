@@ -18,7 +18,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getOpenRouterReasoningParam: () => null,
 	getSamplingParams: () => ({ temperature: 0.7 })
 }));
-vi.mock('#lib/debugLog.ts', () => ({ logDebug: () => {} }));
+vi.mock('#lib/debugLog.ts', async (importOriginal) =>
+	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
+);
 
 import {
 	cleanTitle,

@@ -4,7 +4,9 @@ import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
 import { emptyModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 import type { OpenRouterModel } from '#lib/openrouter.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 function model(id: string, name: string): OpenRouterModel {
 	return {
@@ -38,7 +40,7 @@ describe('JobModelFields OpenRouter picker', () => {
 			return el;
 		});
 		await fireEvent.click(trigger);
-		expect(screen.getByPlaceholderText('Search models…')).toBeTruthy();
+		screen.getByPlaceholderText('Search models…');
 
 		await fireEvent.click(screen.getByRole('button', { name: /Model Two/ }));
 		expect(screen.queryByPlaceholderText('Search models…')).toBeNull();
