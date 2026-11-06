@@ -7,7 +7,6 @@ import {
 	buildEditSynthBody,
 	buildLmBody,
 	buildSynthBody,
-	errorOf,
 	readComposed,
 	readProps,
 	readStatus,
@@ -60,19 +59,6 @@ describe('readStatus', () => {
 		expect(readStatus({ status: 'queued' })).toBe('running');
 		expect(readStatus({})).toBe('running');
 		expect(readStatus('done')).toBe('running');
-	});
-});
-
-describe('errorOf', () => {
-	it("reads ace-server's error", () => {
-		expect(errorOf('{"error":"no lm loaded"}')).toBe('no lm loaded');
-	});
-
-	it('is null for a body without one, or not JSON', () => {
-		expect(errorOf('{"error":""}')).toBeNull();
-		expect(errorOf('{"message":"x"}')).toBeNull();
-		expect(errorOf('<html>502</html>')).toBeNull();
-		expect(errorOf('')).toBeNull();
 	});
 });
 
