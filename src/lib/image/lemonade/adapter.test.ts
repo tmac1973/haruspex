@@ -2,15 +2,9 @@ import { describe, it, expect } from 'vitest';
 import health from './fixtures/health.json';
 import systemInfo from './fixtures/system-info.json';
 import models from './fixtures/models.json';
-import {
-	bareName,
-	buildGeneration,
-	errorMessage,
-	findJob,
-	MAX_EXTRAS_CHARS,
-	readServer
-} from './adapter';
+import { bareName, buildGeneration, findJob, MAX_EXTRAS_CHARS, readServer } from './adapter';
 import { CLEAR_START_STRENGTH } from '#lib/image/local/adapter.ts';
+import { errorBody } from '#lib/utils/http.ts';
 
 const base = {
 	model: 'user.Ming-Image-0.1-Design-GGUF',
@@ -76,8 +70,8 @@ describe('responses', () => {
 		// Recorded from Lemonade 2026.43.3 for a model it does not have.
 		const body =
 			'{"error":{"code":"model_not_found","message":"Model \'user.Nope\' was not found.","type":"model_not_found"}}';
-		expect(errorMessage(body)).toBe("Model 'user.Nope' was not found.");
-		expect(errorMessage('Internal Server Error')).toBeNull();
+		expect(errorBody(body).message).toBe("Model 'user.Nope' was not found.");
+		expect(errorBody('Internal Server Error').message).toBeNull();
 	});
 });
 

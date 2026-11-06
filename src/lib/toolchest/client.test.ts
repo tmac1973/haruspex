@@ -4,7 +4,7 @@ import { invokeRouter } from '#lib/testing/invoke.ts';
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 
-import { ToolchestError, errorBody, hostOf, toolchestBytes, toolchestJson } from './client.ts';
+import { ToolchestError, hostOf, toolchestBytes, toolchestJson } from './client.ts';
 
 const cfg = { baseUrl: 'http://gpu.lan:8080', apiKey: 'k' };
 
@@ -32,24 +32,6 @@ async function caught(p: Promise<unknown>): Promise<ToolchestError> {
 
 beforeEach(() => {
 	tauri.invoke.mockReset();
-});
-
-describe('errorBody', () => {
-	it("reads toolchest's message and code", () => {
-		expect(errorBody('{"error":{"message":"no model","code":"not_ready"}}')).toEqual({
-			message: 'no model',
-			code: 'not_ready'
-		});
-	});
-
-	it('answers nulls for a body that is not JSON, has no error, or empty fields', () => {
-		const none = { message: null, code: null };
-		expect(errorBody('<html>502</html>')).toEqual(none);
-		expect(errorBody('')).toEqual(none);
-		expect(errorBody('{"ok":true}')).toEqual(none);
-		expect(errorBody('{"error":{"message":"","code":7}}')).toEqual(none);
-		expect(errorBody('null')).toEqual(none);
-	});
 });
 
 describe('hostOf', () => {

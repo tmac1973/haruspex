@@ -8,7 +8,7 @@ import { BACKEND_TIMEOUT_MS, invokeBackend, type Backend } from '#lib/utils/back
 import { getSettings } from '#lib/stores/settings.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
-import { errorMessage } from '#lib/image/lemonade/adapter.ts';
+import { errorBody } from '#lib/utils/http.ts';
 
 export interface LemonadeConfig {
 	baseUrl: string;
@@ -42,7 +42,7 @@ const lemonade: Backend<ImageBackendError> = {
 	rejected: (status, body, path) =>
 		new ImageBackendError(
 			'rejected',
-			`Lemonade refused ${path}: ${errorMessage(body) ?? `status ${status}`}`,
+			`Lemonade refused ${path}: ${errorBody(body).message ?? `status ${status}`}`,
 			{ status, body: body.slice(0, 200) }
 		)
 };
