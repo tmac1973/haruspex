@@ -120,7 +120,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     container:
-      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
     env:
       # Playwright's own advice for this image under Actions.
       HOME: /root
