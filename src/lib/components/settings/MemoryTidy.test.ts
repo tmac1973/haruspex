@@ -26,8 +26,8 @@ describe('Settings → Memory → Duplicates', () => {
 		const onMerged = vi.fn();
 		render(MemoryTidy, { props: { onMerged } });
 		await fireEvent.click(screen.getByText('Find duplicates'));
-		expect(await screen.findByText('Builds Haruspex.')).toBeTruthy();
-		expect(screen.getByText('(saved by you)')).toBeTruthy();
+		await screen.findByText('Builds Haruspex.');
+		screen.getByText('(saved by you)');
 		const box = screen.getByLabelText('Merged memory') as HTMLTextAreaElement;
 		expect(box.value).toBe(group.content);
 		await fireEvent.input(box, { target: { value: 'Builds Haruspex, a desktop AI app.' } });
@@ -52,9 +52,9 @@ describe('Settings → Memory → Duplicates', () => {
 		dedupe.findDuplicateGroups.mockResolvedValueOnce([]);
 		render(MemoryTidy, { props: { onMerged: vi.fn() } });
 		await fireEvent.click(screen.getByText('Find duplicates'));
-		expect(await screen.findByText('No duplicates found.')).toBeTruthy();
+		await screen.findByText('No duplicates found.');
 		dedupe.findDuplicateGroups.mockRejectedValueOnce('model not ready');
 		await fireEvent.click(screen.getByText('Find duplicates'));
-		expect(await screen.findByText("Couldn't check: model not ready")).toBeTruthy();
+		await screen.findByText("Couldn't check: model not ready");
 	});
 });

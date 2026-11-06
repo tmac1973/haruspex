@@ -12,7 +12,7 @@ describe('AgentsMdBadge', () => {
 		expect(screen.queryByRole('dialog')).toBeNull();
 
 		await fireEvent.click(screen.getByText('AGENTS.md'));
-		expect(screen.getByText('/code/repo')).toBeTruthy();
+		screen.getByText('/code/repo');
 		await fireEvent.click(screen.getByText("Stop using this repo's instructions"));
 		expect(onIgnore).toHaveBeenCalledOnce();
 		expect(screen.queryByRole('dialog')).toBeNull();

@@ -23,10 +23,10 @@ function renderDialog(overrides: Record<string, unknown> = {}) {
 describe('ConfirmDialog', () => {
 	it('renders title, message, and default button labels', () => {
 		renderDialog();
-		expect(screen.getByText('Delete conversation?')).toBeTruthy();
-		expect(screen.getByText('This cannot be undone.')).toBeTruthy();
-		expect(screen.getByText('Delete')).toBeTruthy();
-		expect(screen.getByText('Cancel')).toBeTruthy();
+		screen.getByText('Delete conversation?');
+		screen.getByText('This cannot be undone.');
+		screen.getByText('Delete');
+		screen.getByText('Cancel');
 	});
 
 	it('gives Cancel initial focus', async () => {
@@ -67,8 +67,8 @@ describe('ConfirmDialog', () => {
 
 	it('honors custom labels', () => {
 		renderDialog({ confirmLabel: 'Overwrite', cancelLabel: 'Keep mine' });
-		expect(screen.getByText('Overwrite')).toBeTruthy();
-		expect(screen.getByText('Keep mine')).toBeTruthy();
+		screen.getByText('Overwrite');
+		screen.getByText('Keep mine');
 	});
 
 	it('uses the danger variant when destructive, default otherwise', () => {

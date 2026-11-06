@@ -38,8 +38,8 @@ describe('AudioPlayer', () => {
 			configurable: true
 		});
 		await fireEvent(audio, new Event('timeupdate'));
-		expect(screen.getByText('1:30')).toBeTruthy();
-		expect(screen.getByText('2:59')).toBeTruthy();
+		screen.getByText('1:30');
+		screen.getByText('2:59');
 		const slider = screen.getByRole('slider', { name: 'Position in Rain' }) as HTMLInputElement;
 		expect(Number(slider.value)).toBeCloseTo(90.4);
 	});
@@ -58,7 +58,7 @@ describe('AudioPlayer', () => {
 		Object.defineProperty(audio, 'duration', { value: 30, configurable: true });
 		Object.defineProperty(audio, 'currentTime', { value: 2.1, writable: true, configurable: true });
 		await fireEvent(audio, new Event('timeupdate'));
-		expect(screen.getByText('0:30')).toBeTruthy();
+		screen.getByText('0:30');
 		expect(slider.disabled).toBe(false);
 		expect(Number(slider.max)).toBe(30);
 		expect(Number(slider.value)).toBeCloseTo(2.1);
@@ -107,7 +107,7 @@ describe('AudioPlayer', () => {
 			})
 		);
 		expect(tauri.save.mock.calls[0][0]).toMatchObject({ defaultPath: 'rain.mp3' });
-		expect(await screen.findByText('Saved to /home/me/Rain.mp3')).toBeTruthy();
+		await screen.findByText('Saved to /home/me/Rain.mp3');
 	});
 
 	it('does nothing when the dialog is cancelled', async () => {

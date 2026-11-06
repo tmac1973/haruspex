@@ -56,6 +56,6 @@ describe('ThinkingPanel', () => {
 
 	it('shows the stat in the summary when given one', () => {
 		render(ThinkingPanel, { text: 'x', stat: '~2m · ~1.9K tokens · 61% of generation' });
-		expect(screen.getByText(/61% of generation/)).toBeTruthy();
+		screen.getByText(/61% of generation/);
 	});
 });

@@ -21,7 +21,7 @@ describe('Toasts host', () => {
 		showToast('File saved');
 		await tick();
 
-		expect(screen.getByText('File saved')).toBeTruthy();
+		screen.getByText('File saved');
 		await fireEvent.click(screen.getByLabelText('Dismiss'));
 		expect(screen.queryByText('File saved')).toBeNull();
 	});

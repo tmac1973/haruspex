@@ -65,9 +65,7 @@ describe('CodeBranchControl', () => {
 		expect(screen.queryByTestId('dirty-marker')).toBeNull();
 		unmount();
 		render(CodeBranchControl, { session: session({ git: repo({ branch: null, untracked: 1 }) }) });
-		expect(
-			screen.getByRole('button', { name: /Branch abc1234, uncommitted changes/ })
-		).toBeTruthy();
+		screen.getByRole('button', { name: /Branch abc1234, uncommitted changes/ });
 		screen.getByTestId('dirty-marker');
 	});
 

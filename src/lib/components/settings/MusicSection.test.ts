@@ -105,7 +105,7 @@ describe('Settings → Music', () => {
 		})) as HTMLSelectElement;
 		await waitFor(() => expect([...select.options].map((o) => o.value)).toContain('ace-xl'));
 		const heading = await screen.findByRole('heading', { name: /Instances on the server/ });
-		expect(within(heading.closest('section')!).getByText('ace-xl')).toBeTruthy();
+		within(heading.closest('section')!).getByText('ace-xl');
 	});
 
 	it('saves a server it reached, and switches to another saved one with its key', async () => {

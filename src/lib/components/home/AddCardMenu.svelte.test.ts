@@ -46,7 +46,7 @@ describe('Add card', () => {
 		);
 		await fireEvent.click(email);
 		// Still open: nothing was chosen.
-		expect(screen.getByRole('menu')).toBeTruthy();
+		screen.getByRole('menu');
 
 		const jobs = screen.getByRole('menuitem', { name: 'Jobs' });
 		expect(jobs.getAttribute('aria-disabled')).toBe('false');

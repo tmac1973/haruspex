@@ -41,7 +41,7 @@ beforeEach(() => {
 describe('HelpersSection', () => {
 	it('says so when there are no helpers', () => {
 		render(HelpersSection);
-		expect(screen.getByText('No helpers yet.')).toBeTruthy();
+		screen.getByText('No helpers yet.');
 	});
 
 	it('shows each helper off by default, and saves a switch', async () => {

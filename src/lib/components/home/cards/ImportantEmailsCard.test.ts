@@ -84,21 +84,21 @@ describe('ImportantEmailsCard', () => {
 		]);
 		m.latest = { latest: run, latestSucceeded: run };
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText('Invoice overdue')).toBeTruthy();
-		expect(screen.getByText('Dana <dana@example.com>')).toBeTruthy();
-		expect(screen.getByText('Money owed')).toBeTruthy();
+		screen.getByText('Invoice overdue');
+		screen.getByText('Dana <dana@example.com>');
+		screen.getByText('Money owed');
 	});
 
 	it('says so when nothing is important, and when it has not checked yet', () => {
 		const run = succeeded([]);
 		m.latest = { latest: run, latestSucceeded: run };
 		const { unmount } = render(ImportantEmailsCard, { card });
-		expect(screen.getByText('No important mail.')).toBeTruthy();
+		screen.getByText('No important mail.');
 		unmount();
 
 		m.latest = { latest: null, latestSucceeded: null };
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText('Not checked yet.')).toBeTruthy();
+		screen.getByText('Not checked yet.');
 	});
 
 	it('puts a failed check’s error above the last good result', () => {
@@ -108,14 +108,14 @@ describe('ImportantEmailsCard', () => {
 			latestSucceeded: good
 		};
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText(/The last check failed: IMAP login failed/)).toBeTruthy();
-		expect(screen.getByText('No important mail.')).toBeTruthy();
+		screen.getByText(/The last check failed: IMAP login failed/);
+		screen.getByText('No important mail.');
 	});
 
 	it('says it is waiting for chat while its run waits', () => {
 		m.current = { id: 7, jobId: 3, status: 'running', waitingForSlot: true };
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText('Waiting for chat…')).toBeTruthy();
+		screen.getByText('Waiting for chat…');
 	});
 
 	it('opens a message when its row is clicked', async () => {
@@ -123,7 +123,7 @@ describe('ImportantEmailsCard', () => {
 		m.latest = { latest: run, latestSucceeded: run };
 		render(ImportantEmailsCard, { card });
 		await fireEvent.click(screen.getByRole('button', { name: 'Open Invoice overdue' }));
-		expect(await screen.findByText('Reading…')).toBeTruthy();
+		await screen.findByText('Reading…');
 	});
 
 	it('moves a message to Trash after asking, and stops listing it', async () => {

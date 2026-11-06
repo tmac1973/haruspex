@@ -95,8 +95,8 @@ describe('the Update button', () => {
 		render(McpServerRow, {
 			props: { config: config(), entry: ENTRY, onchange: () => {}, onremove: () => {} }
 		});
-		expect(screen.getByText('Version 2026.10.1 is available.')).toBeTruthy();
-		expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy();
+		screen.getByText('Version 2026.10.1 is available.');
+		screen.getByRole('button', { name: 'Update' });
 	});
 
 	it('drops projects that have gone, then lists the rest before overwriting them', async () => {
@@ -111,7 +111,7 @@ describe('the Update button', () => {
 			}
 		});
 		screen.getByRole('button', { name: 'Update' }).click();
-		await vi.waitFor(() => expect(screen.getByText('/games/one')).toBeTruthy());
+		await vi.waitFor(() => screen.getByText('/games/one'));
 		await tick();
 
 		expect(screen.queryByText('/games/gone')).toBeNull();
@@ -135,8 +135,8 @@ describe('what the card says', () => {
 	it('shows a blocked version’s reason, offers Update, and will not start it', async () => {
 		await withStatus(true, 'Leaks tokens.');
 		render(McpServerRow, { props: props() });
-		expect(screen.getByText('Stopped for a security problem: Leaks tokens.')).toBeTruthy();
-		expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy();
+		screen.getByText('Stopped for a security problem: Leaks tokens.');
+		screen.getByRole('button', { name: 'Update' });
 		const start = screen.getByRole('button', { name: 'Start' }) as HTMLButtonElement;
 		expect(start.disabled).toBe(true);
 		expect(start.title).toBe('Update to start it.');

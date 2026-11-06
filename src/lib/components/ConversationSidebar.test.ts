@@ -48,8 +48,8 @@ describe('ConversationSidebar delete confirmation', () => {
 	it('clicking a row delete opens the dialog without deleting', async () => {
 		render(ConversationSidebar);
 		await fireEvent.click(rowDeleteButtons()[0]);
-		expect(screen.getByText('Delete conversation?')).toBeTruthy();
-		expect(screen.getByText('"First chat" will be permanently deleted.')).toBeTruthy();
+		screen.getByText('Delete conversation?');
+		screen.getByText('"First chat" will be permanently deleted.');
 		expect(deleteConversation).not.toHaveBeenCalled();
 	});
 
@@ -81,7 +81,7 @@ describe('ConversationSidebar delete confirmation', () => {
 	it('clear-all goes through its own confirmation', async () => {
 		render(ConversationSidebar);
 		await fireEvent.click(screen.getByText('Clear all'));
-		expect(screen.getByText('Delete all conversations?')).toBeTruthy();
+		screen.getByText('Delete all conversations?');
 		expect(clearAllConversations).not.toHaveBeenCalled();
 
 		await fireEvent.click(screen.getByText('Delete all'));
@@ -135,6 +135,6 @@ describe('ConversationSidebar marks', () => {
 			m.getAttribute('data-mark')
 		);
 		expect(marks).toEqual(['running', 'queued', 'unread']);
-		expect(screen.getByLabelText('Finished while you were elsewhere')).toBeTruthy();
+		screen.getByLabelText('Finished while you were elsewhere');
 	});
 });

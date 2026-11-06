@@ -20,7 +20,7 @@ describe('YoutubeUploadDialog', () => {
 	it('starts private, waits for "made for kids", and returns the edits', async () => {
 		render(YoutubeUploadDialog);
 		const answer = askYoutubeUpload(request);
-		expect(await screen.findByText('Upload to YouTube?')).toBeTruthy();
+		await screen.findByText('Upload to YouTube?');
 		expect((screen.getByLabelText('Private') as HTMLInputElement).checked).toBe(true);
 		const upload = screen.getByText('Upload').closest('button') as HTMLButtonElement;
 		expect(upload.disabled).toBe(true);

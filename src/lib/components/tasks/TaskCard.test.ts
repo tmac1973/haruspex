@@ -47,14 +47,14 @@ describe('TaskCard', () => {
 	it('says a pending task is waiting, with Cancel', () => {
 		upsertTask(task({ state: 'pending' }));
 		card();
-		expect(screen.getByText('Waiting to start')).toBeTruthy();
-		expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+		screen.getByText('Waiting to start');
+		screen.getByRole('button', { name: 'Cancel' });
 	});
 
 	it('shows how far a running task has got, and cancels it without asking', async () => {
 		upsertTask(task({ percent: 42, phase: 'encoding', etaSecs: 90 }));
 		const { container } = card();
-		expect(screen.getByText(/42%, encoding · 1:30 left/)).toBeTruthy();
+		screen.getByText(/42%, encoding · 1:30 left/);
 		expect(container.querySelector('progress')?.getAttribute('value')).toBe('42');
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 		expect(invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
@@ -63,7 +63,7 @@ describe('TaskCard', () => {
 	it('shows an unknown amount of progress, and a place in the queue', () => {
 		upsertTask(task({ queuePosition: 3 }));
 		const { container } = card();
-		expect(screen.getByText("3rd in the server's queue")).toBeTruthy();
+		screen.getByText("3rd in the server's queue");
 		expect(container.querySelector('progress')?.hasAttribute('value')).toBe(false);
 	});
 
@@ -75,7 +75,7 @@ describe('TaskCard', () => {
 			})
 		);
 		card();
-		expect(screen.getByText('ep1/renders/a.mp4')).toBeTruthy();
+		screen.getByText('ep1/renders/a.mp4');
 		await fireEvent.click(screen.getByRole('button', { name: 'Show in folder' }));
 		expect(invoke).toHaveBeenCalledWith('task_open', { id: 't1', folder: true });
 	});
@@ -98,7 +98,7 @@ describe('TaskCard', () => {
 			src: `haruspex-img://localhost/${hash}`,
 			alt: 'a fox'
 		});
-		expect(screen.getByText('1024×768')).toBeTruthy();
+		screen.getByText('1024×768');
 	});
 
 	it('plays a finished song, and says where it was saved', () => {
@@ -110,14 +110,14 @@ describe('TaskCard', () => {
 			})
 		);
 		card();
-		expect(screen.getByText('Rain')).toBeTruthy();
-		expect(screen.getByText('Wrote rain.mp3.')).toBeTruthy();
+		screen.getByText('Rain');
+		screen.getByText('Wrote rain.mp3.');
 	});
 
 	it('shows why it failed, with its output behind a disclosure', () => {
 		upsertTask(task({ state: 'failed', error: 'melt stopped', logTail: 'boom' }));
 		const { container } = card();
-		expect(screen.getByText('melt stopped')).toBeTruthy();
+		screen.getByText('melt stopped');
 		const details = container.querySelector('details')!;
 		expect(details.open).toBe(false);
 		expect(details.textContent).toContain('boom');
@@ -126,7 +126,7 @@ describe('TaskCard', () => {
 	it('says a task the registry no longer keeps is gone', async () => {
 		vi.mocked(invoke).mockResolvedValue([]);
 		card();
-		await waitFor(() => expect(screen.getByText('Task no longer available.')).toBeTruthy());
-		expect(screen.getByText('Rendering ep1')).toBeTruthy();
+		await waitFor(() => screen.getByText('Task no longer available.'));
+		screen.getByText('Rendering ep1');
 	});
 });

@@ -35,9 +35,9 @@ describe('MemoryList', () => {
 		vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 		render(MemoryList);
 
-		expect(await screen.findByText('Prefers tabs over spaces.')).toBeTruthy();
-		expect(screen.getByText(/Editor setup/)).toBeTruthy();
-		expect(screen.getByText('preference')).toBeTruthy();
+		await screen.findByText('Prefers tabs over spaces.');
+		screen.getByText(/Editor setup/);
+		screen.getByText('preference');
 	});
 
 	/**
@@ -47,12 +47,12 @@ describe('MemoryList', () => {
 	it('says so when the source conversation is gone', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce([memory({ source_title: null })]);
 		render(MemoryList);
-		expect(await screen.findByText(/from a deleted chat/)).toBeTruthy();
+		await screen.findByText(/from a deleted chat/);
 	});
 
 	it('shows an empty state rather than a bare list', async () => {
 		render(MemoryList);
-		expect(await screen.findByText('Nothing remembered yet.')).toBeTruthy();
+		await screen.findByText('Nothing remembered yet.');
 	});
 
 	it('re-queries with the filter text', async () => {
@@ -104,7 +104,7 @@ describe('MemoryList', () => {
 		await fireEvent.input(screen.getByLabelText('Memory text'), { target: { value: '   ' } });
 		await fireEvent.click(screen.getByText('Save'));
 
-		await waitFor(() => expect(screen.getByText('Prefers tabs over spaces.')).toBeTruthy());
+		await waitFor(() => screen.getByText('Prefers tabs over spaces.'));
 		expect(invoke).not.toHaveBeenCalledWith('memory_update', expect.anything());
 	});
 

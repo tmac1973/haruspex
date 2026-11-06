@@ -49,7 +49,7 @@ describe('SkillApprovalModal', () => {
 	it('saves the edited text and says it was edited', async () => {
 		render(SkillApprovalModal);
 		const { save, done } = ask();
-		expect(await screen.findByText('/data/skills/deploy-check')).toBeTruthy();
+		await screen.findByText('/data/skills/deploy-check');
 		await type(TEXT.replace('checks', 'checks twice'));
 		await fireEvent.click(screen.getByText('Save skill'));
 		expect(await done).toEqual({ kind: 'saved', edited: true });
@@ -85,7 +85,7 @@ describe('SkillApprovalModal', () => {
 		render(SkillApprovalModal);
 		const { done } = ask({ update: true, current: 'OLD SKILL TEXT' });
 		await fireEvent.click(await screen.findByText('Show the current version'));
-		expect(screen.getByText('OLD SKILL TEXT')).toBeTruthy();
+		screen.getByText('OLD SKILL TEXT');
 		await fireEvent.click(screen.getByText('Reject'));
 		await done;
 	});
@@ -99,8 +99,8 @@ describe('SkillApprovalModal', () => {
 			project: true,
 			text: '# Build\n\n- `npm test`\n'
 		});
-		expect(await screen.findByText('Add an AGENTS.md to this repo?')).toBeTruthy();
-		expect(screen.getByText(/3 lines/)).toBeTruthy();
+		await screen.findByText('Add an AGENTS.md to this repo?');
+		screen.getByText(/3 lines/);
 		await fireEvent.click(screen.getByText('Save AGENTS.md'));
 		expect(await done).toEqual({ kind: 'saved', edited: false });
 		expect(save).toHaveBeenCalledWith('# Build\n\n- `npm test`\n');

@@ -36,11 +36,11 @@ describe('MemoryRecallStep', () => {
 		// On a turn where recall worked this is noise; it earns its space only
 		// when an answer is surprising.
 		render(MemoryRecallStep, { step: step([TABS]) });
-		expect(screen.getByText(/Recalled 1/)).toBeTruthy();
+		screen.getByText(/Recalled 1/);
 		expect(screen.queryByText('Prefers tabs over spaces.')).toBeNull();
 
 		await fireEvent.click(screen.getByRole('button', { name: /Recalled 1/ }));
-		expect(screen.getByText('Prefers tabs over spaces.')).toBeTruthy();
+		screen.getByText('Prefers tabs over spaces.');
 	});
 
 	it('renders nothing when the step carries no memories', () => {
@@ -69,7 +69,7 @@ describe('MemoryRecallStep', () => {
 		await fireEvent.click(screen.getByText('Forget this'));
 
 		expect(invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' });
-		expect(screen.getByText(/future chats only/)).toBeTruthy();
+		screen.getByText(/future chats only/);
 	});
 
 	it('leaves the row listed when the delete fails', async () => {
@@ -80,6 +80,6 @@ describe('MemoryRecallStep', () => {
 		await fireEvent.click(screen.getByText('Forget this'));
 
 		expect(screen.queryByText(/future chats only/)).toBeNull();
-		expect(screen.getByText('Forget this')).toBeTruthy();
+		screen.getByText('Forget this');
 	});
 });

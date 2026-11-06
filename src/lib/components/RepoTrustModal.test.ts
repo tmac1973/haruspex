@@ -18,8 +18,8 @@ describe('RepoTrustModal', () => {
 		render(RepoTrustModal);
 		const answer = askRepoTrust({ root: '/code/repo', skills: 2, agentsMd: true });
 		await tick();
-		expect(screen.getByText("Use this repo's instructions?")).toBeTruthy();
-		expect(screen.getByText(/2 skills and an AGENTS.md/)).toBeTruthy();
+		screen.getByText("Use this repo's instructions?");
+		screen.getByText(/2 skills and an AGENTS.md/);
 		await fireEvent.click(screen.getByText('Use them'));
 		expect(await answer).toBe(true);
 	});
@@ -33,9 +33,9 @@ describe('RepoTrustModal', () => {
 			change: { kind: 'origin', was: 'git@x:me/repo.git', now: null }
 		});
 		await tick();
-		expect(screen.getByText('A different repo is in this folder')).toBeTruthy();
-		expect(screen.getByText('git@x:me/repo.git')).toBeTruthy();
-		expect(screen.getByText('no origin remote')).toBeTruthy();
+		screen.getByText('A different repo is in this folder');
+		screen.getByText('git@x:me/repo.git');
+		screen.getByText('no origin remote');
 	});
 
 	it('names the skills added since the user said yes', async () => {
@@ -47,7 +47,7 @@ describe('RepoTrustModal', () => {
 			change: { kind: 'skills', added: ['deploy', 'release'] }
 		});
 		await tick();
-		expect(screen.getByText('This repo has new skills')).toBeTruthy();
-		expect(screen.getByText(/Added since you said yes: deploy, release/)).toBeTruthy();
+		screen.getByText('This repo has new skills');
+		screen.getByText(/Added since you said yes: deploy, release/);
 	});
 });

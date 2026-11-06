@@ -42,6 +42,6 @@ describe('ApiKeysSection', () => {
 	it('says so when keys last only until Haruspex closes', async () => {
 		storeKind('none');
 		render(ApiKeysSection);
-		expect(await screen.findByText(/only until Haruspex closes/)).toBeTruthy();
+		await screen.findByText(/only until Haruspex closes/);
 	});
 });

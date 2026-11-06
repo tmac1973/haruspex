@@ -124,9 +124,7 @@ describe('FileEditorModal', () => {
 		void editWorkdirFiles({ workdir: '/proj', files: ['plan/x/phase-01-setup.md'], title: 'P' });
 		await type('changed\n');
 		await fireEvent.click(screen.getByText('Save'));
-		await waitFor(() =>
-			expect(screen.getByText(/Could not save plan\/x\/phase-01-setup.md: disk full/)).toBeTruthy()
-		);
+		await waitFor(() => screen.getByText(/Could not save plan\/x\/phase-01-setup.md: disk full/));
 		screen.getByText('Done');
 	});
 

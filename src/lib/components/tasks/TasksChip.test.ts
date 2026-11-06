@@ -88,9 +88,9 @@ describe('TasksChip', () => {
 		expect(chip.getAttribute('title')).toContain('Rendering ep1 (Holiday video)');
 
 		await fireEvent.click(chip);
-		expect(screen.getByText('Rendering ep1')).toBeTruthy();
-		expect(screen.getByText('npm run dev')).toBeTruthy();
-		expect(await screen.findByText('Fix the build')).toBeTruthy();
+		screen.getByText('Rendering ep1');
+		screen.getByText('npm run dev');
+		await screen.findByText('Fix the build');
 	});
 
 	it('cancels a task and stops a command from the list', async () => {
@@ -126,7 +126,7 @@ describe('TasksChip', () => {
 		render(TasksChip);
 		const chip = screen.getByRole('button', { name: 'Tasks' });
 		await fireEvent.click(chip);
-		expect(screen.getByText('Done', { selector: '.heading' })).toBeTruthy();
+		screen.getByText('Done', { selector: '.heading' });
 
 		vi.advanceTimersByTime(9 * 60 * 1000);
 		flushSync();

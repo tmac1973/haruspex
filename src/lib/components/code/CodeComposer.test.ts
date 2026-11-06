@@ -48,7 +48,7 @@ describe('CodeComposer steering', () => {
 		await fireEvent.keyDown(box, { key: 'Enter' });
 		expect(session.send).toHaveBeenCalledWith('try the other file', { images: [] });
 		expect(box.value).toBe('');
-		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Stop' });
 	});
 
 	it('sends attached images with a steering message and clears them', async () => {
@@ -58,7 +58,7 @@ describe('CodeComposer steering', () => {
 		});
 		render(CodeComposer, { session, slashHost: host });
 		const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
-		expect(screen.getByAltText('attachment')).toBeTruthy();
+		screen.getByAltText('attachment');
 		await fireEvent.input(box, { target: { value: 'it looks like this' } });
 		await fireEvent.keyDown(box, { key: 'Enter' });
 		expect(session.send).toHaveBeenCalledWith('it looks like this', {
@@ -172,6 +172,6 @@ describe('CodeComposer camera button', () => {
 		await fireEvent.click(screen.getByRole('menuitem', { name: 'Window…' }));
 		await fireEvent.click(await screen.findByRole('option', { name: 'Dark Times — darktimes' }));
 		expect(invoke).toHaveBeenCalledWith('capture_window', { id: 7 });
-		await waitFor(() => expect(screen.getByAltText('attachment')).toBeTruthy());
+		await waitFor(() => screen.getByAltText('attachment'));
 	});
 });

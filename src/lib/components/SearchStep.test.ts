@@ -39,8 +39,8 @@ describe('SearchStep artifacts', () => {
 			]
 		});
 		await fireEvent.click(document.querySelector('.step')!);
-		expect(screen.getByText('Rendering ep2')).toBeTruthy();
-		expect(screen.getByText('Rendering ep1')).toBeTruthy();
+		screen.getByText('Rendering ep2');
+		screen.getByText('Rendering ep1');
 	});
 
 	it('plays a generated-audio artifact on the step card once it is opened', async () => {
@@ -61,7 +61,7 @@ describe('SearchStep artifacts', () => {
 		// The webview can't play the cache's scheme, so not that URL.
 		await waitFor(() => expect(audio.getAttribute('src')).toBe('blob:step-song'));
 		expect(invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: 'a'.repeat(64) });
-		expect(screen.getByText('Rain')).toBeTruthy();
+		screen.getByText('Rain');
 	});
 
 	it('sanitization regression: strips onerror/onload handlers from plain HTML artifacts', () => {
@@ -141,7 +141,7 @@ describe('SearchStep artifacts', () => {
 		expect(container.querySelector('th')?.textContent).toBe('col');
 		expect(container.querySelector('td')?.textContent).toBe('42');
 		// Truncation note renders alongside the table
-		expect(screen.getByText('Showing 1 of 100 rows')).toBeTruthy();
+		screen.getByText('Showing 1 of 100 rows');
 	});
 
 	it('renders nothing for an empty steps array', () => {

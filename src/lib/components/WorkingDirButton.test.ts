@@ -54,7 +54,7 @@ describe('WorkingDirButton right-click menu', () => {
 			'disabled',
 			true
 		);
-		expect(screen.getByRole('menuitem', { name: 'Choose folder…' })).toBeTruthy();
+		screen.getByRole('menuitem', { name: 'Choose folder…' });
 		expect(screen.queryByRole('menuitem', { name: 'Clear' })).toBeNull();
 	});
 

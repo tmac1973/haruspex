@@ -104,9 +104,7 @@ beforeEach(() => {
 describe('the list of image models', () => {
 	it('says how it is used, and that toolchest has models while it is empty', async () => {
 		render(ImageSection);
-		expect(
-			screen.getByText('Image tools use the first model in this list that can do the job.')
-		).toBeTruthy();
+		screen.getByText('Image tools use the first model in this list that can do the job.');
 		await screen.findByText('llama-toolchest on box:3000 has image models.');
 	});
 
@@ -116,7 +114,7 @@ describe('the list of image models', () => {
 		expect(settings.imageModels).toMatchObject([
 			{ backend: 'llama-toolchest', url: 'http://box:3000', keyId: 'k1', name: 'llama-toolchest' }
 		]);
-		expect((await screen.findByLabelText('Server address:')) as HTMLInputElement).toBeTruthy();
+		await screen.findByLabelText('Server address:');
 	});
 
 	it('shows each model with where it runs and what it can do, and reorders and removes', async () => {
@@ -132,9 +130,7 @@ describe('the list of image models', () => {
 		render(ImageSection);
 		screen.getByText('llama-toolchest on box:3000');
 		screen.getByText('Not probed yet.');
-		expect(
-			screen.getByText(/^Can: draw pictures, transparent backgrounds, tiling textures/)
-		).toBeTruthy();
+		screen.getByText(/^Can: draw pictures, transparent backgrounds, tiling textures/);
 		await fireEvent.click(screen.getByRole('button', { name: 'Move Ming up' }));
 		expect(settings.imageModels.map((e) => e.id)).toEqual(['b', 'a']);
 		await fireEvent.click(screen.getByRole('button', { name: 'Remove klein' }));
@@ -180,7 +176,7 @@ describe('an open Lemonade model', () => {
 		await open(/^ming/);
 		const heading = await screen.findByRole('heading', { name: /Models on the server/ });
 		const section = heading.closest('section')!;
-		await waitFor(() => expect(within(section).getByText('installed')).toBeTruthy());
+		await waitFor(() => within(section).getByText('installed'));
 		expect(within(section).getAllByRole('button', { name: 'Install' })).toHaveLength(2);
 	});
 });
@@ -194,7 +190,7 @@ describe('an open llama-toolchest model', () => {
 		await open(/^qwen/);
 		const heading = await screen.findByRole('heading', { name: /Instances on the server/ });
 		const section = heading.closest('section')!;
-		await waitFor(() => expect(within(section).getByText('qwen-turbo-local')).toBeTruthy());
+		await waitFor(() => within(section).getByText('qwen-turbo-local'));
 		expect(document.querySelector('input[type="password"]')).toBeNull();
 	});
 

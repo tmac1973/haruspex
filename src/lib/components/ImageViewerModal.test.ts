@@ -42,7 +42,7 @@ describe('ImageViewerModal', () => {
 			defaultPath: 'a-lighthouse-at-dusk.jpg',
 			filters: [{ name: 'Image', extensions: ['jpg'] }]
 		});
-		expect(await screen.findByText('Saved to /home/me/lighthouse.jpg')).toBeTruthy();
+		await screen.findByText('Saved to /home/me/lighthouse.jpg');
 		expect(onClose).not.toHaveBeenCalled();
 	});
 

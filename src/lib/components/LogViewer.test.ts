@@ -57,10 +57,10 @@ describe('LogViewer', () => {
 	it('shows the bundled engine and the ComfyUI calls under Image', async () => {
 		render(LogViewer, { open: true, onclose: vi.fn() });
 		await fireEvent.click(screen.getByText('Image'));
-		expect(await screen.findByText('sd-server listening')).toBeTruthy();
+		await screen.findByText('sd-server listening');
 		const picker = screen.getByLabelText('Image log') as HTMLSelectElement;
 		await fireEvent.change(picker, { target: { value: 'comfyui' } });
-		expect(await screen.findByText(/system_stats → ok in 9 ms/)).toBeTruthy();
+		await screen.findByText(/system_stats → ok in 9 ms/);
 		await fireEvent.click(screen.getByText('Clear'));
 		await waitFor(() => expect(invoke).toHaveBeenCalledWith('comfy_clear_logs'));
 	});

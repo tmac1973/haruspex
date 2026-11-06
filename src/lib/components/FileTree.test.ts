@@ -40,7 +40,7 @@ describe('FileTree', () => {
 		const onpick = vi.fn();
 		render(FileTree, { workdir: '/proj', relPath: 'src/main.ts', onpick });
 		await screen.findByText('Text 3');
-		expect(screen.getByText('a.ts')).toBeTruthy();
+		screen.getByText('a.ts');
 		expect(screen.queryByText('logo.png')).toBeNull();
 
 		await fireEvent.click(screen.getByText('util'));
