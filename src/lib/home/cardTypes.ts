@@ -43,6 +43,12 @@ export interface CardFormProps {
 	 * itself and has no schedule.
 	 */
 	onadd: (config: Record<string, unknown>, schedule: Schedule) => Promise<boolean>;
+	/**
+	 * The user's jobs of the card's job type, offered under Use a job, and how
+	 * to add the card for one. Absent for a card type with no job, or none to offer.
+	 */
+	existingJobs?: { id: number; name: string }[];
+	onuse?: (jobId: number) => Promise<boolean>;
 	ondone: () => void;
 }
 

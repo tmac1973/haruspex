@@ -5,8 +5,14 @@
  */
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getJobType } from '#lib/agent/jobs/types/index.ts';
-import { createJob, scheduleToConfigJson, type Schedule } from '#lib/stores/jobs.svelte.ts';
-import { addCard, getHomeCards } from '#lib/stores/homeCards.svelte.ts';
+import {
+	createJob,
+	getJobs,
+	scheduleToConfigJson,
+	type JobSummary,
+	type Schedule
+} from '#lib/stores/jobs.svelte.ts';
+import { addCard, cardUsesExistingJob, getHomeCards } from '#lib/stores/homeCards.svelte.ts';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 
 /**
@@ -44,9 +50,31 @@ export async function createCardJob(
 	return addCard(cardTypeId, {}, jobId, cardType.defaultSize);
 }
 
-/** Whether a card's job belongs to it, rather than being a job the user pinned. */
+/** Whether a card's job belongs to it, rather than being one the user pinned or picked. */
 export function ownsJob(card: HomeCard): boolean {
-	return card.job_id !== null && getCardType(card.card_type)?.jobType !== undefined;
+	return (
+		card.job_id !== null &&
+		getCardType(card.card_type)?.jobType !== undefined &&
+		!cardUsesExistingJob(card)
+	);
+}
+
+/**
+ * The user's own jobs a card type could show instead of making one: its job
+ * type, not already a card's own job. A job made in the Jobs tab, say.
+ */
+export function existingJobsFor(cardTypeId: string): JobSummary[] {
+	const jobType = getCardType(cardTypeId)?.jobType;
+	if (!jobType) return [];
+	const owned = ownedJobIds();
+	return getJobs().filter((j) => j.job_type === jobType && !owned.has(j.id));
+}
+
+/** Add a card that shows an existing job (`cardUsesExistingJob`). */
+export function addCardForJob(cardTypeId: string, jobId: number): Promise<HomeCard | null> {
+	const cardType = getCardType(cardTypeId);
+	if (!cardType) return Promise.resolve(null);
+	return addCard(cardTypeId, { existingJob: true }, jobId, cardType.defaultSize);
 }
 
 /** The jobs that belong to a Home card, for the Jobs tab's "Home" badge. */

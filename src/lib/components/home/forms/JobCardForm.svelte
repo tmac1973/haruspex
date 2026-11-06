@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * The Add card form for a card that owns a job (Important emails, News):
-	 * its job type's editor section and how often the job runs.
+	 * its job type's editor section and how often the job runs. When the user
+	 * already has jobs of that type, Use a job shows one of them instead.
 	 */
 	import Modal from '#lib/components/Modal.svelte';
 	import JobScheduleField from '#lib/components/jobs/JobScheduleField.svelte';
@@ -15,8 +16,15 @@
 		open,
 		defaultSchedule,
 		onadd,
+		existingJobs = [],
+		onuse,
 		ondone
 	}: CardFormProps & { title: string; jobType: JobTypeDefinition } = $props();
+
+	const canUse = $derived(existingJobs.length > 0 && onuse !== undefined);
+	let using = $state(false);
+	// svelte-ignore state_referenced_locally
+	let pickedId = $state<number | null>(existingJobs[0]?.id ?? null);
 
 	// svelte-ignore state_referenced_locally
 	let config = $state(jobType.configDefaults());
@@ -30,13 +38,19 @@
 		jobType.validate?.({ name: '', workingDir: '', steps: [], config }) ?? null
 	);
 
+	const blocker = $derived(using ? (pickedId === null ? 'Pick a job.' : null) : problem);
+
 	async function add() {
-		if (problem || saving) return;
+		if (blocker || saving) return;
 		saving = true;
 		error = null;
 		try {
-			// A plain copy: the settings go to the database, not a $state proxy.
-			if (await onadd($state.snapshot(config), schedule)) ondone();
+			const added =
+				using && pickedId !== null && onuse
+					? await onuse(pickedId)
+					: // A plain copy: the settings go to the database, not a $state proxy.
+						await onadd($state.snapshot(config), schedule);
+			if (added) ondone();
 			else error = 'The card could not be added.';
 		} finally {
 			saving = false;
@@ -46,8 +60,30 @@
 
 <Modal {open} {title} dismissable onclose={ondone} maxWidth={480}>
 	<div class="form">
-		<jobType.Editor bind:config steps={[]} jobName={title} />
-		<JobScheduleField {schedule} onchange={(next) => (schedule = next)} />
+		{#if canUse}
+			<div class="segmented" role="group" aria-label="Job">
+				<button type="button" class:active={!using} onclick={() => (using = false)}>New job</button>
+				<button
+					type="button"
+					class:active={using}
+					title="Show a {jobType.label} job you already have. It keeps its own settings and schedule."
+					onclick={() => (using = true)}>Use a job</button
+				>
+			</div>
+		{/if}
+		{#if canUse && using}
+			<label class="field">
+				<span>Job</span>
+				<select bind:value={pickedId}>
+					{#each existingJobs as job (job.id)}
+						<option value={job.id}>{job.name}</option>
+					{/each}
+				</select>
+			</label>
+		{:else}
+			<jobType.Editor bind:config steps={[]} jobName={title} />
+			<JobScheduleField {schedule} onchange={(next) => (schedule = next)} />
+		{/if}
 		{#if error}
 			<p class="error">{error}</p>
 		{/if}
@@ -57,8 +93,8 @@
 				type="button"
 				class="btn btn-primary"
 				onclick={() => void add()}
-				disabled={problem !== null || saving}
-				title={problem ?? undefined}>Add card</button
+				disabled={blocker !== null || saving}
+				title={blocker ?? undefined}>Add card</button
 			>
 		</div>
 	</div>

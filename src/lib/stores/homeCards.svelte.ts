@@ -17,6 +17,19 @@ let cards = $state<HomeCard[]>([]);
 let loaded = $state(false);
 let loading: Promise<void> | null = null;
 
+/**
+ * Whether a card shows a job the user already had (Add card → Use a job)
+ * rather than one it made. That job stays the user's: no Home badge, it keeps
+ * its schedule with the Home tab off, and removing the card keeps it.
+ */
+export function cardUsesExistingJob(card: HomeCard): boolean {
+	try {
+		return (JSON.parse(card.config) as { existingJob?: unknown }).existingJob === true;
+	} catch {
+		return false;
+	}
+}
+
 export function getHomeCards(): HomeCard[] {
 	return cards;
 }
