@@ -37,7 +37,7 @@ import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 const SAMPLE_ALLOW = [...PROJECT_READ_TOOLS, SUBMIT_FINDINGS_TOOL];
 const VERIFY_ALLOW = [...PROJECT_READ_TOOLS, SUBMIT_VERDICT_TOOL];
 /** Upper bound on sample runs per audit, regardless of configured value. */
-const MAX_AUDIT_RUNS = 20;
+export const MAX_AUDIT_RUNS = 20;
 /**
  * Per-sample agent-loop turn budget. A thorough whole-codebase audit is mostly
  * grepping and reading and can take 100+ turns on a large repo — far more than

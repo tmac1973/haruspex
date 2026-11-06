@@ -186,7 +186,15 @@ pub fn owner_client_create(
     name: String,
     scopes: Vec<Scope>,
 ) -> Result<CreatedOwnerClient, String> {
-    let (client, token) = api.clients()?.create(&name, &scopes)?;
+    create_client(&api, &name, &scopes)
+}
+
+fn create_client(
+    api: &OwnerApi,
+    name: &str,
+    scopes: &[Scope],
+) -> Result<CreatedOwnerClient, String> {
+    let (client, token) = api.clients()?.create(name, scopes)?;
     let pair_code = api.pairing.issue(&token)?;
     Ok(CreatedOwnerClient {
         client,
@@ -202,7 +210,11 @@ pub fn owner_client_pair(
     api: tauri::State<'_, OwnerApi>,
     id: String,
 ) -> Result<CreatedOwnerClient, String> {
-    let (client, token) = api.clients()?.rotate(&id)?;
+    pair_client(&api, &id)
+}
+
+fn pair_client(api: &OwnerApi, id: &str) -> Result<CreatedOwnerClient, String> {
+    let (client, token) = api.clients()?.rotate(id)?;
     let pair_code = api.pairing.issue(&token)?;
     Ok(CreatedOwnerClient {
         client,
@@ -213,7 +225,11 @@ pub fn owner_client_pair(
 
 #[tauri::command]
 pub fn owner_client_revoke(api: tauri::State<'_, OwnerApi>, id: String) -> Result<bool, String> {
-    api.clients()?.revoke(&id)
+    revoke_client(&api, &id)
+}
+
+fn revoke_client(api: &OwnerApi, id: &str) -> Result<bool, String> {
+    api.clients()?.revoke(id)
 }
 
 /// The computers Settings lists as trusted, and where each was found.
@@ -221,4 +237,225 @@ pub fn owner_client_revoke(api: tauri::State<'_, OwnerApi>, id: String) -> Resul
 pub async fn owner_trusted_hosts(app: AppHandle) -> Vec<TrustedHost> {
     let trust = app.state::<OwnerApi>().trust.clone();
     trust.resolve_all().await
+}
+
+// `owner_api_apply` and the `#[tauri::command]` wrappers need a running Tauri
+// app (`AppHandle`, `State`), which the tests can't build: they test what the
+// commands call instead — `status`, the device functions, and the
+// certificate whose fingerprint decides whether `owner_api_apply` restarts.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::owner::server::{Audio, BoxFuture, Dispatch, Images, StoredImage};
+    use crate::test_util::{temp_dir, TestDir};
+    use serde_json::Value;
+    use std::path::PathBuf;
+    use tokio::sync::broadcast;
+
+    const NO_DEVICE_FOLDER: &str = "no app data folder for the device list";
+
+    struct Nothing;
+
+    impl Dispatch for Nothing {
+        fn op(&self, _op: Value) -> BoxFuture<Result<Value, String>> {
+            Box::pin(async { Err("no engine".into()) })
+        }
+        fn subscribe(&self) -> broadcast::Receiver<Value> {
+            broadcast::channel(1).1
+        }
+    }
+
+    impl Images for Nothing {
+        fn lookup(&self, _urls: &[String]) -> Vec<(String, crate::db::ImageRow)> {
+            Vec::new()
+        }
+        fn bytes(&self, _hash: &str) -> Option<(String, Vec<u8>)> {
+            None
+        }
+        fn store(&self, _bytes: Vec<u8>) -> Result<StoredImage, String> {
+            Err("no images".into())
+        }
+    }
+
+    impl Audio for Nothing {
+        fn file(&self, _hash: &str) -> Option<(String, PathBuf)> {
+            None
+        }
+    }
+
+    fn api_in(dir: &TestDir) -> OwnerApi {
+        OwnerApi::load(Some(dir.to_path_buf()))
+    }
+
+    fn a_scope() -> [Scope; 1] {
+        [Scope::ALL[0]]
+    }
+
+    #[test]
+    fn a_stopped_api_reports_nothing_to_connect_to() {
+        let s = status(&OwnerApi::load(None));
+        assert!(!s.running);
+        assert_eq!(s.port, None);
+        assert!(!s.bind_all);
+        assert_eq!(s.address, None);
+        assert_eq!(s.fingerprint, None);
+        assert_eq!(s.certificate, None);
+    }
+
+    #[test]
+    fn a_certificate_left_from_a_stopped_server_is_not_reported() {
+        let api = OwnerApi::load(None);
+        *api.served.lock_or_recover() = Some(("AB:CD".into(), "PEM".into()));
+        let s = status(&api);
+        assert!(!s.running);
+        assert_eq!(s.fingerprint, None);
+        assert_eq!(s.certificate, None);
+    }
+
+    #[tokio::test]
+    async fn a_running_api_reports_its_port_address_and_certificate() {
+        let dir = temp_dir("owner_status");
+        let api = api_in(&dir);
+        let identity = api.certificate(&[]).unwrap();
+        let services = server::Services {
+            dispatch: Arc::new(Nothing),
+            images: Arc::new(Nothing),
+            audio: Arc::new(Nothing),
+            clients: api.clients().unwrap(),
+            pairing: api.pairing.clone(),
+            web_root: None,
+            trust: api.trust.clone(),
+        };
+        let tls = crate::owner::tls::server_config(&identity).unwrap();
+        let running = server::start(services, 0, false, tls).await.unwrap();
+        let port = running.port;
+        *api.running.lock_or_recover() = Some(running);
+        *api.served.lock_or_recover() =
+            Some((identity.fingerprint.clone(), identity.cert_pem.clone()));
+
+        let s = status(&api);
+        assert!(s.running);
+        assert_eq!(s.port, Some(port));
+        assert!(!s.bind_all);
+        assert_eq!(s.address.as_deref(), Some("127.0.0.1"));
+        assert_eq!(s.fingerprint, Some(identity.fingerprint));
+        assert_eq!(s.certificate, Some(identity.cert_pem));
+
+        let r = api.running.lock_or_recover().take().unwrap();
+        r.shutdown().await;
+    }
+
+    #[test]
+    fn without_a_data_folder_there_is_no_certificate() {
+        let err = OwnerApi::load(None).certificate(&[]).unwrap_err();
+        assert!(err.contains("HTTPS certificate"), "{err}");
+    }
+
+    #[test]
+    fn the_kept_certificate_is_reused_until_a_new_name_needs_one() {
+        let dir = temp_dir("owner_cert");
+        let api = api_in(&dir);
+        let first = api.certificate(&[]).unwrap();
+        // Same names: the same certificate, so `owner_api_apply` doesn't restart.
+        assert_eq!(api.certificate(&[]).unwrap().fingerprint, first.fingerprint);
+        // A link address it doesn't cover yet: a new one, so it does.
+        let wider = api.certificate(&["haruspex.example.test"]).unwrap();
+        assert_ne!(wider.fingerprint, first.fingerprint);
+        assert!(wider.names.iter().any(|n| n == "haruspex.example.test"));
+    }
+
+    #[test]
+    fn without_a_data_folder_every_device_command_says_why() {
+        let api = OwnerApi::load(None);
+        assert_eq!(
+            create_client(&api, "Phone", &a_scope()).unwrap_err(),
+            NO_DEVICE_FOLDER
+        );
+        assert_eq!(pair_client(&api, "abc").unwrap_err(), NO_DEVICE_FOLDER);
+        assert_eq!(revoke_client(&api, "abc").unwrap_err(), NO_DEVICE_FOLDER);
+    }
+
+    #[test]
+    fn an_unreadable_device_file_is_an_error_and_is_left_alone() {
+        let dir = temp_dir("owner_bad_clients");
+        let file = dir.join("owner-clients.json");
+        std::fs::write(&file, b"{ not json").unwrap();
+        let api = api_in(&dir);
+        let err = create_client(&api, "Phone", &a_scope()).unwrap_err();
+        assert!(err.contains("owner-clients.json"), "{err}");
+        assert!(revoke_client(&api, "abc").is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), b"{ not json");
+    }
+
+    #[test]
+    fn a_device_is_refused_without_a_name_or_a_permission() {
+        let dir = temp_dir("owner_refuse");
+        let api = api_in(&dir);
+        assert!(create_client(&api, "  ", &a_scope()).is_err());
+        assert!(create_client(&api, "Phone", &[]).is_err());
+        assert!(api.clients().unwrap().list().is_empty());
+    }
+
+    #[test]
+    fn a_new_device_gets_a_code_that_pairs_a_browser_with_its_token() {
+        let dir = temp_dir("owner_create");
+        let api = api_in(&dir);
+        let made = create_client(&api, "Phone", &a_scope()).unwrap();
+        assert_eq!(made.client.name, "Phone");
+        assert_eq!(
+            api.pairing.redeem(&made.pair_code),
+            Some(made.token.clone())
+        );
+        let clients = api.clients().unwrap();
+        assert_eq!(
+            clients.authenticate(&made.token).map(|c| c.id),
+            Some(made.client.id.clone())
+        );
+        // Kept on disk: a fresh load still knows it.
+        assert_eq!(api_in(&dir).clients().unwrap().list().len(), 1);
+    }
+
+    #[test]
+    fn pairing_again_replaces_the_token() {
+        let dir = temp_dir("owner_pair");
+        let api = api_in(&dir);
+        let made = create_client(&api, "Phone", &a_scope()).unwrap();
+        let again = pair_client(&api, &made.client.id).unwrap();
+        assert_ne!(again.token, made.token);
+        assert_eq!(
+            api.pairing.redeem(&again.pair_code),
+            Some(again.token.clone())
+        );
+        let clients = api.clients().unwrap();
+        assert!(clients.authenticate(&made.token).is_none());
+        assert!(clients.authenticate(&again.token).is_some());
+    }
+
+    #[test]
+    fn pairing_an_unknown_device_is_an_error() {
+        let dir = temp_dir("owner_pair_unknown");
+        let api = api_in(&dir);
+        assert_eq!(pair_client(&api, "nope").unwrap_err(), "no such device");
+    }
+
+    #[test]
+    fn revoking_ends_the_token_and_says_whether_there_was_a_device() {
+        let dir = temp_dir("owner_revoke");
+        let api = api_in(&dir);
+        let made = create_client(&api, "Phone", &a_scope()).unwrap();
+        assert_eq!(revoke_client(&api, "nope"), Ok(false));
+        assert_eq!(revoke_client(&api, &made.client.id), Ok(true));
+        assert!(api.clients().unwrap().authenticate(&made.token).is_none());
+        assert_eq!(revoke_client(&api, &made.client.id), Ok(false));
+    }
+
+    #[test]
+    fn a_created_device_never_shows_its_token_in_a_log() {
+        let dir = temp_dir("owner_debug");
+        let api = api_in(&dir);
+        let made = create_client(&api, "Phone", &a_scope()).unwrap();
+        let shown = format!("{made:?}");
+        assert!(!shown.contains(&made.token));
+        assert!(!shown.contains(&made.pair_code));
+    }
 }
