@@ -24,6 +24,11 @@ vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => m.inferenceQueue());
 
 useRunnerFixtures();
 
+/** The type config of the first job the run created: the chained coding job. */
+function createdTypeConfig() {
+	return JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+}
+
 /**
  * The handoff. Runs in every mode, never prompts, and either starts the coding
  * run or records why it did not — the morning's first question answered by the
@@ -102,7 +107,7 @@ describe('guided_planning — handoff', () => {
 		expect(mocks.createJob).toHaveBeenCalledTimes(1);
 		const input = mocks.createJob.mock.calls[0][0];
 		expect(input.job_type).toBe('autonomous_coding');
-		expect(JSON.parse(input.type_config).plan_dir).toBe(PLAN_DIR);
+		expect(createdTypeConfig().plan_dir).toBe(PLAN_DIR);
 		// The link reads in both directions: the coding job names where it came
 		// from, and the handoff output names what it started.
 		expect(input.description).toContain('guided-planning run');
@@ -157,7 +162,7 @@ describe('guided_planning — handoff', () => {
 			turnsWithVerdict('- (a) phase-01-one.md: depends on phase 02, written later')
 		);
 		expect(mocks.createJob).toHaveBeenCalledTimes(1);
-		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		const cfg = createdTypeConfig();
 		expect(cfg.open_findings).toHaveLength(1);
 		expect(cfg.open_findings[0]).toContain('depends on phase 02');
 		expect(handoffOutput()).toContain('1 unresolved finding');
@@ -170,7 +175,7 @@ describe('guided_planning — handoff', () => {
 			turnsWithVerdict('- phase-01-one.md: something is wrong but I did not label it')
 		);
 		expect(mocks.createJob).toHaveBeenCalledTimes(1);
-		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		const cfg = createdTypeConfig();
 		expect(cfg.open_findings[0]).toContain('something is wrong');
 	});
 
@@ -183,7 +188,7 @@ describe('guided_planning — handoff', () => {
 				)
 			)
 		);
-		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		const cfg = createdTypeConfig();
 		expect(cfg.open_findings).toHaveLength(2);
 	});
 
@@ -222,7 +227,7 @@ describe('guided_planning — handoff', () => {
 			planningJob({ run_mode: 'unattended_chain' }),
 			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
 		);
-		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		const cfg = createdTypeConfig();
 		expect(cfg.open_findings).toEqual([]);
 		expect(handoffOutput()).toContain('nothing outstanding');
 	});
@@ -243,7 +248,7 @@ describe('guided_planning — handoff', () => {
 			planningJob({ run_mode: 'unattended_chain', use_git: false, web_research: false }),
 			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
 		);
-		const cfg = JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		const cfg = createdTypeConfig();
 		expect(cfg.use_git).toBe(false);
 		expect(cfg.web_research).toBe(false);
 	});
@@ -281,7 +286,7 @@ describe('guided_planning — chained coding run settings', () => {
 		const { enqueue } = await freshRunner();
 		await enqueue(1);
 		await tick();
-		return JSON.parse(mocks.createJob.mock.calls[0][0].type_config);
+		return createdTypeConfig();
 	}
 
 	it('passes the pinned overrides to the created job', async () => {
