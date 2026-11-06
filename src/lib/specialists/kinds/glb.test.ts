@@ -31,10 +31,11 @@ const runner = vi.hoisted(() => ({ runAssetHtml: vi.fn() }));
 vi.mock('#lib/specialists/three/runHtml.ts', () => runner);
 const glb = vi.hoisted(() => ({ checkGlb: vi.fn() }));
 vi.mock('#lib/glb/check.ts', () => glb);
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ specialists: [] })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ specialists: [] })
+	})
+);
 
 import { specialistKind } from '#lib/specialists/kinds.ts';
 import '#lib/specialists/kinds/index.ts';

@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const invokeMock = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import {
 	registerWatch,
@@ -22,7 +24,7 @@ import { invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	_resetForTests();
-	invokeMock.mockReset();
+	vi.mocked(invoke).mockReset();
 	vi.useFakeTimers();
 });
 
@@ -33,7 +35,7 @@ afterEach(() => {
 describe('backgroundWatch', () => {
 	it('polls the .done sentinel and fires the handler with the exit code', async () => {
 		let finished = false;
-		invokeMock.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					fs_read_text_absolute: (args) => {
@@ -74,7 +76,9 @@ describe('backgroundWatch', () => {
 	});
 
 	it('captures a non-zero exit code', async () => {
-		invokeMock.mockImplementation(invokeRouter({ fs_read_text_absolute: '17\n' }, undefined));
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ fs_read_text_absolute: '17\n' }, undefined)
+		);
 		setWatchCompletionHandler(() => {});
 		registerWatch({
 			ptySessionId: 1,
@@ -88,7 +92,7 @@ describe('backgroundWatch', () => {
 	});
 
 	it('clearWatchesForSession drops a session’s pending watches', async () => {
-		invokeMock.mockRejectedValue(new Error('not done'));
+		vi.mocked(invoke).mockRejectedValue(new Error('not done'));
 		const fired: number[] = [];
 		setWatchCompletionHandler((pty) => fired.push(pty));
 		registerWatch({
@@ -100,7 +104,7 @@ describe('backgroundWatch', () => {
 		});
 		clearWatchesForSession(2);
 		// Even if the sentinel later appears, a cleared watch never fires.
-		invokeMock.mockResolvedValue('0');
+		vi.mocked(invoke).mockResolvedValue('0');
 		await vi.advanceTimersByTimeAsync(8000);
 		expect(fired).toEqual([]);
 		expect(peekCompletedWatches(2)).toHaveLength(0);
@@ -134,7 +138,7 @@ describe('backgroundWatch with a code_bg source', () => {
 
 	it('polls code_bg_status and fires only the owner’s handler', async () => {
 		let status = [proc('bg-1', true)];
-		invokeMock.mockImplementation(invokeRouter({ code_bg_status: () => status }, undefined));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ code_bg_status: () => status }, undefined));
 		let fired = 0;
 		let otherFired = 0;
 		let ptyFired = 0;
@@ -146,7 +150,7 @@ describe('backgroundWatch with a code_bg source', () => {
 		await vi.advanceTimersByTimeAsync(4000);
 		expect(fired).toBe(0);
 		// No sentinel reads for a code_bg watch.
-		expect(invokeMock).not.toHaveBeenCalledWith('fs_read_text_absolute', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('fs_read_text_absolute', expect.anything());
 
 		status = [proc('bg-1', false, 2)];
 		await vi.advanceTimersByTimeAsync(4000);
@@ -161,27 +165,27 @@ describe('backgroundWatch with a code_bg source', () => {
 	});
 
 	it('reports a signal kill as -1', async () => {
-		invokeMock.mockResolvedValue([proc('bg-2', false, null)]);
+		vi.mocked(invoke).mockResolvedValue([proc('bg-2', false, null)]);
 		register('bg-2');
 		await vi.advanceTimersByTimeAsync(4000);
 		expect(peekCompletedCodeWatches('sess-a')[0]?.exitCode).toBe(-1);
 	});
 
 	it('drops a watch whose process was stopped, without a notification', async () => {
-		invokeMock.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 		let fired = 0;
 		setCodeWatchCompletionHandler('sess-a', () => fired++);
 		register('bg-3');
 		await vi.advanceTimersByTimeAsync(4000);
 		expect(fired).toBe(0);
 		expect(peekCompletedCodeWatches('sess-a')).toHaveLength(0);
-		invokeMock.mockClear();
+		vi.mocked(invoke).mockClear();
 		await vi.advanceTimersByTimeAsync(8000);
-		expect(invokeMock).not.toHaveBeenCalled(); // polling stopped
+		expect(invoke).not.toHaveBeenCalled(); // polling stopped
 	});
 
 	it('clearCodeWatches drops only that session’s watches', async () => {
-		invokeMock.mockResolvedValue([
+		vi.mocked(invoke).mockResolvedValue([
 			proc('bg-4', false, 0),
 			{ ...proc('bg-5', false, 0), owner: 'sess-b' }
 		]);
@@ -194,7 +198,7 @@ describe('backgroundWatch with a code_bg source', () => {
 	});
 
 	it('removing a handler stops its notifications', async () => {
-		invokeMock.mockResolvedValue([proc('bg-6', false, 0)]);
+		vi.mocked(invoke).mockResolvedValue([proc('bg-6', false, 0)]);
 		let fired = 0;
 		const off = setCodeWatchCompletionHandler('sess-a', () => fired++);
 		off();
@@ -206,15 +210,15 @@ describe('backgroundWatch with a code_bg source', () => {
 	});
 
 	it('reads the log through code_bg_tail, empty on failure', async () => {
-		invokeMock.mockResolvedValueOnce('tail of log');
+		vi.mocked(invoke).mockResolvedValueOnce('tail of log');
 		expect(await readCodeBgLog('bg-7', 100)).toBe('tail of log');
-		expect(invokeMock).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-7', bytes: 100 });
-		invokeMock.mockRejectedValueOnce(new Error('gone'));
+		expect(invoke).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-7', bytes: 100 });
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('gone'));
 		expect(await readCodeBgLog('bg-7')).toBe('');
 	});
 	it('hands a session’s watches to another window, which then gets the completion', async () => {
 		let status = [proc('bg-8', true), { ...proc('bg-9', true), owner: 'sess-b' }];
-		invokeMock.mockImplementation(invokeRouter({ code_bg_status: () => status }, undefined));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ code_bg_status: () => status }, undefined));
 		let here = 0;
 		setCodeWatchCompletionHandler('sess-a', () => here++);
 		register('bg-8');

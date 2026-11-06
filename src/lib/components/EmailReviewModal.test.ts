@@ -81,7 +81,7 @@ describe('EmailReviewModal', () => {
 		await open();
 		await fireEvent.input(field('To'), { target: { value: 'alice at example' } });
 		expect((screen.getByText('Send') as HTMLButtonElement).disabled).toBe(true);
-		expect(screen.getByText(/is not an email address/)).toBeTruthy();
+		screen.getByText(/is not an email address/);
 	});
 
 	it('stays open with the error when sending fails', async () => {
@@ -89,7 +89,7 @@ describe('EmailReviewModal', () => {
 		await open();
 		await fireEvent.click(screen.getByText('Send'));
 		await screen.findByText(/refused the login/);
-		expect(screen.getByText('Review email')).toBeTruthy();
+		screen.getByText('Review email');
 		expect(field('Message').value).toBe('Yes.');
 	});
 

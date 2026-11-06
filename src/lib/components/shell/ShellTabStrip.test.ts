@@ -3,7 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
 // ShellPicker asks for the shell catalog; an empty one hides it.
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => []) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async () => [])
+);
 const store = vi.hoisted(() => ({
 	getShellSessions: vi.fn(() =>
 		Array.from({ length: 40 }, (_, i) => ({ id: `s${i}`, name: `Shell ${i}`, isSubmitting: false }))

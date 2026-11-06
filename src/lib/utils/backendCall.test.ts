@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { fromBackendError, invokeBackend, type Backend } from './backendCall.ts';
 
@@ -24,7 +26,7 @@ const backend: Backend<TestError> = {
 };
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('fromBackendError', () => {
@@ -60,7 +62,7 @@ describe('fromBackendError', () => {
 
 describe('invokeBackend', () => {
 	it('passes the id it made to the command and answers its value', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ comfy_json: (a) => a }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ comfy_json: (a) => a }));
 		const out = (await invokeBackend(backend, 'comfy_json', '/p', (id) => ({ id }))) as {
 			id: string;
 		};
@@ -73,13 +75,13 @@ describe('invokeBackend', () => {
 		await expect(
 			invokeBackend(backend, 'comfy_json', '/p', () => ({}), ac.signal)
 		).rejects.toMatchObject({ kind: 'cancelled' });
-		expect(tauri.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('stops the call through comfy_cancel when the signal fires mid-call', async () => {
 		const ac = new AbortController();
 		let callId = '';
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				comfy_json: (a) => {
 					callId = (a as { id: string }).id;
@@ -92,6 +94,6 @@ describe('invokeBackend', () => {
 		await expect(
 			invokeBackend(backend, 'comfy_json', '/p', (id) => ({ id }), ac.signal)
 		).rejects.toMatchObject({ kind: 'cancelled' });
-		expect(tauri.invoke).toHaveBeenCalledWith('comfy_cancel', { id: callId });
+		expect(invoke).toHaveBeenCalledWith('comfy_cancel', { id: callId });
 	});
 });

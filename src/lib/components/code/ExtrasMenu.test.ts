@@ -85,7 +85,7 @@ describe('the Extras menu', () => {
 
 	it('shows the defaults for a session that never chose', async () => {
 		await open(session());
-		expect(screen.getByRole('button', { name: /Extras: 1/ })).toBeTruthy();
+		screen.getByRole('button', { name: /Extras: 1/ });
 		expect(box('Regex').checked).toBe(true);
 		expect(box('SQL').checked).toBe(false);
 		expect((screen.getByText('Use defaults') as HTMLButtonElement).disabled).toBe(true);
@@ -110,7 +110,7 @@ describe('the Extras menu', () => {
 		settings.codeHelpers = { '3d': true };
 		const s = session();
 		await open(s);
-		expect(screen.getByRole('button', { name: /Extras: 2/ })).toBeTruthy();
+		screen.getByRole('button', { name: /Extras: 2/ });
 		expect(box('3D').checked).toBe(true);
 		await fireEvent.click(box('3D'));
 		expect(s.setSessionHelpers).toHaveBeenCalledWith([]);

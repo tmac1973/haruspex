@@ -7,17 +7,13 @@ const mocks = vi.hoisted(() => ({
 	read: vi.fn()
 }));
 
-const { invokeRouter } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter({
-			skills_list: () => mocks.list,
-			skills_project_root: () => mocks.root,
-			skill_read: () => mocks.read()
-		})
-	)
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		skills_list: () => mocks.list,
+		skills_project_root: () => mocks.root,
+		skill_read: () => mocks.read()
+	})
+);
 
 import { invoke } from '@tauri-apps/api/core';
 import { defaultSkills, updateSkills } from '#lib/stores/settings.ts';

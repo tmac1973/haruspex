@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	askEmailReview: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/emailReview.svelte.ts', () => ({ askEmailReview: mocks.askEmailReview }));
 
 import '#lib/agent/tools/email-compose.ts';
@@ -36,7 +38,7 @@ function account(overrides: Partial<EmailAccount> = {}): EmailAccount {
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.askEmailReview.mockReset();
 	setEmailAccounts([]);
 });
@@ -84,12 +86,12 @@ describe('email_compose', () => {
 			{ ...attended, codeAutoApprove: true }
 		);
 		expect(mocks.askEmailReview).toHaveBeenCalledTimes(1);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('email_send', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('email_send', expect.anything());
 	});
 
 	it('fills a reply from the original', async () => {
 		setEmailAccounts([sender()]);
-		mocks.invoke.mockResolvedValue(replyContext);
+		vi.mocked(invoke).mockResolvedValue(replyContext);
 		mocks.askEmailReview.mockResolvedValue({
 			kind: 'sent',
 			messageId: 'new@example.com',
@@ -100,8 +102,8 @@ describe('email_compose', () => {
 			{ reply_to: '7:42', body: 'Yes, see you then.', reply_all: true },
 			attended
 		);
-		expect(mocks.invoke.mock.calls[0][0]).toBe('email_reply_context');
-		expect(mocks.invoke.mock.calls[0][1]).toMatchObject({ messageId: '7:42' });
+		expect(vi.mocked(invoke).mock.calls[0][0]).toBe('email_reply_context');
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ messageId: '7:42' });
 		expect(mocks.askEmailReview.mock.calls[0][0]).toMatchObject({
 			to: ['alice@example.com'],
 			cc: ['bob@example.com'],

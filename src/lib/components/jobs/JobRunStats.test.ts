@@ -33,7 +33,7 @@ describe('JobRunStats', () => {
 			],
 			contextSize: 32768
 		});
-		expect(screen.getByText('Not recorded for this run.')).toBeTruthy();
+		screen.getByText('Not recorded for this run.');
 		expect(screen.queryByText('Run total')).toBeNull();
 	});
 
@@ -63,7 +63,7 @@ describe('JobRunStats', () => {
 		});
 		const footer = screen.getByText('Run total').closest('tr')!;
 		expect(footer.textContent).toContain('~');
-		expect(screen.getByText(/apportioned by character count/)).toBeTruthy();
+		screen.getByText(/apportioned by character count/);
 	});
 
 	it('drops the estimate mark when every phase reported an exact split', () => {
@@ -91,7 +91,7 @@ describe('JobRunStats', () => {
 		expect(footer.textContent).toContain('5K');
 		// Only the phase that ran counts toward calls.
 		expect(footer.textContent).toContain('3');
-		expect(screen.getByText(/1 of 2 phases recorded/)).toBeTruthy();
+		screen.getByText(/1 of 2 phases recorded/);
 	});
 
 	/**
@@ -145,9 +145,9 @@ describe('JobRunStats', () => {
 				contextSize: 32768
 			}
 		});
-		expect(screen.getByText('Qwen3.6-35B-A3B')).toBeTruthy();
-		expect(screen.getByText('thinking on')).toBeTruthy();
-		expect(screen.getByText('effort high')).toBeTruthy();
+		screen.getByText('Qwen3.6-35B-A3B');
+		screen.getByText('thinking on');
+		screen.getByText('effort high');
 	});
 
 	it('says thinking off rather than dropping the line', () => {
@@ -161,7 +161,7 @@ describe('JobRunStats', () => {
 				contextSize: null
 			}
 		});
-		expect(screen.getByText('thinking off')).toBeTruthy();
+		screen.getByText('thinking off');
 		expect(screen.queryByText(/^effort/)).toBeNull();
 	});
 
@@ -183,7 +183,7 @@ describe('JobRunStats', () => {
 			finishedAt: null
 		};
 		render(JobRunStats, { rows: [{ label: 'Overview', stats: stats() }], contextSize: null, meta });
-		expect(screen.getByText('Export JSON')).toBeTruthy();
+		screen.getByText('Export JSON');
 	});
 
 	it('hides the export when no phase recorded anything', () => {

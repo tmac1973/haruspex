@@ -1,18 +1,19 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn(), backend: 'none', generate: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({
-			...actual.getSettings(),
+const state = vi.hoisted(() => ({ backend: 'none', generate: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({
 			videoEditingEnabled: true,
 			imageBackendKind: state.backend
 		})
-	};
-});
+	})
+);
 vi.mock('#lib/image/generateOne.ts', () => ({ generateOneImage: state.generate }));
 
 import { executeTool } from '#lib/agent/tools/index.ts';
@@ -27,7 +28,7 @@ const written = {
 };
 
 beforeEach(() => {
-	state.invoke.mockReset().mockResolvedValue(written);
+	vi.mocked(invoke).mockReset().mockResolvedValue(written);
 	state.generate.mockReset();
 	state.backend = 'none';
 	_setVideoBinariesForTests({ ffmpeg: found, ffprobe: found, melt: found, hints: [] });
@@ -41,7 +42,7 @@ describe('video_thumbnail', () => {
 			{ episode: 'ep010', from: 'frame', at: '3:12' },
 			ctx
 		);
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'video_thumbnail_from_frame',
 			expect.objectContaining({ path: null, at: null, timelineAt: 192, contain: false })
 		);
@@ -57,7 +58,7 @@ describe('video_thumbnail', () => {
 			{ from: 'frame', source: 'ep010/raw/obs.mp4', at: 40, fit: 'contain' },
 			ctx
 		);
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'video_thumbnail_from_frame',
 			expect.objectContaining({
 				path: 'ep010/raw/obs.mp4',
@@ -83,7 +84,7 @@ describe('video_thumbnail', () => {
 		expect(state.generate).toHaveBeenCalledWith(
 			expect.objectContaining({ width: 1344, height: 768 })
 		);
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'video_thumbnail_from_image',
 			expect.objectContaining({ imageBase64: 'AQID' })
 		);

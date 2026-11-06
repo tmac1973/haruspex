@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SearchChunk } from '#lib/ipc/gen/SearchChunk.ts';
 import { setCodeHelperConfig } from '#lib/stores/settings.ts';
@@ -5,8 +6,10 @@ import { makeToolContext } from '#lib/testing/toolContext.ts';
 // Imported once, statically: the tool registry's first load takes seconds (#409).
 import { executeTool } from '#lib/agent/tools/index.ts';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rerank: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+const mocks = vi.hoisted(() => ({ rerank: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/rerank.ts', () => ({ rerankDocuments: mocks.rerank }));
 
 const ctx = makeToolContext({ workingDir: '/work', codeMode: true });
@@ -22,11 +25,11 @@ function chunk(path: string, start: number, lines: string[], score = 1): SearchC
 }
 
 function answer(chunks: SearchChunk[], terms = ['grow', 'type']) {
-	mocks.invoke.mockResolvedValueOnce({ terms, chunks, files_scanned: 10 });
+	vi.mocked(invoke).mockResolvedValueOnce({ terms, chunks, files_scanned: 10 });
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.rerank.mockReset();
 	setCodeHelperConfig('search', undefined);
 });
@@ -75,7 +78,7 @@ describe('search_code', () => {
 			makeToolContext({ codeMode: true })
 		);
 		expect(out.result).toContain('No working directory set');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('asks for 100 candidates and passes the path and WSL distro through', async () => {
@@ -85,7 +88,7 @@ describe('search_code', () => {
 			{ query: 'q', path: 'src' },
 			makeToolContext({ workingDir: '/work', codeMode: true, wslDistro: 'Ubuntu' })
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('code_search_candidates', {
+		expect(invoke).toHaveBeenCalledWith('code_search_candidates', {
 			root: '/work',
 			query: 'q',
 			path: 'src',

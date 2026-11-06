@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { SubtaskResult } from '#lib/code/runSubtask.ts';
 import type { SubtaskWorktree } from '#lib/code/subtaskGit.ts';
 import { invokeRouter, unexpectedInvoke, type InvokeRoute } from '#lib/testing/invoke.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const child = vi.hoisted(() => ({ runSubtask: vi.fn() }));
 vi.mock('#lib/code/runSubtask.ts', () => ({ runSubtask: child.runSubtask }));
@@ -26,7 +28,7 @@ const wt: SubtaskWorktree = {
 };
 
 function routes(r: Record<string, InvokeRoute>) {
-	tauri.invoke.mockImplementation(invokeRouter(r, unexpectedInvoke));
+	vi.mocked(invoke).mockImplementation(invokeRouter(r, unexpectedInvoke));
 }
 
 function result(over: Partial<SubtaskResult> = {}): SubtaskResult {
@@ -65,7 +67,7 @@ function initial(mode: 'read' | 'write' = 'read'): SubtaskState {
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	child.runSubtask.mockReset();
 	routes({});
 });

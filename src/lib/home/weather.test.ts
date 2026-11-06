@@ -1,11 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => ({ proxy: { mode: 'manual', url: 'http://proxy:3128' } })
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ proxy: { mode: 'manual', url: 'http://proxy:3128' } })
+	})
+);
 
 import { fetchWeather, forecastUrl, geocode, parseForecast, weatherLabel } from './weather';
 
@@ -29,7 +33,7 @@ const FORECAST = {
 };
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('forecastUrl', () => {
@@ -74,12 +78,12 @@ describe('weatherLabel', () => {
 
 describe('fetching', () => {
 	it('goes through the network proxy and parses the reply text', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ proxy_fetch: { text: JSON.stringify(FORECAST), full_length: 1 } })
 		);
 		const out = await fetchWeather({ place: 'Halifax', lat: 44.65, lon: -63.57, units: 'metric' });
 		expect(out.now.temp).toBe(7.4);
-		expect(tauri.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'proxy_fetch',
 			expect.objectContaining({
 				caller: 'home-weather',
@@ -89,7 +93,7 @@ describe('fetching', () => {
 	});
 
 	it('names each place with its region and country', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				proxy_fetch: {
 					text: JSON.stringify({
@@ -114,7 +118,7 @@ describe('fetching', () => {
 	});
 
 	it('says so when the reply is not JSON', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ proxy_fetch: { text: '<html>blocked</html>' } })
 		);
 		await expect(geocode('x')).rejects.toThrow(/not JSON/);

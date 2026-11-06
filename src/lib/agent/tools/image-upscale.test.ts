@@ -1,13 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'local',
-	invoke: vi.fn(),
 	upscale: vi.fn(),
 	size: { width: 512, height: 384 }
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageBackendKind: state.backend }),
@@ -36,26 +38,28 @@ beforeEach(() => {
 	state.backend = 'local';
 	state.size = { width: 512, height: 384 };
 	vi.stubGlobal('createImageBitmap', async () => ({ ...state.size, close: () => {} }));
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter(
-			{
-				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
-				fs_read_bytes: [4, 5, 6],
-				image_store_bytes: SRC,
-				image_store_upscaled: () => {
-					const headers = (
-						state.invoke.mock.calls.at(-1)?.[2] as { headers: Record<string, string> }
-					).headers;
-					return {
-						hash: OUT,
-						width: Number(headers['x-width']),
-						height: Number(headers['x-height'])
-					};
-				}
-			},
-			(_cmd: string, args: unknown) => args ?? null
-		)
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter(
+				{
+					image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+					fs_read_bytes: [4, 5, 6],
+					image_store_bytes: SRC,
+					image_store_upscaled: () => {
+						const headers = (
+							vi.mocked(invoke).mock.calls.at(-1)?.[2] as { headers: Record<string, string> }
+						).headers;
+						return {
+							hash: OUT,
+							width: Number(headers['x-width']),
+							height: Number(headers['x-height'])
+						};
+					}
+				},
+				(_cmd: string, args: unknown) => args ?? null
+			)
+		);
 	state.upscale.mockReset().mockResolvedValue(new Uint8Array([9, 9, 9]));
 });
 
@@ -84,7 +88,9 @@ describe('upscale_image', () => {
 	it('upscales a picture drawn earlier and keeps the result at the size asked for', async () => {
 		const out = await executeTool('upscale_image', { image: SRC_URL, scale: 2 }, chat);
 		expect(state.upscale.mock.calls[0][0]).toEqual({ name: 'image.png', hash: SRC });
-		const [cmd, body, opts] = state.invoke.mock.calls.find(([c]) => c === 'image_store_upscaled')!;
+		const [cmd, body, opts] = vi
+			.mocked(invoke)
+			.mock.calls.find(([c]) => c === 'image_store_upscaled')!;
 		expect(cmd).toBe('image_store_upscaled');
 		expect(Array.from(body as Uint8Array)).toEqual([9, 9, 9]);
 		expect(opts).toEqual({
@@ -102,7 +108,7 @@ describe('upscale_image', () => {
 	it('keeps a working-folder file in the cache first, so its alpha can be put back', async () => {
 		const ctx = makeToolContext({ interactive: true, conversationId: 'c', workingDir: '/pics' });
 		await executeTool('upscale_image', { image: 'sprite.png' }, ctx);
-		expect(state.invoke).toHaveBeenCalledWith('image_store_bytes', {
+		expect(invoke).toHaveBeenCalledWith('image_store_bytes', {
 			bytes: [4, 5, 6],
 			mime: 'image/png',
 			width: 512,

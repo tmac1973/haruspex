@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
@@ -10,8 +11,9 @@ import {
 } from '#lib/agent/tools/audit.ts';
 import { DEFAULT_AUDIT_SYNTHESIS_PROMPT } from './auditPipeline';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	markRunStarted: vi.fn(async () => {}),
 	markRunStepStarted: vi.fn(async () => {}),
@@ -76,8 +78,8 @@ function submit(turn: Turn, name: string, args: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
-	tauri.invoke.mockImplementation(invokeRouter({}));
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockImplementation(invokeRouter({}));
 });
 
 describe('planAuditSteps', () => {
@@ -107,7 +109,9 @@ describe('planAuditSteps', () => {
 describe('runAuditPipeline', () => {
 	it('runs every sample, verifies the findings and writes the report', async () => {
 		const written: Record<string, unknown>[] = [];
-		tauri.invoke.mockImplementation(invokeRouter({ fs_write_text: (a) => void written.push(a!) }));
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ fs_write_text: (a) => void written.push(a!) })
+		);
 		const { h, ctx } = harness(job({ num_runs: 2, output_file: 'AUDIT.md' }), (turn) => {
 			if (turn.userMessage.includes('Audit the repo'))
 				submit(turn, SUBMIT_FINDINGS_TOOL, { findings: [FINDING] });
@@ -129,7 +133,7 @@ describe('runAuditPipeline', () => {
 	});
 
 	it('still succeeds, with a note, when the report file cannot be written', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				fs_write_text: () => {
 					throw 'disk full';

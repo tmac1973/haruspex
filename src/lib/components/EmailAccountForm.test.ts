@@ -52,7 +52,7 @@ describe('EmailAccountForm password', () => {
 		const { field } = renderForm();
 		expect(screen.queryByText(/Not saved yet/)).toBeNull();
 		await fireEvent.input(field, { target: { value: 'new-pw' } });
-		expect(screen.getByText('Not saved yet — press Save password.')).toBeTruthy();
+		screen.getByText('Not saved yet — press Save password.');
 
 		await fireEvent.click(screen.getByText('Save password'));
 		await waitFor(() => expect(screen.queryByText(/Not saved yet/)).toBeNull());

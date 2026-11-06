@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(async (): Promise<unknown> => null) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (): Promise<unknown> => null)
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const stores = vi.hoisted(() => ({
@@ -86,9 +88,9 @@ describe('TasksChip', () => {
 		expect(chip.getAttribute('title')).toContain('Rendering ep1 (Holiday video)');
 
 		await fireEvent.click(chip);
-		expect(screen.getByText('Rendering ep1')).toBeTruthy();
-		expect(screen.getByText('npm run dev')).toBeTruthy();
-		expect(await screen.findByText('Fix the build')).toBeTruthy();
+		screen.getByText('Rendering ep1');
+		screen.getByText('npm run dev');
+		await screen.findByText('Fix the build');
 	});
 
 	it('cancels a task and stops a command from the list', async () => {
@@ -98,7 +100,7 @@ describe('TasksChip', () => {
 		render(TasksChip);
 		await fireEvent.click(screen.getByRole('button', { name: 'Tasks: 2' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-		expect(tauri.invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
+		expect(invoke).toHaveBeenCalledWith('task_cancel', { id: 't1' });
 		await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
 		expect(stop).toHaveBeenCalled();
 	});
@@ -124,7 +126,7 @@ describe('TasksChip', () => {
 		render(TasksChip);
 		const chip = screen.getByRole('button', { name: 'Tasks' });
 		await fireEvent.click(chip);
-		expect(screen.getByText('Done', { selector: '.heading' })).toBeTruthy();
+		screen.getByText('Done', { selector: '.heading' });
 
 		vi.advanceTimersByTime(9 * 60 * 1000);
 		flushSync();

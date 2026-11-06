@@ -1,10 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { MemoryMeta } from '#lib/ipc/gen/MemoryMeta.ts';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/memory.svelte.ts', () => ({ refreshMemoryCount: vi.fn() }));
 
 import MemoryList from './MemoryList.svelte';
@@ -26,17 +27,17 @@ function memory(over: Partial<MemoryMeta> = {}): MemoryMeta {
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	mocks.invoke.mockResolvedValue([]);
+	vi.mocked(invoke).mockResolvedValue([]);
 });
 
 describe('MemoryList', () => {
 	it('lists what is remembered, with where it came from', async () => {
-		mocks.invoke.mockResolvedValueOnce([memory()]);
+		vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 		render(MemoryList);
 
-		expect(await screen.findByText('Prefers tabs over spaces.')).toBeTruthy();
-		expect(screen.getByText(/Editor setup/)).toBeTruthy();
-		expect(screen.getByText('preference')).toBeTruthy();
+		await screen.findByText('Prefers tabs over spaces.');
+		screen.getByText(/Editor setup/);
+		screen.getByText('preference');
 	});
 
 	/**
@@ -44,28 +45,28 @@ describe('MemoryList', () => {
 	 * not hide a fact still being recalled, so the row stays and says so.
 	 */
 	it('says so when the source conversation is gone', async () => {
-		mocks.invoke.mockResolvedValueOnce([memory({ source_title: null })]);
+		vi.mocked(invoke).mockResolvedValueOnce([memory({ source_title: null })]);
 		render(MemoryList);
-		expect(await screen.findByText(/from a deleted chat/)).toBeTruthy();
+		await screen.findByText(/from a deleted chat/);
 	});
 
 	it('shows an empty state rather than a bare list', async () => {
 		render(MemoryList);
-		expect(await screen.findByText('Nothing remembered yet.')).toBeTruthy();
+		await screen.findByText('Nothing remembered yet.');
 	});
 
 	it('re-queries with the filter text', async () => {
-		mocks.invoke.mockResolvedValueOnce([memory()]);
+		vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 		render(MemoryList);
 		await screen.findByText('Prefers tabs over spaces.');
 
-		mocks.invoke.mockResolvedValueOnce([]);
+		vi.mocked(invoke).mockResolvedValueOnce([]);
 		await fireEvent.input(screen.getByLabelText('Filter memories'), {
 			target: { value: 'toronto' }
 		});
 
 		await waitFor(() =>
-			expect(mocks.invoke).toHaveBeenCalledWith(
+			expect(invoke).toHaveBeenCalledWith(
 				'memory_list',
 				expect.objectContaining({ filter: 'toronto' })
 			)
@@ -77,7 +78,7 @@ describe('MemoryList', () => {
 	 * update so an edited memory is recalled for what it now says.
 	 */
 	it('saves an edit through memory_update', async () => {
-		mocks.invoke.mockResolvedValueOnce([memory()]);
+		vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 		render(MemoryList);
 		await screen.findByText('Prefers tabs over spaces.');
 
@@ -87,7 +88,7 @@ describe('MemoryList', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		await waitFor(() =>
-			expect(mocks.invoke).toHaveBeenCalledWith('memory_update', {
+			expect(invoke).toHaveBeenCalledWith('memory_update', {
 				id: 'mem-1',
 				content: 'Prefers spaces after all.'
 			})
@@ -95,7 +96,7 @@ describe('MemoryList', () => {
 	});
 
 	it('treats an emptied edit as a cancel, not a silent wipe', async () => {
-		mocks.invoke.mockResolvedValueOnce([memory()]);
+		vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 		render(MemoryList);
 		await screen.findByText('Prefers tabs over spaces.');
 
@@ -103,28 +104,26 @@ describe('MemoryList', () => {
 		await fireEvent.input(screen.getByLabelText('Memory text'), { target: { value: '   ' } });
 		await fireEvent.click(screen.getByText('Save'));
 
-		await waitFor(() => expect(screen.getByText('Prefers tabs over spaces.')).toBeTruthy());
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_update', expect.anything());
+		await waitFor(() => screen.getByText('Prefers tabs over spaces.'));
+		expect(invoke).not.toHaveBeenCalledWith('memory_update', expect.anything());
 	});
 
 	it('deletes a row without a confirmation step', async () => {
 		// One row, its text in front of you: a modal per row makes clearing
 		// out bad extractions tedious enough that people stop.
-		mocks.invoke.mockResolvedValueOnce([memory()]);
+		vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 		render(MemoryList);
 		await screen.findByText('Prefers tabs over spaces.');
 
 		await fireEvent.click(screen.getByText('Delete'));
 
-		await waitFor(() =>
-			expect(mocks.invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' })
-		);
+		await waitFor(() => expect(invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' }));
 		await waitFor(() => expect(screen.queryByText('Prefers tabs over spaces.')).toBeNull());
 	});
 
 	describe('clear all', () => {
 		it('requires the word to be typed before it will fire', async () => {
-			mocks.invoke.mockResolvedValueOnce([memory()]);
+			vi.mocked(invoke).mockResolvedValueOnce([memory()]);
 			render(MemoryList);
 			await screen.findByText('Prefers tabs over spaces.');
 
@@ -138,7 +137,7 @@ describe('MemoryList', () => {
 			expect((screen.getByText('Delete everything') as HTMLButtonElement).disabled).toBe(false);
 
 			await fireEvent.click(screen.getByText('Delete everything'));
-			await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('memory_delete_all'));
+			await waitFor(() => expect(invoke).toHaveBeenCalledWith('memory_delete_all'));
 		});
 
 		it('is not offered when there is nothing to forget', async () => {

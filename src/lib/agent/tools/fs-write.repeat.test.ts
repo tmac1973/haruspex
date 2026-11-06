@@ -1,12 +1,14 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	isAutoApproveActive: vi.fn(() => true),
 	askFileConflict: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/approvalOverride.ts', () => ({
 	isAutoApproveActive: mocks.isAutoApproveActive
 }));
@@ -19,13 +21,13 @@ import { resolveWritePathInteractive } from './fs-write';
 import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.isAutoApproveActive.mockReturnValue(true);
 });
 
 /** Pretend every path already exists on disk unless told otherwise. */
 function existsReturns(exists: boolean) {
-	mocks.invoke.mockImplementation(invokeRouter({ fs_path_exists: exists }, unexpectedInvoke));
+	vi.mocked(invoke).mockImplementation(invokeRouter({ fs_path_exists: exists }, unexpectedInvoke));
 }
 
 describe('repeat-write guard', () => {
@@ -71,7 +73,7 @@ describe('repeat-write guard', () => {
 		existsReturns(true);
 		const written = new Set<string>(['a.md']);
 		await resolveWritePathInteractive('/w', 'a.md', written);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('allows writes to two different paths in the same turn', async () => {
@@ -113,7 +115,7 @@ describe('an existing file, with someone at the keyboard', () => {
 	});
 
 	function disk(opts: { available?: string | Error }) {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
 					fs_path_exists: true,
@@ -170,7 +172,7 @@ describe('an existing file, with someone at the keyboard', () => {
 	});
 
 	it('does not ask when the file does not exist', async () => {
-		mocks.invoke.mockResolvedValue(false);
+		vi.mocked(invoke).mockResolvedValue(false);
 		const r = await resolveWritePathInteractive('/w', 'new.md', new Set());
 		expect(r).toEqual({ kind: 'ok', finalPath: 'new.md', overwrite: false });
 		expect(mocks.askFileConflict).not.toHaveBeenCalled();

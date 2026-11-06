@@ -1,12 +1,14 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	listSkills: vi.fn(),
 	readSkillForTurn: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 // jsdom draws nothing: a picture is "downscaled" by marking it.
 vi.mock('#lib/utils/image.ts', () => ({ downscaleDataUrl: async (u: string) => `${u}#small` }));
 vi.mock('#lib/skills/client.ts', async (importOriginal) => ({
@@ -21,7 +23,7 @@ const HASH = 'a'.repeat(64);
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.listSkills.mockReset().mockResolvedValue([
 		{
 			name: 'fix-picture',
@@ -42,14 +44,14 @@ describe('attachImages', () => {
 	});
 
 	it('reads an uploaded picture by hash, as a data URL of its own type', async () => {
-		mocks.invoke.mockResolvedValue(JPEG.buffer);
+		vi.mocked(invoke).mockResolvedValue(JPEG.buffer);
 		const [url] = await attachImages([HASH]);
-		expect(mocks.invoke).toHaveBeenCalledWith('image_read_bytes', { hash: HASH });
+		expect(invoke).toHaveBeenCalledWith('image_read_bytes', { hash: HASH });
 		expect(url).toBe('data:image/jpeg;base64,/9j/4A==#small');
 	});
 
 	it("takes the app's own image URLs and data URLs too", async () => {
-		mocks.invoke.mockResolvedValue(new Uint8Array([0x89, 0x50]).buffer);
+		vi.mocked(invoke).mockResolvedValue(new Uint8Array([0x89, 0x50]).buffer);
 		const out = await attachImages([
 			`haruspex-img://localhost/${HASH}`,
 			'data:image/png;base64,AA'
@@ -62,7 +64,7 @@ describe('attachImages', () => {
 		await expect(attachImages('x')).rejects.toThrow('a list of picture hashes');
 		await expect(attachImages(['https://example.com/cat.png'])).rejects.toThrow('upload it first');
 		await expect(attachImages(['data:text/html;base64,AA'])).rejects.toThrow('upload it first');
-		mocks.invoke.mockRejectedValue(new Error('Image not found'));
+		vi.mocked(invoke).mockRejectedValue(new Error('Image not found'));
 		await expect(attachImages([HASH])).rejects.toThrow('upload it again');
 		await expect(attachImages(Array(MAX_IMAGES + 1).fill(HASH))).rejects.toThrow(
 			`at most ${MAX_IMAGES}`

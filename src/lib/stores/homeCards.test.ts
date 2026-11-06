@@ -1,15 +1,19 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const settings = vi.hoisted(() => ({ homeSeeded: false }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => settings,
-	updateSettings: (partial: Partial<typeof settings>) => Object.assign(settings, partial)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => settings,
+		updateSettings: (partial: Partial<typeof settings>) => Object.assign(settings, partial)
+	})
+);
 
 const jobs = vi.hoisted(() => ({ deleteJob: vi.fn(async () => true) }));
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({ deleteJob: jobs.deleteJob }));
@@ -51,9 +55,9 @@ beforeEach(() => {
 	_resetForTests();
 	settings.homeSeeded = false;
 	rows = [];
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	jobs.deleteJob.mockClear();
-	tauri.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			db_home_cards_list: () => rows.map((r) => ({ ...r })),
 			db_home_cards_create: (a) => {
@@ -111,7 +115,7 @@ describe('homeCards', () => {
 		await moveCard(a.id, -1);
 		await moveCard(c.id, 1);
 		expect(types()).toEqual(['a', 'b', 'c']);
-		expect(tauri.invoke).not.toHaveBeenCalledWith('db_home_cards_reorder', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('db_home_cards_reorder', expect.anything());
 
 		await moveCard(a.id, 1);
 		expect(types()).toEqual(['b', 'a', 'c']);
@@ -130,9 +134,9 @@ describe('homeCards', () => {
 		expect(types()).toEqual(['c', 'a', 'b']);
 		await moveCardTo(c.id, getHomeCards()[2].id);
 		expect(types()).toEqual(['a', 'b', 'c']);
-		tauri.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await moveCardTo(a.id, a.id);
-		expect(tauri.invoke).not.toHaveBeenCalledWith('db_home_cards_reorder', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('db_home_cards_reorder', expect.anything());
 	});
 
 	it('switches a card between normal and wide', async () => {

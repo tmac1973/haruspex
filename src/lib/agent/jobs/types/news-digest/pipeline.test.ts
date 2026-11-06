@@ -1,14 +1,17 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ proxy: null })
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ proxy: null })
+	})
+);
 vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	markRunStarted: vi.fn(async () => {}),
 	markRunStepStarted: vi.fn(async () => {}),
@@ -69,7 +72,7 @@ function harness(replies: string[]) {
 }
 
 function serve(xml: string) {
-	tauri.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			proxy_fetch: (a) => {
 				if (a?.url === DOWN) throw 'connection refused';
@@ -80,7 +83,7 @@ function serve(xml: string) {
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('news digest pipeline', () => {

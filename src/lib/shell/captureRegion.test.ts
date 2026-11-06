@@ -1,10 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const tauri = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	calls: [] as string[]
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/window', () => ({
 	getCurrentWindow: () => ({
 		hide: async () => void tauri.calls.push('hide'),
@@ -16,7 +18,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 import { finishRegionCapture, sourceRect, startRegionCapture } from './captureRegion';
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	tauri.calls.length = 0;
 });
 
@@ -55,7 +57,7 @@ describe('turning a drag on the preview into a region of the screen', () => {
 
 describe('capturing a region', () => {
 	it('hides the window for the capture and brings it back', async () => {
-		tauri.invoke.mockImplementation(async () => {
+		vi.mocked(invoke).mockImplementation(async () => {
 			tauri.calls.push('capture');
 			return { dataUrl: 'data:x', width: 1, height: 1 };
 		});
@@ -64,14 +66,14 @@ describe('capturing a region', () => {
 	});
 
 	it('brings the window back when the capture fails', async () => {
-		tauri.invoke.mockRejectedValue('no portal');
+		vi.mocked(invoke).mockRejectedValue('no portal');
 		await expect(startRegionCapture()).rejects.toBe('no portal');
 		expect(tauri.calls).toContain('show');
 	});
 
 	it('discards the held frame when cancelled', async () => {
-		tauri.invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		expect(await finishRegionCapture(null)).toBeNull();
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_region_finish', { rect: null });
+		expect(invoke).toHaveBeenCalledWith('capture_region_finish', { rect: null });
 	});
 });

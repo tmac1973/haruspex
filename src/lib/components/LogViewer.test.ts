@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import LogViewer from './LogViewer.svelte';
 import { invokeRouter } from '#lib/testing/invoke.ts';
@@ -36,27 +38,29 @@ const stats = {
 };
 
 beforeEach(() => {
-	invoke.mockReset().mockImplementation(
-		invokeRouter(
-			{
-				get_search_stats: stats,
-				image_engine_logs: ['sd-server listening'],
-				whisper_video_logs: ['whisper_init_from_file_with_params_no_state: loading model'],
-				comfy_logs: ['GET http://gpu.lan:8188/system_stats → ok in 9 ms, 512 bytes']
-			},
-			[]
-		)
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter(
+				{
+					get_search_stats: stats,
+					image_engine_logs: ['sd-server listening'],
+					whisper_video_logs: ['whisper_init_from_file_with_params_no_state: loading model'],
+					comfy_logs: ['GET http://gpu.lan:8188/system_stats → ok in 9 ms, 512 bytes']
+				},
+				[]
+			)
+		);
 });
 
 describe('LogViewer', () => {
 	it('shows the bundled engine and the ComfyUI calls under Image', async () => {
 		render(LogViewer, { open: true, onclose: vi.fn() });
 		await fireEvent.click(screen.getByText('Image'));
-		expect(await screen.findByText('sd-server listening')).toBeTruthy();
+		await screen.findByText('sd-server listening');
 		const picker = screen.getByLabelText('Image log') as HTMLSelectElement;
 		await fireEvent.change(picker, { target: { value: 'comfyui' } });
-		expect(await screen.findByText(/system_stats → ok in 9 ms/)).toBeTruthy();
+		await screen.findByText(/system_stats → ok in 9 ms/);
 		await fireEvent.click(screen.getByText('Clear'));
 		await waitFor(() => expect(invoke).toHaveBeenCalledWith('comfy_clear_logs'));
 	});

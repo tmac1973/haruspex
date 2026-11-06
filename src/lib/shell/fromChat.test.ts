@@ -2,24 +2,27 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Same isolation as the shell store's own tests: we're exercising the
 // registry + handoff, not the inference pipeline or the Tauri boundary.
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, undefined)
+);
 vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn: vi.fn() }));
 vi.mock('#lib/shell/systemPrompt.ts', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' })
 }));
 const fullAccessDefault = vi.hoisted(() => ({ value: false }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		shellFullAccessDefault: fullAccessDefault.value,
-		shellHistoryTurnsForPrompt: 3,
-		shellMaxBytesPerCapture: 1000,
-		contextSize: 8192,
-		inferenceBackend: { mode: 'local' }
-	}),
-	getActiveLocalModelFilename: () => '',
-	getApiKeyValue: () => undefined
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			shellFullAccessDefault: fullAccessDefault.value,
+			shellHistoryTurnsForPrompt: 3,
+			shellMaxBytesPerCapture: 1000,
+			contextSize: 8192,
+			inferenceBackend: { mode: 'local' }
+		}),
+		getActiveLocalModelFilename: () => '',
+		getApiKeyValue: () => undefined
+	})
+);
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
 vi.mock('#lib/agent/contextBudget.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/agent/contextBudget.ts')>()),

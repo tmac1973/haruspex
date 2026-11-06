@@ -1,9 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/memory.svelte.ts', () => ({ refreshMemoryCount: vi.fn() }));
 
 import MemoryRecallStep from './MemoryRecallStep.svelte';
@@ -27,7 +28,7 @@ const TABS = {
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	mocks.invoke.mockResolvedValue(undefined);
+	vi.mocked(invoke).mockResolvedValue(undefined);
 });
 
 describe('MemoryRecallStep', () => {
@@ -35,11 +36,11 @@ describe('MemoryRecallStep', () => {
 		// On a turn where recall worked this is noise; it earns its space only
 		// when an answer is surprising.
 		render(MemoryRecallStep, { step: step([TABS]) });
-		expect(screen.getByText(/Recalled 1/)).toBeTruthy();
+		screen.getByText(/Recalled 1/);
 		expect(screen.queryByText('Prefers tabs over spaces.')).toBeNull();
 
 		await fireEvent.click(screen.getByRole('button', { name: /Recalled 1/ }));
-		expect(screen.getByText('Prefers tabs over spaces.')).toBeTruthy();
+		screen.getByText('Prefers tabs over spaces.');
 	});
 
 	it('renders nothing when the step carries no memories', () => {
@@ -67,18 +68,18 @@ describe('MemoryRecallStep', () => {
 
 		await fireEvent.click(screen.getByText('Forget this'));
 
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' });
-		expect(screen.getByText(/future chats only/)).toBeTruthy();
+		expect(invoke).toHaveBeenCalledWith('memory_delete', { id: 'mem-1' });
+		screen.getByText(/future chats only/);
 	});
 
 	it('leaves the row listed when the delete fails', async () => {
-		mocks.invoke.mockRejectedValueOnce(new Error('db locked'));
+		vi.mocked(invoke).mockRejectedValueOnce(new Error('db locked'));
 		render(MemoryRecallStep, { step: step([TABS]) });
 		await fireEvent.click(screen.getByRole('button', { name: /Recalled 1/ }));
 
 		await fireEvent.click(screen.getByText('Forget this'));
 
 		expect(screen.queryByText(/future chats only/)).toBeNull();
-		expect(screen.getByText('Forget this')).toBeTruthy();
+		screen.getByText('Forget this');
 	});
 });

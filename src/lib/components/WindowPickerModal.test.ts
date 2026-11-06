@@ -71,7 +71,7 @@ describe('WindowPickerModal', () => {
 		const { filter } = open();
 		await fireEvent.input(filter(), { target: { value: 'nope' } });
 		expect(screen.queryAllByRole('option')).toHaveLength(0);
-		expect(screen.getByText('No window matches.')).toBeTruthy();
+		screen.getByText('No window matches.');
 	});
 
 	it('moves the highlight with the arrows, Home and End, and picks it with Enter', async () => {

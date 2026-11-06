@@ -1,22 +1,23 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RUST_PAYWALL_SENTINEL } from '#lib/agent/paywall.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	runSubAgent: vi.fn(),
 	settings: {} as Record<string, unknown>
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({ ...actual.getSettings(), ...mocks.settings }),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({ ...mocks.settings }),
 		getSearchProxy: () => ({ mode: 'none', url: '', bypass: '' })
-	};
-});
+	})
+);
 
 vi.mock('./_helpers', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./_helpers')>()),
@@ -34,7 +35,7 @@ const ctx = makeToolContext({
 });
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.runSubAgent.mockReset();
 	mocks.settings = {};
 });
@@ -49,7 +50,7 @@ function errorOf(out: { result: string }): string {
 
 /** Answer each command from a table; anything else is a test failure. */
 function backend(table: Record<string, (args: Record<string, unknown>) => unknown>) {
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter(table as Record<string, InvokeRoute>, unexpectedInvoke)
 	);
 }
@@ -105,7 +106,7 @@ describe('web_search', () => {
 		expect(JSON.parse(out.result)).toEqual({
 			error: 'web_search needs a non-empty "query" string.'
 		});
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('coerces a numeric query to a string', async () => {
@@ -116,14 +117,14 @@ describe('web_search', () => {
 	});
 
 	it('returns a tool error when the search fails', async () => {
-		mocks.invoke.mockRejectedValue(new Error('SearXNG unreachable'));
+		vi.mocked(invoke).mockRejectedValue(new Error('SearXNG unreachable'));
 		expect(errorOf(await call('web_search', { query: 'q' }))).toBe(
 			'web_search failed: SearXNG unreachable'
 		);
 	});
 
 	it('returns a tool error for a string rejection', async () => {
-		mocks.invoke.mockRejectedValue('rate limited');
+		vi.mocked(invoke).mockRejectedValue('rate limited');
 		expect(errorOf(await call('web_search', { query: 'q' }))).toBe(
 			'web_search failed: rate limited'
 		);
@@ -164,7 +165,7 @@ describe('fetch_url', () => {
 	// Plain text on purpose: the "Failed to fetch" prefix is how the loop and
 	// the chat store recognise an unreadable page (FETCH_FAILURE_PREFIXES).
 	it('reports a fetch failure as plain text, with the message only', async () => {
-		mocks.invoke.mockRejectedValue(new Error('HTTP 404'));
+		vi.mocked(invoke).mockRejectedValue(new Error('HTTP 404'));
 		expect((await call('fetch_url', { url: 'https://a.test/x' })).result).toBe(
 			'Failed to fetch URL: HTTP 404'
 		);
@@ -182,11 +183,11 @@ describe('fetch_url', () => {
 	it('refuses a missing url without fetching', async () => {
 		const out = await call('fetch_url', {});
 		expect(JSON.parse(out.result).error).toMatch(/needs a non-empty "url"/);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('reports a string rejection as plain text', async () => {
-		mocks.invoke.mockRejectedValue('blocked by proxy');
+		vi.mocked(invoke).mockRejectedValue('blocked by proxy');
 		expect((await call('fetch_url', { url: 'https://a.test/x' })).result).toBe(
 			'Failed to fetch URL: blocked by proxy'
 		);
@@ -238,7 +239,7 @@ describe('research_url', () => {
 	});
 
 	it('reports a fetch failure without running the sub-agent', async () => {
-		mocks.invoke.mockRejectedValue(new Error('timeout'));
+		vi.mocked(invoke).mockRejectedValue(new Error('timeout'));
 		mocks.runSubAgent.mockResolvedValue('should not appear');
 		expect((await call('research_url', args)).result).toBe('Failed to fetch URL: timeout');
 	});
@@ -341,7 +342,7 @@ describe('image_search', () => {
 	});
 
 	it('returns a tool error when the search fails', async () => {
-		mocks.invoke.mockRejectedValue(new Error('Openverse 503'));
+		vi.mocked(invoke).mockRejectedValue(new Error('Openverse 503'));
 		expect(errorOf(await call('image_search', { query: 'q' }))).toBe(
 			'image_search failed: Openverse 503'
 		);
@@ -366,7 +367,7 @@ describe('fetch_url_images', () => {
 	});
 
 	it('returns a tool error when the fetch fails', async () => {
-		mocks.invoke.mockRejectedValue(new Error('TLS handshake failed'));
+		vi.mocked(invoke).mockRejectedValue(new Error('TLS handshake failed'));
 		expect(errorOf(await call('fetch_url_images', { url: 'https://a.test' }))).toBe(
 			'fetch_url_images failed: TLS handshake failed'
 		);

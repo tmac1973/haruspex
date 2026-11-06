@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { blendReason, groundOf } from './ground';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const tone = { lightness: 0.22, target: 0.47, targetGrey: 0x5c5c5cff };
 
@@ -30,7 +32,7 @@ describe('blendReason', () => {
 });
 
 describe('groundOf', () => {
-	beforeEach(() => tauri.invoke.mockReset());
+	beforeEach(() => vi.mocked(invoke).mockReset());
 
 	const piece = (id: number, area: number) => ({
 		bytes: [id],
@@ -45,7 +47,7 @@ describe('groundOf', () => {
 	});
 
 	it('keeps the largest sprites and drops specks', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				image_split_sheet: {
 					pieces: [piece(1, 10), piece(2, 1000), piece(3, 20), piece(4, 500)],
@@ -64,7 +66,7 @@ describe('groundOf', () => {
 	});
 
 	it('is null when there is nothing to cut', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ image_split_sheet: { pieces: [], keyed: false, palette: [] } })
 		);
 		expect(await groundOf(new Uint8Array([1]), { background: {} } as never)).toBeNull();

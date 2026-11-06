@@ -1,12 +1,14 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	askCommandApproval: vi.fn(),
 	openWindows: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 // Real routing rules (windows.test.ts covers them); only the windows are fake.
 vi.mock('#lib/editor/windows.ts', async (importOriginal) => {
 	const real = await importOriginal<typeof import('#lib/editor/windows.ts')>();
@@ -44,9 +46,9 @@ const ctx = makeToolContext({
 let unregister: () => void = () => {};
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	mocks.askCommandApproval.mockReset();
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			shell_platform_supported: true,
 			app_protected_targets: () => ({
@@ -191,7 +193,7 @@ describe('open_in_shell', () => {
 
 	it('refuses where the Shell tab does not work', async () => {
 		const calls = fakeShell(async () => ({ kind: 'closed', shellName: 'Shell 2' }));
-		mocks.invoke.mockImplementation(invokeRouter({ shell_platform_supported: false }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ shell_platform_supported: false }));
 		const out = await executeTool('open_in_shell', { command: 'ls' }, ctx);
 		expect(out.result).toContain('not available');
 		expect(calls).toHaveLength(0);

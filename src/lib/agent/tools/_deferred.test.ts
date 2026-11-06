@@ -4,12 +4,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // video, screen capture. The audit's profiles.
 const flags = vi.hoisted(() => ({ full: true, defer: 'on' as 'auto' | 'on' | 'off' }));
 
-vi.mock('#lib/stores/settings.ts', async (orig) => {
-	const real = await orig<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...real,
-		getSettings: () => ({
-			...real.getSettings(),
+vi.mock('#lib/stores/settings.ts', async (orig) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(orig, {
+		overDefaults: true,
+		settings: () => ({
 			sandboxEnabled: true,
 			screenCaptureEnabled: flags.full,
 			musicBackendKind: flags.full ? 'toolchest' : 'none',
@@ -24,8 +22,8 @@ vi.mock('#lib/stores/settings.ts', async (orig) => {
 		hasSendableEmailAccount: () => flags.full,
 		hasEnabledCalendarAccount: () => flags.full,
 		hasEnabledContactsAccount: () => flags.full
-	};
-});
+	})
+);
 vi.mock('#lib/image/entries.ts', async (orig) => ({
 	...(await orig<object>()),
 	imageEntries: () => (flags.full ? [{ id: 'a' }, { id: 'b' }] : [])

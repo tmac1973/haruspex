@@ -6,6 +6,7 @@
  * runner's context, whose `runJobTurn` is the model.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { ModelVerdict } from '#lib/glb/verdict.ts';
@@ -19,8 +20,9 @@ import { parseModelGenerationConfig } from './config';
 import { createStage, createToolAllowlist } from './create';
 import { initialEntryStates } from './state';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
 vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 
@@ -121,7 +123,7 @@ function harness(config: Record<string, unknown> = {}, writes = true) {
 beforeEach(() => {
 	vi.clearAllMocks();
 	files = new Map();
-	tauri.invoke.mockImplementation(routes());
+	vi.mocked(invoke).mockImplementation(routes());
 });
 
 describe('createStage', () => {

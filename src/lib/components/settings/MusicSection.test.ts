@@ -26,11 +26,12 @@ const settings = vi.hoisted(() => ({
 		remoteApiKeyId: 'k1' as string | null
 	}
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	updateSettings: vi.fn((patch: object) => Object.assign(settings, patch))
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => settings,
+		updateSettings: vi.fn((patch: object) => Object.assign(settings, patch))
+	})
+);
 
 import MusicSection from './MusicSection.svelte';
 
@@ -104,7 +105,7 @@ describe('Settings → Music', () => {
 		})) as HTMLSelectElement;
 		await waitFor(() => expect([...select.options].map((o) => o.value)).toContain('ace-xl'));
 		const heading = await screen.findByRole('heading', { name: /Instances on the server/ });
-		expect(within(heading.closest('section')!).getByText('ace-xl')).toBeTruthy();
+		within(heading.closest('section')!).getByText('ace-xl');
 	});
 
 	it('saves a server it reached, and switches to another saved one with its key', async () => {

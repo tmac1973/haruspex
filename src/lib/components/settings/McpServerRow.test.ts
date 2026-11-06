@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 import McpServerRow from '#lib/components/settings/McpServerRow.svelte';
@@ -58,7 +60,7 @@ async function withStatus(
 	updateAvailable: boolean,
 	blockedReason: string | null = null
 ): Promise<void> {
-	invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			mcp_update_status: [
 				{
@@ -76,8 +78,8 @@ async function withStatus(
 }
 
 beforeEach(() => {
-	invoke.mockReset();
-	invoke.mockResolvedValue(null);
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue(null);
 });
 
 describe('the Update button', () => {
@@ -93,8 +95,8 @@ describe('the Update button', () => {
 		render(McpServerRow, {
 			props: { config: config(), entry: ENTRY, onchange: () => {}, onremove: () => {} }
 		});
-		expect(screen.getByText('Version 2026.10.1 is available.')).toBeTruthy();
-		expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy();
+		screen.getByText('Version 2026.10.1 is available.');
+		screen.getByRole('button', { name: 'Update' });
 	});
 
 	it('drops projects that have gone, then lists the rest before overwriting them', async () => {
@@ -109,7 +111,7 @@ describe('the Update button', () => {
 			}
 		});
 		screen.getByRole('button', { name: 'Update' }).click();
-		await vi.waitFor(() => expect(screen.getByText('/games/one')).toBeTruthy());
+		await vi.waitFor(() => screen.getByText('/games/one'));
 		await tick();
 
 		expect(screen.queryByText('/games/gone')).toBeNull();
@@ -133,8 +135,8 @@ describe('what the card says', () => {
 	it('shows a blocked version’s reason, offers Update, and will not start it', async () => {
 		await withStatus(true, 'Leaks tokens.');
 		render(McpServerRow, { props: props() });
-		expect(screen.getByText('Stopped for a security problem: Leaks tokens.')).toBeTruthy();
-		expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy();
+		screen.getByText('Stopped for a security problem: Leaks tokens.');
+		screen.getByRole('button', { name: 'Update' });
 		const start = screen.getByRole('button', { name: 'Start' }) as HTMLButtonElement;
 		expect(start.disabled).toBe(true);
 		expect(start.title).toBe('Update to start it.');

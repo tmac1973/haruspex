@@ -1,8 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(), save: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const tauri = vi.hoisted(() => ({ save: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: tauri.save }));
 
 import ImageViewerModal from './ImageViewerModal.svelte';
@@ -12,7 +15,7 @@ const HASH = 'b'.repeat(64);
 
 beforeEach(() => {
 	tauri.save.mockReset();
-	tauri.invoke
+	vi.mocked(invoke)
 		.mockReset()
 		.mockImplementation(
 			invokeRouter({ image_read_bytes: () => new Uint8Array([0xff, 0xd8, 0xff]).buffer })
@@ -30,7 +33,7 @@ describe('ImageViewerModal', () => {
 		tauri.save.mockResolvedValueOnce('/home/me/lighthouse.jpg');
 		await fireEvent.click(screen.getByRole('button', { name: 'Save as…' }));
 		await vi.waitFor(() =>
-			expect(tauri.invoke).toHaveBeenCalledWith('image_save_as', {
+			expect(invoke).toHaveBeenCalledWith('image_save_as', {
 				hash: HASH,
 				path: '/home/me/lighthouse.jpg'
 			})
@@ -39,7 +42,7 @@ describe('ImageViewerModal', () => {
 			defaultPath: 'a-lighthouse-at-dusk.jpg',
 			filters: [{ name: 'Image', extensions: ['jpg'] }]
 		});
-		expect(await screen.findByText('Saved to /home/me/lighthouse.jpg')).toBeTruthy();
+		await screen.findByText('Saved to /home/me/lighthouse.jpg');
 		expect(onClose).not.toHaveBeenCalled();
 	});
 

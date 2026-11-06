@@ -1,9 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), imageKind: 'none' }));
+const mocks = vi.hoisted(() => ({ imageKind: 'none' }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [],
 	getJob: vi.fn()
@@ -50,7 +53,7 @@ describe('guided-planning Editor', () => {
 
 	it('shows it in the chain mode, where it is the only chance to set it', () => {
 		mount({ run_mode: 'unattended_chain' });
-		expect(screen.getByLabelText('Max model steps per turn')).toBeTruthy();
+		screen.getByLabelText('Max model steps per turn');
 		expect(screen.queryByLabelText('Max attempts per step')).toBeNull();
 	});
 
@@ -65,7 +68,7 @@ describe('guided-planning Editor', () => {
 		const select = screen.getByLabelText('Verification') as HTMLSelectElement;
 		const skip = [...select.options].find((o) => o.value === 'skip')!;
 		expect(skip.disabled).toBe(true);
-		expect(screen.getByText(/decides whether the coding run may start/)).toBeTruthy();
+		screen.getByText(/decides whether the coding run may start/);
 	});
 
 	it('offers full, lite and skip in the other modes', () => {
@@ -84,8 +87,8 @@ describe('guided-planning Editor', () => {
 			expect(screen.queryByLabelText('Change the coding run model')).toBeNull();
 			document.body.innerHTML = '';
 			mount({ run_mode: 'unattended_chain' });
-			expect(screen.getByLabelText('Change the coding run model')).toBeTruthy();
-			expect(screen.getByText('Same as this job')).toBeTruthy();
+			screen.getByLabelText('Change the coding run model');
+			screen.getByText('Same as this job');
 			expect(screen.queryByText('Remote server')).toBeNull();
 		});
 
@@ -96,7 +99,7 @@ describe('guided-planning Editor', () => {
 				expect(screen.queryByLabelText('Change the asset run model')).toBeNull();
 				document.body.innerHTML = '';
 				mount({ run_mode: 'unattended_chain', generate_assets: true });
-				expect(screen.getByLabelText('Change the asset run model')).toBeTruthy();
+				screen.getByLabelText('Change the asset run model');
 			} finally {
 				mocks.imageKind = 'none';
 			}
@@ -104,7 +107,7 @@ describe('guided-planning Editor', () => {
 
 		it('summarises a chosen stage on its row, and marks one with no model', () => {
 			mount({ run_mode: 'unattended_chain', chain_coding_model: emptyModelForm('remote') });
-			expect(screen.getByText('Remote · no model picked')).toBeTruthy();
+			screen.getByText('Remote · no model picked');
 			expect(document.querySelector('.stage-row.missing')).toBeTruthy();
 		});
 
@@ -113,10 +116,10 @@ describe('guided-planning Editor', () => {
 			expect(screen.queryByText('Remote server')).toBeNull();
 			await fireEvent.click(screen.getByLabelText('Change the coding run model'));
 			expect((screen.getByLabelText('Coding run model') as HTMLSelectElement).value).toBe('choose');
-			expect(screen.getByText('Remote server')).toBeTruthy();
+			screen.getByText('Remote server');
 			// The local model while planning runs remotely: not the same as
 			// "Same as this job", and not marked "(default)" here.
-			expect(screen.getByText('Settings model')).toBeTruthy();
+			screen.getByText('Settings model');
 			expect(screen.queryByText('Settings model (default)')).toBeNull();
 		});
 	});
@@ -141,7 +144,7 @@ describe('guided-planning Editor', () => {
 		});
 
 		it('lists planning skills first, then the rest', async () => {
-			mocks.invoke.mockImplementation(
+			vi.mocked(invoke).mockImplementation(
 				invokeRouter({
 					skills_list: () => [summary('deploy', false), summary('plan-web-app', true)]
 				})
@@ -157,18 +160,18 @@ describe('guided-planning Editor', () => {
 		});
 
 		it('says when the chosen skill is gone', async () => {
-			mocks.invoke.mockImplementation(
+			vi.mocked(invoke).mockImplementation(
 				invokeRouter({ skills_list: () => [summary('plan-web-app', true)] })
 			);
 			mount({ planning_skill: 'plan-old' });
-			expect(await screen.findByText(/Not in your skills any more/)).toBeTruthy();
-			expect(screen.getByText('plan-old (missing)')).toBeTruthy();
+			await screen.findByText(/Not in your skills any more/);
+			screen.getByText('plan-old (missing)');
 		});
 	});
 
 	it('hides the later-stage settings when overview only is on', () => {
 		mount({ overview_only: true, run_mode: 'unattended_chain' });
-		expect(screen.getByLabelText(/Overview only/)).toBeTruthy();
+		screen.getByLabelText(/Overview only/);
 		expect(screen.queryByLabelText('Run mode')).toBeNull();
 		expect(screen.queryByLabelText('Verification')).toBeNull();
 		expect(screen.queryByLabelText('Max model steps per turn')).toBeNull();
@@ -184,7 +187,7 @@ describe('guided-planning Editor — 3D models', () => {
 					jobName: 'Test job'
 				}
 			});
-			expect(screen.getByLabelText(/Also generate 3D models/)).toBeTruthy();
+			screen.getByLabelText(/Also generate 3D models/);
 			expect(screen.queryByLabelText('Change the 3d creation')).toBeNull();
 			unmount();
 		}
@@ -192,8 +195,8 @@ describe('guided-planning Editor — 3D models', () => {
 
 	it('shows the 3D creation and animation rows when on', () => {
 		mount({ generate_models: true });
-		expect(screen.getByLabelText('Change the 3d creation')).toBeTruthy();
-		expect(screen.getByLabelText('Change the 3d animation')).toBeTruthy();
+		screen.getByLabelText('Change the 3d creation');
+		screen.getByLabelText('Change the 3d animation');
 	});
 
 	it('hides it for an overview-only run', () => {

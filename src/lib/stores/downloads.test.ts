@@ -1,10 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const tauri = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	handler: null as ((e: { payload: unknown }) => void) | null
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async (_name: string, h: (e: { payload: unknown }) => void) => {
 		tauri.handler = h;
@@ -30,7 +32,7 @@ const progress = (stage: string, downloaded: number) => ({
 
 beforeEach(() => {
 	_resetDownloads();
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	tauri.handler = null;
 });
 afterEach(() => vi.useRealTimers());
@@ -65,7 +67,9 @@ describe('syncDownloads', () => {
 	it('picks up a download a closed screen started, and drops it when Rust says it ended', async () => {
 		vi.useFakeTimers();
 		let running: string | null = 'image:ming';
-		tauri.invoke.mockImplementation(invokeRouter({ download_status: () => running }, undefined));
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ download_status: () => running }, undefined)
+		);
 		await syncDownloads();
 		expect(getActiveDownload()).toEqual({ key: 'image:ming', progress: null });
 		tauri.handler!({ payload: progress('Verifying 4 of 4: tokenizer.json', 100) });
@@ -78,7 +82,7 @@ describe('syncDownloads', () => {
 	it('ignores an answer that is not a key', async () => {
 		// A catch-all test mock answered [] — and the settings screens threw
 		// on `key.startsWith`.
-		tauri.invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 		await syncDownloads();
 		expect(getActiveDownload()).toBeNull();
 	});
@@ -86,13 +90,13 @@ describe('syncDownloads', () => {
 	it('still syncs when progress events cannot be listened for', async () => {
 		const { listen } = await import('@tauri-apps/api/event');
 		vi.mocked(listen).mockRejectedValueOnce(new Error('no event bridge'));
-		tauri.invoke.mockResolvedValue('llm:qwen');
+		vi.mocked(invoke).mockResolvedValue('llm:qwen');
 		await syncDownloads();
 		expect(getActiveDownload()?.key).toBe('llm:qwen');
 	});
 
 	it('shows nothing when nothing is downloading', async () => {
-		tauri.invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		await syncDownloads();
 		expect(getActiveDownload()).toBeNull();
 	});

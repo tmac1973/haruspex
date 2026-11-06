@@ -1,27 +1,30 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	showToast: vi.fn(),
 	askMemoryApproval: vi.fn(),
 	memoryActive: vi.fn(() => true),
 	settings: { memoryConfirmWrites: false, sandboxEnabled: false }
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/toasts.svelte.ts', () => ({ showToast: mocks.showToast }));
 vi.mock('#lib/stores/memory.svelte.ts', () => ({
 	refreshMemoryCount: vi.fn(),
 	memoryActive: mocks.memoryActive
 }));
 vi.mock('#lib/stores/session.svelte.ts', () => ({ getActiveConversationId: () => 'conv-7' }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => mocks.settings,
-	hasEnabledEmailAccount: () => false,
-	hasEnabledCalendarAccount: () => false,
-	hasEnabledContactsAccount: () => false
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => mocks.settings,
+		hasEnabledEmailAccount: () => false,
+		hasEnabledCalendarAccount: () => false,
+		hasEnabledContactsAccount: () => false
+	})
+);
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
@@ -49,7 +52,7 @@ beforeEach(() => {
 	mocks.settings.memoryConfirmWrites = false;
 	mocks.memoryActive.mockReturnValue(true);
 	// No near-duplicate by default.
-	mocks.invoke.mockImplementation(invokeRouter({ memory_find_similar: null }, undefined));
+	vi.mocked(invoke).mockImplementation(invokeRouter({ memory_find_similar: null }, undefined));
 });
 
 describe('remember_this exposure', () => {
@@ -80,14 +83,14 @@ describe('remember_this exposure', () => {
 		mocks.memoryActive.mockReturnValue(false);
 		const out = await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
 		expect(out.result).toContain('Long-term memory is off');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
 	});
 });
 
 describe('remember_this writing', () => {
 	it('stores the fact with explicit origin and the active conversation', async () => {
 		const out = await executeTool(REMEMBER_TOOL, { content: FACT, category: 'preference' }, ctx);
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_add', {
+		expect(invoke).toHaveBeenCalledWith('memory_add', {
 			content: FACT,
 			category: 'preference',
 			sourceConversationId: 'conv-7',
@@ -102,15 +105,15 @@ describe('remember_this writing', () => {
 	});
 
 	it('bumps a near-duplicate instead of storing it twice', async () => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{ memory_find_similar: { id: 'mem-1', content: 'Ships on Fridays.' } },
 				undefined
 			)
 		);
 		const out = await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-1' });
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-1' });
+		expect(invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
 		expect(out.result).toContain('Already remembered');
 	});
 
@@ -123,19 +126,19 @@ describe('remember_this writing', () => {
 		);
 		expect(short.result).toContain('between 8 and 400');
 		expect(long.result).toContain('between 8 and 400');
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
 	});
 
 	it('falls back to "fact" for an unknown category rather than storing it', async () => {
 		await executeTool(REMEMBER_TOOL, { content: FACT, category: 'nonsense' }, ctx);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'memory_add',
 			expect.objectContaining({ category: 'fact' })
 		);
 	});
 
 	it('reports a storage failure instead of claiming it saved', async () => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ memory_find_similar: null }, () => {
 				throw new Error('db is locked');
 			})
@@ -158,13 +161,13 @@ describe('remember_this approval', () => {
 			{ content: FACT, category: 'fact', chatId: 'conv-7' },
 			undefined
 		);
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('memory_add', expect.anything());
 	});
 
 	it('writes nothing when the user declines', async () => {
 		mocks.askMemoryApproval.mockResolvedValue('deny');
 		const out = await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
 		expect(mocks.showToast).not.toHaveBeenCalled();
 		expect(out.result).toContain('declined');
 	});
@@ -180,6 +183,6 @@ describe('remember_this approval', () => {
 		mocks.settings.memoryConfirmWrites = false;
 		await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
 		expect(mocks.askMemoryApproval).not.toHaveBeenCalled();
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('memory_add', expect.anything());
 	});
 });

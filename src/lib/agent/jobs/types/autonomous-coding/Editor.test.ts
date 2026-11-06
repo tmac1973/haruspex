@@ -1,9 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
+const mocks = vi.hoisted(() => ({ open: vi.fn() }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [],
@@ -35,16 +38,16 @@ function mount(overrides: Record<string, unknown> = {}, workingDir = '/repo') {
 }
 
 beforeEach(() => {
-	mocks.invoke.mockReset().mockRejectedValue(new Error('no fs in tests'));
+	vi.mocked(invoke).mockReset().mockRejectedValue(new Error('no fs in tests'));
 	mocks.open.mockReset();
 });
 
 describe('autonomous-coding Editor', () => {
 	it('renders every field without throwing', () => {
 		mount();
-		expect(screen.getByLabelText('Plan directory')).toBeTruthy();
+		screen.getByLabelText('Plan directory');
 		expect(screen.queryByLabelText('Context mode')).toBeNull();
-		expect(screen.getByLabelText('Signing fallback')).toBeTruthy();
+		screen.getByLabelText('Signing fallback');
 		expect(screen.queryByLabelText('Max attempts per step')).toBeNull();
 	});
 
@@ -59,14 +62,14 @@ describe('autonomous-coding Editor', () => {
 		const tips = screen.getAllByRole('button', { name: /^About / });
 		expect(tips.length).toBeGreaterThan(3);
 		await fireEvent.focus(tips[0]);
-		expect(screen.getByRole('tooltip')).toBeTruthy();
+		screen.getByRole('tooltip');
 	});
 
 	it('rejects a plan dir picked outside the working dir', async () => {
 		mocks.open.mockResolvedValueOnce('/somewhere/else/plan');
 		mount();
 		await fireEvent.click(screen.getByRole('button', { name: 'Browse…' }));
-		expect(await screen.findByText(/inside the working directory/)).toBeTruthy();
+		await screen.findByText(/inside the working directory/);
 	});
 
 	it('stores a picked plan dir as a relative path', async () => {
@@ -81,7 +84,7 @@ describe('autonomous-coding Editor', () => {
 	it('explains itself when no working dir is set yet', async () => {
 		mount({}, '');
 		await fireEvent.click(screen.getByRole('button', { name: 'Browse…' }));
-		expect(await screen.findByText(/working directory first/)).toBeTruthy();
+		await screen.findByText(/working directory first/);
 		expect(mocks.open).not.toHaveBeenCalled();
 	});
 });

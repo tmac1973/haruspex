@@ -27,8 +27,8 @@ describe('CommandCard', () => {
 		expect(pre().split('\n')).toHaveLength(20);
 		expect(pre()).toContain('line 30');
 		expect(pre()).not.toContain('line 10\n');
-		expect(screen.getByText('exit 1')).toBeTruthy();
-		expect(screen.getByText('2.4 s')).toBeTruthy();
+		screen.getByText('exit 1');
+		screen.getByText('2.4 s');
 		await fireEvent.click(screen.getByRole('button', { name: 'Show all 30 lines' }));
 		expect(pre().split('\n')).toHaveLength(30);
 	});
@@ -36,13 +36,13 @@ describe('CommandCard', () => {
 	it('shows short output whole, with no expand button', () => {
 		render(CommandCard, { step: step('Exit code: 0 (3ms)\nok') });
 		expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull();
-		expect(screen.getByText('ok')).toBeTruthy();
+		screen.getByText('ok');
 	});
 
 	it('shows a refusal instead of output', () => {
 		render(CommandCard, { step: step('{"error":"Denied by the user."}') });
-		expect(screen.getByText('Denied by the user.')).toBeTruthy();
-		expect(screen.getByText('not run')).toBeTruthy();
+		screen.getByText('Denied by the user.');
+		screen.getByText('not run');
 	});
 
 	it('opens the command in a new shell at the folder, without waiting', async () => {

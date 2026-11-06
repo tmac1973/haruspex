@@ -6,23 +6,21 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 // its own.
 const state = vi.hoisted(() => ({ stored: new Map<string, string>() }));
 
-const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+const { unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter(
-			{
-				secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
-				secret_get: (a) => {
-					if (a!.key === 'apikey:locked') throw 'the keychain is locked';
-					return state.stored.get(a!.key as string) ?? null;
-				},
-				get_llama_api_key: ''
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{
+			secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
+			secret_get: (a) => {
+				if (a!.key === 'apikey:locked') throw 'the keychain is locked';
+				return state.stored.get(a!.key as string) ?? null;
 			},
-			unexpectedInvoke
-		)
+			get_llama_api_key: ''
+		},
+		unexpectedInvoke
 	)
-}));
+);
 
 import { getApiKeyProblem, getApiKeyValue, updateSettings } from './settings';
 import { apiKeysReady, setStoredApiKeyValue } from './apiKeySecrets';

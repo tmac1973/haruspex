@@ -1,19 +1,22 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const accounts = vi.hoisted(() => [
 	{ id: 'work', label: 'Work', enabled: true },
 	{ id: 'old', label: 'Old', enabled: false }
 ]);
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ integrations: { email: { accounts } } })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ integrations: { email: { accounts } } })
+	})
+);
 vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	markRunStarted: vi.fn(async () => {}),
 	markRunStepStarted: vi.fn(async () => {}),
@@ -81,13 +84,13 @@ function harness(replies: string[], accountIds = ['work', 'old']) {
 }
 
 function inbox(...mail: ReturnType<typeof listing>[]) {
-	tauri.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({ email_list_recent: () => mail, email_cancel: null })
 	);
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('email digest pipeline', () => {
@@ -104,7 +107,7 @@ describe('email digest pipeline', () => {
 		inbox(listing('1', 'Invoice'));
 		const { h, ctx } = harness(['{"items":[]}']);
 		await runEmailDigestPipeline(ctx);
-		const calls = tauri.invoke.mock.calls.filter((c) => c[0] === 'email_list_recent');
+		const calls = vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'email_list_recent');
 		expect(calls).toHaveLength(1);
 		expect(calls[0][1]).toMatchObject({ unseenOnly: true, hours: 24, account: { id: 'work' } });
 		expect(h.steps[0].output).toContain('Skipped Old: it is turned off.');

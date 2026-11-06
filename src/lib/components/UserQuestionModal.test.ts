@@ -24,7 +24,7 @@ describe('UserQuestionModal', () => {
 		expect(heading.textContent).toBe("Here's the plan outline — 2 phase(s).");
 		const strong = screen.getByText('Phase 01 — One');
 		expect(strong.tagName).toBe('STRONG');
-		expect(screen.getByText('second')).toBeTruthy();
+		screen.getByText('second');
 	});
 
 	it('renders no body when there is none', async () => {

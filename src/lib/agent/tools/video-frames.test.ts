@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -18,7 +20,7 @@ import { makeToolContext } from '#lib/testing/toolContext.ts';
 const found = { path: '/usr/bin/x', version: 'x', source: 'path' as const };
 
 beforeEach(() => {
-	state.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	_setVideoBinariesForTests({ ffmpeg: found, ffprobe: found, melt: found, hints: [] });
 });
 
@@ -51,7 +53,7 @@ describe('video_frames', () => {
 	});
 
 	it('hands the sheet to the model and shows it, with what each tile is', async () => {
-		state.invoke.mockResolvedValue({
+		vi.mocked(invoke).mockResolvedValue({
 			dataUrl: 'data:image/jpeg;base64,AAAA',
 			tiles: [
 				{ n: 1, path: 'ep010/raw/obs.mp4', sourceSecs: 70, timelineSecs: 65 },

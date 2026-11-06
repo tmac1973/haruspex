@@ -28,7 +28,7 @@ describe('SubtaskCard', () => {
 			onStop: () => {}
 		});
 		expect(screen.getByTestId('subtask-status').textContent).toBe('running');
-		expect(screen.getByRole('button', { name: 'Hide 1 step' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Hide 1 step' });
 	});
 
 	it('shows the report once done, with no stop button and its steps folded', () => {
@@ -36,9 +36,9 @@ describe('SubtaskCard', () => {
 			subtask: finishedSubtask(base, { status: 'done', report: 'bar.ts:3', steps: [child] }),
 			onStop: () => {}
 		});
-		expect(screen.getByText('bar.ts:3')).toBeTruthy();
+		screen.getByText('bar.ts:3');
 		expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
-		expect(screen.getByRole('button', { name: 'Show 1 step' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Show 1 step' });
 	});
 
 	it('renders the report’s markdown', () => {
@@ -58,7 +58,7 @@ describe('SubtaskCard', () => {
 		const { unmount } = render(SubtaskCard, {
 			subtask: finishedSubtask(base, { status: 'stopped', report: 'half', steps: [] })
 		});
-		expect(screen.getByText('What it had so far')).toBeTruthy();
+		screen.getByText('What it had so far');
 		unmount();
 		render(SubtaskCard, {
 			subtask: finishedSubtask(base, {
@@ -68,7 +68,7 @@ describe('SubtaskCard', () => {
 				steps: []
 			})
 		});
-		expect(screen.getByText('server went away')).toBeTruthy();
+		screen.getByText('server went away');
 	});
 
 	it('is head and report only when compact', () => {
@@ -90,8 +90,8 @@ describe('SubtaskCard for a writing subtask', () => {
 			onStop: () => {}
 		});
 		expect(screen.getByTestId('subtask-status').textContent).toBe('waiting for your approval');
-		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
-		expect(screen.getByText('Writing subtask')).toBeTruthy();
+		screen.getByRole('button', { name: 'Stop' });
+		screen.getByText('Writing subtask');
 	});
 
 	it('lists the files it applied', () => {
@@ -100,7 +100,7 @@ describe('SubtaskCard for a writing subtask', () => {
 			subtask: { ...s, apply: { status: 'applied', files: ['src/score.ts'] } }
 		});
 		expect(screen.getByTestId('subtask-apply').textContent).toContain('Applied 1 file');
-		expect(screen.getByText('src/score.ts')).toBeTruthy();
+		screen.getByText('src/score.ts');
 	});
 
 	it('says when it didn’t apply, with its copy’s path to copy', () => {
@@ -111,13 +111,13 @@ describe('SubtaskCard for a writing subtask', () => {
 		expect(screen.getByTestId('subtask-apply').textContent).toContain(
 			"Didn't apply: conflict in src/a.ts"
 		);
-		expect(screen.getByRole('button', { name: 'Copy path' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Copy path' });
 	});
 });
 
 describe('SubtaskCard in the background', () => {
 	it('says it runs in the background', () => {
 		render(SubtaskCard, { subtask: newSubtaskState('b1', 'review', 't', 'read', true) });
-		expect(screen.getByText('Background subtask')).toBeTruthy();
+		screen.getByText('Background subtask');
 	});
 });

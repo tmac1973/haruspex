@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, ToolExecOutput, ToolRegistration } from './types';
 
@@ -9,13 +10,14 @@ import type { ToolContext, ToolExecOutput, ToolRegistration } from './types';
 // pin down what the two layers do together.
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	isAutoApproveActive: vi.fn(() => false),
 	askFileConflict: vi.fn(),
 	registered: new Map<string, unknown>()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/stores/approvalOverride.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/approvalOverride.ts')>()),
@@ -64,23 +66,25 @@ beforeEach(() => {
 		disk.written.push({ command, payload: payload! });
 		return undefined;
 	};
-	mocks.invoke.mockReset().mockImplementation(
-		invokeRouter(
-			{
-				fs_path_exists: () => {
-					if (disk.exists instanceof Error) throw disk.exists;
-					return disk.exists;
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter(
+				{
+					fs_path_exists: () => {
+						if (disk.exists instanceof Error) throw disk.exists;
+						return disk.exists;
+					},
+					fs_find_available_path: () => {
+						if (disk.available instanceof Error) throw disk.available;
+						return disk.available;
+					},
+					fs_write_xlsx: write('fs_write_xlsx'),
+					fs_write_ods: write('fs_write_ods')
 				},
-				fs_find_available_path: () => {
-					if (disk.available instanceof Error) throw disk.available;
-					return disk.available;
-				},
-				fs_write_xlsx: write('fs_write_xlsx'),
-				fs_write_ods: write('fs_write_ods')
-			},
-			unexpectedInvoke
-		)
-	);
+				unexpectedInvoke
+			)
+		);
 });
 
 function executor(name: string) {

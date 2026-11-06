@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // Everything on: every integration, two image models, music, video, screen.
-vi.mock('#lib/stores/settings.ts', async (orig) => {
-	const real = await orig<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...real,
-		getSettings: () => ({
-			...real.getSettings(),
+vi.mock('#lib/stores/settings.ts', async (orig) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(orig, {
+		overDefaults: true,
+		settings: () => ({
 			sandboxEnabled: true,
 			screenCaptureEnabled: true,
 			musicBackendKind: 'toolchest',
@@ -20,8 +18,8 @@ vi.mock('#lib/stores/settings.ts', async (orig) => {
 		hasSendableEmailAccount: () => true,
 		hasEnabledCalendarAccount: () => true,
 		hasEnabledContactsAccount: () => true
-	};
-});
+	})
+);
 vi.mock('#lib/image/entries.ts', async (orig) => ({
 	...(await orig<object>()),
 	imageEntries: () => [{ id: 'a' }, { id: 'b' }]

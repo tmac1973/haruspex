@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 	cards: [] as { job_id: number | null; card_type: string; config?: string }[]
 }));
 
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => ({ homeTab: mocks.homeTab })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ homeTab: mocks.homeTab })
+	})
+);
 
 vi.mock('#lib/stores/homeCards.svelte.ts', () => ({
 	loadHomeCards: () => Promise.resolve(),

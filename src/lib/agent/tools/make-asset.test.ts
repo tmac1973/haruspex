@@ -1,13 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'local',
 	pending: null as string | null,
-	invoke: vi.fn(),
 	make: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageBackendKind: state.backend }),
@@ -40,26 +42,28 @@ function context(over: Partial<ToolContext> = {}): ToolContext {
 }
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
-const calls = (cmd: string) => invokeCalls(state.invoke, cmd);
+const calls = (cmd: string) => invokeCalls(vi.mocked(invoke), cmd);
 const writes = () => calls('fs_write_bytes_absolute').filter((a) => !a?.dryRun);
 
 beforeEach(() => {
 	state.backend = 'local';
 	state.pending = null;
-	state.invoke.mockReset().mockImplementation(
-		invokeRouter({
-			shell_pending_command: () => state.pending,
-			fs_read_bytes_absolute: () => Array.from(PNG),
-			fs_read_bytes: () => Array.from(PNG),
-			image_extract_palette: PALETTE,
-			texture_validate: () => undefined,
-			texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
-			image_contact_sheet: [7, 7],
-			texture_transition_validate: () => undefined,
-			texture_transition_render: [5, 5],
-			texture_transition_preview: [6, 6]
-		})
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter({
+				shell_pending_command: () => state.pending,
+				fs_read_bytes_absolute: () => Array.from(PNG),
+				fs_read_bytes: () => Array.from(PNG),
+				image_extract_palette: PALETTE,
+				texture_validate: () => undefined,
+				texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
+				image_contact_sheet: [7, 7],
+				texture_transition_validate: () => undefined,
+				texture_transition_render: [5, 5],
+				texture_transition_preview: [6, 6]
+			})
+		);
 	state.make.mockReset().mockResolvedValue({
 		bytes: PNG,
 		width: 32,
@@ -140,7 +144,7 @@ describe('make_asset', () => {
 			relPath: '/home/u/game/assets/coin.png'
 		});
 		// A WSL session's folder is reached through its distro's share.
-		state.invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await executeTool(
 			'make_asset',
 			{ kind: 'icon', prompt: 'a gold coin', path: 'coin.png' },
@@ -182,7 +186,7 @@ describe('make_asset', () => {
 	});
 
 	it('refuses a file that exists before drawing, and says how to replace it', async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				fs_write_bytes_absolute: () => {
 					throw 'File already exists: coin.png';
@@ -322,7 +326,7 @@ describe('make_asset textures', () => {
 			});
 
 		it('says the sprites show up, and shows them on the tile', async () => {
-			state.invoke.mockImplementation(routes(true));
+			vi.mocked(invoke).mockImplementation(routes(true));
 			const sprites = ['sprites/goblin.png', 'sprites/rat.png'];
 			const out = await executeTool('make_asset', texture({ sprites }), context());
 			expect(calls('fs_read_bytes_absolute').map((a) => a?.path)).toEqual([
@@ -336,7 +340,7 @@ describe('make_asset textures', () => {
 		});
 
 		it('says how to change a tile they would vanish into', async () => {
-			state.invoke.mockImplementation(routes(false));
+			vi.mocked(invoke).mockImplementation(routes(false));
 			const out = await executeTool(
 				'make_asset',
 				texture({ sprites: ['sprites/goblin.png'] }),
@@ -378,7 +382,7 @@ describe('make_asset textures', () => {
 	});
 
 	it("passes Rust's refusal back, naming the field, before writing", async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				texture_validate: () => {
 					throw 'layers[0].color: "orange" is not a #rrggbb colour.';

@@ -1,10 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 
 // The pool's managers pull in app singletons; stub them so only the pool and
 // its WorkerManagers run. getWorkingDir → null keeps the pre-run sync a no-op.
-const invokeMock = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/session.svelte.ts', () => ({
 	getWorkingDir: () => null,
 	getWorkingDirFor: () => null
@@ -82,8 +84,8 @@ async function runIn(pool: WorkerPool, chat: string): Promise<string> {
 
 beforeEach(() => {
 	workers = [];
-	invokeMock.mockReset();
-	invokeMock.mockResolvedValue(null);
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue(null);
 });
 
 describe('WorkerPool', () => {

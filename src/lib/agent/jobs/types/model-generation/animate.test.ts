@@ -7,6 +7,7 @@
  * `runJobTurn` is the model.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { ModelVerdict } from '#lib/glb/verdict.ts';
@@ -20,8 +21,9 @@ import { parseModelGenerationConfig } from './config';
 import { animateStage, clipsSummary } from './animate';
 import { initialEntryStates, type EntryState } from './state';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
 vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 
@@ -143,7 +145,7 @@ beforeEach(() => {
 		[BUILD, [...SOURCE]],
 		[GLB, [1]]
 	]);
-	tauri.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			fs_read_bytes: (a) => {
 				const v = files.get(a!.relPath as string);

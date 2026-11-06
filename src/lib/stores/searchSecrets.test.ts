@@ -2,20 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({ available: true, stored: new Map<string, string>() }));
 
-const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+const { unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter(
-			{
-				secret_available: () => state.available,
-				secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
-				secret_delete: (a) => void state.stored.delete(a!.key as string)
-			},
-			unexpectedInvoke
-		)
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{
+			secret_available: () => state.available,
+			secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
+			secret_delete: (a) => void state.stored.delete(a!.key as string)
+		},
+		unexpectedInvoke
 	)
-}));
+);
 
 import { getSettings, hasBraveApiKey, updateSettings } from './settings';
 import { migrateBraveApiKey, removeBraveApiKey, saveBraveApiKey } from './searchSecrets';

@@ -10,7 +10,7 @@ describe('Tooltip', () => {
 		expect(screen.queryByRole('tooltip')).toBeNull();
 		// The affordance itself is always there — that visible hint that help
 		// exists is the reason this replaces the native `title` attribute.
-		expect(screen.getByRole('button', { name: 'More information' })).toBeTruthy();
+		screen.getByRole('button', { name: 'More information' });
 	});
 
 	it('opens on hover and closes on leave', async () => {
@@ -26,7 +26,7 @@ describe('Tooltip', () => {
 		// native title attribute was not good enough either.
 		render(Tooltip, { text: HELP });
 		await fireEvent.focus(screen.getByRole('button', { name: 'More information' }));
-		expect(screen.getByRole('tooltip')).toBeTruthy();
+		screen.getByRole('tooltip');
 	});
 
 	it('closes on Escape and keeps focus on the trigger', async () => {
@@ -34,7 +34,7 @@ describe('Tooltip', () => {
 		const trigger = screen.getByRole('button', { name: 'More information' });
 		trigger.focus();
 		await fireEvent.focus(trigger);
-		expect(screen.getByRole('tooltip')).toBeTruthy();
+		screen.getByRole('tooltip');
 
 		await fireEvent.keyDown(trigger, { key: 'Escape' });
 		expect(screen.queryByRole('tooltip')).toBeNull();
@@ -49,7 +49,7 @@ describe('Tooltip', () => {
 		const trigger = screen.getByRole('button', { name: 'More information' });
 		await fireEvent.focus(trigger);
 		await fireEvent.keyDown(trigger, { key: 'a' });
-		expect(screen.getByRole('tooltip')).toBeTruthy();
+		screen.getByRole('tooltip');
 	});
 
 	it('wires aria-describedby only while open', async () => {
@@ -65,7 +65,7 @@ describe('Tooltip', () => {
 
 	it('takes an explicit accessible name', async () => {
 		render(Tooltip, { text: HELP, label: 'About phase verification' });
-		expect(screen.getByRole('button', { name: 'About phase verification' })).toBeTruthy();
+		screen.getByRole('button', { name: 'About phase verification' });
 	});
 
 	/**
@@ -90,7 +90,7 @@ describe('Tooltip', () => {
 		const trigger = screen.getByRole('button', { name: 'More information' });
 		await fireEvent.click(trigger);
 
-		expect(screen.getByRole('tooltip')).toBeTruthy();
+		screen.getByRole('tooltip');
 		expect(document.activeElement).not.toBe(input);
 		label.remove();
 	});

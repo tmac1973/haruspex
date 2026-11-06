@@ -1,16 +1,16 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	logDebug: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: mocks.invoke
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal, {
@@ -25,8 +25,8 @@ let ctx: ToolContext;
 
 beforeEach(() => {
 	ctx = makeToolContext({ workingDir: '/tmp/work' });
-	mocks.invoke.mockReset();
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({ fs_path_exists: false, fs_write_xlsx: undefined }, unexpectedInvoke)
 	);
 });
@@ -40,13 +40,13 @@ describe('fs_write_spreadsheet input validation', () => {
 	it('rejects an empty sheets array without invoking the backend', async () => {
 		const out = await callXlsx({ path: 'out.xlsx', sheets: [] });
 		expect(JSON.parse(out.result).error).toMatch(/non-empty array/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('rejects a sheet with zero rows', async () => {
 		const out = await callXlsx({ path: 'out.xlsx', sheets: [{ name: 'S', rows: [] }] });
 		expect(JSON.parse(out.result).error).toMatch(/no rows/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('rejects a sheet with only a header row', async () => {
@@ -55,7 +55,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			sheets: [{ name: 'S', rows: [['Header', 'Other']] }]
 		});
 		expect(JSON.parse(out.result).error).toMatch(/header row/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('rejects a sheet whose data rows are all empty', async () => {
@@ -64,7 +64,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			sheets: [{ name: 'S', rows: [['A', 'B'], [], ['', '']] }]
 		});
 		expect(JSON.parse(out.result).error).toMatch(/header row/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('rejects a placeholder directive like ["/formula"]', async () => {
@@ -73,7 +73,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			sheets: [{ name: 'S', rows: [['N', 'F(N)'], ['/formula']] }]
 		});
 		expect(JSON.parse(out.result).error).toMatch(/placeholder/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('accepts real data and forwards to the backend', async () => {
@@ -92,7 +92,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			]
 		});
 
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_xlsx', expect.any(Object));
+		expect(invoke).toHaveBeenCalledWith('fs_write_xlsx', expect.any(Object));
 		expect(out.result).toMatch(/Wrote: fib\.xlsx/);
 	});
 
@@ -105,7 +105,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			sheets: [{ name: 'S', rows: [['n', 'F(n)'], wide] }]
 		});
 		expect(JSON.parse(out.result).error).toMatch(/cells but the header has/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('rejects a sheet where a named column is entirely blank in every data row', async () => {
@@ -118,7 +118,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			sheets: [{ name: 'S', rows }]
 		});
 		expect(JSON.parse(out.result).error).toMatch(/"F\(n\)" is entirely blank/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('allows blank cells in some rows of a column as long as some have data', async () => {
@@ -154,7 +154,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			]
 		});
 		expect(out.result).toMatch(/Wrote/);
-		const payload = mocks.invoke.mock.calls.find((c) => c[0] === 'fs_write_xlsx')?.[1] as {
+		const payload = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'fs_write_xlsx')?.[1] as {
 			sheets: { rows: unknown[][] }[];
 		};
 		expect(payload.sheets[0].rows).toEqual([
@@ -189,7 +189,7 @@ describe('fs_write_spreadsheet input validation', () => {
 		];
 		const out = await callXlsx({ path: 'out.xlsx', sheets: [{ name: 'S', rows }] });
 		expect(JSON.parse(out.result).error).toMatch(/"F\(n\)" is entirely blank/i);
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it('accepts formulas (cells starting with "=")', async () => {
@@ -206,7 +206,7 @@ describe('fs_write_spreadsheet input validation', () => {
 			]
 		});
 
-		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_xlsx', expect.any(Object));
+		expect(invoke).toHaveBeenCalledWith('fs_write_xlsx', expect.any(Object));
 		expect(out.result).toMatch(/Wrote/);
 	});
 });

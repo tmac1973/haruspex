@@ -16,23 +16,19 @@ const presets = [
 	}
 ];
 
-const { invokeRouter } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
-
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter(
-			{
-				email_list_providers: () => presets,
-				mcp_runtimes_available: { node: false, uv: false },
-				get_active_model_path: null,
-				get_models_dir: null
-			},
-			// The sections load lists on mount; an array is the shape that keeps
-			// their `$derived` chains valid without mocking each one by name.
-			() => []
-		)
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{
+			email_list_providers: () => presets,
+			mcp_runtimes_available: { node: false, uv: false },
+			get_active_model_path: null,
+			get_models_dir: null
+		},
+		// The sections load lists on mount; an array is the shape that keeps
+		// their `$derived` chains valid without mocking each one by name.
+		() => []
 	)
-}));
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async () => () => {})
 }));

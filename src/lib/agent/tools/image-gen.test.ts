@@ -1,12 +1,14 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	backend: 'comfyui',
-	invoke: vi.fn(),
 	generate: vi.fn()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({ imageBackendKind: state.backend }),
@@ -31,7 +33,7 @@ const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 
 beforeEach(() => {
 	state.backend = 'comfyui';
-	state.invoke.mockReset().mockResolvedValue(HASH);
+	vi.mocked(invoke).mockReset().mockResolvedValue(HASH);
 	state.generate.mockReset().mockResolvedValue({
 		bytes: new Uint8Array([1, 2]),
 		width: 1024,
@@ -61,7 +63,7 @@ describe('generate_image is offered', () => {
 describe('generate_image', () => {
 	it('stores the picture with the conversation and gives the model its markdown', async () => {
 		const out = await executeTool('generate_image', { prompt: 'a lighthouse at dusk' }, ctx);
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'image_store_bytes',
 			expect.objectContaining({ conversationId: 'chat-1', mime: 'image/png' })
 		);
@@ -136,7 +138,7 @@ describe('generate_image with a path', () => {
 	});
 
 	it('saves the picture into the working folder too', async () => {
-		state.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ fs_path_exists: false, image_store_bytes: HASH })
 		);
 		const withFolder = makeToolContext({
@@ -149,7 +151,7 @@ describe('generate_image with a path', () => {
 			{ prompt: 'a lighthouse', path: 'lighthouse.png' },
 			withFolder
 		);
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'fs_write_bytes',
 			expect.objectContaining({
 				workdir: '/home/me/pics',

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
 const listing = vi.hoisted(() => ({ files: [] as string[], truncated: false }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => listing) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async () => listing)
+);
 
 import FileTree from './FileTree.svelte';
 
@@ -38,7 +40,7 @@ describe('FileTree', () => {
 		const onpick = vi.fn();
 		render(FileTree, { workdir: '/proj', relPath: 'src/main.ts', onpick });
 		await screen.findByText('Text 3');
-		expect(screen.getByText('a.ts')).toBeTruthy();
+		screen.getByText('a.ts');
 		expect(screen.queryByText('logo.png')).toBeNull();
 
 		await fireEvent.click(screen.getByText('util'));

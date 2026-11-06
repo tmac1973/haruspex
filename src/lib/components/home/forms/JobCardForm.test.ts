@@ -29,7 +29,7 @@ describe('JobCardForm', () => {
 	it('offers no choice when there is no job to use', () => {
 		render(JobCardForm, props());
 		expect(screen.queryByRole('button', { name: 'Use a job' })).toBeNull();
-		expect(screen.getByTestId('fake-editor')).toBeTruthy();
+		screen.getByTestId('fake-editor');
 	});
 
 	it('adds the card for a picked job instead of making one', async () => {

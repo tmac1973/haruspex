@@ -1,22 +1,25 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { LatestRun } from '#lib/home/latestRun.svelte.ts';
 
 const m = vi.hoisted(() => ({
-	invoke: vi.fn<(...args: unknown[]) => Promise<null>>(async () => null),
 	latest: { latest: null, latestSucceeded: null } as LatestRun,
 	current: null as Record<string, unknown> | null,
 	enqueue: vi.fn(async () => 1)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: m.invoke }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<object>()),
-	getSettings: () => ({
-		integrations: { email: { accounts: [{ id: 'acc', label: 'Work', sendEnabled: false }] } }
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			integrations: { email: { accounts: [{ id: 'acc', label: 'Work', sendEnabled: false }] } }
+		})
 	})
-}));
+);
 vi.mock('#lib/home/latestRun.svelte.ts', () => ({ getLatestRun: () => m.latest }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: m.enqueue,
@@ -66,7 +69,7 @@ beforeEach(() => {
 	m.latest = { latest: null, latestSucceeded: null };
 	m.current = null;
 	m.enqueue.mockClear();
-	m.invoke.mockClear();
+	vi.mocked(invoke).mockClear();
 	_resetForTests();
 });
 
@@ -81,21 +84,21 @@ describe('ImportantEmailsCard', () => {
 		]);
 		m.latest = { latest: run, latestSucceeded: run };
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText('Invoice overdue')).toBeTruthy();
-		expect(screen.getByText('Dana <dana@example.com>')).toBeTruthy();
-		expect(screen.getByText('Money owed')).toBeTruthy();
+		screen.getByText('Invoice overdue');
+		screen.getByText('Dana <dana@example.com>');
+		screen.getByText('Money owed');
 	});
 
 	it('says so when nothing is important, and when it has not checked yet', () => {
 		const run = succeeded([]);
 		m.latest = { latest: run, latestSucceeded: run };
 		const { unmount } = render(ImportantEmailsCard, { card });
-		expect(screen.getByText('No important mail.')).toBeTruthy();
+		screen.getByText('No important mail.');
 		unmount();
 
 		m.latest = { latest: null, latestSucceeded: null };
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText('Not checked yet.')).toBeTruthy();
+		screen.getByText('Not checked yet.');
 	});
 
 	it('puts a failed check’s error above the last good result', () => {
@@ -105,14 +108,14 @@ describe('ImportantEmailsCard', () => {
 			latestSucceeded: good
 		};
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText(/The last check failed: IMAP login failed/)).toBeTruthy();
-		expect(screen.getByText('No important mail.')).toBeTruthy();
+		screen.getByText(/The last check failed: IMAP login failed/);
+		screen.getByText('No important mail.');
 	});
 
 	it('says it is waiting for chat while its run waits', () => {
 		m.current = { id: 7, jobId: 3, status: 'running', waitingForSlot: true };
 		render(ImportantEmailsCard, { card });
-		expect(screen.getByText('Waiting for chat…')).toBeTruthy();
+		screen.getByText('Waiting for chat…');
 	});
 
 	it('opens a message when its row is clicked', async () => {
@@ -120,7 +123,7 @@ describe('ImportantEmailsCard', () => {
 		m.latest = { latest: run, latestSucceeded: run };
 		render(ImportantEmailsCard, { card });
 		await fireEvent.click(screen.getByRole('button', { name: 'Open Invoice overdue' }));
-		expect(await screen.findByText('Reading…')).toBeTruthy();
+		await screen.findByText('Reading…');
 	});
 
 	it('moves a message to Trash after asking, and stops listing it', async () => {
@@ -130,7 +133,7 @@ describe('ImportantEmailsCard', () => {
 		await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }));
 		await waitFor(() => expect(screen.queryByText('Invoice overdue')).toBeNull());
-		expect(m.invoke).toHaveBeenCalledWith('email_trash', {
+		expect(invoke).toHaveBeenCalledWith('email_trash', {
 			account: expect.objectContaining({ id: 'acc' }),
 			messageId: 'mid-a'
 		});

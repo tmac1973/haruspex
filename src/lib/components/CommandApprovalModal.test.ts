@@ -8,14 +8,14 @@ describe('CommandApprovalModal', () => {
 		render(CommandApprovalModal);
 		const first = askCommandApproval({ command: 'rm -rf a', reasons: [], requester: 'Code · A' });
 		const second = askCommandApproval({ command: 'rm -rf b', reasons: [], requester: 'Shell 2' });
-		expect(await screen.findByText('rm -rf a')).toBeTruthy();
+		await screen.findByText('rm -rf a');
 		const who = screen.getByTestId('command-approval-requester');
 		expect(who.textContent).toContain('Code · A');
 		expect(who.textContent).toContain('1 more waiting');
 
 		await fireEvent.click(screen.getByText('Allow once'));
 		expect(await first).toBe('allow_once');
-		expect(await screen.findByText('rm -rf b')).toBeTruthy();
+		await screen.findByText('rm -rf b');
 		expect(screen.getByTestId('command-approval-requester').textContent).toContain('Shell 2');
 		expect(screen.getByTestId('command-approval-requester').textContent).not.toContain('waiting');
 

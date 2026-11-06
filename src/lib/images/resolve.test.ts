@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { clearResolvedImages, getResolvedImages, rehydrateImages } from './resolve.svelte';
 import { imageSrc } from './url';
@@ -26,7 +28,7 @@ const row = {
 
 beforeEach(() => {
 	clearResolvedImages();
-	invoke
+	vi.mocked(invoke)
 		.mockReset()
 		.mockImplementation(invokeRouter({ image_rehydrate_local: () => [row] }, () => []));
 });

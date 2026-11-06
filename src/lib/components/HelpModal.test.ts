@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const invoke = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async () => undefined)
+);
 
 import HelpModal from './HelpModal.svelte';
 import { GUIDE_URL } from '#lib/guide/prompt.ts';
@@ -10,10 +12,10 @@ import { GUIDE_URL } from '#lib/guide/prompt.ts';
 describe('HelpModal', () => {
 	it('renders the shortcuts dialog when open', () => {
 		render(HelpModal, { open: true, onclose: vi.fn() });
-		expect(screen.getByRole('dialog')).toBeTruthy();
-		expect(screen.getByText('Keyboard shortcuts')).toBeTruthy();
+		screen.getByRole('dialog');
+		screen.getByText('Keyboard shortcuts');
 		// A known shortcut row is present
-		expect(screen.getByText('Show this shortcuts help')).toBeTruthy();
+		screen.getByText('Show this shortcuts help');
 	});
 
 	it('renders nothing when closed', () => {

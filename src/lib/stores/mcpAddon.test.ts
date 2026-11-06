@@ -1,10 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
 const openFileDialog = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openFileDialog }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -47,7 +49,7 @@ function config(over: Partial<McpServerConfig> = {}): McpServerConfig {
 }
 
 beforeEach(() => {
-	invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	openFileDialog.mockReset();
 });
 
@@ -64,7 +66,7 @@ describe('finding the addon step', () => {
 describe('installing into a project', () => {
 	it('records the chosen directory against the server', async () => {
 		openFileDialog.mockResolvedValue('/home/me/game');
-		invoke.mockResolvedValue('/home/me/game/addons/godot_mcp');
+		vi.mocked(invoke).mockResolvedValue('/home/me/game/addons/godot_mcp');
 
 		const done = await pickAndInstallAddon(config(), 1);
 
@@ -86,7 +88,7 @@ describe('installing into a project', () => {
 
 	it('keeps a second project alongside the first', async () => {
 		openFileDialog.mockResolvedValue('/home/me/other');
-		invoke.mockResolvedValue('/home/me/other/addons/godot_mcp');
+		vi.mocked(invoke).mockResolvedValue('/home/me/other/addons/godot_mcp');
 
 		const done = await pickAndInstallAddon(config({ addonProjects: ['/home/me/game'] }), 1);
 		expect(done?.next.addonProjects).toEqual(['/home/me/game', '/home/me/other']);
@@ -95,7 +97,7 @@ describe('installing into a project', () => {
 	it('does not list the same project twice when the addon is updated', async () => {
 		// Re-running it on a project is how a user takes a new addon version.
 		openFileDialog.mockResolvedValue('/home/me/game');
-		invoke.mockResolvedValue('/home/me/game/addons/godot_mcp');
+		vi.mocked(invoke).mockResolvedValue('/home/me/game/addons/godot_mcp');
 
 		const done = await pickAndInstallAddon(config({ addonProjects: ['/home/me/game'] }), 1);
 		expect(done?.next.addonProjects).toEqual(['/home/me/game']);
@@ -104,7 +106,7 @@ describe('installing into a project', () => {
 	it('surfaces the backend message rather than a generic failure', async () => {
 		// "that folder has no project.godot" is the whole value of the error.
 		openFileDialog.mockResolvedValue('/home/me/Downloads');
-		invoke.mockRejectedValue(
+		vi.mocked(invoke).mockRejectedValue(
 			'/home/me/Downloads does not look like the right folder — it has no project.godot'
 		);
 

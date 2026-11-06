@@ -1,22 +1,23 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	generate: vi.fn(),
 	resume: vi.fn(),
 	upscale: vi.fn(),
 	register: vi.fn((hash: string) => `haruspex-img://localhost/${hash}`)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({ ...actual.getSettings(), imageBackendKind: 'comfyui' })
-	};
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		overDefaults: true,
+		settings: () => ({ imageBackendKind: 'comfyui' })
+	})
+);
 vi.mock('#lib/image/forTool.ts', () => ({
 	generateForTool: state.generate,
 	resumeForTool: state.resume,
@@ -59,11 +60,11 @@ function spec(over: Partial<ImageTaskSpec> = {}): ImageTaskSpec {
 
 beforeEach(() => {
 	_resetTasksForTests();
-	for (const f of [state.invoke, state.generate, state.resume, state.upscale]) f.mockReset();
+	for (const f of [vi.mocked(invoke), state.generate, state.resume, state.upscale]) f.mockReset();
 	state.register.mockClear();
 	state.generate.mockResolvedValue(drawn);
 	state.resume.mockResolvedValue(drawn);
-	state.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			image_store_bytes: 'stored',
 			image_mask_finish: () => new Uint8Array([9]).buffer,
@@ -100,7 +101,7 @@ describe('runImageJob', () => {
 			expect.objectContaining({ prompt: 'a fox' }),
 			expect.objectContaining({ onHandle })
 		);
-		expect(state.invoke).toHaveBeenCalledWith('image_store_bytes', {
+		expect(invoke).toHaveBeenCalledWith('image_store_bytes', {
 			bytes: [1, 2, 3],
 			mime: 'image/png',
 			width: 1024,
@@ -141,7 +142,7 @@ describe('runImageJob', () => {
 		const masked = { canvas: 'cv', mask: 'mk', width: 2000, height: 1500 };
 		const job = { ...spec().job, masked } as ImageTaskSpec['job'];
 		const out = await runImageJob(spec({ job }), {});
-		expect(state.invoke).toHaveBeenCalledWith('image_mask_finish', drawn.bytes, {
+		expect(invoke).toHaveBeenCalledWith('image_mask_finish', drawn.bytes, {
 			headers: { 'x-canvas-hash': 'cv', 'x-mask-hash': 'mk' }
 		});
 		expect(out).toMatchObject({ width: 2000, height: 1500 });
@@ -157,7 +158,7 @@ describe('runImageJob', () => {
 			{}
 		);
 		expect(state.upscale).toHaveBeenCalledWith({ name: 'image.png', hash: 'src' }, {});
-		expect(state.invoke).toHaveBeenCalledWith('fs_save_cached_image', {
+		expect(invoke).toHaveBeenCalledWith('fs_save_cached_image', {
 			hash: 'big',
 			workdir: '/w',
 			relPath: 'big.png',
@@ -177,7 +178,7 @@ describe('background: true', () => {
 			chat
 		);
 		expect(state.generate).not.toHaveBeenCalled();
-		expect(state.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'task_create',
 			expect.objectContaining({
 				kind: 'image',

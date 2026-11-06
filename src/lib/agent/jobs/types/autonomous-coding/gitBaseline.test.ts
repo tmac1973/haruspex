@@ -1,9 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { JobRunContext } from '../types';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { ensureGitBaseline } from './pipeline';
 import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
@@ -81,7 +82,7 @@ function fakeGit(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		throw new Error(`unexpected git command: ${command}`);
 	};
 
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter(
 			{
 				// fs_path_exists is the only marker probe ensureGitignore makes — no
@@ -110,7 +111,7 @@ function ctx(): JobRunContext {
 const checkouts = () => commands.filter((c) => c.startsWith('git checkout -b'));
 
 beforeEach(() => {
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('ensureGitBaseline — working branch', () => {

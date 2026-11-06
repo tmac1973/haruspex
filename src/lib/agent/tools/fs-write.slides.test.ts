@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, ToolExecOutput, ToolRegistration } from './types';
 
@@ -9,7 +10,6 @@ import type { ToolContext, ToolExecOutput, ToolRegistration } from './types';
 // builder only records what it was given.
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	registered: new Map<string, unknown>(),
 	built: [] as { slides: unknown[]; orientation: string; theme: string }[],
 	/** Set to make the next build throw it. */
@@ -19,7 +19,9 @@ const mocks = vi.hoisted(() => ({
 	sheets: { sheets: ['data:image/jpeg;base64,AAAA'], shown: 3, total: 3 }
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfSheets: async () => mocks.sheets }));
 
@@ -59,19 +61,21 @@ beforeEach(() => {
 		sent.push({ command, payload: payload! });
 		return undefined;
 	};
-	mocks.invoke.mockReset().mockImplementation(
-		invokeRouter(
-			{
-				fs_path_exists: false,
-				fs_write_pptx: write('fs_write_pptx'),
-				fs_write_odp: write('fs_write_odp'),
-				slides_preview_pdf: () => {
-					throw new Error('LibreOffice is not installed.');
-				}
-			},
-			unexpectedInvoke
-		)
-	);
+	vi.mocked(invoke)
+		.mockReset()
+		.mockImplementation(
+			invokeRouter(
+				{
+					fs_path_exists: false,
+					fs_write_pptx: write('fs_write_pptx'),
+					fs_write_odp: write('fs_write_odp'),
+					slides_preview_pdf: () => {
+						throw new Error('LibreOffice is not installed.');
+					}
+				},
+				unexpectedInvoke
+			)
+		);
 });
 
 function executor(name: string) {
@@ -690,7 +694,7 @@ describe('orientation', () => {
 describe('a .pptx path', () => {
 	it('sends the built deck as the raw body, with the path in headers', async () => {
 		const calls: unknown[][] = [];
-		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+		vi.mocked(invoke).mockImplementation(async (...args: unknown[]) => {
 			calls.push(args);
 			return args[0] === 'fs_path_exists' ? false : undefined;
 		});
@@ -713,7 +717,7 @@ describe('a .pptx path', () => {
 
 describe('backend failure', () => {
 	it('returns the error and does not count the file as written', async () => {
-		mocks.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ fs_path_exists: false }, () => {
 				throw new Error('image not found: chart.png');
 			})
@@ -737,7 +741,7 @@ describe('the preview', () => {
 	beforeEach(() => {
 		calls = [];
 		mocks.sheets = { sheets: ['data:image/jpeg;base64,AAAA'], shown: 3, total: 3 };
-		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+		vi.mocked(invoke).mockImplementation(async (...args: unknown[]) => {
 			calls.push(args);
 			if (args[0] === 'fs_path_exists') return false;
 			if (args[0] === 'slides_preview_pdf') return new ArrayBuffer(4);
@@ -783,7 +787,7 @@ describe('the preview', () => {
 	});
 
 	it('leaves the result alone without LibreOffice', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string) => {
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
 			if (cmd === 'slides_preview_pdf') throw new Error('LibreOffice is not installed.');
 			return cmd === 'fs_path_exists' ? false : undefined;
 		});
@@ -793,7 +797,7 @@ describe('the preview', () => {
 	});
 
 	it('is of the file the user chose to keep beside the old one', async () => {
-		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+		vi.mocked(invoke).mockImplementation(async (...args: unknown[]) => {
 			calls.push(args);
 			if (args[0] === 'fs_path_exists') return true;
 			if (args[0] === 'fs_find_available_path') return 'd-1.pptx';
@@ -823,7 +827,7 @@ describe('writing a previewed deck again', () => {
 	// what fs_path_exists says after doesn't matter.
 	beforeEach(() => {
 		calls = [];
-		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+		vi.mocked(invoke).mockImplementation(async (...args: unknown[]) => {
 			calls.push(args);
 			if (args[0] === 'fs_path_exists') return false;
 			if (args[0] === 'slides_preview_pdf') return new ArrayBuffer(4);
@@ -904,7 +908,7 @@ describe('writing a previewed deck again', () => {
 		freshTurn();
 		ctx.visionSupported = false;
 		ctx.codeSessionId = 'sess-1';
-		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+		vi.mocked(invoke).mockImplementation(async (...args: unknown[]) => {
 			calls.push(args);
 			return args[0] === 'fs_path_exists' ? true : undefined;
 		});

@@ -159,7 +159,7 @@ describe('the web store', () => {
 		];
 		render(HomeView, { store });
 		expect(screen.queryByText('Idle one')).toBeNull();
-		expect(screen.getByText('Needs attention')).toBeTruthy();
+		screen.getByText('Needs attention');
 		expect(screen.getByRole('link', { name: 'Launch' }).getAttribute('target')).toBe('_blank');
 		await fireEvent.click(screen.getByRole('button', { name: /Fix the build/ }));
 		expect(store.tab).toBe('code');
@@ -187,8 +187,8 @@ describe('the web store', () => {
 			}
 		];
 		render(HomeView, { store });
-		expect(screen.getByText(/job running/)).toBeTruthy();
-		expect(screen.getByText(/queued/, { selector: '.band .fact' })).toBeTruthy();
+		screen.getByText(/job running/);
+		screen.getByText(/queued/, { selector: '.band .fact' });
 		await fireEvent.click(screen.getByRole('button', { name: /session needs you/ }));
 		expect(store.tab).toBe('code');
 	});
@@ -366,7 +366,7 @@ describe('the prompt card', () => {
 			},
 			onanswer
 		});
-		expect(screen.getByText('rm -rf build')).toBeTruthy();
+		screen.getByText('rm -rf build');
 		await fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
 		expect(onanswer).toHaveBeenCalledWith('code-s1:4', { kind: 'command', choice: 'deny' });
 	});
@@ -410,8 +410,8 @@ describe('the prompt card', () => {
 			},
 			onanswer
 		});
-		expect(screen.getByText('Allow GitHub to run create_issue?')).toBeTruthy();
-		expect(screen.getByText(/"title": "Bug"/)).toBeTruthy();
+		screen.getByText('Allow GitHub to run create_issue?');
+		screen.getByText(/"title": "Bug"/);
 		await fireEvent.click(screen.getByText('Always allow'));
 		expect(onanswer).toHaveBeenCalledWith('main:3', { kind: 'mcp', choice: 'allow_always' });
 	});
@@ -462,7 +462,7 @@ describe('the prompt card', () => {
 			},
 			onanswer
 		});
-		expect(screen.getByText(/2 skills and an AGENTS.md/)).toBeTruthy();
+		screen.getByText(/2 skills and an AGENTS.md/);
 		await fireEvent.click(screen.getByText('Ignore them'));
 		expect(onanswer).toHaveBeenCalledWith('main:5', { kind: 'repo-trust', trust: false });
 	});
@@ -481,7 +481,7 @@ describe('the prompt card', () => {
 			},
 			onanswer
 		});
-		expect(screen.getByText('Take a screenshot?')).toBeTruthy();
+		screen.getByText('Take a screenshot?');
 		await fireEvent.click(screen.getByText("Don't"));
 		expect(onanswer).toHaveBeenCalledWith('main:6', { kind: 'screen-capture', choice: 'deny' });
 	});
@@ -500,8 +500,8 @@ describe('the prompt card', () => {
 			},
 			onanswer
 		});
-		expect(screen.getByText('File already exists')).toBeTruthy();
-		expect(screen.getByText('report.docx')).toBeTruthy();
+		screen.getByText('File already exists');
+		screen.getByText('report.docx');
 		await fireEvent.click(screen.getByText('Keep both'));
 		expect(onanswer).toHaveBeenCalledWith('main:7', { kind: 'file-conflict', choice: 'counter' });
 		await fireEvent.click(screen.getByText('Overwrite'));
@@ -553,7 +553,7 @@ describe('the composer', () => {
 		const onstop = vi.fn();
 		render(Composer, { busy: true, onsend: vi.fn(), onstop });
 		flushSync();
-		expect(screen.getByRole('button', { name: 'Queue' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Queue' });
 		screen.getByRole('button', { name: 'Stop' }).click();
 		expect(onstop).toHaveBeenCalled();
 	});
@@ -595,7 +595,7 @@ describe('the file viewer', () => {
 			file: { path: 'big.log', content: 'x'.repeat(300_000), truncated: true },
 			onclose: vi.fn()
 		});
-		expect(screen.getByText('Only the start of this file is shown.')).toBeTruthy();
+		screen.getByText('Only the start of this file is shown.');
 		// Too big to highlight: plain text.
 		expect(document.querySelector('.code-block')).toBeNull();
 	});
@@ -616,7 +616,7 @@ describe('a message', () => {
 				]
 			}
 		});
-		expect(screen.getByText('look at this')).toBeTruthy();
+		screen.getByText('look at this');
 		await fireEvent.click(screen.getByTitle('Show full size'));
 		expect((asked.mock.calls[0][0] as CustomEvent).detail.src).toBe(pixel);
 		document.removeEventListener(VIEW_IMAGE_EVENT, asked);
@@ -629,7 +629,7 @@ describe('a message', () => {
 				content: [{ type: 'image_url', image_url: { url: 'haruspex-img://localhost/abc' } }]
 			}
 		});
-		expect(screen.getByText(/An image on your computer/)).toBeTruthy();
+		screen.getByText(/An image on your computer/);
 		expect(screen.queryByAltText('Attached')).toBeNull();
 	});
 
@@ -751,7 +751,7 @@ describe('chat in the web store', () => {
 			onretry: () => {}
 		});
 		const divider = screen.getByTestId('chat-summary');
-		expect(screen.getByText('old question')).toBeTruthy();
+		screen.getByText('old question');
 		expect(divider.nextElementSibling!.textContent).toContain('new question');
 		await fireEvent.click(screen.getByText('Earlier messages summarised'));
 		expect(divider.textContent).toContain('They asked once.');
@@ -823,7 +823,7 @@ describe('chat in the web store', () => {
 		];
 		render(ChatList, { store });
 		for (const mark of ['Writing', 'Waiting', 'New', 'Open']) {
-			expect(screen.getByText(mark)).toBeTruthy();
+			screen.getByText(mark);
 		}
 		expect((screen.getByRole('button', { name: 'New chat' }) as HTMLButtonElement).disabled).toBe(
 			false
@@ -847,7 +847,7 @@ describe('the composer', () => {
 	it('waits while busy when it may not steer', () => {
 		render(Composer, { busy: true, steer: false, onsend: vi.fn(), onstop: vi.fn() });
 		expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
-		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Stop' });
 	});
 
 	it('says why it is disabled', () => {
@@ -866,7 +866,7 @@ describe('the composer', () => {
 		render(Composer, { busy: true, onsend, onstop: vi.fn() });
 		const box = screen.getByLabelText('Message') as HTMLTextAreaElement;
 		expect(box.disabled).toBe(false);
-		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Stop' });
 		await fireEvent.input(box, { target: { value: 'also this' } });
 		await fireEvent.keyDown(box, { key: 'Enter' });
 		expect(onsend).toHaveBeenCalledWith('also this', []);
@@ -888,7 +888,7 @@ describe('a sandbox prompt', () => {
 			},
 			onanswer
 		});
-		expect(screen.getByText('import os')).toBeTruthy();
+		screen.getByText('import os');
 		await fireEvent.click(screen.getByRole('button', { name: 'Allow for this chat' }));
 		expect(onanswer).toHaveBeenCalledWith('main:9', { kind: 'sandbox', choice: 'allow_chat' });
 	});
@@ -913,7 +913,7 @@ describe('the transcript and compaction', () => {
 		await fireEvent.click(screen.getByText('Earlier turns summarised'));
 		expect(divider.textContent).toContain('Asked one question.');
 		// Everything above the cut still shows.
-		expect(screen.getByText('question 1')).toBeTruthy();
+		screen.getByText('question 1');
 	});
 
 	it('says when it is summarising', () => {
@@ -922,6 +922,6 @@ describe('the transcript and compaction', () => {
 			oncontinue: () => {},
 			onopenfile: () => {}
 		});
-		expect(screen.getByText('Summarising earlier turns…')).toBeTruthy();
+		screen.getByText('Summarising earlier turns…');
 	});
 });

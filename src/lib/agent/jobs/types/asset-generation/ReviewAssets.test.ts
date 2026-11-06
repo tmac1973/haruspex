@@ -68,8 +68,8 @@ describe('ReviewAssets', () => {
 		// emptied the grid again, so the dialog always showed nothing.
 		open();
 		await waitFor(() => expect(screen.getAllByRole('img')).toHaveLength(2));
-		expect(screen.getByAltText('player')).toBeTruthy();
-		expect(screen.getByText('not made')).toBeTruthy();
+		screen.getByAltText('player');
+		screen.getByText('not made');
 		// Loaded once, not in a loop.
 		await new Promise((r) => setTimeout(r, 50));
 		expect(invokeCalls(mocks.invoke, 'fs_read_text_full')).toHaveLength(1);
@@ -141,8 +141,8 @@ describe('ReviewAssets', () => {
 		);
 		open();
 		await waitFor(() => screen.getByAltText('shore'));
-		expect(screen.getByText('rejected')).toBeTruthy();
-		expect(screen.getByLabelText('Note for shore')).toBeTruthy();
+		screen.getByText('rejected');
+		screen.getByLabelText('Note for shore');
 		await fireEvent.click(screen.getByRole('button', { name: /Make 1 again/ }));
 		await waitFor(() => expect(mocks.enqueue).toHaveBeenCalled());
 		const written = mocks.invoke.mock.calls.find(([c]) => c === 'fs_write_text');

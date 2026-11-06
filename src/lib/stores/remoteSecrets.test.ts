@@ -6,24 +6,22 @@ const state = vi.hoisted(() => ({
 	stored: new Map<string, string>()
 }));
 
-const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+const { unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter(
-			{
-				secret_available: () => state.available,
-				secret_set: (a) => {
-					if (state.refuseSet) throw 'locked';
-					state.stored.set(a!.key as string, a!.value as string);
-				},
-				secret_get: (a) => state.stored.get(a!.key as string) ?? null,
-				secret_delete: (a) => void state.stored.delete(a!.key as string)
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{
+			secret_available: () => state.available,
+			secret_set: (a) => {
+				if (state.refuseSet) throw 'locked';
+				state.stored.set(a!.key as string, a!.value as string);
 			},
-			unexpectedInvoke
-		)
+			secret_get: (a) => state.stored.get(a!.key as string) ?? null,
+			secret_delete: (a) => void state.stored.delete(a!.key as string)
+		},
+		unexpectedInvoke
 	)
-}));
+);
 
 import { getSettings, updateSettings } from './settings';
 import { getRemoteToken } from './remoteSecrets';

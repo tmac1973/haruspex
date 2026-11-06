@@ -1,13 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
 
 const tauri = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	listeners: new Map<string, (event: { payload: unknown }) => void>()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => {
 		tauri.listeners.set(name, handler);
@@ -36,13 +38,13 @@ function emitStatus(payload: SidecarStatus): void {
 
 /** The (model, context) pairs the sidecar was started with, in order. */
 function starts(): [unknown, unknown][] {
-	return invokeCalls(tauri.invoke, 'start_server').map((a) => [a?.modelPath, a?.ctxSize]);
+	return invokeCalls(vi.mocked(invoke), 'start_server').map((a) => [a?.modelPath, a?.ctxSize]);
 }
 
 beforeEach(() => {
 	vi.resetModules();
-	tauri.invoke.mockReset();
-	tauri.invoke.mockImplementation(invokeRouter({}));
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockImplementation(invokeRouter({}));
 	tauri.listeners.clear();
 	queue.running = 0;
 });
@@ -56,7 +58,7 @@ describe('starting and stopping', () => {
 	});
 
 	it('startServer shows the error when the launch fails', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				start_server: () => {
 					throw 'model file not found';
@@ -87,7 +89,7 @@ describe('starting and stopping', () => {
 	});
 
 	it('stopServer keeps the status and records the error when stopping fails', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				stop_server: () => {
 					throw 'still busy';
@@ -102,13 +104,13 @@ describe('starting and stopping', () => {
 	});
 
 	it('getServerLogs returns the server log lines', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ get_server_logs: ['line 1', 'line 2'] }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ get_server_logs: ['line 1', 'line 2'] }));
 		const { getServerLogs } = await freshStore();
 		expect(await getServerLogs()).toEqual(['line 1', 'line 2']);
 	});
 
 	it('getServerLogs returns empty array on error', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				get_server_logs: () => {
 					throw new Error('not available');
@@ -122,14 +124,14 @@ describe('starting and stopping', () => {
 
 describe('status events', () => {
 	it('initServerStore picks up the status the server already has', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ get_server_status: { type: 'Ready' } }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ get_server_status: { type: 'Ready' } }));
 		const { initServerStore, getServerState } = await freshStore();
 		await initServerStore();
 		expect(getServerState().status).toBe('ready');
 	});
 
 	it('initServerStore leaves the status alone when the server cannot be asked', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				get_server_status: () => {
 					throw 'not ready';
@@ -187,7 +189,7 @@ describe('status events', () => {
 		const { initServerStore, getServerState } = await freshStore();
 		await initServerStore();
 		tauri.listeners.clear();
-		tauri.invoke.mockImplementation(invokeRouter({ get_server_status: { type: 'Ready' } }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ get_server_status: { type: 'Ready' } }));
 
 		await initServerStore();
 		expect(tauri.listeners.size).toBe(0);
@@ -209,7 +211,7 @@ describe('restartServerWhenIdle', () => {
 		const { restartServerWhenIdle, getPendingRestart } = await freshStore();
 		await expect(restartServerWhenIdle('/models/b.gguf', 16384, 'context')).resolves.toBe(false);
 		expect(starts()).toEqual([]);
-		expect(invokeCalls(tauri.invoke, 'stop_server')).toEqual([]);
+		expect(invokeCalls(vi.mocked(invoke), 'stop_server')).toEqual([]);
 		expect(getPendingRestart()).toEqual({
 			modelPath: '/models/b.gguf',
 			ctxSize: 16384,
@@ -290,7 +292,7 @@ describe('maybeFlushPendingRestart', () => {
 
 	it('starts the server once even when the layout re-fires during a flush', async () => {
 		let finishStop!: () => void;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ stop_server: () => new Promise<void>((r) => (finishStop = r)) })
 		);
 		queue.running = 1;
@@ -307,7 +309,7 @@ describe('maybeFlushPendingRestart', () => {
 
 	it('holds a restart queued mid-flush until that flush finishes, then runs it', async () => {
 		let finishStop!: () => void;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ stop_server: () => new Promise<void>((r) => (finishStop = r)) })
 		);
 		queue.running = 1;
@@ -329,7 +331,7 @@ describe('maybeFlushPendingRestart', () => {
 		await first;
 		expect(starts()).toEqual([['/models/b.gguf', 8192]]);
 
-		tauri.invoke.mockImplementation(invokeRouter({}));
+		vi.mocked(invoke).mockImplementation(invokeRouter({}));
 		await maybeFlushPendingRestart();
 		expect(starts()).toEqual([
 			['/models/b.gguf', 8192],
@@ -339,7 +341,7 @@ describe('maybeFlushPendingRestart', () => {
 	});
 
 	it('can flush again after a flush whose start failed', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				start_server: () => {
 					throw 'boom';
@@ -353,7 +355,7 @@ describe('maybeFlushPendingRestart', () => {
 		await maybeFlushPendingRestart();
 		expect(getServerState().status).toBe('error');
 
-		tauri.invoke.mockImplementation(invokeRouter({}));
+		vi.mocked(invoke).mockImplementation(invokeRouter({}));
 		queue.running = 1;
 		await restartServerWhenIdle('/models/c.gguf', 8192, 'model');
 		queue.running = 0;

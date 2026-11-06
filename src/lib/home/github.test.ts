@@ -26,9 +26,11 @@ vi.mock('@tauri-apps/api/core', () => ({
 		return m.answer(a.name, a.arguments);
 	}
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
-	getSettings: () => ({ integrations: { mcp: { servers: m.servers } } })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ integrations: { mcp: { servers: m.servers } } })
+	})
+);
 vi.mock('#lib/stores/mcpServers.svelte.ts', () => ({
 	mcpState: () => ({ status: { type: m.status } })
 }));

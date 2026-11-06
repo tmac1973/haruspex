@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { executeTool, getDisplayLabel } from '#lib/agent/tools/index.ts';
 import { resetShownOutput } from '#lib/agent/tools/shell-interactive.ts';
@@ -65,11 +67,11 @@ async function run(name: string, args: Record<string, unknown>, ctx = shellCtx()
 
 /** The bytes the tool typed into the terminal. */
 function typed(): unknown[] {
-	return invokeCalls(tauri.invoke, 'shell_write').map((a) => a?.data);
+	return invokeCalls(vi.mocked(invoke), 'shell_write').map((a) => a?.data);
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	resetShownOutput();
 	vi.useFakeTimers();
 });
@@ -82,7 +84,7 @@ describe('outside a live terminal', () => {
 	it.each(['shell_read', 'shell_input', 'shell_interrupt', 'shell_snapshot'])(
 		'%s says it only works in a live terminal session',
 		async (name) => {
-			tauri.invoke.mockImplementation(invokeRouter({}));
+			vi.mocked(invoke).mockImplementation(invokeRouter({}));
 			const out = await run(name, {}, shellCtx({ shellSessionId: undefined }));
 			expect(JSON.parse(out.result).error).toMatch(/only works in a live terminal session/);
 		}
@@ -91,13 +93,13 @@ describe('outside a live terminal', () => {
 
 describe('shell_read', () => {
 	it('says the terminal is idle when nothing has run yet', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ shell_get_recent_commands: [] }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ shell_get_recent_commands: [] }));
 		const out = await run('shell_read', {});
 		expect(out.result).toBe('The terminal is idle at a prompt; nothing has run yet.');
 	});
 
 	it("shows a running program's output so far, trailing whitespace trimmed", async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [
 					region('Serving on :8000\nGET /\n\n', { commandLine: 'npm run dev' })
@@ -111,7 +113,7 @@ describe('shell_read', () => {
 	});
 
 	it('names a running program with no command line as "A command"', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: [region('x', { commandLine: '' })] })
 		);
 		const out = await run('shell_read', {});
@@ -119,7 +121,9 @@ describe('shell_read', () => {
 	});
 
 	it('suggests a silent running program may be waiting for input', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ shell_get_recent_commands: [region('  \n')] }));
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ shell_get_recent_commands: [region('  \n')] })
+		);
 		const out = await run('shell_read', {});
 		expect(out.result).toBe(
 			'`python3` is still running. Output so far: (no output yet — it may be waiting for input).'
@@ -127,7 +131,7 @@ describe('shell_read', () => {
 	});
 
 	it('reports the last finished command with its exit code', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('done\n', { pending: false, exitCode: 2 })]
 			})
@@ -137,7 +141,7 @@ describe('shell_read', () => {
 	});
 
 	it('says "exit unknown" and "no output" for a silent command with no exit code', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: [region('', { pending: false })] })
 		);
 		const out = await run('shell_read', {});
@@ -145,7 +149,7 @@ describe('shell_read', () => {
 	});
 
 	it('spills a very large output to a file the model can read', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('log line\n'.repeat(5000))],
 				code_write_overflow: '/tmp/haruspex-overflow-1.txt'
@@ -158,7 +162,7 @@ describe('shell_read', () => {
 	});
 
 	it('reports a closed session as a tool error', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: () => {
 					throw 'no such session';
@@ -170,7 +174,7 @@ describe('shell_read', () => {
 	});
 
 	it("returns only a running program's new output on a second read", async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(
 					region('root@OpenWrt:~# ls\nbackups\n', { commandLine: 'ssh router' }),
@@ -188,7 +192,7 @@ describe('shell_read', () => {
 	});
 
 	it('says when nothing is new, and gives all of it with full: true', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: [region('>>> 1 + 1\n2\n')] })
 		);
 		await run('shell_read', {});
@@ -201,7 +205,7 @@ describe('shell_read', () => {
 	});
 
 	it('counts what shell_input returned as seen', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(
 					region('>>> '),
@@ -217,7 +221,7 @@ describe('shell_read', () => {
 	});
 
 	it('shows a finished command in full, even when it matches the last read', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(
 					region('same\n', { pending: false, exitCode: 0 }),
@@ -233,7 +237,7 @@ describe('shell_read', () => {
 
 describe('shell_input', () => {
 	it('refuses to type into an idle shell, so it cannot bypass run_command', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: [region('', { pending: false, exitCode: 0 })] })
 		);
 		const out = await run('shell_input', { text: 'rm -rf build' });
@@ -242,14 +246,14 @@ describe('shell_input', () => {
 	});
 
 	it('refuses when nothing has ever run', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ shell_get_recent_commands: [] }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ shell_get_recent_commands: [] }));
 		const out = await run('shell_input', { text: 'y' });
 		expect(JSON.parse(out.result).error).toMatch(/use run_command/);
 		expect(typed()).toEqual([]);
 	});
 
 	it('types the line with Enter and returns only what appeared after it', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(region('>>> '), region('>>> 1+1\n2\n>>> '))
 			})
@@ -260,7 +264,7 @@ describe('shell_input', () => {
 	});
 
 	it('sends raw keystrokes without Enter when enter is false', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: terminal(region('more'), region('more')) })
 		);
 		await run('shell_input', { text: 'q', enter: false });
@@ -268,7 +272,7 @@ describe('shell_input', () => {
 	});
 
 	it('reads a stringified "false" for enter as false', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: terminal(region('more'), region('more')) })
 		);
 		await run('shell_input', { text: 'q', enter: 'false' });
@@ -276,7 +280,7 @@ describe('shell_input', () => {
 	});
 
 	it('sends just Enter for empty text', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(region('Continue?'), region('Continue?'))
 			})
@@ -287,7 +291,7 @@ describe('shell_input', () => {
 	});
 
 	it('treats text that is not a string or number as empty and sends just Enter', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: terminal(region('?'), region('?')) })
 		);
 		const out = await run('shell_input', { text: { line: 'y' } });
@@ -296,7 +300,7 @@ describe('shell_input', () => {
 	});
 
 	it('types a numeric text as its digits', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: terminal(region('Pick: '), region('Pick: ')) })
 		);
 		await run('shell_input', { text: 3 });
@@ -304,7 +308,7 @@ describe('shell_input', () => {
 	});
 
 	it('says there was no new output when the screen did not change', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ shell_get_recent_commands: terminal(region('(gdb) ')) })
 		);
 		const out = await run('shell_input', { text: 'next' });
@@ -312,7 +316,7 @@ describe('shell_input', () => {
 	});
 
 	it('says when the program exited after the input', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(
 					region('Proceed? [y/N] '),
@@ -325,7 +329,7 @@ describe('shell_input', () => {
 	});
 
 	it('returns the whole buffer when the output ring rotated past what was on screen', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: terminal(region('old line\n> '), region('fresh tail\n> '))
 			})
@@ -336,7 +340,7 @@ describe('shell_input', () => {
 
 	it('gives up after about six seconds on output that never settles', async () => {
 		let n = 0;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: () => [region(n === 0 ? '$ ' : `$ ${'.'.repeat(n++)}`, {})],
 				shell_write: () => {
@@ -354,7 +358,7 @@ describe('shell_input', () => {
 
 	it('reports a session that closes mid-way as a tool error', async () => {
 		let calls = 0;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: () => {
 					if (calls++ === 0) return [region('> ')];
@@ -369,7 +373,7 @@ describe('shell_input', () => {
 
 describe('shell_interrupt', () => {
 	it('still sends Ctrl-C but says nothing was running at an idle prompt', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('', { pending: false, exitCode: 0 })],
 				shell_get_context: { completed_total: 3 }
@@ -384,7 +388,7 @@ describe('shell_interrupt', () => {
 
 	it('reports the program stopped and shows its final output', async () => {
 		let total = 3;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: () =>
 					total > 3
@@ -404,7 +408,7 @@ describe('shell_interrupt', () => {
 
 	it('leaves out "Final output" when the stopped program printed nothing', async () => {
 		let total = 0;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: () =>
 					total > 0 ? [region('', { pending: false })] : [region('')],
@@ -421,7 +425,7 @@ describe('shell_interrupt', () => {
 	});
 
 	it('suggests force:true when the program ignores Ctrl-C for four seconds', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('stubborn')],
 				shell_get_context: { completed_total: 5 }
@@ -436,7 +440,7 @@ describe('shell_interrupt', () => {
 	});
 
 	it('sends Ctrl-\\ with force and points at the Restart button if that fails too', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('stubborn')],
 				shell_get_context: { completed_total: 5 }
@@ -449,7 +453,7 @@ describe('shell_interrupt', () => {
 	});
 
 	it('treats a non-boolean force as a plain Ctrl-C', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('', { pending: false })],
 				shell_get_context: { completed_total: 0 }
@@ -465,7 +469,7 @@ describe('shell_interrupt', () => {
 	});
 
 	it('reports a closed session as a tool error before sending anything', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: () => {
 					throw 'no such session';
@@ -479,7 +483,7 @@ describe('shell_interrupt', () => {
 
 	it('reports a session that closes while waiting as an error, not a stuck program', async () => {
 		let contextCalls = 0;
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				shell_get_recent_commands: [region('server')],
 				shell_get_context: () => {

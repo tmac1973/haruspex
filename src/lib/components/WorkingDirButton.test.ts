@@ -4,7 +4,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import WorkingDirButton from './WorkingDirButton.svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => {}) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async () => {})
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => null) }));
 
 beforeEach(() => {
@@ -52,7 +54,7 @@ describe('WorkingDirButton right-click menu', () => {
 			'disabled',
 			true
 		);
-		expect(screen.getByRole('menuitem', { name: 'Choose folder…' })).toBeTruthy();
+		screen.getByRole('menuitem', { name: 'Choose folder…' });
 		expect(screen.queryByRole('menuitem', { name: 'Clear' })).toBeNull();
 	});
 

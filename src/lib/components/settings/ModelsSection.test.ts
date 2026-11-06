@@ -6,9 +6,9 @@ import { stopServer } from '#lib/stores/llamaServer.svelte.ts';
 import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn()
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async () => () => {})
 }));
@@ -96,7 +96,7 @@ describe('ModelsSection active model', () => {
 			)
 		);
 		await renderSection();
-		expect(screen.getByText('active')).toBeTruthy();
+		screen.getByText('active');
 		// Only model-b offers Use; the active model-a doesn't.
 		expect(screen.getAllByText('Use')).toHaveLength(1);
 	});
@@ -106,12 +106,10 @@ describe('ModelsSection delete confirmation', () => {
 	it('clicking Delete opens the dialog without deleting from disk', async () => {
 		await renderSection();
 		await fireEvent.click(deleteButtonFor(1));
-		expect(screen.getByText('Delete model?')).toBeTruthy();
-		expect(
-			screen.getByText(
-				"b.gguf (3.00 GB) will be removed from disk. You'll have to download it again to use it."
-			)
-		).toBeTruthy();
+		screen.getByText('Delete model?');
+		screen.getByText(
+			"b.gguf (3.00 GB) will be removed from disk. You'll have to download it again to use it."
+		);
 		expect(invoke).not.toHaveBeenCalledWith('delete_model', expect.anything());
 		expect(stopServer).not.toHaveBeenCalled();
 	});
@@ -119,11 +117,9 @@ describe('ModelsSection delete confirmation', () => {
 	it('mentions stopping the server only for the active model', async () => {
 		await renderSection();
 		await fireEvent.click(deleteButtonFor(0));
-		expect(
-			screen.getByText(
-				"a.gguf (5.00 GB) will be removed from disk. You'll have to download it again to use it. The inference server will be stopped first."
-			)
-		).toBeTruthy();
+		screen.getByText(
+			"a.gguf (5.00 GB) will be removed from disk. You'll have to download it again to use it. The inference server will be stopped first."
+		);
 	});
 
 	it('confirming deletes the model and closes the dialog', async () => {

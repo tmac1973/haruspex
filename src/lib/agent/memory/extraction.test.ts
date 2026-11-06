@@ -1,13 +1,15 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConversationWithMessages } from '#lib/ipc/gen/ConversationWithMessages.ts';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	runEphemeralTurn: vi.fn(),
 	memoryActive: vi.fn(() => true)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
@@ -143,7 +145,7 @@ describe('extractMemories — gates', () => {
 		mocks.memoryActive.mockReturnValue(false);
 		const result = await extractMemories('conv-1');
 		expect(result.skipped).toBe('inactive');
-		expect(mocks.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	/**
@@ -152,14 +154,14 @@ describe('extractMemories — gates', () => {
 	 * deletion.
 	 */
 	it('does nothing for an incognito conversation', async () => {
-		mocks.invoke.mockResolvedValueOnce({ memory_enabled: false, memory_extracted_to: -1 });
+		vi.mocked(invoke).mockResolvedValueOnce({ memory_enabled: false, memory_extracted_to: -1 });
 		const result = await extractMemories('conv-1');
 		expect(result.skipped).toBe('incognito');
 		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
 	});
 
 	it('does nothing for a conversation with too few new turns', async () => {
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce(conversation([message(0, 'user', 'hi')]));
 		const result = await extractMemories('conv-1');
@@ -174,7 +176,7 @@ describe('extractMemories — gates', () => {
  * conversation land here.
  */
 function store(opts: { neighbors?: Record<string, unknown[]>; failAdd?: string } = {}) {
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			memory_neighbors: (args) => opts.neighbors?.[String(args?.content ?? '')] ?? [],
 			memory_add: (args) => {
@@ -187,7 +189,7 @@ function store(opts: { neighbors?: Record<string, unknown[]>; failAdd?: string }
 
 describe('extractMemories — storing', () => {
 	beforeEach(() => {
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce(conversation(FOUR_TURNS));
 	});
@@ -199,7 +201,7 @@ describe('extractMemories — storing', () => {
 		const result = await extractMemories('conv-1');
 
 		expect(result.added).toBe(1);
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_add', {
+		expect(invoke).toHaveBeenCalledWith('memory_add', {
 			content: 'Prefers tabs over spaces.',
 			category: 'preference',
 			sourceConversationId: 'conv-1',
@@ -215,13 +217,13 @@ describe('extractMemories — storing', () => {
 	 */
 	it('bumps an existing memory instead of storing a near-duplicate', async () => {
 		turnSubmits([{ content: 'Prefers tabs over spaces.', category: 'preference' }]);
-		mocks.invoke.mockResolvedValueOnce({ id: 'mem-existing', score: 0.95 });
+		vi.mocked(invoke).mockResolvedValueOnce({ id: 'mem-existing', score: 0.95 });
 
 		const result = await extractMemories('conv-1');
 
 		expect(result).toMatchObject({ added: 0, deduped: 1 });
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-existing' });
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
+		expect(invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-existing' });
+		expect(invoke).not.toHaveBeenCalledWith('memory_add', expect.anything());
 	});
 
 	it('carries on after one candidate fails to store', async () => {
@@ -259,9 +261,9 @@ describe('extractMemories — storing', () => {
 		turnSubmits([]);
 		await extractMemories('conv-1');
 
-		const calls = mocks.invoke.mock.calls.map((c) => c[0]);
+		const calls = vi.mocked(invoke).mock.calls.map((c) => c[0]);
 		expect(calls[calls.length - 1]).toBe('conversation_set_memory_extracted_to');
-		expect(mocks.invoke).toHaveBeenCalledWith('conversation_set_memory_extracted_to', {
+		expect(invoke).toHaveBeenCalledWith('conversation_set_memory_extracted_to', {
 			conversationId: 'conv-1',
 			sortOrder: 3
 		});
@@ -279,7 +281,7 @@ describe('extractMemories — storing', () => {
 		mocks.runEphemeralTurn.mockRejectedValueOnce(new Error('backend down'));
 		const result = await extractMemories('conv-1');
 		expect(result.skipped).toBe('failed');
-		expect(mocks.invoke).not.toHaveBeenCalledWith(
+		expect(invoke).not.toHaveBeenCalledWith(
 			'conversation_set_memory_extracted_to',
 			expect.anything()
 		);
@@ -293,12 +295,12 @@ describe('extractMemories — storing', () => {
 			{ content: 'A perfectly good durable fact.', category: 'nonsense' },
 			{ notContent: true }
 		]);
-		mocks.invoke.mockResolvedValueOnce(null).mockResolvedValueOnce('mem-1');
+		vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce('mem-1');
 
 		const result = await extractMemories('conv-1');
 
 		expect(result.added).toBe(1);
-		expect(mocks.invoke).toHaveBeenCalledWith(
+		expect(invoke).toHaveBeenCalledWith(
 			'memory_add',
 			expect.objectContaining({ content: 'A perfectly good durable fact.', category: 'fact' })
 		);
@@ -333,7 +335,7 @@ describe('extractMemories — the duplicate review', () => {
 	}
 
 	beforeEach(() => {
-		mocks.invoke
+		vi.mocked(invoke)
 			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 			.mockResolvedValueOnce(conversation(FOUR_TURNS));
 	});
@@ -343,7 +345,7 @@ describe('extractMemories — the duplicate review', () => {
 		turns([{ fact: 1, action: 'same', memory_id: 'mem-learned' }]);
 		const result = await extractMemories('conv-1');
 		expect(result).toMatchObject({ added: 0, deduped: 1 });
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-learned' });
+		expect(invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-learned' });
 		const review = mocks.runEphemeralTurn.mock.calls[1][0];
 		expect(review.userMessage).toContain(FACT);
 		expect(review.userMessage).toContain('[mem-learned] Builds Haruspex. (learned)');
@@ -361,7 +363,7 @@ describe('extractMemories — the duplicate review', () => {
 		]);
 		const result = await extractMemories('conv-1');
 		expect(result).toMatchObject({ added: 0, merged: 1 });
-		expect(mocks.invoke).toHaveBeenCalledWith('memory_update', {
+		expect(invoke).toHaveBeenCalledWith('memory_update', {
 			id: 'mem-learned',
 			content: 'Builds Haruspex and is adding 3D model generation to it.'
 		});
@@ -372,7 +374,7 @@ describe('extractMemories — the duplicate review', () => {
 		turns([{ fact: 1, action: 'update', memory_id: 'mem-saved', content: 'Something longer.' }]);
 		const result = await extractMemories('conv-1');
 		expect(result).toMatchObject({ added: 0, deduped: 1 });
-		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_update', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('memory_update', expect.anything());
 	});
 
 	it('stores the fact as new when the review fails, or names a memory it was not shown', async () => {
@@ -381,8 +383,8 @@ describe('extractMemories — the duplicate review', () => {
 			[[{ fact: 1, action: 'same', memory_id: 'mem-elsewhere' }], false]
 		] as const) {
 			// Reset, not clear: a cleared mock keeps its queued once-values.
-			mocks.invoke.mockReset();
-			mocks.invoke
+			vi.mocked(invoke).mockReset();
+			vi.mocked(invoke)
 				.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
 				.mockResolvedValueOnce(conversation(FOUR_TURNS));
 			store({ neighbors: { [FACT]: [learned] } });

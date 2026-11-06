@@ -7,27 +7,25 @@ const state = vi.hoisted(() => ({
 	failSet: false
 }));
 
-const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+const { unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(
-		invokeRouter(
-			{
-				secret_available: () => state.available,
-				secret_set: (a) => {
-					if (state.failSet) throw new Error('locked');
-					state.stored.set(a!.key as string, a!.value as string);
-					return null;
-				},
-				secret_delete: (a) => {
-					state.stored.delete(a!.key as string);
-					return null;
-				}
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(
+		{
+			secret_available: () => state.available,
+			secret_set: (a) => {
+				if (state.failSet) throw new Error('locked');
+				state.stored.set(a!.key as string, a!.value as string);
+				return null;
 			},
-			unexpectedInvoke
-		)
+			secret_delete: (a) => {
+				state.stored.delete(a!.key as string);
+				return null;
+			}
+		},
+		unexpectedInvoke
 	)
-}));
+);
 
 import { getSettings, setDavAccounts } from './settings';
 import { forgetDavPassword, migrateDavSecrets, withStoredDavPassword } from './davSecrets';

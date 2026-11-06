@@ -1,8 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import { ToolchestError, hostOf, toolchestBytes, toolchestJson } from './client.ts';
 
@@ -10,7 +12,7 @@ const cfg = { baseUrl: 'http://gpu.lan:8080', apiKey: 'k' };
 
 /** `toolchest_json` failing with `err`, as Rust reports a ComfyError. */
 function failWith(err: unknown) {
-	tauri.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			toolchest_json: () => {
 				throw err;
@@ -31,7 +33,7 @@ async function caught(p: Promise<unknown>): Promise<ToolchestError> {
 }
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 });
 
 describe('hostOf', () => {
@@ -44,7 +46,7 @@ describe('hostOf', () => {
 
 describe('toolchestJson', () => {
 	it('sends the call to Rust and answers its value', async () => {
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				toolchest_json: (a) => ({ got: (a as { call: { path: string } }).call.path })
 			})
@@ -108,15 +110,15 @@ describe('toolchestJson', () => {
 		expect(await caught(toolchestJson(cfg, { path: '/p' }, ac.signal))).toMatchObject({
 			kind: 'cancelled'
 		});
-		expect(tauri.invoke).not.toHaveBeenCalled();
+		expect(invoke).not.toHaveBeenCalled();
 	});
 });
 
 describe('toolchestBytes', () => {
 	it('answers bytes whether Rust sends an ArrayBuffer or a number array', async () => {
-		tauri.invoke.mockImplementation(invokeRouter({ toolchest_bytes: [1, 2, 3] }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ toolchest_bytes: [1, 2, 3] }));
 		expect(Array.from(await toolchestBytes(cfg, '/f'))).toEqual([1, 2, 3]);
-		tauri.invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ toolchest_bytes: () => new Uint8Array([4, 5]).buffer })
 		);
 		expect(Array.from(await toolchestBytes(cfg, '/f'))).toEqual([4, 5]);

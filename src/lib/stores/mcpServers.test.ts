@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
@@ -24,8 +25,9 @@ import { setMcpServers } from './settings';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const ID = 'srv-1';
 
@@ -81,14 +83,14 @@ const CONNECTION = {
 
 /** Wire up the happy path: spawn config, start, connection info, tool list. */
 function mockHappyStart(): void {
-	invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({ mcp_connection_info: CONNECTION, mcp_list_tools: TOOLS })
 	);
 }
 
 beforeEach(async () => {
-	invoke.mockReset();
-	invoke.mockResolvedValue(null);
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockResolvedValue(null);
 	await stopMcpServer(ID);
 });
 
@@ -113,7 +115,7 @@ describe('starting a server', () => {
 	it('lands in error with the reason when the spawn config is refused', async () => {
 		// The unfinished-setup case: refusing here is what turns "it did
 		// nothing" into a sentence the user can act on.
-		invoke.mockRejectedValue('GitHub has not finished its setup');
+		vi.mocked(invoke).mockRejectedValue('GitHub has not finished its setup');
 		await startMcpServer(config({ setupComplete: false }), entry());
 
 		const state = mcpState(ID);
@@ -123,7 +125,7 @@ describe('starting a server', () => {
 	});
 
 	it('stops with the reason, not a failure, when its version is blocked', async () => {
-		invoke.mockRejectedValue("BLOCKED_VERSION:Runs any page's script.");
+		vi.mocked(invoke).mockRejectedValue("BLOCKED_VERSION:Runs any page's script.");
 		await startMcpServer(config(), entry());
 
 		const state = mcpState(ID);
@@ -141,7 +143,7 @@ describe('starting a server', () => {
 	it('registers no tools when a later step fails', async () => {
 		// A partial success is a server that looks running with no tools, which
 		// is the worst of both: the row says fine and the model has nothing.
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_list_tools: () => {
 					throw 'tools/list failed';
@@ -160,7 +162,7 @@ describe('a backend that outlived the frontend', () => {
 		// `make dev` reloads the frontend and leaves the Rust supervisor running.
 		// Without this the card read "Failed: already running" next to a server
 		// that was working, and — worse — no tools were registered at all.
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_server_status: { type: 'Ready' },
 				mcp_connection_info: CONNECTION,
@@ -170,7 +172,7 @@ describe('a backend that outlived the frontend', () => {
 
 		await startMcpServer(config(), entry());
 
-		const called = invoke.mock.calls.map((c) => c[0]);
+		const called = vi.mocked(invoke).mock.calls.map((c) => c[0]);
 		expect(called).not.toContain(IPC.mcp_start_server);
 		expect(mcpState(ID).status.type).toBe('Ready');
 		expect(mcpState(ID).connection?.protocolVersion).toBe('2026-07-28');
@@ -179,19 +181,19 @@ describe('a backend that outlived the frontend', () => {
 	});
 
 	it('starts normally when the backend has nothing running', async () => {
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({ mcp_server_status: { type: 'Stopped' }, mcp_list_tools: TOOLS })
 		);
 
 		await startMcpServer(config(), entry());
-		expect(invoke.mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
 		await stopMcpServer(ID);
 	});
 
 	it('does not adopt a server the backend reports as failed', async () => {
 		// Ready is the only state worth taking over. Adopting an Error would
 		// hide the failure behind a card that claims to be running.
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_server_status: { type: 'Error', message: 'it died' },
 				mcp_start_server: () => {
@@ -213,7 +215,7 @@ describe('a backend that outlived the frontend', () => {
 	it('waits out a start the backend has under way, then adopts it', async () => {
 		// A reload that lands while the server is still negotiating: starting
 		// it again is refused, and the card read "Failed: already running".
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_server_status: statusesInTurn('Starting', 'Starting', 'Ready'),
 				mcp_connection_info: CONNECTION,
@@ -223,14 +225,14 @@ describe('a backend that outlived the frontend', () => {
 
 		await startMcpServer(config(), entry());
 
-		expect(invoke.mock.calls.map((c) => c[0])).not.toContain(IPC.mcp_start_server);
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).not.toContain(IPC.mcp_start_server);
 		expect(mcpState(ID).status.type).toBe('Ready');
 		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
 		await stopMcpServer(ID);
 	});
 
 	it('starts it afresh when the start under way fails', async () => {
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_server_status: statusesInTurn('Starting', 'Error'),
 				mcp_connection_info: CONNECTION,
@@ -240,7 +242,7 @@ describe('a backend that outlived the frontend', () => {
 
 		await startMcpServer(config(), entry());
 
-		expect(invoke.mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
 		expect(mcpState(ID).status.type).toBe('Ready');
 		await stopMcpServer(ID);
 	});
@@ -248,7 +250,7 @@ describe('a backend that outlived the frontend', () => {
 	it('stops waiting after the backend’s own deadline has passed', async () => {
 		vi.useFakeTimers();
 		try {
-			invoke.mockImplementation(
+			vi.mocked(invoke).mockImplementation(
 				invokeRouter({
 					mcp_server_status: { type: 'Starting' },
 					mcp_start_server: () => {
@@ -286,7 +288,7 @@ describe('a server that changes its toolset while running', () => {
 		await startMcpServer(config(), entry());
 		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__create_node');
 
-		invoke.mockImplementation(invokeRouter({ mcp_list_tools: MORE }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ mcp_list_tools: MORE }));
 		await refreshMcpTools(ID);
 
 		expect(mcpState(ID).tools).toHaveLength(2);
@@ -302,7 +304,7 @@ describe('a server that changes its toolset while running', () => {
 		await startMcpServer(config(), entry());
 		expect(mcpDefaultTools(ID)).toEqual(['search']);
 
-		invoke.mockImplementation(invokeRouter({ mcp_list_tools: MORE }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ mcp_list_tools: MORE }));
 		await refreshMcpTools(ID);
 
 		expect(mcpDefaultTools(ID)).toEqual(['search']);
@@ -315,7 +317,7 @@ describe('a server that changes its toolset while running', () => {
 		await startMcpServer(config(), entry());
 		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
 
-		invoke.mockImplementation(invokeRouter({ mcp_list_tools: [] }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ mcp_list_tools: [] }));
 		await refreshMcpTools(ID);
 
 		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__search');
@@ -324,7 +326,7 @@ describe('a server that changes its toolset while running', () => {
 	it('does nothing for a server it has never started', async () => {
 		// The notification can outlive the server: re-registering here would
 		// resurrect tools for something that is gone.
-		invoke.mockClear();
+		vi.mocked(invoke).mockClear();
 		await refreshMcpTools('never-started');
 		expect(invoke).not.toHaveBeenCalled();
 	});
@@ -335,7 +337,7 @@ describe('a server that changes its toolset while running', () => {
 		mockHappyStart();
 		await startMcpServer(config(), entry());
 
-		invoke.mockRejectedValue('server is not connected');
+		vi.mocked(invoke).mockRejectedValue('server is not connected');
 		await refreshMcpTools(ID);
 
 		expect(mcpState(ID).status.type).toBe('Ready');
@@ -349,14 +351,14 @@ describe('what was installed', () => {
 
 	beforeEach(async () => {
 		// A removed server's manifest goes with it, so each test starts clean.
-		invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		await removeMcpServer(INSTALLED_ID);
 	});
 
 	it("registers the installed entry's default tools, not the current catalog's", async () => {
 		// The release bumped the pin and changed the defaults; the old package
 		// is still what runs.
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_connection_info: CONNECTION,
 				mcp_list_tools: TOOLS,
@@ -400,7 +402,7 @@ describe('stopping a server', () => {
 		await startMcpServer(config(), entry());
 		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
 
-		invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		await stopMcpServer(ID);
 
 		const state = mcpState(ID);
@@ -416,7 +418,7 @@ describe('stopping a server', () => {
 		mockHappyStart();
 		await startMcpServer(config(), entry());
 
-		invoke.mockRejectedValue('kill failed');
+		vi.mocked(invoke).mockRejectedValue('kill failed');
 		await stopMcpServer(ID);
 
 		expect(mcpState(ID).status.type).toBe('Error');
@@ -431,7 +433,7 @@ describe('removing a server', () => {
 		rememberAlwaysAllow(ID, 'create_issue');
 		expect(isAlwaysAllowed(ID, 'create_issue')).toBe(true);
 
-		invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		await removeMcpServer(ID);
 
 		expect(isAlwaysAllowed(ID, 'create_issue')).toBe(false);
@@ -445,7 +447,7 @@ describe('proxy handling', () => {
 		// server honours it is up to its author.
 		mockHappyStart();
 		await startMcpServer(config(), entry());
-		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_start_server);
+		const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === IPC.mcp_start_server);
 		expect(call?.[1]).toHaveProperty('proxy');
 		await stopMcpServer(ID);
 	});
@@ -464,10 +466,10 @@ describe('remote servers', () => {
 		// A remote server has no program, arguments or environment. Threading an
 		// empty spawn config through the stdio path would mean every caller
 		// carrying a shape that means nothing for half its cases.
-		invoke.mockImplementation(invokeRouter({ mcp_list_tools: [] }));
+		vi.mocked(invoke).mockImplementation(invokeRouter({ mcp_list_tools: [] }));
 		await startMcpServer(remote(), null);
 
-		const called = invoke.mock.calls.map((c) => c[0]);
+		const called = vi.mocked(invoke).mock.calls.map((c) => c[0]);
 		expect(called).toContain(IPC.mcp_connect_remote_server);
 		expect(called).not.toContain(IPC.mcp_start_server);
 		expect(mcpState('remote-1').status.type).toBe('Ready');
@@ -478,9 +480,9 @@ describe('remote servers', () => {
 		// The escape hatch for the cases an address cannot decide: a public host
 		// the user wants reached direct, or an internal one that does need the
 		// proxy despite the bypass rules.
-		invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		await startMcpServer(remote({ id: 'remote-4', proxyUse: 'never' }), null);
-		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_connect_remote_server);
+		const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === IPC.mcp_connect_remote_server);
 		expect((call?.[1] as { config: McpServerConfig }).config.proxyUse).toBe('never');
 		await stopMcpServer('remote-4');
 	});
@@ -488,15 +490,15 @@ describe('remote servers', () => {
 	it('sends the configured proxy with the connection', async () => {
 		// A user who configured a proxy — often the whole reason they did —
 		// must not find that MCP quietly connects direct.
-		invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockResolvedValue(null);
 		await startMcpServer(remote({ id: 'remote-2' }), null);
-		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_connect_remote_server);
+		const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === IPC.mcp_connect_remote_server);
 		expect(call?.[1]).toHaveProperty('proxy');
 		await stopMcpServer('remote-2');
 	});
 
 	it('lands in error with the reason when the host is unreachable', async () => {
-		invoke.mockRejectedValue('mcp.example.test did not answer within 20s');
+		vi.mocked(invoke).mockRejectedValue('mcp.example.test did not answer within 20s');
 		await startMcpServer(remote({ id: 'remote-3' }), null);
 		expect(mcpState('remote-3').error).toContain('did not answer');
 	});
@@ -506,7 +508,7 @@ describe('starting everything on launch', () => {
 	it('carries on past a failure so one broken server does not hide the rest', async () => {
 		const first = config({ id: 'a', label: 'A' });
 		const second = config({ id: 'b', label: 'B' });
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_start_server: (args) => {
 					if ((args?.config as { id?: string } | undefined)?.id === 'a') throw 'a is broken';
@@ -531,7 +533,9 @@ describe('starting at app launch', () => {
 		// server runs, and nothing was starting them, so the model never saw a
 		// single MCP tool however carefully the user had set one up.
 		setMcpServers([config({ id: 'boot-1' })]);
-		invoke.mockImplementation(invokeRouter({ mcp_catalog: [entry()], mcp_list_tools: [] }));
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ mcp_catalog: [entry()], mcp_list_tools: [] })
+		);
 
 		await startConfiguredMcpServers();
 		expect(mcpState('boot-1').status.type).toBe('Ready');
@@ -541,7 +545,7 @@ describe('starting at app launch', () => {
 
 	it('skips a server whose setup never finished', async () => {
 		setMcpServers([config({ id: 'boot-2', setupComplete: false })]);
-		invoke.mockResolvedValue([]);
+		vi.mocked(invoke).mockResolvedValue([]);
 		await startConfiguredMcpServers();
 		expect(mcpState('boot-2').status.type).toBe('Stopped');
 		setMcpServers([]);
@@ -552,7 +556,7 @@ describe('starting at app launch', () => {
 		// tools would resolve as disabled — a server running with an invisible
 		// toolset is worse than one that did not start.
 		setMcpServers([config({ id: 'boot-3' })]);
-		invoke.mockImplementation(
+		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
 				mcp_catalog: () => {
 					throw 'no catalog';
@@ -568,8 +572,8 @@ describe('starting at app launch', () => {
 		// The common case on a fresh install: launch must not pay for a feature
 		// nobody has set up.
 		setMcpServers([]);
-		invoke.mockClear();
-		invoke.mockResolvedValue(null);
+		vi.mocked(invoke).mockClear();
+		vi.mocked(invoke).mockResolvedValue(null);
 		await startConfiguredMcpServers();
 		expect(invoke).not.toHaveBeenCalled();
 	});
@@ -644,7 +648,7 @@ describe('companion applications', () => {
 	});
 
 	it('probes a catalog server and records the answer', async () => {
-		invoke.mockResolvedValue({ kind: 'disconnected', hint: 'Open Blender.' });
+		vi.mocked(invoke).mockResolvedValue({ kind: 'disconnected', hint: 'Open Blender.' });
 		const status = await probeCompanion(config({ id: 'blender-1' }));
 		expect(status).toEqual({ kind: 'disconnected', hint: 'Open Blender.' });
 		expect(mcpState('blender-1').companion).toEqual({
@@ -657,12 +661,12 @@ describe('companion applications', () => {
 		// A failed probe is not evidence the application is absent, and telling
 		// the user to go and start something that is already running is worse
 		// than saying nothing.
-		invoke.mockRejectedValue('server is not connected');
+		vi.mocked(invoke).mockRejectedValue('server is not connected');
 		expect(await probeCompanion(config({ id: 'blender-2' }))).toEqual({ kind: 'unknown' });
 	});
 
 	it('passes no entry id for a custom server, which cannot have a companion', async () => {
-		invoke.mockResolvedValue({ kind: 'unknown' });
+		vi.mocked(invoke).mockResolvedValue({ kind: 'unknown' });
 		await probeCompanion(
 			config({ id: 'custom-1', source: { kind: 'custom', program: '/x/srv', args: [] } })
 		);

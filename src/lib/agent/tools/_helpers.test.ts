@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue('') }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ proxy: { mode: 'none', url: '', bypass: '' } }),
-	hasEnabledEmailAccount: () => false,
-	hasEnabledCalendarAccount: () => false,
-	hasEnabledContactsAccount: () => false
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, '')
+);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ proxy: { mode: 'none', url: '', bypass: '' } }),
+		hasEnabledEmailAccount: () => false,
+		hasEnabledCalendarAccount: () => false,
+		hasEnabledContactsAccount: () => false
+	})
+);
 
 import { ensureUrlScheme, isToolErrorResult, toolInvokeError } from './_helpers';
 import { toolError } from './types';

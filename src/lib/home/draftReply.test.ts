@@ -1,10 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { EmailAccount } from '#lib/stores/settings.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const m = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
@@ -34,8 +36,10 @@ const REPLY = {
 };
 
 beforeEach(() => {
-	tauri.invoke.mockReset();
-	tauri.invoke.mockImplementation(invokeRouter({ email_reply_context: REPLY, email_cancel: null }));
+	vi.mocked(invoke).mockReset();
+	vi.mocked(invoke).mockImplementation(
+		invokeRouter({ email_reply_context: REPLY, email_cancel: null })
+	);
 	m.runEphemeralTurn.mockReset();
 	m.slotOptions = [];
 });

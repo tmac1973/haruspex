@@ -1,11 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(),
 	disk: new Map<string, string>()
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => true }));
 
 import { executeTool } from '#lib/agent/tools/index.ts';
@@ -15,9 +17,9 @@ import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 beforeEach(() => {
 	mocks.disk.clear();
-	mocks.invoke.mockReset();
+	vi.mocked(invoke).mockReset();
 	const path = (a?: Record<string, unknown>) => String(a?.relPath);
-	mocks.invoke.mockImplementation(
+	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			fs_path_exists: (a) => mocks.disk.has(path(a)),
 			fs_read_text_full: (a) => mocks.disk.get(path(a)),
