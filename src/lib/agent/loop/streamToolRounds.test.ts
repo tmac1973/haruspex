@@ -58,9 +58,11 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	})
 );
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn().mockRejectedValue(new Error('not available'))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, () => {
+		throw new Error('not available');
+	})
+);
 
 const TOOLS: ToolDefinition[] = [
 	{ type: 'function', function: { name: 'fs_read_text', description: '', parameters: {} } }

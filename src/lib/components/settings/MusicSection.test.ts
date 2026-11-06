@@ -5,7 +5,9 @@ import { invokeRouter } from '#lib/testing/invoke.ts';
 import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import aceProps from '#lib/music/ace/fixtures/props-asmodean.json';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 const settings = vi.hoisted(() => ({
@@ -198,6 +200,6 @@ describe('Settings → Music', () => {
 		expect([...model.options].map((o) => o.value)).toEqual(['', 'acestep-v15-xl-sft-Q8_0.gguf']);
 		await fireEvent.change(model, { target: { value: 'acestep-v15-xl-sft-Q8_0.gguf' } });
 		expect(settings.musicAceModel).toBe('acestep-v15-xl-sft-Q8_0.gguf');
-		expect(screen.getByRole('button', { name: 'Make a test clip' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Make a test clip' });
 	});
 });

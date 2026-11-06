@@ -4,7 +4,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 const flags = vi.hoisted(() => ({ youtube: true }));
@@ -78,8 +80,8 @@ beforeEach(() => {
 describe('VideoEditingSection', () => {
 	it('shows what it found and where', async () => {
 		render(VideoEditingSection);
-		expect(await screen.findByText('melt 7.1 (Kdenlive)')).toBeTruthy();
-		expect(screen.getByText('ffmpeg 7.1 (PATH)')).toBeTruthy();
+		await screen.findByText('melt 7.1 (Kdenlive)');
+		screen.getByText('ffmpeg 7.1 (PATH)');
 	});
 
 	it('turns the video tools on with its switch', async () => {
@@ -93,8 +95,8 @@ describe('VideoEditingSection', () => {
 	it('says what to install when one is missing', async () => {
 		status = { ...status, melt: null, hints: ['Not found: melt.'] };
 		render(VideoEditingSection);
-		expect(await screen.findByText('Not found')).toBeTruthy();
-		expect(screen.getByText('Install Kdenlive, or set the paths above.')).toBeTruthy();
+		await screen.findByText('Not found');
+		screen.getByText('Install Kdenlive, or set the paths above.');
 	});
 
 	it('saves an override path as a plain string and looks again', async () => {
@@ -112,7 +114,7 @@ describe('VideoEditingSection', () => {
 
 	it('offers the encoders that passed their test and saves the choice', async () => {
 		render(VideoEditingSection);
-		expect(await screen.findByText('VA-API (AMD, Intel)')).toBeTruthy();
+		await screen.findByText('VA-API (AMD, Intel)');
 		const select = screen.getByLabelText('Encoder:') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: 'h264_vaapi' } });
 		expect(updateSettings).toHaveBeenCalledWith({ videoEncoder: 'h264_vaapi' });
@@ -122,7 +124,7 @@ describe('VideoEditingSection', () => {
 		render(VideoEditingSection);
 		const button = await screen.findByText('Download large-v3-turbo (1.6 GB)');
 		await fireEvent.click(button);
-		expect(await screen.findByText('whisper large-v3-turbo')).toBeTruthy();
+		await screen.findByText('whisper large-v3-turbo');
 	});
 
 	it('shows no YouTube sign-in while the upload is hidden', async () => {
@@ -136,7 +138,7 @@ describe('VideoEditingSection', () => {
 	it('signs in to YouTube for uploads', async () => {
 		render(VideoEditingSection);
 		await fireEvent.click(await screen.findByText('Sign in to YouTube'));
-		expect(await screen.findByText('Signed in as tim@example.com')).toBeTruthy();
+		await screen.findByText('Signed in as tim@example.com');
 	});
 
 	it('saves the format', async () => {

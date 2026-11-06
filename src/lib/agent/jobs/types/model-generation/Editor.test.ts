@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('./pipeline', () => ({ runModelGenerationPipeline: vi.fn() }));
 
 import Editor from './Editor.svelte';
@@ -19,8 +21,8 @@ const blind = (vision: 'yes' | 'no') => ({ ...emptyModelForm('remote'), vision }
 describe('3D models Editor', () => {
 	it('shows both model rows, each the job’s model by default', () => {
 		mount();
-		expect(screen.getByLabelText('Change the creation model')).toBeTruthy();
-		expect(screen.getByLabelText('Change the animation model')).toBeTruthy();
+		screen.getByLabelText('Change the creation model');
+		screen.getByLabelText('Change the animation model');
 		expect(screen.getAllByText('Same as this job')).toHaveLength(2);
 	});
 

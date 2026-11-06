@@ -3,7 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { EmailAccount } from '#lib/stores/settings.ts';
 import type { EmailDraft } from '#lib/stores/emailReview.svelte.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 const m = vi.hoisted(() => ({
 	finish: null as ((d: EmailDraft) => void) | null,
@@ -42,7 +44,7 @@ describe('DraftReply', () => {
 		expect(review.disabled).toBe(true);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Draft' }));
-		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Stop' });
 		expect(review.disabled).toBe(true);
 
 		m.finish!(draft);

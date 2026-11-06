@@ -8,7 +8,9 @@ import models from '#lib/image/lemonade/fixtures/models.json';
 import toolchestModels from '#lib/toolchest/fixtures/models-asmodean.json';
 import type { ImageModelEntry } from '#lib/image/types.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const settings = vi.hoisted(() => ({
@@ -127,8 +129,8 @@ describe('the list of image models', () => {
 			})
 		];
 		render(ImageSection);
-		expect(screen.getByText('llama-toolchest on box:3000')).toBeTruthy();
-		expect(screen.getByText('Not probed yet.')).toBeTruthy();
+		screen.getByText('llama-toolchest on box:3000');
+		screen.getByText('Not probed yet.');
 		expect(
 			screen.getByText(/^Can: draw pictures, transparent backgrounds, tiling textures/)
 		).toBeTruthy();

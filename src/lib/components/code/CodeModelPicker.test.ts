@@ -5,7 +5,9 @@ import type { BackendOverride } from '#lib/api.ts';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
 import { updateInferenceBackend, updateSettings } from '#lib/stores/settings.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const llama = vi.hoisted(() => ({ startServer: vi.fn(), restartServerWhenIdle: vi.fn() }));
 vi.mock('#lib/stores/llamaServer.svelte.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/llamaServer.svelte.ts')>()),
@@ -35,7 +37,7 @@ describe('CodeModelPicker', () => {
 		updateSettings({ activeLocalModelFilename: 'Qwen3.5-9B-Q4_K_M.gguf' });
 		updateInferenceBackend({ mode: 'local' });
 		render(CodeModelPicker, { session: fakeSession(null) });
-		expect(screen.getByRole('button', { name: 'Model: Settings · qwen3.5-9b' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Model: Settings · qwen3.5-9b' });
 
 		updateInferenceBackend({
 			mode: 'remote',
@@ -43,7 +45,7 @@ describe('CodeModelPicker', () => {
 			remoteModelId: 'big-model'
 		});
 		await tick();
-		expect(screen.getByRole('button', { name: 'Model: Settings · big-model' })).toBeTruthy();
+		screen.getByRole('button', { name: 'Model: Settings · big-model' });
 		updateInferenceBackend({ mode: 'local' });
 	});
 
@@ -51,7 +53,7 @@ describe('CodeModelPicker', () => {
 		const session = fakeSession(remote);
 		render(CodeModelPicker, { session });
 		await fireEvent.click(screen.getByRole('button', { name: /Model: qwen3.8-27b/ }));
-		expect(screen.getByText('Session model')).toBeTruthy();
+		screen.getByText('Session model');
 		// Reasoning and sampling are the Jobs runner's, not the session's.
 		expect(screen.queryByText('Advanced model behavior')).toBeNull();
 

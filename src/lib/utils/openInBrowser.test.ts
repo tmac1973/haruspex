@@ -3,7 +3,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { getToasts } from '#lib/stores/toasts.svelte.ts';
 import { openInBrowser } from './openInBrowser.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 beforeEach(() => {
 	vi.mocked(invoke).mockReset();

@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
 	createJob: vi.fn(async () => 9)
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({

@@ -14,9 +14,11 @@ import {
 	takeConversationDraft
 } from '#lib/stores/chat.svelte.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn().mockRejectedValue(new Error('not available'))
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, () => {
+		throw new Error('not available');
+	})
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
 // The real chat store pulls in Tauri IPC + the server store; ChatView (and
@@ -105,8 +107,8 @@ describe('ChatView error banner', () => {
 
 	it('renders Retry next to Copy debug log and invokes the store', async () => {
 		render(ChatView);
-		expect(screen.getByText('An unexpected error occurred.')).toBeTruthy();
-		expect(screen.getByText('Copy debug log')).toBeTruthy();
+		screen.getByText('An unexpected error occurred.');
+		screen.getByText('Copy debug log');
 
 		const retry = screen.getByRole('button', { name: 'Retry' });
 		await fireEvent.click(retry);
@@ -124,7 +126,7 @@ describe('ChatView error banner', () => {
 	it('omits Retry for non-retryable errors (lastTurnFailed false)', () => {
 		vi.mocked(getLastTurnFailed).mockReturnValue(false);
 		render(ChatView);
-		expect(screen.getByText('An unexpected error occurred.')).toBeTruthy();
+		screen.getByText('An unexpected error occurred.');
 		expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
 	});
 });

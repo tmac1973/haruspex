@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { ChatMessage } from '#lib/api.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 const openWindows = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 vi.mock('#lib/editor/windows.ts', () => ({
 	openInEditorWindows: openWindows,
@@ -93,7 +95,7 @@ describe('CodeTranscript steering', () => {
 
 	it('says when the turn is queued behind another', () => {
 		render(CodeTranscript, { session: fakeSession({ status: 'queued', busy: true }) });
-		expect(screen.getByText('Waiting for another turn to finish…')).toBeTruthy();
+		screen.getByText('Waiting for another turn to finish…');
 	});
 });
 
@@ -101,16 +103,16 @@ describe('CodeTranscript render window', () => {
 	it('renders the last 20 turns of a long session, and earlier ones on request', async () => {
 		render(CodeTranscript, { session: fakeSession({ messages: thread(25) }) });
 		expect(screen.queryByText('question 5')).toBeNull();
-		expect(screen.getByText('question 6')).toBeTruthy();
-		expect(screen.getByText('answer 25')).toBeTruthy();
+		screen.getByText('question 6');
+		screen.getByText('answer 25');
 		await fireEvent.click(screen.getByRole('button', { name: 'Show earlier (5 more turns)' }));
-		expect(screen.getByText('question 1')).toBeTruthy();
+		screen.getByText('question 1');
 		expect(screen.queryByRole('button', { name: /Show earlier/ })).toBeNull();
 	});
 
 	it('shows a short session whole', () => {
 		render(CodeTranscript, { session: fakeSession({ messages: thread(3) }) });
-		expect(screen.getByText('question 1')).toBeTruthy();
+		screen.getByText('question 1');
 		expect(screen.queryByRole('button', { name: /Show earlier/ })).toBeNull();
 	});
 });
@@ -166,13 +168,13 @@ describe('CodeTranscript live tool round', () => {
 			]
 		});
 		render(CodeTranscript, { session });
-		expect(screen.getByText('Read the file first.')).toBeTruthy();
+		screen.getByText('Read the file first.');
 		const rows = screen
 			.getAllByTestId('pending-call')
 			.map((r) => r.textContent?.replace(/\s+/g, ' ').trim());
 		expect(rows[0]).toContain('Writing src/foo.ts… 4.2 KB');
 		expect(rows[1]).toContain('Preparing command…');
-		expect(screen.getByText('npm test')).toBeTruthy();
+		screen.getByText('npm test');
 	});
 
 	it('shows the reasoning behind a step above it', () => {
@@ -190,7 +192,7 @@ describe('CodeTranscript live tool round', () => {
 			]
 		});
 		render(CodeTranscript, { session });
-		expect(screen.getByText('Find where foo is defined.')).toBeTruthy();
+		screen.getByText('Find where foo is defined.');
 	});
 
 	it('shows what the model said with its calls once, as markdown, above the steps', () => {
@@ -453,7 +455,7 @@ describe('CodeTranscript fork', () => {
 		const session = fakeSession({ messages: thread(1) });
 		render(CodeTranscript, { session });
 		await fireEvent.click(screen.getAllByRole('button', { name: 'Fork from here' })[0]);
-		expect(await screen.findByText(/isn't in a git repository/)).toBeTruthy();
+		await screen.findByText(/isn't in a git repository/);
 		expect(screen.queryByRole('button', { name: /New worktree/ })).toBeNull();
 		await fireEvent.click(screen.getByRole('button', { name: 'Fork read-only' }));
 		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0, 'readOnly');
@@ -491,7 +493,7 @@ describe('background command notices', () => {
 			{ role: 'assistant', content: 'It finished.' }
 		];
 		render(CodeTranscript, { session: fakeSession({ messages }) });
-		expect(screen.getByText('Background command finished: sleep 20; echo done')).toBeTruthy();
+		screen.getByText('Background command finished: sleep 20; echo done');
 		expect(screen.queryByText('YOU')).toBeNull();
 	});
 });
@@ -510,14 +512,14 @@ describe('CodeTranscript compaction', () => {
 		await fireEvent.click(screen.getByText('Earlier turns summarised'));
 		expect(divider.textContent).toContain('Asked two questions.');
 		// Everything before the cut is still shown.
-		expect(screen.getByText('question 1')).toBeTruthy();
+		screen.getByText('question 1');
 	});
 
 	it('says when it is summarising', () => {
 		render(CodeTranscript, {
 			session: fakeSession({ status: 'running', busy: true, compacting: true })
 		});
-		expect(screen.getByText('Summarising earlier turns…')).toBeTruthy();
+		screen.getByText('Summarising earlier turns…');
 	});
 });
 
@@ -537,8 +539,8 @@ describe('CodeTranscript subtasks', () => {
 			1: [{ id: 'd1', toolName: 'delegate', query: 'foo callers', status: 'done', subtask }]
 		};
 		render(CodeTranscript, { session: fakeSession({ messages, messageSteps }) });
-		expect(screen.getByTestId('subtask-card')).toBeTruthy();
-		expect(screen.getByText('foo is called from bar.ts:3')).toBeTruthy();
+		screen.getByTestId('subtask-card');
+		screen.getByText('foo is called from bar.ts:3');
 	});
 
 	it('stops a running subtask through the session', async () => {
@@ -574,6 +576,6 @@ describe('CodeTranscript subtask notifications', () => {
 			{ role: 'assistant', content: 'it is fine' }
 		];
 		render(CodeTranscript, { session: fakeSession({ messages }) });
-		expect(screen.getByText('Subtask finished')).toBeTruthy();
+		screen.getByText('Subtask finished');
 	});
 });

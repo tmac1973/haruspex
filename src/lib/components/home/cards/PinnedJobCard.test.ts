@@ -3,7 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { LatestRun } from '#lib/home/latestRun.svelte.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => null) }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 // jsdom has none; the card measures its output to decide on Show more.
 vi.stubGlobal(
 	'ResizeObserver',
@@ -75,7 +77,7 @@ describe('PinnedJobCard', () => {
 			latestSucceeded: { ...run(5, 'succeeded'), steps: [{ output: 'Three new papers.' }] } as never
 		};
 		render(PinnedJobCard, { card: card(7) });
-		expect(screen.getByText('Three new papers.')).toBeTruthy();
+		screen.getByText('Three new papers.');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Open' }));
 		expect(m.selectJob).toHaveBeenCalledWith(7, 5);
@@ -88,13 +90,13 @@ describe('PinnedJobCard', () => {
 			latestSucceeded: { ...run(5, 'succeeded'), steps: [{ output: 'Old news.' }] } as never
 		};
 		render(PinnedJobCard, { card: card(7) });
-		expect(screen.getByText(/The last run failed: model timed out/)).toBeTruthy();
-		expect(screen.getByText('Old news.')).toBeTruthy();
+		screen.getByText(/The last run failed: model timed out/);
+		screen.getByText('Old news.');
 	});
 
 	it('runs the job, and greys Run now out while it is queued', async () => {
 		const { unmount } = render(PinnedJobCard, { card: card(7) });
-		expect(screen.getByText('No runs yet.')).toBeTruthy();
+		screen.getByText('No runs yet.');
 		await fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
 		expect(m.enqueue).toHaveBeenCalledWith(7, 'manual');
 		unmount();
@@ -104,7 +106,7 @@ describe('PinnedJobCard', () => {
 		expect((screen.getByRole('button', { name: 'Run now' }) as HTMLButtonElement).disabled).toBe(
 			true
 		);
-		expect(screen.getByText('Queued')).toBeTruthy();
+		screen.getByText('Queued');
 	});
 
 	it('says so when the job is running', () => {
@@ -117,7 +119,7 @@ describe('PinnedJobCard', () => {
 			waitingForSlot: false
 		};
 		render(PinnedJobCard, { card: card(7) });
-		expect(screen.getByText('Running')).toBeTruthy();
+		screen.getByText('Running');
 		expect((screen.getByRole('button', { name: 'Run now' }) as HTMLButtonElement).disabled).toBe(
 			true
 		);
@@ -125,7 +127,7 @@ describe('PinnedJobCard', () => {
 
 	it('says the job was deleted, with no buttons', () => {
 		render(PinnedJobCard, { card: card(null) });
-		expect(screen.getByText('This job was deleted.')).toBeTruthy();
+		screen.getByText('This job was deleted.');
 		expect(screen.queryByRole('button')).toBeNull();
 	});
 });

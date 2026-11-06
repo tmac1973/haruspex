@@ -5,7 +5,9 @@ import CalendarSection from './CalendarSection.svelte';
 import { getSettings, setDavAccounts } from '#lib/stores/settings.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 function answer(signIn: () => Promise<unknown>) {
 	vi.mocked(invoke).mockImplementation(
@@ -52,8 +54,8 @@ describe('Sign in with Google', () => {
 		expect(account.passwordRef).toBe('dav:new');
 		expect(account.enabled).toBe(true);
 		// The sign-in is followed by a check, which names what it found.
-		expect(await screen.findByText('Calendars: Personal')).toBeTruthy();
-		expect(screen.getByText('Signed in as me@gmail.com.')).toBeTruthy();
+		await screen.findByText('Calendars: Personal');
+		screen.getByText('Signed in as me@gmail.com.');
 	});
 
 	it('shows why a sign-in failed and adds nothing', async () => {
@@ -61,7 +63,7 @@ describe('Sign in with Google', () => {
 		render(CalendarSection);
 		await fireEvent.click(await screen.findByText('Sign in with Google'));
 
-		expect(await screen.findByText('Google sign-in was cancelled.')).toBeTruthy();
+		await screen.findByText('Google sign-in was cancelled.');
 		expect(getSettings().integrations.dav.accounts).toHaveLength(0);
 	});
 

@@ -5,7 +5,9 @@ import FileEditorModal from './FileEditorModal.svelte';
 import { editWorkdirFiles, getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 // A stand-in editor: a textarea, so a test can type into it. The real one is
 // covered by codemirror.test.ts.
@@ -57,7 +59,7 @@ describe('FileEditorModal', () => {
 			files: Object.keys(files),
 			title: 'Implementation plan'
 		});
-		expect(await screen.findByText('phase-02-api.md')).toBeTruthy();
+		await screen.findByText('phase-02-api.md');
 
 		await type('# Phase 01, revised\n');
 		await fireEvent.click(screen.getByText('Save'));
@@ -81,7 +83,7 @@ describe('FileEditorModal', () => {
 		});
 		await type('changed\n');
 		await fireEvent.click(screen.getByText('Done'));
-		expect(screen.getByText('Unsaved changes.')).toBeTruthy();
+		screen.getByText('Unsaved changes.');
 		expect(invoke).not.toHaveBeenCalledWith('fs_write_text', expect.anything());
 
 		await fireEvent.click(screen.getByText('Save and close'));
@@ -125,7 +127,7 @@ describe('FileEditorModal', () => {
 		await waitFor(() =>
 			expect(screen.getByText(/Could not save plan\/x\/phase-01-setup.md: disk full/)).toBeTruthy()
 		);
-		expect(screen.getByText('Done')).toBeTruthy();
+		screen.getByText('Done');
 	});
 
 	it('stays a plain modal for the Jobs checkpoint: no watching, no conflict check', async () => {
