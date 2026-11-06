@@ -54,7 +54,7 @@ import {
 	LEAN_SCHEMA_BUDGET_CHARS,
 	LEAN_WRITE_SCHEMA_BUDGET_CHARS,
 	LEAN_WRITE_TOOLS
-} from './leanProfile';
+} from './_leanProfile';
 
 /** A Chat turn with a working folder and everything a lean tool could need. */
 const CHAT = {

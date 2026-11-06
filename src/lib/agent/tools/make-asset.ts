@@ -27,7 +27,7 @@ import {
 	parseTransition,
 	type TransitionInput
 } from '#lib/agent/tools/_assetTransition.ts';
-import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
+import { localWriteBlocked } from '#lib/agent/tools/_nestedSession.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import {
 	DEFAULT_SIZE,

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import '#lib/agent/tools/index.ts';
 import type { ToolContext, DeferredFamily } from './types';
 import { executeTool, getDisplayLabel, getToolSchemas } from './registry';
-import { familyResult, loadedFamilies } from './deferred';
+import { familyResult, loadedFamilies } from './_deferred';
 
 const VIDEO: DeferredFamily = {
 	id: 'video',

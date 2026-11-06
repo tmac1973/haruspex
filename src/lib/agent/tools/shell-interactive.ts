@@ -23,7 +23,7 @@ import { labelArg, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
-import { spillIfLarge } from '#lib/agent/tools/pty-exec.ts';
+import { spillIfLarge } from '#lib/agent/tools/_ptyExec.ts';
 import { snapshotTerminal } from '#lib/stores/shellTerminalSnapshot.ts';
 
 /** Cap on images buffered into one turn — too many exhausts model context. */

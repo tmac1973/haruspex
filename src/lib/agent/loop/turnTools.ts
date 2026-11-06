@@ -8,7 +8,7 @@ import type { ToolDefinition } from '#lib/api.ts';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { getDeferTools, getSettings } from '#lib/stores/settings.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-import { deferOn, splitTurnTools } from '#lib/agent/tools/deferred.ts';
+import { deferOn, splitTurnTools } from '#lib/agent/tools/_deferred.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { skillsWithFiles } from '#lib/skills/content.ts';
 import type { TurnSkills } from '#lib/skills/turn.ts';

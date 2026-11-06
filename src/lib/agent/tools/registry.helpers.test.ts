@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
-import { isCodeWriteTool } from '#lib/agent/tools/codeTabProfile.ts';
+import { isCodeWriteTool } from '#lib/agent/tools/_codeTabProfile.ts';
 import { helperForTool } from '#lib/helpers/registry.ts';
 import { setCodeHelper } from '#lib/stores/settings.ts';
 

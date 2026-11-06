@@ -11,7 +11,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';
-import { isToolErrorResult } from '#lib/agent/tools/toolResult.ts';
+import { isToolErrorResult } from '#lib/agent/tools/_toolResult.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { getActiveLocalModelFilename } from '#lib/stores/settings.ts';
 

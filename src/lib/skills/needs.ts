@@ -18,7 +18,7 @@ import type { ImageBackendKind } from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { imageEntries } from '#lib/image/entries.ts';
 import { videoToolsOn } from '#lib/video/binaries.ts';
-import { leanOffers } from '#lib/agent/tools/leanProfile.ts';
+import { leanOffers } from '#lib/agent/tools/_leanProfile.ts';
 
 /** Why each need is unmet, in the words Settings uses. */
 const UNMET: Record<SkillNeed, string> = {

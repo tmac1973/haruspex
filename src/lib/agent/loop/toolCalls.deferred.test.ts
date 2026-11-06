@@ -16,7 +16,7 @@ vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 
 import { executeToolCalls } from './toolCalls';
 import { NudgeState } from './nudges';
-import { familyResult } from '#lib/agent/tools/deferred.ts';
+import { familyResult } from '#lib/agent/tools/_deferred.ts';
 
 const schema = (name: string): ToolDefinition => ({
 	type: 'function',

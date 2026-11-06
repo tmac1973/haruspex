@@ -2,7 +2,7 @@
  * What lean mode pauses that the user set up: each integration whose tools
  * a full Chat turn would offer, by the name Settings lists it under. Lean
  * mode leaves their settings and processes alone; the model just isn't
- * offered their tools (see `leanProfile.ts`).
+ * offered their tools (see `_leanProfile.ts`).
  */
 import {
 	getSettings,

@@ -2,7 +2,7 @@ import { textureFiles, transitionFiles } from '#lib/assets/texture.ts';
 import type { ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
-import { coerceArgsToSchema } from '#lib/agent/tools/coerce.ts';
+import { coerceArgsToSchema } from '#lib/agent/tools/_coerce.ts';
 import { imageEntries } from '#lib/image/entries.ts';
 import {
 	hasEnabledEmailAccount,
@@ -13,7 +13,7 @@ import {
 } from '#lib/stores/settings.ts';
 // The predicate, not the tool module — mcp.ts registers THROUGH this file, so
 // importing it here would be a cycle. Same reason as memoryActive() below.
-import { isMcpToolEnabled } from '#lib/agent/tools/mcpNames.ts';
+import { isMcpToolEnabled } from '#lib/agent/tools/_mcpNames.ts';
 // The predicate, not the tool module: remember.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
@@ -25,8 +25,8 @@ import {
 	REMOTE_HANDOFF_REFUSAL,
 	isCodeWriteTool,
 	type DescriptionOverride
-} from '#lib/agent/tools/codeTabProfile.ts';
-import { leanOffers } from '#lib/agent/tools/leanProfile.ts';
+} from '#lib/agent/tools/_codeTabProfile.ts';
+import { leanOffers } from '#lib/agent/tools/_leanProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
@@ -885,7 +885,7 @@ async function runTool(
 
 	// Absorb sloppy-but-unambiguous arg shapes (stringified JSON, "5" for
 	// an integer, ...) before the executor's own validation runs — see
-	// coerce.ts. Saves a whole model round-trip per avoided error.
+	// _coerce.ts. Saves a whole model round-trip per avoided error.
 	const coerced = coerceArgsToSchema(reg.schema.function.parameters, args);
 
 	// One writer per folder: a Code session's write takes the folder first,
@@ -924,7 +924,7 @@ function changedFiles(
 
 /**
  * A call's arguments as its executor will see them: coerced toward the tool's
- * schema (see coerce.ts). For anything that reads a call before it runs — a
+ * schema (see _coerce.ts). For anything that reads a call before it runs — a
  * stage capturing a structured answer from `onToolStart` — so it reads the
  * same arguments the tool does. Unknown tools pass through unchanged.
  */

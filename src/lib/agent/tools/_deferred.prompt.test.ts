@@ -57,7 +57,7 @@ import { buildSystemPrompt } from '#lib/agent/systemPrompt.ts';
 import { buildCodeSystemPrompt } from '#lib/code/systemPrompt.ts';
 import { buildLoopContext } from '#lib/agent/loop/context.ts';
 import { resolveTurnTools, type TurnToolsInput } from '#lib/agent/loop/turnTools.ts';
-import { familyResult, loadedFamilies, toolIndexSection, LOAD_TOOLS } from './deferred';
+import { familyResult, loadedFamilies, toolIndexSection, LOAD_TOOLS } from './_deferred';
 import type { DeferredFamily } from './types';
 
 const CHAT: TurnToolsInput = {

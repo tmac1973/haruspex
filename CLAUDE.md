@@ -133,8 +133,13 @@ cargo fmt -- --check # Rust format check
   an extensionless `#lib/agent/loop` to the `loop/` folder, not `loop.ts`.
   Lint enforces it in `src/lib` (tests may import a sibling as `./foo`).
 - File names: camelCase (`runTurn.ts`). Tool modules in `agent/tools/` are
-  kebab-case after the tools they register (`fs-write.ts` → `fs_write_*`).
+  kebab-case after the tools they register (`fs-write.ts` → `fs_write_*`);
+  every other module there is `_camelCase` (`_helpers.ts`), bar `index`,
+  `registry` and `types`. Lint enforces it.
   A second test file for one source is `foo.<aspect>.test.ts`.
+- A test for `foo.svelte.ts` is `foo.svelte.test.ts` only when the test itself
+  uses runes (`$state`, `$effect.root`, …) and needs the Svelte compiler;
+  otherwise `foo.test.ts`.
 - Tabs for indentation, single quotes, no trailing commas (Prettier)
 - Rust: 4-space indent, 100 char line width
 - Tests co-located with source: `foo.ts` → `foo.test.ts`

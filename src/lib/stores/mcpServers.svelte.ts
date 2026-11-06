@@ -22,7 +22,7 @@ import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 import type { InstallManifest } from '#lib/ipc/gen/InstallManifest.ts';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
-import { mcpDefaultTools } from '#lib/agent/tools/mcpNames.ts';
+import { mcpDefaultTools } from '#lib/agent/tools/_mcpNames.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import { getSettings, startableMcpServers } from '#lib/stores/settings.ts';
 import { forgetMcpSecrets } from '#lib/stores/mcpSecrets.ts';

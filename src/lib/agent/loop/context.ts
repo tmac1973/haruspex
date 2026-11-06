@@ -7,7 +7,7 @@
 import type { BackendOverride, ChatMessage, ToolDefinition } from '#lib/api.ts';
 import type { PendingImage, ToolContext } from '#lib/agent/tools/index.ts';
 import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
-import { LOAD_TOOLS } from '#lib/agent/tools/deferred.ts';
+import { LOAD_TOOLS } from '#lib/agent/tools/_deferred.ts';
 import { readableSkills, resolveTurnTools } from '#lib/agent/loop/turnTools.ts';
 import { familyResult, loadedFamilies } from '#lib/agent/tools/_deferredLoaded.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';

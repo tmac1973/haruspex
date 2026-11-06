@@ -18,7 +18,7 @@
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
 	import { createKeyedCopyAction } from '#lib/utils/clipboard.svelte.ts';
-	import { isToolErrorResult } from '#lib/agent/tools/toolResult.ts';
+	import { isToolErrorResult } from '#lib/agent/tools/_toolResult.ts';
 	import { sanitizeHtml } from '#lib/sanitize.ts';
 	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
 	import ImageSaveButton from '#lib/components/ImageSaveButton.svelte';

@@ -12,7 +12,7 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
 
-import { lintPythonIfApplicable } from './python-lint';
+import { lintPythonIfApplicable } from './_pythonLint';
 
 describe('lintPythonIfApplicable', () => {
 	beforeEach(() => {

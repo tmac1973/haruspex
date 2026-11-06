@@ -3,14 +3,14 @@
  * new Shell tab for the user to run (sudo, password prompts, anything that
  * wants a terminal) and waits for the result; `open_in_editor` shows files in
  * an editor window and returns at once. Offered only to the Code tab
- * (`codeTabProfile.ts`).
+ * (`_codeTabProfile.ts`).
  */
 import { labelArg } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { checkCommandBoundary } from '#lib/agent/tools/code.ts';
-import { spillIfLarge } from '#lib/agent/tools/pty-exec.ts';
+import { spillIfLarge } from '#lib/agent/tools/_ptyExec.ts';
 import {
 	openShellForCommand,
 	reportShellWait,
