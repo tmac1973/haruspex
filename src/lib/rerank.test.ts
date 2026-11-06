@@ -32,7 +32,7 @@ describe('rerankDocuments', () => {
 		);
 		expect(got.order[0].index).toBe(1);
 		expect(apiKeysReadyMock).toHaveBeenCalled();
-		expect(invoke).toHaveBeenCalledWith('rerank_documents', {
+		expect(invoke).toHaveBeenCalledWith('rerank_run', {
 			baseUrl: 'http://compute2:3000',
 			apiKey: 'sk-secret',
 			model: 'rr',
@@ -46,7 +46,7 @@ describe('rerankDocuments', () => {
 		vi.mocked(invoke).mockResolvedValue({ order: [] });
 		await rerankDocuments({ url: 'http://h', keyId: null, model: 'rr' }, 'q', []);
 		expect(invoke).toHaveBeenCalledWith(
-			'rerank_documents',
+			'rerank_run',
 			expect.objectContaining({ apiKey: null, timeoutMs: null })
 		);
 	});
@@ -58,7 +58,7 @@ describe('listServerModels', () => {
 		vi.mocked(invoke).mockResolvedValue(models);
 		expect(await listServerModels('http://compute2:3000', 'k1')).toEqual(models);
 		expect(apiKeysReadyMock).toHaveBeenCalled();
-		expect(invoke).toHaveBeenCalledWith('list_server_models', {
+		expect(invoke).toHaveBeenCalledWith('server_models_list', {
 			baseUrl: 'http://compute2:3000',
 			apiKey: 'sk-secret'
 		});
@@ -67,7 +67,7 @@ describe('listServerModels', () => {
 	it('sends no key for an unknown key id', async () => {
 		vi.mocked(invoke).mockResolvedValue([]);
 		await listServerModels('http://h', 'gone');
-		expect(invoke).toHaveBeenCalledWith('list_server_models', {
+		expect(invoke).toHaveBeenCalledWith('server_models_list', {
 			baseUrl: 'http://h',
 			apiKey: null
 		});

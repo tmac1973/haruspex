@@ -316,7 +316,7 @@
 		downloadError = '';
 		try {
 			await runDownload(keyOf(m), () =>
-				invoke('download_image_model', { id: m.id, proxy: getSettings().proxy })
+				invoke('image_model_download', { id: m.id, proxy: getSettings().proxy })
 			);
 			await selectModel(m);
 		} catch (e) {
@@ -335,7 +335,7 @@
 		downloadError = '';
 		try {
 			await runDownload(keyOf(m), () =>
-				invoke('download_image_model', { id: m.id, proxy: getSettings().proxy })
+				invoke('image_model_download', { id: m.id, proxy: getSettings().proxy })
 			);
 		} catch (e) {
 			downloadError = errMessage(e);
@@ -355,7 +355,7 @@
 		await invoke('image_engine_stop').catch(() => {});
 		downloadError = '';
 		try {
-			await invoke('delete_image_model', { id: m.id });
+			await invoke('image_model_delete', { id: m.id });
 		} catch (e) {
 			downloadError = errMessage(e);
 			await refreshModels();
