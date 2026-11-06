@@ -145,7 +145,9 @@ export interface BuildCodePromptOpts {
 	 */
 	deferred?: DeferredFamily[];
 	/** The helpers the session offers (`sessionHelpers`): their TOOLS lines lead the list. */
-	helpers?: Pick<HelperDef, 'id' | 'prompt'>[];
+	helpers?: { id: HelperDef['id']; prompt?: string }[];
+	/** Locate code with search_code first: the Search helper is on with a reranker. */
+	searchFirst?: boolean;
 }
 
 /** The session's helpers' TOOLS lines, each ending in a newline. */
@@ -156,9 +158,9 @@ function helperLines(opts: BuildCodePromptOpts): string {
 		.join('');
 }
 
-/** HOW TO WORK; with the Search helper on, it locates code with search_code first. */
+/** HOW TO WORK; with `searchFirst`, it locates code with search_code first. */
 function howToWork(opts: BuildCodePromptOpts): string {
-	if (!opts.helpers?.some((h) => h.id === 'search')) return HOW_TO_WORK;
+	if (!opts.searchFirst) return HOW_TO_WORK;
 	return HOW_TO_WORK.replace(
 		'- Explore before editing: grep/glob to locate code,',
 		'- Explore before editing: locate code with search_code (a question in plain words) or grep/glob (a name you already know),'
