@@ -115,6 +115,14 @@ describe('ImportantEmailsCard', () => {
 		expect(screen.getByText('Waiting for chat…')).toBeTruthy();
 	});
 
+	it('opens a message when its row is clicked', async () => {
+		const run = succeeded([email('a', 'Invoice overdue')]);
+		m.latest = { latest: run, latestSucceeded: run };
+		render(ImportantEmailsCard, { card });
+		await fireEvent.click(screen.getByRole('button', { name: 'Open Invoice overdue' }));
+		expect(await screen.findByText('Reading…')).toBeTruthy();
+	});
+
 	it('moves a message to Trash after asking, and stops listing it', async () => {
 		m.latest = { latest: null, latestSucceeded: succeeded([email('a', 'Invoice overdue')]) };
 		render(ImportantEmailsCard, { card });
