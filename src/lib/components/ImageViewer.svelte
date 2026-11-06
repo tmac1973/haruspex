@@ -28,6 +28,31 @@
 	let loading = $state(true);
 	/** At its real size, scrolling when larger than the pane; otherwise fitted. */
 	let actual = $state(false);
+	let stage: HTMLDivElement | undefined = $state();
+	/** Where the pointer was last, while dragging the image around at 1:1. */
+	let drag = $state<{ x: number; y: number } | null>(null);
+
+	function startPan(e: PointerEvent): void {
+		if (!actual || e.button !== 0 || !stage) return;
+		// A press on a scroll bar is the scroll bar's.
+		const box = stage.getBoundingClientRect();
+		if (e.clientX - box.left - stage.clientLeft >= stage.clientWidth) return;
+		if (e.clientY - box.top - stage.clientTop >= stage.clientHeight) return;
+		e.preventDefault();
+		stage.setPointerCapture?.(e.pointerId);
+		drag = { x: e.clientX, y: e.clientY };
+	}
+
+	function pan(e: PointerEvent): void {
+		if (!drag || !stage) return;
+		stage.scrollLeft -= e.clientX - drag.x;
+		stage.scrollTop -= e.clientY - drag.y;
+		drag = { x: e.clientX, y: e.clientY };
+	}
+
+	function endPan(): void {
+		drag = null;
+	}
 
 	function release(): void {
 		if (url) URL.revokeObjectURL(url);
@@ -72,9 +97,19 @@
 </script>
 
 <div class="image-viewer" data-testid="image-viewer">
-	<div class="stage" class:actual>
+	<div
+		class="stage"
+		class:actual
+		class:dragging={drag}
+		role="presentation"
+		bind:this={stage}
+		onpointerdown={startPan}
+		onpointermove={pan}
+		onpointerup={endPan}
+		onpointercancel={endPan}
+	>
 		{#if url && !error}
-			<img src={url} alt={relPath} onload={loaded} onerror={failed} />
+			<img src={url} alt={relPath} draggable="false" onload={loaded} onerror={failed} />
 		{/if}
 		{#if loading && !error}<p class="note">Loading…</p>{/if}
 		{#if error}<p class="note error">{error}</p>{/if}
@@ -132,6 +167,10 @@
 	.stage.actual {
 		overflow: auto;
 		place-items: start;
+		cursor: grab;
+	}
+	.stage.actual.dragging {
+		cursor: grabbing;
 	}
 	.stage.actual img {
 		position: static;
