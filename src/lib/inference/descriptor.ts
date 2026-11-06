@@ -21,6 +21,7 @@ import { getOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 import { localServerKey } from '#lib/inference/localServerKey.ts';
 import {
 	getActiveLocalModelFilename,
+	getApiKeyProblem,
 	getApiKeyValue,
 	getSettings,
 	resolveEffort,
@@ -110,6 +111,12 @@ export interface BackendDescriptor {
 	baseUrl: string;
 	/** Resolved Bearer token (key-store reference wins over inline). */
 	apiKey?: string;
+	/**
+	 * Set when the backend names a stored key that has no value this run:
+	 * why, in words for the user. A request is refused rather than sent with
+	 * no key, which the server would answer with a bare 401.
+	 */
+	apiKeyError?: string;
 	/** Model id sent in requests; 'default' placeholder when unset/local. */
 	modelId: string;
 	/**
@@ -238,6 +245,20 @@ function resolveApiKey(
 ): string | undefined {
 	const key = (getApiKeyValue(apiKeyId) ?? inlineKey ?? '').trim();
 	return key.length > 0 ? key : undefined;
+}
+
+/** Why `resolveApiKey` found nothing for a key the backend names, if it is that. */
+function apiKeyError(
+	apiKeyId: string | null | undefined,
+	inlineKey: string | null | undefined
+): string | undefined {
+	if (resolveApiKey(apiKeyId, inlineKey)) return undefined;
+	const p = getApiKeyProblem(apiKeyId);
+	if (!p) return undefined;
+	const where = 'Enter it again in Settings → Inference → API Keys.';
+	return p.problem === 'missing'
+		? `The API key "${p.name}" is missing from the secret store. ${where}`
+		: `Haruspex could not read the API key "${p.name}" from the secret store. ${where}`;
 }
 
 /**
@@ -419,6 +440,7 @@ function resolveRemoteDescriptor(
 		kind: openrouter ? 'openrouter' : 'remote',
 		baseUrl: remoteBase,
 		apiKey: resolveApiKey(inf.remoteApiKeyId, inf.remoteApiKey),
+		apiKeyError: apiKeyError(inf.remoteApiKeyId, inf.remoteApiKey),
 		modelId: inf.remoteModelId || 'default',
 		calibrationKey: `${remoteBase}|${inf.remoteModelId || 'default'}`,
 		contextSize: globalContextSize(settings),
@@ -498,6 +520,7 @@ function resolveOverrideDescriptor(
 		kind: openrouter ? 'openrouter' : 'remote',
 		baseUrl: base,
 		apiKey: resolveApiKey(override.apiKeyId, override.apiKey),
+		apiKeyError: apiKeyError(override.apiKeyId, override.apiKey),
 		modelId: override.modelId?.trim() || 'default',
 		calibrationKey: `${base}|${override.modelId?.trim() || 'default'}`,
 		contextSize:

@@ -360,6 +360,7 @@ function resolveChatEndpoint(
 	isOpenRouter: boolean;
 } {
 	const descriptor = resolveBackendDescriptor(override);
+	if (descriptor.apiKeyError) throw new ApiError(descriptor.apiKeyError);
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	if (descriptor.apiKey) {
 		headers['Authorization'] = `Bearer ${descriptor.apiKey}`;

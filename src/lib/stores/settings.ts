@@ -20,7 +20,7 @@ import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
-import { rememberedApiKey } from '#lib/stores/apiKeyMemory.ts';
+import { apiKeyProblem, rememberedApiKey, type ApiKeyProblem } from '#lib/stores/apiKeyMemory.ts';
 import { persistItem } from '#lib/persist.ts';
 import {
 	getOpenRouterCatalog,
@@ -1704,6 +1704,21 @@ export function getApiKeyValue(id: string | null | undefined): string | undefine
 	const k = settings.apiKeys.find((k) => k.id === id);
 	if (!k) return undefined;
 	return k.value || (k.stored ? rememberedApiKey(id) : undefined);
+}
+
+/**
+ * A referenced key that has no value this run because the secret store had
+ * none or refused the read, with its name for the error. Null when the key
+ * has a value, was never stored, or is not in the list.
+ */
+export function getApiKeyProblem(
+	id: string | null | undefined
+): { name: string; problem: ApiKeyProblem } | null {
+	if (!id) return null;
+	const k = settings.apiKeys.find((k) => k.id === id);
+	if (!k?.stored || k.value || rememberedApiKey(id) !== undefined) return null;
+	const problem = apiKeyProblem(id);
+	return problem ? { name: k.name, problem } : null;
 }
 
 /** Add a new key and return its id. */
