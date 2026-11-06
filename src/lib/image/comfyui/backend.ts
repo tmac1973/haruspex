@@ -13,6 +13,7 @@
 
 import { errMessage } from '#lib/utils/error.ts';
 import { randomSeed } from '#lib/utils/random.ts';
+import { pngSize } from '#lib/utils/png.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -188,13 +189,6 @@ function serverEdits(cfg: api.ClientConfig, family: ModelFamily): Promise<boolea
 		editsByServer.set(key, known);
 	}
 	return known;
-}
-
-/** A PNG's size from its header, or null for anything else. */
-export function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
-	if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return null;
-	const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	return { width: v.getUint32(16), height: v.getUint32(20) };
 }
 
 /** The template for this request. Falls back as `selectTemplate` describes. */

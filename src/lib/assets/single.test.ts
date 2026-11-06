@@ -20,7 +20,7 @@ vi.mock('./normalize', () => ({
 	checkImage: state.check
 }));
 
-import { makeSingleAsset, pngSize } from './single';
+import { makeSingleAsset } from './single';
 
 const PROFILE = {
 	target_size: 64,
@@ -101,12 +101,5 @@ describe('makeSingleAsset', () => {
 		expect(state.generate.mock.calls[0][0].seamless).toBe(true);
 		await makeSingleAsset({ kind: 'image', prompt: 'a lighthouse' });
 		expect(state.generate.mock.calls[1][0].seamless).toBe(false);
-	});
-});
-
-describe('pngSize', () => {
-	it('reads the header, and refuses what is not a PNG', () => {
-		expect(pngSize(png(48, 16))).toEqual({ width: 48, height: 16 });
-		expect(pngSize(new Uint8Array(30))).toBeNull();
 	});
 });

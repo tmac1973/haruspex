@@ -21,6 +21,7 @@ import { FALLBACK_STYLE } from '#lib/agent/jobs/types/asset-generation/derive.ts
 import { generateForTool } from '#lib/image/forTool.ts';
 import { routedImageBackend } from '#lib/image/route.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
+import { pngSize } from '#lib/utils/png.ts';
 
 /** What `makeSingleAsset` draws. Textures are drawn by code (`assets/texture.ts`). */
 export type SingleKind = Exclude<AssetKind, 'texture'> | 'image';
@@ -156,11 +157,4 @@ async function profileFor(
 			? { ...base, palette: [] }
 			: base;
 	return effectiveProfile(withPalette, kind);
-}
-
-/** A PNG's pixel size from its header, or null if it is not a PNG. */
-export function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
-	if (bytes.length < 24 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
-	const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	return { width: v.getUint32(16), height: v.getUint32(20) };
 }
