@@ -30,6 +30,7 @@ import {
 import { resolveMusicBackend, MUSIC_TRACKS, type MusicTask } from '#lib/music/index.ts';
 import { BACKGROUND_PARAM } from '#lib/agent/tools/_musicJob.ts';
 import { MAX_TRIM_SECONDS, trimSong } from '#lib/agent/tools/_musicTrim.ts';
+import { finiteOrUndefined, trimmed } from '#lib/utils/coerce.ts';
 
 export const ACTIONS = {
 	restyle: 'cover',
@@ -48,8 +49,6 @@ const ALL_ACTIONS = [...Object.keys(ACTIONS), 'trim'];
 const MAX_EXTEND_SECONDS = 240;
 const DEFAULT_EXTEND_SECONDS = 30;
 
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const round = (s: number) => Math.round(s * 10) / 10;
 
 /** The instruments named, as a list: an array, or one string split at commas. */
@@ -72,15 +71,15 @@ type ActionFields = (
 ) => Partial<Req> | string;
 
 function restyle(args: Record<string, unknown>): Partial<Req> | string {
-	const strength = num(args.strength);
+	const strength = finiteOrUndefined(args.strength);
 	if (strength === undefined) return {};
 	if (strength < 0 || strength > 1) return 'strength must be between 0 and 1.';
 	return { coverStrength: strength };
 }
 
 function redo(args: Record<string, unknown>, len: number): Partial<Req> | string {
-	const start = num(args.start_seconds) ?? 0;
-	const end = num(args.end_seconds) ?? len;
+	const start = finiteOrUndefined(args.start_seconds) ?? 0;
+	const end = finiteOrUndefined(args.end_seconds) ?? len;
 	if (start < 0 || end > len + 0.5) {
 		return `start_seconds and end_seconds must be within the song (0–${round(len)} s).`;
 	}
@@ -89,7 +88,7 @@ function redo(args: Record<string, unknown>, len: number): Partial<Req> | string
 }
 
 function extend(args: Record<string, unknown>, len: number): Partial<Req> | string {
-	const add = num(args.seconds) ?? DEFAULT_EXTEND_SECONDS;
+	const add = finiteOrUndefined(args.seconds) ?? DEFAULT_EXTEND_SECONDS;
 	if (add < 1 || add > MAX_EXTEND_SECONDS) {
 		return `seconds must be between 1 and ${MAX_EXTEND_SECONDS}.`;
 	}
@@ -99,7 +98,7 @@ function extend(args: Record<string, unknown>, len: number): Partial<Req> | stri
 	const durationSec = round(len + add);
 	// A window past the end adds music there; one before the start adds an
 	// intro, and an end of -1 then means the source's start.
-	return str(args.at) === 'start'
+	return trimmed(args.at) === 'start'
 		? { repaintStart: -add, repaintEnd: -1, durationSec }
 		: { repaintStart: round(len), repaintEnd: durationSec, durationSec };
 }
@@ -132,11 +131,11 @@ export function parseEditArgs(
 	args: Record<string, unknown>,
 	source: MusicSource
 ): MusicArgs | string {
-	const action = str(args.action) as EditAction;
+	const action = trimmed(args.action) as EditAction;
 	if (!(action in ACTIONS)) return `action must be one of ${Object.keys(ACTIONS).join(', ')}.`;
 	const task = ACTIONS[action];
 	const tracks = instruments(args.instruments ?? args.instrument);
-	let caption = str(args.caption);
+	let caption = trimmed(args.caption);
 	if (!caption) {
 		if (action !== 'extract_instrument') return `edit_music ${action} needs a "caption".`;
 		caption = tracks.join(', ') || 'isolated track';
@@ -266,9 +265,9 @@ registerTool({
 	displayLabel: (args) =>
 		`music: ${String(args.action ?? 'edit')} ${String(args.title ?? '').slice(0, 50)}`.trim(),
 	execute: async (args, ctx) => {
-		const action = str(args.action);
+		const action = trimmed(args.action);
 		if (action === 'trim') {
-			const source = await resolveSong(str(args.source), 'source', ctx);
+			const source = await resolveSong(trimmed(args.source), 'source', ctx);
 			if (typeof source === 'string') return toolResult(toolError(source));
 			return trimSong(args, source, ctx);
 		}
@@ -277,7 +276,7 @@ registerTool({
 		}
 		const refused = await unsupported(ACTIONS[action as EditAction]);
 		if (refused) return toolResult(toolError(refused));
-		const source = await resolveSong(str(args.source), 'source', ctx);
+		const source = await resolveSong(trimmed(args.source), 'source', ctx);
 		if (typeof source === 'string') return toolResult(toolError(source));
 		const parsed = parseEditArgs(args, source);
 		if (typeof parsed === 'string') return toolResult(toolError(parsed));

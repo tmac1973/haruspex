@@ -13,11 +13,11 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { MusicSource } from '#lib/agent/tools/_musicSource.ts';
+import { finiteOrUndefined } from '#lib/utils/coerce.ts';
 
 /** The longest cut: its WAV must fit the audio cache's 50 MiB a file. */
 export const MAX_TRIM_SECONDS = 270;
 
-const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const round = (s: number) => Math.round(s * 10) / 10;
 
 /** The stretch `args` names in a song `len` seconds long, or what is wrong. */
@@ -25,8 +25,8 @@ export function trimWindow(
 	args: Record<string, unknown>,
 	len: number
 ): { start: number; end: number } | string {
-	const start = num(args.start_seconds) ?? 0;
-	const end = Math.min(num(args.end_seconds) ?? len, len);
+	const start = finiteOrUndefined(args.start_seconds) ?? 0;
+	const end = Math.min(finiteOrUndefined(args.end_seconds) ?? len, len);
 	if (start < 0 || start >= len) {
 		return `start_seconds must be within the song (0–${round(len)} s).`;
 	}

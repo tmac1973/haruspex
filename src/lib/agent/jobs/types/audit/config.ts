@@ -4,6 +4,8 @@
  * mappers in definition.ts (presentation defaults applied on top).
  */
 
+import { finiteOrNull, nonEmptyOrNull } from '#lib/utils/coerce.ts';
+
 export interface AuditConfig {
 	/** Independent sample runs. null = runner default (3). */
 	num_runs: number | null;
@@ -19,14 +21,6 @@ export interface AuditConfig {
 	verify_instructions: string | null;
 }
 
-function num(v: unknown): number | null {
-	return typeof v === 'number' && Number.isFinite(v) ? v : null;
-}
-
-function str(v: unknown): string | null {
-	return typeof v === 'string' && v.length > 0 ? v : null;
-}
-
 export function parseAuditConfig(json: string | null): AuditConfig {
 	let raw: Record<string, unknown> = {};
 	if (json) {
@@ -38,11 +32,11 @@ export function parseAuditConfig(json: string | null): AuditConfig {
 		}
 	}
 	return {
-		num_runs: num(raw.num_runs),
-		output_file: str(raw.output_file),
+		num_runs: finiteOrNull(raw.num_runs),
+		output_file: nonEmptyOrNull(raw.output_file),
 		read_only: typeof raw.read_only === 'boolean' ? raw.read_only : true,
-		max_iterations: num(raw.max_iterations),
-		sample_instructions: str(raw.sample_instructions),
-		verify_instructions: str(raw.verify_instructions)
+		max_iterations: finiteOrNull(raw.max_iterations),
+		sample_instructions: nonEmptyOrNull(raw.sample_instructions),
+		verify_instructions: nonEmptyOrNull(raw.verify_instructions)
 	};
 }

@@ -9,17 +9,9 @@
 import type { ModelClip, ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
 import { LOOPING_CLIP } from '#lib/models3d/spec/types.ts';
 import { modelDir } from '#lib/models3d/spec/paths.ts';
+import { numberOrNaN, stringOr } from '#lib/utils/coerce.ts';
 
 export type ModelParseResult = { spec: ModelSpec } | { errors: string[] };
-
-function str(v: unknown, fallback = ''): string {
-	return typeof v === 'string' ? v : fallback;
-}
-
-/** NaN when absent, so validation reports it rather than a quiet zero. */
-function num(v: unknown): number {
-	return typeof v === 'number' ? v : NaN;
-}
 
 function strings(v: unknown): string[] {
 	return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
@@ -28,25 +20,25 @@ function strings(v: unknown): string[] {
 function clip(raw: unknown): ModelClip | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const c = raw as Record<string, unknown>;
-	const name = str(c.name);
+	const name = stringOr(c.name);
 	return {
 		name,
-		seconds: num(c.seconds),
+		seconds: numberOrNaN(c.seconds),
 		// Locomotion and idles cycle; a one-shot like "attack" does not.
 		loop: typeof c.loop === 'boolean' ? c.loop : LOOPING_CLIP.test(name),
-		action: str(c.action)
+		action: stringOr(c.action)
 	};
 }
 
 function entry(raw: unknown): ModelEntry | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const e = raw as Record<string, unknown>;
-	const id = str(e.id);
+	const id = stringOr(e.id);
 	return {
 		id,
-		title: str(e.title),
-		description: str(e.description),
-		height_m: num(e.height_m),
+		title: stringOr(e.title),
+		description: stringOr(e.description),
+		height_m: numberOrNaN(e.height_m),
 		parts: strings(e.parts),
 		clips: Array.isArray(e.clips)
 			? e.clips.map(clip).filter((c): c is ModelClip => c !== null)
@@ -76,7 +68,7 @@ export function parseModelSpec(json: string): ModelParseResult {
 	return {
 		spec: {
 			version: 1,
-			style: str(o.style),
+			style: stringOr(o.style),
 			entries: o.entries.map(entry).filter((e): e is ModelEntry => e !== null)
 		}
 	};

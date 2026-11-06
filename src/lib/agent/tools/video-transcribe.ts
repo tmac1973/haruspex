@@ -8,12 +8,13 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { parseChapters, str, num, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { parseChapters, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { formatDuration } from '#lib/video/report.ts';
 import type { Transcript } from '#lib/ipc/gen/Transcript.ts';
 import type { TranscribeProgress } from '#lib/ipc/gen/TranscribeProgress.ts';
 import type { SilenceRange } from '#lib/ipc/gen/SilenceRange.ts';
 import type { ChaptersWritten } from '#lib/ipc/gen/ChaptersWritten.ts';
+import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
 
 /** A transcript longer than this is cut, pointing at the rest. */
 export const TRANSCRIPT_CAP = 12_000;
@@ -90,15 +91,15 @@ async function transcribe(args: Record<string, unknown>, ctx: ToolContext) {
 }
 
 async function silences(args: Record<string, unknown>, ctx: ToolContext) {
-	const path = str(args.path);
+	const path = trimmedOrNull(args.path);
 	if (!path) return toolResult(toolError('video_silences needs "path", a clip.'));
-	const minSecs = num(args.min_secs) ?? 1.5;
+	const minSecs = parsedFiniteOrNull(args.min_secs) ?? 1.5;
 	try {
 		const found = await invoke<SilenceRange[]>('video_silences', {
 			workingDir: ctx.workingDir,
 			path,
 			minSecs,
-			noiseDb: num(args.noise_db) ?? -35,
+			noiseDb: parsedFiniteOrNull(args.noise_db) ?? -35,
 			settings: videoSettings()
 		});
 		if (found.length === 0) return toolResult(`No silences of ${minSecs} s or more in ${path}.`);
@@ -120,8 +121,8 @@ async function captions(args: Record<string, unknown>, ctx: ToolContext) {
 		const path = await invoke<string>('video_write_captions', {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
-			project: str(args.project),
-			render: str(args.render)
+			project: trimmedOrNull(args.project),
+			render: trimmedOrNull(args.render)
 		});
 		return toolResult(
 			`Captions written to ${path}. YouTube doesn't get them from Haruspex: the user adds the file in YouTube Studio → Subtitles.`
@@ -138,7 +139,7 @@ async function chapters(args: Record<string, unknown>, ctx: ToolContext) {
 		const written = await invoke<ChaptersWritten>('video_write_chapters', {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
-			project: str(args.project),
+			project: trimmedOrNull(args.project),
 			chapters: list
 		});
 		return toolResult(
@@ -210,7 +211,7 @@ registerTool({
 			}
 		}
 	},
-	displayLabel: (args) => `Finding silences in ${str(args.path) ?? 'a clip'}`,
+	displayLabel: (args) => `Finding silences in ${trimmedOrNull(args.path) ?? 'a clip'}`,
 	execute: silences
 });
 

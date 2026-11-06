@@ -20,7 +20,7 @@ import {
 	timelineTranscriptReport
 } from '#lib/video/report.ts';
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
-import { parseCut, parseOp, str, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { parseCut, parseOp, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
@@ -29,6 +29,7 @@ import type { BackgroundTask } from '#lib/tasks/types.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { trimmedOrNull } from '#lib/utils/coerce.ts';
 
 async function probe(args: Record<string, unknown>, ctx: ToolContext) {
 	const episode = episodeArg(args);
@@ -45,7 +46,7 @@ async function probe(args: Record<string, unknown>, ctx: ToolContext) {
 }
 
 function editLabel(args: Record<string, unknown>): string {
-	const op = str(args.op) ?? 'edit';
+	const op = trimmedOrNull(args.op) ?? 'edit';
 	if (op === 'remove_silences') {
 		return args.index ? `Cutting silences from clip ${String(args.index)}` : 'Cutting silences';
 	}
@@ -59,7 +60,7 @@ async function projectRead(args: Record<string, unknown>, ctx: ToolContext) {
 		const where = {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
-			project: str(args.project)
+			project: trimmedOrNull(args.project)
 		};
 		const summary = await invoke<ProjectSummary>('video_project_summary', where);
 		if (args.transcript !== true) return toolResult(summaryReport(summary));
@@ -93,7 +94,7 @@ async function edit(args: Record<string, unknown>, ctx: ToolContext) {
 		const result = await invoke<CutResult>('video_project_op', {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
-			project: str(args.project),
+			project: trimmedOrNull(args.project),
 			op,
 			settings: videoSettings()
 		});
@@ -294,7 +295,7 @@ async function render(args: Record<string, unknown>, ctx: ToolContext) {
 			request: {
 				workingDir: ctx.workingDir,
 				episode: episodeArg(args),
-				project: str(args.project),
+				project: trimmedOrNull(args.project),
 				owner: taskOwner(ctx),
 				encoder: getSettings().videoEncoder,
 				settings: videoSettings()
@@ -336,7 +337,7 @@ async function normalize(args: Record<string, unknown>, ctx: ToolContext) {
 		const result = await invoke<CutResult>('video_project_op', {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
-			project: str(args.project),
+			project: trimmedOrNull(args.project),
 			op: { op: 'normalize' },
 			settings: videoSettings()
 		});

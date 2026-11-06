@@ -42,6 +42,7 @@ import {
 	savedLineOf,
 	startMusicTask
 } from '#lib/agent/tools/_musicJob.ts';
+import { trimmed } from '#lib/utils/coerce.ts';
 
 export const MIN_SECONDS = 5;
 export const MAX_SECONDS = 240;
@@ -57,8 +58,6 @@ export interface MusicArgs {
 	background: boolean;
 	notes: string[];
 }
-
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
 /** A title from the caption when none was given: its first five words. */
 function titleOf(caption: string): string {
@@ -121,13 +120,13 @@ export function parseMusicArgs(
 	args: Record<string, unknown>,
 	defaultSec: number
 ): MusicArgs | string {
-	const caption = str(args.caption);
+	const caption = trimmed(args.caption);
 	if (!caption) return 'generate_music needs a "caption".';
 	const notes: string[] = [];
-	const lyrics = str(args.lyrics);
+	const lyrics = trimmed(args.lyrics);
 	const instrumental = args.instrumental === true || !lyrics;
 	const durationSec = lengthOf(args.duration_seconds, defaultSec, notes);
-	const path = str(args.path);
+	const path = trimmed(args.path);
 	const format = formatOf(args.format, path, notes);
 	if (!format) return 'path must end in .mp3 or .wav.';
 	const bpm = typeof args.bpm === 'number' ? Math.round(args.bpm) : undefined;
@@ -137,14 +136,14 @@ export function parseMusicArgs(
 	if (timeSignature === null) return 'time_signature must be 2/4, 3/4, 4/4 or 6/8.';
 	return {
 		req: {
-			title: str(args.title) || titleOf(caption),
+			title: trimmed(args.title) || titleOf(caption),
 			caption,
 			lyrics: instrumental ? undefined : lyrics,
 			instrumental,
 			durationSec,
 			bpm: bpm && bpm >= 40 && bpm <= 220 ? bpm : undefined,
-			key: str(args.key) || undefined,
-			language: str(args.language) || undefined,
+			key: trimmed(args.key) || undefined,
+			language: trimmed(args.language) || undefined,
 			timeSignature,
 			format
 		},
@@ -275,8 +274,8 @@ registerTool({
 	execute: async (args, ctx) => {
 		const parsed = parseMusicArgs(args, getSettings().musicDefaultDurationSec);
 		if (typeof parsed === 'string') return toolResult(toolError(parsed));
-		if (str(args.style_reference)) {
-			const ref = await resolveSong(str(args.style_reference), 'style_reference', ctx);
+		if (trimmed(args.style_reference)) {
+			const ref = await resolveSong(trimmed(args.style_reference), 'style_reference', ctx);
 			if (typeof ref === 'string') return toolResult(toolError(ref));
 			parsed.req.reference = ref.input;
 		}

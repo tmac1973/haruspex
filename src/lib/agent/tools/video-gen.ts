@@ -26,8 +26,7 @@ import { readyVideoInstance } from '#lib/videogen/toolchest.ts';
 import type { ToolchestInstance, VideoLimits } from '#lib/toolchest/models.ts';
 import type { VideoRequest, VideoStartImage } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
-
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+import { trimmed } from '#lib/utils/coerce.ts';
 
 /** A title from the prompt when none was given: its first five words. */
 function titleOf(prompt: string): string {
@@ -96,11 +95,11 @@ function seedOf(raw: unknown): number | string {
 
 /** What is wrong with the call before anything is asked of the server, or null. */
 function argsRefusal(args: Record<string, unknown>, ctx: ToolContext): string | null {
-	if (!str(args.prompt)) return 'generate_video needs a "prompt".';
+	if (!trimmed(args.prompt)) return 'generate_video needs a "prompt".';
 	if (!taskOwner(ctx) || ctx.shellMode) {
 		return 'generate_video runs in the background, which needs a chat or a Code session.';
 	}
-	if (str(args.path) && !/\.webm$/i.test(str(args.path))) return 'path must end in .webm.';
+	if (trimmed(args.path) && !/\.webm$/i.test(trimmed(args.path))) return 'path must end in .webm.';
 	const seed = seedOf(args.seed);
 	return typeof seed === 'string' ? seed : null;
 }
@@ -114,12 +113,12 @@ async function startFrom(
 	instance: ToolchestInstance,
 	ctx: ToolContext
 ): Promise<{ image?: VideoStartImage; portrait: boolean } | string> {
-	const asked = str(args.orientation);
-	if (!str(args.start_image)) return { portrait: asked === 'portrait' };
+	const asked = trimmed(args.orientation);
+	if (!trimmed(args.start_image)) return { portrait: asked === 'portrait' };
 	if (!instance.capabilities.includes('start_image')) {
 		return `${instance.id} can't start from a picture.`;
 	}
-	const source = await resolveImage(str(args.start_image), 'start_image', ctx);
+	const source = await resolveImage(trimmed(args.start_image), 'start_image', ctx);
 	if (typeof source === 'string') return source;
 	const input = await hashedInput(
 		source.input,
@@ -200,9 +199,9 @@ registerTool({
 		const fit = fitClip(instance.video, instance.id, { seconds: asked, portrait: start.portrait });
 
 		let save: SaveTarget | null = null;
-		if (str(args.path)) {
+		if (trimmed(args.path)) {
 			const settled = await prepareSave(
-				str(args.path),
+				trimmed(args.path),
 				args.overwrite === true,
 				ctx,
 				'generate_video'
@@ -211,11 +210,11 @@ registerTool({
 			save = settled;
 		}
 
-		const prompt = str(args.prompt);
+		const prompt = trimmed(args.prompt);
 		const request: VideoRequest = {
-			title: str(args.title) || titleOf(prompt),
+			title: trimmed(args.title) || titleOf(prompt),
 			prompt,
-			...(str(args.negative_prompt) ? { negativePrompt: str(args.negative_prompt) } : {}),
+			...(trimmed(args.negative_prompt) ? { negativePrompt: trimmed(args.negative_prompt) } : {}),
 			width: fit.width,
 			height: fit.height,
 			frames: fit.frames,
