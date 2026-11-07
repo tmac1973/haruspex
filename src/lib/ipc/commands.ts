@@ -248,6 +248,7 @@ export const IPC = {
 	image_read_bytes: 'image_read_bytes',
 	image_rehydrate_local: 'image_rehydrate_local',
 	image_resolve: 'image_resolve',
+	image_result_check: 'image_result_check',
 	image_save_as: 'image_save_as',
 	image_seam_finish: 'image_seam_finish',
 	image_seam_inputs: 'image_seam_inputs',

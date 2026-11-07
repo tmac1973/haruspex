@@ -10,7 +10,12 @@
  */
 
 import { getSettings } from '#lib/stores/settings.ts';
-import { FEEDBACK_TOOL, traceEntry, type TraceEntry } from '#lib/harnessFeedback/report.ts';
+import {
+	CUT_MARK,
+	FEEDBACK_TOOL,
+	traceEntry,
+	type TraceEntry
+} from '#lib/harnessFeedback/report.ts';
 
 /** Calls kept per run. Failed ones are kept over the rest when it fills. */
 const RUN_TRACE_CAP = 60;
@@ -82,6 +87,8 @@ export function reportTrace(trace: RunTrace, tool?: string): TraceEntry[] {
 export const REFLECTION_SYSTEM_PROMPT = `You are reviewing a finished run of a Haruspex job, to help Haruspex's developers improve its tools. You are given the job, how the run ended, and the tool calls it made with their results.
 
 Call ${FEEDBACK_TOOL} once for each distinct problem with Haruspex's own tools that you can see in the run: a tool that failed when it should not have, a result that was misleading, an error that did not say what to do, a capability the run needed and lacked, or a schema that was hard to use. Point at the calls that show it.
+
+Each result here is cut to its first part, ending in "[N more chars ${CUT_MARK}]". That cut is this review's, not the tool's: the run saw the whole result, so don't report it as a tool cutting its output.
 
 Do not report problems with the task itself, with websites or files that were simply wrong, or mistakes the model made with a tool that worked as described. If nothing about the tools got in the way, make no calls and answer "None."`;
 

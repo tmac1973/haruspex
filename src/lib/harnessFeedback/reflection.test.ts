@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
 	noteRunToolCall,
+	REFLECTION_SYSTEM_PROMPT,
 	reflectionPrompt,
 	reportTrace,
 	takeRunTrace
@@ -81,6 +82,16 @@ describe('the reflection prompt', () => {
 		expect(prompt).toContain('- fetch_url: 1 call, 1 failed');
 		expect(prompt).toContain('### 1. fetch_url (failed)');
 		expect(prompt).toContain('### 2. web_search\nArguments: {"q":"x"}\nResult: ok');
+	});
+
+	it("marks a long result's cut as the review's own, and says so up front", () => {
+		// #1032: a bare "[4634 more chars]" was reported as fs_read_text cutting its output.
+		noteRunToolCall(1, 'fs_read_text', { path: 'a.js' }, 'x'.repeat(3000));
+		const prompt = reflectionPrompt(run, takeRunTrace(1)!);
+		expect(prompt).toContain('… [1500 more chars cut from this copy; the run had them]');
+		expect(REFLECTION_SYSTEM_PROMPT).toContain(
+			"That cut is this review's, not the tool's: the run saw the whole result"
+		);
 	});
 });
 
