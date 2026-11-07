@@ -8,7 +8,8 @@
  * Each format says what a revision keeps and a continuation doesn't — a
  * document its title, a spreadsheet its header and first record. The rule is
  * for a file the turn created; one that was there before the turn is still
- * refused. Slide decks have their own, which also keeps a deck's look
+ * refused. Text files outside a Code session use the document rule (`fs-write.ts`).
+ * Slide decks have their own, which also keeps a deck's look
  * (`slides/preview.ts`).
  */
 

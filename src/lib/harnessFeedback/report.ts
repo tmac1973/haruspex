@@ -71,11 +71,18 @@ const ERROR_CHARS = 4000;
 
 /**
  * `text` cut to `max` characters, line breaks kept, saying how much went:
- * evidence, unlike `reports.ts`'s one-line `clipToLine`.
+ * evidence, unlike `reports.ts`'s one-line `clipToLine`. The marker names
+ * the trace as what cut it, so neither a reviewer nor a developer takes it
+ * for the tool's own truncation.
  */
 function clipCounted(text: string, max: number): string {
-	return text.length > max ? `${text.slice(0, max)}… [${text.length - max} more chars]` : text;
+	return text.length > max
+		? `${text.slice(0, max)}… [${TRACE_CLIP} ${text.length - max} more chars]`
+		: text;
 }
+
+/** How a clipped trace entry is marked. `reflection.ts` names it to the reviewer. */
+export const TRACE_CLIP = 'trace clipped:';
 
 /** Failed calls to the reported tool kept however far back they were. */
 const MATCHING_FAILURES = 3;

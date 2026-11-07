@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
 	noteRunToolCall,
+	REFLECTION_SYSTEM_PROMPT,
 	reflectionPrompt,
 	reportTrace,
 	takeRunTrace
@@ -81,6 +82,13 @@ describe('the reflection prompt', () => {
 		expect(prompt).toContain('- fetch_url: 1 call, 1 failed');
 		expect(prompt).toContain('### 1. fetch_url (failed)');
 		expect(prompt).toContain('### 2. web_search\nArguments: {"q":"x"}\nResult: ok');
+	});
+
+	it("marks a long result as the trace's cut, not the tool's", () => {
+		noteRunToolCall(1, 'fs_read_text', { path: 'a.js' }, 'x'.repeat(2000));
+		const prompt = reflectionPrompt(run, takeRunTrace(1)!);
+		expect(prompt).toContain('… [trace clipped: 500 more chars]');
+		expect(REFLECTION_SYSTEM_PROMPT).toContain('[trace clipped: N more chars]');
 	});
 });
 

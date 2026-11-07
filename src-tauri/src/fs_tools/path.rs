@@ -653,12 +653,96 @@ pub async fn fs_find_available_path(workdir: String, rel_path: String) -> Result
     ))
 }
 
+/// Why a read of `resolved` (shown as `shown`) found no file there: it is
+/// missing, with any near-named files beside it, or it is a folder. One
+/// "Not a file" for both left a model retrying a path that didn't exist yet
+/// as if it were a permissions problem.
+pub(crate) fn not_a_file(resolved: &Path, shown: &str) -> String {
+    if resolved.is_dir() {
+        return format!("{shown} is a folder, not a file. List it with fs_list_dir.");
+    }
+    if resolved.exists() {
+        return format!("Not a file: {shown}");
+    }
+    let near = near_names(resolved);
+    if near.is_empty() {
+        format!("No such file: {shown}")
+    } else {
+        format!("No such file: {shown}. Beside it: {}", near.join(", "))
+    }
+}
+
+/// Up to three files in `missing`'s folder whose names are a few edits from
+/// its name, nearest first.
+fn near_names(missing: &Path) -> Vec<String> {
+    let (Some(dir), Some(name)) = (
+        missing.parent(),
+        missing.file_name().and_then(|n| n.to_str()),
+    ) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let most = (name.chars().count() / 5).clamp(1, 3);
+    let mut near: Vec<(usize, String)> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .map(|n| (edit_distance(name, &n), n))
+        .filter(|(d, _)| *d <= most)
+        .collect();
+    near.sort();
+    near.into_iter().take(3).map(|(_, n)| n).collect()
+}
+
+/// Levenshtein distance by characters.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut diag = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let next = (diag + usize::from(ca != *cb))
+                .min(row[j] + 1)
+                .min(row[j + 1] + 1);
+            diag = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_util::temp_dir;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn a_missing_file_says_so_and_names_near_ones() {
+        let dir = temp_dir("not_a_file");
+        fs::write(dir.join("phase-01-pinned-three.js-import-map.md"), "").unwrap();
+        fs::write(dir.join("overview.md"), "").unwrap();
+        let wanted = "phase-01-pinned-three-js-import-map.md";
+        assert_eq!(
+            not_a_file(&dir.join(wanted), wanted),
+            format!("No such file: {wanted}. Beside it: phase-01-pinned-three.js-import-map.md")
+        );
+        assert_eq!(not_a_file(&dir.join("x.md"), "x.md"), "No such file: x.md");
+    }
+
+    #[test]
+    fn a_folder_is_named_as_one() {
+        let dir = temp_dir("not_a_file");
+        fs::create_dir(dir.join("plan")).unwrap();
+        assert_eq!(
+            not_a_file(&dir.join("plan"), "plan"),
+            "plan is a folder, not a file. List it with fs_list_dir."
+        );
+    }
 
     #[test]
     fn render_read_returns_whole_small_file() {

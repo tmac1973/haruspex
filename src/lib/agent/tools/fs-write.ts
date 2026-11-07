@@ -69,6 +69,10 @@ function writeRootError(rawPath: unknown, ctx: ToolContext): string | null {
 	if (!root) return null;
 	const path = typeof rawPath === 'string' ? rawPath : '';
 	if (!isUnderWriteRoot(path, root)) {
+		// A root can be one file: a planning turn that writes one phase.
+		if (/\.[^/.]+$/.test(root)) {
+			return `This turn may only write ${root}. Refusing to write "${path || '(empty path)'}" — write ${root} instead.`;
+		}
 		return (
 			`This run may only write inside ${root}. Refusing to write ` +
 			`"${path || '(empty path)'}" — put the file under ${root}.`
@@ -218,10 +222,17 @@ export async function resolveWritePathInteractive(
 
 function repeatWriteMessage(relPath: string, editable: boolean, hint = ''): string {
 	const refused =
-		`"${relPath}" was already written in this turn, and writing it again would ` +
-		`replace what you just wrote rather than add to it. Do not write a file in ` +
-		`pieces: emit a single fs_write_* call containing the file's complete content. `;
-	if (editable) return refused + 'To change part of a file you already wrote, use fs_edit_text.';
+		`"${relPath}" was already written in this turn, so this write was refused and ` +
+		`the file is unchanged: a second write would replace the first rather than add ` +
+		`to it. Write each file whole in one call. `;
+	if (editable) {
+		return (
+			refused +
+			hint +
+			`Otherwise change it with fs_edit_text, copying old_str from the file as it is ` +
+			`on disk now, not from this write.`
+		);
+	}
 	const dot = relPath.lastIndexOf('.');
 	const next = dot > 0 ? `${relPath.slice(0, dot)}-2${relPath.slice(dot)}` : `${relPath}-2`;
 	return (
@@ -684,7 +695,9 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 		if ('error' in choice) return toolResult(toolError(choice.error));
 		const err = validateTextContent(args, tool);
 		if (err) return toolResult(toolError(err));
-		if (tool === 'fs_write_document') return documentWrite(choice, args.content as string, ctx);
+		if (tool === 'fs_write_document' || (tool === 'fs_write_text' && !ctx.codeSessionId)) {
+			return titledWrite(tool, choice, args.content as string, ctx);
+		}
 		return fsWriteWithConflictCheck(
 			tool,
 			choice.command,
@@ -700,17 +713,20 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 }
 
 /**
- * Write a document. One this turn created may be written again under the
- * same title, to revise it (`_drafts.ts`).
+ * Write a document, or a text file outside a Code session (which has its own
+ * rule: a rewrite after a command). One this turn created may be written
+ * again with the same first line, to revise it (`_drafts.ts`): a job that
+ * checked a module and is fixing it writes it whole again.
  */
-function documentWrite(
+function titledWrite(
+	tool: string,
 	choice: { command: string; path: string },
 	content: string,
 	ctx: ToolContext
 ): Promise<ToolExecOutput> {
 	const workdir = fsWorkdir(ctx)!;
 	return draftWrite(
-		'fs_write_document',
+		tool,
 		DOCUMENT,
 		[firstLine(content)],
 		choice.path,
@@ -1166,7 +1182,7 @@ registerTool({
 		function: {
 			name: 'fs_edit_text',
 			description:
-				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; for large rewrites use fs_write_text with overwrite. In Chat mode the path is relative to the working directory. In Shell mode an absolute path (e.g. "/etc/ssh/sshd_config") is preferred, but a relative path is resolved against the current shell directory; writes must be enabled in Settings → Shell.',
+				'Edit a text file by replacing exactly one occurrence of old_str with new_str. The old_str must appear exactly once in the file — include enough surrounding context to make it unique. Use this for small targeted changes; to replace a whole file, use fs_write_text. In Chat mode the path is relative to the working directory. In Shell mode an absolute path (e.g. "/etc/ssh/sshd_config") is preferred, but a relative path is resolved against the current shell directory; writes must be enabled in Settings → Shell.',
 			parameters: {
 				type: 'object',
 				properties: {

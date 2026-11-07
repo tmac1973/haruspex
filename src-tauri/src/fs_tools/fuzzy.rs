@@ -179,8 +179,9 @@ fn fuzzy_apply(
     let win = old_norm.len();
     let not_found = || {
         format!(
-            "old_str not found in {}. The text doesn't match the file even allowing for whitespace/quote differences — re-read the file and copy the exact lines you want to change.",
-            path
+            "old_str not found in {}. The text doesn't match the file even allowing for whitespace/quote differences. {} Re-read those lines and copy them exactly.",
+            path,
+            closest_match(&content_norm, &old_norm, &content_lines, &old_lines)
         )
     };
     if win == 0 || win > content_norm.len() {
@@ -218,6 +219,62 @@ fn fuzzy_apply(
         used_fuzzy: true,
     };
     Ok((out_lines.join("\n"), result))
+}
+
+/// Where a missed `old_str` comes nearest the file, for the not-found error:
+/// the window sharing the most non-blank lines with it, and the first line
+/// there that differs. A model that copied `old_str` from a stale or partial
+/// view of the file then knows which lines to read again.
+fn closest_match(
+    content_norm: &[String],
+    old_norm: &[String],
+    content_lines: &[&str],
+    old_lines: &[&str],
+) -> String {
+    // A final newline ends the last line; it doesn't start another.
+    let total = content_lines.len() - usize::from(content_lines.last() == Some(&""));
+    let wanted = old_norm.iter().filter(|l| !l.trim().is_empty()).count();
+    let mut best = (0, 0);
+    for start in 0..total {
+        let score = old_norm
+            .iter()
+            .zip(&content_norm[start..])
+            .filter(|(o, c)| !o.trim().is_empty() && o == c)
+            .count();
+        if score > best.1 {
+            best = (start, score);
+        }
+    }
+    let (start, score) = best;
+    if score == 0 {
+        let s = if total == 1 { "" } else { "s" };
+        return format!("No line of old_str is in the file, which has {total} line{s}.");
+    }
+    let differs = old_norm
+        .iter()
+        .enumerate()
+        .find(|(j, o)| content_norm.get(start + j) != Some(*o))
+        .map(|(j, _)| j);
+    let shown = |s: &str| {
+        let s = s.trim();
+        match s.char_indices().nth(100) {
+            Some((i, _)) => format!("{}…", &s[..i]),
+            None => s.to_string(),
+        }
+    };
+    let detail = match differs {
+        Some(j) if start + j < total => format!(
+            " Line {} differs: the file has `{}`, old_str has `{}`.",
+            start + j + 1,
+            shown(content_lines[start + j]),
+            shown(old_lines[j])
+        ),
+        _ => " old_str runs past the end of the file.".to_string(),
+    };
+    format!(
+        "The closest match starts at line {} ({score} of {wanted} lines match; the file has {total}).{detail}",
+        start + 1
+    )
 }
 
 /// `content` as a whole-file rewrite of `path` should be written: in the
@@ -327,6 +384,24 @@ mod tests {
     fn not_found_errors() {
         let err = apply_edit("alpha\n", "zeta", "x", "f").unwrap_err();
         assert!(err.contains("not found"), "got: {err}");
+        assert!(
+            err.contains("No line of old_str is in the file, which has 1 line"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn not_found_names_the_closest_match_and_where_it_differs() {
+        let file = "a\nb\nconst spine = (t) => [];\nd\ne\n";
+        let err = apply_edit(file, "b\nfnQuat('Spine')\nd", "x", "f").unwrap_err();
+        assert!(
+            err.contains("closest match starts at line 2 (2 of 3 lines match; the file has 5)"),
+            "got: {err}"
+        );
+        assert!(
+            err.contains("Line 3 differs: the file has `const spine = (t) => [];`, old_str has `fnQuat('Spine')`"),
+            "got: {err}"
+        );
     }
 
     #[test]

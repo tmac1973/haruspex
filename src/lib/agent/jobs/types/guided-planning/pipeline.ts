@@ -403,8 +403,9 @@ const NO_EMBEDDED_CODE_RULES = [
 	'prose. If a block runs long, or would compile as part of the product, cut it',
 	'and state the signatures and rules it implied instead.',
 	'To correct part of a file you already wrote IN THIS TURN, use fs_edit_text.',
-	'Writing the same file twice in one turn is refused — the second write would',
-	'replace the first rather than extend it.',
+	'A second write of the same file in one turn replaces the first rather than',
+	'extending it, so it is refused unless it is the whole file again, starting',
+	'with the same first line.',
 	'The commands in ## Build gate and ## Test plan must be REAL commands. No',
 	'inline `-c "…"` or `-e "…"` program strings, no heredocs, no multi-line REPL',
 	'transcripts — those are hand-written validators smuggled into a command, and',
@@ -1195,6 +1196,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			 * prompt the model may ignore.
 			 */
 			mayAsk?: boolean;
+			/**
+			 * Where the turn may write, when narrower than the plan folder: a
+			 * phase turn writes its own file only, so a model that picks a
+			 * near-identical name (three.js for three-js) is refused rather
+			 * than leaving a second phase-01 beside the real one.
+			 */
+			writeRoot?: string;
 		} = {}
 	) => {
 		const mayAsk = opts.mayAsk ?? true;
@@ -1207,7 +1215,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			visionSupported: deps.visionSupported(),
 			maxIterations,
 			interactive: mayAsk,
-			writeRoot: outDir,
+			writeRoot: opts.writeRoot ?? outDir,
 			systemPrompt,
 			toolAllowlist: mayAsk ? tools : tools.filter((t) => t !== 'ask_user_question'),
 			expectsFileOutput: opts.expectsFileOutput,
@@ -1389,7 +1397,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		retryMessage: (problem: string) => string,
 		retryPrompt: string,
 		failureError: (problem: string) => string,
-		kind = 'retry'
+		kind = 'retry',
+		writeRoot?: string
 	): Promise<void> => {
 		abortIfCancelled();
 		let problem = await check();
@@ -1397,7 +1406,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			abortIfCancelled();
 			await turn(stepIdx, retryMessage(problem), retryPrompt, 15, {
 				expectsFileOutput: true,
-				kind
+				kind,
+				writeRoot
 			});
 			abortIfCancelled();
 			problem = await check();
@@ -2295,7 +2305,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				writeMsg,
 				phaseWritePrompt(outDir, overviewPath, webResearch, planningOverview, useGit),
 				30,
-				{ expectsFileOutput: true, kind: 'planning.write', mayAsk: runMode === 'attended' }
+				{
+					expectsFileOutput: true,
+					kind: 'planning.write',
+					mayAsk: runMode === 'attended',
+					writeRoot: phase.relPath
+				}
 			);
 			await ensureWritten(
 				checkPhaseFile(phase.relPath),
@@ -2311,7 +2326,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`Phase ${phase.nn} (${phase.relPath}) was still not written correctly after ` +
 					`${MAX_WRITE_ATTEMPTS} attempts — ${problem}. The selected model may be too small ` +
 					`to follow the write step reliably — try a larger model.`,
-				'planning.retry'
+				'planning.retry',
+				phase.relPath
 			);
 		}
 		finishStep(PLANNING, `Wrote ${outline.length} phase file(s) to ${outDir}`);

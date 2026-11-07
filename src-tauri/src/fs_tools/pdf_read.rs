@@ -262,7 +262,7 @@ pub async fn fs_read_pdf_bytes(workdir: String, rel_path: String) -> Result<Stri
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(super::path::not_a_file(&resolved, &rel_path));
     }
 
     stat_within_limit(&resolved, MAX_DOC_READ_BYTES, "PDF").await?;

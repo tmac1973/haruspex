@@ -48,7 +48,7 @@ describe('repeat-write guard', () => {
 		if (r.kind === 'rejected') {
 			// The model has to be told what to do instead, or it just retries.
 			expect(r.message).toContain('fs_edit_text');
-			expect(r.message).toContain('complete content');
+			expect(r.message).toContain('whole in one call');
 			expect(r.message).toContain('plan/phase-02.md');
 		}
 	});
