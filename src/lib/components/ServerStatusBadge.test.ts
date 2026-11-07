@@ -136,6 +136,37 @@ describe('ServerStatusBadge', () => {
 		screen.getByText('View logs');
 	});
 
+	it('shows a missing remote model as an error that opens Settings → Inference', async () => {
+		mockState({
+			status: 'remote',
+			remoteLabel: 'qwen3.8-27b @ gpu-box:8080',
+			remoteProblem: { kind: 'missing', modelId: 'qwen3.8-27b' }
+		});
+		const onOpenLogs = vi.fn();
+		render(ServerStatusBadge, { props: { onOpenLogs } });
+		screen.getByText('Model not found · qwen3.8-27b @ gpu-box:8080');
+		expect(badge().getAttribute('data-status')).toBe('error');
+		expect(badge().title).toContain('no longer lists qwen3.8-27b');
+		expect(screen.queryByText('View logs')).toBeNull();
+		await fireEvent.click(screen.getByRole('button'));
+		expect(openSettings).toHaveBeenCalledWith('inference');
+		expect(onOpenLogs).not.toHaveBeenCalled();
+	});
+
+	it('tells an unreachable remote server apart from a missing model', async () => {
+		mockState({
+			status: 'remote',
+			remoteLabel: 'qwen3.8-27b @ gpu-box:8080',
+			remoteProblem: { kind: 'unreachable', error: 'connection refused' }
+		});
+		render(ServerStatusBadge);
+		screen.getByText('Unreachable · qwen3.8-27b @ gpu-box:8080');
+		expect(badge().getAttribute('data-status')).toBe('error');
+		expect(badge().title).toContain('connection refused');
+		await fireEvent.click(screen.getByRole('button'));
+		expect(openSettings).toHaveBeenCalledWith('inference');
+	});
+
 	it('announces status changes politely', () => {
 		mockState({ status: 'starting' });
 		render(ServerStatusBadge);
