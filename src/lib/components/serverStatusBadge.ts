@@ -14,6 +14,7 @@ export interface StatusBadge {
 	title: string;
 }
 
+const SETTINGS = 'Click to open Settings → Inference.';
 const LOGS = 'Click to open logs.';
 
 export function statusBadge(
@@ -27,7 +28,7 @@ export function statusBadge(
 		return {
 			status: 'remote',
 			label,
-			title: `${whose} own model, not Settings → Inference: ${label} (${view.backend.baseUrl}). ${LOGS}`
+			title: `${whose} own model, not Settings → Inference: ${label} (${view.backend.baseUrl}). ${SETTINGS}`
 		};
 	}
 
@@ -37,13 +38,13 @@ export function statusBadge(
 			return {
 				status: 'ready',
 				label: `Ready · ${name}`,
-				title: `Settings → Inference: ${name}, running locally. ${LOGS}`
+				title: `Settings → Inference: ${name}, running locally. ${SETTINGS}`
 			};
 		case 'starting':
 			return {
 				status: 'starting',
 				label: `Starting · ${name}…`,
-				title: `Settings → Inference: ${name}, starting. ${LOGS}`
+				title: `Settings → Inference: ${name}, starting. ${SETTINGS}`
 			};
 		case 'error': {
 			const label = `Error${state.errorMessage ? `: ${state.errorMessage}` : ''}`;
@@ -58,14 +59,14 @@ export function statusBadge(
 			return {
 				status: 'remote',
 				label,
-				title: `Settings → Inference: ${label}. ${LOGS}`
+				title: `Settings → Inference: ${label}. ${SETTINGS}`
 			};
 		}
 		default:
 			return {
 				status: 'stopped',
 				label: `Stopped · ${name}`,
-				title: `Settings → Inference: ${name}, not running. ${LOGS}`
+				title: `Settings → Inference: ${name}, not running. ${SETTINGS}`
 			};
 	}
 }

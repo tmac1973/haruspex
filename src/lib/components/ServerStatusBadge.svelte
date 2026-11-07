@@ -3,6 +3,7 @@
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { getModelInView } from '#lib/stores/modelInView.svelte.ts';
 	import { statusBadge } from '#lib/components/serverStatusBadge.ts';
+	import { openSettings } from '#lib/stores/settingsNav.svelte.ts';
 
 	interface Props {
 		/** Opens the Log Viewer — same handler as the header logs icon. */
@@ -14,14 +15,15 @@
 	const state = $derived(getServerState());
 	const badge = $derived(statusBadge(getModelInView(), state, getLiveSettings()));
 	const showLogsLink = $derived(badge.status === 'error');
+
+	// An error is read in the logs; otherwise the badge leads to the model's settings.
+	function onclick(): void {
+		if (showLogsLink) onOpenLogs?.();
+		else openSettings('inference');
+	}
 </script>
 
-<button
-	class="status-badge"
-	data-status={badge.status}
-	title={badge.title}
-	onclick={() => onOpenLogs?.()}
->
+<button class="status-badge" data-status={badge.status} title={badge.title} {onclick}>
 	<span class="dot"></span>
 	<span class="label" aria-live="polite">{badge.label}</span>
 	{#if showLogsLink}

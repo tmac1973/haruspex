@@ -45,7 +45,7 @@ To run the wizard again, use Settings → Inference → **Run Setup Wizard**. Yo
 
 Lean mode shows Chat and Jobs only (see the `lean-mode` page).
 
-Along the top of the window you also find the server status (click it to open the logs), a light/dark toggle, the log viewer, the help list of keyboard shortcuts (**?** or F1), and Settings.
+Along the top of the window you also find the server status (click it to open Settings → Inference), a light/dark toggle, the log viewer, the help list of keyboard shortcuts (**?** or F1), and Settings.
 
 ## Check what the model tells you
 
