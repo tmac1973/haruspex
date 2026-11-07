@@ -14,9 +14,9 @@
 
 	const state = $derived(getServerState());
 	const badge = $derived(statusBadge(getModelInView(), state, getLiveSettings()));
-	const showLogsLink = $derived(badge.status === 'error');
+	const showLogsLink = $derived(badge.opens === 'logs');
 
-	// An error is read in the logs; otherwise the badge leads to the model's settings.
+	// A local error is read in the logs; otherwise the badge leads to the model's settings.
 	function onclick(): void {
 		if (showLogsLink) onOpenLogs?.();
 		else openSettings('inference');

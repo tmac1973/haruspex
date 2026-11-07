@@ -56,6 +56,7 @@
 		maybeFlushPendingRestart,
 		startServer
 	} from '#lib/stores/llamaServer.svelte.ts';
+	import { checkRemoteModelOnStartup } from '#lib/inference/remoteModelCheck.ts';
 	import {
 		applyAccent,
 		applyTheme,
@@ -393,6 +394,9 @@
 			const backend = getSettings().inferenceBackend;
 			if (backend.mode === 'remote' && backend.remoteBaseUrl) {
 				enterRemoteMode(backend.remoteBaseUrl, backend.remoteModelId);
+				// Reports a model that went away while the app was closed;
+				// never blocks startup or changes the settings.
+				void checkRemoteModelOnStartup(backend);
 			} else {
 				const hasModel = await invoke<boolean>('has_any_model');
 				if (!hasModel && !page.url.pathname.startsWith('/setup')) {

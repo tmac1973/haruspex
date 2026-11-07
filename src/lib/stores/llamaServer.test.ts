@@ -397,3 +397,39 @@ describe('remote mode label', () => {
 		expect(getServerState().remoteLabel).toBeUndefined();
 	});
 });
+
+describe('remote model problem', () => {
+	const missing = { kind: 'missing', modelId: 'qwen' } as const;
+
+	it('is recorded for the server and model the badge shows', async () => {
+		const { enterRemoteMode, setRemoteProblem, getServerState } = await freshStore();
+		enterRemoteMode('http://gpu-box:8080', 'qwen');
+		expect(setRemoteProblem('http://gpu-box:8080', 'qwen', missing)).toBe(true);
+		expect(getServerState().remoteProblem).toEqual(missing);
+	});
+
+	it('is dropped when Settings → Inference moved on while the check ran', async () => {
+		const { enterRemoteMode, setRemoteProblem, getServerState } = await freshStore();
+		enterRemoteMode('http://gpu-box:8080', 'other');
+		expect(setRemoteProblem('http://gpu-box:8080', 'qwen', missing)).toBe(false);
+		expect(getServerState().remoteProblem).toBeUndefined();
+	});
+
+	it('is dropped outside remote mode', async () => {
+		const { setRemoteProblem, getServerState } = await freshStore();
+		expect(setRemoteProblem('http://gpu-box:8080', 'qwen', missing)).toBe(false);
+		expect(getServerState().remoteProblem).toBeUndefined();
+	});
+
+	it('is cleared by picking a model again or leaving remote mode', async () => {
+		const { enterRemoteMode, exitRemoteMode, setRemoteProblem, getServerState } =
+			await freshStore();
+		enterRemoteMode('http://gpu-box:8080', 'qwen');
+		setRemoteProblem('http://gpu-box:8080', 'qwen', missing);
+		enterRemoteMode('http://gpu-box:8080', 'qwen');
+		expect(getServerState().remoteProblem).toBeUndefined();
+		setRemoteProblem('http://gpu-box:8080', 'qwen', missing);
+		exitRemoteMode();
+		expect(getServerState().remoteProblem).toBeUndefined();
+	});
+});

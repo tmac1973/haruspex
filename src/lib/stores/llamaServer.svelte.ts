@@ -25,6 +25,10 @@ import { formatContextSize } from '#lib/utils/format.ts';
  */
 export type ServerStatusType = 'stopped' | 'starting' | 'ready' | 'error' | 'remote';
 
+/** What the startup check found wrong with the remote model. */
+export type RemoteProblem =
+	{ kind: 'missing'; modelId: string } | { kind: 'unreachable'; error: string };
+
 // ts-rs-generated mirror of the Rust `SidecarStatus` enum
 // (#[serde(tag = "type", content = "message")]).
 type RustServerStatus = SidecarStatus;
@@ -40,6 +44,13 @@ export interface ServerState {
 	 * where their chat requests are going.
 	 */
 	remoteLabel?: string;
+	/**
+	 * Set when the startup check found the remote model gone or its server
+	 * silent (see `#lib/inference/remoteModelCheck`). The badge shows it as
+	 * an error that leads to Settings → Inference. Cleared on entering or
+	 * leaving remote mode.
+	 */
+	remoteProblem?: RemoteProblem;
 	/**
 	 * Set when llama-server failed to load on the GPU and was respawned
 	 * with `--n-gpu-layers 0`. Drives the "Running on CPU" banner in the
@@ -291,7 +302,24 @@ export async function maybeFlushPendingRestart(): Promise<void> {
 export function enterRemoteMode(baseUrl: string, modelId: string): void {
 	serverState.status = 'remote';
 	serverState.errorMessage = undefined;
+	serverState.remoteProblem = undefined;
 	serverState.remoteLabel = buildRemoteLabel(baseUrl, modelId);
+}
+
+/**
+ * Record what the remote model check found. Ignored unless the badge still
+ * shows the server and model that were checked: the user may have changed
+ * Settings → Inference while the check ran. Returns whether it was recorded.
+ */
+export function setRemoteProblem(
+	baseUrl: string,
+	modelId: string,
+	problem: RemoteProblem | undefined
+): boolean {
+	if (serverState.status !== 'remote') return false;
+	if (serverState.remoteLabel !== buildRemoteLabel(baseUrl, modelId)) return false;
+	serverState.remoteProblem = problem;
+	return true;
 }
 
 function buildRemoteLabel(baseUrl: string, modelId: string): string {
@@ -328,6 +356,7 @@ function buildRemoteLabel(baseUrl: string, modelId: string): string {
  */
 export function exitRemoteMode(): void {
 	serverState.remoteLabel = undefined;
+	serverState.remoteProblem = undefined;
 	if (serverState.status === 'remote') {
 		serverState.status = 'stopped';
 	}

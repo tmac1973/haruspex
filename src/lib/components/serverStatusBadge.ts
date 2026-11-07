@@ -12,6 +12,8 @@ export interface StatusBadge {
 	status: ServerStatusType;
 	label: string;
 	title: string;
+	/** What a click opens: the logs explain a local error, Settings fixes the rest. */
+	opens: 'logs' | 'settings';
 }
 
 const SETTINGS = 'Click to open Settings → Inference.';
@@ -28,7 +30,8 @@ export function statusBadge(
 		return {
 			status: 'remote',
 			label,
-			title: `${whose} own model, not Settings → Inference: ${label} (${view.backend.baseUrl}). ${SETTINGS}`
+			title: `${whose} own model, not Settings → Inference: ${label} (${view.backend.baseUrl}). ${SETTINGS}`,
+			opens: 'settings'
 		};
 	}
 
@@ -38,35 +41,58 @@ export function statusBadge(
 			return {
 				status: 'ready',
 				label: `Ready · ${name}`,
-				title: `Settings → Inference: ${name}, running locally. ${SETTINGS}`
+				title: `Settings → Inference: ${name}, running locally. ${SETTINGS}`,
+				opens: 'settings'
 			};
 		case 'starting':
 			return {
 				status: 'starting',
 				label: `Starting · ${name}…`,
-				title: `Settings → Inference: ${name}, starting. ${SETTINGS}`
+				title: `Settings → Inference: ${name}, starting. ${SETTINGS}`,
+				opens: 'settings'
 			};
 		case 'error': {
 			const label = `Error${state.errorMessage ? `: ${state.errorMessage}` : ''}`;
 			return {
 				status: 'error',
 				label,
-				title: `Settings → Inference: ${name}. ${label}. ${LOGS}`
+				title: `Settings → Inference: ${name}. ${label}. ${LOGS}`,
+				opens: 'logs'
 			};
 		}
 		case 'remote': {
-			const label = `Remote${state.remoteLabel ? ` · ${state.remoteLabel}` : ''}`;
+			const where = state.remoteLabel ? ` · ${state.remoteLabel}` : '';
+			const problem = state.remoteProblem;
+			if (problem?.kind === 'missing') {
+				return {
+					status: 'error',
+					label: `Model not found${where}`,
+					title: `Settings → Inference: the server no longer lists ${problem.modelId || 'a model'}. ${SETTINGS}`,
+					opens: 'settings'
+				};
+			}
+			if (problem?.kind === 'unreachable') {
+				return {
+					status: 'error',
+					label: `Unreachable${where}`,
+					title: `Settings → Inference: the server did not answer (${problem.error}). ${SETTINGS}`,
+					opens: 'settings'
+				};
+			}
+			const label = `Remote${where}`;
 			return {
 				status: 'remote',
 				label,
-				title: `Settings → Inference: ${label}. ${SETTINGS}`
+				title: `Settings → Inference: ${label}. ${SETTINGS}`,
+				opens: 'settings'
 			};
 		}
 		default:
 			return {
 				status: 'stopped',
 				label: `Stopped · ${name}`,
-				title: `Settings → Inference: ${name}, not running. ${SETTINGS}`
+				title: `Settings → Inference: ${name}, not running. ${SETTINGS}`,
+				opens: 'settings'
 			};
 	}
 }
