@@ -62,6 +62,31 @@ const TABLE: Record<string, Handler> = {
 	power_inhibit_release: none,
 	power_inhibit_acquire: none,
 	shell_platform_supported: () => true,
+	// The startup remote model check: read the fake LLM's own model list, as
+	// the Rust probe's OpenAI-compatible path does.
+	probe_inference_server: async (a) => {
+		const baseUrl = String(a?.baseUrl ?? '').replace(/\/+$/, '');
+		const res = await fetch(`${baseUrl}/v1/models`).catch(() => null);
+		if (!res?.ok) throw `Couldn't detect a supported inference server at ${baseUrl}.`;
+		const { data } = (await res.json()) as { data: { id: string; context_length?: number }[] };
+		return {
+			base_url: baseUrl,
+			kind: 'openai-compat',
+			models: data.map((m) => ({
+				id: m.id,
+				display_name: m.id,
+				context_size: m.context_length ?? null,
+				vision_supported: null,
+				loaded: null,
+				parallel: null,
+				reasoning: null,
+				sampling: null
+			})),
+			default_context_size: null,
+			notes: '',
+			engine: null
+		};
+	},
 	// The engine (plan/remote-api/) stays off: the UI flows drive the UI.
 	engine_enabled: () => false,
 	// Settings → Remote control, off.
