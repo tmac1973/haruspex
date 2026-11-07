@@ -73,6 +73,7 @@ describe('inspectMotion', () => {
 		expect(w.travel).toBeCloseTo(0.5, 2);
 		expect(w.travelDir[1]).toBeGreaterThan(0.4);
 		expect(w.travelTrack).toBe('Rig.position');
+		expect(w.travelTrackFar).toBeCloseTo(0.5, 2);
 		// Out and back still travels, for a walk.
 		const there = clip('Walk', 1, move('Rig', [0, 0.5, 1], [ROOT_AT(0), [0, 0, 0.5], ROOT_AT(0)]));
 		expect(inspectMotion(THREE, gltf(movable(), [there]))[0].travel).toBeGreaterThan(0.45);

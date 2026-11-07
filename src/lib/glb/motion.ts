@@ -81,6 +81,8 @@ export interface ClipMotion extends TrackChecks {
 	travel: number;
 	travelDir: [number, number];
 	travelTrack: string;
+	/** How far `travelTrack`'s own keys move its node across the floor, in metres (0 for none). */
+	travelTrackFar: number;
 	/** For a walk or run, the median velocity of its planted parts (m/s on x, z); else null. */
 	stance: { x: number; z: number } | null;
 	/** Whether the slides were judged against `stance`: planted feet moving back together. */
@@ -351,16 +353,18 @@ function travelOf(
 	moved: { net: [number, number]; most: [number, number] },
 	locomotion: boolean,
 	height: number
-): Pick<ClipMotion, 'travel' | 'travelDir' | 'travelTrack'> {
+): Pick<ClipMotion, 'travel' | 'travelDir' | 'travelTrack' | 'travelTrackFar'> {
 	// A walk that wanders far and comes back still travels; anything else is judged by where it ends.
 	const wanders = locomotion && Math.hypot(...moved.most) > ROOT_WANDER * height;
 	const dir = wanders ? moved.most : moved.net;
 	const far = Math.hypot(...dir);
 	const carrier = travellingTrack(THREE, root, clip);
+	const carries = carrier.far >= far / 2 && far > 0;
 	return {
 		travel: far,
 		travelDir: dir,
-		travelTrack: carrier.far >= far / 2 && far > 0 ? carrier.name : ''
+		travelTrack: carries ? carrier.name : '',
+		travelTrackFar: carries ? carrier.far : 0
 	};
 }
 

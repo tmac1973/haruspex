@@ -257,6 +257,30 @@ describe('joint folds', () => {
 		expect(jointsOf(leg('Forearm_L')).map((j) => j.sign)).toEqual([-1]);
 	});
 
+	it('measures to the shin mesh when the knee pivot holds only meshes', () => {
+		// The #1032 knight: Hip_L > Knee_L, with the shin and a kneecap as meshes.
+		const hips = new THREE.Object3D();
+		hips.name = 'Hips';
+		hips.position.y = 1;
+		const hip = new THREE.Object3D();
+		hip.name = 'Hip_L';
+		const knee = new THREE.Object3D();
+		knee.name = 'Knee_L';
+		knee.position.y = -0.5;
+		knee.add(
+			box('Knee_L_cap', [0.12, 0.08, 0.12], [0, 0, 0.05]),
+			box('Knee_L_steel', [0.1, 0.5, 0.1], [0, -0.25, 0])
+		);
+		hip.add(knee, box('Thigh_L_steel', [0.1, 0.5, 0.1], [0, -0.25, 0]));
+		hips.add(hip);
+		const root = scene(hips);
+		const joints = jointsOf(root);
+		expect(joints.map((j) => [j.node.name, j.child.name])).toEqual([['Knee_L', 'Knee_L_steel']]);
+		knee.rotation.x = Math.PI / 6;
+		root.updateMatrixWorld(true);
+		expect(foldDegrees(THREE, joints[0])).toBeCloseTo(30, 0);
+	});
+
 	it('measures a backward fold as positive', () => {
 		const root = leg();
 		root.getObjectByName('Shin_L')!.rotation.x = Math.PI / 6;
@@ -299,6 +323,8 @@ describe('joint folds', () => {
 				]
 			)
 		);
-		expect(formatClip(c, false)).toContain('No knee or elbow joints found by name.');
+		expect(formatClip(c, false)).toContain(
+			'No knee or elbow joints found by name: a pivot or bone named like Knee_L or Elbow_R, with the lower limb (a pivot or a mesh) under it, has its fold checked.'
+		);
 	});
 });

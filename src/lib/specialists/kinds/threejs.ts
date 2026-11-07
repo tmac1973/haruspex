@@ -64,8 +64,9 @@ registerSpecialistKind({
 		"Writes a self-contained Three.js scene (one HTML file) for a web project: objects, environments, animated scenes. Port the result into the project's code. Send a short English request.",
 	defaultSystemPrompt: THREEJS_SYSTEM_PROMPT,
 	// Thinking off: with it on, the 2026-11-02 spike spent 24k and then 48k
-	// tokens reasoning and never wrote a page.
-	defaultSampling: { temperature: 0.7, top_p: 0.95, top_k: 20, max_tokens: 24000, thinking: false },
+	// tokens reasoning and never wrote a page. 48k with it off, as the GLB kind
+	// (#994): a detailed cottage was cut off at 24k mid-page (#1032).
+	defaultSampling: { temperature: 0.7, top_p: 0.95, top_k: 20, max_tokens: 48000, thinking: false },
 	writes: true,
 	params: HTML_KIND_PARAMS,
 	requestRequired: false,
