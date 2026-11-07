@@ -31,6 +31,8 @@ export function isCodeWriteTool(name: string): boolean {
 	return (
 		name.startsWith('fs_write_') ||
 		name === 'fs_edit_text' ||
+		name === 'fs_delete' ||
+		name === 'fs_move' ||
 		name === 'make_asset' ||
 		name === 'save_generated' ||
 		helperForTool(name)?.writes === true

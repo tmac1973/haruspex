@@ -21,7 +21,7 @@ The choice can't be changed while lean mode is on: lean mode already sends a sho
 
 ## The groups
 
-Documents (PDF, Word, OpenDocument, spreadsheets, slides), email, calendar, contacts, pictures, music, speech, video generation, video editing, screen capture, writing skills, and game assets in the Code tab. Each MCP server is a group of its own. A group is listed only when its tools are available: email appears once an account is connected, video editing once it is turned on and a working folder is set.
+Documents (PDF, Word, OpenDocument, spreadsheets, slides), deleting or moving files it made, email, calendar, contacts, pictures, music, speech, video generation, video editing, screen capture, writing skills, and game assets in the Code tab. Each MCP server is a group of its own. A group is listed only when its tools are available: email appears once an account is connected, video editing once it is turned on and a working folder is set.
 
 ## What you see
 

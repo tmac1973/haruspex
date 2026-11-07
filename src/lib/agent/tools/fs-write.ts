@@ -44,6 +44,7 @@ import {
 	noteDraft,
 	type DraftKind
 } from '#lib/agent/tools/_drafts.ts';
+import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -64,7 +65,7 @@ export function isUnderWriteRoot(relPath: string, root: string): boolean {
 }
 
 /** Guard a write against ctx.writeRoot; returns an error string if out of bounds. */
-function writeRootError(rawPath: unknown, ctx: ToolContext): string | null {
+export function writeRootError(rawPath: unknown, ctx: ToolContext): string | null {
 	const root = ctx.writeRoot?.trim();
 	if (!root) return null;
 	const path = typeof rawPath === 'string' ? rawPath : '';
@@ -110,6 +111,8 @@ interface WriteOptions {
 	editable?: boolean;
 	/** Said after a refused repeat write, before the advice to use a new name. */
 	repeatHint?: string;
+	/** Whose files the write's result is (`_created.ts`); none in Shell. */
+	scope?: string | null;
 }
 
 /**
@@ -117,14 +120,16 @@ interface WriteOptions {
  * command; a job run overwrites; a chat asks.
  */
 function writeOptions(ctx: ToolContext): WriteOptions {
+	const scope = createdScope(ctx);
 	if (!ctx.codeSessionId) {
 		return {
 			askBeforeOverwrite: ctx.jobRunId === undefined,
 			releaseSlot: ctx.releaseSlot,
-			chatId: ctx.conversationId
+			chatId: ctx.conversationId,
+			scope
 		};
 	}
-	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn };
+	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn, scope };
 }
 
 /** `opts`, letting a second write this turn replace `path` too. */
@@ -277,16 +282,16 @@ async function fsWriteWithConflictCheck(
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
 	try {
-		if (typeof command === 'string') {
-			await invoke(command, {
-				workdir,
-				relPath: resolved.finalPath,
-				...payload,
-				overwrite: resolved.overwrite
-			});
-		} else {
-			await command(resolved.finalPath, resolved.overwrite);
-		}
+		await trackWrite(opts.scope ?? null, workdir, resolved.finalPath, resolved.overwrite, () =>
+			typeof command === 'string'
+				? invoke(command, {
+						workdir,
+						relPath: resolved.finalPath,
+						...payload,
+						overwrite: resolved.overwrite
+					})
+				: command(resolved.finalPath, resolved.overwrite)
+		);
 		filesWrittenThisTurn.add(resolved.finalPath);
 		opts.rewritable?.delete(resolved.finalPath);
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
@@ -842,12 +847,15 @@ function shellAwareEditText() {
 		}
 		const path = args.path as string;
 		try {
-			const r = await invoke<EditResult>('fs_edit_text', {
-				workdir: fsWorkdir(ctx),
-				relPath: path,
-				oldStr: args.old_str as string,
-				newStr: args.new_str as string
-			});
+			// An edit keeps the record of a file this conversation made current.
+			const r = await trackWrite(createdScope(ctx), fsWorkdir(ctx), path, true, () =>
+				invoke<EditResult>('fs_edit_text', {
+					workdir: fsWorkdir(ctx),
+					relPath: path,
+					oldStr: args.old_str as string,
+					newStr: args.new_str as string
+				})
+			);
 			const diag = await lintPythonIfApplicable(fsWorkdir(ctx), path);
 			return toolResult(`${formatEditResult(path, r)}${diag}`);
 		} catch (e) {
@@ -1149,12 +1157,19 @@ registerTool({
 		if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, 'fs_download_url');
 		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 		try {
-			const message = await invoke<string>('fs_download_url', {
-				workdir: fsWorkdir(ctx),
-				url,
-				relPath: resolved.finalPath,
-				overwrite: resolved.overwrite
-			});
+			const message = await trackWrite(
+				createdScope(ctx),
+				fsWorkdir(ctx),
+				resolved.finalPath,
+				resolved.overwrite,
+				() =>
+					invoke<string>('fs_download_url', {
+						workdir: fsWorkdir(ctx),
+						url,
+						relPath: resolved.finalPath,
+						overwrite: resolved.overwrite
+					})
+			);
 			ctx.filesWrittenThisTurn.add(resolved.finalPath);
 			if (ctx.codeSessionId) ctx.filesRewritableThisTurn?.delete(resolved.finalPath);
 			let thumbDataUrl: string | undefined;

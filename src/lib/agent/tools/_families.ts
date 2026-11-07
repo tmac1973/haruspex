@@ -35,6 +35,11 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
 		has: byName('fs_write_document', 'fs_write_spreadsheet', 'fs_write_slides')
 	},
 	{
+		id: 'files',
+		line: 'files — delete or move files you made in this conversation',
+		has: byName('fs_delete', 'fs_move')
+	},
+	{
 		id: 'email',
 		line: "email — read, summarise and draft the user's email",
 		has: byCategory('email')

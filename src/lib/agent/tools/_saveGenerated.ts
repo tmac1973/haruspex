@@ -20,6 +20,7 @@ import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { ctxCwd, fsWorkdir, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
+import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 import { resolveWritePathInteractive, userCanceledWriteError } from '#lib/agent/tools/fs-write.ts';
 import { audioHashFromUrl } from '#lib/audio/url.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
@@ -48,7 +49,14 @@ export async function generatedBytes(g: Generated): Promise<Uint8Array> {
 /** Where a save goes, once settled. */
 export type SaveTarget =
 	| { mode: 'project'; path: string; overwrite: boolean }
-	| { mode: 'chat'; workdir: string; path: string; overwrite: boolean };
+	| {
+			mode: 'chat';
+			workdir: string;
+			path: string;
+			overwrite: boolean;
+			/** Whose file it becomes (`_created.ts`), kept for a save that lands after the turn. */
+			scope?: string | null;
+	  };
 
 /** Why nothing can be saved in this turn, or null. */
 function saveRefusal(ctx: ToolContext): string | null {
@@ -85,7 +93,13 @@ export async function prepareSave(
 	});
 	if (resolved.kind === 'canceled') return userCanceledWriteError(rawPath, tool);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
-	return { mode: 'chat', workdir, path: resolved.finalPath, overwrite: resolved.overwrite };
+	return {
+		mode: 'chat',
+		workdir,
+		path: resolved.finalPath,
+		overwrite: resolved.overwrite,
+		scope: createdScope(ctx)
+	};
 }
 
 export function isSaveTarget(v: SaveTarget | ToolExecOutput): v is SaveTarget {
@@ -106,12 +120,14 @@ export async function writeCachedImage(
 	const workdir = target.mode === 'chat' ? target.workdir : fsWorkdir(ctx);
 	if (!workdir) return `Could not write ${target.path}: there is no folder to save into.`;
 	try {
-		await invoke('fs_save_cached_image', {
-			hash,
-			workdir,
-			relPath: target.path,
-			overwrite: target.overwrite
-		});
+		await trackWrite(createdScope(ctx), workdir, target.path, target.overwrite, () =>
+			invoke('fs_save_cached_image', {
+				hash,
+				workdir,
+				relPath: target.path,
+				overwrite: target.overwrite
+			})
+		);
 		ctx.filesWrittenThisTurn.add(target.path);
 		return null;
 	} catch (e) {
@@ -129,13 +145,15 @@ export async function writeSaved(
 		return writeAsset(target.path, bytes, target.overwrite, false, assetIo(ctx));
 	}
 	try {
-		await invoke('fs_write_bytes', {
-			workdir: target.workdir,
-			relPath: target.path,
-			bytes: Array.from(bytes),
-			overwrite: target.overwrite,
-			dryRun: false
-		});
+		await trackWrite(target.scope ?? null, target.workdir, target.path, target.overwrite, () =>
+			invoke('fs_write_bytes', {
+				workdir: target.workdir,
+				relPath: target.path,
+				bytes: Array.from(bytes),
+				overwrite: target.overwrite,
+				dryRun: false
+			})
+		);
 		ctx.filesWrittenThisTurn.add(target.path);
 		return null;
 	} catch (e) {

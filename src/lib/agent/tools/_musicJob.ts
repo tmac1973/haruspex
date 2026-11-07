@@ -32,6 +32,7 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
+import { trackWrite } from '#lib/agent/tools/_created.ts';
 
 /** A `music` task's spec. Every song in `request` is named by its audio-cache hash. */
 export interface MusicTaskSpec {
@@ -140,13 +141,15 @@ export async function saveCachedAudio(target: SaveTarget, hash: string): Promise
 	}
 	try {
 		const bytes = await invoke<ArrayBuffer>('audio_read_bytes', { hash });
-		await invoke('fs_write_bytes', {
-			workdir: target.workdir,
-			relPath: target.path,
-			bytes: Array.from(new Uint8Array(bytes)),
-			overwrite: target.overwrite,
-			dryRun: false
-		});
+		await trackWrite(target.scope ?? null, target.workdir, target.path, target.overwrite, () =>
+			invoke('fs_write_bytes', {
+				workdir: target.workdir,
+				relPath: target.path,
+				bytes: Array.from(new Uint8Array(bytes)),
+				overwrite: target.overwrite,
+				dryRun: false
+			})
+		);
 		return savedLineOf(target.path, null);
 	} catch (e) {
 		return savedLineOf(target.path, `Could not write ${target.path}: ${errMessage(e)}`);

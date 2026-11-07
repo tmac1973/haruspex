@@ -154,6 +154,12 @@ pub fn run() {
             app.manage(owner::OwnerApi::load(app.path().app_data_dir().ok()));
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
+            app.manage(fs_tools::created::CreatedFiles::new(
+                app.path()
+                    .app_data_dir()
+                    .ok()
+                    .map(|d| d.join("created_files.json")),
+            ));
             let database = Database::new(app.handle())
                 .map_err(|e| format!("Failed to initialize database: {e}"))?;
             // The proxy records search stats through the StatSink trait
@@ -596,6 +602,10 @@ pub fn run() {
             fs_tools::text::fs_read_text_full,
             fs_tools::text::fs_write_text,
             fs_tools::text::fs_edit_text,
+            fs_tools::created::fs_created_status,
+            fs_tools::created::fs_created_note,
+            fs_tools::created::fs_delete_created,
+            fs_tools::created::fs_move_created,
             fs_tools::editor::editor_read_file,
             fs_tools::editor::editor_save_file,
             fs_tools::editor::editor_unwatch_file,

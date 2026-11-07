@@ -129,6 +129,8 @@ ring = "0.17"
 # from the stores, one crate per platform; each is listed under its target
 # below.
 keyring-core = "1"
+# fs_delete moves a file the agent made to the system trash, so it can come back.
+trash = "5.3.0"
 
 # Secret Service (GNOME Keyring, KWallet) over zbus, which on Linux is already
 # in the tree on tokio through ashpd; crypto-rust keeps OpenSSL out.
