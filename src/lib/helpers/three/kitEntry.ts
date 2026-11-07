@@ -10,7 +10,8 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { ParametricGeometry } from 'three/examples/jsm/geometries/ParametricGeometry.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { checkedMergeGeometries } from '#lib/helpers/three/merge.ts';
 import { createNoise, random } from '#lib/helpers/three/noise.ts';
 
 /** The module's PNGs by the path it wrote, filled by the runner before it runs (`textures.ts`). */
@@ -29,7 +30,7 @@ function texture(path: string): THREE.Texture {
 
 /** What a build module's `build(THREE, kit)` gets as `kit`. */
 export const kit = {
-	mergeGeometries,
+	mergeGeometries: checkedMergeGeometries,
 	mergeVertices,
 	RoundedBoxGeometry,
 	ConvexGeometry,

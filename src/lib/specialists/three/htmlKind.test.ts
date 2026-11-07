@@ -38,6 +38,7 @@ import type { RunError } from './runHtml';
 import {
 	failureReport,
 	htmlCallLabel,
+	outOfTokens,
 	runHtmlKind,
 	type HtmlKindOutcome,
 	type HtmlKindSpec
@@ -123,6 +124,25 @@ describe('failureReport', () => {
 	});
 });
 
+describe('outOfTokens', () => {
+	it('points at Thinking when most of the output was reasoning', () => {
+		const msg = outOfTokens(24000, {
+			content: '<ht',
+			reasoning: 'x'.repeat(5000),
+			completionTokens: 24000
+		});
+		expect(msg).toBe(
+			'The specialist wrote 24,000 tokens (its limit is 24000) most of it on thinking: turn Thinking off for it in Settings → Code → Specialists. The limit is on what it writes, not on the request: ask for fewer parts in one call (one draft per part, then combine them), or raise Max tokens in Settings → Code → Specialists.'
+		);
+	});
+
+	it('falls back to the limit when the server sent no usage', () => {
+		expect(outOfTokens(48000, { content: '<html>', completionTokens: null })).toMatch(
+			/^The specialist wrote 48,000 tokens/
+		);
+	});
+});
+
 describe('runHtmlKind', () => {
 	it('generates, saves the source and returns what the kind made', async () => {
 		const out = await runHtmlKind(run({ path: 'cube.glb' }, 'A cube'), spec());
@@ -131,25 +151,38 @@ describe('runHtmlKind', () => {
 		expect(call.callSpecialist.mock.calls[0][1]).toBe('A cube (one file)');
 	});
 
-	it('asks for request and path, or recheck', async () => {
-		expect(errorOf(await runHtmlKind(run({ path: 'cube.glb' }), spec()))).toBe(
-			'Pass request and path, or recheck.'
+	it('names what a new draft is missing and which arguments arrived', async () => {
+		// The 2026-11-04 report: glb-coder called with path and overwrite, no request.
+		expect(
+			errorOf(
+				await runHtmlKind(run({ name: '3D Coder', path: 'cube.glb', overwrite: true }), spec())
+			)
+		).toBe(
+			'A new draft needs request and path; to re-run a saved source, pass recheck alone. This call is missing request (it had path, overwrite).'
 		);
-		expect(errorOf(await runHtmlKind(run({}, 'A cube'), spec()))).toBe(
-			'Pass request and path, or recheck.'
+		expect(errorOf(await runHtmlKind(run({}, 'A cube'), spec()))).toMatch(
+			/missing path \(it had only name\)/
 		);
+		expect(errorOf(await runHtmlKind(run({}), spec()))).toMatch(/missing request and path/);
 	});
 
-	it('refuses a recheck with a request, a path or images', async () => {
-		expect(errorOf(await runHtmlKind(run({ recheck: 'a.html' }, 'again'), spec()))).toMatch(
-			/recheck takes no request or path/
+	it('rechecks anyway when a request, path or images came too, and says they went unused', async () => {
+		files.set('/proj/a.html', Array.from(new TextEncoder().encode(PAGE)));
+		const out = await runHtmlKind(
+			run({ recheck: 'a.html', path: 'b.glb' }, 'Re-render after the camera fix.', {}, [{}]),
+			spec()
 		);
-		expect(errorOf(await runHtmlKind(run({ recheck: 'a.html', path: 'b.glb' }), spec()))).toMatch(
-			/recheck takes no request or path/
+		expect(out.result).toBe(
+			'Rechecked the saved source as it is; request, path, images only go with a new draft, so they were not used.\nMade it.'
 		);
-		expect(
-			errorOf(await runHtmlKind(run({ recheck: 'a.html' }, undefined, {}, [{}]), spec()))
-		).toMatch(/images only go with a new request/);
+		expect(runner.runAssetHtml.mock.calls[0][0]).toBe(PAGE);
+		expect(call.callSpecialist).not.toHaveBeenCalled();
+	});
+
+	it('rechecks the file named by recheck, not by path', async () => {
+		files.set('/proj/a.html', Array.from(new TextEncoder().encode(PAGE)));
+		const out = await runHtmlKind(run({ recheck: 'a.html', path: 'other.html' }), spec());
+		expect(out.result).toMatch(/Made it\.$/);
 	});
 
 	it("passes on the kind's refusal of the path", async () => {
@@ -165,10 +198,16 @@ describe('runHtmlKind', () => {
 		expect(call.callSpecialist).not.toHaveBeenCalled();
 	});
 
-	it('says how to raise the limit when the specialist runs out of tokens', async () => {
-		call.callSpecialist.mockResolvedValue({ content: '<html', finishReason: 'length' });
+	it('says the output ran out, not the request, when the specialist hits its limit', async () => {
+		call.callSpecialist.mockResolvedValue({
+			content: '<html',
+			finishReason: 'length',
+			completionTokens: 24000
+		});
 		const msg = errorOf(await runHtmlKind(run({ path: 'cube.glb' }, 'A cube'), spec()));
-		expect(msg).toContain(`max ${effectiveSampling(entry).max_tokens}`);
+		expect(msg).toContain(`its limit is ${effectiveSampling(entry).max_tokens}`);
+		expect(msg).toContain('the page was still not finished');
+		expect(msg).toContain('not on the request: ask for fewer parts in one call');
 		expect(msg).toContain('Settings → Code → Specialists');
 	});
 

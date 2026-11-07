@@ -75,6 +75,28 @@ describe('closeUpBounds', () => {
 		if ('bounds' in r) expect(r.bounds.min[1]).toBeCloseTo(1.5, 5);
 	});
 
+	it('says when the part is nearly as long as the whole, so it frames like the whole', () => {
+		// The 2026-11-04 pine: a trunk running up through the foliage.
+		const root = new THREE.Group();
+		const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4.2));
+		trunk.name = 'Trunk';
+		trunk.position.y = 2.1;
+		const foliage = new THREE.Mesh(new THREE.ConeGeometry(0.86, 3.5));
+		foliage.name = 'Foliage';
+		foliage.position.y = 2.75;
+		root.add(trunk, foliage);
+		const tree = {
+			min: [-0.86, 0, -0.86],
+			max: [0.86, 4.5, 0.86],
+			size: [1.72, 4.5, 1.72]
+		} as Bounds;
+		expect(closeUpBounds(THREE, root, 'Trunk', tree)).toMatchObject({
+			label: 'Trunk',
+			note: "Trunk is 4.20 m along its longest side, 93% of the whole model's 4.50 m, so the close-up frames nearly all of it. Pass a smaller part, or a pivot around one."
+		});
+		expect(closeUpBounds(THREE, knight(), 'head', whole)).not.toHaveProperty('note');
+	});
+
 	it('names what it cannot find', () => {
 		expect(closeUpBounds(THREE, knight(), 'Tail', whole)).toEqual({
 			error: 'No node named Tail: pass a mesh or pivot name, or "head".'

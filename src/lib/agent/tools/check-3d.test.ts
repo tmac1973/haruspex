@@ -84,6 +84,37 @@ describe('check_3d', () => {
 		expect((await call({ path: 'models/bear/bear.js' })).result).not.toContain('was not passed');
 	});
 
+	it('finds an animation module named with _anim or -anim too', async () => {
+		files.set('/proj/m/hero.js', enc(MODULE));
+		files.set('/proj/m/hero_anim.js', enc('export default () => [];'));
+		glb.checkGlb.mockResolvedValue({ bytes: GLB, report: { animations: [] }, text: '', png: PNG });
+		expect((await call({ path: 'm/hero.js' })).result).toContain(
+			'm/hero_anim.js was not passed: add anim: "m/hero_anim.js"'
+		);
+	});
+
+	it('takes anim and clip together with out, ground and spec_height', async () => {
+		// The 2026-11-04 reports: the five arguments together read as if anim and clip were dropped.
+		files.set('/proj/m/bear.js', enc(MODULE));
+		files.set('/proj/m/bear.anim.js', enc('export default () => [];'));
+		await call({
+			path: 'm/bear.js',
+			out: 'm/bear.glb',
+			ground: true,
+			spec_height: 1.2,
+			anim: 'm/bear.anim.js',
+			clip: 'Walk'
+		});
+		expect(runner.runBuildModule.mock.calls[0][1]).toMatchObject({
+			anim: 'export default () => [];'
+		});
+		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({
+			clip: 'Walk',
+			ground: true,
+			specHeight: 1.2
+		});
+	});
+
 	it('says which vertex colours the runner clamped', async () => {
 		files.set('/proj/assets/crate.js', enc(MODULE));
 		runner.runBuildModule.mockResolvedValueOnce({

@@ -186,15 +186,18 @@ async function source(a: Args, cwd: string | null, ctx: ToolContext): Promise<So
 }
 
 /**
- * `knight.anim.js` beside `knight.js`, when it exists. A model that checks its
- * build module alone gets "No animation." and may not see why: in the
- * 2026-11-04 tests one called check_3d 21 times without `anim`, sure it had
- * passed it.
+ * `knight.anim.js` (or `knight_anim.js`, `knight-anim.js`) beside `knight.js`,
+ * when it exists. A model that checks its build module alone gets "No
+ * animation." and may not see why: in the 2026-11-04 tests one called check_3d
+ * 21 times without `anim`, sure it had passed it.
  */
 async function animModuleBeside(build: string, io: LoadIo): Promise<string | null> {
-	const beside = build.replace(/\.(m?js)$/i, '.anim.$1');
-	if (beside === build) return null;
-	return 'bytes' in (await readFile(beside, io)) ? beside : null;
+	for (const sep of ['.', '_', '-']) {
+		const beside = build.replace(/\.(m?js)$/i, `${sep}anim.$1`);
+		if (beside === build) return null;
+		if ('bytes' in (await readFile(beside, io))) return beside;
+	}
+	return null;
 }
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {

@@ -180,17 +180,34 @@ const boundsOf = (box: { min: { x: number; y: number; z: number }; max: typeof b
 	return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as Vec3 };
 };
 
+/** A part this share of the whole's longest side frames about as the whole does. */
+const NEARLY_WHOLE = 0.8;
+
+/**
+ * What the model is told when `part` is nearly as long as the whole: the views
+ * frame each side by its longest extent, so a trunk that runs up a tree is
+ * framed like the tree. A pine's `view: "Trunk"` came back looking like the
+ * whole-model sheet and read as a close-up that ignored the part (2026-11-04).
+ */
+function nearlyWholeNote(label: string, part: Bounds, whole: Bounds): string | undefined {
+	const longest = Math.max(...part.size);
+	const wholeLongest = Math.max(...whole.size);
+	if (!(wholeLongest > 0) || longest < NEARLY_WHOLE * wholeLongest) return undefined;
+	const share = Math.round((longest / wholeLongest) * 100);
+	return `${label} is ${longest.toFixed(2)} m along its longest side, ${share}% of the whole model's ${wholeLongest.toFixed(2)} m, so the close-up frames nearly all of it. Pass a smaller part, or a pivot around one.`;
+}
+
 /**
  * What a close-up of `view` frames: the node of that name (or for "head", the
  * first node named like one, else the top quarter of the asset), or why there
- * is none.
+ * is none. `note` says when the part is nearly as long as the whole.
  */
 export function closeUpBounds(
 	THREE: Three,
 	root: Object3D,
 	view: string,
 	whole: Bounds
-): { bounds: Bounds; label: string } | { error: string } {
+): { bounds: Bounds; label: string; note?: string } | { error: string } {
 	root.updateMatrixWorld(true);
 	let node =
 		root.getObjectByName(view) ??
@@ -208,7 +225,9 @@ export function closeUpBounds(
 	if (!node) return { error: `No node named ${view}: pass a mesh or pivot name, or "head".` };
 	const box = new THREE.Box3().setFromObject(node);
 	if (box.isEmpty()) return { error: `${view} has no meshes under it to show.` };
-	return { bounds: boundsOf(box), label: node.name };
+	const bounds = boundsOf(box);
+	const note = nearlyWholeNote(node.name, bounds, whole);
+	return { bounds, label: node.name, ...(note ? { note } : {}) };
 }
 
 /**

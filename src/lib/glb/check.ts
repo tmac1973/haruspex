@@ -86,7 +86,10 @@ function whatToShow(
 	clip: string | undefined,
 	view: string | undefined
 ):
-	| { anim: AnimationClip | undefined; close: { bounds: Bounds; label: string } | null }
+	| {
+			anim: AnimationClip | undefined;
+			close: { bounds: Bounds; label: string; note?: string } | null;
+	  }
 	| { problems: string[] } {
 	const anim = clip ? gltf.animations.find((a) => a.name === clip) : undefined;
 	if (clip && !anim) {
@@ -123,11 +126,12 @@ function describe(
 			? renderMotionSheet(THREE, gltf.scene, anim, motion.fastest)
 			: renderSheet(THREE, gltf.scene, close?.bounds ?? report.bounds, !!close);
 	disposeTree(gltf.scene);
-	const text = formatReport(report, {
+	const formatted = formatReport(report, {
 		normalisedFrom,
 		clipLines: formatClipLines(clips),
 		clipDetail: motion ? formatClip(motion, png !== null) : undefined,
 		clip: anim?.name
 	});
+	const text = close?.note ? `${formatted}\n${close.note}` : formatted;
 	return { text, png, clip: anim?.name, closeUp: close?.label };
 }
