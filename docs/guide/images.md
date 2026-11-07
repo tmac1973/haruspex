@@ -52,13 +52,13 @@ Settings → Image marks Qwen-Image as not licensed for commercial use and asks 
 
 ## Draw a picture in Chat
 
-Ask Chat to draw something. It takes 30 seconds to a few minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking before replacing a file.
+Ask Chat to draw something. It takes 30 seconds to minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Ask for another shape or a transparent background; it says if one comes out blank or opaque. With a working folder set, it can save it there, asking before replacing a file.
 
 ## Make art for a project
 
-In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It won't overwrite a file unless you ask. See the `code` and `shell` pages.
+In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It won't overwrite a file unless asked. See the `code` and `shell` pages.
 
-A tiling texture, such as "a 32 px gravel floor tile", or the edge tiles where two textures meet, is drawn by code, not by the image model, and works without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model in Settings → Image can tile, the picture is still written, and the assistant says so.
+A tiling texture, such as "a 32 px gravel tile", or the edge tiles where two textures meet, is drawn by code, not by the image model, and works without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model in Settings → Image can tile, the picture is still written, and the assistant says so.
 
 ## Make a whole set of game art
 

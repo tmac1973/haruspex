@@ -79,10 +79,59 @@ pub fn entropy_bits(img: &RgbaImage) -> f32 {
         .sum::<f32>()
 }
 
+/// Below this spread of luminance (0–255) a picture is one flat colour.
+const BLANK_LUMA_SPREAD: f32 = 2.0;
+
+/// Whether a picture is one flat colour: the standard deviation of its
+/// visible pixels' luminance under [`BLANK_LUMA_SPREAD`]. A model that failed
+/// can still return a valid PNG: an edit reported as made came back a black
+/// frame (#1032). Sampled on a grid, so a 2048 px picture costs little;
+/// `entropy_bits` is meant for a 16-colour sprite, not a full-colour image.
+pub fn looks_blank(img: &RgbaImage) -> bool {
+    let step = ((img.width().max(img.height()) / 256).max(1)) as usize;
+    let (mut n, mut sum, mut sq) = (0f64, 0f64, 0f64);
+    for (x, y, p) in img.enumerate_pixels() {
+        if !(x as usize).is_multiple_of(step) || !(y as usize).is_multiple_of(step) || p.0[3] == 0 {
+            continue;
+        }
+        let l = 0.299 * p.0[0] as f64 + 0.587 * p.0[1] as f64 + 0.114 * p.0[2] as f64;
+        n += 1.0;
+        sum += l;
+        sq += l * l;
+    }
+    if n == 0.0 {
+        return true;
+    }
+    let mean = sum / n;
+    ((sq / n - mean * mean).max(0.0).sqrt() as f32) < BLANK_LUMA_SPREAD
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use image::Rgba;
+
+    #[test]
+    fn a_flat_or_empty_picture_looks_blank_and_a_varied_one_does_not() {
+        assert!(looks_blank(&RgbaImage::from_pixel(
+            1024,
+            1024,
+            Rgba([3, 2, 4, 255])
+        )));
+        assert!(looks_blank(&RgbaImage::from_pixel(
+            8,
+            8,
+            Rgba([0, 0, 0, 0])
+        )));
+        let shapes = RgbaImage::from_fn(1024, 1024, |x, _| {
+            if x < 512 {
+                Rgba([200, 40, 40, 255])
+            } else {
+                Rgba([20, 20, 20, 255])
+            }
+        });
+        assert!(!looks_blank(&shapes));
+    }
 
     #[test]
     fn a_flat_image_has_no_entropy() {

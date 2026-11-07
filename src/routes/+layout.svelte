@@ -2,6 +2,7 @@
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { agentPowershell } from '#lib/code/powershell.ts';
 	import { refreshVideoBinaries } from '#lib/video/binaries.ts';
+	import { probePythonRuntime } from '#lib/sandbox/availability.ts';
 	import { initTasks } from '#lib/tasks/store.svelte.ts';
 	import { startTaskRunner } from '#lib/tasks/followers.ts';
 	import favicon from '#lib/assets/favicon.svg';
@@ -154,6 +155,8 @@
 	// Whether ffmpeg and melt are here decides whether the video tools are
 	// offered; the registry asks synchronously, so look once now.
 	onMount(() => void refreshVideoBinaries().catch(() => {}));
+	// Likewise whether the Python runtime is here decides run_python.
+	onMount(() => void probePythonRuntime());
 	// Background tasks report progress and their end as events; every window
 	// listens, and the one holding the conversation or session that started a
 	// task tells it.
