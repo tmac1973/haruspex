@@ -583,7 +583,7 @@ fn thumbnail_target(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("thumbnail");
-        let _ = std::fs::copy(&target, backups.join(format!("{stem}-{stamp}.jpg")));
+        let _ = super::copy_file(&target, &backups.join(format!("{stem}-{stamp}.jpg")));
     }
     Ok(target)
 }
