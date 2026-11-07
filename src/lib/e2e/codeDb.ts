@@ -217,6 +217,9 @@ export const CODE_DB: Record<string, Handler> = {
 		line_after: '# Hello',
 		used_fuzzy: false
 	}),
+	// The record of the files the agent made (fs_delete, fs_move): none here.
+	fs_created_status: () => 'foreign',
+	fs_created_note: () => null,
 	run_command_capture: () => ({
 		stdout: '# Hello\n\nA project for the e2e tests.\n',
 		stderr: '',
