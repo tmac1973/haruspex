@@ -12,6 +12,7 @@ import {
 	toolInvokeError
 } from '#lib/agent/tools/_helpers.ts';
 import { extractPalette } from '#lib/assets/normalize.ts';
+import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 
 /**
  * Where `make_asset` reads and writes. A Code session's folder is its
@@ -27,10 +28,17 @@ export interface AssetIo {
 export function assetIo(ctx: ToolContext): AssetIo {
 	const workdir = ctx.shellMode ? null : fsWorkdir(ctx);
 	if (workdir) {
+		const write = (relPath: string, bytes: number[], overwrite: boolean, dryRun: boolean) =>
+			invoke<void>('fs_write_bytes', { workdir, relPath, bytes, overwrite, dryRun });
+		const scope = createdScope(ctx);
 		return {
 			read: (relPath) => invoke<number[]>('fs_read_bytes', { workdir, relPath }),
 			write: (relPath, bytes, overwrite, dryRun) =>
-				invoke('fs_write_bytes', { workdir, relPath, bytes, overwrite, dryRun })
+				dryRun
+					? write(relPath, bytes, overwrite, dryRun)
+					: trackWrite(scope, workdir, relPath, overwrite, () =>
+							write(relPath, bytes, overwrite, dryRun)
+						)
 		};
 	}
 	const distro = ctxWslDistroArg(ctx);

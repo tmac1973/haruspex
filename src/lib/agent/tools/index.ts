@@ -2,6 +2,8 @@
 import '#lib/agent/tools/web.ts';
 import '#lib/agent/tools/fs-read.ts';
 import '#lib/agent/tools/fs-write.ts';
+import '#lib/agent/tools/fs-delete.ts';
+import '#lib/agent/tools/fs-move.ts';
 import '#lib/agent/tools/email.ts';
 import '#lib/agent/tools/email-compose.ts';
 import '#lib/agent/tools/sandbox.ts';
