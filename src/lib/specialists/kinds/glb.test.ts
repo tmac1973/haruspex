@@ -118,18 +118,24 @@ describe('the glb kind', () => {
 		expect(files.get('/proj/a.glb')).toEqual([...GLB]);
 	});
 
-	it('needs a request and path, or a recheck alone', async () => {
-		expect((await run({ path: 'a.glb' })).result).toMatch(/Pass request and path, or recheck/);
-		expect((await run({}, 'x')).result).toMatch(/Pass request and path, or recheck/);
-		expect((await run({ recheck: 'a.glb.html' }, 'x')).result).toMatch(/recheck takes no request/);
-		expect((await run({ recheck: 'a.glb.html', path: 'b.glb' })).result).toMatch(
-			/recheck takes no request/
+	it('needs a request and path for a new draft', async () => {
+		expect((await run({ path: 'a.glb', overwrite: true })).result).toMatch(
+			/missing request \(it had path, overwrite\)/
 		);
+		expect((await run({}, 'x')).result).toMatch(/missing path/);
+	});
+
+	it('rechecks the saved source even when a request or path came too', async () => {
+		files.set('/proj/a.glb.html', [...new TextEncoder().encode(PAGE)]);
+		const out = await run({ recheck: 'a.glb.html', path: 'b.glb' }, 'x');
+		expect(out.result).toMatch(/^Rechecked the saved source as it is; request, path only go/);
+		expect(out.result).toContain('Saved a.glb (source: a.glb.html).');
+		expect(call.callSpecialist).not.toHaveBeenCalled();
 	});
 
 	it('says when the model ran out of tokens or wrote no page', async () => {
 		call.callSpecialist.mockResolvedValueOnce({ content: '', finishReason: 'length' });
-		expect((await run({ path: 'a.glb' }, 'x')).result).toMatch(/ran out of tokens \(max 48000\)/);
+		expect((await run({ path: 'a.glb' }, 'x')).result).toMatch(/its limit is 48000/);
 		call.callSpecialist.mockResolvedValueOnce({ content: 'Sorry, no.', finishReason: 'stop' });
 		expect((await run({ path: 'a.glb' }, 'x')).result).toMatch(/without an HTML page: Sorry, no\./);
 		expect(files.size).toBe(0);
@@ -182,20 +188,10 @@ describe('the glb kind', () => {
 		expect(out.result).toContain('Saved lamp.glb (source: lamp.glb.html).');
 	});
 
-	it('refuses a recheck of anything but a saved .glb.html, or with images', async () => {
+	it('refuses a recheck of anything but a saved .glb.html', async () => {
 		expect((await run({ recheck: 'lamp.html' })).result).toMatch(/needs the \.glb\.html/);
 		expect((await run({ recheck: 'gone.glb.html' })).result).toMatch(
 			/Could not read gone\.glb\.html/
-		);
-		const withImages = {
-			entry,
-			request: undefined,
-			images: [{ path: 'a.png', dataUrl: PNG }],
-			args: { recheck: 'lamp.glb.html' },
-			ctx: ctx()
-		} as unknown as SpecialistRun;
-		expect((await specialistKind('glb')!.run(withImages)).result).toMatch(
-			/images only go with a new request/
 		);
 	});
 

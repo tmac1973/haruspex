@@ -56,7 +56,8 @@ export const HTML_KIND_PARAMS = {
 	recheck: {
 		schema: {
 			type: 'string',
-			description: 'Path of a source file this tool saved earlier; re-runs it without generating.'
+			description:
+				'Path of a source file this tool saved earlier; re-runs it as it is, without generating. Pass it with name alone.'
 		},
 		required: false
 	},
@@ -98,22 +99,42 @@ function decode(bytes: number[]): string {
 	return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
-type Prepared = { mode: 'generate' | 'recheck'; paths: HtmlKindPaths } | string;
+type Prepared = { mode: 'generate' | 'recheck'; paths: HtmlKindPaths; ignored: string[] } | string;
+
+/**
+ * Why a new draft can't start: what is missing, and the argument names that
+ * did arrive. A model whose `request` was dropped on the way (seen with
+ * deepseek-v4.1-flash, 2026-11-04) sent the same call seven times against a
+ * bare "Pass request and path"; the list shows it the field never came.
+ */
+function draftRefusal(run: SpecialistRun): string {
+	const missing = [
+		...(run.request === undefined ? ['request'] : []),
+		...(typeof run.args.path !== 'string' ? ['path'] : [])
+	];
+	const got = Object.keys(run.args).filter((k) => k !== 'name');
+	const had = got.length ? got.join(', ') : 'only name';
+	return `A new draft needs request and path; to re-run a saved source, pass recheck alone. This call is missing ${missing.join(' and ')} (it had ${had}).`;
+}
 
 /** The call's mode and paths, or why it can't run. */
 function prepare(run: SpecialistRun, spec: HtmlKindSpec): Prepared {
 	const { args, request, images, ctx } = run;
 	const recheck = typeof args.recheck === 'string';
-	if (recheck) {
-		if (request !== undefined || args.path !== undefined) {
-			return 'recheck takes no request or path: it re-runs the saved source.';
-		}
-		if (images.length)
-			return 'recheck re-runs the saved source; images only go with a new request.';
-	} else if (request === undefined || typeof args.path !== 'string') {
-		return 'Pass request and path, or recheck.';
+	// A recheck re-runs the saved source, so a request, path or images can't
+	// change it: run it anyway and say they went unused. Refusing left a model
+	// with no call it could see as valid (2026-11-04).
+	const ignored = recheck
+		? [
+				...(request !== undefined ? ['request'] : []),
+				...(args.path !== undefined ? ['path'] : []),
+				...(images.length ? ['images'] : [])
+			]
+		: [];
+	if (!recheck && (request === undefined || typeof args.path !== 'string')) {
+		return draftRefusal(run);
 	}
-	const shape = spec.sourcePath(args);
+	const shape = spec.sourcePath(recheck ? { ...args, path: undefined } : args);
 	if (typeof shape === 'string') return shape;
 	const cwd = ctxCwd(ctx);
 	return {
@@ -122,8 +143,40 @@ function prepare(run: SpecialistRun, spec: HtmlKindSpec): Prepared {
 			...shape,
 			sourceAbs: resolveShellPath(shape.source, cwd),
 			targetAbs: resolveShellPath(shape.target, cwd)
-		}
+		},
+		ignored
 	};
+}
+
+/** The line a recheck adds when the call also carried draft-only arguments. */
+function ignoredNote(ignored: string[]): string[] {
+	if (!ignored.length) return [];
+	return [
+		`Rechecked the saved source as it is; ${ignored.join(', ')} only go with a new draft, so they were not used.`
+	];
+}
+
+/** Put `lines` ahead of a result. */
+function withLines(output: ToolExecOutput, lines: string[]): ToolExecOutput {
+	return lines.length ? { ...output, result: [...lines, output.result].join('\n') } : output;
+}
+
+/**
+ * What the model reads when the specialist's answer hit `max_tokens`. The
+ * output is what ran out, not the request: a 350-word request read as "too
+ * long" (2026-11-04), so say what the tokens went on.
+ */
+export function outOfTokens(
+	max: number,
+	answer: { content: string; reasoning?: string; completionTokens: number | null }
+): string {
+	const used = answer.completionTokens ?? max;
+	const thought = answer.reasoning?.length ?? 0;
+	const spent =
+		thought > answer.content.length
+			? 'most of it on thinking: turn Thinking off for it in Settings → Code → Specialists'
+			: 'and the page was still not finished';
+	return `The specialist wrote ${used.toLocaleString('en-US')} tokens (its limit is ${max}) ${spent}. The limit is on what it writes, not on the request: ask for fewer parts in one call (one draft per part, then combine them), or raise Max tokens in Settings → Code → Specialists.`;
 }
 
 /** The page the model wrote, saved at the source; or the error to return. */
@@ -148,10 +201,7 @@ async function generate(
 		images
 	});
 	if (answer.finishReason === 'length') {
-		const max = effectiveSampling(entry).max_tokens;
-		return {
-			error: `The specialist ran out of tokens (max ${max}). Raise Max tokens in Settings → Code → Specialists, or ask for something simpler.`
-		};
+		return { error: outOfTokens(effectiveSampling(entry).max_tokens, answer) };
 	}
 	const html = extractHtml(answer.content);
 	if (!html) {
@@ -173,6 +223,7 @@ export async function runHtmlKind(run: SpecialistRun, spec: HtmlKindSpec): Promi
 	const prepared = prepare(run, spec);
 	if (typeof prepared === 'string') return toolResult(toolError(prepared));
 	const { mode, paths } = prepared;
+	const note = ignoredNote(prepared.ignored);
 	let html: string;
 	if (mode === 'recheck') {
 		try {
@@ -189,11 +240,17 @@ export async function runHtmlKind(run: SpecialistRun, spec: HtmlKindSpec): Promi
 	const result = await runAssetHtml(html, { signal: run.ctx.signal, ...spec.runOptions });
 	// Any error fails the run, before `finish` can write anything.
 	if (result.errors.length) {
-		return toolResult(failureReport(result.errors, [], paths.source, run.entry.name));
+		return withLines(
+			toolResult(failureReport(result.errors, [], paths.source, run.entry.name)),
+			note
+		);
 	}
 	const outcome = await spec.finish(result, paths, run);
 	if (!outcome.ok) {
-		return toolResult(failureReport([], outcome.problems, paths.source, run.entry.name));
+		return withLines(
+			toolResult(failureReport([], outcome.problems, paths.source, run.entry.name)),
+			note
+		);
 	}
-	return outcome.output;
+	return withLines(outcome.output, note);
 }

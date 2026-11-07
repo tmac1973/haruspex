@@ -11,7 +11,7 @@ The 3D helper gives the Code tab's agent one tool, `check_3d`. The agent writes 
 
 A **build module** is a `.js` file whose default export is `build(THREE, kit)`. It imports nothing, since it runs alone in a hidden sandbox, and returns one Three.js object (or `{ object, animations }` with clips). Units are metres, y is up, the front faces +z, and every mesh is named.
 
-`kit` adds `mergeGeometries`, `mergeVertices`, `RoundedBoxGeometry`, `ConvexGeometry`, `ParametricGeometry`, seeded `createNoise(seed)` and `random(seed)`, and `texture('textures/bark.png')`, which loads a PNG beside the file. Texture paths must be written out in full; up to 8 PNGs of up to 4 MB each.
+`kit` adds `mergeGeometries` (it says why a merge fails), `mergeVertices`, `RoundedBoxGeometry`, `ConvexGeometry`, `ParametricGeometry`, seeded `createNoise(seed)` and `random(seed)`, and `texture('textures/bark.png')`, which loads a PNG beside the file. Texture paths must be written out in full; up to 8 PNGs of up to 4 MB each.
 
 An **animation module** keeps clips in a file of their own. Its `animate(THREE, object, kit)` gets the built model and returns an array of clips. Clips turn or move named nodes, usually pivots placed at the joints (`Hip_L > Knee_L`). A track naming a node that doesn't exist is dropped, and the report lists it.
 
@@ -29,11 +29,11 @@ An **animation module** keeps clips in a file of their own. Its `animate(THREE, 
 | `ground`        | put the feet on the floor, centred                          |
 | `max_triangles` | warn above this many triangles                              |
 
-Checking a `.glb` writes nothing unless `height` or `ground` asks for a resized copy at `out`.
+Checking a `.glb` writes nothing unless `height` or `ground` asks for a copy at `out`.
 
 ## What it checks
 
-A build error stops the check and reports the error with its line, in whichever file it came from. So does a clip track whose values don't match its times, named by clip and track. Otherwise:
+A build error stops the check and reports the error with its line and file. So does a clip track whose values don't match its times, named by clip and track. Otherwise:
 
 - **Problems**: no meshes, zero size, broken vertex positions.
 - **Warnings**: missing normals, faces that vanish from behind, faces pointing inward, textures over 2048 px, more triangles than `max_triangles`, a height off `spec_height`.
@@ -53,7 +53,7 @@ Each clip is sampled at 16 frames. Clips named Idle, Walk, Run, Fly or Swim loop
 - a clip that plays once and doesn't start and end at the rest pose (a Die or Fall may end elsewhere), so a game can't blend into and out of it;
 - a walk or run whose planted feet don't move back together at one speed, like a treadmill: they slip against it, stand still or move forward;
 - a knee or elbow bending the wrong way by over 10°;
-- a joint turning over 90° between two keys, and tracks that never move;
+- a joint turning over 90° between keys, and tracks that never move;
 - how far it ends from where it started, how far its key pose reaches, and how far it drifts;
 - as notes that never fail it: keys over 0.3 s apart, which move in straight lines, and over 60 keys a second, which bloat the file.
 
@@ -61,10 +61,10 @@ Each clip is sampled at 16 frames. Clips named Idle, Walk, Run, Fly or Swim loop
 
 - The `.glb`, with its clips, saved at `out`.
 - The report: size in metres, where the feet sit, mesh, triangle and draw-call counts, the heaviest parts, problems, warnings, materials and one line per clip.
-- The render sheet: a 1200 × 800 image of front, right, back, left, top and three-quarter views over a floor grid, height marked. With `view`, the same views framed on that part, drawing only what is near it.
+- The render sheet: a 1200 × 800 image of front, right, back, left, top and three-quarter views over a floor grid, height marked. With `view`, the same views framed on that part, drawing only what is near it (a part as long as the model looks whole).
 - The motion sheet, with `clip`: 8 frames from the side, 8 from the front, then all frames overlaid with trails of the parts that move most.
 
-The agent sees the sheets only if its model reads images; the report comes either way.
+The agent sees the sheets only if its model reads images.
 
 ## What it doesn't do
 
