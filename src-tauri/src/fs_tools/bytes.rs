@@ -17,7 +17,7 @@ pub async fn fs_read_bytes(workdir: String, rel_path: String) -> Result<Vec<u8>,
     let workdir = workdir_path(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(super::path::not_a_file(&resolved, &rel_path));
     }
     tokio::fs::read(&resolved)
         .await

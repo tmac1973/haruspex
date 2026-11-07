@@ -99,4 +99,21 @@ describe('writing a file twice in one Chat turn', () => {
 		expect(again.result).toContain('already written in this turn');
 		expect(mocks.disk.get('app.py')).toBe('a\n');
 	});
+
+	it('lets a file the turn created be revised whole, starting with the same line', async () => {
+		const ctx = turn(undefined);
+		await write(ctx, '// walk cycle\nconst a = 1;\n');
+		const again = await write(ctx, '// walk cycle\nconst a = 2;\n');
+		expect(again.result).toContain('Wrote: app.py');
+		expect(mocks.disk.get('app.py')).toBe('// walk cycle\nconst a = 2;\n');
+	});
+
+	it('says how to revise, and that the refused write did not land', async () => {
+		const ctx = turn(undefined);
+		await write(ctx, '// walk cycle\n');
+		const piece = await write(ctx, 'const rest = 1;\n');
+		expect(piece.result).toContain('the file is unchanged');
+		expect(piece.result).toContain('starting with the same first line');
+		expect(piece.result).toContain('as it is on disk now');
+	});
 });

@@ -394,7 +394,7 @@ pub async fn fs_read_image(workdir: String, rel_path: String) -> Result<String, 
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(super::path::not_a_file(&resolved, &rel_path));
     }
 
     stat_within(&resolved, MAX_IMAGE_BYTES, |len| {

@@ -102,7 +102,7 @@ pub(super) async fn read_document_blocking(
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(path::not_a_file(&resolved, &rel_path));
     }
 
     extract_document_blocking(&resolved, fmt, extract).await

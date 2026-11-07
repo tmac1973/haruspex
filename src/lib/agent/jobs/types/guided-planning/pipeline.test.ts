@@ -481,7 +481,7 @@ describe('guided planning can repair a file it already wrote this turn', () => {
 	it('tells the phase writer when to reach for it', () => {
 		const prompt = flat(phaseWritePrompt('plan/x/', 'plan/x/overview.md', false));
 		expect(prompt).toContain('use fs_edit_text');
-		expect(prompt).toContain('Writing the same file twice in one turn is refused');
+		expect(prompt).toContain('refused unless it is the whole file again');
 	});
 });
 

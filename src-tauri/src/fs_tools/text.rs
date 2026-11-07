@@ -21,7 +21,7 @@ pub async fn fs_read_text(
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(super::path::not_a_file(&resolved, &rel_path));
     }
 
     read_text_at(
@@ -43,7 +43,7 @@ pub async fn fs_read_text_full(workdir: String, rel_path: String) -> Result<Stri
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(super::path::not_a_file(&resolved, &rel_path));
     }
 
     read_text_full_at(&resolved).await
@@ -95,7 +95,7 @@ pub async fn fs_edit_text(
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
     if !resolved.is_file() {
-        return Err(format!("Not a file: {}", rel_path));
+        return Err(super::path::not_a_file(&resolved, &rel_path));
     }
 
     edit_text_at(&resolved, &old_str, &new_str, &rel_path).await

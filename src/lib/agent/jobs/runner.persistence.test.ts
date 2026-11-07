@@ -7,7 +7,8 @@ const {
 	useRunnerFixtures,
 	makeJob,
 	freshRunner,
-	tick
+	tick,
+	turnsOfKind
 } = await vi.hoisted(() => import('./runner.fixtures.ts'));
 
 vi.mock('@tauri-apps/api/core', () => m.tauriCore());
@@ -210,6 +211,9 @@ describe('jobs runner — per-turn-kind stats', () => {
 		expect(byKind['planning.write']).toBeTruthy();
 		expect(byKind['planning.write'].calls).toBe(1);
 		expect(byKind['planning.write'].tokens_reasoning).toBe(60);
+		// A phase turn may write its own file and nothing else in the plan folder.
+		const [write] = turnsOfKind('planning.write');
+		expect((write[0] as EphemeralTurnOptions).writeRoot).toMatch(/^plan\/x\/phase-01-.*\.md$/);
 	});
 
 	it('attributes the overview and outline interviews separately', async () => {

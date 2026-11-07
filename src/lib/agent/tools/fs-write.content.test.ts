@@ -321,4 +321,18 @@ describe('writeRoot confinement applies to edits, not just writes', () => {
 		expect(out.result).toContain('Edited plan/my-feature/phase-01.md');
 		expect(invoke).toHaveBeenCalled();
 	});
+
+	it('holds a one-file root to that file, refusing a near-identical name', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const root = 'plan/x/phase-01-pinned-three-js-import-map.md';
+		const out = await executeTool(
+			'fs_write_text',
+			{ path: 'plan/x/phase-01-pinned-three.js-import-map.md', content: '# Phase 01\n' },
+			{ ...ctx, writeRoot: root }
+		);
+		expect(JSON.parse(out.result).error).toBe(
+			`This turn may only write ${root}. Refusing to write "plan/x/phase-01-pinned-three.js-import-map.md" — write ${root} instead.`
+		);
+		expect(invoke).not.toHaveBeenCalled();
+	});
 });
