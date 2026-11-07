@@ -191,7 +191,7 @@ fn backup(project: &Path) -> Result<Option<PathBuf>, String> {
         .unwrap_or("project");
     let stamp = chrono_stamp();
     let to = dir.join(format!("{stem}-{stamp}.kdenlive"));
-    std::fs::copy(project, &to).map_err(|e| format!("can't back up the project: {e}"))?;
+    crate::video::copy_file(project, &to).map_err(|e| format!("can't back up the project: {e}"))?;
     // Keep the newest few.
     let mut old: Vec<PathBuf> = std::fs::read_dir(&dir)
         .map(|rd| {
@@ -251,7 +251,18 @@ pub async fn save(project: &Path, text: &str, melt: &str) -> Result<(), String> 
     if let Err(why) = melt_loads(melt, project).await {
         match &saved {
             Some(b) => {
-                let _ = std::fs::copy(b, project);
+                // Beside it and renamed, as above, so a failed copy can't
+                // leave the project half restored.
+                let restored =
+                    crate::video::copy_file(b, &tmp).and_then(|()| std::fs::rename(&tmp, project));
+                if let Err(e) = restored {
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(format!(
+                        "melt couldn't load the edited project ({why}), and restoring it \
+                         failed ({e}): the old version is {}",
+                        b.display()
+                    ));
+                }
             }
             None => {
                 let _ = std::fs::remove_file(project);

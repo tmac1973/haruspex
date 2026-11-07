@@ -181,7 +181,8 @@ registerTool({
 							properties: {
 								index: {
 									type: 'integer',
-									description: 'A clip already in the cut, by its number from video_project_read.'
+									description:
+										'A clip already in the cut, by its number from video_project_read: the cut as it is now, before intro and outro are added.'
 								},
 								path: {
 									type: 'string',
