@@ -15,6 +15,9 @@ const state = vi.hoisted(() => ({
 	generate: vi.fn()
 }));
 
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+
 vi.mock('./registry', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./registry')>()),
 	backendForEntry: () => ({
@@ -37,7 +40,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 import {
 	generateForTool,
 	upscaleForTool,
+	BLANK_NOTE,
 	GPU_FULL_SENTENCE,
+	NO_ALPHA_NOTE,
 	NO_EDIT_SENTENCE,
 	NO_EXTEND_SENTENCE,
 	NO_UPSCALE_SENTENCE
@@ -71,6 +76,7 @@ beforeEach(() => {
 	state.probe = { ok: true, detail: 'ok' };
 	state.caps = { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };
 	state.generate.mockReset().mockResolvedValue(drawn());
+	tauri.invoke.mockReset().mockResolvedValue({ transparent: 0.4, blank: false });
 });
 
 describe('generateForTool', () => {
@@ -144,8 +150,33 @@ describe('generateForTool notes', () => {
 			...result,
 			meta: { ...result.meta, transparencyFailed: 'It came back solid.' }
 		});
+		tauri.invoke.mockResolvedValue({ transparent: 0, blank: false });
 		const out = await generateForTool(req({ transparent: true }));
 		expect(out.notes).toContain('It came back solid.');
+		expect(out.notes).not.toContain(NO_ALPHA_NOTE);
+	});
+
+	it('says first when the picture came out one flat colour', async () => {
+		// #1032: an edit reported as made was a near-black frame.
+		tauri.invoke.mockResolvedValue({ transparent: 0, blank: true });
+		const out = await generateForTool(req());
+		expect(tauri.invoke).toHaveBeenCalledWith('image_result_check', { bytes: [1, 2, 3] });
+		expect(out.notes[0]).toBe(BLANK_NOTE);
+	});
+
+	it('says when a transparent request came back with no alpha at all', async () => {
+		// #1032: a cutout came back RGB with a painted checkerboard.
+		tauri.invoke.mockResolvedValue({ transparent: 0, blank: false });
+		expect((await generateForTool(req({ transparent: true }))).notes).toContain(NO_ALPHA_NOTE);
+		// Not asked for, or there: nothing to say.
+		expect((await generateForTool(req())).notes).not.toContain(NO_ALPHA_NOTE);
+		tauri.invoke.mockResolvedValue({ transparent: 0.3, blank: false });
+		expect((await generateForTool(req({ transparent: true }))).notes).toEqual([]);
+	});
+
+	it('says nothing when the check cannot run', async () => {
+		tauri.invoke.mockRejectedValue('Could not read the picture');
+		expect((await generateForTool(req({ transparent: true }))).notes).toEqual([]);
 	});
 });
 

@@ -179,9 +179,9 @@ fn fuzzy_apply(
     let win = old_norm.len();
     let not_found = || {
         format!(
-            "old_str not found in {}. The text doesn't match the file even allowing for whitespace/quote differences. {} Re-read those lines and copy them exactly.",
+            "old_str not found in {}. The text doesn't match the file even allowing for whitespace/quote differences. {}",
             path,
-            closest_match(&content_norm, &old_norm, &content_lines, &old_lines)
+            closest_hint(&content_lines, &content_norm, &old_norm)
         )
     };
     if win == 0 || win > content_norm.len() {
@@ -221,59 +221,86 @@ fn fuzzy_apply(
     Ok((out_lines.join("\n"), result))
 }
 
-/// Where a missed `old_str` comes nearest the file, for the not-found error:
-/// the window sharing the most non-blank lines with it, and the first line
-/// there that differs. A model that copied `old_str` from a stale or partial
-/// view of the file then knows which lines to read again.
-fn closest_match(
-    content_norm: &[String],
-    old_norm: &[String],
-    content_lines: &[&str],
-    old_lines: &[&str],
-) -> String {
-    // A final newline ends the last line; it doesn't start another.
+/// Lines a not-found hint quotes are cut to this many characters.
+const HINT_LINE_CHARS: usize = 120;
+
+fn quoted(line: &str) -> String {
+    let t = line.trim();
+    match t.char_indices().nth(HINT_LINE_CHARS) {
+        Some((i, _)) => format!("`{}…`", &t[..i]),
+        None => format!("`{t}`"),
+    }
+}
+
+/// Where `old_str` comes closest to the file, for a not-found error: the
+/// window whose lines match `old_str`'s first lines longest, and the first
+/// line that differs. A bare "re-read the file" sent a model back to read a
+/// file it had just read, when its `old_str` came from a version that was
+/// never written (#1032). Lines compare trimmed, so indentation drift still
+/// finds the place.
+fn closest_hint(content_lines: &[&str], content_norm: &[String], old_norm: &[String]) -> String {
+    let trim = |s: &String| s.trim().to_string();
+    let file: Vec<String> = content_norm.iter().map(trim).collect();
+    let old: Vec<String> = old_norm.iter().map(trim).collect();
+    // A final newline leaves an empty last entry that isn't a line.
     let total = content_lines.len() - usize::from(content_lines.last() == Some(&""));
-    let wanted = old_norm.iter().filter(|l| !l.trim().is_empty()).count();
-    let mut best = (0, 0);
-    for start in 0..total {
-        let score = old_norm
+    let reread = |line: usize| {
+        let from = line.saturating_sub(5).max(1);
+        let to = (line + old.len() + 5).min(total);
+        format!("Read lines {from}-{to} again and copy old_str from what is there now.")
+    };
+
+    // The longest run of old_str's opening lines found together in the file.
+    let mut best: Option<(usize, usize)> = None;
+    for start in 0..file.len() {
+        let n = old
             .iter()
-            .zip(&content_norm[start..])
-            .filter(|(o, c)| !o.trim().is_empty() && o == c)
+            .zip(&file[start..])
+            .take_while(|(a, b)| a == b)
             .count();
-        if score > best.1 {
-            best = (start, score);
+        if n > 0 && !old[0].is_empty() && best.is_none_or(|(_, m)| n > m) {
+            best = Some((start, n));
         }
     }
-    let (start, score) = best;
-    if score == 0 {
-        let s = if total == 1 { "" } else { "s" };
-        return format!("No line of old_str is in the file, which has {total} line{s}.");
-    }
-    let differs = old_norm
-        .iter()
-        .enumerate()
-        .find(|(j, o)| content_norm.get(start + j) != Some(*o))
-        .map(|(j, _)| j);
-    let shown = |s: &str| {
-        let s = s.trim();
-        match s.char_indices().nth(100) {
-            Some((i, _)) => format!("{}…", &s[..i]),
-            None => s.to_string(),
+    if let Some((start, n)) = best {
+        if n == old.len() {
+            return format!(
+                "It matches lines {}-{} of the file except for indentation: copy them with the file's leading spaces or tabs.",
+                start + 1,
+                start + n
+            );
         }
-    };
-    let detail = match differs {
-        Some(j) if start + j < total => format!(
-            " Line {} differs: the file has `{}`, old_str has `{}`.",
-            start + j + 1,
-            shown(content_lines[start + j]),
-            shown(old_lines[j])
-        ),
-        _ => " old_str runs past the end of the file.".to_string(),
-    };
+        let at = start + n;
+        let file_has = content_lines
+            .get(at)
+            .map_or("the end of the file".to_string(), |l| quoted(l));
+        return format!(
+            "Its first {n} line{} match line {} of the file, then line {} differs: the file has {file_has}, old_str has {}. {}",
+            if n == 1 { "" } else { "s" },
+            start + 1,
+            at + 1,
+            quoted(&old_norm[n]),
+            reread(start + 1)
+        );
+    }
+
+    // No opening line matches: is any of its other lines there?
+    for (k, line) in old.iter().enumerate() {
+        if line.chars().count() < 8 {
+            continue;
+        }
+        if let Some(i) = file.iter().position(|l| l == line) {
+            return format!(
+                "Its line {} ({}) is at line {} of the file, but the lines around it differ. {}",
+                k + 1,
+                quoted(line),
+                i + 1,
+                reread(i + 1)
+            );
+        }
+    }
     format!(
-        "The closest match starts at line {} ({score} of {wanted} lines match; the file has {total}).{detail}",
-        start + 1
+        "None of its lines are in the file ({total} lines now): it may come from a version that was never written, or that has changed since. Read the file again and copy old_str from what is there now."
     )
 }
 
@@ -384,22 +411,44 @@ mod tests {
     fn not_found_errors() {
         let err = apply_edit("alpha\n", "zeta", "x", "f").unwrap_err();
         assert!(err.contains("not found"), "got: {err}");
+    }
+
+    #[test]
+    fn not_found_names_the_closest_place_and_the_line_that_differs() {
+        let file = "a\nconst x = 1;\nconst y = 2;\nconst z = 3;\nb\n";
+        let err = apply_edit(file, "const x = 1;\n  const y = 9;", "q", "f").unwrap_err();
         assert!(
-            err.contains("No line of old_str is in the file, which has 1 line"),
+            err.contains(
+                "Its first 1 line match line 2 of the file, then line 3 differs: the file has `const y = 2;`, old_str has `const y = 9;`. Read lines 1-5 again"
+            ),
             "got: {err}"
         );
     }
 
     #[test]
-    fn not_found_names_the_closest_match_and_where_it_differs() {
-        let file = "a\nb\nconst spine = (t) => [];\nd\ne\n";
-        let err = apply_edit(file, "b\nfnQuat('Spine')\nd", "x", "f").unwrap_err();
+    fn not_found_finds_a_later_line_of_old_str() {
+        let file = "one\ntwo\nfnQuat('Spine', t)\nthree\n";
+        let err = apply_edit(file, "changed first\nfnQuat('Spine', t)", "q", "f").unwrap_err();
         assert!(
-            err.contains("closest match starts at line 2 (2 of 3 lines match; the file has 5)"),
+            err.contains("Its line 2 (`fnQuat('Spine', t)`) is at line 3 of the file"),
             "got: {err}"
         );
+    }
+
+    #[test]
+    fn not_found_says_when_no_line_is_in_the_file() {
+        let err = apply_edit("alpha\nbeta\n", "a version never written", "q", "f").unwrap_err();
         assert!(
-            err.contains("Line 3 differs: the file has `const spine = (t) => [];`, old_str has `fnQuat('Spine')`"),
+            err.contains("None of its lines are in the file (2 lines now)"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn not_found_says_when_only_the_indentation_differs() {
+        let err = apply_edit("if a {\n    b();\n}\n", "if a {\nb();", "q", "f").unwrap_err();
+        assert!(
+            err.contains("matches lines 1-2 of the file except for indentation"),
             "got: {err}"
         );
     }

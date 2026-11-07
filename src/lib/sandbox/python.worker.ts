@@ -3,6 +3,7 @@
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 import { errMessage } from '#lib/utils/error.ts';
 import { customSchemeBase } from '#lib/utils/customScheme.ts';
+import { runtimeFileMissing } from '#lib/sandbox/availability.ts';
 import type {
 	InstallPhase,
 	MainToWorker,
@@ -1176,23 +1177,6 @@ function installSandboxFetchProxy(): void {
 	};
 }
 
-/**
- * static/pyodide/ is gitignored and filled by scripts/fetch-pyodide.sh, so a
- * fresh dev checkout has none. loadPyodide then imports pyodide.asm.mjs from a
- * 404 page, and WebKit reports only "Importing a module script failed." When
- * loading fails, check for that file so the error names what is missing. A
- * built app answers a missing file with the SPA's index.html and a 200, so an
- * HTML answer counts as missing too.
- */
-async function runtimeMissing(fetchFn: typeof fetch, indexURL: string): Promise<boolean> {
-	try {
-		const resp = await fetchFn(indexURL + 'pyodide.asm.mjs', { method: 'HEAD' });
-		return !resp.ok || (resp.headers.get('content-type') ?? '').includes('text/html');
-	} catch {
-		return false;
-	}
-}
-
 async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
@@ -1224,7 +1208,9 @@ async function init(): Promise<void> {
 		await py.runPythonAsync(HARUSPEX_INIT_PY);
 		post({ kind: 'ready' });
 	} catch (err) {
-		if (await runtimeMissing(nativeFetch, indexURL)) {
+		// loadPyodide imports pyodide.asm.mjs from a 404 page when the runtime is
+		// missing, and WebKit says only "Importing a module script failed."
+		if (await runtimeFileMissing(nativeFetch, indexURL)) {
 			post({
 				kind: 'load_error',
 				error:

@@ -314,6 +314,28 @@ pub fn image_transparent_fraction(bytes: Vec<u8>) -> Result<f32, String> {
     Ok(super::stats::transparent_fraction(&img))
 }
 
+/// What a made picture shows that a backend's "done" doesn't: whether any of
+/// it is transparent, and whether it is one flat colour.
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ImageResultCheck {
+    /// The fraction of pixels that aren't fully opaque.
+    pub transparent: f32,
+    pub blank: bool,
+}
+
+/// Check a picture a tool is about to call made (`stats.rs`).
+#[tauri::command]
+pub fn image_result_check(bytes: Vec<u8>) -> Result<ImageResultCheck, String> {
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Could not read the picture: {e}"))?
+        .to_rgba8();
+    Ok(ImageResultCheck {
+        transparent: super::stats::transparent_fraction(&img),
+        blank: super::stats::looks_blank(&img),
+    })
+}
+
 /// What a seamless repaint starts from: the texture rolled by half, so its
 /// seams cross in the middle, and the mask over them. PNG bytes, both.
 #[derive(Serialize, ts_rs::TS)]

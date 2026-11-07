@@ -84,11 +84,14 @@ describe('the reflection prompt', () => {
 		expect(prompt).toContain('### 2. web_search\nArguments: {"q":"x"}\nResult: ok');
 	});
 
-	it("marks a long result as the trace's cut, not the tool's", () => {
-		noteRunToolCall(1, 'fs_read_text', { path: 'a.js' }, 'x'.repeat(2000));
+	it("marks a long result's cut as the review's own, and says so up front", () => {
+		// #1032: a bare "[4634 more chars]" was reported as fs_read_text cutting its output.
+		noteRunToolCall(1, 'fs_read_text', { path: 'a.js' }, 'x'.repeat(3000));
 		const prompt = reflectionPrompt(run, takeRunTrace(1)!);
-		expect(prompt).toContain('… [trace clipped: 500 more chars]');
-		expect(REFLECTION_SYSTEM_PROMPT).toContain('[trace clipped: N more chars]');
+		expect(prompt).toContain('… [1500 more chars cut from this copy; the run had them]');
+		expect(REFLECTION_SYSTEM_PROMPT).toContain(
+			"That cut is this review's, not the tool's: the run saw the whole result"
+		);
 	});
 });
 

@@ -11,8 +11,8 @@
 
 import { getSettings } from '#lib/stores/settings.ts';
 import {
+	CUT_MARK,
 	FEEDBACK_TOOL,
-	TRACE_CLIP,
 	traceEntry,
 	type TraceEntry
 } from '#lib/harnessFeedback/report.ts';
@@ -88,7 +88,7 @@ export const REFLECTION_SYSTEM_PROMPT = `You are reviewing a finished run of a H
 
 Call ${FEEDBACK_TOOL} once for each distinct problem with Haruspex's own tools that you can see in the run: a tool that failed when it should not have, a result that was misleading, an error that did not say what to do, a capability the run needed and lacked, or a schema that was hard to use. Point at the calls that show it.
 
-Long arguments and results are cut short here and end "[${TRACE_CLIP} N more chars]". The model saw them whole, so that cut is not a problem to report.
+Each result here is cut to its first part, ending in "[N more chars ${CUT_MARK}]". That cut is this review's, not the tool's: the run saw the whole result, so don't report it as a tool cutting its output.
 
 Do not report problems with the task itself, with websites or files that were simply wrong, or mistakes the model made with a tool that worked as described. If nothing about the tools got in the way, make no calls and answer "None."`;
 
