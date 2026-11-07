@@ -235,7 +235,16 @@ async function routeNamed<T>(name: string, need: ImageNeed, run: Run<T>): Promis
 		got = await ready(entry, need);
 	} catch (e) {
 		// Only the probe said so: refuse as when it was known.
-		throw e instanceof CannotDo ? namedCannot(entry, e.caps, need) : e;
+		if (e instanceof CannotDo) throw namedCannot(entry, e.caps, need);
+		// Name the model, so "No model is chosen" isn't read as no model named.
+		if (passOver(e)) {
+			const err = e as ImageBackendError;
+			throw new ImageBackendError(err.kind, `${entry.name} isn't ready: ${err.message}`, {
+				status: err.status,
+				body: err.body
+			});
+		}
+		throw e;
 	}
 	return { entry, ...got, value: await run(entry, got.backend, got.caps) };
 }

@@ -314,6 +314,17 @@ describe('image_search', () => {
 		});
 	});
 
+	it("says when the sources didn't answer, not that nothing was found", async () => {
+		backend({
+			proxy_image_search: () => {
+				throw new Error('None of the image sources answered (openverse: timed out)');
+			}
+		});
+		const out = (await call('image_search', { query: 'warehouse' })).result;
+		expect(out).toContain('None of the image sources answered');
+		expect(out).not.toContain('Try a broader');
+	});
+
 	it('appends ready-made markdown for at most three results', async () => {
 		const results = [
 			result('File:Red panda.JPG', 1),

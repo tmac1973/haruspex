@@ -228,7 +228,7 @@ registerTool({
 		}
 	},
 	liveSchema: (schema) =>
-		imageToolSchema(schema, (properties) => {
+		imageToolSchema(schema, 'edit', (properties) => {
 			const most = maxEditPictures();
 			if (most === 0) return false;
 			if (most === 1) delete properties.also;

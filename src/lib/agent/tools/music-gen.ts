@@ -260,8 +260,9 @@ registerTool({
 					style_reference: {
 						type: 'string',
 						description:
-							'A song whose sound (voice, timbre) to borrow: a haruspex-audio:// URL from this ' +
-							'conversation, or an audio file in the working folder. For just a voice, pass ' +
+							'A song whose sound (voice, timbre) to borrow: "attached" for audio the user ' +
+							'attached, a haruspex-audio:// URL from this conversation, or an audio file in the ' +
+							'working folder. For just a voice, pass ' +
 							'vocals that edit_music extract_instrument pulled out.'
 					},
 					background: BACKGROUND_PARAM

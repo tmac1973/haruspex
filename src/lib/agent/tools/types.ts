@@ -102,6 +102,11 @@ export interface ToolContext {
 	 */
 	userImages?: string[];
 	/**
+	 * The audio-cache hashes of the files attached to the newest user message
+	 * that has any, in order: what the music tools read as "attached".
+	 */
+	userAudio?: string[];
+	/**
 	 * The model can see images. A tool that makes one only hands it to the
 	 * model (`pendingImages`) when it can; absent means true, as the loop
 	 * defaults it.
