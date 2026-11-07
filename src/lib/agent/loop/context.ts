@@ -16,11 +16,27 @@ import { loadedSkillNames } from '#lib/skills/content.ts';
 import { coveredTools } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { splitAttachedAudio } from '#lib/audio/attached.ts';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
+
+/** The audio-cache hashes of the files attached to the newest user message that has any. */
+export function latestUserAudio(messages: ChatMessage[]): string[] {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role !== 'user') continue;
+		const text =
+			typeof m.content === 'string'
+				? m.content
+				: m.content.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n');
+		const hashes = splitAttachedAudio(text).audio.map((a) => a.hash);
+		if (hashes.length) return hashes;
+	}
+	return [];
+}
 
 /** The data URLs of the pictures in the newest user message that has any. */
 export function latestUserImages(messages: ChatMessage[]): string[] {
@@ -150,6 +166,8 @@ export interface LoopContext {
 	steeringReplyDue?: boolean;
 	/** See `ToolContext.userImages`. */
 	userImages: string[];
+	/** See `ToolContext.userAudio`. */
+	userAudio: string[];
 	filesWrittenThisTurn: Set<string>;
 	filesRewritableThisTurn: Set<string>;
 	maxIterations: number;
@@ -290,6 +308,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		expectsFileOutput,
 		pendingImages: [],
 		userImages: latestUserImages(options.messages),
+		userAudio: latestUserAudio(options.messages),
 		filesWrittenThisTurn: new Set(),
 		filesRewritableThisTurn: new Set(),
 		maxIterations: options.maxIterations ?? 8,

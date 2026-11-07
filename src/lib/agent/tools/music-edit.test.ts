@@ -250,6 +250,29 @@ describe('edit_music', () => {
 		expect(state.generate.mock.calls[0][0]).toMatchObject({ task: 'cover', seed: 99 });
 	});
 
+	it('takes "attached" as the audio the user attached', async () => {
+		// The #1032 WMA: converted to FLAC in the cache when dropped.
+		const ctx = makeToolContext({ interactive: true, conversationId: 'c', userAudio: [SRC] });
+		await executeTool(
+			'edit_music',
+			{ source: 'attached', action: 'restyle', caption: 'jazz' },
+			ctx
+		);
+		expect(state.generate.mock.calls[0][0].source).toMatchObject({ hash: SRC });
+		const two = await executeTool(
+			'edit_music',
+			{ source: 'attached:2', action: 'restyle', caption: 'jazz' },
+			ctx
+		);
+		expect(two.result).toMatch(/there is one attached audio file; use \\?"attached/);
+		const none = await executeTool(
+			'edit_music',
+			{ source: 'attached', action: 'restyle', caption: 'jazz' },
+			chat
+		);
+		expect(none.result).toMatch(/the user hasn't attached an audio file/);
+	});
+
 	it('reads a file from the working folder and sends its bytes', async () => {
 		const ctx = makeToolContext({ interactive: true, conversationId: 'c', workingDir: '/music' });
 		await executeTool(

@@ -141,7 +141,7 @@ registerTool({
 			}
 		}
 	},
-	liveSchema: (schema) => imageToolSchema(schema, () => anyEntryCan('upscale')),
+	liveSchema: (schema) => imageToolSchema(schema, 'upscale', () => anyEntryCan('upscale')),
 	displayLabel: (args) => `upscale: ${String(args.image ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
 		const scale = args.scale === 2 ? 2 : 4;

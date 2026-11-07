@@ -142,7 +142,10 @@ describe('routeImage', () => {
 
 	it('doesn’t move a named entry that doesn’t answer onto another', async () => {
 		state.backends.B = backend(EDITS_4, 'down');
-		await expect(ranOn(edit(2), 'B')).rejects.toMatchObject({ kind: 'unreachable' });
+		await expect(ranOn(edit(2), 'B')).rejects.toMatchObject({
+			kind: 'unreachable',
+			message: "B isn't ready: Can’t reach it."
+		});
 	});
 
 	it('tries a background task’s own entry first, even once it is gone from the list', async () => {

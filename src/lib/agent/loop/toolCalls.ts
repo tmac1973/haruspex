@@ -179,6 +179,7 @@ export async function executeToolCalls(
 				signal,
 				pendingImages: ctx.pendingImages,
 				userImages: ctx.userImages,
+				userAudio: ctx.userAudio,
 				visionSupported: ctx.options.visionSupported ?? true,
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,

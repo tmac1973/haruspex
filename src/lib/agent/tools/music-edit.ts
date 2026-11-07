@@ -192,8 +192,8 @@ registerTool({
 					source: {
 						type: 'string',
 						description:
-							'The song: a haruspex-audio:// URL from this conversation, or an audio file in the ' +
-							'working folder.'
+							'The song: "attached" for audio the user attached ("attached:2" for the second), a ' +
+							'haruspex-audio:// URL from this conversation, or an audio file in the working folder.'
 					},
 					action: {
 						type: 'string',

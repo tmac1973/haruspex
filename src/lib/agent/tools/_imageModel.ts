@@ -10,7 +10,7 @@
  */
 
 import type { ToolDefinition } from '#lib/api.ts';
-import { entryNames, imageEntries } from '#lib/image/entries.ts';
+import { entryNamesFor, imageEntries } from '#lib/image/entries.ts';
 
 type Properties = Record<string, Record<string, unknown>>;
 
@@ -34,12 +34,13 @@ function modelsKey(): string {
 const built = new Map<string, { key: string; schema: ToolDefinition | null }>();
 
 /**
- * `schema` with `model` narrowed to the models' names, or without it when
- * there are fewer than two, after `shape` has changed its properties as it
- * needs. `shape` returns false to leave the tool out.
+ * `schema` with `model` narrowed to the names of the models that can do `op`,
+ * or without it when fewer than two can, after `shape` has changed its
+ * properties as it needs. `shape` returns false to leave the tool out.
  */
 export function imageToolSchema(
 	schema: ToolDefinition,
+	op: 'draw' | 'edit' | 'upscale',
 	shape: (properties: Properties) => boolean = () => true
 ): ToolDefinition | null {
 	const name = schema.function.name;
@@ -49,7 +50,7 @@ export function imageToolSchema(
 
 	const params = schema.function.parameters as { properties: Properties };
 	const properties = { ...params.properties };
-	const names = entryNames();
+	const names = entryNamesFor(op);
 	if (names.length < 2) delete properties.model;
 	else properties.model = { ...MODEL_PARAM, enum: names };
 	const live = shape(properties)

@@ -232,8 +232,10 @@ pub struct ImageSearchResult {
 /// slower to the front of the list.
 ///
 /// A source that errors, times out or rate-limits contributes nothing and is
-/// otherwise ignored. Only when all three come back empty does the caller see
-/// an empty result, which keeps one flaky backend from breaking image search.
+/// otherwise ignored, which keeps one flaky backend from breaking image
+/// search. When nothing comes back and a source failed, the failure is the
+/// answer: an empty list reads as "no such images", and a model told that
+/// searched "warehouse" four times over while the providers were unreachable.
 #[tauri::command]
 pub async fn proxy_image_search(
     query: String,
@@ -253,6 +255,7 @@ pub async fn proxy_image_search(
         wikipedia::search(&client, &query),
     );
 
+    let mut failed = Vec::new();
     let lists: Vec<Vec<ImageSearchResult>> = [
         ("openverse", openverse_res),
         ("commons", commons_res),
@@ -262,6 +265,7 @@ pub async fn proxy_image_search(
     .map(|(name, res)| match res {
         Ok(items) => items,
         Err(e) => {
+            failed.push(format!("{name}: {e}"));
             // Warn, not debug: a source dropping out silently degrades results
             // to whatever is left, and Commons alone is the weakest of the
             // three. When someone reports poor images this is the first thing
@@ -284,7 +288,23 @@ pub async fn proxy_image_search(
         lists.get(2).map(Vec::len).unwrap_or(0),
         merged.len()
     );
+    if merged.is_empty() && !failed.is_empty() {
+        return Err(unanswered(&failed));
+    }
     Ok(merged)
+}
+
+/// The error for a search that found nothing because sources failed.
+fn unanswered(failed: &[String]) -> String {
+    let which = if failed.len() == 3 {
+        "None of the image sources answered"
+    } else {
+        "No images came back, and some sources didn't answer"
+    };
+    format!(
+        "{which} ({}). A different query won't help until they do: check Settings → Network → Web Search Proxy, or go on without images.",
+        failed.join("; ")
+    )
 }
 
 /// Round-robin the lists together, dropping duplicate URLs, until `limit` is
@@ -421,6 +441,16 @@ fn usable_hero_url(raw: &str, base_url: &url::Url) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_search_no_source_answered_says_so() {
+        let all = ["openverse: timed out", "commons: 503", "wikipedia: dns"].map(String::from);
+        let err = unanswered(&all);
+        assert!(err.starts_with("None of the image sources answered (openverse: timed out; "));
+        assert!(err.contains("A different query won't help"));
+        let some = unanswered(&["commons: 503".to_string()]);
+        assert!(some.starts_with("No images came back, and some sources didn't answer"));
+    }
 
     #[test]
     fn extract_page_images_resolves_relative_urls() {

@@ -74,6 +74,19 @@ describe('toolchestJson', () => {
 		expect(e.message).toContain('queue is full');
 	});
 
+	it('takes a backend that cannot take jobs yet as one to pass over', async () => {
+		failWith({
+			kind: 'rejected',
+			status: 503,
+			body: '{"error":{"message":"backend ming-gpu1 has no VRAM reservation yet","code":"backend_unavailable"}}'
+		});
+		const e = await caught(toolchestJson(cfg, { path: '/v1/images/jobs' }));
+		expect(e).toMatchObject({ kind: 'unconfigured', status: 503, code: 'backend_unavailable' });
+		expect(e.message).toBe(
+			"llama-toolchest can't run this model yet: backend ming-gpu1 has no VRAM reservation yet. Set it up on the toolchest's Server page, or pick another model."
+		);
+	});
+
 	it("passes on toolchest's own message, or the status when there is none", async () => {
 		failWith({ kind: 'rejected', status: 422, body: '{"error":{"message":"bad size"}}' });
 		expect((await caught(toolchestJson(cfg, { path: '/v1/x' }))).message).toContain('bad size');

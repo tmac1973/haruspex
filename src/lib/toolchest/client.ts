@@ -52,6 +52,19 @@ function fromRefusal(status: number, body: string, path: string): ToolchestError
 			opts
 		);
 	}
+	// The server is up but none of its matching backends can take jobs now:
+	// switched off, being measured, or with no VRAM reservation yet. That is
+	// the model not being set up, so the image router moves on to the next
+	// one, an asset job doesn't retry it as an outage (`unconfigured`), and
+	// the fix is on the toolchest's own Server page.
+	if (code === 'backend_unavailable') {
+		return new ToolchestError(
+			'unconfigured',
+			`llama-toolchest can't run this model yet: ${message ?? `status ${status}`}. ` +
+				"Set it up on the toolchest's Server page, or pick another model.",
+			opts
+		);
+	}
 	return new ToolchestError(
 		'rejected',
 		`llama-toolchest refused ${path}: ${message ?? `status ${status}`}`,

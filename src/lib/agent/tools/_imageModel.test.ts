@@ -118,7 +118,11 @@ describe('the model argument', () => {
 		expect(params('edit_image').model).toBeUndefined();
 		state.models = [ming, klein];
 		expect(params('generate_image').model).toMatchObject({ enum: ['Ming sprites', 'klein'] });
-		expect(params('upscale_image').model).toMatchObject({ enum: ['Ming sprites', 'klein'] });
+		// Ming can't edit or upscale, so only klein is left for those: nothing to choose.
+		expect(params('edit_image').model).toBeUndefined();
+		expect(params('upscale_image').model).toBeUndefined();
+		state.models = [ming, klein, flux3];
+		expect(params('edit_image').model).toMatchObject({ enum: ['klein', 'FLUX.3 Image Klein'] });
 	});
 
 	it('is passed on to the router', async () => {

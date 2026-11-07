@@ -209,7 +209,7 @@ registerTool({
 			}
 		}
 	},
-	liveSchema: (schema) => imageToolSchema(schema),
+	liveSchema: (schema) => imageToolSchema(schema, 'draw'),
 	displayLabel: (args) => `draw: ${String(args.prompt ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
 		const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';

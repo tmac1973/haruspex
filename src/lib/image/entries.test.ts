@@ -32,6 +32,7 @@ import {
 	anyEntryCan,
 	entryApiKey,
 	entryNames,
+	entryNamesFor,
 	entryForHandle,
 	firstImageEntry,
 	imageEntries,
@@ -169,6 +170,18 @@ describe('what the image models can do, together', () => {
 		expect(maxEditPictures()).toBe(4);
 		settings.imageModels = [entry('a', {})];
 		expect(maxEditPictures()).toBe(0);
+	});
+
+	it("offers each tool the models that can do its job, or haven't said", () => {
+		// The #1032 report: Ming, which can't edit, was offered to edit_image.
+		settings.imageModels = [
+			entry('Ming', {}),
+			entry('klein', { edit: true, maxEditImages: 4 }),
+			entry('new', null)
+		];
+		expect(entryNamesFor('draw')).toEqual(['Ming', 'klein', 'new']);
+		expect(entryNamesFor('edit')).toEqual(['klein', 'new']);
+		expect(entryNamesFor('upscale')).toEqual(['new']);
 	});
 
 	it('can edit or upscale when one model can, or may', () => {

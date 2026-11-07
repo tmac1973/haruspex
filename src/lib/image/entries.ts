@@ -42,6 +42,17 @@ export function entryNames(): string[] {
 	return imageEntries().map((e) => e.name);
 }
 
+/**
+ * The names of the models that can do `op`, or may (no probe has said), in
+ * Settings order: what a tool offers as its `model` argument, so a model a
+ * probe found can't edit isn't offered for edits. Every model draws.
+ */
+export function entryNamesFor(op: 'draw' | 'edit' | 'upscale'): string[] {
+	return imageEntries()
+		.filter((e) => op === 'draw' || !e.caps || !!e.caps[op])
+		.map((e) => e.name);
+}
+
 /** The pictures one edit took before models said: what an unprobed one is assumed to take. */
 export const UNPROBED_EDIT_PICTURES = 4;
 
