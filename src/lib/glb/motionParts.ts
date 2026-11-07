@@ -283,6 +283,33 @@ interface Joint {
 
 const isMeshNode = (o: Object3D) => (o as Mesh).isMesh === true;
 
+/** A mesh's box centre in its parent's space, unrotated: near enough to rank meshes by. */
+function meshCentre(mesh: Mesh): [number, number, number] {
+	mesh.geometry.computeBoundingBox();
+	const b = mesh.geometry.boundingBox!;
+	const s = mesh.scale;
+	return [
+		mesh.position.x + ((b.min.x + b.max.x) / 2) * s.x,
+		mesh.position.y + ((b.min.y + b.max.y) / 2) * s.y,
+		mesh.position.z + ((b.min.z + b.max.z) / 2) * s.z
+	];
+}
+
+/**
+ * What a joint's lower part is measured to: a pivot or bone under it, or,
+ * when a rigid rig hangs only meshes there (Knee_L > the shin's mesh), the
+ * mesh reaching furthest from the joint — the shin, not a kneecap.
+ */
+function lowerPart(node: Object3D): Object3D | undefined {
+	const pivot = node.children.find(
+		(c) => !isMeshNode(c) && !c.name.toLowerCase().includes('socket')
+	);
+	if (pivot) return pivot;
+	const meshes = node.children.filter(isMeshNode) as Mesh[];
+	const reach = (m: Mesh) => Math.hypot(...meshCentre(m));
+	return meshes.sort((a, b) => reach(b) - reach(a)).find((m) => reach(m) > 1e-3);
+}
+
 /** Knees and elbows found by name: bones or pivot nodes, never meshes. */
 export function jointsOf(root: Object3D): Joint[] {
 	const out: Joint[] = [];
@@ -295,12 +322,19 @@ export function jointsOf(root: Object3D): Joint[] {
 				? -1
 				: 0;
 		if (!sign) return;
-		const child = node.children.find(
-			(c) => !isMeshNode(c) && !c.name.toLowerCase().includes('socket')
-		);
+		const child = lowerPart(node);
 		if (child) out.push({ node, parent: node.parent, child, sign });
 	});
 	return out;
+}
+
+/** Where a joint's lower part is: a pivot's origin, or a mesh's box centre. */
+function endOf(THREE: Three, part: Object3D): InstanceType<Three['Vector3']> {
+	if (!isMeshNode(part)) return part.getWorldPosition(new THREE.Vector3());
+	const mesh = part as Mesh;
+	mesh.geometry.computeBoundingBox();
+	mesh.updateWorldMatrix(true, false);
+	return mesh.geometry.boundingBox!.getCenter(new THREE.Vector3()).applyMatrix4(mesh.matrixWorld);
 }
 
 /** The fold at a joint about the side axis (+x), in degrees; positive swings the lower part back (−z). */
@@ -310,7 +344,7 @@ export function foldDegrees(
 ): number | null {
 	const p = j.parent.getWorldPosition(new THREE.Vector3());
 	const n = j.node.getWorldPosition(new THREE.Vector3());
-	const c = j.child.getWorldPosition(new THREE.Vector3());
+	const c = endOf(THREE, j.child);
 	const a = n.clone().sub(p);
 	const b = c.clone().sub(n);
 	if (a.length() < 1e-3 || b.length() < 1e-3) return null;

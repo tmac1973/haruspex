@@ -27,6 +27,7 @@ function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 		travel: 0,
 		travelDir: [0, 0],
 		travelTrack: '',
+		travelTrackFar: 0,
 		stance: null,
 		treadmill: false,
 		hitch: null,
@@ -95,11 +96,16 @@ describe('clipProblems', () => {
 			travel: 0.6,
 			travelDir: [0, 0.6],
 			travelTrack: 'Root.position',
+			travelTrackFar: 0.6,
 			stance: { x: 0, z: 0 }
 		});
 		expect(clipProblems(walk)).toEqual([
-			'carries the body 60 cm forward (Root.position): a game moves the model itself, so it would move twice and jump back each loop. Play it in place, with its planted feet moving back instead'
+			'carries the body 60 cm forward (Root.position moves 60 cm by its own keys): a game moves the model itself, so it would move twice and jump back each loop. Play it in place, with its planted feet moving back instead'
 		]);
+		const drift = { ...walk, travelTrack: '', travelTrackFar: 0 };
+		expect(clipProblems(drift)[0]).toContain(
+			'(no one track carries it: the parts move forward together)'
+		);
 	});
 
 	it('wants a walk in place to move its planted feet back', () => {

@@ -84,7 +84,12 @@ export const travels = (c: ClipMotion) => c.loop && c.travel > seamLimit(c);
 function loopProblems(c: ClipMotion): string[] {
 	const out: string[] = [];
 	if (travels(c)) {
-		const track = c.travelTrack ? ` (${c.travelTrack})` : '';
+		// Name what to change: the track whose own keys move that far, or, when
+		// none does, the parts moving together (a hip sway, feet keyed in world
+		// space), so a model doesn't add a root track to cancel drift no track made.
+		const track = c.travelTrack
+			? ` (${c.travelTrack} moves ${cm(c.travelTrackFar)} by its own keys)`
+			: ' (no one track carries it: the parts move forward together)';
 		const feet = c.locomotion ? ', with its planted feet moving back instead' : '';
 		out.push(
 			`carries the body ${cm(c.travel)} ${way(c.travelDir)}${track}: a game moves the model itself, so it would move twice and jump back each loop. Play it in place${feet}`
@@ -190,7 +195,7 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 			: `Rig: rigid, ${c.bones} animated nodes.`,
 		c.jointsChecked.length
 			? `Joints checked: ${c.jointsChecked.join(', ')}.`
-			: 'No knee or elbow joints found by name.',
+			: 'No knee or elbow joints found by name: a pivot or bone named like Knee_L or Elbow_R, with the lower limb (a pivot or a mesh) under it, has its fold checked.',
 		`Ends ${cm(c.seam)} from where it starts${c.seamPart ? ` (${c.seamPart} moves most)` : ''}: a loop needs this near 0.`,
 		`Starts ${cm(c.fromRest.start)} and ends ${cm(c.fromRest.end)} from the rest pose.`,
 		c.reachPart

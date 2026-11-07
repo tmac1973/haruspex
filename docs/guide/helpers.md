@@ -57,7 +57,7 @@ Three.js comes with the app, so the 3D helper needs no network. The agent sees t
 - No model: a helper can't make anything on its own; the agent writes the code.
 - Search matches words, not meaning or code structure: it knows nothing of calls, types or imports, and a question worded unlike the code can miss.
 - It can't tell whether a motion looks good, only what's physically wrong. You can play the clips in the file's 3D view (**Animation**).
-- It finds knees and elbows by name only (knee, shin, elbow, forearm and so on).
+- It finds knees and elbows by name only (knee, shin, elbow, forearm and so on), and measures each to the pivot or mesh under it.
 - It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
 - It doesn't fix problems, rig or skin a character, unwrap UVs or make lower-detail copies.
 - Not in Chat, the Shell or subtasks. The 3D models job uses the 3D helper's checks itself; see the `3d-models` page.

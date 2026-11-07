@@ -11,7 +11,7 @@ The 3D helper gives the Code tab's agent one tool, `check_3d`. The agent writes 
 
 A **build module** is a `.js` file whose default export is `build(THREE, kit)`. It imports nothing, since it runs alone in a hidden sandbox, and returns one Three.js object (or `{ object, animations }` with clips). Units are metres, y is up, the front faces +z, and every mesh is named.
 
-`kit` adds `mergeGeometries` (it says why a merge fails), `mergeVertices`, `RoundedBoxGeometry`, `ConvexGeometry`, `ParametricGeometry`, seeded `createNoise(seed)` and `random(seed)`, and `texture('textures/bark.png')`, which loads a PNG beside the file. Texture paths must be written out in full; up to 8 PNGs of up to 4 MB each.
+`kit` adds `mergeGeometries` (it says why a merge fails), `mergeVertices`, `RoundedBoxGeometry`, `ConvexGeometry`, `ParametricGeometry`, seeded `createNoise(seed)` → `{ noise2, noise3 }` and `random(seed)`, and `texture('textures/bark.png')`, which loads a PNG beside the file. Write texture paths in full; up to 8 PNGs of 4 MB each.
 
 An **animation module** keeps clips in a file of their own. Its `animate(THREE, object, kit)` gets the built model and returns an array of clips. Clips turn or move named nodes, usually pivots placed at the joints (`Hip_L > Knee_L`). A track naming a node that doesn't exist is dropped, and the report lists it.
 
