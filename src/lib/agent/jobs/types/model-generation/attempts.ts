@@ -16,7 +16,8 @@
 import {
 	modelLoadIo,
 	writeModelBytes,
-	writeSheetPng
+	writeSheetPng,
+	type ModelDisk
 } from '#lib/agent/jobs/types/model-generation/io.ts';
 import { judgeModel, type ModelStage, type ModelVerdict } from '#lib/glb/verdict.ts';
 import type { LoadIo } from '#lib/helpers/three/load.ts';
@@ -74,6 +75,8 @@ export function attemptDir(entry: Pick<ModelEntry, 'dir'>, stage: ModelStage, n:
 
 export interface AttemptsInput {
 	workdir: string;
+	/** The run's scope for the files it makes (`ModelDisk`). */
+	scope: string | null;
 	entry: ModelEntry;
 	stage: ModelStage;
 	/** Attempts already numbered for this stage (a rebuild after review goes on from there). */
@@ -88,9 +91,11 @@ export class Attempts {
 	private last: { hash: string; attempt: Attempt } | null = null;
 	private readonly files: ReturnType<typeof modelFiles>;
 	private readonly io: LoadIo;
+	private readonly disk: ModelDisk;
 
 	constructor(private readonly input: AttemptsInput) {
 		this.count = input.start;
+		this.disk = { workdir: input.workdir, scope: input.scope };
 		this.files = modelFiles(input.entry);
 		this.io = input.io ?? modelLoadIo(input.workdir);
 	}
@@ -170,22 +175,22 @@ export class Attempts {
 		const best = this.best;
 		if (!best) return null;
 		if (this.last?.hash !== best.hash) {
-			await writeModelBytes(this.input.workdir, this.sourcePath, best.source);
+			await writeModelBytes(this.disk, this.sourcePath, best.source);
 		}
 		return { n: best.n, done: best.done, problems: best.problems };
 	}
 
 	/** Copy one attempt to its own folder: its source, GLB, sheets and problems. */
 	private async save(n: number, source: Uint8Array, v: ModelVerdict): Promise<void> {
-		const { workdir, entry, stage } = this.input;
+		const { entry, stage } = this.input;
 		const dir = attemptDir(entry, stage, n);
 		const name = this.sourcePath.slice(this.sourcePath.lastIndexOf('/') + 1);
-		await writeModelBytes(workdir, `${dir}${name}`, source);
-		if (v.glb) await writeModelBytes(workdir, `${dir}${entry.id}.glb`, v.glb);
+		await writeModelBytes(this.disk, `${dir}${name}`, source);
+		if (v.glb) await writeModelBytes(this.disk, `${dir}${entry.id}.glb`, v.glb);
 		if (stage === 'create' && v.sheetPng)
-			await writeSheetPng(workdir, `${dir}sheet.png`, v.sheetPng);
+			await writeSheetPng(this.disk, `${dir}sheet.png`, v.sheetPng);
 		for (const [clip, png] of Object.entries(v.clipSheets)) {
-			await writeSheetPng(workdir, `${dir}clip-${slugify(clip)}.png`, png);
+			await writeSheetPng(this.disk, `${dir}clip-${slugify(clip)}.png`, png);
 		}
 		const lines = [
 			v.done ? 'Done.' : 'Not done.',
@@ -193,7 +198,7 @@ export class Attempts {
 			...(v.warnings.length ? ['', 'Warnings:', ...v.warnings.map((w) => `- ${w}`)] : [])
 		];
 		await writeModelBytes(
-			workdir,
+			this.disk,
 			`${dir}problems.txt`,
 			new TextEncoder().encode(lines.join('\n') + '\n')
 		);
@@ -201,13 +206,12 @@ export class Attempts {
 
 	/** Make this attempt's GLB and sheets the entry's main ones. */
 	private async putForward(v: ModelVerdict): Promise<void> {
-		const { workdir } = this.input;
-		if (v.glb) await writeModelBytes(workdir, this.files.glb, v.glb);
+		if (v.glb) await writeModelBytes(this.disk, this.files.glb, v.glb);
 		if (this.input.stage === 'create' && v.sheetPng) {
-			await writeSheetPng(workdir, this.files.sheet, v.sheetPng);
+			await writeSheetPng(this.disk, this.files.sheet, v.sheetPng);
 		}
 		for (const [clip, png] of Object.entries(v.clipSheets)) {
-			await writeSheetPng(workdir, this.files.clipSheet(clip), png);
+			await writeSheetPng(this.disk, this.files.clipSheet(clip), png);
 		}
 	}
 }

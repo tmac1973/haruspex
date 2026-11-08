@@ -102,6 +102,7 @@ import type {
 	SheetOutcome
 } from '#lib/agent/jobs/types/asset-generation/types.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
+import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
 const MAX_DERIVE_ATTEMPTS = 2;
@@ -248,12 +249,14 @@ async function writeWorkdirBytes(
 	relPath: string,
 	bytes: Uint8Array
 ): Promise<void> {
-	await invoke('fs_write_bytes', {
-		workdir: ctx.job.working_dir,
-		relPath,
-		bytes: Array.from(bytes),
-		overwrite: true
-	});
+	await trackWrite(createdScope({ jobRunId: ctx.runId }), ctx.job.working_dir, relPath, true, () =>
+		invoke('fs_write_bytes', {
+			workdir: ctx.job.working_dir,
+			relPath,
+			bytes: Array.from(bytes),
+			overwrite: true
+		})
+	);
 }
 
 async function writeWorkdirFile(
@@ -261,12 +264,14 @@ async function writeWorkdirFile(
 	relPath: string,
 	content: string
 ): Promise<void> {
-	await invoke('fs_write_text', {
-		workdir: ctx.job.working_dir,
-		relPath,
-		content,
-		overwrite: true
-	});
+	await trackWrite(createdScope({ jobRunId: ctx.runId }), ctx.job.working_dir, relPath, true, () =>
+		invoke('fs_write_text', {
+			workdir: ctx.job.working_dir,
+			relPath,
+			content,
+			overwrite: true
+		})
+	);
 }
 
 /**

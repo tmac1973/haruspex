@@ -23,6 +23,7 @@ import { modelLoadIo } from '#lib/agent/jobs/types/model-generation/io.ts';
 import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { DRAW_TEXTURE_TOOL } from '#lib/agent/tools/draw-texture.ts';
 import type { ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
+import { createdScope } from '#lib/agent/tools/_created.ts';
 
 /** What a creation turn may use: the model's files and the checker. */
 export const CREATE_TOOLS: readonly string[] = [
@@ -152,6 +153,7 @@ export async function buildEntry(input: BuildEntryInput): Promise<void> {
 	// A rebuild after review starts a new best: the user turned the old one down.
 	const attempts = new Attempts({
 		workdir,
+		scope: createdScope({ jobRunId: ctx.runId }),
 		entry,
 		stage: 'create',
 		start: state.attempts,
