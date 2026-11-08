@@ -5,11 +5,11 @@ description: Coding sessions in a project folder — starting one, diffs and com
 
 # Code tab
 
-The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there. For Windows (a Windows folder or WSL), see the `code-windows` page.
+The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there, and can't work outside it. It can move files it made in the session, or delete them to the trash, unless you've changed them. For Windows (a Windows folder or WSL), see the `code-windows` page.
 
 ## Start a session
 
-Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The agent can't work outside the folder.
+Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder.
 
 Type what you want and press `Enter`. After the first reply the model names the session, never replacing a name you gave it. Sessions save as they go.
 
@@ -32,13 +32,13 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 Commands that need a password (`sudo`) or a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in, not run. Check it, then press `Enter`.
 
-The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. The agent then gets the exit code and output. **Cancel** stops the wait (the agent carries on); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (old fish), the agent asks you.
+The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. The agent then gets the exit code and output. **Cancel** stops the wait (the agent carries on); **Stop** ends the turn; either way the Shell tab stays. If the shell doesn't report finished commands (old fish), the agent asks you.
 
 ## Edit files
 
 Files open in an editor window, one per folder, a tab per file. **Open** above the sessions opens any file or folder. **⤢** on a tab moves the file to its own window. Keys: see the `shortcuts` page. The agent can open files but not see your edits. Models, images and sounds open in viewers (see the `viewers` page).
 
-An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable**: outside changes won't show. Closing a window with unsaved edits asks first.
+An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable**: outside changes won't show.
 
 ## Steer or stop the agent
 

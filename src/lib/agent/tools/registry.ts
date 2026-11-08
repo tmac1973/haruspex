@@ -267,6 +267,8 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'video-gen') return videoGenOffered(opts) && isCodeTab(opts);
 	// Saving a picture or song made earlier into the project.
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
+	// Tidying up files the session made. Shell has a terminal with rm and mv.
+	if (name === 'fs_delete' || name === 'fs_move') return isCodeTab(opts);
 	// Editing the videos in the project folder. The Code tab only: Shell has
 	// no folder that stays put.
 	if (reg.category === 'video') return opts.videoTools && isCodeTab(opts);
