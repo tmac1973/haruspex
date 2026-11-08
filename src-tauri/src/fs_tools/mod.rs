@@ -547,7 +547,8 @@ mod tests {
             ],
             &images,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         assert!(!bytes.is_empty());
         // PDFs start with %PDF-
         assert!(bytes.starts_with(b"%PDF-"));

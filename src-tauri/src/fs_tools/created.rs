@@ -152,15 +152,31 @@ impl CreatedFiles {
         });
     }
 
-    /// Move `path` to the trash, when it is `scope`'s.
-    pub fn delete(&self, scope: &str, path: &Path, shown: &str) -> Result<(), String> {
+    /// Move `path` to the trash, when it is `scope`'s; where it went.
+    ///
+    /// When the system trash refuses it (a network share with no trash
+    /// folder, where making one needs a chmod the share won't do), the file
+    /// goes to `fallback` instead, so a delete is still never for good.
+    pub fn delete(
+        &self,
+        scope: &str,
+        path: &Path,
+        shown: &str,
+        fallback: &Path,
+        to_trash: impl FnOnce(&Path) -> Result<(), String>,
+    ) -> Result<Deleted, String> {
         refuse_unless_owned(self.status(scope, path), shown)?;
         let key = key_of(path)?;
-        trash::delete(path).map_err(|e| {
-            format!("{shown} could not be moved to the trash ({e}), so it was left alone.")
-        })?;
+        let went = match to_trash(path) {
+            Ok(()) => Deleted::Trash,
+            Err(why) => Deleted::Folder(set_aside(path, fallback).map_err(|e| {
+                format!(
+                    "{shown} could not be moved to the trash ({why}) or set aside ({e}), so it was left alone."
+                )
+            })?),
+        };
         self.forget(scope, &key);
-        Ok(())
+        Ok(went)
     }
 
     /// Move or rename `from` to `to`, when `from` is `scope`'s. `to` may only
@@ -204,6 +220,38 @@ impl CreatedFiles {
         self.forget(scope, &old);
         self.note(scope, to)
     }
+}
+
+/// Where a deleted file went.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Deleted {
+    Trash,
+    /// The system trash refused it; it was moved here.
+    Folder(PathBuf),
+}
+
+/// Move `path` into `dir` under a name no other file there has.
+fn set_aside(path: &Path, dir: &Path) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".into());
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+    let mut to = dir.join(format!("{stamp}-{name}"));
+    let mut n = 2;
+    while to.exists() {
+        to = dir.join(format!("{stamp}-{n}-{name}"));
+        n += 1;
+    }
+    if std::fs::rename(path, &to).is_err() {
+        crate::video::copy_file(path, &to).map_err(|e| e.to_string())?;
+        std::fs::remove_file(path).map_err(|e| {
+            let _ = std::fs::remove_file(&to);
+            e.to_string()
+        })?;
+    }
+    Ok(to)
 }
 
 fn refuse_unless_owned(status: Status, shown: &str) -> Result<(), String> {
@@ -251,16 +299,37 @@ pub fn fs_created_note(
     state.note(scope_of(&scope)?, &path)
 }
 
+/// Folder a delete falls back to, inside the working folder.
+const SET_ASIDE: &str = ".haruspex/trash";
+
 /// Move `rel_path` to the trash, when `scope` made it and nobody changed it.
+/// Returns null when the system trash took it, or the working-folder path it
+/// was set aside at when the trash refused.
 #[tauri::command]
 pub fn fs_delete_created(
     state: tauri::State<'_, CreatedFiles>,
     workdir: String,
     rel_path: String,
     scope: String,
-) -> Result<(), String> {
-    let path = resolve_in_workdir(&workdir_path_for_write(&workdir)?, &rel_path)?;
-    state.delete(scope_of(&scope)?, &path, &rel_path)
+) -> Result<Option<String>, String> {
+    let root = workdir_path_for_write(&workdir)?;
+    let path = resolve_in_workdir(&root, &rel_path)?;
+    let went = state.delete(
+        scope_of(&scope)?,
+        &path,
+        &rel_path,
+        &root.join(SET_ASIDE),
+        |p| trash::delete(p).map_err(|e| e.to_string()),
+    )?;
+    Ok(match went {
+        Deleted::Trash => None,
+        Deleted::Folder(to) => Some(
+            to.strip_prefix(&root)
+                .unwrap_or(&to)
+                .to_string_lossy()
+                .replace('\\', "/"),
+        ),
+    })
 }
 
 /// Move or rename `from` to `to` inside the working folder, under the same rule.
@@ -318,19 +387,67 @@ mod tests {
         let files = store(&dir);
         let a = dir.join("a.md");
         fs::write(&a, "theirs").unwrap();
-        let err = files.delete("chat:1", &a, "a.md").unwrap_err();
+        let aside = dir.join(".haruspex/trash");
+        let trash = |_: &Path| -> Result<(), String> { panic!("refused before the trash") };
+        let err = files
+            .delete("chat:1", &a, "a.md", &aside, trash)
+            .unwrap_err();
         assert!(
             err.starts_with("You didn't make a.md in this conversation"),
             "{err}"
         );
         files.note("chat:1", &a).unwrap();
         fs::write(&a, "changed").unwrap();
-        let err = files.delete("chat:1", &a, "a.md").unwrap_err();
+        let err = files
+            .delete("chat:1", &a, "a.md", &aside, trash)
+            .unwrap_err();
         assert!(
             err.starts_with("a.md was changed after you wrote it"),
             "{err}"
         );
         assert!(a.exists());
+    }
+
+    #[test]
+    fn delete_uses_the_trash_and_forgets_the_file() {
+        let dir = temp_dir("created");
+        let files = store(&dir);
+        let a = dir.join("a.md");
+        fs::write(&a, "draft").unwrap();
+        files.note("chat:1", &a).unwrap();
+        let went = files
+            .delete("chat:1", &a, "a.md", &dir.join("aside"), |p| {
+                fs::remove_file(p).map_err(|e| e.to_string())
+            })
+            .unwrap();
+        assert_eq!(went, Deleted::Trash);
+        assert!(!dir.join("aside").exists());
+    }
+
+    #[test]
+    fn delete_sets_the_file_aside_when_the_trash_refuses() {
+        let dir = temp_dir("created");
+        let files = store(&dir);
+        let a = dir.join("a.md");
+        fs::write(&a, "draft").unwrap();
+        files.note("chat:1", &a).unwrap();
+        let aside = dir.join(".haruspex/trash");
+        let went = files
+            .delete(
+                "chat:1",
+                &a,
+                "a.md",
+                &aside,
+                |_| Err("no trash here".into()),
+            )
+            .unwrap();
+        let Deleted::Folder(to) = went else {
+            panic!("not set aside: {went:?}")
+        };
+        assert!(!a.exists());
+        assert!(to.starts_with(&aside), "{}", to.display());
+        assert!(to.to_string_lossy().ends_with("-a.md"));
+        assert_eq!(fs::read_to_string(&to).unwrap(), "draft");
     }
 
     #[test]

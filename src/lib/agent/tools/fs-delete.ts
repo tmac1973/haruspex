@@ -38,13 +38,18 @@ registerTool({
 		const rootErr = writeRootError(path, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
 		try {
-			await invoke('fs_delete_created', {
+			// Null when the system trash took it; else where it was set aside.
+			const aside = await invoke<string | null>('fs_delete_created', {
 				workdir: fsWorkdir(ctx),
 				relPath: path,
 				scope: createdScope(ctx)
 			});
 			ctx.filesWrittenThisTurn.delete(path);
-			return toolResult(`Moved ${path} to the trash.`);
+			return toolResult(
+				aside
+					? `The system trash wouldn't take ${path}, so it was moved to ${aside} in the working folder.`
+					: `Moved ${path} to the trash.`
+			);
 		} catch (e) {
 			return toolResult(toolInvokeError('fs_delete', e));
 		}

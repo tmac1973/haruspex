@@ -261,6 +261,15 @@ export function userCanceledWriteError(relPath: string, command: string): ToolEx
  * shared by all fs_write_* tools. `tool` names the write in what the model
  * reads; `command` is the Rust command that writes the format.
  */
+/**
+ * " (3 pages)", when the write's command says how many pages it made: a PDF,
+ * so a model asked for one page can tell without reading it back (#1032).
+ */
+function pagesNote(written: unknown): string {
+	if (typeof written !== 'number' || !Number.isInteger(written) || written < 1) return '';
+	return ` (${written} page${written === 1 ? '' : 's'})`;
+}
+
 /** A write that can't be `invoke(command, args)` with JSON args: a slide deck
  *  goes to Rust as the raw body. Called with the path the user settled on. */
 type RawWrite = (relPath: string, overwrite: boolean) => Promise<unknown>;
@@ -282,20 +291,25 @@ async function fsWriteWithConflictCheck(
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
 	try {
-		await trackWrite(opts.scope ?? null, workdir, resolved.finalPath, resolved.overwrite, () =>
-			typeof command === 'string'
-				? invoke(command, {
-						workdir,
-						relPath: resolved.finalPath,
-						...payload,
-						overwrite: resolved.overwrite
-					})
-				: command(resolved.finalPath, resolved.overwrite)
+		const written = await trackWrite(
+			opts.scope ?? null,
+			workdir,
+			resolved.finalPath,
+			resolved.overwrite,
+			() =>
+				typeof command === 'string'
+					? invoke(command, {
+							workdir,
+							relPath: resolved.finalPath,
+							...payload,
+							overwrite: resolved.overwrite
+						})
+					: command(resolved.finalPath, resolved.overwrite)
 		);
 		filesWrittenThisTurn.add(resolved.finalPath);
 		opts.rewritable?.delete(resolved.finalPath);
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
-		const out = toolResult(`Wrote: ${resolved.finalPath}${diag}`);
+		const out = toolResult(`Wrote: ${resolved.finalPath}${pagesNote(written)}${diag}`);
 		if (diffAfter !== undefined && before !== undefined) {
 			out.fileDiff = buildWriteDiff(resolved.finalPath, before, diffAfter);
 		}
@@ -755,8 +769,9 @@ async function draftWrite(
 	const turn = ctx.filesWrittenThisTurn;
 	const rewrite = turn.has(path) && mayRewriteDraft(turn, path, signature, kind);
 	const send: RawWrite = async (relPath, overwrite) => {
-		await write(relPath, overwrite);
+		const written = await write(relPath, overwrite);
 		noteDraft(turn, relPath, signature, overwrite);
+		return written;
 	};
 	return fsWriteWithConflictCheck(
 		tool,

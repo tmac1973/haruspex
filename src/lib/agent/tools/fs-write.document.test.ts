@@ -59,6 +59,19 @@ describe('fs_write_document paths', () => {
 		}
 	});
 
+	it('says how many pages a PDF came to (#1032: one page asked, three written)', async () => {
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ fs_path_exists: false, fs_write_pdf: 3, fs_write_docx: null })
+		);
+		expect((await write({ path: 'hp.pdf', content: DRAFT })).result).toBe(
+			'Wrote: hp.pdf (3 pages)'
+		);
+		vi.mocked(invoke).mockImplementation(invokeRouter({ fs_path_exists: false, fs_write_pdf: 1 }));
+		expect((await write({ path: 'one.pdf', content: DRAFT })).result).toBe(
+			'Wrote: one.pdf (1 page)'
+		);
+	});
+
 	it('writes a path with space around it under the trimmed name', async () => {
 		const out = await write({ path: ' hp-research-final.pdf\n', content: DRAFT });
 		expect(out.result).toBe('Wrote: hp-research-final.pdf');

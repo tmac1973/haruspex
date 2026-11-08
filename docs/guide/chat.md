@@ -15,7 +15,7 @@ Type a question and press `Enter` (`Shift`+`Enter` for a new line). When the que
 - **Deep research** — click the magnifying-glass button in the chat box ("Deep research ON — will search more sources"). Answers are slower but use more sources.
 - **Stopped early?** — a turn gets 10 steps (searches, page reads, replies), 25 with deep research. Raise it in Settings → Chat → Max steps per turn.
 
-Search can fail or be rate limited. Which search engine is used, and proxies, are covered on the `search-and-network` page. The model can be wrong even with sources, so check anything that matters.
+Search can fail or be rate limited. Search engines and proxies are on the `search-and-network` page. The model can be wrong even with sources, so check anything that matters.
 
 ## Run several conversations at once
 
@@ -28,12 +28,12 @@ Click the folder icon in the chat box to pick a working directory. The assistant
 - **Reads:** plain text, Markdown, CSV, JSON, YAML, TOML, PDF (text, or as page images for scans), Word `.docx`, Excel `.xlsx`, and images.
 - **Writes:** text files and edits to them, PDF, Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx` and OpenDocument `.odt`/`.ods`/`.odp`. The extension picks the format. See the `slides` page.
 - **Downloads:** files from a web address into the folder (50 MB limit, programs blocked).
-- **Delete or move:** only files it made in this chat, if you haven't changed them. Deletes go to the trash.
+- **Delete or move:** only files it made in this chat, if you haven't changed them. Deletes go to the trash (else the folder's `.haruspex/trash/`).
 - **Cannot:** run scripts or touch anything outside the folder.
 
 If the file exists, the assistant asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**. It rewrites a document or sheet it made in the same answer without asking.
 
-Small models may forget to write the file, or claim they did: ask again.
+Small models may forget to write the file, or claim they did.
 
 ## Run Python for charts, maths and documents
 
@@ -56,7 +56,7 @@ Drop or paste an image into the chat box to ask about it. The camera button atta
 - **Speak:** hold the microphone button, or hold `F2`, and release to send. The first time, a speech model is downloaded.
 - **Listen:** click the speaker icon on an answer, or press `F3`, to have it read aloud.
 
-Pick the voice, microphone and speaker in Settings → Audio. Speech is processed on your computer.
+Pick voice, microphone and speaker in Settings → Audio. Speech is processed on your computer.
 
 ## Run the commands from an answer
 
@@ -76,4 +76,4 @@ Once a chat fills most of the model's context, Haruspex summarises its older mes
 
 ## Use a skill
 
-Type `/` to pick one of your skills, or `/name what you want`. See the `skills` page.
+Type `/` to pick a skill, or `/name what you want`. See the `skills` page.

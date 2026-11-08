@@ -89,6 +89,16 @@ describe('fs_delete', () => {
 		]);
 	});
 
+	it('says where the file went when the system trash refused it', async () => {
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ fs_delete_created: '.haruspex/trash/20261107T180000-draft.md' })
+		);
+		const out = await executeTool('fs_delete', { path: 'draft.md' }, job());
+		expect(out.result).toBe(
+			"The system trash wouldn't take draft.md, so it was moved to .haruspex/trash/20261107T180000-draft.md in the working folder."
+		);
+	});
+
 	it("passes on Rust's refusal", async () => {
 		vi.mocked(invoke).mockImplementation(
 			invokeRouter({

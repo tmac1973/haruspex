@@ -49,6 +49,7 @@ import { isAttended, reviewStage } from '#lib/agent/jobs/types/model-generation/
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { handoffToCoding } from '#lib/agent/jobs/chainCoding.ts';
+import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
 const MAX_DERIVE_ATTEMPTS = 2;
@@ -87,12 +88,14 @@ async function writeWorkdirFile(
 	relPath: string,
 	content: string
 ): Promise<void> {
-	await invoke('fs_write_text', {
-		workdir: ctx.job.working_dir,
-		relPath,
-		content,
-		overwrite: true
-	});
+	await trackWrite(createdScope({ jobRunId: ctx.runId }), ctx.job.working_dir, relPath, true, () =>
+		invoke('fs_write_text', {
+			workdir: ctx.job.working_dir,
+			relPath,
+			content,
+			overwrite: true
+		})
+	);
 }
 
 /**

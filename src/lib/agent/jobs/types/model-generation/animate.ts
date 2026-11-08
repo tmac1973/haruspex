@@ -20,6 +20,7 @@ import {
 } from '#lib/agent/jobs/types/model-generation/prompts.ts';
 import { Attempts, sha256, type Attempt } from '#lib/agent/jobs/types/model-generation/attempts.ts';
 import { modelLoadIo, writeModelBytes } from '#lib/agent/jobs/types/model-generation/io.ts';
+import { createdScope } from '#lib/agent/tools/_created.ts';
 import type { ClipsState, EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { modelFiles } from '#lib/models3d/spec/paths.ts';
 import type { ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
@@ -96,8 +97,10 @@ export async function animateEntry(input: AnimateEntryInput): Promise<void> {
 	};
 	state.clips = clips;
 	const firstMessage = animateEntryPrompt(entry, new TextDecoder().decode(original));
+	const scope = createdScope({ jobRunId: ctx.runId });
 	const attempts = new Attempts({
 		workdir,
+		scope,
 		entry,
 		stage: 'animate',
 		start: 0,
@@ -140,7 +143,7 @@ export async function animateEntry(input: AnimateEntryInput): Promise<void> {
 
 		const problems: string[] = [];
 		if (!(await buildUntouched())) {
-			await writeModelBytes(workdir, files.build, original);
+			await writeModelBytes({ workdir, scope }, files.build, original);
 			problems.push(
 				`${entry.id}.js was changed; it was put back. Change only ${entry.id}.anim.js.`
 			);

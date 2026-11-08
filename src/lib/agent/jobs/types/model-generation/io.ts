@@ -8,6 +8,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { LoadIo } from '#lib/helpers/three/load.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
+import { trackWrite } from '#lib/agent/tools/_created.ts';
+
+/**
+ * Where a run writes: its working folder, and the run's scope, so the files
+ * it makes are its own to delete or move later (`_created.ts`).
+ */
+export interface ModelDisk {
+	workdir: string;
+	scope: string | null;
+}
 
 /** What `judgeModel` reads with: paths it resolves against `workdir`. */
 export function modelLoadIo(workdir: string): LoadIo {
@@ -19,28 +29,30 @@ export function modelLoadIo(workdir: string): LoadIo {
 
 /** Write bytes to `relPath`, replacing what is there and making its folders. */
 export async function writeModelBytes(
-	workdir: string,
+	disk: ModelDisk,
 	relPath: string,
 	bytes: Uint8Array
 ): Promise<void> {
-	await invoke('fs_write_bytes', {
-		workdir,
-		relPath,
-		bytes: Array.from(bytes),
-		overwrite: true,
-		dryRun: false
-	});
+	await trackWrite(disk.scope, disk.workdir, relPath, true, () =>
+		invoke('fs_write_bytes', {
+			workdir: disk.workdir,
+			relPath,
+			bytes: Array.from(bytes),
+			overwrite: true,
+			dryRun: false
+		})
+	);
 }
 
 /** Write a PNG data URL (a render sheet) as a file. False when it isn't one. */
 export async function writeSheetPng(
-	workdir: string,
+	disk: ModelDisk,
 	relPath: string,
 	dataUrl: string
 ): Promise<boolean> {
 	const bytes = dataUrlBytes(dataUrl);
 	if (!bytes) return false;
-	await writeModelBytes(workdir, relPath, bytes);
+	await writeModelBytes(disk, relPath, bytes);
 	return true;
 }
 

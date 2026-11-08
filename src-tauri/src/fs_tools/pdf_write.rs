@@ -137,21 +137,23 @@ fn register_images(
 ///     pre-loaded into `images` (paths point into the workdir).
 ///
 /// Content is word-wrapped to fit the page and flows across multiple pages.
+/// Returns the PDF's bytes and how many pages it came to.
 pub(super) fn build_pdf(
     lines: &[&str],
     images: &std::collections::HashMap<String, LoadedImage>,
-) -> Result<Vec<u8>, String> {
+) -> Result<(Vec<u8>, usize), String> {
     use printpdf::*;
 
     let mut doc = PdfDocument::new("Document");
     let registered_images = register_images(&mut doc, images)?;
     let all_pages = layout_pages(lines, &registered_images);
+    let count = all_pages.len();
 
     let bytes = doc
         .with_pages(all_pages)
         .save(&PdfSaveOptions::default(), &mut Vec::new());
 
-    Ok(bytes)
+    Ok((bytes, count))
 }
 
 /// Lay out the document into pages — the pure, document-free core of
@@ -499,12 +501,27 @@ pub async fn fs_write_pdf(
     rel_path: String,
     content: String,
     overwrite: Option<bool>,
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    // How many pages it came to, so a model asked for one page can tell
+    // without reading the file back.
+    let pages = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = pages.clone();
     // PDF keeps blank lines: build_pdf treats them as paragraph breaks.
     super::write_markdown_document(
-        workdir, rel_path, content, overwrite, "PDF", true, build_pdf,
+        workdir,
+        rel_path,
+        content,
+        overwrite,
+        "PDF",
+        true,
+        move |lines, images| {
+            let (bytes, n) = build_pdf(lines, images)?;
+            counted.store(n, std::sync::atomic::Ordering::Relaxed);
+            Ok(bytes)
+        },
     )
-    .await
+    .await?;
+    Ok(pages.load(std::sync::atomic::Ordering::Relaxed))
 }
 
 #[cfg(test)]
@@ -515,6 +532,16 @@ mod tests {
 
     fn pages(lines: &[&str]) -> Vec<printpdf::PdfPage> {
         layout_pages(lines, &HashMap::new())
+    }
+
+    #[test]
+    fn the_count_is_the_pages_laid_out() {
+        let long: Vec<String> = (0..200).map(|i| format!("Paragraph {i}.")).collect();
+        let lines: Vec<&str> = long.iter().map(String::as_str).collect();
+        let (_, n) = build_pdf(&lines, &HashMap::new()).unwrap();
+        assert!(n > 1, "{n}");
+        assert_eq!(n, pages(&lines).len());
+        assert_eq!(build_pdf(&["One line."], &HashMap::new()).unwrap().1, 1);
     }
 
     /// Concatenate every ShowText payload across all pages — lets us assert
