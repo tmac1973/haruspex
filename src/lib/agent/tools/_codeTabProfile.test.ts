@@ -43,9 +43,10 @@ function runCommand(codeMode: boolean, shellMode: boolean) {
 
 describe('tool profiles over (codeMode, shellMode)', () => {
 	it('(code, no shell) — the Code tab: code tools plus its own, no terminal tools', () => {
-		// save_generated too: the Code tab saves pictures and songs into the project.
+		// save_generated too: the Code tab saves pictures and songs into the project;
+		// fs_delete and fs_move tidy up the files the session made.
 		expect(names(true, false)).toEqual(
-			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'save_generated'].sort()
+			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'save_generated', 'fs_delete', 'fs_move'].sort()
 		);
 	});
 

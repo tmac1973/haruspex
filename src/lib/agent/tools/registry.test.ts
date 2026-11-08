@@ -42,6 +42,20 @@ describe('interactive shell tool gating', () => {
 		expect(n).not.toContain('fetch_url');
 	});
 
+	it('offers fs_delete and fs_move in the Code tab, not in Shell', () => {
+		const tab = names({ hasWorkingDir: true, codeMode: true, shellMode: false });
+		for (const t of ['fs_delete', 'fs_move']) expect(tab).toContain(t);
+		for (const shell of [
+			{ hasWorkingDir: true, codeMode: true, shellMode: true },
+			{ hasWorkingDir: true, shellMode: true }
+		]) {
+			const n = names(shell);
+			for (const t of ['fs_delete', 'fs_move']) expect(n).not.toContain(t);
+		}
+		const readOnly = names({ hasWorkingDir: true, codeMode: true, codeReadOnly: true });
+		for (const t of ['fs_delete', 'fs_move']) expect(readOnly).not.toContain(t);
+	});
+
 	it('hides interactive tools in plain Shell mode (no code mode)', () => {
 		const n = names({ hasWorkingDir: true, shellMode: true });
 		for (const t of INTERACTIVE) expect(n).not.toContain(t);

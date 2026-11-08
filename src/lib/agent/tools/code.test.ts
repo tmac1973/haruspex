@@ -756,7 +756,9 @@ describe('Code-mode tool filtering', () => {
 				'open_in_shell',
 				'open_in_editor',
 				'delegate',
-				'save_generated'
+				'save_generated',
+				'fs_delete',
+				'fs_move'
 			].sort()
 		);
 	});
