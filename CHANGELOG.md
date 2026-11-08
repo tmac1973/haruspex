@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.17](https://github.com/tmac1973/haruspex/compare/v0.2.16...v0.2.17) (2026-11-08)
+
+
+### Features
+
+* **fs-tools:** fs_delete and fs_move for files the agent made ([#1042](https://github.com/tmac1973/haruspex/issues/1042)) ([ff763a4](https://github.com/tmac1973/haruspex/commit/ff763a459515a3c729b89220fcb58ebc0daed2bf))
+* **header:** the status badge opens Settings → Inference ([#1034](https://github.com/tmac1973/haruspex/issues/1034)) ([4f95460](https://github.com/tmac1973/haruspex/commit/4f954601635efcf739078c681bc760a9a2927d73))
+* **inference:** check at startup that the remote model is still there ([#1037](https://github.com/tmac1973/haruspex/issues/1037)) ([c22d811](https://github.com/tmac1973/haruspex/commit/c22d811f2e0f5c9631d7b40ca87735fc96e767af))
+
+
+### Bug Fixes
+
+* **3d:** clearer ask_specialist and check_3d answers for the [#1032](https://github.com/tmac1973/haruspex/issues/1032) argument reports ([#1035](https://github.com/tmac1973/haruspex/issues/1035)) ([dd2920c](https://github.com/tmac1973/haruspex/commit/dd2920c34515d21a334a12b1409ec26fe766b45e))
+* **3d:** knee checks on mesh-only joints, a verifiable travel message ([#1032](https://github.com/tmac1973/haruspex/issues/1032)) ([#1040](https://github.com/tmac1973/haruspex/issues/1040)) ([551f509](https://github.com/tmac1973/haruspex/commit/551f509d9c87fcbcaef850204c86485d471e0e9c))
+* **code-tab:** offer fs_delete and fs_move in Code sessions ([#1046](https://github.com/tmac1973/haruspex/issues/1046)) ([#1047](https://github.com/tmac1973/haruspex/issues/1047)) ([7ef1380](https://github.com/tmac1973/haruspex/commit/7ef138013af07f40a0f889cb018d31fd8daae4f2))
+* **fs-tools:** clearer fs tool errors and fewer false feedback reports ([#1032](https://github.com/tmac1973/haruspex/issues/1032)) ([#1039](https://github.com/tmac1973/haruspex/issues/1039)) ([8466566](https://github.com/tmac1973/haruspex/commit/8466566293486a67111523956ef67eaee8e8b63e))
+* **fs-tools:** jobs' own writes tracked, a trash fallback, PDF page counts ([#1043](https://github.com/tmac1973/haruspex/issues/1043)) ([#1044](https://github.com/tmac1973/haruspex/issues/1044)) ([2b91ca1](https://github.com/tmac1973/haruspex/commit/2b91ca164ee262ab5f12c3fdbe831041d1e0db93))
+* **media-tools:** honest image search, attached audio, toolchest setup errors ([#1032](https://github.com/tmac1973/haruspex/issues/1032)) ([#1041](https://github.com/tmac1973/haruspex/issues/1041)) ([ca786b9](https://github.com/tmac1973/haruspex/commit/ca786b9d5ba48553e2e9e5f3d5056ae476e89875))
+* **tools:** honest answers for the [#1032](https://github.com/tmac1973/haruspex/issues/1032) fs, python and image reports ([#1036](https://github.com/tmac1973/haruspex/issues/1036)) ([2763fce](https://github.com/tmac1973/haruspex/commit/2763fcee721e1e57a71ca3d3ecff03a24f20eeff))
+* **video:** back up and restore projects on shares that refuse chmod ([#1033](https://github.com/tmac1973/haruspex/issues/1033)) ([888a7bd](https://github.com/tmac1973/haruspex/commit/888a7bd01518578604550ae626a61abd3b7da193))
+
 ## [0.2.16](https://github.com/tmac1973/haruspex/compare/v0.2.15...v0.2.16) (2026-11-06)
 
 
