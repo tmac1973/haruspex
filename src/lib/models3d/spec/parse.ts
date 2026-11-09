@@ -26,6 +26,7 @@ function clip(raw: unknown): ModelClip | null {
 		seconds: numberOrNaN(c.seconds),
 		// Locomotion and idles cycle; a one-shot like "attack" does not.
 		loop: typeof c.loop === 'boolean' ? c.loop : LOOPING_CLIP.test(name),
+		...(typeof c.airborne === 'boolean' ? { airborne: c.airborne } : {}),
 		action: stringOr(c.action)
 	};
 }

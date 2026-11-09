@@ -5,7 +5,7 @@ description: What check_3d does in detail — the build and animation modules it
 
 # The 3D helper
 
-The 3D helper gives the Code tab's agent one tool, `check_3d`. The agent writes code that builds a model; the helper runs it, saves a `.glb`, measures it and renders it, so the agent can see what it made and fix it. Turn it on in Settings → Code → Helpers → 3D. For a short overview of all helpers, see the `helpers` page; for whole sets of models made by a job, see the `3d-models` page.
+The 3D helper gives the Code tab's agent one tool, `check_3d`. The agent writes code that builds a model; the helper runs it, saves a `.glb`, measures and renders it. Turn it on in Settings → Code → Helpers → 3D. See the `helpers` page for all helpers, and the `3d-models` page for jobs.
 
 ## What the agent writes
 
@@ -23,6 +23,7 @@ An **animation module** keeps clips in a file of their own. Its `animate(THREE, 
 | `anim`          | an animation module to run with the build module            |
 | `out`           | where to save the `.glb`; a module defaults to its own name |
 | `clip`          | show that clip moving instead of the still views            |
+| `clips`         | per clip `loop` and `airborne`, overriding the name         |
 | `view`          | show one part close up: a mesh or pivot name, or `head`     |
 | `height`        | scale the model to this many metres tall                    |
 | `spec_height`   | warn when the model is over 10% off this height             |
@@ -41,18 +42,18 @@ A build error stops the check and reports the error with its line and file. So d
 - **Parts**: floating free, hidden inside another part, or tiny next to the rest.
 - **glTF validation**: the Khronos glTF Validator's errors, one line per kind, such as rotation keys that aren't unit quaternions. three.js draws these anyway; other engines may not.
 
-Vertex colours outside 0–1 are clamped before the `.glb` is written, and the report says how many.
+Vertex colours outside 0–1 are clamped in the `.glb`; the report says how many.
 
-Each clip is sampled at 16 frames. Clips named Idle, Walk, Run, Fly or Swim loop. A walk or run plays in place, since the game moves the model; its line gives the speed to move it at. Each clip reports:
+Each clip is sampled at 16 frames. Idle, Walk, Run, Swim and flight (Fly, Hover, Glide, Soar) loop; runs, jumps and flight may leave the floor, unless `clips` says otherwise. A walk or run plays in place, since the game moves the model; its line gives that speed. Each clip reports:
 
-- going through the floor or the whole model leaving it, each over 1 cm (runs and jumps may leave it);
+- going through the floor or the whole model leaving it, each over 1 cm;
 - a clip that lasts 0 s, never moves, or has keys past its end;
 - a part passing into another, or coming away from the body;
 - a planted foot sliding over 3 cm;
 - a looping clip that ends over 1 cm (or 2% of the height) from where it starts, changes speed at its loop point, or carries the body across the floor, with the track that carries it;
-- a clip that plays once and doesn't start and end at the rest pose or Idle's first pose (a Die may end elsewhere), so a game can't blend into it;
+- a one-shot that doesn't start and end at the rest pose or Idle's first pose (a Die may end elsewhere), so a game can't blend into it;
 - a walk or run whose planted feet don't move back together at one speed, like a treadmill: they slip against it, stand still or move forward;
-- a knee or elbow bending the wrong way by over 10°;
+- a knee or elbow bending the wrong way by over 10° (not in a wing);
 - a joint turning over 90° between keys, and tracks that never move;
 - how far it ends from where it started, how far its key pose reaches, and how far it drifts;
 - as notes that never fail it: keys over 0.3 s apart, which move in straight lines, and over 60 keys a second, which bloat the file.
@@ -71,5 +72,5 @@ The agent sees the sheets only if its model reads images.
 - It can't tell whether a model looks right or a walk reads as a walk, only what is physically wrong.
 - It doesn't decide when the agent is done: the agent does, or the session's step limit.
 - It keeps no history: each check replaces the `.glb` at `out`.
-- It finds knees and elbows, loops and walks by name only.
+- It finds knees, elbows and walks by name only.
 - It doesn't rig, skin, unwrap UVs or make lower-detail copies.

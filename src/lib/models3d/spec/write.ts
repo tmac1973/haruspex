@@ -8,7 +8,13 @@
 import type { ModelClip, ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
 
 function orderedClip(c: ModelClip): Record<string, unknown> {
-	return { name: c.name, seconds: c.seconds, loop: c.loop, action: c.action };
+	return {
+		name: c.name,
+		seconds: c.seconds,
+		loop: c.loop,
+		...(c.airborne === undefined ? {} : { airborne: c.airborne }),
+		action: c.action
+	};
 }
 
 function orderedEntry(e: ModelEntry): Record<string, unknown> {

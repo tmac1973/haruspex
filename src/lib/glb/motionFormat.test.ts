@@ -24,6 +24,7 @@ function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 		loop: false,
 		locomotion: false,
 		airborne: false,
+		declared: [],
 		travel: 0,
 		travelDir: [0, 0],
 		travelTrack: '',
@@ -66,6 +67,21 @@ describe('formatClipLines', () => {
 			'- Walk (0.82 s, 18 tracks, ends 1 cm from its start): no problems found.',
 			'- Attack (0.75 s, 18 tracks, ends 1 cm from its start): through the floor by 2 cm at 0.48 s; Bone_Arm.quaternion turns 140° between two keys at 0.35 s; tracks that never move: Bone_Jaw.quaternion.'
 		]);
+	});
+
+	it('says which flags were set against the name', () => {
+		const set = motion({
+			name: 'Levitate',
+			loop: true,
+			airborne: true,
+			declared: ['loops', 'airborne']
+		});
+		expect(formatClipLines([set])[1]).toBe(
+			'- Levitate (0.82 s, 18 tracks, ends 1 cm from its start, set as loops and airborne): no problems found.'
+		);
+		expect(formatClip(set, false)[0]).toBe(
+			'Clip Levitate: 0.82 s, 18 tracks, set as loops and airborne.'
+		);
 	});
 });
 
