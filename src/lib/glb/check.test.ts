@@ -104,10 +104,12 @@ describe('checkGlb', () => {
 	it('fails on a clip name it does not have, listing the clips', async () => {
 		const bytes = await glbWith([bob('Idle', 'Crate'), bob('Hop', 'Crate')], box('Crate'));
 		expect(await checkGlb(bytes, { clip: 'Run' })).toEqual({
-			problems: ['No clip named Run. Clips: Idle, Hop.']
+			problems: ['No clip named Run. Clips: Idle, Hop.'],
+			argument: 'clip'
 		});
 		expect(await checkGlb(await glbOf(box('Crate')), { clip: 'Run' })).toEqual({
-			problems: ['No clip named Run. The GLB has no clips.']
+			problems: ['No clip named Run. The GLB has no clips.'],
+			argument: 'clip'
 		});
 	});
 

@@ -34,10 +34,29 @@ describe('sheetLayout', () => {
 		expect(top.half).toBeCloseTo(1 * 1.2);
 	});
 
-	it('adds 0.1 m grid lines only under 1 m tall', () => {
-		expect(sheetLayout(bounds([0, 0, 0], [0.3, 0.5, 0.3])).grid.minor).toBe(0.1);
-		expect(sheetLayout(bounds([0, 0, 0], [1, 2, 1])).grid.minor).toBeNull();
-		expect(sheetLayout(bounds([0, 0, 0], [1, 2, 1])).grid.major).toBe(1);
+	it('spaces the grid 1 cm under 0.1 m tall, 0.1 m under 1 m, else 1 m', () => {
+		expect(sheetLayout(bounds([0, 0, 0], [0.05, 0.05, 0.05])).grid.spacing).toBe(0.01);
+		expect(sheetLayout(bounds([0, 0, 0], [0.3, 0.5, 0.3])).grid.spacing).toBe(0.1);
+		expect(sheetLayout(bounds([0, 0, 0], [1, 2, 1])).grid.spacing).toBe(1);
+	});
+
+	it('keeps the grid in front of the three-quarter camera, however small the model', () => {
+		for (const [w, h] of [
+			[0.05, 0.05],
+			[0.2, 0.25],
+			[0.6, 1.2],
+			[1.5, 3],
+			[10, 2]
+		]) {
+			const l = sheetLayout(bounds([-w / 2, 0, -w / 2], [w / 2, h, w / 2]));
+			const cam = l.cells[5].dir.map((d, i) => l.centre[i] + d * l.distance * 0.75);
+			const half = l.grid.size / 2;
+			// Every corner is nearer the centre than the camera is, across the floor.
+			const across = Math.hypot(cam[0] - l.centre[0], cam[2] - l.centre[2]);
+			expect(half * Math.SQRT2).toBeLessThan(across);
+			// And the grid still reaches past the model's footprint.
+			expect(half).toBeGreaterThanOrEqual(Math.min(w / 2, across / Math.SQRT2 - l.grid.spacing));
+		}
 	});
 
 	it('stretches the frame to the floor when the asset floats near it', () => {

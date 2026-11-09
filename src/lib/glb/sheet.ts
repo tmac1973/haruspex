@@ -36,8 +36,8 @@ export interface SheetLayout {
 	centre: Vec3;
 	/** Camera distance from the centre. */
 	distance: number;
-	/** The floor grid: its edge length and line spacings, in metres. */
-	grid: { size: number; major: number; minor: number | null; centre: [number, number] };
+	/** The floor grid: its edge length and line spacing, in metres. */
+	grid: { size: number; spacing: number; centre: [number, number] };
 }
 
 const VIEWS: { label: string; dir: Vec3; up: Vec3; across: [number, number] }[] = [
@@ -88,31 +88,42 @@ export function sheetLayout(b: Bounds): SheetLayout {
 		up: [0, 1, 0],
 		half: null
 	});
-	const footprint = Math.max(ext[0], ext[2], 1);
+	const distance = dim * 3;
 	return {
 		cells,
 		centre,
-		distance: dim * 3,
+		distance,
 		grid: {
-			size: Math.ceil(footprint * 1.5) + 1,
-			major: 1,
-			minor: b.size[1] < 1 ? 0.1 : null,
+			...gridSize(b.size[1], Math.max(ext[0], ext[2]), distance),
 			centre: [centre[0], centre[2]]
 		}
 	};
 }
 
+/**
+ * The grid's spacing (1 cm under 0.1 m tall, 0.1 m under 1 m, else 1 m) and edge length: half
+ * as wide again as the footprint, but never reaching the three-quarter
+ * camera. A line that runs past the camera crosses its near plane, and
+ * SwiftShader, which headless hosts draw with, drops such lines whole: a
+ * small model's grid then showed only far behind it.
+ */
+export function gridSize(height: number, footprint: number, distance: number) {
+	const spacing = height < 0.1 ? 0.01 : height < 1 ? 0.1 : 1;
+	const steps = (m: number, round: (n: number) => number) =>
+		round(Number((m / spacing).toFixed(6))) * spacing;
+	const tq = normalise(THREE_QUARTER);
+	// The camera's distance across the floor; the grid's corners stay well inside it.
+	const reach = distance * 0.75 * Math.hypot(tq[0], tq[2]) * 0.55;
+	const wanted = steps(Math.max(footprint, spacing) * 0.75 + spacing / 2, Math.ceil);
+	const half = Math.max(spacing, Math.min(wanted, steps(reach, Math.floor)));
+	return { size: Number((half * 2).toFixed(6)), spacing };
+}
+
 function addGrid(THREE: Three, scene: InstanceType<Three['Scene']>, layout: SheetLayout) {
-	const { size, minor, centre } = layout.grid;
-	const major = new THREE.GridHelper(size, size, 0x3c3c3c, 0x3c3c3c);
-	major.position.set(centre[0], 0, centre[1]);
-	scene.add(major);
-	if (minor) {
-		const n = Math.round(size / minor);
-		const fine = new THREE.GridHelper(size, n, 0x6a6a6a, 0x6a6a6a);
-		fine.position.set(centre[0], -0.0005, centre[1]);
-		scene.add(fine);
-	}
+	const { size, spacing, centre } = layout.grid;
+	const grid = new THREE.GridHelper(size, Math.round(size / spacing), 0x4a4a4a, 0x4a4a4a);
+	grid.position.set(centre[0], 0, centre[1]);
+	scene.add(grid);
 }
 
 function camera(THREE: Three, layout: SheetLayout, cell: SheetCell) {
@@ -140,6 +151,12 @@ function annotate(THREE: Three, ctx: CanvasRenderingContext2D, layout: SheetLayo
 		ctx.fillStyle = '#ffffff';
 		ctx.fillText(cell.label, cell.x + 14, cell.y + 12);
 	}
+	const tq = layout.cells[5];
+	const gridLabel = `grid ${layout.grid.spacing} m`;
+	ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+	ctx.fillRect(tq.x + 8, tq.y + CELL - 30, ctx.measureText(gridLabel).width + 12, 22);
+	ctx.fillStyle = '#ffffff';
+	ctx.fillText(gridLabel, tq.x + 14, tq.y + CELL - 26);
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
 	for (let i = 1; i < COLUMNS; i++) ctx.strokeRect(i * CELL, 0, 0, SHEET_HEIGHT);
 	ctx.strokeRect(0, CELL, SHEET_WIDTH, 0);

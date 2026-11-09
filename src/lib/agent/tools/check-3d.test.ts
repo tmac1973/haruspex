@@ -282,6 +282,21 @@ describe('check_3d', () => {
 		expect(io.write).not.toHaveBeenCalled();
 	});
 
+	it('asks to fix the argument, not the file, for a clip or part the GLB lacks', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		glb.checkGlb.mockResolvedValueOnce({
+			problems: ['No clip named Wlak. Clips: Walk.'],
+			argument: 'clip'
+		});
+		expect((await call({ path: 'a.js', clip: 'Wlak' })).result).toBe(
+			[
+				'The check failed.',
+				'- No clip named Wlak. Clips: Walk.',
+				'Fix the clip argument and call check_3d again.'
+			].join('\n')
+		);
+	});
+
 	it('shows a part close up when asked, with the close-up note', async () => {
 		files.set('/proj/a.js', enc(MODULE));
 		glb.checkGlb.mockResolvedValueOnce({

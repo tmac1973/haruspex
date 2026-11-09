@@ -45,11 +45,20 @@ export interface GlbCheck {
 	invalid: string[];
 }
 
+/**
+ * Why a check failed (no GLB to write). `argument` names the argument to fix
+ * when the GLB is fine and the call asked for a clip or part it doesn't have.
+ */
+export interface GlbProblems {
+	problems: string[];
+	argument?: 'clip' | 'view';
+}
+
 /** Check GLB bytes; `problems` when they fail (no GLB to write). */
 export async function checkGlb(
 	bytes: Uint8Array,
 	opts: CheckOptions = {}
-): Promise<GlbCheck | { problems: string[] }> {
+): Promise<GlbCheck | GlbProblems> {
 	let loaded = await loadGlb(bytes);
 	if ('error' in loaded) return { problems: [loaded.error] };
 	const inspect = { maxTriangles: opts.maxTriangles, specHeight: opts.specHeight };
@@ -90,15 +99,15 @@ function whatToShow(
 			anim: AnimationClip | undefined;
 			close: { bounds: Bounds; label: string; note?: string } | null;
 	  }
-	| { problems: string[] } {
+	| GlbProblems {
 	const anim = clip ? gltf.animations.find((a) => a.name === clip) : undefined;
 	if (clip && !anim) {
 		const names = gltf.animations.map((a) => a.name);
 		const has = names.length ? `Clips: ${names.join(', ')}.` : 'The GLB has no clips.';
-		return { problems: [`No clip named ${clip}. ${has}`] };
+		return { problems: [`No clip named ${clip}. ${has}`], argument: 'clip' };
 	}
 	const close = view && !anim ? closeUpBounds(THREE, gltf.scene, view, report.bounds) : null;
-	if (close && 'error' in close) return { problems: [close.error] };
+	if (close && 'error' in close) return { problems: [close.error], argument: 'view' };
 	return { anim, close };
 }
 
@@ -111,7 +120,7 @@ function describe(
 	report: GlbReport,
 	{ clip, clips: flags, view }: CheckOptions,
 	normalisedFrom: Bounds | undefined
-): Pick<GlbCheck, 'text' | 'png' | 'clip' | 'closeUp'> | { problems: string[] } {
+): Pick<GlbCheck, 'text' | 'png' | 'clip' | 'closeUp'> | GlbProblems {
 	const asked = whatToShow(THREE, gltf, report, clip, view);
 	if ('problems' in asked) {
 		disposeTree(gltf.scene);

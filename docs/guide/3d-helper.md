@@ -62,7 +62,7 @@ Each clip is sampled at 16 frames. Idle, Walk, Run, Swim and flight (Fly, Hover,
 
 - The `.glb`, with its clips, saved at `out`.
 - The report: size in metres, where the feet sit, mesh, triangle and draw-call counts, the heaviest parts, problems, warnings, materials and one line per clip.
-- The render sheet: a 1200 × 800 image of front, right, back, left, top and three-quarter views over a floor grid, height marked. With `view`, the same views framed on that part, drawing only what is near it (a part as long as the model looks whole).
+- The render sheet: a 1200 × 800 image of front, right, back, left, top and three-quarter views over a labelled floor grid, height marked; "right" shows the model's left. With `view`, the same views framed on that part, drawing only what is near it (a part as long as the model looks whole).
 - The motion sheet, with `clip`: 8 frames from the side, 8 from the front, then all frames overlaid with trails of the parts that move most.
 
 The agent sees the sheets only if its model reads images.
@@ -70,7 +70,7 @@ The agent sees the sheets only if its model reads images.
 ## What it doesn't do
 
 - It can't tell whether a model looks right or a walk reads as a walk, only what is physically wrong.
-- It doesn't decide when the agent is done: the agent does, or the session's step limit.
+- It doesn't decide when the agent is done.
 - It keeps no history: each check replaces the `.glb` at `out`.
 - It finds knees, elbows and walks by name only.
 - It doesn't rig, skin, unwrap UVs or make lower-detail copies.
