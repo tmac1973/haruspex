@@ -22,6 +22,7 @@ const PAGES = [
 	'home',
 	'chat',
 	'chat-conversations',
+	'documents',
 	'slides',
 	'shell',
 	'code',

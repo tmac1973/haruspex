@@ -228,7 +228,8 @@ describe('the merged writers pick the format from the extension', () => {
 			vi.mocked(invoke).mockReset();
 			vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_document', { path, content: 'Body.' });
-			expect(out.result).toBe(`Wrote: ${path}`);
+			// A PDF is built here, so its page count is known.
+			expect(out.result).toBe(`Wrote: ${path}${command === 'fs_write_pdf' ? ' (1 page)' : ''}`);
 			expect(written()[0][0]).toBe(command);
 		}
 	});
@@ -261,11 +262,10 @@ describe('the retired per-format tools still work', () => {
 	it('routes fs_write_pdf to fs_write_document as a PDF, adding the extension', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await call('fs_write_pdf', { path: 'report', content: 'Body.' });
-		expect(out.result).toBe('Wrote: report.pdf');
-		expect(invoke).toHaveBeenLastCalledWith(
-			'fs_write_pdf',
-			expect.objectContaining({ relPath: 'report.pdf' })
-		);
+		expect(out.result).toBe('Wrote: report.pdf (1 page)');
+		expect(invoke).toHaveBeenLastCalledWith('fs_write_pdf', expect.any(Uint8Array), {
+			headers: expect.objectContaining({ 'x-rel-path': 'report.pdf' })
+		});
 	});
 
 	it('keeps a path that already has the extension', async () => {

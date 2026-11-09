@@ -1,5 +1,5 @@
 //! Image loading, normalization, and embedding helpers shared by
-//! `fs_read_image`, the doc-builders (DOCX/ODT/PPTX/ODP/PDF), and the
+//! `fs_read_image`, the doc-builders (DOCX/ODT/ODP), and the
 //! markdown-image extractor used to scan document bodies.
 //!
 //! Everything that touches `LoadedImage` lives here so the doc-builder
@@ -232,8 +232,8 @@ pub(super) fn render_doc_body(
 /// Extract every `![alt](path)` image reference from a markdown-shaped
 /// document, in order of first appearance, deduplicated. The returned
 /// vector preserves source order so the document builders can assign
-/// stable media indices (`image1`, `image2`, …). Used by the PDF, DOCX,
-/// and ODT writers.
+/// stable media indices (`image1`, `image2`, …). Used by the DOCX and ODT
+/// writers.
 ///
 /// Matches the subset of CommonMark we actually want to support:
 ///   - `![alt text](path)` — single line, no nested brackets
@@ -331,7 +331,7 @@ pub(super) fn load_image_set(
 }
 
 /// Convenience wrapper: load every image referenced by a markdown body.
-/// Used by the DOCX/ODT/PDF writers.
+/// Used by the DOCX and ODT writers.
 pub(super) fn load_markdown_images(
     workdir: &Path,
     content: &str,

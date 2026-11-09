@@ -201,10 +201,7 @@ pub async fn fs_write_odt(
     content: String,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    super::write_markdown_document(
-        workdir, rel_path, content, overwrite, "odt", false, build_odt,
-    )
-    .await
+    super::write_markdown_document(workdir, rel_path, content, overwrite, "odt", build_odt).await
 }
 
 #[cfg(test)]

@@ -6,7 +6,8 @@ import { MAX_DRAFT_REWRITES } from '#lib/agent/tools/_drafts.ts';
 
 const mocks = vi.hoisted(() => ({
 	disk: new Set<string>(),
-	askFileConflict: vi.fn()
+	askFileConflict: vi.fn(),
+	pdf: { pages: 1, missing: new Set<string>() }
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -14,6 +15,42 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => false }));
 vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({ askFileConflict: mocks.askFileConflict }));
+// The PDF itself is built and tested in `documents/`; here it is bytes to write.
+vi.mock('#lib/documents/pdf.ts', () => ({
+	pdfFromMarkdown: async () => ({
+		bytes: new TextEncoder().encode('%PDF-1.7'),
+		pages: mocks.pdf.pages,
+		missing: mocks.pdf.missing
+	})
+}));
+
+type Headers = { headers: Record<string, string> };
+
+/** Where a write went and whether it replaced the file: a PDF says so in
+ *  headers, since the file is the body; the other formats in their args. */
+function sentTo(call: unknown[]): { relPath: string; overwrite: boolean } {
+	if (call[0] === 'fs_write_pdf') {
+		const { headers } = call[2] as Headers;
+		return {
+			relPath: decodeURIComponent(headers['x-rel-path']),
+			overwrite: headers['x-overwrite'] === 'true'
+		};
+	}
+	const args = call[1] as { relPath: string; overwrite: boolean };
+	return { relPath: args.relPath, overwrite: args.overwrite };
+}
+
+/** Answer by command, as `invokeRouter`, with a PDF write going to disk. */
+function route(routes: Parameters<typeof invokeRouter>[0]) {
+	const router = invokeRouter(routes);
+	return async <T>(cmd: string, args?: unknown, opts?: unknown): Promise<T> => {
+		if (cmd === 'fs_write_pdf') {
+			mocks.disk.add(sentTo([cmd, args, opts]).relPath);
+			return null as T;
+		}
+		return router<T>(cmd, args as Record<string, unknown>);
+	};
+}
 
 const ctx = makeToolContext({ workingDir: '/w' });
 
@@ -22,16 +59,15 @@ beforeEach(() => {
 	mocks.disk.clear();
 	mocks.askFileConflict.mockReset();
 	mocks.askFileConflict.mockResolvedValue('overwrite');
+	mocks.pdf = { pages: 1, missing: new Set() };
 	vi.mocked(invoke).mockReset();
-	const write = (a?: Record<string, unknown>) => {
-		mocks.disk.add(String(a?.relPath));
-		return null;
-	};
 	vi.mocked(invoke).mockImplementation(
-		invokeRouter({
+		route({
 			fs_path_exists: (a) => mocks.disk.has(String(a?.relPath)),
-			fs_write_pdf: write,
-			fs_write_docx: write
+			fs_write_docx: (a) => {
+				mocks.disk.add(String(a?.relPath));
+				return null;
+			}
 		})
 	);
 });
@@ -55,27 +91,44 @@ describe('fs_write_document paths', () => {
 			'docs/v1.2/notes.docx'
 		]) {
 			const out = await write({ path, content: DRAFT });
-			expect(out.result).toBe(`Wrote: ${path}`);
+			expect(out.result).toBe(`Wrote: ${path}${/\.pdf$/i.test(path) ? ' (1 page)' : ''}`);
 		}
 	});
 
 	it('says how many pages a PDF came to (#1032: one page asked, three written)', async () => {
-		vi.mocked(invoke).mockImplementation(
-			invokeRouter({ fs_path_exists: false, fs_write_pdf: 3, fs_write_docx: null })
-		);
+		mocks.pdf.pages = 3;
 		expect((await write({ path: 'hp.pdf', content: DRAFT })).result).toBe(
 			'Wrote: hp.pdf (3 pages)'
 		);
-		vi.mocked(invoke).mockImplementation(invokeRouter({ fs_path_exists: false, fs_write_pdf: 1 }));
+		mocks.pdf.pages = 1;
 		expect((await write({ path: 'one.pdf', content: DRAFT })).result).toBe(
 			'Wrote: one.pdf (1 page)'
 		);
 	});
 
+	it('sends the built PDF as the raw body, with the path in headers', async () => {
+		await write({ path: 'notes/Ünïcode report.pdf', content: DRAFT });
+		const [cmd, body, opts] = writes()[0];
+		expect(cmd).toBe('fs_write_pdf');
+		expect(new TextDecoder().decode(body as Uint8Array)).toBe('%PDF-1.7');
+		expect((opts as Headers).headers).toEqual({
+			'x-workdir': encodeURIComponent('/w'),
+			'x-rel-path': encodeURIComponent('notes/Ünïcode report.pdf'),
+			'x-overwrite': 'false'
+		});
+	});
+
+	it('names the characters the fonts could not draw', async () => {
+		mocks.pdf.missing = new Set(['漢', '🚀']);
+		const out = await write({ path: 'hp.pdf', content: DRAFT });
+		expect(out.result).toContain('Wrote: hp.pdf');
+		expect(out.result).toContain('no glyph for 漢 🚀');
+	});
+
 	it('writes a path with space around it under the trimmed name', async () => {
 		const out = await write({ path: ' hp-research-final.pdf\n', content: DRAFT });
-		expect(out.result).toBe('Wrote: hp-research-final.pdf');
-		expect(writes()[0][1]).toMatchObject({ relPath: 'hp-research-final.pdf' });
+		expect(out.result).toBe('Wrote: hp-research-final.pdf (1 page)');
+		expect(sentTo(writes()[0]).relPath).toBe('hp-research-final.pdf');
 	});
 
 	it('says a missing path is missing, not that its extension is wrong', async () => {
@@ -100,7 +153,7 @@ describe('fs_write_document paths', () => {
 			}
 		});
 		const out = await executeTool(call.name, call.arguments, ctx);
-		expect(out.result).toBe('Wrote: hp-research-final.pdf');
+		expect(out.result).toBe('Wrote: hp-research-final.pdf (1 page)');
 	});
 });
 
@@ -108,8 +161,8 @@ describe('rewriting a document in the same turn', () => {
 	it('rewrites a document the turn created when it keeps its title', async () => {
 		await write({ path: 'hp-research.pdf', content: DRAFT });
 		const out = await write({ path: 'hp-research.pdf', content: SHORTER });
-		expect(out.result).toBe('Wrote: hp-research.pdf');
-		expect(writes()[1][1]).toMatchObject({ relPath: 'hp-research.pdf', overwrite: true });
+		expect(out.result).toBe('Wrote: hp-research.pdf (1 page)');
+		expect(sentTo(writes()[1])).toEqual({ relPath: 'hp-research.pdf', overwrite: true });
 		// The turn wrote it, so there is no one else's file to ask about.
 		expect(mocks.askFileConflict).not.toHaveBeenCalled();
 	});
@@ -127,7 +180,7 @@ describe('rewriting a document in the same turn', () => {
 		await write({ path: 'r.pdf', content: DRAFT });
 		for (let i = 0; i < MAX_DRAFT_REWRITES; i++) {
 			const out = await write({ path: 'r.pdf', content: `${SHORTER} ${i}` });
-			expect(out.result).toBe('Wrote: r.pdf');
+			expect(out.result).toBe('Wrote: r.pdf (1 page)');
 		}
 		const out = await write({ path: 'r.pdf', content: SHORTER });
 		const error = JSON.parse(out.result).error;
@@ -157,19 +210,15 @@ describe('rewriting a document in the same turn', () => {
 		mocks.disk.add('report.pdf');
 		mocks.askFileConflict.mockResolvedValue('counter');
 		vi.mocked(invoke).mockImplementation(
-			invokeRouter({
+			route({
 				fs_path_exists: (a) => mocks.disk.has(String(a?.relPath)),
-				fs_find_available_path: 'report (1).pdf',
-				fs_write_pdf: (a) => {
-					mocks.disk.add(String(a?.relPath));
-					return null;
-				}
+				fs_find_available_path: 'report (1).pdf'
 			})
 		);
 		const first = await write({ path: 'report.pdf', content: DRAFT });
-		expect(first.result).toBe('Wrote: report (1).pdf');
+		expect(first.result).toBe('Wrote: report (1).pdf (1 page)');
 		const again = await write({ path: 'report (1).pdf', content: SHORTER });
-		expect(again.result).toBe('Wrote: report (1).pdf');
+		expect(again.result).toBe('Wrote: report (1).pdf (1 page)');
 	});
 
 	it('starts each turn with no drafts', async () => {
@@ -177,7 +226,7 @@ describe('rewriting a document in the same turn', () => {
 		ctx.filesWrittenThisTurn = new Set();
 		mocks.askFileConflict.mockResolvedValue('overwrite');
 		const out = await write({ path: 'a.pdf', content: SHORTER });
-		expect(out.result).toBe('Wrote: a.pdf');
+		expect(out.result).toBe('Wrote: a.pdf (1 page)');
 		// A later turn treats the file as the user's: it asks.
 		expect(mocks.askFileConflict).toHaveBeenCalledTimes(1);
 	});

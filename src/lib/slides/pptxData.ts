@@ -83,7 +83,7 @@ const CELL_PAD = { v: 0.05, h: 0.08 };
 const LINE = 1.2;
 
 /** A number as people write one: 12, 1,200, -3.5, 12%, $40, $4.2m, 3bn. */
-const NUMERIC = /^[-+]?[$€£]?\s?\d[\d,]*(\.\d+)?\s?(%|[kmb]n?)?$/i;
+export const NUMERIC = /^[-+]?[$€£]?\s?\d[\d,]*(\.\d+)?\s?(%|[kmb]n?)?$/i;
 
 /** Column widths in proportion to their longest cell, within limits, filling `width`. */
 function columnWidths(rows: string[][], width: number): number[] {

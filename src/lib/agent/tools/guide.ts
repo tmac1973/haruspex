@@ -26,7 +26,7 @@ registerTool({
 		function: {
 			name: HARUSPEX_DOCS_TOOL,
 			description:
-				"Read Haruspex's user guide. Without a page: how Haruspex is set up now (model, which features are on) and the list of pages. With a page: that page. Use it for any question about Haruspex itself.",
+				"Read Haruspex's user guide. Without a page: how Haruspex is set up now (model, features on) and the list of pages. With a page: that page. Use it for any question about Haruspex itself.",
 			parameters: {
 				type: 'object',
 				properties: {

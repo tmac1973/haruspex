@@ -212,9 +212,9 @@ right one when adding code:
 | `path.rs`          | Workdir resolution + path safety (`resolve_in_workdir`, `refuse_if_exists`, `workdir_path`) |
 | `text.rs`          | Plain-text read / write / append                     |
 | `images.rs`        | PNG/JPEG load, EMU/cm conversion, markdown image refs|
-| `markdown_inline.rs` | Inline markdown → styled runs, table flattening, ASCII folding |
+| `markdown_inline.rs` | Headings, XML escaping and standalone image lines for docx/odt |
 | `pdf_read.rs`      | PDFium + pdf-extract fallback for `fs_read_pdf`      |
-| `pdf_write.rs`     | `build_pdf` (printpdf, Helvetica/Courier WinAnsi)    |
+| `pdf_write.rs`     | Writes a PDF built in the frontend (`src/lib/documents/`, pdfmake) |
 | `docx.rs`          | OOXML word document builder                          |
 | `odt.rs`           | OpenDocument text builder                            |
 | `pptx.rs`          | OOXML PowerPoint builder (`build_pptx` + 11 part writers + `ImageIndex`) |

@@ -36,11 +36,11 @@ use path::{
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Shared command body for the markdown-text document writers (docx / odt /
-/// pdf). Resolves and guards the destination (write-size cap + overwrite
+/// Shared command body for the markdown-text document writers (docx / odt;
+/// the PDF is built in the frontend). Resolves and guards the destination (write-size cap + overwrite
 /// refusal), pre-loads referenced `![](…)` images while the async runtime is
-/// available, then runs `build` on a blocking thread over the content lines —
-/// blank lines dropped unless `keep_blank_lines` — and writes the bytes.
+/// available, then runs `build` on a blocking thread over the content's
+/// non-blank lines and writes the bytes.
 /// `format` names the build task in error messages.
 ///
 /// The slide/sheet writers (pptx / odp / xlsx) don't share this: they take
@@ -52,7 +52,6 @@ pub(super) async fn write_markdown_document(
     content: String,
     overwrite: Option<bool>,
     format: &str,
-    keep_blank_lines: bool,
     build: impl FnOnce(&[&str], &HashMap<String, LoadedImage>) -> Result<Vec<u8>, String>
         + Send
         + 'static,
@@ -72,11 +71,7 @@ pub(super) async fn write_markdown_document(
 
     let format = format.to_string();
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let lines: Vec<&str> = if keep_blank_lines {
-            content.lines().collect()
-        } else {
-            content.lines().filter(|l| !l.trim().is_empty()).collect()
-        };
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
         build(&lines, &images)
     })
     .await
@@ -130,160 +125,10 @@ pub(super) async fn extract_document_blocking(
 mod tests {
     use super::docx::build_docx;
     use super::images::LoadedImage;
-    use super::markdown_inline::{
-        ascii_fold_for_pdf, format_table_as_monoblock, is_horizontal_rule, is_table_separator,
-        normalize_list_marker, pad_right, parse_inline_markdown, parse_standalone_image_line,
-        preprocess_lines, strip_inline_markdown, wrap_to_width, DocumentBlock, ImageAlignment,
-        ImageOptions,
-    };
+    use super::markdown_inline::{parse_standalone_image_line, ImageAlignment, ImageOptions};
     use super::odp::build_odp;
     use super::odt::build_odt;
-    use super::pdf_write::build_pdf;
     use super::slides::{Slide, SlideBullet, SlideLayout, SlideOrientation};
-
-    #[test]
-    fn parse_inline_markdown_bold_italic() {
-        let runs = parse_inline_markdown("plain **bold** and *italic* end");
-        let collected: Vec<(String, bool, bool)> = runs
-            .iter()
-            .map(|r| (r.text.clone(), r.bold, r.italic))
-            .collect();
-        // Expected: "plain " plain, "bold" bold, " and " plain, "italic" italic, " end" plain
-        assert_eq!(collected.len(), 5);
-        assert_eq!(collected[0], ("plain ".to_string(), false, false));
-        assert_eq!(collected[1], ("bold".to_string(), true, false));
-        assert_eq!(collected[2], (" and ".to_string(), false, false));
-        assert_eq!(collected[3], ("italic".to_string(), false, true));
-        assert_eq!(collected[4], (" end".to_string(), false, false));
-    }
-
-    #[test]
-    fn parse_inline_markdown_strips_code_and_links() {
-        let runs = parse_inline_markdown("use `cargo` then see [docs](https://example.com).");
-        // Concatenated plain text should have the backticks and link URL stripped.
-        let joined: String = runs.iter().map(|r| r.text.as_str()).collect();
-        assert_eq!(joined, "use cargo then see docs.");
-        // None of the runs should carry the URL itself.
-        assert!(!joined.contains("https://"));
-        assert!(!joined.contains('`'));
-        assert!(!joined.contains('['));
-    }
-
-    #[test]
-    fn parse_inline_markdown_unclosed_emphasis_is_tolerated() {
-        // Unclosed ** — everything after becomes bold, but at least the
-        // literal asterisks don't leak through to the PDF.
-        let runs = parse_inline_markdown("before **unfinished");
-        let joined: String = runs.iter().map(|r| r.text.as_str()).collect();
-        assert_eq!(joined, "before unfinished");
-    }
-
-    #[test]
-    fn normalize_list_marker_disambiguates_star_and_plus() {
-        // `- ` passes through unchanged (already unambiguous)
-        assert_eq!(normalize_list_marker("- one"), "- one");
-        // `* ` and `+ ` get rewritten so the inline parser doesn't mistake
-        // the opening `*` for italic emphasis
-        assert_eq!(normalize_list_marker("* two"), "- two");
-        assert_eq!(normalize_list_marker("+ three"), "- three");
-        // Indented list marker preserves indentation
-        assert_eq!(normalize_list_marker("  * nested"), "  - nested");
-        // Numbered lists pass through untouched
-        assert_eq!(normalize_list_marker("1. first"), "1. first");
-        // Leading `*italic*` shouldn't match (no space after opening *)
-        assert_eq!(normalize_list_marker("*italic*"), "*italic*");
-    }
-
-    #[test]
-    fn ascii_fold_for_pdf_replaces_bullets_and_arrows() {
-        // Bullets, arrows, and smart punctuation — the exact characters
-        // that previously produced `â€¢` / `â†'` mojibake in the PDF.
-        assert_eq!(ascii_fold_for_pdf("a \u{2022} b"), "a - b");
-        assert_eq!(ascii_fold_for_pdf("\u{2192} and \u{2193}"), "-> and v");
-        assert_eq!(ascii_fold_for_pdf("\u{2190}\u{2191}\u{2194}"), "<-^<->");
-        // Smart quotes
-        assert_eq!(ascii_fold_for_pdf("\u{2018}hi\u{2019}"), "'hi'");
-        assert_eq!(ascii_fold_for_pdf("\u{201C}hi\u{201D}"), "\"hi\"");
-        // Dashes and ellipsis
-        assert_eq!(ascii_fold_for_pdf("a\u{2013}b"), "a-b");
-        assert_eq!(ascii_fold_for_pdf("a\u{2014}b"), "a--b");
-        assert_eq!(ascii_fold_for_pdf("loading\u{2026}"), "loading...");
-    }
-
-    #[test]
-    fn ascii_fold_for_pdf_strips_accents() {
-        assert_eq!(ascii_fold_for_pdf("café"), "cafe");
-        assert_eq!(ascii_fold_for_pdf("naïve"), "naive");
-        assert_eq!(ascii_fold_for_pdf("Ångström"), "Angstrom");
-        assert_eq!(ascii_fold_for_pdf("mañana"), "manana");
-        assert_eq!(ascii_fold_for_pdf("Straße"), "Strasse");
-    }
-
-    #[test]
-    fn ascii_fold_for_pdf_handles_box_drawing() {
-        // Box-drawing characters fold to ASCII pipes/dashes/pluses so any
-        // ASCII-art tables or diagrams the model emits stay legible.
-        assert_eq!(ascii_fold_for_pdf("\u{250C}\u{2500}\u{2510}"), "+-+");
-        assert_eq!(
-            ascii_fold_for_pdf("\u{2502} a \u{2502} b \u{2502}"),
-            "| a | b |"
-        );
-    }
-
-    #[test]
-    fn ascii_fold_for_pdf_passes_through_ascii() {
-        let text = "Hello, World! 123 + 456 = 579. `code` and **bold**.";
-        assert_eq!(ascii_fold_for_pdf(text), text);
-    }
-
-    #[test]
-    fn is_horizontal_rule_matches_common_forms() {
-        assert!(is_horizontal_rule("---"));
-        assert!(is_horizontal_rule("----"));
-        assert!(is_horizontal_rule("***"));
-        assert!(is_horizontal_rule("___"));
-        assert!(is_horizontal_rule("  ---  "));
-        assert!(is_horizontal_rule("- - -"));
-        assert!(is_horizontal_rule("-- -")); // 3 dashes with a space is still a valid HR
-                                             // Not rules
-        assert!(!is_horizontal_rule("--")); // only 2 dashes
-        assert!(!is_horizontal_rule("abc"));
-        assert!(!is_horizontal_rule(""));
-        assert!(!is_horizontal_rule("-*-"));
-    }
-
-    #[test]
-    fn format_table_as_monoblock_strips_inline_markdown_from_cells() {
-        // The exact failure mode the user reported: table cells contain
-        // `**Bold**` for emphasis, which the Courier table renderer was
-        // dumping verbatim. After stripping, the asterisks should be gone
-        // but the content preserved.
-        let header = vec!["**Feature**".to_string(), "Service".to_string()];
-        let rows = vec![
-            vec!["**Cost:**".to_string(), "Low".to_string()],
-            vec!["`focus`".to_string(), "*IT*".to_string()],
-            vec!["[link](url)".to_string(), "Med".to_string()],
-        ];
-        let out = format_table_as_monoblock(&header, &rows);
-        let all_text: String = out
-            .iter()
-            .map(|l| l.text.clone())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // Literal markdown syntax characters must not leak into any line.
-        assert!(!all_text.contains("**"));
-        assert!(!all_text.contains('`'));
-        assert!(!all_text.contains("["));
-        assert!(!all_text.contains("]("));
-
-        // But the underlying content survives.
-        assert!(all_text.contains("Feature"));
-        assert!(all_text.contains("Cost:"));
-        assert!(all_text.contains("focus"));
-        assert!(all_text.contains("IT"));
-        assert!(all_text.contains("link"));
-    }
 
     use super::test_support::{assert_odf_mimetype, read_zip_entry, read_zip_entry_bytes};
 
@@ -525,36 +370,6 @@ mod tests {
     }
 
     #[test]
-    fn build_pdf_embeds_referenced_image_without_panicking() {
-        // We can't easily decode the PDF stream here to confirm the image
-        // is positioned correctly, but we can at least verify the builder
-        // accepts a markdown body with an image reference and produces a
-        // non-empty PDF.
-        let mut images = std::collections::HashMap::new();
-        images.insert(
-            "chart.png".to_string(),
-            LoadedImage {
-                bytes: make_png(80, 60),
-                extension: "png".to_string(),
-            },
-        );
-        let bytes = build_pdf(
-            &[
-                "# Report",
-                "Some prose.",
-                "![chart](chart.png)",
-                "More prose.",
-            ],
-            &images,
-        )
-        .unwrap()
-        .0;
-        assert!(!bytes.is_empty());
-        // PDFs start with %PDF-
-        assert!(bytes.starts_with(b"%PDF-"));
-    }
-
-    #[test]
     fn build_odt_escapes_xml_special_chars() {
         let bytes = build_odt(&["Contains < and > and & and \"quoted\""], &no_images()).unwrap();
         let content = read_zip_entry(&bytes, "content.xml");
@@ -740,161 +555,5 @@ mod tests {
     fn build_odp_empty_slides_returns_error() {
         let slides: Vec<Slide> = Vec::new();
         assert!(build_odp(&slides, &no_images(), SlideOrientation::Landscape).is_err());
-    }
-
-    #[test]
-    fn strip_inline_markdown_removes_syntax_chars() {
-        assert_eq!(strip_inline_markdown("**bold**"), "bold");
-        assert_eq!(
-            strip_inline_markdown("plain *italic* mix"),
-            "plain italic mix"
-        );
-        assert_eq!(strip_inline_markdown("`code`"), "code");
-        assert_eq!(strip_inline_markdown("[label](https://x)"), "label");
-        assert_eq!(
-            strip_inline_markdown("**Cost:** $5 *per* `month`"),
-            "Cost: $5 per month"
-        );
-        // Plain ASCII passes through untouched.
-        assert_eq!(
-            strip_inline_markdown("no markdown here"),
-            "no markdown here"
-        );
-    }
-
-    #[test]
-    fn format_table_as_monoblock_aligns_columns() {
-        let header = vec![
-            "Feature".to_string(),
-            "MSP".to_string(),
-            "MSSP".to_string(),
-            "MDR".to_string(),
-        ];
-        let rows = vec![
-            vec![
-                "Cost".to_string(),
-                "Low".to_string(),
-                "Med".to_string(),
-                "High".to_string(),
-            ],
-            vec![
-                "Focus".to_string(),
-                "IT".to_string(),
-                "Sec".to_string(),
-                "IR".to_string(),
-            ],
-        ];
-        let out = format_table_as_monoblock(&header, &rows);
-
-        // First line should be the (bold) header row.
-        assert!(out[0].bold);
-        assert!(out[0].text.contains("Feature"));
-        assert!(out[0].text.contains("MSP"));
-        assert!(out[0].text.contains("MSSP"));
-        assert!(out[0].text.contains("MDR"));
-
-        // Second line should be the dashed separator under the header.
-        assert!(!out[1].bold);
-        assert!(out[1].text.contains("---"));
-
-        // Each MonoLine should have the same rendered width (padded).
-        let widths: Vec<usize> = out.iter().map(|l| l.text.chars().count()).collect();
-        assert!(widths.windows(2).all(|w| w[0] == w[1]));
-
-        // Data rows should exist and be non-bold.
-        assert!(out.iter().any(|l| !l.bold && l.text.contains("Cost")));
-        assert!(out.iter().any(|l| !l.bold && l.text.contains("Focus")));
-    }
-
-    #[test]
-    fn preprocess_lines_rewrites_tables_to_monoblock() {
-        let lines = vec![
-            "Intro paragraph.",
-            "",
-            "| A | B | C |",
-            "| :--- | :--- | :--- |",
-            "| 1 | 2 | 3 |",
-            "",
-            "After table.",
-        ];
-        let out = preprocess_lines(&lines);
-
-        // The table should become exactly one MonoBlock.
-        let mono_count = out
-            .iter()
-            .filter(|b| matches!(b, DocumentBlock::MonoBlock(_)))
-            .count();
-        assert_eq!(mono_count, 1);
-
-        // And surrounding text should still be Line blocks.
-        let line_texts: Vec<&str> = out
-            .iter()
-            .filter_map(|b| match b {
-                DocumentBlock::Line(s) => Some(s.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert!(line_texts.contains(&"Intro paragraph."));
-        assert!(line_texts.contains(&"After table."));
-
-        // And the raw table syntax should NOT show up as a Line anywhere.
-        assert!(!line_texts.iter().any(|l| l.contains("| :---")));
-    }
-
-    #[test]
-    fn preprocess_lines_passes_through_without_tables() {
-        let lines = vec!["# Title", "", "A paragraph.", "- A bullet"];
-        let out = preprocess_lines(&lines);
-        let line_texts: Vec<&str> = out
-            .iter()
-            .filter_map(|b| match b {
-                DocumentBlock::Line(s) => Some(s.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            line_texts,
-            vec!["# Title", "", "A paragraph.", "- A bullet"]
-        );
-        // No tables → no MonoBlocks
-        assert!(!out.iter().any(|b| matches!(b, DocumentBlock::MonoBlock(_))));
-    }
-
-    #[test]
-    fn wrap_to_width_breaks_on_whitespace() {
-        let lines = wrap_to_width("hello world foo bar", 10);
-        assert_eq!(lines, vec!["hello", "world foo", "bar"]);
-    }
-
-    #[test]
-    fn wrap_to_width_hard_wraps_long_words() {
-        let lines = wrap_to_width("abcdefghijklmnop short", 5);
-        // First three are the long word split at 5-char intervals,
-        // then "short" on its own line.
-        assert_eq!(lines, vec!["abcde", "fghij", "klmno", "p", "short"]);
-    }
-
-    #[test]
-    fn pad_right_truncates_when_too_long() {
-        assert_eq!(pad_right("abcdef", 3), "abc");
-        assert_eq!(pad_right("ab", 5), "ab   ");
-        assert_eq!(pad_right("", 3), "   ");
-    }
-
-    #[test]
-    fn is_table_separator_recognizes_gfm_separators() {
-        assert!(is_table_separator("| --- | --- |"));
-        assert!(is_table_separator("| :--- | ---: | :---: |"));
-        assert!(is_table_separator("|---|---|"));
-        assert!(!is_table_separator("| a | b |"));
-        assert!(!is_table_separator("abc"));
-    }
-
-    #[test]
-    fn ascii_fold_for_pdf_drops_unknown() {
-        // Characters we don't explicitly handle get dropped rather than
-        // leaking mojibake. Emoji, CJK, etc.
-        assert_eq!(ascii_fold_for_pdf("hi 🎉 bye"), "hi  bye");
-        assert_eq!(ascii_fold_for_pdf("hello 你好"), "hello ");
     }
 }
