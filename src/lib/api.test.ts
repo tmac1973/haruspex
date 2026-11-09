@@ -11,6 +11,11 @@ import {
 import type { ChatMessage } from '#lib/api.ts';
 import { clearDebugLogs, getDebugLogs, setVerbosePayloads } from '#lib/debugLog.ts';
 import { resetOpenRouterProviderSlugs } from '#lib/openrouter.ts';
+import {
+	PINNED_RATE_LIMIT_DELAYS_MS,
+	setRateLimitWaitListener,
+	type RateLimitWait
+} from '#lib/rateLimitWait.ts';
 
 // Mock the settings module so resolveChatEndpoint (via resolveBackendDescriptor)
 // sees the backend we want. vi.hoisted ensures the mock fns are available when
@@ -574,6 +579,97 @@ describe('OpenRouter provider pin', () => {
 		await chatCompletion({ messages: thread(round) });
 
 		expect(bodies[0].provider).toEqual({ order: ['google-ai-studio'], allow_fallbacks: false });
+	});
+
+	describe('a 429 on the pinned provider', () => {
+		const rateLimited = (retryAfter?: string) => ({
+			ok: false,
+			status: 429,
+			text: async () => 'rate-limited upstream',
+			headers: new Headers(retryAfter ? { 'retry-after': retryAfter } : {})
+		});
+		const ok = {
+			ok: true,
+			json: async () => ({
+				choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+			})
+		};
+
+		/** The chat fetch answers with `replies` in turn; the provider list always works. */
+		function stubChat(...replies: object[]) {
+			const chat = vi.fn();
+			for (const r of replies) chat.mockResolvedValueOnce(r);
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(async (url: string) =>
+					url.endsWith('/v1/providers')
+						? {
+								ok: true,
+								json: async () => ({ data: [{ name: 'Google', slug: 'google-vertex' }] })
+							}
+						: chat()
+				)
+			);
+			return chat;
+		}
+
+		let waits: RateLimitWait[];
+		beforeEach(() => {
+			useOpenRouter();
+			waits = [];
+			setRateLimitWaitListener((w) => waits.push(w));
+			vi.useFakeTimers();
+		});
+		afterEach(() => {
+			setRateLimitWaitListener(null);
+			vi.useRealTimers();
+		});
+
+		it('waits longer than a transient retry, says so, and gets through', async () => {
+			const chat = stubChat(...Array(4).fill(rateLimited()), ok);
+
+			const run = chatCompletion({ messages: thread(reasoningRound()) });
+			await vi.runAllTimersAsync();
+			const result = await run;
+
+			expect(result.content).toBe('ok');
+			expect(chat).toHaveBeenCalledTimes(5);
+			expect(waits.map((w) => w.delayMs)).toEqual(PINNED_RATE_LIMIT_DELAYS_MS.slice(0, 4));
+			expect(waits[0]).toMatchObject({ provider: 'Google', wait: 1, waits: 6 });
+		});
+
+		it('follows Retry-After', async () => {
+			stubChat(rateLimited('12'), ok);
+
+			const run = chatCompletion({ messages: thread(reasoningRound()) });
+			await vi.runAllTimersAsync();
+			await run;
+
+			expect(waits.map((w) => w.delayMs)).toEqual([12_000]);
+		});
+
+		it('gives up with a plain message once the waits are used up', async () => {
+			const chat = stubChat(...Array(7).fill(rateLimited()));
+
+			const run = chatCompletion({ messages: thread(reasoningRound()) });
+			const assertion = expect(run).rejects.toThrow(
+				'Google was still rate-limited after 2 min, and this conversation'
+			);
+			await vi.runAllTimersAsync();
+			await assertion;
+			expect(chat).toHaveBeenCalledTimes(7);
+		});
+
+		it('keeps the short retries for a request that is not pinned', async () => {
+			const chat = stubChat(...Array(4).fill(rateLimited()));
+
+			const run = chatCompletion({ messages: [{ role: 'user', content: 'hi' }] });
+			const assertion = expect(run).rejects.toThrow('Server error');
+			await vi.runAllTimersAsync();
+			await assertion;
+			expect(chat).toHaveBeenCalledTimes(4);
+			expect(waits).toEqual([]);
+		});
 	});
 });
 

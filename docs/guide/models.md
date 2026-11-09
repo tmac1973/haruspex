@@ -5,7 +5,7 @@ description: Choosing, downloading and switching local models, context size, res
 
 # Models
 
-Haruspex runs a language model on your GPU by default.
+Haruspex runs a model on your GPU by default.
 
 ## Which model fits your hardware
 
@@ -20,7 +20,7 @@ The first-run wizard reads your GPU's memory (VRAM) and recommends a model and c
 | 24 GB | Qwen 3.6 35B-A3B or Qwen 3.8 27B | Everything, including coding. |
 | 32 GB and up | The same two, at higher quality | The best local quality. |
 
-From 24 GB up, Qwen 3.6 35B-A3B is the default and answers faster; Qwen 3.8 27B is dense, and some prefer it. Integrated graphics work but are slow. Even an 8 GB M1 Mac should work.
+From 24 GB up, Qwen 3.6 35B-A3B is the default and answers faster; Qwen 3.8 27B is dense, and some prefer it. Even an 8 GB M1 Mac should work.
 
 Haruspex uses your GPU heavily, so games run worse alongside it.
 
@@ -45,7 +45,7 @@ Haruspex summarises the older parts of long chats and Code sessions so they fit.
 
 ## Run a model bigger than your VRAM
 
-Turn on Settings → Inference → **Let models use system RAM**, or pick the larger model the setup wizard offers. Haruspex keeps what it can in VRAM and moves the rest to system RAM, so context can grow to what both hold. Replies get slower. Qwen 3.6 35B-A3B slows the least, because only a few of its experts run for each word; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
+Turn on Settings → Inference → **Let models use system RAM**, or pick the larger model the setup wizard offers. Haruspex keeps what it can in VRAM and moves the rest to system RAM, so context can grow to what both hold. Replies get slower. Qwen 3.6 35B-A3B slows the least; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
 
 ## Response length
 
@@ -81,10 +81,12 @@ The built-in model server answers only Haruspex. To share a model with other app
 
 Add an API key from openrouter.ai/keys, press **Load models**, and pick one. Keep **Only show models that support tool calling** on; the assistant needs tools.
 
+A reasoning model's conversation stays with the provider that wrote its reasoning. If that provider is rate-limited, Haruspex waits up to two minutes with a notice; then try later or switch models.
+
 ## Different models for different jobs
 
 Each job can use its own model or server, so a heavy job can go to a big remote model while your local model serves Chat and Shell. See the `jobs` page.
 
 ## Features that need a bigger model
 
-The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models often fail at these; 16 GB models manage, and 24 GB or bigger remote models do well. See the `troubleshooting` page for small-model limits.
+The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox write code. The 4B and 9B models often fail at these. See the `troubleshooting` page.

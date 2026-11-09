@@ -9,6 +9,13 @@ import { OPENROUTER_ATTRIBUTION_HEADERS, openRouterProviderSlug } from '#lib/ope
 import { isAbortError, errMessage } from '#lib/utils/error.ts';
 import { readErrorText, urlForReport } from '#lib/utils/http.ts';
 import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
+import {
+	PINNED_RATE_LIMIT_DELAYS_MS,
+	notifyRateLimitWait,
+	parseRetryAfter,
+	pinnedRateLimitDelay,
+	rateLimitGiveUpMessage
+} from '#lib/rateLimitWait.ts';
 
 let nextRequestId = 1;
 
@@ -475,23 +482,23 @@ function wireMessages(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /**
- * OpenRouter's routing slug for `providerPin`, or undefined when the request
- * isn't pinned.
+ * `providerPin`'s provider, by name and by OpenRouter's routing slug, or
+ * undefined when the request isn't pinned.
  */
-async function pinnedProviderSlug(
+async function pinnedProvider(
 	endpoint: { isOpenRouter: boolean; model: string },
 	messages: ChatMessage[]
-): Promise<string | undefined> {
+): Promise<{ name: string; slug: string } | undefined> {
 	if (!endpoint.isOpenRouter) return undefined;
-	const provider = providerPin(messages, endpoint.model);
-	return provider ? openRouterProviderSlug(provider) : undefined;
+	const name = providerPin(messages, endpoint.model);
+	return name ? { name, slug: await openRouterProviderSlug(name) } : undefined;
 }
 
 function buildRequestBody(
 	options: ChatCompletionOptions,
 	modelName: string = 'default',
 	isOpenRouter = false,
-	/** `pinnedProviderSlug`: no fallback to another provider, which would reject the signatures. */
+	/** `pinnedProvider`'s slug: no fallback to another provider, which would reject the signatures. */
 	providerSlug?: string
 ): Record<string, unknown> {
 	const isStream = options.stream ?? true;
@@ -636,11 +643,52 @@ function servedByOf(parsed: unknown, model: string | undefined): ServedBy | unde
 	return model && typeof provider === 'string' && provider ? { provider, model } : undefined;
 }
 
+/** One try's outcome: the OK response, or a failure worth retrying. */
+type ChatTry = { response: Response } | { error: ApiError; retryAfterMs?: number };
+
+/**
+ * One POST. Rethrows AbortError as-is and throws a non-retriable status as
+ * ApiError; a dropped connection or a retriable status comes back as `error`.
+ */
+async function tryChatRequest(
+	url: string,
+	init: RequestInit,
+	reqId: number,
+	label: string,
+	attempt: number
+): Promise<ChatTry> {
+	let response: Response;
+	try {
+		response = await fetch(url, init);
+	} catch (e) {
+		if (isAbortError(e)) {
+			logDebug('api', `${label} request #${reqId} aborted before response`);
+			throw e;
+		}
+		// A dropped/refused connection is transient (sidecar restarting) — retry.
+		logDebug('api', `${label} request #${reqId} fetch failed`, { error: errMessage(e), attempt });
+		return { error: new ApiError('Failed to connect to the AI model. Is it still loading?') };
+	}
+	if (response.ok) return { response };
+
+	const text = await readErrorText(response);
+	logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
+		body: previewPayload(text),
+		attempt
+	});
+	const error = new ApiError(`Server error: ${text}`, response.status);
+	if (!isRetriableStatus(response.status)) throw error; // client error (4xx) — retrying won't help
+	return { error, retryAfterMs: parseRetryAfter(response.headers?.get('retry-after')) };
+}
+
 /**
  * POST a chat request and return the OK response. Shared by the streaming and
  * non-streaming paths: rethrows AbortError as-is, maps other fetch failures
  * and non-2xx statuses to ApiError. `label` ("stream" / "non-stream") only
  * tags the debug logs.
+ *
+ * A 429 on a request pinned to `pinnedProvider` waits longer (see
+ * `rateLimitWait.ts`), since no other provider can take it.
  */
 async function sendChatRequest(
 	url: string,
@@ -648,52 +696,49 @@ async function sendChatRequest(
 	body: unknown,
 	signal: AbortSignal | undefined,
 	reqId: number,
-	label: string
+	label: string,
+	pinnedProvider?: string
 ): Promise<Response> {
-	const payload = JSON.stringify(body);
-	let lastError: ApiError | undefined;
-	for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
-		if (attempt > 0) {
-			const delay = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
-			logDebug(
-				'api',
-				`${label} request #${reqId} retry ${attempt}/${MAX_TRANSIENT_RETRIES} after ${delay}ms`,
-				{ reason: lastError?.message }
-			);
-			await abortableDelay(delay, signal); // rejects on abort → propagates out
-		}
+	const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body), signal };
+	let retries = 0;
+	let rateLimitWaits = 0;
+	let waitedMs = 0;
+	for (let attempt = 0; ; attempt++) {
+		const result = await tryChatRequest(url, init, reqId, label, attempt);
+		if ('response' in result) return result.response;
 
-		let response: Response;
-		try {
-			response = await fetch(url, { method: 'POST', headers, body: payload, signal });
-		} catch (e) {
-			if (isAbortError(e)) {
-				logDebug('api', `${label} request #${reqId} aborted before response`);
-				throw e;
+		if (pinnedProvider && result.error.statusCode === 429) {
+			const delay = pinnedRateLimitDelay(rateLimitWaits, result.retryAfterMs);
+			if (delay === null) {
+				throw new ApiError(rateLimitGiveUpMessage(pinnedProvider, waitedMs), 429);
 			}
-			// A dropped/refused connection is transient (sidecar restarting) — retry.
-			logDebug('api', `${label} request #${reqId} fetch failed`, { error: errMessage(e), attempt });
-			lastError = new ApiError('Failed to connect to the AI model. Is it still loading?');
+			rateLimitWaits++;
+			waitedMs += delay;
+			logDebug('api', `${label} request #${reqId} waiting ${delay}ms on ${pinnedProvider}`, {
+				wait: rateLimitWaits,
+				retryAfterMs: result.retryAfterMs
+			});
+			notifyRateLimitWait({
+				provider: pinnedProvider,
+				delayMs: delay,
+				wait: rateLimitWaits,
+				waits: PINNED_RATE_LIMIT_DELAYS_MS.length
+			});
+			await abortableDelay(delay, signal); // rejects on abort → propagates out
 			continue;
 		}
 
-		if (!response.ok) {
-			const text = await readErrorText(response);
-			logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
-				body: previewPayload(text),
-				attempt
-			});
-			const err = new ApiError(`Server error: ${text}`, response.status);
-			if (isRetriableStatus(response.status)) {
-				lastError = err;
-				continue;
-			}
-			throw err; // client error (4xx) — retrying won't help
-		}
-		return response;
+		// Exhausted all attempts on a transient failure.
+		if (retries >= MAX_TRANSIENT_RETRIES) throw result.error;
+		retries++;
+		const delay = RETRY_BASE_DELAY_MS * 2 ** (retries - 1);
+		logDebug(
+			'api',
+			`${label} request #${reqId} retry ${retries}/${MAX_TRANSIENT_RETRIES} after ${delay}ms`,
+			{ reason: result.error.message }
+		);
+		await abortableDelay(delay, signal); // rejects on abort → propagates out
 	}
-	// Exhausted all attempts on a transient failure.
-	throw lastError ?? new ApiError('Failed to connect to the AI model. Is it still loading?');
 }
 
 /** `model`, when given, is the requested model, recorded in each chunk's `served_by`. */
@@ -712,11 +757,12 @@ export async function* chatCompletionStream(
 	// Stored keys and llama-server's key are read once per run; wait for that.
 	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
+	const pin = await pinnedProvider(endpoint, options.messages);
 	const body = buildRequestBody(
 		{ ...options, stream: true },
 		endpoint.model,
 		endpoint.isOpenRouter,
-		await pinnedProviderSlug(endpoint, options.messages)
+		pin?.slug
 	);
 	const reqId = nextRequestId++;
 	logDebug(
@@ -731,7 +777,8 @@ export async function* chatCompletionStream(
 		body,
 		signal,
 		reqId,
-		'stream'
+		'stream',
+		pin?.name
 	);
 
 	if (!response.body) {
@@ -776,11 +823,12 @@ export async function chatCompletion(
 	// Stored keys and llama-server's key are read once per run; wait for that.
 	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
+	const pin = await pinnedProvider(endpoint, options.messages);
 	const body = buildRequestBody(
 		{ ...options, stream: false },
 		endpoint.model,
 		endpoint.isOpenRouter,
-		await pinnedProviderSlug(endpoint, options.messages)
+		pin?.slug
 	);
 	const reqId = nextRequestId++;
 	logDebug(
@@ -795,7 +843,8 @@ export async function chatCompletion(
 		body,
 		signal,
 		reqId,
-		'non-stream'
+		'non-stream',
+		pin?.name
 	);
 
 	const data = await response.json();
