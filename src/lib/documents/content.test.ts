@@ -125,6 +125,7 @@ describe('tables', () => {
 	it('repeats the header, and puts a number column on the right', () => {
 		const [t] = render(md);
 		expect(t.table.headerRows).toBe(1);
+		expect(t.table.keepWithHeaderRows).toBe(1);
 		expect(t.table.body[0][0].text[0]).toMatchObject({ text: 'Model', bold: true });
 		expect(t.table.body.map((r: Any[]) => r[1].alignment)).toEqual(['right', 'right', 'right']);
 		expect(t.table.body[1][0].alignment).toBe('left');
