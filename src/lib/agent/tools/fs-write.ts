@@ -21,6 +21,7 @@ import { buildPptx } from '#lib/slides/pptx.ts';
 import { pdfFromMarkdown } from '#lib/documents/pdf.ts';
 import { missingNote } from '#lib/documents/glyphs.ts';
 import { attachPdfPreview } from '#lib/documents/preview.ts';
+import { PAGE_SIZES, PDF_STYLES, pdfOptions } from '#lib/documents/looks.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
 import { foldForOdp } from '#lib/slides/odp.ts';
 import { bulletText, normalizeSlide, settleLayout } from '#lib/slides/prepare.ts';
@@ -718,7 +719,7 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 		const err = validateTextContent(args, tool);
 		if (err) return toolResult(toolError(err));
 		if (tool === 'fs_write_document' || (tool === 'fs_write_text' && !ctx.codeSessionId)) {
-			return titledWrite(tool, choice, args.content as string, ctx);
+			return titledWrite(tool, choice, args, ctx);
 		}
 		return fsWriteWithConflictCheck(
 			tool,
@@ -743,10 +744,11 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 async function titledWrite(
 	tool: string,
 	choice: { command: string; path: string },
-	content: string,
+	args: Record<string, unknown>,
 	ctx: ToolContext
 ): Promise<ToolExecOutput> {
 	const workdir = fsWorkdir(ctx)!;
+	const content = args.content as string;
 	let write: RawWrite = (relPath, overwrite) =>
 		invoke(choice.command, { workdir, relPath, content, overwrite });
 	if (choice.command !== IPC.fs_write_pdf) {
@@ -754,9 +756,11 @@ async function titledWrite(
 	}
 	// The PDF is built here with pdfmake; Rust only writes it. A picture that
 	// can't be read refuses the document before anything is written.
+	const options = pdfOptions(args, globalThis.navigator?.language);
+	if ('error' in options) return toolResult(toolError(options.error));
 	let pdf: Awaited<ReturnType<typeof pdfFromMarkdown>>;
 	try {
-		pdf = await pdfFromMarkdown(workdir, content);
+		pdf = await pdfFromMarkdown(workdir, content, options);
 	} catch (e) {
 		return toolResult(toolInvokeError(tool, e));
 	}
@@ -1096,8 +1100,24 @@ registerTool({
 					content: {
 						type: 'string',
 						description:
-							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). PDF also renders bold, italic, links, lists, tables and code; .docx and .odt write other lines as plain paragraphs.'
-					}
+							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). PDF also renders bold, italic, links, lists, tables and code.'
+					},
+					page_size: {
+						type: 'string',
+						enum: [...PAGE_SIZES],
+						description: "PDF only; default: the user's paper."
+					},
+					style: {
+						type: 'string',
+						enum: [...PDF_STYLES],
+						description:
+							'PDF only. plain (default), report (blue headings) or letter (wide margins).'
+					},
+					title: {
+						type: 'string',
+						description: 'PDF only: printed at the top.'
+					},
+					toc: { type: 'boolean', description: 'PDF only: a contents page.' }
 				},
 				required: ['path', 'content']
 			}

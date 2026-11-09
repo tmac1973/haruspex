@@ -27,6 +27,8 @@ export interface ContentContext {
 	/** The page's content box, in points. */
 	width: number;
 	height: number;
+	/** Heading levels listed in the table of contents, first to last. */
+	toc?: [number, number];
 }
 
 export const CODE_FONT = 'Courier';
@@ -296,7 +298,7 @@ function tableBlock(table: Tokens.Table, ctx: ContentContext): Content {
 	const widths = longest.map((n) => (n > 24 ? '*' : 'auto'));
 	if (!widths.includes('*')) widths[longest.indexOf(Math.max(...longest))] = '*';
 	return {
-		table: { headerRows: 1, widths, body, dontBreakRows: true },
+		table: { headerRows: 1, keepWithHeaderRows: 1, widths, body, dontBreakRows: true },
 		layout: {
 			hLineWidth: (i: number, node: { table: { body: unknown[] } }) =>
 				i === 0 || i === node.table.body.length ? 0 : i === 1 ? 1 : 0.5,
@@ -348,20 +350,25 @@ function listItem(item: Tokens.ListItem, ctx: ContentContext): Content {
 
 const HEADING_STYLE = ['h1', 'h2', 'h3', 'h4'];
 
+/** A heading, listed in the contents when its level is. */
+function headingBlock(h: Tokens.Heading, ctx: ContentContext): Content {
+	const listed = ctx.toc && h.depth >= ctx.toc[0] && h.depth <= ctx.toc[1];
+	return {
+		text: inline(h.tokens, ctx, { bold: true }),
+		style: HEADING_STYLE[Math.min(h.depth, 4) - 1],
+		headlineLevel: h.depth,
+		...(listed && { tocItem: true, tocMargin: [(h.depth - ctx.toc![0]) * 14, 0, 0, 4] })
+	};
+}
+
 /** Block tokens as pdfmake content. */
 export function blocks(tokens: Token[], ctx: ContentContext): Content[] {
 	const out: Content[] = [];
 	for (const t of tokens) {
 		switch (t.type) {
-			case 'heading': {
-				const h = t as Tokens.Heading;
-				out.push({
-					text: inline(h.tokens, ctx, { bold: true }),
-					style: HEADING_STYLE[Math.min(h.depth, 4) - 1],
-					headlineLevel: h.depth
-				});
+			case 'heading':
+				out.push(headingBlock(t as Tokens.Heading, ctx));
 				break;
-			}
 			case 'paragraph': {
 				const p = t as Tokens.Paragraph;
 				const images = standaloneImages(p);

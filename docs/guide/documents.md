@@ -1,6 +1,6 @@
 ---
 title: Documents
-description: Making a PDF, Word or LibreOffice document in Chat: what a PDF shows, how the assistant checks it, pictures, characters the PDF can't print, and what .docx and .odt leave out.
+description: Making a PDF, Word or LibreOffice document in Chat: what a PDF shows, its page size and look, how the assistant checks it, pictures, characters the PDF can't print, and what .docx and .odt leave out.
 ---
 
 # Documents
@@ -20,7 +20,18 @@ A PDF keeps the shape of the assistant's markdown:
 - Code blocks in a fixed-width font on a grey panel, and quotes beside a rule.
 - Page numbers at the foot of each page when there is more than one.
 
-Pages are US Letter. A heading at the bottom of a page moves to the next page with the text it heads. The PDF's title, in its properties, is the document's first heading.
+A heading near the bottom of a page moves to the next page with the text or table it heads. The PDF's title, in its properties, is the document's first heading unless you give it one.
+
+## Choose the page size and look
+
+Ask for any of these in your message and the assistant passes them along:
+
+- **Page size**: A4 or US Letter. Without one, the PDF uses the paper of your system's region: Letter in the US, Canada, Mexico and a few other countries in the Americas, and A4 elsewhere.
+- **Style**: _plain_ (the default), _report_ (blue headings, a rule under the title, and the title at the top of each later page), or _letter_ (wider margins, smaller headings, and no page number on the first page).
+- **Title**: printed large at the top of the first page, and set in the PDF's properties. A first heading that repeats it is left out.
+- **Contents**: a contents page after the title, listing the main sections with their page numbers.
+
+These apply to PDFs only.
 
 ## The assistant checks its PDF
 

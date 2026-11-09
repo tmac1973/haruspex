@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
 	disk: new Set<string>(),
 	askFileConflict: vi.fn(),
 	pdf: { pages: 1, missing: new Set<string>() },
-	render: vi.fn()
+	render: vi.fn(),
+	build: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -18,11 +19,14 @@ vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => f
 vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({ askFileConflict: mocks.askFileConflict }));
 // The PDF itself is built and tested in `documents/`; here it is bytes to write.
 vi.mock('#lib/documents/pdf.ts', () => ({
-	pdfFromMarkdown: async () => ({
-		bytes: new TextEncoder().encode('%PDF-1.7'),
-		pages: mocks.pdf.pages,
-		missing: mocks.pdf.missing
-	})
+	pdfFromMarkdown: async (...args: unknown[]) => {
+		mocks.build(...args);
+		return {
+			bytes: new TextEncoder().encode('%PDF-1.7'),
+			pages: mocks.pdf.pages,
+			missing: mocks.pdf.missing
+		};
+	}
 }));
 
 vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfSheets: mocks.render }));
@@ -124,6 +128,24 @@ describe('fs_write_document paths', () => {
 			'x-rel-path': encodeURIComponent('notes/Ünïcode report.pdf'),
 			'x-overwrite': 'false'
 		});
+	});
+
+	it("builds the PDF with the call's page size, style, title and contents", async () => {
+		mocks.build.mockClear();
+		const args = { page_size: 'A4', style: 'report', title: 'Heat Pumps', toc: true };
+		await write({ path: 'hp.pdf', content: DRAFT, ...args });
+		expect(mocks.build.mock.calls[0][2]).toEqual({
+			pageSize: 'a4',
+			style: 'report',
+			title: 'Heat Pumps',
+			toc: true
+		});
+	});
+
+	it('refuses a style it does not have, writing nothing', async () => {
+		const out = await write({ path: 'hp.pdf', content: DRAFT, style: 'fancy' });
+		expect(out.result).toContain('style must be one of plain, report, letter.');
+		expect(writes()).toEqual([]);
 	});
 
 	it('names the characters the fonts could not draw', async () => {
