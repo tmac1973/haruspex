@@ -20,7 +20,7 @@ import {
 	timelineTranscriptReport
 } from '#lib/video/report.ts';
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
-import { parseCut, parseOp, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { parseCut, parseOp, parseTime, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
@@ -65,7 +65,9 @@ async function projectRead(args: Record<string, unknown>, ctx: ToolContext) {
 		const summary = await invoke<ProjectSummary>('video_project_summary', where);
 		if (args.transcript !== true) return toolResult(summaryReport(summary));
 		const t = await invoke<TimelineTranscript>('video_project_transcript', where);
-		return toolResult(`${summaryReport(summary)}\n\n${timelineTranscriptReport(t)}`);
+		const from = parseTime(args.transcript_from) ?? 0;
+		const speech = timelineTranscriptReport(t, { from, items: summary.items });
+		return toolResult(`${summaryReport(summary)}\n\n${speech}`);
 	} catch (e) {
 		return toolResult(toolError(errMessage(e)));
 	}
@@ -151,6 +153,11 @@ registerTool({
 						type: 'boolean',
 						description:
 							"Also give the cut's speech in the video's own time, from the clips' transcripts (video_transcribe makes them)."
+					},
+					transcript_from: {
+						type: 'string',
+						description:
+							'With transcript: start the speech here, in the video\'s time (e.g. "14:31.2"), to read on where a long one was cut.'
 					}
 				}
 			}

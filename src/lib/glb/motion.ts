@@ -48,6 +48,14 @@ export interface TimeSpan {
 	to: number;
 }
 
+/** How far a clip's first and last poses are from a reference pose (m), at the part furthest off. */
+export interface EndsOff {
+	start: number;
+	startPart: string;
+	end: number;
+	endPart: string;
+}
+
 export interface ClipMotion extends TrackChecks {
 	name: string;
 	duration: number;
@@ -94,7 +102,12 @@ export interface ClipMotion extends TrackChecks {
 	 */
 	hitch: { part: string; jump: number; speed: number } | null;
 	/** How far the first and last poses are from the rest pose (m), at the part furthest off. */
-	fromRest: { start: number; startPart: string; end: number; endPart: string };
+	fromRest: EndsOff;
+	/**
+	 * The same from the Idle clip's first pose, which a game blends a one-shot
+	 * from and back to; null with no looping Idle, or for Idle itself.
+	 */
+	fromIdle: (EndsOff & { clip: string }) | null;
 	/** The parts whose centres travel furthest, for trails. */
 	fastest: string[];
 	/** The furthest any part gets from where it starts (m), which part, and when: the key pose. */
@@ -221,6 +234,13 @@ function floorTracker(
 	};
 }
 
+/** How far `first` and `last` are from `ref`, at the part furthest off each. */
+function endsOff(first: Map<string, Vec>, last: Map<string, Vec>, ref: Map<string, Vec>): EndsOff {
+	const start = furthest(first, ref);
+	const end = furthest(last, ref);
+	return { start: start.off, startPart: start.part, end: end.off, endPart: end.part };
+}
+
 /** Where each part's centre goes: the seam, the key pose's reach, and the parts to trail. */
 function pathTracker(THREE: Three, parts: Part[], stride: number, rest: Map<string, Vec>) {
 	const times: number[] = [];
@@ -263,7 +283,7 @@ function pathTracker(THREE: Three, parts: Part[], stride: number, rest: Map<stri
 		result(): Pick<
 			ClipMotion,
 			'seam' | 'seamPart' | 'fastest' | 'reach' | 'reachPart' | 'reachAt' | 'fromRest'
-		> {
+		> & { off: (ref: Map<string, Vec>) => EndsOff } {
 			let seam = 0;
 			let seamPart = '';
 			for (const part of parts) {
@@ -275,8 +295,6 @@ function pathTracker(THREE: Three, parts: Part[], stride: number, rest: Map<stri
 				.sort((a, b) => b[1] - a[1])
 				.slice(0, TRAILS)
 				.map(([name]) => name);
-			const start = furthest(first, rest);
-			const end = furthest(last, rest);
 			return {
 				seam,
 				seamPart,
@@ -284,7 +302,8 @@ function pathTracker(THREE: Three, parts: Part[], stride: number, rest: Map<stri
 				reach,
 				reachPart,
 				reachAt,
-				fromRest: { start: start.off, startPart: start.part, end: end.off, endPart: end.part }
+				fromRest: endsOff(first, last, rest),
+				off: (ref) => endsOff(first, last, ref)
 			};
 		}
 	};
@@ -368,6 +387,28 @@ function travelOf(
 	};
 }
 
+/** A looping clip named Idle, if there is one, and each part's centre at its first pose. */
+function idleStart(
+	THREE: Three,
+	root: Object3D,
+	parts: Part[],
+	stride: number,
+	loops: AnimationClip[]
+): { clip: string; at: Map<string, Vec> } | null {
+	const clip = loops.find((c) => /idle/i.test(c.name));
+	if (!clip) return null;
+	const pose = poser(THREE, root, clip);
+	try {
+		pose.at(0);
+		return {
+			clip: clip.name,
+			at: new Map(parts.map((p) => [p.name, partCentre(THREE, p, stride)]))
+		};
+	} finally {
+		pose.stop();
+	}
+}
+
 export interface MotionOptions {
 	/** Whether each clip loops, by name, as a spec says; other clips go by their names. */
 	loops?: Record<string, boolean>;
@@ -392,9 +433,11 @@ export function inspectMotion(
 	const size = rest.getSize(new THREE.Vector3());
 	const weld = weldFor(Math.max(size.x, size.y, size.z));
 	const restCentres = new Map(parts.map((p) => [p.name, partCentre(THREE, p, stride)]));
+	const loops = (clip: AnimationClip) => opts.loops?.[clip.name] ?? LOOPING_CLIP.test(clip.name);
+	const idle = idleStart(THREE, root, parts, stride, gltf.animations.filter(loops));
 
 	return gltf.animations.map((clip) => {
-		const loop = opts.loops?.[clip.name] ?? LOOPING_CLIP.test(clip.name);
+		const loop = loops(clip);
 		const locomotion = LOCOMOTION_CLIP.test(clip.name);
 		const pose = poser(THREE, root, clip);
 		const ground = floorTracker(THREE, meshes, stride, floor, restCentre);
@@ -422,6 +465,7 @@ export function inspectMotion(
 		} finally {
 			pose.stop();
 		}
+		const { off, ...path } = paths.result();
 		return {
 			name: clip.name,
 			duration: clip.duration,
@@ -433,7 +477,8 @@ export function inspectMotion(
 			...ground.result(),
 			...travelOf(THREE, root, clip, paths.body(), locomotion, size.y),
 			height: size.y,
-			...paths.result(),
+			...path,
+			fromIdle: idle && idle.clip !== clip.name ? { clip: idle.clip, ...off(idle.at) } : null,
 			hitch,
 			...trackChecks(clip),
 			...contacts.result(),

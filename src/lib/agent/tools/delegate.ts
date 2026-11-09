@@ -188,7 +188,7 @@ registerTool({
 						type: 'string',
 						enum: ['read', 'write'],
 						description:
-							'read: the subtask reads and searches the project only. write: it makes the change in its own copy of the project, and its changes are applied to the folder when it finishes.'
+							'read: the subtask reads and searches the project only. write: it makes the change in its own copy of the project, and its changes are applied to the folder when it finishes. Write needs the project to be in a git repository.'
 					},
 					label: {
 						type: 'string',

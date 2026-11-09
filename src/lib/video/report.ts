@@ -158,22 +158,48 @@ export function cutReport(r: CutResult): string {
 	return lines.join('\n');
 }
 
-/** The cut's speech, `[h:mm:ss] text`, as long as it fits in `cap`. */
-export function timelineTranscriptReport(t: TimelineTranscript, cap = 12_000): string {
-	const lines = [`The cut's speech, in the video's time:`];
+/** How the clips with no transcript are named: their numbers, with their files when known. */
+function untranscribedNote(t: TimelineTranscript, items: SummaryItem[]): string {
+	const named = t.untranscribed.map((i) => {
+		const path = items.find((x) => x.index === i)?.path;
+		return path ? `${i} (${path})` : String(i);
+	});
+	return named.length === 1
+		? `Clip ${named[0]} has no transcript yet.`
+		: `Clips ${named.join(', ')} have no transcript yet.`;
+}
+
+/**
+ * The cut's speech from `from` (s, in the video's time), `[h:mm:ss] text`, as
+ * long as it fits in `cap`. `items`, the project's main track, names the clips
+ * with no transcript.
+ */
+export function timelineTranscriptReport(
+	t: TimelineTranscript,
+	opts: { from?: number; items?: SummaryItem[]; cap?: number } = {}
+): string {
+	const { from = 0, items = [], cap = 12_000 } = opts;
+	const lines = [
+		from > 0
+			? `The cut's speech from ${formatTime(from)}, in the video's time:`
+			: `The cut's speech, in the video's time:`
+	];
 	let used = 0;
 	for (const l of t.lines) {
+		if (l.start < from - 0.05) continue;
 		const line = `[${formatDuration(l.start)}] ${l.text}`;
 		if (used + line.length > cap) {
-			lines.push('… (cut here to fit)');
+			// Say where the rest starts, so it isn't read as speech that isn't there.
+			const at = formatTime(l.start);
+			lines.push(
+				`… (cut here to fit; the rest starts at ${at}: ask again with transcript_from: "${at}")`
+			);
 			break;
 		}
 		lines.push(line);
 		used += line.length + 1;
 	}
 	if (t.lines.length === 0) lines.push('(nothing transcribed yet: use video_transcribe)');
-	if (t.untranscribed.length > 0) {
-		lines.push(`Clips ${t.untranscribed.join(', ')} have no transcript yet.`);
-	}
+	if (t.untranscribed.length > 0) lines.push(untranscribedNote(t, items));
 	return lines.join('\n');
 }

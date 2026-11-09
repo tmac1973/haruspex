@@ -8,8 +8,8 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { parseChapters, videoSettings, episodeArg } from '#lib/video/args.ts';
-import { formatDuration } from '#lib/video/report.ts';
+import { parseChapters, parseTime, videoSettings, episodeArg } from '#lib/video/args.ts';
+import { formatDuration, formatTime } from '#lib/video/report.ts';
 import type { Transcript } from '#lib/ipc/gen/Transcript.ts';
 import type { TranscribeProgress } from '#lib/ipc/gen/TranscribeProgress.ts';
 import type { SilenceRange } from '#lib/ipc/gen/SilenceRange.ts';
@@ -24,18 +24,20 @@ function stamp(secs: number): string {
 	return `[${formatDuration(secs)}]`;
 }
 
-export function transcriptReport(list: Transcript[], cap = TRANSCRIPT_CAP): string {
+/** Each clip's speech from `from` (s, in its own time), as long as it fits in `cap`. */
+export function transcriptReport(list: Transcript[], cap = TRANSCRIPT_CAP, from = 0): string {
 	const parts: string[] = [];
 	let used = 0;
-	let cut = false;
+	let cut: { path: string; at: number } | null = null;
 	for (const t of list) {
-		const head = `${t.path} (${formatDuration(t.durationSecs)}${t.language ? `, ${t.language}` : ''}):`;
+		const head = `${t.path} (${formatDuration(t.durationSecs)}${t.language ? `, ${t.language}` : ''}${from > 0 ? `, from ${formatTime(from)}` : ''}):`;
 		parts.push(head);
 		used += head.length;
 		for (const s of t.segments) {
+			if (s.start < from - 0.05) continue;
 			const line = `${stamp(s.start)} ${s.text}`;
 			if (used + line.length > cap) {
-				cut = true;
+				cut = { path: t.path, at: s.start };
 				break;
 			}
 			parts.push(line);
@@ -45,8 +47,10 @@ export function transcriptReport(list: Transcript[], cap = TRANSCRIPT_CAP): stri
 		parts.push('');
 	}
 	if (cut) {
+		// Name where the rest starts and how to read it, so a long clip can be read to its end.
+		const at = formatTime(cut.at);
 		parts.push(
-			'… (cut here to fit; video_project_read with transcript: true gives the cut’s transcript, or transcribe one clip at a time)'
+			`… (cut here to fit; ${cut.path} goes on at ${at}: ask again with paths: [${JSON.stringify(cut.path)}] and from: "${at}")`
 		);
 	}
 	if (list.some((t) => t.model === 'ggml-base.en.bin')) {
@@ -81,7 +85,7 @@ async function transcribe(args: Record<string, unknown>, ctx: ToolContext) {
 			job,
 			onProgress: channel
 		});
-		return toolResult(transcriptReport(list));
+		return toolResult(transcriptReport(list, TRANSCRIPT_CAP, parseTime(args.from) ?? 0));
 	} catch (e) {
 		if (ctx.signal?.aborted || isAbortError(e)) throw e;
 		return toolResult(toolError(errMessage(e)));
@@ -180,6 +184,11 @@ registerTool({
 					refresh: {
 						type: 'boolean',
 						description: 'Transcribe again with the best model even if a transcript is kept.'
+					},
+					from: {
+						type: 'string',
+						description:
+							'Start each clip\'s transcript here, in its own time (e.g. "13:01.6"), to read on where a long one was cut.'
 					}
 				}
 			}
