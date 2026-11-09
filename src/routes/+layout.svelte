@@ -204,10 +204,13 @@
 		if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 			e.preventDefault();
 			void openInBrowser(href);
-		} else if (href && /^[a-z][a-z0-9+.-]*:/i.test(href)) {
+		} else if (href && !href.startsWith('#')) {
 			// Any other scheme (`haruspex-img:`, `file:`, `asset:`…) is one the
 			// browser cannot open and the webview would navigate to, leaving the
-			// user on a bare page with no way back short of quitting.
+			// user on a bare page with no way back short of quitting. A path
+			// (`assets/bear.glb`, `/home/…`) goes to the app's router instead,
+			// which has no such page and shows a 404. The app's own navigation
+			// is `goto`, never a link, so nothing here needs one.
 			e.preventDefault();
 		}
 	}

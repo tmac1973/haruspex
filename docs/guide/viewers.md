@@ -10,7 +10,7 @@ A `.glb` model, an image (`.png`, `.jpg`, `.webp`, `.gif`, `.bmp`, `.svg`) or a 
 ## Open a file or a folder
 
 - From the Code tab: click **Open** at the top of the sessions list, then **File…** to pick any file, or **Folder…** to pick a folder. Any folder works, not only a session's.
-- From a Code session: click a file name in the transcript, or ask the agent to open it.
+- From a Code session: click a file name or a file link in the transcript, or ask the agent to open it. Only files inside the session's folder open this way.
 
 **Folder…** opens on the folder's first model, else its first image, else its first sound, else its first text file. A file picked with **File…** opens in its own folder's window, so the list beside it holds that folder and the folders inside it. To compare files spread over several folders, use **Folder…** on the folder above them.
 
