@@ -7,7 +7,8 @@ import { MAX_DRAFT_REWRITES } from '#lib/agent/tools/_drafts.ts';
 const mocks = vi.hoisted(() => ({
 	disk: new Set<string>(),
 	askFileConflict: vi.fn(),
-	pdf: { pages: 1, missing: new Set<string>() }
+	pdf: { pages: 1, missing: new Set<string>() },
+	render: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -23,6 +24,8 @@ vi.mock('#lib/documents/pdf.ts', () => ({
 		missing: mocks.pdf.missing
 	})
 }));
+
+vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfSheets: mocks.render }));
 
 type Headers = { headers: Record<string, string> };
 
@@ -60,6 +63,11 @@ beforeEach(() => {
 	mocks.askFileConflict.mockReset();
 	mocks.askFileConflict.mockResolvedValue('overwrite');
 	mocks.pdf = { pages: 1, missing: new Set() };
+	// The preview has its own tests; these see it only where they turn it on.
+	ctx.visionSupported = false;
+	ctx.pendingImages = [];
+	mocks.render.mockReset();
+	mocks.render.mockResolvedValue({ sheets: ['data:sheet'], shown: 2, total: 2 });
 	vi.mocked(invoke).mockReset();
 	vi.mocked(invoke).mockImplementation(
 		route({
@@ -219,6 +227,48 @@ describe('rewriting a document in the same turn', () => {
 		expect(first.result).toBe('Wrote: report (1).pdf (1 page)');
 		const again = await write({ path: 'report (1).pdf', content: SHORTER });
 		expect(again.result).toBe('Wrote: report (1).pdf (1 page)');
+	});
+
+	it('shows a model that can see the PDF it wrote', async () => {
+		ctx.visionSupported = true;
+		mocks.pdf.pages = 2;
+		const out = await write({ path: 'hp.pdf', content: DRAFT });
+		expect(out.result).toMatch(/^Wrote: hp\.pdf \(2 pages\)\nThe sheets show all 2 pages/);
+		expect(ctx.pendingImages).toEqual([{ path: 'hp.pdf#sheet1', dataUrl: 'data:sheet' }]);
+	});
+
+	it('shows nothing for a Word document', async () => {
+		ctx.visionSupported = true;
+		expect((await write({ path: 'hp.docx', content: DRAFT })).result).toBe('Wrote: hp.docx');
+		expect(mocks.render).not.toHaveBeenCalled();
+	});
+
+	it('lets a PDF that was there before be fixed once the model has seen it', async () => {
+		ctx.visionSupported = true;
+		mocks.disk.add('report.pdf');
+		await write({ path: 'report.pdf', content: DRAFT });
+		expect(mocks.askFileConflict).toHaveBeenCalledTimes(1);
+		ctx.pendingImages = [];
+		const out = await write({ path: 'report.pdf', content: SHORTER });
+		expect(out.result).toMatch(/^Wrote: report\.pdf/);
+		// The user said to overwrite it once; the fix is not asked about again.
+		expect(mocks.askFileConflict).toHaveBeenCalledTimes(1);
+		expect(writes()).toHaveLength(2);
+	});
+
+	it('previews the copy the user kept beside the old file, under its own name', async () => {
+		ctx.visionSupported = true;
+		mocks.disk.add('report.pdf');
+		mocks.askFileConflict.mockResolvedValue('counter');
+		vi.mocked(invoke).mockImplementation(
+			route({
+				fs_path_exists: (a) => mocks.disk.has(String(a?.relPath)),
+				fs_find_available_path: 'report (1).pdf'
+			})
+		);
+		const out = await write({ path: 'report.pdf', content: DRAFT });
+		expect(out.result).toContain('write the whole document again to "report (1).pdf"');
+		expect(ctx.pendingImages[0].path).toBe('report (1).pdf#sheet1');
 	});
 
 	it('starts each turn with no drafts', async () => {

@@ -1,6 +1,6 @@
 ---
 title: Documents
-description: Making a PDF, Word or LibreOffice document in Chat: what a PDF shows, pictures, characters the PDF can't print, and what .docx and .odt leave out.
+description: Making a PDF, Word or LibreOffice document in Chat: what a PDF shows, how the assistant checks it, pictures, characters the PDF can't print, and what .docx and .odt leave out.
 ---
 
 # Documents
@@ -22,7 +22,11 @@ A PDF keeps the shape of the assistant's markdown:
 
 Pages are US Letter. A heading at the bottom of a page moves to the next page with the text it heads. The PDF's title, in its properties, is the document's first heading.
 
-The assistant is told how many pages the PDF came to, so it can shorten one that should have fit on a page.
+## The assistant checks its PDF
+
+After writing a PDF, the assistant is told how many pages it came to. If the model can see images, it is also shown the pages, four to a picture, up to the first eight. It looks for a table too narrow to read, a picture missing or too small, a mostly empty page, or more pages than you asked for, and may write the document again to fix it. It can do that up to three times in one answer, even for a file that was there before and that you said to overwrite.
+
+A model that can't see images gets only the page count.
 
 ## Pictures
 

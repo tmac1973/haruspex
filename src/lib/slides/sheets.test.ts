@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_SHEETS, SHEET_GAP, SLIDES_PER_SHEET, cellOrigin, planSheets } from './sheets';
+import {
+	DOCUMENT_SHEETS,
+	MAX_SHEETS,
+	SHEET_GAP,
+	SLIDES_PER_SHEET,
+	cellOrigin,
+	planSheets
+} from './sheets';
 
 describe('planSheets', () => {
 	it('sizes a landscape cell 512 wide and a portrait one 512 tall', () => {
@@ -26,6 +33,17 @@ describe('planSheets', () => {
 		expect(many.sheets).toHaveLength(MAX_SHEETS);
 		expect(many.shown).toBe(SLIDES_PER_SHEET * MAX_SHEETS);
 		expect(many.total).toBe(40);
+	});
+
+	it("lays a document's pages out four to a sheet, two across and larger", () => {
+		const letter = planSheets(9, 612 / 792, DOCUMENT_SHEETS);
+		expect(letter.cell).toEqual({ w: 541, h: 700 });
+		expect(letter.sheets.map((s) => [s.first, s.count, s.cols, s.rows])).toEqual([
+			[0, 4, 2, 2],
+			[4, 4, 2, 2]
+		]);
+		expect(letter.shown).toBe(8);
+		expect(letter.total).toBe(9);
 	});
 });
 

@@ -7,8 +7,9 @@
  * back its PDF and found it a page too long writes the whole document again.
  * Each format says what a revision keeps and a continuation doesn't — a
  * document its title, a spreadsheet its header and first record. The rule is
- * for a file the turn created; one that was there before the turn is still
- * refused. Text files outside a Code session use the document rule (`fs-write.ts`).
+ * for a file the turn created, or a PDF the model was shown
+ * (`documents/preview.ts`); one that was there before the turn and wasn't
+ * shown is still refused. Text files outside a Code session use the document rule (`fs-write.ts`).
  * Slide decks have their own, which also keeps a deck's look
  * (`slides/preview.ts`).
  */
@@ -31,6 +32,8 @@ interface Draft {
 	signature: string[];
 	/** The file did not exist before the turn wrote it. */
 	created: boolean;
+	/** The model was shown it, so a rewrite fixes what it saw. */
+	previewed: boolean;
 	rewrites: number;
 }
 
@@ -70,10 +73,23 @@ export const SPREADSHEET: DraftKind = {
 	how: 'write it whole again with the same header row and first data row'
 };
 
-/** The file at `path`, when the turn created it and it has rewrites left. */
+/** The file at `path`, when the turn created it or showed it to the model,
+ *  and it has rewrites left. */
 function revisable(turn: Set<string>, path: string): Draft | undefined {
 	const draft = drafts.get(turn)?.get(path);
-	return draft?.created && draft.rewrites < MAX_DRAFT_REWRITES ? draft : undefined;
+	if (!draft || !(draft.created || draft.previewed)) return undefined;
+	return draft.rewrites < MAX_DRAFT_REWRITES ? draft : undefined;
+}
+
+/** Whether the file at `path` may still be rewritten this turn. */
+export function canRewriteDraft(turn: Set<string>, path: string): boolean {
+	return revisable(turn, path) !== undefined;
+}
+
+/** Note that the model was shown the file at `path`, as written. */
+export function noteDraftPreview(turn: Set<string>, path: string): void {
+	const draft = drafts.get(turn)?.get(path);
+	if (draft) draft.previewed = true;
 }
 
 /** Whether a write with this `signature` may replace the file this turn wrote at `path`. */
@@ -102,6 +118,7 @@ export function noteDraft(
 	map.set(path, {
 		signature,
 		created: seen ? seen.created : !overwrite,
+		previewed: seen?.previewed ?? false,
 		rewrites: seen ? seen.rewrites + 1 : 0
 	});
 }
@@ -112,5 +129,5 @@ export function noteDraft(
  */
 export function draftRewriteHint(turn: Set<string>, path: string, kind: DraftKind): string {
 	if (!revisable(turn, path)) return '';
-	return `To revise a file you created this turn, ${kind.how}. `;
+	return `To revise a file you created or were shown this turn, ${kind.how}. `;
 }

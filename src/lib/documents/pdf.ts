@@ -1,4 +1,4 @@
-import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
+import type { Content, Node, NodeQueries, TDocumentDefinitions } from 'pdfmake/interfaces';
 import type { Tokens } from 'marked';
 import type { SlideImage } from '#lib/slides/types.ts';
 import { loadImages } from '#lib/slides/images.ts';
@@ -52,8 +52,21 @@ const STYLES: TDocumentDefinitions['styles'] = {
 	h2: { fontSize: 15.5, margin: [0, 12, 0, 6] },
 	h3: { fontSize: 13, margin: [0, 10, 0, 4] },
 	h4: { fontSize: 11.5, margin: [0, 8, 0, 4] },
-	p: { margin: [0, 0, 0, 8] }
+	p: { margin: [0, 0, 0, 8] },
+	footer: { alignment: 'center', fontSize: 9, color: '#80868f' }
 };
+
+/**
+ * A heading with nothing of its own after it on the page goes over with what
+ * it heads. The page number counts as a node on the page, so it is skipped
+ * by its style; another heading is not something this one heads.
+ */
+export function strandedHeading(node: Node, queries: NodeQueries): boolean {
+	if (node.headlineLevel === undefined) return false;
+	return !queries
+		.getFollowingNodesOnPage()
+		.some((n) => n.style !== 'footer' && n.headlineLevel === undefined);
+}
 
 /** Images as pdfmake places them: PNG and JPEG as they are. */
 export type ImageConverter = (image: SlideImage) => Promise<SlideImage>;
@@ -103,13 +116,9 @@ export async function buildPdf(
 		styles: STYLES,
 		footer: (page: number, count: number): Content | null => {
 			pages = count;
-			return count > 1
-				? { text: `${page} / ${count}`, alignment: 'center', fontSize: 9, color: '#80868f' }
-				: null;
+			return count > 1 ? { text: `${page} / ${count}`, style: 'footer' } : null;
 		},
-		// A heading at the foot of a page goes over with what it heads.
-		pageBreakBefore: (node, queries) =>
-			node.headlineLevel !== undefined && queries.getFollowingNodesOnPage().length === 0
+		pageBreakBefore: strandedHeading
 	};
 	const buffer = await pdfMake.createPdf(doc).getBuffer();
 	return { bytes: new Uint8Array(buffer), pages, missing };

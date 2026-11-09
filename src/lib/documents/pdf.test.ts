@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildPdf } from './pdf';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import type { Node, NodeQueries } from 'pdfmake/interfaces';
+import { buildPdf, strandedHeading } from './pdf';
 import { base64ToBytes } from '#lib/utils/base64.ts';
 import type { SlideImage } from '#lib/slides/types.ts';
 
@@ -18,6 +20,22 @@ describe('buildPdf', () => {
 		const body = Array.from({ length: 120 }, (_, i) => `Paragraph ${i} of the report.`);
 		const pdf = await buildPdf(body.join('\n\n'), new Map(), noConvert);
 		expect(pdf.pages).toBeGreaterThan(2);
+	});
+
+	it('never ends a page on a heading (the preview caught one at the foot of page 2)', async () => {
+		// Paragraphs of every length from 4 to 12 sentences: some heading lands at a foot.
+		const sentence = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod. ';
+		let md = '# Title\n\nIntro.\n';
+		for (let i = 1; i <= 18; i++) md += `\n## Section ${i}\n\n${sentence.repeat(4 + (i % 9))}\n`;
+		const pdf = await buildPdf(md, new Map(), noConvert);
+		const task = pdfjs.getDocument({ data: pdf.bytes.slice() });
+		const doc = await task.promise;
+		for (let n = 1; n <= doc.numPages; n++) {
+			const items = (await (await doc.getPage(n)).getTextContent()).items as { str: string }[];
+			const lines = items.map((i) => i.str.trim()).filter((s) => s && !/^\d+ \/ \d+$/.test(s));
+			expect(lines.at(-1), `page ${n}`).not.toMatch(/^Section \d+$/);
+		}
+		await task.destroy();
 	});
 
 	it('titles the PDF after its first heading', async () => {
@@ -48,5 +66,34 @@ describe('buildPdf', () => {
 		);
 		expect(convert).toHaveBeenCalledWith(gif);
 		expect(ascii(pdf.bytes)).toContain('/Subtype /Image');
+	});
+});
+
+describe('strandedHeading', () => {
+	const queries = (following: Node[]): NodeQueries => ({
+		getFollowingNodesOnPage: () => following,
+		getNodesOnNextPage: () => [],
+		getPreviousNodesOnPage: () => []
+	});
+	/** Only the fields the rule reads. */
+	const node = (fields: Partial<Node>) => fields as Node;
+	const heading = node({ headlineLevel: 2 });
+
+	it('moves a heading with only the page number after it', () => {
+		expect(strandedHeading(heading, queries([node({ style: 'footer' })]))).toBe(true);
+		expect(strandedHeading(heading, queries([]))).toBe(true);
+	});
+
+	it('moves a heading followed only by another heading', () => {
+		expect(
+			strandedHeading(heading, queries([node({ headlineLevel: 3 }), node({ style: 'footer' })]))
+		).toBe(true);
+	});
+
+	it('leaves a heading with its text after it, and anything that is not a heading', () => {
+		expect(
+			strandedHeading(heading, queries([node({ style: 'p' }), node({ style: 'footer' })]))
+		).toBe(false);
+		expect(strandedHeading(node({ style: 'p' }), queries([]))).toBe(false);
 	});
 });

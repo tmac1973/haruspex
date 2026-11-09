@@ -20,6 +20,7 @@ import { buildWriteDiff } from '#lib/code/diff.ts';
 import { buildPptx } from '#lib/slides/pptx.ts';
 import { pdfFromMarkdown } from '#lib/documents/pdf.ts';
 import { missingNote } from '#lib/documents/glyphs.ts';
+import { attachPdfPreview } from '#lib/documents/preview.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
 import { foldForOdp } from '#lib/slides/odp.ts';
 import { bulletText, normalizeSlide, settleLayout } from '#lib/slides/prepare.ts';
@@ -748,21 +749,29 @@ async function titledWrite(
 	const workdir = fsWorkdir(ctx)!;
 	let write: RawWrite = (relPath, overwrite) =>
 		invoke(choice.command, { workdir, relPath, content, overwrite });
-	let note = '';
-	if (choice.command === IPC.fs_write_pdf) {
-		// The PDF is built here with pdfmake; Rust only writes it. A picture
-		// that can't be read refuses the document before anything is written.
-		try {
-			const pdf = await pdfFromMarkdown(workdir, content);
-			write = pdfWrite(pdf.bytes, pdf.pages, workdir);
-			note = missingNote(pdf.missing);
-		} catch (e) {
-			return toolResult(toolInvokeError(tool, e));
-		}
+	if (choice.command !== IPC.fs_write_pdf) {
+		return draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
 	}
+	// The PDF is built here with pdfmake; Rust only writes it. A picture that
+	// can't be read refuses the document before anything is written.
+	let pdf: Awaited<ReturnType<typeof pdfFromMarkdown>>;
+	try {
+		pdf = await pdfFromMarkdown(workdir, content);
+	} catch (e) {
+		return toolResult(toolInvokeError(tool, e));
+	}
+	// The path it went to: the user may have kept the old file and had it
+	// written beside it.
+	let written = choice.path;
+	const send = pdfWrite(pdf.bytes, pdf.pages, workdir);
+	write = (relPath, overwrite) => {
+		written = relPath;
+		return send(relPath, overwrite);
+	};
 	const out = await draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
+	const note = missingNote(pdf.missing);
 	if (note && out.result.startsWith('Wrote:')) out.result += `\n${note}`;
-	return out;
+	return attachPdfPreview(out, ctx, written, pdf.bytes);
 }
 
 /** Write a built PDF as `pptxWrite` does a deck; it answers with its page count. */
