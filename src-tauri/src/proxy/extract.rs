@@ -31,6 +31,12 @@ pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit
 /// (c) keep the www form as a fallback when a family answers 403/429. Share
 /// links (`/r/x/s/<token>`) resolve their redirect on the original host
 /// first — the token may not resolve on other hosts.
+///
+/// By late 2026 none of it gets through from most networks: old.reddit and
+/// `.json` answer 403 "blocked by network security", www answers a 200
+/// JavaScript challenge with no thread in it, and RSS 429s after a request
+/// or two. The candidates stay for networks Reddit still lets in; when they
+/// fail, [`REDDIT_BLOCKED`] says so plainly.
 fn reddit_fetch_candidates(raw: &str) -> Option<Vec<String>> {
     let parsed = url::Url::parse(raw).ok()?;
     let host = parsed.host_str()?.to_ascii_lowercase();
@@ -64,6 +70,22 @@ fn reddit_fetch_candidates(raw: &str) -> Option<Vec<String>> {
         push(www, &mut candidates);
     }
     Some(candidates)
+}
+
+/// What a Reddit fetch that was refused, or answered with a challenge page,
+/// returns. Without it the model read "403" as a problem to solve and spent
+/// its turn on run_python, `.json` and RSS variants that Reddit blocks too.
+const REDDIT_BLOCKED: &str = "Reddit blocked this request: it refuses readers that are not \
+logged in. Do not retry this page or try to read Reddit another way (code, .json, RSS, \
+old.reddit). Use other sources.";
+
+/// Under this many characters, a Reddit page is the JavaScript challenge or
+/// block page, not a thread: a real one carries the post, comments and the
+/// sidebar.
+const REDDIT_MIN_TEXT: usize = 300;
+
+fn reddit_page_blocked(text: &str) -> bool {
+    text.chars().count() < REDDIT_MIN_TEXT
 }
 
 /// True when a fetch error means "this endpoint family refused us" (blocked
@@ -186,8 +208,15 @@ pub(super) async fn fetch_and_extract(
 
     let client = build_fetch_client(proxy)?;
 
-    let response = match reddit_fetch_candidates(url) {
-        Some(candidates) => fetch_first_ok(&client, &candidates).await?,
+    let reddit = reddit_fetch_candidates(url);
+    let response = match &reddit {
+        Some(candidates) => fetch_first_ok(&client, candidates).await.map_err(|e| {
+            if is_refusal(&e) {
+                REDDIT_BLOCKED.to_string()
+            } else {
+                e
+            }
+        })?,
         None => fetch_ok(&client, url).await?,
     };
 
@@ -239,7 +268,11 @@ pub(super) async fn fetch_and_extract(
         .ok()
         .and_then(|base| super::images::extract_hero_image(&html, &base));
 
-    Ok(FetchedPage::from_text(extract_text(&html), hero_image))
+    let text = extract_text(&html);
+    if reddit.is_some() && reddit_page_blocked(&text) {
+        return Err(REDDIT_BLOCKED.to_string());
+    }
+    Ok(FetchedPage::from_text(text, hero_image))
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
@@ -453,7 +486,22 @@ pub(super) fn strip_html_tags(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::reddit_fetch_candidates;
+    use super::{extract_text, reddit_fetch_candidates, reddit_page_blocked};
+
+    #[test]
+    fn reddit_challenge_page_counts_as_blocked() {
+        // The shape of what www.reddit.com answers a logged-out fetch with.
+        let challenge = r#"<html><head><title>Reddit</title><script>
+            document.addEventListener("DOMContentLoaded", async function () {});
+            </script><style>main{display:flex}</style></head>
+            <body><main><form method="post"><input name="solution"></form></main></body></html>"#;
+        assert!(reddit_page_blocked(&extract_text(challenge)));
+        let thread = format!(
+            "<html><body><main>{}</main></body></html>",
+            "a comment. ".repeat(40)
+        );
+        assert!(!reddit_page_blocked(&extract_text(&thread)));
+    }
 
     #[test]
     fn reddit_candidates_prefer_old_then_www() {
