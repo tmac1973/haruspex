@@ -118,6 +118,36 @@ export interface DeliveredSteering {
 const BG_POLL_MS = 3000;
 /** Tools whose end can start or stop a background process. */
 const BG_TOOLS = new Set(['run_command', 'command_stop']);
+/** How long an ended turn waits for each of its last calls (release, git, save). */
+const CLEANUP_WAIT_MS = 10_000;
+
+/**
+ * Wait for `work`, but no longer than `ms` or until `cut` settles. True when
+ * it finished (a rejection counts: the callers report their own). The work
+ * runs on; only the wait ends.
+ */
+export async function waitAtMost(
+	work: Promise<unknown>,
+	ms: number,
+	cut: Promise<void>
+): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<false>((resolve) => {
+		timer = setTimeout(() => resolve(false), ms);
+	});
+	try {
+		return await Promise.race([
+			work.then(
+				() => true,
+				() => true
+			),
+			late,
+			cut.then(() => false)
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
 
 export class CodeSession {
 	readonly id: string;
@@ -255,6 +285,8 @@ export class CodeSession {
 	private pendingCheckpoint: ChatMessage[] | null = null;
 	/** Settles once the running turn has been saved. */
 	private turnDone: Promise<void> | null = null;
+	/** Ends the running turn's wait for its last calls (`stop`); set while it waits. */
+	private cutCleanup: (() => void) | null = null;
 	/** The naming call has been made (or is under way); it is made once. */
 	private named = false;
 	private closed = false;
@@ -489,6 +521,8 @@ export class CodeSession {
 	 */
 	stop = (): void => {
 		this.abortController?.abort();
+		// A turn already winding down stops waiting for its last calls.
+		this.cutCleanup?.();
 		// Background subtasks run on; their cards, and closing the session, stop them.
 		this.subtaskStops.stopAll({ background: false });
 	};
@@ -1001,16 +1035,30 @@ export class CodeSession {
 			this.clearLive();
 			this.ticket = null;
 			this.turnGuard = null;
-			await guard.finish();
+			// A call that never answers (one the webview dropped when a page
+			// load cancelled it) must not keep the session busy: each step
+			// gets a while, and Stop ends the wait at once.
+			const cut = new Promise<void>((resolve) => (this.cutCleanup = resolve));
+			const step = async (name: string, work: Promise<unknown>) => {
+				const done = await waitAtMost(work, CLEANUP_WAIT_MS, cut);
+				if (!done) logDebug('code', 'turn cleanup gave up waiting', { id: this.id, step: name });
+				return done;
+			};
+			await step('release folder', guard.finish());
 			if (started) {
 				// What the turn itself did to the branch (a `git switch` it ran)
 				// is what it saw, so only later changes get a note.
-				await this.refreshGit();
+				await step('git status', this.refreshGit());
 				this.branchSeenByAgent = branchSeen(this.git);
-				await this.persist();
+				if (!(await step('save', this.persist()))) {
+					this.saveError = 'The session has not saved yet.';
+					// Later saves would queue behind one that may never end.
+					this.saving = Promise.resolve();
+				}
 			} else {
 				this.unsend(opening, typed, told);
 			}
+			this.cutCleanup = null;
 			void this.refreshBackground();
 		}
 		return started;
