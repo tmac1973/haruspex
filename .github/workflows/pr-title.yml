@@ -18,9 +18,14 @@
 # the subject — but the rule is enforced for every PR anyway: "does this need a
 # prefix?" depending on commit count is a rule nobody can apply reliably, and
 # a PR gains commits after review all the time.
+#
+# It runs on `pull_request`, not `pull_request_target`: it only reads the
+# title with a read-only token, and needs neither secrets nor a write token.
+# GitHub is ending `pull_request_target`'s default protection, and its
+# brownouts blocked this check outright (2026-11-09).
 name: PR title
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
