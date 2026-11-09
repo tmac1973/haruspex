@@ -200,7 +200,8 @@ SEARCH RULES:
 - Use the user's exact terms.
 - Use fetch_url on 2-4 of the most relevant results before answering.
 - Only cite sources you actually fetched. Do not cite URLs from search snippets alone.
-- For reviews or "best of" questions, include Reddit alongside review sites.
+- For reviews or "best of" questions, include forums and owner reviews alongside review sites.
+- Reddit blocks this app. Skip reddit.com results, and do not try to read Reddit another way (code, .json, RSS, old.reddit).
 
 INLINE CITATIONS:
 - Every fetch_url / research_url result starts with a "[Source: <url>]" header identifying which URL the content came from. Some also carry an "[Image: <url>]" line — that is a picture from the page, available if an image would help.
@@ -283,7 +284,7 @@ export function injectMessageHints(
 	const runsSkill = lastText !== fullText;
 
 	if (!runsSkill && looksLikeReviewQuery(lastText)) {
-		hints.push('Include Reddit as a source.');
+		hints.push('Include forums and owner reviews as sources.');
 	}
 
 	if (opts.workingDir && opts.lean && opts.leanFileWrites && looksLikeFileOutputRequest(lastText)) {

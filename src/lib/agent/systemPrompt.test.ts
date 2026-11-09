@@ -90,7 +90,7 @@ describe('injectMessageHints — memory section', () => {
 			exhaustiveResearch: false,
 			memorySection: section
 		});
-		expect(last(out)).toContain('Include Reddit as a source.');
+		expect(last(out)).toContain('Include forums and owner reviews as sources.');
 		expect(last(out).endsWith('- Prefers tabs.')).toBe(true);
 	});
 
@@ -167,7 +167,8 @@ describe('buildSystemPrompt — search rules', () => {
 		const p = prompt();
 		expect(p).toContain('Use fetch_url on 2-4 of the most relevant results');
 		expect(p).toContain('Only cite sources you actually fetched');
-		expect(p).toContain('include Reddit alongside review sites');
+		expect(p).toContain('include forums and owner reviews alongside review sites');
+		expect(p).toContain('Reddit blocks this app.');
 	});
 });
 
@@ -322,8 +323,10 @@ describe('injectMessageHints', () => {
 		'/weather Chicago'
 	);
 
-	it('asks for Reddit on a review question, and for depth with deep research on', () => {
-		expect(hinted('best budget headphones?')).toContain('Include Reddit as a source.');
+	it('asks for forums on a review question, and for depth with deep research on', () => {
+		expect(hinted('best budget headphones?')).toContain(
+			'Include forums and owner reviews as sources.'
+		);
 		expect(hinted('tell me about monkeys', true)).toContain('Research this thoroughly.');
 	});
 
