@@ -19,6 +19,7 @@ const ORDER = [
 	'home',
 	'chat',
 	'chat-conversations',
+	'documents',
 	'slides',
 	'shell',
 	'code',

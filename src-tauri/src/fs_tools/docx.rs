@@ -332,10 +332,7 @@ pub async fn fs_write_docx(
     content: String,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
-    super::write_markdown_document(
-        workdir, rel_path, content, overwrite, "docx", false, build_docx,
-    )
-    .await
+    super::write_markdown_document(workdir, rel_path, content, overwrite, "docx", build_docx).await
 }
 
 #[tauri::command]

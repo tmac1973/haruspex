@@ -71,12 +71,23 @@ function positive(width: number, height: number): { width: number; height: numbe
  * the model can act on: a format no deck shows, a file too large, or one that
  * isn't the picture its name says.
  */
-export async function loadSlideImages(
+export function loadSlideImages(
 	workdir: string,
 	slides: Slide[]
 ): Promise<Map<string, SlideImage>> {
+	return loadImages(
+		workdir,
+		slides.flatMap((s) => (s.image ? [s.image] : []))
+	);
+}
+
+/** Read and measure the pictures at `paths`, once each: a PDF's as a deck's. */
+export async function loadImages(
+	workdir: string,
+	paths: string[]
+): Promise<Map<string, SlideImage>> {
 	const images = new Map<string, SlideImage>();
-	for (const path of new Set(slides.flatMap((s) => (s.image ? [s.image] : [])))) {
+	for (const path of new Set(paths)) {
 		const mime = slideImageMime(path);
 		if (!mime) {
 			const ext = /\.([^./\\]+)$/.exec(path)?.[1] ?? '';

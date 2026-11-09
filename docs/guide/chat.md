@@ -26,7 +26,7 @@ While one conversation answers, send in another, or send more in the same one to
 Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there and nowhere else. Each chat keeps its own. A new chat starts in Settings → Chat → Default working directory, or with none.
 
 - **Reads:** plain text, Markdown, CSV, JSON, YAML, TOML, PDF (text, or as page images for scans), Word `.docx`, Excel `.xlsx`, and images.
-- **Writes:** text files and edits to them, PDF, Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx` and OpenDocument `.odt`/`.ods`/`.odp`. The extension picks the format. See the `slides` page.
+- **Writes:** text files and edits to them, PDF, Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx` and OpenDocument `.odt`/`.ods`/`.odp`. The extension picks the format. See the `documents` and `slides` pages.
 - **Downloads:** files from a web address into the folder (50 MB limit, programs blocked).
 - **Delete or move:** only files it made in this chat, if you haven't changed them. Deletes go to the trash (else the folder's `.haruspex/trash/`).
 - **Cannot:** run scripts or touch anything outside the folder.

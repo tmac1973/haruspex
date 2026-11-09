@@ -1,602 +1,74 @@
-//! PDF generation via `printpdf`. Markdown-shaped input is preprocessed
-//! by `super::markdown_inline` (headings, tables, inline emphasis) and
-//! images are loaded by `super::images`. The renderer flows pages
-//! automatically and folds non-ASCII characters to ASCII so the built-in
-//! Helvetica font's WinAnsi encoding doesn't mojibake.
+//! PDF writing. The document is built in the frontend with pdfmake
+//! (`src/lib/documents/`); this only puts the finished file in the working
+//! directory. It arrives as the raw body, as a deck does (`pptx.rs`): a PDF
+//! with photos is too much for a JSON number array.
 
-use super::images::LoadedImage;
-use super::markdown_inline::{
-    ascii_fold_for_pdf, is_horizontal_rule, normalize_list_marker, parse_inline_markdown,
-    preprocess_lines, runs_to_words, wrap_styled_words, DocumentBlock, ImageAlignment, InlineRun,
+use super::path::{
+    refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
 };
-use std::collections::HashMap;
+use super::pptx::header;
 
-/// Font family selector — Helvetica for normal prose, Courier for
-/// monospace tables where column alignment via space padding matters.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum FontFamily {
-    Helvetica,
-    Courier,
-}
+/// The largest PDF written. Each picture is held to the slides' image cap
+/// when the document is built; this bounds a document of many.
+const MAX_PDF_BYTES: usize = 200 * 1_048_576;
 
-/// Approximate character width in points for Helvetica at given size.
-/// Used for line-fit estimates during word wrap.
-fn char_width_pt(font_pt: f32) -> f32 {
-    font_pt * 0.55
-}
-
-/// Classify a raw line into (rendered_text, font_size_pt, leading_pt,
-/// is_heading). Headings get larger sizes and looser leading; body
-/// lines get standard.
-fn classify(line: &str, h1: f32, h2: f32, h3: f32, body: f32) -> (String, f32, f32, bool) {
-    let trimmed = line.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("# ") {
-        (rest.to_string(), h1, h1 * 0.5, true)
-    } else if let Some(rest) = trimmed.strip_prefix("## ") {
-        (rest.to_string(), h2, h2 * 0.5, true)
-    } else if let Some(rest) = trimmed.strip_prefix("### ") {
-        (rest.to_string(), h3, h3 * 0.5, true)
-    } else {
-        (line.to_string(), body, body * 0.4, false)
+/// Only a .pdf path and a PDF: the cap here is above the one for content a
+/// model writes, so this must not become a way around it.
+fn check_pdf(rel_path: &str, bytes: &[u8]) -> Result<(), String> {
+    if !rel_path.to_ascii_lowercase().ends_with(".pdf") {
+        return Err(format!("{rel_path} is not a .pdf path."));
     }
-}
-
-fn pick_font(family: FontFamily, bold: bool, italic: bool) -> printpdf::BuiltinFont {
-    use printpdf::BuiltinFont::*;
-    match (family, bold, italic) {
-        (FontFamily::Helvetica, true, true) => HelveticaBoldOblique,
-        (FontFamily::Helvetica, true, false) => HelveticaBold,
-        (FontFamily::Helvetica, false, true) => HelveticaOblique,
-        (FontFamily::Helvetica, false, false) => Helvetica,
-        (FontFamily::Courier, true, true) => CourierBoldOblique,
-        (FontFamily::Courier, true, false) => CourierBold,
-        (FontFamily::Courier, false, true) => CourierOblique,
-        (FontFamily::Courier, false, false) => Courier,
+    if !bytes.starts_with(b"%PDF-") {
+        return Err("The document is not a PDF.".into());
     }
-}
-
-/// Emit page-start ops. `Op::SetTextCursor` serializes to the PDF
-/// `Td` operator which is RELATIVE, so we can't use it for absolute
-/// positioning. `Op::SetTextMatrix(Translate(x, y))` serializes to
-/// `Tm` which is absolute in page coordinates (origin at bottom-left).
-fn start_page_ops(ops: &mut Vec<printpdf::Op>) {
-    use printpdf::*;
-    ops.push(Op::SaveGraphicsState);
-    ops.push(Op::StartTextSection);
-    // Black fill so text is visible (default is actually black but be explicit).
-    ops.push(Op::SetFillColor {
-        col: Color::Rgb(Rgb {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            icc_profile: None,
-        }),
-    });
-}
-
-fn finish_page_ops(ops: &mut Vec<printpdf::Op>) {
-    use printpdf::*;
-    ops.push(Op::EndTextSection);
-    ops.push(Op::RestoreGraphicsState);
-}
-
-/// Emit a `SetFont` op (and, for flowing text, a matching `SetLineHeight`)
-/// only when the requested font key differs from the last one emitted,
-/// updating the tracker. `with_line_height` is false for one-shot lines like
-/// the image placeholder where leading is irrelevant. The key is
-/// `(font_pt.to_bits(), family, bold, italic)`.
-fn set_font_if_needed(
-    ops: &mut Vec<printpdf::Op>,
-    last_font: &mut Option<(u32, FontFamily, bool, bool)>,
-    key: (u32, FontFamily, bool, bool),
-    font_pt: f32,
-    with_line_height: bool,
-) {
-    use printpdf::*;
-    if *last_font != Some(key) {
-        let (_, family, bold, italic) = key;
-        ops.push(Op::SetFont {
-            font: PdfFontHandle::Builtin(pick_font(family, bold, italic)),
-            size: Pt(font_pt),
-        });
-        if with_line_height {
-            ops.push(Op::SetLineHeight {
-                lh: Pt(font_pt * 1.2),
-            });
-        }
-        *last_font = Some(key);
-    }
-}
-
-/// Register each unique referenced image with the PDF document once
-/// up front. Returns a map keyed by the workdir-relative path so the
-/// rendering loop can look up the document's XObjectId and natural
-/// pixel dimensions when it embeds an image.
-fn register_images(
-    doc: &mut printpdf::PdfDocument,
-    images: &HashMap<String, LoadedImage>,
-) -> Result<HashMap<String, (printpdf::XObjectId, u32, u32)>, String> {
-    use printpdf::*;
-    let mut registered: HashMap<String, (XObjectId, u32, u32)> = HashMap::new();
-    for (path, img) in images {
-        let mut warnings = Vec::new();
-        let raw = RawImage::decode_from_bytes(&img.bytes, &mut warnings)
-            .map_err(|e| format!("Failed to decode image {}: {}", path, e))?;
-        let (w, h) = (raw.width as u32, raw.height as u32);
-        let id = doc.add_image(&raw);
-        registered.insert(path.clone(), (id, w, h));
-    }
-    Ok(registered)
-}
-
-/// Build a simple PDF from markdown-ish text. Supports:
-///   - `#`, `##`, `###` headings (rendered bold, larger)
-///   - `**bold**`, `*italic*`, `` `code` ``, `[text](url)` inline markdown
-///   - `-` / `*` / `+` bullet lists (converted to `•`)
-///   - `![alt](path)` on a line by itself — embeds the referenced image
-///     pre-loaded into `images` (paths point into the workdir).
-///
-/// Content is word-wrapped to fit the page and flows across multiple pages.
-/// Returns the PDF's bytes and how many pages it came to.
-pub(super) fn build_pdf(
-    lines: &[&str],
-    images: &std::collections::HashMap<String, LoadedImage>,
-) -> Result<(Vec<u8>, usize), String> {
-    use printpdf::*;
-
-    let mut doc = PdfDocument::new("Document");
-    let registered_images = register_images(&mut doc, images)?;
-    let all_pages = layout_pages(lines, &registered_images);
-    let count = all_pages.len();
-
-    let bytes = doc
-        .with_pages(all_pages)
-        .save(&PdfSaveOptions::default(), &mut Vec::new());
-
-    Ok((bytes, count))
-}
-
-/// Lay out the document into pages — the pure, document-free core of
-/// `build_pdf`. Takes the pre-registered image table (XObject id + natural
-/// pixel size) and emits the printpdf op stream per page. Split out so the
-/// op stream is unit-testable without constructing a `PdfDocument`.
-fn layout_pages(
-    lines: &[&str],
-    registered_images: &HashMap<String, (printpdf::XObjectId, u32, u32)>,
-) -> Vec<printpdf::PdfPage> {
-    use printpdf::*;
-
-    // US Letter: 215.9 mm × 279.4 mm. Keep a 20 mm margin on all sides.
-    let page_width_mm = 215.9_f32;
-    let page_height_mm = 279.4_f32;
-    let margin_mm = 20.0_f32;
-    let content_width_mm = page_width_mm - (margin_mm * 2.0);
-
-    // Font sizes (points)
-    let body_pt = 11.0_f32;
-    let h1_pt = 20.0_f32;
-    let h2_pt = 16.0_f32;
-    let h3_pt = 13.0_f32;
-
-    // Convert mm to Pt (1 mm ≈ 2.8346 pt)
-    let mm_to_pt = 2.834_645_7_f32;
-    let content_width_pt = content_width_mm * mm_to_pt;
-
-    let top_y_mm = page_height_mm - margin_mm;
-    let bottom_y_mm = margin_mm;
-    let margin_pt = margin_mm * mm_to_pt;
-
-    let mut all_pages: Vec<PdfPage> = Vec::new();
-    let mut current_ops: Vec<Op> = Vec::new();
-    let mut cursor_y_mm = top_y_mm;
-
-    start_page_ops(&mut current_ops);
-
-    // (font_pt, family, bold, italic) — tracks the last SetFont op so we
-    // can avoid re-emitting it when the next run has the same style.
-    let mut last_font: Option<(u32, FontFamily, bool, bool)> = None;
-
-    // Preprocess: split the input into DocumentBlocks. Markdown tables
-    // become MonoBlocks (aligned monospace), everything else becomes Line.
-    let preprocessed = preprocess_lines(lines);
-
-    // Helper that emits a page break at the current cursor position. Used
-    // when a line won't fit in the remaining vertical space. Horizontal
-    // rules (`---`) are NOT treated as page breaks — they're skipped
-    // entirely, since in markdown they're typically section dividers, and
-    // forcing a page break on every divider produced too many pages.
-    let page_break = |current_ops: &mut Vec<Op>,
-                      all_pages: &mut Vec<PdfPage>,
-                      cursor_y_mm: &mut f32,
-                      last_font: &mut Option<(u32, FontFamily, bool, bool)>| {
-        finish_page_ops(current_ops);
-        all_pages.push(PdfPage::new(
-            Mm(page_width_mm),
-            Mm(page_height_mm),
-            std::mem::take(current_ops),
+    if bytes.len() > MAX_PDF_BYTES {
+        return Err(format!(
+            "The PDF is too large ({} bytes). Maximum is {} bytes.",
+            bytes.len(),
+            MAX_PDF_BYTES
         ));
-        *cursor_y_mm = top_y_mm;
-        start_page_ops(current_ops);
-        *last_font = None;
-    };
-
-    // Break to a new page when `needed_mm` won't fit in the remaining
-    // vertical space. Thin wrapper over `page_break` so each block type
-    // doesn't repeat the `cursor - needed < bottom` guard.
-    let break_if_needed =
-        |needed_mm: f32,
-         current_ops: &mut Vec<Op>,
-         all_pages: &mut Vec<PdfPage>,
-         cursor_y_mm: &mut f32,
-         last_font: &mut Option<(u32, FontFamily, bool, bool)>| {
-            if *cursor_y_mm - needed_mm < bottom_y_mm {
-                page_break(current_ops, all_pages, cursor_y_mm, last_font);
-            }
-        };
-
-    for block in &preprocessed {
-        match block {
-            DocumentBlock::Line(line) => {
-                if line.trim().is_empty() {
-                    cursor_y_mm -= 4.0;
-                    continue;
-                }
-
-                // Horizontal rules (`---`, `***`, `___`) are treated as
-                // visual section dividers with a bit of extra spacing — NOT
-                // page breaks. The previous `--- = page break` rule pushed
-                // every divider to a new page, which generated 5–10 page
-                // breaks in a single report.
-                if is_horizontal_rule(line) {
-                    cursor_y_mm -= 4.0;
-                    continue;
-                }
-
-                // Fold Unicode to ASCII before anything else sees the line
-                // so the PDF only ever contains ASCII bytes (sidesteps the
-                // lopdf WinAnsi bug documented in `ascii_fold_for_pdf`).
-                let folded = ascii_fold_for_pdf(line);
-
-                let (text_after_heading, font_pt, spacing_after_pt, is_heading) =
-                    classify(&folded, h1_pt, h2_pt, h3_pt, body_pt);
-
-                // Always run inline parsing, even for headings. Models
-                // routinely emit `### **Section Title**` — if we skipped
-                // inline parsing inside headings the literal `**` would
-                // end up rendered in the PDF. Force `bold = true` on every
-                // resulting run so the heading stays visually bold
-                // regardless of its markdown shape.
-                let runs = if is_heading {
-                    let mut parsed = parse_inline_markdown(&text_after_heading);
-                    if parsed.is_empty() {
-                        parsed.push(InlineRun {
-                            text: text_after_heading,
-                            bold: true,
-                            italic: false,
-                        });
-                    } else {
-                        for run in &mut parsed {
-                            run.bold = true;
-                        }
-                    }
-                    parsed
-                } else {
-                    let normalized = normalize_list_marker(&text_after_heading);
-                    parse_inline_markdown(&normalized)
-                };
-
-                let words = runs_to_words(&runs);
-                if words.is_empty() {
-                    cursor_y_mm -= spacing_after_pt / mm_to_pt;
-                    continue;
-                }
-
-                let max_chars =
-                    ((content_width_pt / char_width_pt(font_pt)).floor() as usize).max(1);
-                let wrapped_lines = wrap_styled_words(&words, max_chars);
-                let line_height_mm = (font_pt * 1.2) / mm_to_pt;
-                let font_pt_key = font_pt.to_bits();
-
-                for wrapped_line in wrapped_lines {
-                    break_if_needed(
-                        line_height_mm,
-                        &mut current_ops,
-                        &mut all_pages,
-                        &mut cursor_y_mm,
-                        &mut last_font,
-                    );
-
-                    let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (font_pt * 0.2);
-                    current_ops.push(Op::SetTextMatrix {
-                        matrix: TextMatrix::Translate(Pt(margin_pt), Pt(baseline_pt)),
-                    });
-
-                    for (idx, sw) in wrapped_line.iter().enumerate() {
-                        let key = (font_pt_key, FontFamily::Helvetica, sw.bold, sw.italic);
-                        set_font_if_needed(&mut current_ops, &mut last_font, key, font_pt, true);
-
-                        let piece = if idx == 0 {
-                            sw.word.clone()
-                        } else {
-                            format!(" {}", sw.word)
-                        };
-                        current_ops.push(Op::ShowText {
-                            items: vec![TextItem::Text(piece)],
-                        });
-                    }
-
-                    cursor_y_mm -= line_height_mm;
-                }
-
-                cursor_y_mm -= spacing_after_pt / mm_to_pt;
-            }
-
-            DocumentBlock::MonoBlock(mono_lines) => {
-                // Tables render as pre-aligned monospace lines in Courier.
-                // The line text already contains exact column padding from
-                // `format_table_as_monoblock`, so we emit each line as one
-                // ShowText op at the correct baseline with no inline parsing
-                // or wrapping.
-                let font_pt = body_pt;
-                let line_height_mm = (font_pt * 1.2) / mm_to_pt;
-                let font_pt_key = font_pt.to_bits();
-
-                // Small visual gap before the table.
-                cursor_y_mm -= 2.0;
-
-                for mono in mono_lines {
-                    break_if_needed(
-                        line_height_mm,
-                        &mut current_ops,
-                        &mut all_pages,
-                        &mut cursor_y_mm,
-                        &mut last_font,
-                    );
-
-                    let key = (font_pt_key, FontFamily::Courier, mono.bold, false);
-                    set_font_if_needed(&mut current_ops, &mut last_font, key, font_pt, true);
-
-                    let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (font_pt * 0.2);
-                    current_ops.push(Op::SetTextMatrix {
-                        matrix: TextMatrix::Translate(Pt(margin_pt), Pt(baseline_pt)),
-                    });
-
-                    // Fold non-ASCII (same WinAnsi bug defense as Line path).
-                    let text = ascii_fold_for_pdf(&mono.text);
-                    current_ops.push(Op::ShowText {
-                        items: vec![TextItem::Text(text)],
-                    });
-
-                    cursor_y_mm -= line_height_mm;
-                }
-
-                // Small visual gap after the table.
-                cursor_y_mm -= 3.0;
-            }
-            DocumentBlock::Image(path, opts) => {
-                // Look up the pre-registered image. If it's missing (loading
-                // failed earlier or the model referenced a path we didn't
-                // load), render a one-line italic placeholder so the
-                // document still flows.
-                let Some(&(ref image_id, px_w, px_h)) = registered_images.get(path) else {
-                    let line_height_mm = (body_pt * 1.2) / mm_to_pt;
-                    break_if_needed(
-                        line_height_mm,
-                        &mut current_ops,
-                        &mut all_pages,
-                        &mut cursor_y_mm,
-                        &mut last_font,
-                    );
-                    let key = (body_pt.to_bits(), FontFamily::Helvetica, false, true);
-                    set_font_if_needed(&mut current_ops, &mut last_font, key, body_pt, false);
-                    let baseline_pt = (cursor_y_mm - line_height_mm) * mm_to_pt + (body_pt * 0.2);
-                    current_ops.push(Op::SetTextMatrix {
-                        matrix: TextMatrix::Translate(Pt(margin_pt), Pt(baseline_pt)),
-                    });
-                    let placeholder = format!("[image: {}]", path);
-                    current_ops.push(Op::ShowText {
-                        items: vec![TextItem::Text(ascii_fold_for_pdf(&placeholder))],
-                    });
-                    cursor_y_mm -= line_height_mm;
-                    continue;
-                };
-
-                // Compute display size in points. Treat the bitmap's native
-                // pixel size as 96 dpi (a reasonable default for screenshots
-                // and matplotlib output). If the user specified width%, that
-                // becomes a fraction of the content width; otherwise fit
-                // to content width on overflow. Aspect ratio is preserved.
-                let dpi = 96.0_f32;
-                let natural_w_pt = (px_w as f32) * (72.0 / dpi);
-                let natural_h_pt = (px_h as f32) * (72.0 / dpi);
-                let (display_w_pt, display_h_pt) = match opts.width_fraction {
-                    Some(frac) => {
-                        let w = content_width_pt * frac;
-                        let h = if natural_w_pt > 0.0 {
-                            natural_h_pt * (w / natural_w_pt)
-                        } else {
-                            natural_h_pt
-                        };
-                        (w, h)
-                    }
-                    None => {
-                        let scale = (content_width_pt / natural_w_pt).min(1.0);
-                        (natural_w_pt * scale, natural_h_pt * scale)
-                    }
-                };
-                let display_h_mm = display_h_pt / mm_to_pt;
-                let translate_x_pt = match opts.alignment {
-                    ImageAlignment::Left => margin_pt,
-                    ImageAlignment::Center => margin_pt + (content_width_pt - display_w_pt) / 2.0,
-                    ImageAlignment::Right => margin_pt + (content_width_pt - display_w_pt),
-                };
-
-                // Force a page break if the image won't fit in the remaining
-                // vertical space. Don't try to shrink past natural size to fit
-                // — the page break preserves intent better than a tiny image.
-                break_if_needed(
-                    display_h_mm,
-                    &mut current_ops,
-                    &mut all_pages,
-                    &mut cursor_y_mm,
-                    &mut last_font,
-                );
-
-                // Small vertical gap above the image so it doesn't kiss the
-                // line of text immediately above.
-                cursor_y_mm -= 2.0;
-
-                let y_baseline_pt = (cursor_y_mm - display_h_mm) * mm_to_pt;
-
-                // printpdf draws raster XObjects outside the text section. We
-                // close the section, emit the image op, then reopen it so the
-                // following text blocks render correctly. SetFont state is
-                // section-scoped, so reset our tracker.
-                current_ops.push(Op::EndTextSection);
-                // printpdf 0.9 applies a baseline px-to-pt transform at
-                // `dpi` *first*, then multiplies by `scale_x`/`scale_y`.
-                // With dpi=None (default 300), 1 px = 0.24 pt up front;
-                // a "scale 0.5" then meant "half of natural-at-300dpi",
-                // not "half of an inch worth of pixels". We tell printpdf
-                // to treat the bitmap as 96 dpi (a screenshot/matplotlib
-                // assumption that lines up with `natural_w_pt` below) and
-                // pass `scale_x` as the fraction of *that* baseline we
-                // want. The two together produce display_w_pt exactly.
-                current_ops.push(Op::UseXobject {
-                    id: image_id.clone(),
-                    transform: XObjectTransform {
-                        translate_x: Some(Pt(translate_x_pt)),
-                        translate_y: Some(Pt(y_baseline_pt)),
-                        rotate: None,
-                        scale_x: Some(display_w_pt / natural_w_pt),
-                        scale_y: Some(display_h_pt / natural_h_pt),
-                        dpi: Some(dpi),
-                        // Keep printpdf's unit-square → pixel-size scale, which the
-                        // scale factors above are computed against.
-                        no_auto_scale: false,
-                    },
-                });
-                current_ops.push(Op::StartTextSection);
-                last_font = None;
-
-                cursor_y_mm -= display_h_mm;
-                cursor_y_mm -= 3.0;
-            }
-        }
     }
-
-    finish_page_ops(&mut current_ops);
-    all_pages.push(PdfPage::new(
-        Mm(page_width_mm),
-        Mm(page_height_mm),
-        current_ops,
-    ));
-
-    all_pages
+    Ok(())
 }
 
+/// Write a built PDF: the file is the raw body, and the folder, path and
+/// overwrite choice are `x-workdir`, `x-rel-path` and `x-overwrite`.
 #[tauri::command]
-pub async fn fs_write_pdf(
-    workdir: String,
-    rel_path: String,
-    content: String,
-    overwrite: Option<bool>,
-) -> Result<usize, String> {
-    // How many pages it came to, so a model asked for one page can tell
-    // without reading the file back.
-    let pages = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let counted = pages.clone();
-    // PDF keeps blank lines: build_pdf treats them as paragraph breaks.
-    super::write_markdown_document(
-        workdir,
-        rel_path,
-        content,
-        overwrite,
-        "PDF",
-        true,
-        move |lines, images| {
-            let (bytes, n) = build_pdf(lines, images)?;
-            counted.store(n, std::sync::atomic::Ordering::Relaxed);
-            Ok(bytes)
-        },
-    )
-    .await?;
-    Ok(pages.load(std::sync::atomic::Ordering::Relaxed))
+pub async fn fs_write_pdf(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("The PDF must be sent as raw bytes.".into());
+    };
+    let workdir = workdir_path_for_write(&header(&request, "x-workdir")?)?;
+    let rel_path = header(&request, "x-rel-path")?;
+    let overwrite = header(&request, "x-overwrite").ok().map(|v| v == "true");
+    check_pdf(&rel_path, bytes)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
+    write_bytes_to_workdir(&resolved, bytes).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use printpdf::{Op, TextItem};
-    use std::collections::HashMap;
 
-    fn pages(lines: &[&str]) -> Vec<printpdf::PdfPage> {
-        layout_pages(lines, &HashMap::new())
+    #[test]
+    fn a_pdf_must_be_a_pdf_path_and_a_pdf() {
+        assert!(check_pdf("report.pdf", b"%PDF-1.7\nrest").is_ok());
+        assert!(check_pdf("Report.PDF", b"%PDF-1.3").is_ok());
+        assert!(check_pdf("report.txt", b"%PDF-1.7")
+            .unwrap_err()
+            .contains("not a .pdf"));
+        assert!(check_pdf("report.pdf", b"hello")
+            .unwrap_err()
+            .contains("not a PDF"));
     }
 
     #[test]
-    fn the_count_is_the_pages_laid_out() {
-        let long: Vec<String> = (0..200).map(|i| format!("Paragraph {i}.")).collect();
-        let lines: Vec<&str> = long.iter().map(String::as_str).collect();
-        let (_, n) = build_pdf(&lines, &HashMap::new()).unwrap();
-        assert!(n > 1, "{n}");
-        assert_eq!(n, pages(&lines).len());
-        assert_eq!(build_pdf(&["One line."], &HashMap::new()).unwrap().1, 1);
-    }
-
-    /// Concatenate every ShowText payload across all pages — lets us assert
-    /// the rendered text without parsing the final PDF bytes.
-    fn all_text(pages: &[printpdf::PdfPage]) -> String {
-        let mut out = String::new();
-        for page in pages {
-            for op in &page.ops {
-                if let Op::ShowText { items } = op {
-                    for item in items {
-                        if let TextItem::Text(s) = item {
-                            out.push_str(s);
-                        }
-                    }
-                }
-            }
-        }
-        out
-    }
-
-    fn count_set_font(pages: &[printpdf::PdfPage]) -> usize {
-        pages
-            .iter()
-            .flat_map(|p| &p.ops)
-            .filter(|op| matches!(op, Op::SetFont { .. }))
-            .count()
-    }
-
-    #[test]
-    fn pdf_lays_out_headings_and_body_on_one_page() {
-        let p = pages(&["# Title", "Some body text here.", "More text."]);
-        assert_eq!(p.len(), 1);
-        let text = all_text(&p);
-        assert!(text.contains("Title"));
-        assert!(text.contains("Some body text"));
-        assert!(text.contains("More text."));
-        assert!(count_set_font(&p) >= 1);
-    }
-
-    #[test]
-    fn pdf_flows_across_multiple_pages_when_content_overflows() {
-        let many: Vec<&str> = (0..120).map(|_| "Filler paragraph line.").collect();
-        let p = pages(&many);
-        assert!(
-            p.len() >= 2,
-            "expected a page break, got {} page(s)",
-            p.len()
-        );
-    }
-
-    #[test]
-    fn pdf_renders_markdown_table_cells() {
-        let p = pages(&["| A | B |", "| - | - |", "| 1 | 2 |"]);
-        let text = all_text(&p);
-        assert!(text.contains('A') && text.contains('B'));
-        assert!(text.contains('1') && text.contains('2'));
+    fn a_pdf_past_the_cap_is_refused() {
+        let mut big = b"%PDF-".to_vec();
+        big.resize(MAX_PDF_BYTES + 1, 0);
+        assert!(check_pdf("report.pdf", &big)
+            .unwrap_err()
+            .contains("too large"));
     }
 }

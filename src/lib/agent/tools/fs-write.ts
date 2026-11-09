@@ -18,6 +18,8 @@ import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildWriteDiff } from '#lib/code/diff.ts';
 import { buildPptx } from '#lib/slides/pptx.ts';
+import { pdfFromMarkdown } from '#lib/documents/pdf.ts';
+import { missingNote } from '#lib/documents/glyphs.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
 import { foldForOdp } from '#lib/slides/odp.ts';
 import { bulletText, normalizeSlide, settleLayout } from '#lib/slides/prepare.ts';
@@ -737,21 +739,44 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
  * again with the same first line, to revise it (`_drafts.ts`): a job that
  * checked a module and is fixing it writes it whole again.
  */
-function titledWrite(
+async function titledWrite(
 	tool: string,
 	choice: { command: string; path: string },
 	content: string,
 	ctx: ToolContext
 ): Promise<ToolExecOutput> {
 	const workdir = fsWorkdir(ctx)!;
-	return draftWrite(
-		tool,
-		DOCUMENT,
-		[firstLine(content)],
-		choice.path,
-		(relPath, overwrite) => invoke(choice.command, { workdir, relPath, content, overwrite }),
-		ctx
-	);
+	let write: RawWrite = (relPath, overwrite) =>
+		invoke(choice.command, { workdir, relPath, content, overwrite });
+	let note = '';
+	if (choice.command === IPC.fs_write_pdf) {
+		// The PDF is built here with pdfmake; Rust only writes it. A picture
+		// that can't be read refuses the document before anything is written.
+		try {
+			const pdf = await pdfFromMarkdown(workdir, content);
+			write = pdfWrite(pdf.bytes, pdf.pages, workdir);
+			note = missingNote(pdf.missing);
+		} catch (e) {
+			return toolResult(toolInvokeError(tool, e));
+		}
+	}
+	const out = await draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
+	if (note && out.result.startsWith('Wrote:')) out.result += `\n${note}`;
+	return out;
+}
+
+/** Write a built PDF as `pptxWrite` does a deck; it answers with its page count. */
+function pdfWrite(pdf: Uint8Array, pages: number, workdir: string): RawWrite {
+	return async (relPath, overwrite) => {
+		await invoke('fs_write_pdf', pdf, {
+			headers: {
+				'x-workdir': encodeURIComponent(workdir),
+				'x-rel-path': encodeURIComponent(relPath),
+				'x-overwrite': String(overwrite)
+			}
+		});
+		return pages;
+	};
 }
 
 /**
@@ -1062,7 +1087,7 @@ registerTool({
 					content: {
 						type: 'string',
 						description:
-							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). PDF also renders bold, italic, code, `- ` lists and tables; .docx and .odt write other lines as plain paragraphs.'
+							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). PDF also renders bold, italic, links, lists, tables and code; .docx and .odt write other lines as plain paragraphs.'
 					}
 				},
 				required: ['path', 'content']

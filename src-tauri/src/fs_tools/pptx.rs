@@ -14,8 +14,8 @@ use super::path::{
 const MAX_DECK_BYTES: usize = 200 * 1_048_576;
 
 /// A header's value, percent-decoded: a path can hold any character, and a
-/// header only ASCII.
-fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
+/// header only ASCII. Shared with `pdf_write`, whose PDF arrives the same way.
+pub(super) fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
     let raw = request
         .headers()
         .get(name)

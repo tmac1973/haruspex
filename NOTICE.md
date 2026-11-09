@@ -72,9 +72,15 @@ Python distribution is bundled with Haruspex.
 | Component      | Upstream                                         | License                                                                        |
 | -------------- | ------------------------------------------------ | ------------------------------------------------------------------------------ |
 | glTF Validator | <https://github.com/KhronosGroup/glTF-Validator> | [Apache-2.0](https://github.com/KhronosGroup/glTF-Validator/blob/main/LICENSE) |
+| pdfmake        | <https://github.com/bpampuch/pdfmake>            | [MIT](https://github.com/bpampuch/pdfmake/blob/master/LICENSE)                 |
+| Roboto (font)  | <https://github.com/googlefonts/roboto-2>        | [Apache-2.0](https://github.com/googlefonts/roboto-2/blob/main/LICENSE)        |
 
 The 3D helper's checks (`src/lib/glb/validate.ts`) run the Khronos glTF
 Validator, from the `gltf-validator` npm package, unmodified, in the app's
 webview. It is compiled from Dart, so it also carries code from the Dart SDK
 and Dart packages under BSD-style licenses; the package's `NOTICES` file lists
 them.
+
+PDFs written by `fs_write_document` are built with pdfmake
+(`src/lib/documents/`), which ships Roboto in its `vfs_fonts.js`. Roboto is
+embedded, subset, in each PDF Haruspex writes.

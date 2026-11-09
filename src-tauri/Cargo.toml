@@ -69,7 +69,6 @@ pdf-extract = "0.12"
 # the default (pdfium_latest) binds functions an older libpdfium lacks, the bind
 # fails, and every PDF silently falls back to pdf-extract.
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_7763", "image_latest", "thread_safe"] }
-printpdf = { version = "0.12", features = ["png", "jpeg", "gif"] }
 calamine = "0.38"
 zip = "9.0"
 image = "0.25"
