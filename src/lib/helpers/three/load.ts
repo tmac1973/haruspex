@@ -1,11 +1,12 @@
 /**
  * Running a build module from files: read it and its animation module, read
  * the PNGs they name with `kit.texture`, and build the GLB. `check_3d` and
- * the models job's verdict (`glb/verdict.ts`) both come through here, so a
+ * the models job's verdict (`models3d/verdict.ts`) both come through here, so a
  * model is judged the same way whichever asks. Also the report lines both
  * write about a run, so their text matches.
  */
-import { resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
+import type { FrameRunner } from '#lib/helpers/three/frame.ts';
 import {
 	runBuildModule,
 	type ClampedColours,
@@ -39,6 +40,8 @@ export interface LoadIo {
 	/** A file's bytes, by its resolved path; throws when it can't. */
 	read(path: string): Promise<number[]>;
 	cwd: string | null;
+	/** The sandboxed frame build modules run in (`runBuildModule`). */
+	runFrame: FrameRunner;
 }
 
 /** A module run, or why it couldn't start (a file it couldn't read, a bad texture). */
@@ -126,7 +129,12 @@ export async function loadModuleRun(
 	const source = text(build.bytes);
 	const tex = await readTextures([source, anim ?? ''], paths.build, io);
 	if ('refused' in tex) return tex;
-	const run = await runBuildModule(source, { signal, anim, textures: tex.textures });
+	const run = await runBuildModule(source, {
+		runFrame: io.runFrame,
+		signal,
+		anim,
+		textures: tex.textures
+	});
 	return { glb: run.glb, missing: run.missingTracks, errors: run.errors, clamped: run.clamped };
 }
 

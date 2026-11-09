@@ -6,7 +6,7 @@
  */
 import { errMessage } from '#lib/utils/error.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { paletteFor, writeAsset, type Target } from '#lib/agent/tools/_assetIo.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import {

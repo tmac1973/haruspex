@@ -1,6 +1,7 @@
 /**
- * Run a model-written build module in the hidden sandboxed frame and get its
- * GLB. The module imports nothing: its default export (or `build`) is called
+ * Run a model-written build module in a sandboxed frame and get its GLB. The
+ * host supplies the frame (`runFrame`: the app's is `runHiddenFrame`). The
+ * module imports nothing: its default export (or `build`) is called
  * as `build(THREE, kit)` with the bundled kit (`kitEntry.ts`) and returns an
  * `Object3D` or `{ object, animations }`; the page exports that with
  * `GLTFExporter`. An animation module beside it (`anim`) gets the built
@@ -11,8 +12,12 @@
  * Errors carry their line in the model's own file, and which file that is.
  */
 import { threeKitUrl } from '#lib/helpers/three/kitUrl.ts';
-import { runHiddenFrame, type FrameControl } from '#lib/sandbox/hiddenFrame.ts';
-import { LATE_MS, type RunError } from '#lib/specialists/three/runHtml.ts';
+import {
+	LATE_MS,
+	type FrameControl,
+	type FrameRunner,
+	type RunError
+} from '#lib/helpers/three/frame.ts';
 
 /** A run's error, with the module it came from: the build module or the animation module. */
 export interface ModuleError extends RunError {
@@ -36,6 +41,10 @@ export interface ClampedColours {
 }
 
 export interface ModuleRunOptions {
+	/** The sandboxed frame to run in: the app's is `runHiddenFrame`. */
+	runFrame: FrameRunner;
+	/** Where the page loads the kit from; defaults to this origin's (`threeKitUrl`). */
+	kitUrl?: string;
 	signal?: AbortSignal;
 	timeoutMs?: number;
 	/** An animation module's source: its `animate(THREE, object, kit)` adds clips. */
@@ -226,15 +235,15 @@ export function modulePage(
 /** Run a build module; resolves with its GLB, or with the errors that stopped it. */
 export async function runBuildModule(
 	source: string,
-	opts: ModuleRunOptions = {}
+	opts: ModuleRunOptions
 ): Promise<ModuleRunResult> {
-	const { signal, timeoutMs = 45_000, anim, textures } = opts;
+	const { runFrame, kitUrl = threeKitUrl(), signal, timeoutMs = 45_000, anim, textures } = opts;
 	const result: ModuleRunResult = { glb: null, errors: [], missingTracks: [], clamped: null };
 	const settle = (ctl: FrameControl) => {
 		ctl.clearDeadline();
 		ctl.later(LATE_MS, () => ctl.done());
 	};
-	await runHiddenFrame(modulePage(source, threeKitUrl(), anim, textures), {
+	await runFrame(modulePage(source, kitUrl, anim, textures), {
 		signal,
 		timeoutMs,
 		onTimeout: (ctl) => {

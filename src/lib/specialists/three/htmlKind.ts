@@ -6,7 +6,8 @@
  * check again, so repairs happen in the open with its own edit tools.
  */
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
-import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import { ctxCwd } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { toolError, toolResult, type ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { callOptionsFrom, callSpecialist } from '#lib/specialists/call.ts';
 import { effectiveSampling } from '#lib/specialists/entries.ts';

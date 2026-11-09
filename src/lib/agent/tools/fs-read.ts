@@ -1,12 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { IpcCommand } from '#lib/ipc/commands.ts';
-import {
-	fsWorkdir,
-	labelArg,
-	resolveShellPath,
-	toolInvokeError,
-	wslDistroArg
-} from '#lib/agent/tools/_helpers.ts';
+import { fsWorkdir, labelArg, toolInvokeError, wslDistroArg } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { isSpillFile } from '#lib/agent/tools/_ptyExec.ts';
 import { withLocalScopeNote } from '#lib/agent/tools/_nestedSession.ts';

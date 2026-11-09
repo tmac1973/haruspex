@@ -22,7 +22,7 @@ import { contactTracker, jointTracker, PLANTED, slideTracker } from '#lib/glb/mo
 import { trackChecks, type TrackChecks } from '#lib/glb/motionTracks.ts';
 import { rigOf, trackNodes, type Rig } from '#lib/glb/rig.ts';
 import { weldFor } from '#lib/glb/report.ts';
-import { AIRBORNE_CLIP, LOOPING_CLIP } from '#lib/models3d/spec/types.ts';
+import { AIRBORNE_CLIP, LOOPING_CLIP } from '#lib/glb/clipNames.ts';
 
 export const ANALYSIS_FRAMES = 16;
 /** Through the floor by more than this (m) is a problem. */

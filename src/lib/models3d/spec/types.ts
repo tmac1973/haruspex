@@ -25,11 +25,6 @@ export const MAX_CLIP_SECONDS = 10;
 /** A pivot name the animator can address: a JS identifier without `$`. */
 export const PART_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-/** Clip names that loop unless the spec says otherwise. */
-export const LOOPING_CLIP = /idle|walk|run|fly|hover|glide|soar|swim/i;
-/** Clip names that may leave the floor unless the spec says otherwise. */
-export const AIRBORNE_CLIP = /run|jog|sprint|gallop|jump|hop|leap|fly|hover|glide|soar|swim/i;
-
 export interface ModelClip {
 	name: string;
 	seconds: number;

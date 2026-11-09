@@ -8,7 +8,7 @@
 import { groundContrast, groundPreview } from '#lib/assets/texture.ts';
 import type { GroundContrast } from '#lib/ipc/gen/GroundContrast.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import type { Target } from '#lib/agent/tools/_assetIo.ts';
 
 /** Most sprite files one call may name. */

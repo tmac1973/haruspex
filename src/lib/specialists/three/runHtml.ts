@@ -1,12 +1,8 @@
-import { runHiddenFrame, type FrameControl } from '#lib/sandbox/hiddenFrame.ts';
+import { runHiddenFrame } from '#lib/sandbox/hiddenFrame.ts';
+import { LATE_MS, type FrameControl, type RunError } from '#lib/helpers/three/frame.ts';
 import { injectShim } from '#lib/specialists/three/shim.ts';
 
-export interface RunError {
-	kind: 'error' | 'rejection' | 'console' | 'no-export' | 'timeout';
-	message: string;
-	/** The line in the original HTML, when the browser reports one. */
-	line: number | null;
-}
+export { LATE_MS, type RunError };
 
 export interface AssetRunResult {
 	glb: Uint8Array | null;
@@ -23,8 +19,6 @@ export interface RunOptions {
 
 /** Time after `load` for the scene setup that runs in the first frames. */
 export const SETTLE_MS = 1500;
-/** Time after the last awaited message, to collect late errors. */
-export const LATE_MS = 500;
 
 const ERROR_KINDS = new Set<RunError['kind']>(['error', 'rejection', 'console', 'no-export']);
 

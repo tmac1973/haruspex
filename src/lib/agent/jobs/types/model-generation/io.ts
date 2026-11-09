@@ -7,6 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { LoadIo } from '#lib/helpers/three/load.ts';
+import { runHiddenFrame } from '#lib/sandbox/hiddenFrame.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { trackWrite } from '#lib/agent/tools/_created.ts';
 
@@ -23,7 +24,8 @@ export interface ModelDisk {
 export function modelLoadIo(workdir: string): LoadIo {
 	return {
 		read: (relPath) => invoke<number[]>('fs_read_bytes', { workdir, relPath }),
-		cwd: workdir
+		cwd: workdir,
+		runFrame: runHiddenFrame
 	};
 }
 

@@ -6,7 +6,8 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { LATE_MS } from '#lib/specialists/three/runHtml.ts';
+import { LATE_MS } from '#lib/helpers/three/frame.ts';
+import { runHiddenFrame } from '#lib/sandbox/hiddenFrame.ts';
 import { lineOf, modulePage, runBuildModule, type ModuleRunResult } from './runModule';
 
 function frame() {
@@ -18,9 +19,12 @@ function frame() {
 	return { iframe, send };
 }
 
-async function start(opts: Parameters<typeof runBuildModule>[1] = {}) {
+async function start(opts: Partial<Parameters<typeof runBuildModule>[1]> = {}) {
 	let settled: ModuleRunResult | Error | undefined;
-	const run = runBuildModule('export default (T) => new T.Group();', opts).then(
+	const run = runBuildModule('export default (T) => new T.Group();', {
+		runFrame: runHiddenFrame,
+		...opts
+	}).then(
 		(r) => (settled = r),
 		(e: Error) => (settled = e)
 	);

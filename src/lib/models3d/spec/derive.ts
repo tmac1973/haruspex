@@ -6,9 +6,9 @@
  * models stage, whose ids come from the plan and are checked, never changed.
  */
 
+import { LOOPING_CLIP } from '#lib/glb/clipNames.ts';
 import {
 	ID_PATTERN,
-	LOOPING_CLIP,
 	type ModelClip,
 	type ModelEntry,
 	type ModelSpec

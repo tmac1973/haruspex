@@ -19,7 +19,7 @@ import {
 	writeSheetPng,
 	type ModelDisk
 } from '#lib/agent/jobs/types/model-generation/io.ts';
-import { judgeModel, type ModelStage, type ModelVerdict } from '#lib/glb/verdict.ts';
+import { judgeModel, type ModelStage, type ModelVerdict } from '#lib/models3d/verdict.ts';
 import type { LoadIo } from '#lib/helpers/three/load.ts';
 import { modelFiles, slugify } from '#lib/models3d/spec/paths.ts';
 import type { ModelEntry } from '#lib/models3d/spec/types.ts';
