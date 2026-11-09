@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { base64ToBytes } from '#lib/utils/base64.ts';
 import { cellOrigin, planSheets } from '#lib/slides/sheets.ts';
-import type { SheetPlan } from '#lib/slides/sheets.ts';
+import type { SheetLayout, SheetPlan } from '#lib/slides/sheets.ts';
 
 // PDF.js worker is bundled by Vite. We import the worker as a URL.
 import * as pdfjsLib from 'pdfjs-dist';
@@ -83,17 +83,19 @@ async function renderPages(pdf: pdfjsLib.PDFDocumentProxy): Promise<string[]> {
 }
 
 /**
- * Render a slide deck's PDF as contact sheets (`#lib/slides/sheets.ts`):
- * each slide drawn small in a numbered grid, as JPEG data URLs.
+ * Render a PDF as contact sheets (`#lib/slides/sheets.ts`): each page drawn
+ * small in a numbered grid, as JPEG data URLs. A deck's slides by default;
+ * a document passes its own `layout`.
  */
 export async function renderPdfSheets(
-	bytes: Uint8Array
+	bytes: Uint8Array,
+	layout?: SheetLayout
 ): Promise<{ sheets: string[]; shown: number; total: number }> {
 	const task = pdfjsLib.getDocument({ data: bytes });
 	try {
 		const pdf = await task.promise;
 		const first = (await pdf.getPage(1)).getViewport({ scale: 1 });
-		const plan = planSheets(pdf.numPages, first.width / first.height);
+		const plan = planSheets(pdf.numPages, first.width / first.height, layout);
 		const sheets: string[] = [];
 		for (const sheet of plan.sheets) sheets.push(await renderSheet(pdf, sheet, plan.cell));
 		return { sheets, shown: plan.shown, total: plan.total };

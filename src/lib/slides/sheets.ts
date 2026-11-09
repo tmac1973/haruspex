@@ -2,15 +2,25 @@
  * How a deck's pages are laid out as contact sheets for the preview the model
  * sees: up to nine slides a sheet in a grid of three across, each numbered,
  * and two sheets at most. One sheet costs about what one page of
- * `fs_read_pdf_pages` does, and shows nine slides.
+ * `fs_read_pdf_pages` does, and shows nine slides. A document's pages hold
+ * small text, so they go four to a sheet, larger (`DOCUMENT_SHEETS`).
  */
 
 /** Slides on one sheet, and sheets in one preview. */
 export const SLIDES_PER_SHEET = 9;
 export const MAX_SHEETS = 2;
-const COLUMNS = 3;
-/** A cell's long side, in pixels. */
-const CELL_LONG = 512;
+
+/** How pages sit on a sheet: how many, how many across, and a cell's long
+ *  side in pixels. */
+export interface SheetLayout {
+	perSheet: number;
+	columns: number;
+	cellLong: number;
+}
+
+export const SLIDE_SHEETS: SheetLayout = { perSheet: SLIDES_PER_SHEET, columns: 3, cellLong: 512 };
+/** A Letter page 700 px tall: 11 pt text is about 10 px, still legible. */
+export const DOCUMENT_SHEETS: SheetLayout = { perSheet: 4, columns: 2, cellLong: 700 };
 /** Space around and between cells, in pixels. */
 export const SHEET_GAP = 12;
 
@@ -35,16 +45,21 @@ export interface Sheets {
 }
 
 /** Lay out `pages` pages whose width is `aspect` times their height. */
-export function planSheets(pages: number, aspect: number): Sheets {
+export function planSheets(
+	pages: number,
+	aspect: number,
+	layout: SheetLayout = SLIDE_SHEETS
+): Sheets {
+	const { perSheet, columns, cellLong } = layout;
 	const cell =
 		aspect >= 1
-			? { w: CELL_LONG, h: Math.round(CELL_LONG / aspect) }
-			: { w: Math.round(CELL_LONG * aspect), h: CELL_LONG };
-	const shown = Math.min(pages, SLIDES_PER_SHEET * MAX_SHEETS);
+			? { w: cellLong, h: Math.round(cellLong / aspect) }
+			: { w: Math.round(cellLong * aspect), h: cellLong };
+	const shown = Math.min(pages, perSheet * MAX_SHEETS);
 	const sheets: SheetPlan[] = [];
-	for (let first = 0; first < shown; first += SLIDES_PER_SHEET) {
-		const count = Math.min(SLIDES_PER_SHEET, shown - first);
-		const cols = Math.min(COLUMNS, count);
+	for (let first = 0; first < shown; first += perSheet) {
+		const count = Math.min(perSheet, shown - first);
+		const cols = Math.min(columns, count);
 		const rows = Math.ceil(count / cols);
 		sheets.push({
 			first,
