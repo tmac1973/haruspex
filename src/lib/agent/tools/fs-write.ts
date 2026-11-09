@@ -20,8 +20,9 @@ import { buildWriteDiff } from '#lib/code/diff.ts';
 import { buildPptx } from '#lib/slides/pptx.ts';
 import { missingNote } from '#lib/documents/glyphs.ts';
 import { landscapeNote, pdfFromMarkdown } from '#lib/documents/pdf.ts';
+import { officeFromMarkdown } from '#lib/documents/officeFile.ts';
 import { attachPdfPreview } from '#lib/documents/preview.ts';
-import { PAGE_SIZES, PDF_STYLES, pdfOptions } from '#lib/documents/looks.ts';
+import { PAGE_SIZES, PDF_STYLES, documentOptions } from '#lib/documents/looks.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
 import { foldForOdp } from '#lib/slides/odp.ts';
 import { bulletText, normalizeSlide, settleLayout } from '#lib/slides/prepare.ts';
@@ -749,15 +750,45 @@ async function titledWrite(
 ): Promise<ToolExecOutput> {
 	const workdir = fsWorkdir(ctx)!;
 	const content = args.content as string;
-	let write: RawWrite = (relPath, overwrite) =>
+	if (choice.command === IPC.fs_write_pdf || choice.command in OFFICE_FORMATS) {
+		return documentWrite(tool, choice, args, ctx);
+	}
+	const write: RawWrite = (relPath, overwrite) =>
 		invoke(choice.command, { workdir, relPath, content, overwrite });
-	if (choice.command !== IPC.fs_write_pdf) {
+	return draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
+}
+
+const OFFICE_FORMATS: Record<string, 'docx' | 'odt'> = {
+	[IPC.fs_write_docx]: 'docx',
+	[IPC.fs_write_odt]: 'odt'
+};
+
+/**
+ * A document is built here, as a PDF with pdfmake or a Word or LibreOffice
+ * file from the same parsed markdown; Rust only writes it. A picture that
+ * can't be read refuses the document before anything is written.
+ */
+async function documentWrite(
+	tool: string,
+	choice: { command: string; path: string },
+	args: Record<string, unknown>,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const workdir = fsWorkdir(ctx)!;
+	const content = args.content as string;
+	const options = documentOptions(args, globalThis.navigator?.language);
+	if ('error' in options) return toolResult(toolError(options.error));
+	const office = OFFICE_FORMATS[choice.command];
+	if (office) {
+		let bytes: Uint8Array;
+		try {
+			bytes = await officeFromMarkdown(workdir, content, office, options);
+		} catch (e) {
+			return toolResult(toolInvokeError(tool, e));
+		}
+		const write = rawDocumentWrite(choice.command, bytes, workdir);
 		return draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
 	}
-	// The PDF is built here with pdfmake; Rust only writes it. A picture that
-	// can't be read refuses the document before anything is written.
-	const options = pdfOptions(args, globalThis.navigator?.language);
-	if ('error' in options) return toolResult(toolError(options.error));
 	let pdf: Awaited<ReturnType<typeof pdfFromMarkdown>>;
 	try {
 		pdf = await pdfFromMarkdown(workdir, content, options);
@@ -767,8 +798,8 @@ async function titledWrite(
 	// The path it went to: the user may have kept the old file and had it
 	// written beside it.
 	let written = choice.path;
-	const send = pdfWrite(pdf.bytes, pdf.pages, workdir);
-	write = (relPath, overwrite) => {
+	const send = rawDocumentWrite(choice.command, pdf.bytes, workdir, pdf.pages);
+	const write: RawWrite = (relPath, overwrite) => {
 		written = relPath;
 		return send(relPath, overwrite);
 	};
@@ -780,10 +811,18 @@ async function titledWrite(
 	return attachPdfPreview(out, ctx, written, pdf.bytes);
 }
 
-/** Write a built PDF as `pptxWrite` does a deck; it answers with its page count. */
-function pdfWrite(pdf: Uint8Array, pages: number, workdir: string): RawWrite {
+/**
+ * Write a built document as `pptxWrite` does a deck: the file is the raw
+ * body. A PDF answers with its page count.
+ */
+function rawDocumentWrite(
+	command: string,
+	bytes: Uint8Array,
+	workdir: string,
+	pages?: number
+): RawWrite {
 	return async (relPath, overwrite) => {
-		await invoke('fs_write_pdf', pdf, {
+		await invoke(command, bytes, {
 			headers: {
 				'x-workdir': encodeURIComponent(workdir),
 				'x-rel-path': encodeURIComponent(relPath),
@@ -1102,24 +1141,23 @@ registerTool({
 					content: {
 						type: 'string',
 						description:
-							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). PDF also renders bold, italic, links, lists, tables and code.'
+							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). Bold, italic, links, lists, tables and code all render.'
 					},
 					page_size: {
 						type: 'string',
 						enum: [...PAGE_SIZES],
-						description: "PDF only; default: the user's paper."
+						description: "Default: the user's paper."
 					},
 					style: {
 						type: 'string',
 						enum: [...PDF_STYLES],
-						description:
-							'PDF only. plain (default), report (blue headings) or letter (wide margins).'
+						description: 'plain (default), report (blue headings) or letter (wide margins).'
 					},
 					title: {
 						type: 'string',
-						description: 'PDF only: printed at the top.'
+						description: 'Printed at the top.'
 					},
-					toc: { type: 'boolean', description: 'PDF only: a contents page.' }
+					toc: { type: 'boolean', description: 'A contents page.' }
 				},
 				required: ['path', 'content']
 			}

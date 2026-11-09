@@ -1,5 +1,4 @@
-//! Test-only helpers shared across the fs_tools format tests (docx / odt /
-//! odp / pptx / xlsx). Reading entries out of a generated zip and asserting
+//! Test-only helpers shared across the fs_tools format tests (odp / xlsx). Reading entries out of a generated zip and asserting
 //! the ODF stored-mimetype invariant were copy-pasted into two test modules;
 //! they live here once.
 

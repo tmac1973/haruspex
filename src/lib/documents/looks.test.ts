@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { localPageSize, pdfOptions } from './looks';
+import { localPageSize, documentOptions } from './looks';
 
 describe('localPageSize', () => {
 	it('gives Letter where it is the usual paper and A4 elsewhere', () => {
@@ -20,9 +20,9 @@ describe('localPageSize', () => {
 	});
 });
 
-describe('pdfOptions', () => {
+describe('documentOptions', () => {
 	it('defaults to the local paper, the plain look, no title and no contents', () => {
-		expect(pdfOptions({}, 'en-AU')).toEqual({
+		expect(documentOptions({}, 'en-AU')).toEqual({
 			pageSize: 'a4',
 			style: 'plain',
 			title: undefined,
@@ -32,16 +32,16 @@ describe('pdfOptions', () => {
 
 	it('reads what the model passed, in any case', () => {
 		expect(
-			pdfOptions({ page_size: 'Letter', style: 'REPORT', title: ' Q3 ', toc: true }, 'en-GB')
+			documentOptions({ page_size: 'Letter', style: 'REPORT', title: ' Q3 ', toc: true }, 'en-GB')
 		).toEqual({ pageSize: 'letter', style: 'report', title: 'Q3', toc: true });
-		expect(pdfOptions({ toc: 'true' }, 'en-US')).toMatchObject({ toc: true });
+		expect(documentOptions({ toc: 'true' }, 'en-US')).toMatchObject({ toc: true });
 	});
 
 	it('names the choices when a value is not one', () => {
-		expect(pdfOptions({ page_size: 'a5' }, 'en-US')).toEqual({
+		expect(documentOptions({ page_size: 'a5' }, 'en-US')).toEqual({
 			error: 'page_size must be a4 or letter.'
 		});
-		expect(pdfOptions({ style: 'fancy' }, 'en-US')).toEqual({
+		expect(documentOptions({ style: 'fancy' }, 'en-US')).toEqual({
 			error: 'style must be one of plain, report, letter.'
 		});
 	});

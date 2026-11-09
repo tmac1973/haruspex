@@ -1,9 +1,7 @@
-//! .docx generation, plus the lightweight extractor used by `fs_read_docx`.
-//! Hand-rolled OOXML packaging via the `zip` crate; markdown-shaped input
-//! preprocessing comes from `super::markdown_inline`.
+//! The lightweight .docx text extractor behind `fs_read_docx`. Word files
+//! are built in the frontend (`src/lib/documents/docx.ts`) and written by
+//! `document_write.rs`.
 
-use super::images::LoadedImage;
-use super::markdown_inline::ImageAlignment;
 use std::path::Path;
 
 /// Extract text from a .docx file by reading word/document.xml from the zip
@@ -147,194 +145,6 @@ fn decode_xml_entities(s: &str) -> String {
     out
 }
 
-/// Read an image file and return it as a base64 data URL, resized if
-/// larger than MAX_IMAGE_DIMENSION on the longest side. The returned URL
-/// can be passed directly as an image_url content part to the vision model.
-/// Build a minimal valid .docx file from a list of paragraphs. Each
-/// paragraph string becomes a <w:p> with a single <w:t> run. Basic
-/// formatting (bold, italic) is not supported in this first pass —
-/// the content parameter is plain text with newline-separated paragraphs.
-/// Body XML for a standalone image paragraph. `w:jc` alignment is only
-/// emitted when not default-left (Word treats absent `w:jc` as left), which
-/// keeps the common case lean.
-fn docx_image_paragraph(
-    idx: usize,
-    target_w: u64,
-    target_h: u64,
-    drawing_id: u32,
-    alignment: ImageAlignment,
-) -> String {
-    let ppr = match alignment {
-        ImageAlignment::Left => String::new(),
-        ImageAlignment::Center => r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#.to_string(),
-        ImageAlignment::Right => r#"<w:pPr><w:jc w:val="right"/></w:pPr>"#.to_string(),
-    };
-    format!(
-        r#"<w:p>{ppr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{h}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{id}" name="image{idx}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId{idx}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
-        ppr = ppr,
-        w = target_w,
-        h = target_h,
-        id = drawing_id,
-        idx = idx,
-    )
-}
-
-/// Body XML for a heading paragraph. Font size shrinks two half-points per
-/// level (`32 - level*2`).
-fn docx_heading_paragraph(level: usize, escaped_text: &str) -> String {
-    format!(
-        r#"<w:p><w:pPr><w:pStyle w:val="Heading{}"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="{}"/></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
-        level,
-        32 - level * 2,
-        escaped_text
-    )
-}
-
-/// Body XML for a plain text paragraph.
-fn docx_text_paragraph(escaped_text: &str) -> String {
-    format!(
-        r#"<w:p><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
-        escaped_text
-    )
-}
-
-/// DOCX paragraph emitter for the shared [`super::images::render_doc_body`]
-/// driver. DOCX uses the drawing `seq` for the `<wp:docPr>` id and ignores the
-/// image extension (the relationship already carries it).
-struct DocxBody;
-
-impl super::images::DocBodyEmitter for DocxBody {
-    fn image(
-        &self,
-        idx: usize,
-        w_emu: u64,
-        h_emu: u64,
-        seq: u32,
-        _ext: &str,
-        alignment: ImageAlignment,
-    ) -> String {
-        docx_image_paragraph(idx, w_emu, h_emu, seq, alignment)
-    }
-    fn heading(&self, level: usize, escaped: &str) -> String {
-        docx_heading_paragraph(level, escaped)
-    }
-    fn text(&self, escaped: &str) -> String {
-        docx_text_paragraph(escaped)
-    }
-}
-
-pub(super) fn build_docx(
-    paragraphs: &[&str],
-    images: &std::collections::HashMap<String, LoadedImage>,
-) -> Result<Vec<u8>, String> {
-    use std::io::Write;
-    use zip::write::SimpleFileOptions;
-
-    // Resolve referenced images (first-appearance media numbering + natural
-    // EMU sizes) once. Shared with the ODT builder; per-reference alignment
-    // and width% are applied later by render_doc_body.
-    let (index, natural_emu) = super::images::prepare_doc_images(paragraphs, images)?;
-
-    let mut buf = Vec::new();
-    {
-        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-        // [Content_Types].xml — shared prologue + Default entries for any
-        // image extensions used, then the docx body Override.
-        let mut content_types = super::ooxml::content_types_prologue(&index.unique_exts);
-        content_types.push_str(
-            r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>"#,
-        );
-        zip.start_file("[Content_Types].xml", options)
-            .map_err(|e| e.to_string())?;
-        zip.write_all(content_types.as_bytes())
-            .map_err(|e| e.to_string())?;
-
-        // _rels/.rels — package-level relationship to the main document.
-        zip.start_file("_rels/.rels", options)
-            .map_err(|e| e.to_string())?;
-        zip.write_all(super::ooxml::root_rels("word/document.xml").as_bytes())
-            .map_err(|e| e.to_string())?;
-
-        // word/_rels/document.xml.rels — only emitted when there's at
-        // least one image to reference. Word tolerates a missing file
-        // when there are no images, and we'd rather not write empty
-        // <Relationships> XML.
-        if !index.ordered.is_empty() {
-            let mut rels = String::from(
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-"#,
-            );
-            for path in &index.ordered {
-                let idx = index.by_path[*path];
-                let ext = &images[*path].extension;
-                rels.push_str(&format!(
-                    r#"<Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image{}.{}"/>
-"#,
-                    idx, idx, ext
-                ));
-            }
-            rels.push_str("</Relationships>");
-            zip.start_file("word/_rels/document.xml.rels", options)
-                .map_err(|e| e.to_string())?;
-            zip.write_all(rels.as_bytes()).map_err(|e| e.to_string())?;
-        }
-
-        // word/media/imageN.{ext} — one per unique image.
-        for path in &index.ordered {
-            let idx = index.by_path[*path];
-            let img = &images[*path];
-            zip.start_file(
-                format!("word/media/image{}.{}", idx, img.extension),
-                options,
-            )
-            .map_err(|e| e.to_string())?;
-            zip.write_all(&img.bytes).map_err(|e| e.to_string())?;
-        }
-
-        // word/document.xml — body XML. The root <w:document> needs every
-        // namespace prefix any drawing markup uses, so add wp/a/r/pic now
-        // even when there are no images (cheap, simpler than branching).
-        let mut body_xml = String::from(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
-<w:body>"#,
-        );
-        super::images::render_doc_body(
-            &mut body_xml,
-            paragraphs,
-            images,
-            &index,
-            &natural_emu,
-            &DocxBody,
-        );
-        body_xml.push_str("</w:body></w:document>");
-
-        zip.start_file("word/document.xml", options)
-            .map_err(|e| e.to_string())?;
-        zip.write_all(body_xml.as_bytes())
-            .map_err(|e| e.to_string())?;
-
-        zip.finish().map_err(|e| e.to_string())?;
-    }
-
-    Ok(buf)
-}
-
-#[tauri::command]
-pub async fn fs_write_docx(
-    workdir: String,
-    rel_path: String,
-    content: String,
-    overwrite: Option<bool>,
-) -> Result<(), String> {
-    super::write_markdown_document(workdir, rel_path, content, overwrite, "docx", build_docx).await
-}
-
 #[tauri::command]
 pub async fn fs_read_docx(workdir: String, rel_path: String) -> Result<String, String> {
     let text = super::read_document_blocking(workdir, rel_path, "docx", extract_docx_text).await?;
@@ -349,13 +159,6 @@ pub async fn fs_read_docx(workdir: String, rel_path: String) -> Result<String, S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fs_tools::test_support::read_zip_entry;
-    use std::collections::HashMap;
-
-    fn document_xml(paragraphs: &[&str]) -> String {
-        let bytes = build_docx(paragraphs, &HashMap::new()).unwrap();
-        read_zip_entry(&bytes, "word/document.xml")
-    }
 
     #[test]
     fn extract_text_handles_tables_without_dumping_xml() {
@@ -399,36 +202,5 @@ mod tests {
         // Bare ampersands and unknown entities pass through
         assert_eq!(decode_xml_entities("AT&T"), "AT&T");
         assert_eq!(decode_xml_entities("&unknown;"), "&unknown;");
-    }
-
-    #[test]
-    fn docx_renders_headings_at_each_level() {
-        let body = document_xml(&["# One", "## Two", "### Three"]);
-        assert!(body.contains(r#"<w:pStyle w:val="Heading1"/>"#));
-        assert!(body.contains(r#"<w:pStyle w:val="Heading2"/>"#));
-        assert!(body.contains(r#"<w:pStyle w:val="Heading3"/>"#));
-        assert!(body.contains(r#"<w:t xml:space="preserve">One</w:t>"#));
-        assert!(body.contains(r#"<w:t xml:space="preserve">Three</w:t>"#));
-    }
-
-    #[test]
-    fn docx_renders_plain_paragraph() {
-        let body = document_xml(&["Just text."]);
-        assert!(
-            body.contains(r#"<w:p><w:r><w:t xml:space="preserve">Just text.</w:t></w:r></w:p>"#)
-        );
-    }
-
-    #[test]
-    fn docx_escapes_xml_special_chars() {
-        let body = document_xml(&["a < b & c > d"]);
-        assert!(body.contains("a &lt; b &amp; c &gt; d"));
-    }
-
-    #[test]
-    fn docx_package_declares_document_part() {
-        let bytes = build_docx(&["hi"], &HashMap::new()).unwrap();
-        let content_types = read_zip_entry(&bytes, "[Content_Types].xml");
-        assert!(content_types.contains("word/document.xml"));
     }
 }

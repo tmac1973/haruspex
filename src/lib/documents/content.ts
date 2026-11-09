@@ -55,7 +55,7 @@ export function lex(markdown: string): Token[] {
 
 /** A paragraph (or a list item's text) that is only pictures, one per line,
  *  is a block of them. */
-function standaloneImages(p: { tokens?: Token[] }): Tokens.Image[] | null {
+export function standaloneImages(p: { tokens?: Token[] }): Tokens.Image[] | null {
 	const images: Tokens.Image[] = [];
 	for (const t of p.tokens ?? []) {
 		if (t.type === 'image') images.push(t as Tokens.Image);

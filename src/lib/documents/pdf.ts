@@ -12,7 +12,7 @@ import {
 	type Measure
 } from '#lib/documents/glyphs.ts';
 import { gifToPng } from '#lib/documents/images.ts';
-import { LOOKS, PAGE_POINTS, type Look, type PdfOptions } from '#lib/documents/looks.ts';
+import { LOOKS, PAGE_POINTS, type Look, type DocumentOptions } from '#lib/documents/looks.ts';
 
 /**
  * A PDF from a model's markdown, built with pdfmake: Roboto embedded, so
@@ -23,7 +23,7 @@ import { LOOKS, PAGE_POINTS, type Look, type PdfOptions } from '#lib/documents/l
 const FOOTER = 32;
 
 /** A Letter page in the plain look: what a call without options gets. */
-export const DEFAULT_OPTIONS: PdfOptions = { pageSize: 'letter', style: 'plain', toc: false };
+export const DEFAULT_OPTIONS: DocumentOptions = { pageSize: 'letter', style: 'plain', toc: false };
 
 export interface BuiltPdf {
 	bytes: Uint8Array;
@@ -100,7 +100,7 @@ export async function buildPdf(
 	markdown: string,
 	images: Map<string, SlideImage>,
 	convert: ImageConverter,
-	options: PdfOptions = DEFAULT_OPTIONS
+	options: DocumentOptions = DEFAULT_OPTIONS
 ): Promise<BuiltPdf> {
 	const { pdfMake, body, measure } = await loadPdfMake();
 	const placed = new Map<string, PlacedImage>();
@@ -225,7 +225,7 @@ export function landscapeNote(tables: string[]): string {
 export async function pdfFromMarkdown(
 	workdir: string,
 	markdown: string,
-	options: PdfOptions = DEFAULT_OPTIONS
+	options: DocumentOptions = DEFAULT_OPTIONS
 ): Promise<BuiltPdf> {
 	const images = await loadImages(workdir, imagePaths(lex(markdown)));
 	return buildPdf(markdown, images, gifToPng, options);

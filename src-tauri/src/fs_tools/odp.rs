@@ -4,11 +4,11 @@
 //! convention LibreOffice Impress expects.
 
 use super::images::{build_image_index, load_image_set, ImageIndex, LoadedImage};
-use super::markdown_inline::escape_xml;
 use super::path::{
     refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
 };
 use super::slides::{Slide, SlideLayout, SlideOrientation};
+use super::xml::escape_xml;
 
 /// A length in centimetres as ODF writes it, to the nearest 0.01 mm.
 fn cm(v: f64) -> String {
@@ -119,9 +119,9 @@ impl Page {
 }
 
 /// Build an .odp deck: one page per slide, each a title with bullets and an
-/// optional image, or a section divider. Reuses the ODF zip
-/// scaffolding from `build_odt` (STORED mimetype first, manifest, meta,
-/// styles, content).
+/// optional image, or a section divider. Uses the shared ODF zip
+/// scaffolding (`odf.rs`: STORED mimetype first, manifest, meta, styles,
+/// content).
 pub(super) fn build_odp(
     slides: &[Slide],
     images: &std::collections::HashMap<String, LoadedImage>,
@@ -140,7 +140,7 @@ pub(super) fn build_odp(
         ordered: ordered_image_paths,
         by_path: image_index,
         ..
-    } = build_image_index(slides.iter().filter_map(|s| s.image.as_ref()), images);
+    } = build_image_index(slides.iter().filter_map(|s| s.image.as_ref()));
 
     let page = Page::new(orientation);
     let mut buf = Vec::new();

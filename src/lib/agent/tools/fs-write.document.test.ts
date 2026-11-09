@@ -35,10 +35,13 @@ vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfSheets: mocks.render }));
 
 type Headers = { headers: Record<string, string> };
 
-/** Where a write went and whether it replaced the file: a PDF says so in
- *  headers, since the file is the body; the other formats in their args. */
+/** The commands that take the built file as the body, the path in headers. */
+const RAW = new Set(['fs_write_pdf', 'fs_write_docx', 'fs_write_odt']);
+
+/** Where a write went and whether it replaced the file: a built document
+ *  says so in headers, since the file is the body; a text file in its args. */
 function sentTo(call: unknown[]): { relPath: string; overwrite: boolean } {
-	if (call[0] === 'fs_write_pdf') {
+	if (RAW.has(call[0] as string)) {
 		const { headers } = call[2] as Headers;
 		return {
 			relPath: decodeURIComponent(headers['x-rel-path']),
@@ -49,11 +52,11 @@ function sentTo(call: unknown[]): { relPath: string; overwrite: boolean } {
 	return { relPath: args.relPath, overwrite: args.overwrite };
 }
 
-/** Answer by command, as `invokeRouter`, with a PDF write going to disk. */
+/** Answer by command, as `invokeRouter`, with a document write going to disk. */
 function route(routes: Parameters<typeof invokeRouter>[0]) {
 	const router = invokeRouter(routes);
 	return async <T>(cmd: string, args?: unknown, opts?: unknown): Promise<T> => {
-		if (cmd === 'fs_write_pdf') {
+		if (RAW.has(cmd)) {
 			mocks.disk.add(sentTo([cmd, args, opts]).relPath);
 			return null as T;
 		}
@@ -77,11 +80,7 @@ beforeEach(() => {
 	vi.mocked(invoke).mockReset();
 	vi.mocked(invoke).mockImplementation(
 		route({
-			fs_path_exists: (a) => mocks.disk.has(String(a?.relPath)),
-			fs_write_docx: (a) => {
-				mocks.disk.add(String(a?.relPath));
-				return null;
-			}
+			fs_path_exists: (a) => mocks.disk.has(String(a?.relPath))
 		})
 	);
 });
@@ -156,6 +155,19 @@ describe('fs_write_document paths', () => {
 		expect(out.result).toBe(
 			'Wrote: hp.pdf (1 page)\nA table too wide for the page is on a landscape page: (Region, Q1, Q2, …).'
 		);
+	});
+
+	it('builds a Word or LibreOffice file here and sends it as the raw body', async () => {
+		for (const path of ['notes.docx', 'notes.odt']) {
+			vi.mocked(invoke).mockClear();
+			const out = await write({ path, content: DRAFT, title: 'Notes' });
+			expect(out.result).toBe(`Wrote: ${path}`);
+			const [cmd, body] = writes()[0];
+			expect(cmd).toBe(path.endsWith('docx') ? 'fs_write_docx' : 'fs_write_odt');
+			// A zip: PK, then the rest of the file.
+			expect([...(body as Uint8Array).slice(0, 2)]).toEqual([0x50, 0x4b]);
+			expect(sentTo(writes()[0])).toEqual({ relPath: path, overwrite: false });
+		}
 	});
 
 	it('names the characters the fonts could not draw', async () => {
