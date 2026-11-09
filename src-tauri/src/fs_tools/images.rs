@@ -1,16 +1,10 @@
-//! Image loading, normalization, and embedding helpers shared by
-//! `fs_read_image`, the doc-builders (DOCX/ODT/ODP), and the
-//! markdown-image extractor used to scan document bodies.
-//!
-//! Everything that touches `LoadedImage` lives here so the doc-builder
-//! modules can stay focused on package layout rather than image I/O.
+//! Image loading and normalization shared by `fs_read_image` and the deck
+//! writer (ODP). Everything that touches `LoadedImage` lives here so the
+//! deck module can stay focused on package layout rather than image I/O.
 
-use super::markdown_inline::{
-    escape_xml, parse_heading, parse_standalone_image_line, ImageAlignment,
-};
 use super::path::{resolve_in_workdir, stat_within, stat_within_limit, workdir_path};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -26,11 +20,6 @@ const MAX_IMAGE_DIMENSION: u32 = 1536;
 /// suggests the model is trying to embed a photo when it should use a
 /// reference instead.
 pub(super) const MAX_EMBEDDED_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
-
-/// Maximum displayed width for an embedded image in DOCX/ODT bodies,
-/// in EMUs. ≈ 6 inches = 5_486_400 EMU. Images wider than this are
-/// scaled down proportionally; smaller images render at natural size.
-pub(super) const MAX_DOC_IMAGE_WIDTH_EMU: u64 = 5_486_400;
 
 /// A bitmap image loaded from disk and ready to embed in a document.
 /// `extension` drives both the filename in the zip package and the
@@ -67,44 +56,21 @@ pub(super) fn normalize_image_extension(path: &str) -> Result<String, String> {
     }
 }
 
-/// Decode just enough of an image to learn its pixel dimensions. Used
-/// by the DOCX/ODT/PPTX/ODP builders to compute display sizes in EMUs.
-pub(super) fn image_pixel_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
-    use image::GenericImageView;
-    let img =
-        image::load_from_memory(bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
-    Ok(img.dimensions())
-}
-
-/// Convert pixel width at assumed 96 dpi to EMUs (914400 EMU per inch).
-/// 1 px @ 96 dpi = 914400 / 96 = 9525 EMU exactly.
-pub(super) fn px_to_emu(px: u32) -> u64 {
-    px as u64 * 9525
-}
-
 /// Stable per-image media index for a document. Built once so the manifest /
 /// rels writer and the media writer agree on filenames (`image{i+1}.{ext}`).
-/// Shared by the docx / odt / odp / pptx writers.
+/// Used by the odp writer.
 pub(super) struct ImageIndex<'a> {
     /// Referenced image paths in first-appearance order — entry `i` maps to
     /// the media filename `image{i+1}.{ext}`.
     pub ordered: Vec<&'a String>,
     /// path → 1-based media index.
     pub by_path: HashMap<&'a String, usize>,
-    /// Unique extensions of the *loaded* images, sorted — for deterministic
-    /// `[Content_Types].xml`. Paths absent from `images` contribute nothing.
-    pub unique_exts: BTreeSet<&'a str>,
 }
 
 /// Build an [`ImageIndex`] from an ordered sequence of referenced image
-/// paths; duplicates collapse to their first appearance. `unique_exts` is
-/// derived from the loaded `images` map. The caller decides what counts as a
-/// reference (docx/odt: standalone `![](…)` lines present in `images`;
-/// pptx/odp: each slide's image).
-pub(super) fn build_image_index<'a>(
-    paths: impl IntoIterator<Item = &'a String>,
-    images: &'a HashMap<String, LoadedImage>,
-) -> ImageIndex<'a> {
+/// paths; duplicates collapse to their first appearance. The caller decides
+/// what counts as a reference (each slide's image).
+pub(super) fn build_image_index<'a>(paths: impl IntoIterator<Item = &'a String>) -> ImageIndex<'a> {
     let mut ordered: Vec<&'a String> = Vec::new();
     let mut by_path: HashMap<&'a String, usize> = HashMap::new();
     for path in paths {
@@ -113,191 +79,13 @@ pub(super) fn build_image_index<'a>(
             ordered.push(path);
         }
     }
-    let mut unique_exts: BTreeSet<&'a str> = BTreeSet::new();
-    for path in &ordered {
-        if let Some(img) = images.get(*path) {
-            unique_exts.insert(img.extension.as_str());
-        }
-    }
-    ImageIndex {
-        ordered,
-        by_path,
-        unique_exts,
-    }
-}
-
-/// Fit an image's natural EMU dimensions into the document: width is either a
-/// fraction of the max content width or the natural width capped at that max;
-/// height preserves the aspect ratio. Both clamp to ≥ 1 EMU. Shared by the
-/// docx and odt writers.
-pub(super) fn fit_image_emu(nat_w: u64, nat_h: u64, width_fraction: Option<f32>) -> (u64, u64) {
-    let w = match width_fraction {
-        Some(frac) => ((MAX_DOC_IMAGE_WIDTH_EMU as f32) * frac).round() as u64,
-        None => nat_w.min(MAX_DOC_IMAGE_WIDTH_EMU),
-    }
-    .max(1);
-    let h = (((nat_h as f64) * (w as f64) / (nat_w.max(1) as f64)) as u64).max(1);
-    (w, h)
-}
-
-/// Each referenced image's natural size in EMU, keyed by the (borrowed) image
-/// path. Produced by [`prepare_doc_images`], consumed by [`render_doc_body`].
-pub(super) type NaturalEmu<'a> = HashMap<&'a String, (u64, u64)>;
-
-/// Pre-resolve the images a markdown-text document body references: build the
-/// [`ImageIndex`] (first-appearance media numbering) and decode each unique
-/// image's natural size in EMU. Shared by the DOCX and ODT builders so the two
-/// can't diverge on which lines count as images or how natural sizes are
-/// computed. Per-reference options (alignment, width%) are applied later in
-/// [`render_doc_body`].
-pub(super) fn prepare_doc_images<'a>(
-    paragraphs: &[&str],
-    images: &'a HashMap<String, LoadedImage>,
-) -> Result<(ImageIndex<'a>, NaturalEmu<'a>), String> {
-    let index = build_image_index(
-        paragraphs.iter().filter_map(|p| {
-            parse_standalone_image_line(p).and_then(|(path, _)| images.keys().find(|k| **k == path))
-        }),
-        images,
-    );
-    let mut natural_emu: NaturalEmu<'a> = HashMap::new();
-    for path in &index.ordered {
-        let img = images
-            .get(*path)
-            .ok_or_else(|| format!("Image {} missing from loaded map", path))?;
-        let (px_w, px_h) = image_pixel_dimensions(&img.bytes)?;
-        natural_emu.insert(*path, (px_to_emu(px_w), px_to_emu(px_h)));
-    }
-    Ok((index, natural_emu))
-}
-
-/// Format-specific paragraph emitters for [`render_doc_body`]. Each method
-/// returns the body XML for one classified line; the driver owns the shared
-/// classification (image vs heading vs plain) so DOCX and ODT can't drift.
-pub(super) trait DocBodyEmitter {
-    /// A standalone image paragraph. `w_emu`/`h_emu` are the fitted dimensions;
-    /// `seq` is a 1-based drawing counter (DOCX needs a unique `<wp:docPr>` id;
-    /// ODT ignores it and converts EMU→cm).
-    fn image(
-        &self,
-        idx: usize,
-        w_emu: u64,
-        h_emu: u64,
-        seq: u32,
-        ext: &str,
-        alignment: ImageAlignment,
-    ) -> String;
-    /// A heading paragraph at `level` (1–3) with already-XML-escaped text.
-    fn heading(&self, level: usize, escaped: &str) -> String;
-    /// A plain text paragraph with already-XML-escaped text.
-    fn text(&self, escaped: &str) -> String;
-}
-
-/// Walk a markdown-text document body, classifying each line as a standalone
-/// image, a heading, or plain text, and append the format-specific XML the
-/// `emit` callbacks produce to `body`. An image line whose path isn't in the
-/// loaded `index`/`images` falls through to plain text so a bad reference is
-/// visible rather than silently dropped.
-pub(super) fn render_doc_body(
-    body: &mut String,
-    paragraphs: &[&str],
-    images: &HashMap<String, LoadedImage>,
-    index: &ImageIndex<'_>,
-    natural_emu: &NaturalEmu<'_>,
-    emit: &dyn DocBodyEmitter,
-) {
-    let mut seq: u32 = 0;
-    for para in paragraphs {
-        if let Some((path, opts)) = parse_standalone_image_line(para) {
-            if let Some(&idx) = index.by_path.get(&path) {
-                let (nat_w, nat_h) = natural_emu[&path];
-                let (w_emu, h_emu) = fit_image_emu(nat_w, nat_h, opts.width_fraction);
-                seq += 1;
-                let ext = &images[&path].extension;
-                body.push_str(&emit.image(idx, w_emu, h_emu, seq, ext, opts.alignment));
-                continue;
-            }
-            // Referenced image not loaded — fall through to plain-text render
-            // so the user sees the markdown instead of a silent drop.
-        }
-        let (text, heading_level) = parse_heading(para);
-        let escaped = escape_xml(text);
-        match heading_level {
-            Some(level) => body.push_str(&emit.heading(level, &escaped)),
-            None => body.push_str(&emit.text(&escaped)),
-        }
-    }
-}
-
-/// Extract every `![alt](path)` image reference from a markdown-shaped
-/// document, in order of first appearance, deduplicated. The returned
-/// vector preserves source order so the document builders can assign
-/// stable media indices (`image1`, `image2`, …). Used by the DOCX and ODT
-/// writers.
-///
-/// Matches the subset of CommonMark we actually want to support:
-///   - `![alt text](path)` — single line, no nested brackets
-///   - paths must end in a supported image extension (png/jpg/jpeg/gif)
-///   - URLs are intentionally NOT supported — only workdir-relative paths,
-///     because the writers load bytes from disk and the model shouldn't
-///     be smuggling network fetches into a document write
-pub fn extract_markdown_image_paths(content: &str) -> Vec<String> {
-    use std::collections::HashSet;
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut out: Vec<String> = Vec::new();
-
-    let bytes = content.as_bytes();
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] != b'!' || bytes[i + 1] != b'[' {
-            i += 1;
-            continue;
-        }
-        let alt_start = i + 2;
-        let Some(alt_end_rel) = bytes[alt_start..].iter().position(|&b| b == b']') else {
-            break;
-        };
-        let alt_end = alt_start + alt_end_rel;
-        if alt_end + 1 >= bytes.len() || bytes[alt_end + 1] != b'(' {
-            i = alt_end + 1;
-            continue;
-        }
-        let path_start = alt_end + 2;
-        let Some(path_end_rel) = bytes[path_start..].iter().position(|&b| b == b')') else {
-            break;
-        };
-        let path_end = path_start + path_end_rel;
-        // The body of the parens may be either `path` or `path "title"` —
-        // the title field carries layout hints like `"center 50%"`. Split
-        // on the first whitespace so loading only sees the path.
-        let body = std::str::from_utf8(&bytes[path_start..path_end]).unwrap_or("");
-        let path = match body.find(char::is_whitespace) {
-            Some(idx) => body[..idx].trim().to_string(),
-            None => body.trim().to_string(),
-        };
-        i = path_end + 1;
-        if path.is_empty() {
-            continue;
-        }
-        let lower = path.to_ascii_lowercase();
-        if lower.starts_with("http://")
-            || lower.starts_with("https://")
-            || lower.starts_with("data:")
-        {
-            continue;
-        }
-        if !seen.insert(path.clone()) {
-            continue;
-        }
-        out.push(path);
-    }
-    out
+    ImageIndex { ordered, by_path }
 }
 
 /// Load every image referenced by an iterator of relative paths into a
-/// path → `LoadedImage` map. Used by the doc-builders to pre-resolve
-/// images before generating package bytes (so the builders themselves
-/// can stay pure, no filesystem I/O).
+/// path → `LoadedImage` map. Used by the deck writer to pre-resolve
+/// images before generating package bytes (so the builder itself can
+/// stay pure, no filesystem I/O).
 ///
 /// Duplicates are collapsed (HashMap keys are unique). Missing files,
 /// oversized files, or unsupported extensions abort the load — the
@@ -328,15 +116,6 @@ pub(super) fn load_image_set(
         out.insert(rel_path, LoadedImage { bytes, extension });
     }
     Ok(out)
-}
-
-/// Convenience wrapper: load every image referenced by a markdown body.
-/// Used by the DOCX and ODT writers.
-pub(super) fn load_markdown_images(
-    workdir: &Path,
-    content: &str,
-) -> Result<HashMap<String, LoadedImage>, String> {
-    load_image_set(workdir, extract_markdown_image_paths(content))
 }
 
 /// Decode an image from disk, resize it to fit [`MAX_IMAGE_DIMENSION`] on its
@@ -440,38 +219,5 @@ mod tests {
         assert_eq!(normalize_image_extension("foo.gif").unwrap(), "gif");
         assert!(normalize_image_extension("foo.bmp").is_err());
         assert!(normalize_image_extension("foo").is_err());
-    }
-
-    #[test]
-    fn extract_markdown_image_paths_handles_basic_cases() {
-        let content = "
-intro paragraph
-![alt](first.png)
-some prose
-![other](sub/dir/second.jpg)
-![first repeat](first.png)
-trailing
-";
-        let paths = extract_markdown_image_paths(content);
-        // Order: first appearance, dedup.
-        assert_eq!(
-            paths,
-            vec!["first.png".to_string(), "sub/dir/second.jpg".to_string()]
-        );
-    }
-
-    #[test]
-    fn extract_markdown_image_paths_rejects_urls_and_empty_paths() {
-        let content = "![empty-path]()
-![ok](inline.png)
-![web](https://example.com/img.png)
-![data](data:image/png;base64,xxx)
-![empty-alt](also-loaded.png)";
-        let paths = extract_markdown_image_paths(content);
-        // URL/data refs and empty-path refs drop out; empty alt text is fine.
-        assert_eq!(
-            paths,
-            vec!["inline.png".to_string(), "also-loaded.png".to_string()]
-        );
     }
 }

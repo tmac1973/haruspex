@@ -3,11 +3,11 @@
 //! 2D Vec<Vec<String>> — because the Tauri command surface treats them as
 //! interchangeable except for the output format.
 
-use super::markdown_inline::escape_xml;
 use super::path::{
     ensure_parent_dir, refuse_if_exists, resolve_in_workdir, workdir_path_for_write,
     write_bytes_to_workdir,
 };
+use super::xml::escape_xml;
 
 #[derive(serde::Deserialize)]
 pub struct XlsxSheet {
@@ -29,7 +29,7 @@ fn cell_as_number(cell: &str) -> Option<f64> {
 /// Numeric strings are emitted as `office:value-type="float"` (same
 /// number-vs-text detection as the xlsx writer); everything else is a
 /// `string` cell. Same ODF first-entry-stored-mimetype requirement as
-/// `build_odt`.
+/// the deck writer (`odp.rs`).
 pub(super) fn build_ods(sheets: &[XlsxSheet]) -> Result<Vec<u8>, String> {
     use std::io::Write;
 

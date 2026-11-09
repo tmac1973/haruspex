@@ -1,8 +1,9 @@
 import type { StyleDictionary } from 'pdfmake/interfaces';
 
 /**
- * The options `fs_write_document` takes for a PDF: its page size, its look
- * (`style`, like a deck's theme), a title and a table of contents.
+ * The options `fs_write_document` takes for any of its formats: the page
+ * size, the look (`style`, like a deck's theme), a title and a table of
+ * contents. The PDF, Word and LibreOffice writers read the same looks.
  */
 
 export const PAGE_SIZES = ['a4', 'letter'] as const;
@@ -11,7 +12,7 @@ export type PageSize = (typeof PAGE_SIZES)[number];
 export const PDF_STYLES = ['plain', 'report', 'letter'] as const;
 export type PdfStyle = (typeof PDF_STYLES)[number];
 
-export interface PdfOptions {
+export interface DocumentOptions {
 	pageSize: PageSize;
 	style: PdfStyle;
 	/** Printed at the top and set as the PDF's title; the first heading otherwise. */
@@ -130,10 +131,10 @@ export const LOOKS: Record<PdfStyle, Look> = {
  * The PDF options in a tool call, or an error naming what's wrong. A
  * missing page size is the user's local paper.
  */
-export function pdfOptions(
+export function documentOptions(
 	args: Record<string, unknown>,
 	locale: string | undefined
-): PdfOptions | { error: string } {
+): DocumentOptions | { error: string } {
 	const pick = <T extends string>(key: string, allowed: readonly T[]): T | undefined | null => {
 		const v = args[key];
 		if (v === undefined || v === null || v === '') return undefined;
