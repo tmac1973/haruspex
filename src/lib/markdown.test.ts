@@ -790,6 +790,34 @@ describe('renderMarkdown code-path links', () => {
 		expect(html).toContain('href="https://example.com/src/a.ts"');
 	});
 
+	it('turns a markdown link to a file in the folder into a button', () => {
+		const html = renderMarkdown(
+			'Made [bear](assets/bear/bear.glb), [**knight**](/proj/assets/knight/knight.glb) and [`a.ts`](src/a.ts:4).',
+			undefined,
+			link
+		);
+		expect(buttons(html)).toEqual([
+			'assets/bear/bear.glb',
+			'assets/knight/knight.glb',
+			'src/a.ts:4'
+		]);
+		expect(html).toContain('>bear</button>');
+		expect(html).toContain('<strong>knight</strong></button>');
+		expect(html).toContain('<code>a.ts</code></button>');
+		expect(html).not.toContain('<a ');
+	});
+
+	it('leaves links to URLs, anchors and files outside the folder as links', () => {
+		const html = renderMarkdown(
+			'[site](https://example.com/a.ts), [top](#top), [conf](/etc/app.conf)',
+			undefined,
+			link
+		);
+		expect(buttons(html)).toEqual([]);
+		expect(html).toContain('href="https://example.com/a.ts"');
+		expect(html).toContain('href="/etc/app.conf"');
+	});
+
 	it('leaves code blocks alone', () => {
 		const html = renderMarkdown('```ts\nimport x from "src/a.ts";\n```', undefined, link);
 		expect(buttons(html)).toEqual([]);

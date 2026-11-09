@@ -21,6 +21,8 @@ const db = vi.hoisted(() => {
 		/** What `code_notices_take` gives as the next `since`. */
 		now: 99
 	};
+	/** Commands that never answer, as a request the webview dropped. */
+	const hung = new Set<string>();
 	let n = 0;
 	const emptyThread = JSON.stringify({
 		version: 1,
@@ -37,7 +39,9 @@ const db = vi.hoisted(() => {
 		handoffs,
 		alive,
 		folders,
+		hung,
 		reset() {
+			hung.clear();
 			folders.holder = null;
 			folders.notices = [];
 			folders.git.clear();
@@ -51,6 +55,7 @@ const db = vi.hoisted(() => {
 			n = 0;
 		},
 		handle(cmd: string, args: Record<string, unknown> = {}): unknown {
+			if (hung.has(cmd)) return new Promise(() => {});
 			switch (cmd) {
 				case 'code_session_create': {
 					n += 1;
@@ -555,6 +560,37 @@ describe('a Code session', () => {
 		const saved = storedThread(s.id)!.messages;
 		expect(saved.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
 		expect(saved[3].content).toBe('Now I will');
+	});
+
+	it('goes idle when a call at the end of a turn never answers, and saves later', async () => {
+		vi.useFakeTimers();
+		try {
+			const s = await newSession('/proj');
+			db.hung.add('code_session_save');
+			const sending = s.send('make a bear');
+			await vi.advanceTimersByTimeAsync(10_000);
+			await sending;
+			expect(s.status).toBe('idle');
+			expect(s.saveError).toBe('The session has not saved yet.');
+			// The next save does not queue behind the one that never ended.
+			db.hung.clear();
+			await s.send('and a knight');
+			expect(s.saveError).toBeNull();
+			expect(storedThread(s.id)?.messages).toHaveLength(4);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('stops waiting for the end of a turn at once on Stop', async () => {
+		const s = await newSession('/proj');
+		db.hung.add('code_session_save');
+		const sending = s.send('make a bear');
+		await vi.waitFor(() => expect(s.messages).toHaveLength(2));
+		s.stop();
+		await sending;
+		expect(s.status).toBe('idle');
+		expect(s.saveError).toBe('The session has not saved yet.');
 	});
 
 	it('keeps the steps of a turn stopped mid-command, the running one marked stopped', async () => {

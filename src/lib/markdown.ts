@@ -157,6 +157,24 @@ const marked = new Marked({
 		}
 	],
 	renderer: {
+		/**
+		 * `[bear](assets/bear/bear.glb)` names a file in the folder just as
+		 * `assets/bear/bear.glb` does, so it opens in the editor too. Left as a
+		 * link, a click sent the app's router to a page that doesn't exist.
+		 */
+		link(token) {
+			const linker = activeLinker;
+			if (!linker || /^[a-z][a-z0-9+.-]*:|^#/i.test(token.href)) return false;
+			const ref = linker(token.href);
+			if (!ref) return false;
+			// The text renders unlinked, so a path in it doesn't nest a button.
+			activeLinker = null;
+			try {
+				return pathButton(ref, this.parser.parseInline(token.tokens));
+			} finally {
+				activeLinker = linker;
+			}
+		},
 		codespan({ text }: { text: string }) {
 			const ref = activeLinker?.(text) ?? null;
 			return ref ? pathButton(ref, `<code>${escapeHtml(text)}</code>`) : false;
