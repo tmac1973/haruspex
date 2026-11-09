@@ -1,7 +1,8 @@
 import { Lexer, type Token, type Tokens } from 'marked';
 import type { Content, TableCell } from 'pdfmake/interfaces';
 import { NUMERIC } from '#lib/slides/pptxData.ts';
-import { drawable, type Repertoire } from '#lib/documents/glyphs.ts';
+import { drawable, type Measure, type Repertoire } from '#lib/documents/glyphs.ts';
+import { TABLE_SIZE, tableFit } from '#lib/documents/tableFit.ts';
 
 /**
  * A model's markdown as pdfmake content: headings, paragraphs with bold,
@@ -29,6 +30,16 @@ export interface ContentContext {
 	height: number;
 	/** Heading levels listed in the table of contents, first to last. */
 	toc?: [number, number];
+	/** Body text's widths, regular and bold, for fitting a table. */
+	measure: { regular: Measure; bold: Measure };
+	/** A landscape page's content width, in points. */
+	landscapeWidth: number;
+	/** What the page size is called, for a refusal: "an A4". */
+	pageName: string;
+	/** Tables put on a landscape page, by their header, for the tool result. */
+	landscaped: string[];
+	/** A landscape table was placed: the next block goes back to portrait. */
+	turnBack?: boolean;
 }
 
 export const CODE_FONT = 'Courier';
@@ -297,7 +308,9 @@ function tableBlock(table: Tokens.Table, ctx: ContentContext): Content {
 	);
 	const widths = longest.map((n) => (n > 24 ? '*' : 'auto'));
 	if (!widths.includes('*')) widths[longest.indexOf(Math.max(...longest))] = '*';
+	const landscape = tableFit(texts, ctx);
 	return {
+		...(landscape && { pageOrientation: 'landscape' as const }),
 		table: { headerRows: 1, keepWithHeaderRows: 1, widths, body, dontBreakRows: true },
 		layout: {
 			hLineWidth: (i: number, node: { table: { body: unknown[] } }) =>
@@ -310,7 +323,7 @@ function tableBlock(table: Tokens.Table, ctx: ContentContext): Content {
 			paddingTop: () => 4,
 			paddingBottom: () => 4
 		},
-		fontSize: 10,
+		fontSize: TABLE_SIZE,
 		margin: [0, 2, 0, 12]
 	};
 }
@@ -361,63 +374,93 @@ function headingBlock(h: Tokens.Heading, ctx: ContentContext): Content {
 	};
 }
 
+/** What `blocks` reads and sets on a block it places. */
+interface Placed {
+	headlineLevel?: number;
+	pageBreak?: string;
+	pageOrientation?: string;
+}
+
 /** Block tokens as pdfmake content. */
 export function blocks(tokens: Token[], ctx: ContentContext): Content[] {
 	const out: Content[] = [];
 	for (const t of tokens) {
-		switch (t.type) {
-			case 'heading':
-				out.push(headingBlock(t as Tokens.Heading, ctx));
-				break;
-			case 'paragraph': {
-				const p = t as Tokens.Paragraph;
-				const images = standaloneImages(p);
-				if (images) out.push(...images.map((img) => imageBlock(img, ctx)));
-				else out.push({ text: inline(p.tokens, ctx), style: 'p' });
-				break;
-			}
-			case 'text': {
-				const nested = (t as Tokens.Text).tokens;
-				out.push({ text: nested ? inline(nested, ctx) : [run(t.text, {}, ctx)], style: 'p' });
-				break;
-			}
-			case 'list':
-				out.push(listBlock(t as Tokens.List, ctx));
-				break;
-			case 'code':
-				out.push(codeBlock(t as Tokens.Code, ctx));
-				break;
-			case 'blockquote':
-				out.push(quoteBlock(t as Tokens.Blockquote, ctx));
-				break;
-			case 'table':
-				out.push(tableBlock(t as Tokens.Table, ctx));
-				break;
-			case 'hr':
-				out.push({
-					canvas: [
-						{
-							type: 'line',
-							x1: 0,
-							y1: 0,
-							x2: ctx.width,
-							y2: 0,
-							lineWidth: 0.75,
-							lineColor: RULE_COLOR
-						}
-					],
-					margin: [0, 6, 0, 12]
-				});
-				break;
-			case 'html': {
-				// Block HTML prints as its text, tags and all stripped.
-				const text = t.text.replace(/<[^>]*>/g, '').trim();
-				if (text) out.push({ text: [run(text, {}, ctx)], style: 'p' });
-				break;
-			}
-			default:
-				break;
+		const turnBack = ctx.turnBack;
+		ctx.turnBack = false;
+		const made = block(t, ctx) as Placed[];
+		if (made.length === 0) {
+			ctx.turnBack ||= turnBack;
+			continue;
 		}
+		if (turnBack) Object.assign(made[0], { pageBreak: 'before', pageOrientation: 'portrait' });
+		const wide = made.find((n) => n.pageOrientation === 'landscape' && !n.pageBreak);
+		if (wide) {
+			// A landscape table starts a page, taking its heading with it.
+			const prev = out.at(-1) as Placed | undefined;
+			const start = prev?.headlineLevel !== undefined && !prev.pageBreak ? prev : wide;
+			Object.assign(start, { pageBreak: 'before', pageOrientation: 'landscape' });
+			ctx.turnBack = true;
+		}
+		out.push(...(made as Content[]));
+	}
+	return out;
+}
+
+/** One block token as pdfmake content. */
+function block(t: Token, ctx: ContentContext): Content[] {
+	const out: Content[] = [];
+	switch (t.type) {
+		case 'heading':
+			out.push(headingBlock(t as Tokens.Heading, ctx));
+			break;
+		case 'paragraph': {
+			const p = t as Tokens.Paragraph;
+			const images = standaloneImages(p);
+			if (images) out.push(...images.map((img) => imageBlock(img, ctx)));
+			else out.push({ text: inline(p.tokens, ctx), style: 'p' });
+			break;
+		}
+		case 'text': {
+			const nested = (t as Tokens.Text).tokens;
+			out.push({ text: nested ? inline(nested, ctx) : [run(t.text, {}, ctx)], style: 'p' });
+			break;
+		}
+		case 'list':
+			out.push(listBlock(t as Tokens.List, ctx));
+			break;
+		case 'code':
+			out.push(codeBlock(t as Tokens.Code, ctx));
+			break;
+		case 'blockquote':
+			out.push(quoteBlock(t as Tokens.Blockquote, ctx));
+			break;
+		case 'table':
+			out.push(tableBlock(t as Tokens.Table, ctx));
+			break;
+		case 'hr':
+			out.push({
+				canvas: [
+					{
+						type: 'line',
+						x1: 0,
+						y1: 0,
+						x2: ctx.width,
+						y2: 0,
+						lineWidth: 0.75,
+						lineColor: RULE_COLOR
+					}
+				],
+				margin: [0, 6, 0, 12]
+			});
+			break;
+		case 'html': {
+			// Block HTML prints as its text, tags and all stripped.
+			const text = t.text.replace(/<[^>]*>/g, '').trim();
+			if (text) out.push({ text: [run(text, {}, ctx)], style: 'p' });
+			break;
+		}
+		default:
+			break;
 	}
 	return out;
 }

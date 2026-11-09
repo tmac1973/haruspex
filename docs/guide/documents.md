@@ -1,6 +1,6 @@
 ---
 title: Documents
-description: Making a PDF, Word or LibreOffice document in Chat: what a PDF shows, its page size and look, how the assistant checks it, pictures, characters the PDF can't print, and what .docx and .odt leave out.
+description: Making a PDF, Word or LibreOffice document in Chat: what a PDF shows, wide tables, page size and look, how the assistant checks it, pictures, missing characters, and .docx and .odt.
 ---
 
 # Documents
@@ -17,6 +17,7 @@ A PDF keeps the shape of the assistant's markdown:
 - Links you can click, for web and email addresses. A link to a file in the folder prints as plain text.
 - Bulleted and numbered lists, nested as deep as you like, and checklists.
 - Tables with a bold header row that repeats on each page. A column of numbers lines up on the right.
+- A table too wide for the page gets a landscape page of its own, with its heading. A table too wide even for that isn't written: the assistant is told how many columns fit, so it can split the table.
 - Code blocks in a fixed-width font on a grey panel, and quotes beside a rule.
 - Page numbers at the foot of each page when there is more than one.
 

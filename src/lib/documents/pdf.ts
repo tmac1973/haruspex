@@ -4,7 +4,13 @@ import type { SlideImage } from '#lib/slides/types.ts';
 import { loadImages } from '#lib/slides/images.ts';
 import { bytesToBase64 } from '#lib/utils/base64.ts';
 import { blocks, imagePaths, lex, plainText, type PlacedImage } from '#lib/documents/content.ts';
-import { drawable, fontCoverage, type Coverage } from '#lib/documents/glyphs.ts';
+import {
+	drawable,
+	fontCoverage,
+	fontMeasure,
+	type Coverage,
+	type Measure
+} from '#lib/documents/glyphs.ts';
 import { gifToPng } from '#lib/documents/images.ts';
 import { LOOKS, PAGE_POINTS, type Look, type PdfOptions } from '#lib/documents/looks.ts';
 
@@ -24,14 +30,22 @@ export interface BuiltPdf {
 	pages: number;
 	/** Characters the fonts couldn't draw, left out of the page. */
 	missing: Set<string>;
+	/** Tables too wide for the page, put on a landscape one, by their header. */
+	landscaped: string[];
 }
 
 type PdfMake = typeof import('pdfmake/build/pdfmake.js');
 
-let loaded: Promise<{ pdfMake: PdfMake; body: Coverage }> | null = null;
+interface Loaded {
+	pdfMake: PdfMake;
+	body: Coverage;
+	measure: { regular: Measure; bold: Measure };
+}
+
+let loaded: Promise<Loaded> | null = null;
 
 /** pdfmake and its fonts, loaded on the first PDF: they are 2.5 MB. */
-function loadPdfMake(): Promise<{ pdfMake: PdfMake; body: Coverage }> {
+function loadPdfMake(): Promise<Loaded> {
 	loaded ??= (async () => {
 		const [{ default: pdfMake }, { default: vfs }, { default: courier }] = await Promise.all([
 			import('pdfmake/build/pdfmake.js'),
@@ -40,10 +54,12 @@ function loadPdfMake(): Promise<{ pdfMake: PdfMake; body: Coverage }> {
 		]);
 		pdfMake.addVirtualFileSystem(vfs);
 		pdfMake.addFontContainer(courier as unknown as Parameters<PdfMake['addFontContainer']>[0]);
-		const regular = Uint8Array.from(atob(vfs['Roboto-Regular.ttf'] as string), (c) =>
-			c.charCodeAt(0)
-		);
-		return { pdfMake, body: fontCoverage(regular) };
+		const ttf = (name: string) =>
+			Uint8Array.from(atob(vfs[name] as string), (c) => c.charCodeAt(0));
+		const regular = ttf('Roboto-Regular.ttf');
+		// pdfmake's bold Roboto is the Medium weight.
+		const measure = { regular: fontMeasure(regular), bold: fontMeasure(ttf('Roboto-Medium.ttf')) };
+		return { pdfMake, body: fontCoverage(regular), measure };
 	})();
 	void loaded.catch(() => (loaded = null));
 	return loaded;
@@ -86,7 +102,7 @@ export async function buildPdf(
 	convert: ImageConverter,
 	options: PdfOptions = DEFAULT_OPTIONS
 ): Promise<BuiltPdf> {
-	const { pdfMake, body } = await loadPdfMake();
+	const { pdfMake, body, measure } = await loadPdfMake();
 	const placed = new Map<string, PlacedImage>();
 	for (const [path, img] of images) {
 		const ready = img.mime === 'image/gif' ? await convert(img) : img;
@@ -118,7 +134,11 @@ export async function buildPdf(
 		missing,
 		width: page.width - look.margin * 2,
 		height: page.height - look.margin * 2 - FOOTER,
-		toc: options.toc ? tocLevels(tokens) : undefined
+		toc: options.toc ? tocLevels(tokens) : undefined,
+		measure,
+		landscapeWidth: page.height - look.margin * 2,
+		pageName: page.called,
+		landscaped: [] as string[]
 	};
 	const content = blocks(tokens, ctx);
 	const title = options.title ?? firstHeading;
@@ -132,7 +152,7 @@ export async function buildPdf(
 	}
 	let pages = 1;
 	const doc: TDocumentDefinitions = {
-		pageSize: options.pageSize === 'a4' ? 'A4' : 'LETTER',
+		pageSize: page.pdfmake,
 		pageMargins: [look.margin, look.margin, look.margin, look.margin + FOOTER / 2],
 		info: { title, creator: 'Haruspex', producer: 'Haruspex' },
 		content: [...front, ...content],
@@ -155,7 +175,7 @@ export async function buildPdf(
 		pageBreakBefore: strandedHeading
 	};
 	const buffer = await pdfMake.createPdf(doc).getBuffer();
-	return { bytes: new Uint8Array(buffer), pages, missing };
+	return { bytes: new Uint8Array(buffer), pages, missing, landscaped: ctx.landscaped };
 }
 
 /**
@@ -188,6 +208,14 @@ function titleBlock(
 	};
 	const text: Content = { text: drawable(title, body, missing), style: 'title' };
 	return look === LOOKS.report ? { stack: [text, rule] } : text;
+}
+
+/** The tool result's note on tables turned sideways, or '' when none were. */
+export function landscapeNote(tables: string[]): string {
+	if (tables.length === 0) return '';
+	const which = tables.map((t) => `(${t})`).join('; ');
+	const one = tables.length === 1;
+	return `${one ? 'A table' : `${tables.length} tables`} too wide for the page ${one ? 'is' : 'are'} on a landscape page: ${which}.`;
 }
 
 /**

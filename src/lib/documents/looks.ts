@@ -19,10 +19,13 @@ export interface PdfOptions {
 	toc: boolean;
 }
 
-/** Page sizes in points. */
-export const PAGE_POINTS: Record<PageSize, { width: number; height: number }> = {
-	a4: { width: 595.28, height: 841.89 },
-	letter: { width: 612, height: 792 }
+/** Page sizes in points, pdfmake's name for each, and what a refusal calls it. */
+export const PAGE_POINTS: Record<
+	PageSize,
+	{ width: number; height: number; pdfmake: 'A4' | 'LETTER'; called: string }
+> = {
+	a4: { width: 595.28, height: 841.89, pdfmake: 'A4', called: 'an A4' },
+	letter: { width: 612, height: 792, pdfmake: 'LETTER', called: 'a Letter' }
 };
 
 /** Where Letter is the usual paper; everywhere else uses A4. */
