@@ -4,10 +4,10 @@ import {
 	ensureUrlScheme,
 	fsWorkdir,
 	labelArg,
-	resolveShellPath,
 	toolInvokeError,
 	wslDistroArg
 } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { registerTool, registerToolAlias } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';

@@ -7,7 +7,7 @@
  */
 
 import type { ModelClip, ModelEntry, ModelSpec } from '#lib/models3d/spec/types.ts';
-import { LOOPING_CLIP } from '#lib/models3d/spec/types.ts';
+import { LOOPING_CLIP } from '#lib/glb/clipNames.ts';
 import { modelDir } from '#lib/models3d/spec/paths.ts';
 import { numberOrNaN, stringOr } from '#lib/utils/coerce.ts';
 

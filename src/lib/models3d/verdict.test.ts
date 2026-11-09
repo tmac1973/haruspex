@@ -5,7 +5,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 const runner = vi.hoisted(() => ({ runBuildModule: vi.fn() }));
 vi.mock('#lib/helpers/three/runModule.ts', () => runner);
 
-import { clip, pivotRig, turn } from './motionFixtures';
+import { clip, pivotRig, turn } from '#lib/glb/motionFixtures.ts';
 import { judgeModel } from './verdict';
 import { modelFiles } from '#lib/models3d/spec/paths.ts';
 import type { ModelEntry } from '#lib/models3d/spec/types.ts';
@@ -17,7 +17,8 @@ const io = {
 		if (f === undefined) throw 'No such file';
 		return [...new TextEncoder().encode(f)];
 	},
-	cwd: '/proj'
+	cwd: '/proj',
+	runFrame: async () => {}
 };
 
 function entry(over: Partial<ModelEntry> = {}): ModelEntry {

@@ -25,7 +25,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
-vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
+vi.mock('#lib/models3d/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 const question = vi.hoisted(() => ({ ask: vi.fn() }));
 vi.mock('#lib/stores/userQuestion.svelte.ts', () => ({ askUserQuestion: question.ask }));
 const jobs = vi.hoisted(() => ({ createJob: vi.fn() }));

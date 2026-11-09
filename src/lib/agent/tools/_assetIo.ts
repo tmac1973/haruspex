@@ -5,12 +5,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
-import {
-	ctxWslDistroArg,
-	fsWorkdir,
-	resolveShellPath,
-	toolInvokeError
-} from '#lib/agent/tools/_helpers.ts';
+import { ctxWslDistroArg, fsWorkdir, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { extractPalette } from '#lib/assets/normalize.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 

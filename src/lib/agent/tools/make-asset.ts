@@ -14,7 +14,8 @@
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import { ctxCwd } from '#lib/agent/tools/_helpers.ts';
+import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { assetIo, paletteFor, writeAsset, type Target } from '#lib/agent/tools/_assetIo.ts';
 import {
 	checkGround,

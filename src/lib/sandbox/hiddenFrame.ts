@@ -1,26 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { artifactUrl } from '#lib/sandbox/artifactUrl.ts';
-
-/** What a run's message handler can do with its frame. */
-export interface FrameControl {
-	/** Post a message into the page. */
-	post(message: unknown): void;
-	/** Call `fn` after `ms`, unless the run has ended. */
-	later(ms: number, fn: () => void): void;
-	/** Stop the overall timeout (every awaited message is in). */
-	clearDeadline(): void;
-	/** End the run: remove the frame and resolve. */
-	done(): void;
-}
-
-export interface HiddenFrameOptions {
-	signal?: AbortSignal;
-	timeoutMs: number;
-	/** The overall timeout passed; the handler records it and calls `done`. */
-	onTimeout(ctl: FrameControl): void;
-	/** A message from the page (an object; anything else is dropped). */
-	onMessage(data: Record<string, unknown>, ctl: FrameControl): void;
-}
+import type { FrameControl, FrameOptions } from '#lib/helpers/three/frame.ts';
 
 /**
  * Run model-written HTML in a sandboxed, off-screen iframe on the
@@ -28,7 +8,7 @@ export interface HiddenFrameOptions {
  * an opaque origin that reaches neither the app nor IPC. Resolves when the
  * handler calls `done`; rejects with an `AbortError` when `signal` aborts.
  */
-export async function runHiddenFrame(html: string, opts: HiddenFrameOptions): Promise<void> {
+export async function runHiddenFrame(html: string, opts: FrameOptions): Promise<void> {
 	opts.signal?.throwIfAborted();
 	const id = await invoke<string>('artifact_register', { html });
 	opts.signal?.throwIfAborted();
@@ -44,7 +24,7 @@ class HiddenFrame implements FrameControl {
 	private ended = false;
 
 	constructor(
-		private readonly opts: HiddenFrameOptions,
+		private readonly opts: FrameOptions,
 		private readonly resolve: () => void,
 		private readonly reject: (e: unknown) => void
 	) {}

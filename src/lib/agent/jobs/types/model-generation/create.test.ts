@@ -9,7 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invokeRouter } from '#lib/testing/invoke.ts';
-import type { ModelVerdict } from '#lib/glb/verdict.ts';
+import type { ModelVerdict } from '#lib/models3d/verdict.ts';
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
@@ -24,7 +24,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
 const verdict = vi.hoisted(() => ({ judgeModel: vi.fn() }));
-vi.mock('#lib/glb/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
+vi.mock('#lib/models3d/verdict.ts', () => ({ judgeModel: verdict.judgeModel }));
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 

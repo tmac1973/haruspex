@@ -9,6 +9,7 @@
 	import { checkGlb, type GlbCheck } from '#lib/glb/check.ts';
 	import { extractHtml } from '#lib/specialists/three/extract.ts';
 	import { runBuildModule, type ModuleRunResult } from '#lib/helpers/three/runModule.ts';
+	import { runHiddenFrame } from '#lib/sandbox/hiddenFrame.ts';
 
 	const dev = import.meta.env.DEV;
 
@@ -46,7 +47,7 @@
 		moduleChecked = null;
 		moduleClip = '';
 		try {
-			moduleResult = await runBuildModule(moduleSource);
+			moduleResult = await runBuildModule(moduleSource, { runFrame: runHiddenFrame });
 			if (moduleResult.glb) moduleChecked = await checkGlb(moduleResult.glb);
 		} catch (e) {
 			failure = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
