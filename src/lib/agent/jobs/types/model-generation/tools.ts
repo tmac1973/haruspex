@@ -51,6 +51,11 @@ const ENTRY_PROPERTIES = {
 				name: { type: 'string', description: 'e.g. "Idle", "Walk", "Attack".' },
 				seconds: { type: 'number', description: 'Length, 0.2 to 10.' },
 				loop: { type: 'boolean', description: 'Whether it cycles.' },
+				airborne: {
+					type: 'boolean',
+					description:
+						'Whether it leaves the floor on purpose (a flight, a jump). Leave it out to go by the name.'
+				},
 				action: {
 					type: 'string',
 					description: 'What happens, e.g. "swings the club down from overhead".'

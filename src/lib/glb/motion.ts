@@ -22,7 +22,7 @@ import { contactTracker, jointTracker, PLANTED, slideTracker } from '#lib/glb/mo
 import { trackChecks, type TrackChecks } from '#lib/glb/motionTracks.ts';
 import { rigOf, trackNodes, type Rig } from '#lib/glb/rig.ts';
 import { weldFor } from '#lib/glb/report.ts';
-import { LOOPING_CLIP } from '#lib/models3d/spec/types.ts';
+import { AIRBORNE_CLIP, LOOPING_CLIP } from '#lib/models3d/spec/types.ts';
 
 export const ANALYSIS_FRAMES = 16;
 /** Through the floor by more than this (m) is a problem. */
@@ -39,8 +39,6 @@ export const ROOT_WANDER = 0.15;
 
 /** Clips that move the model across the floor in a game: they play in place. */
 export const LOCOMOTION_CLIP = /walk|run|jog|trot|gallop|sprint|crawl|sneak|strafe|march/i;
-/** Clips that leave the floor by design, so lifting off it is no fault. */
-const AIRBORNE_CLIP = /run|jog|sprint|gallop|jump|hop|leap|fly|swim/i;
 const TRAILS = 5;
 
 export interface TimeSpan {
@@ -60,12 +58,14 @@ export interface ClipMotion extends TrackChecks, Rig {
 	name: string;
 	duration: number;
 	tracks: number;
-	/** Whether it loops: the spec's word, or else read from its name. */
+	/** Whether it loops: the caller's word, or else read from its name. */
 	loop: boolean;
 	/** Whether its name makes it a walk or run, which plays in place. */
 	locomotion: boolean;
-	/** Whether its name lets it leave the floor (a run, a jump). */
+	/** Whether it may leave the floor: the caller's word, or else read from its name. */
 	airborne: boolean;
+	/** Flags the caller set against what the name says, for the report: 'loops', 'airborne', … */
+	declared: string[];
 	/** Through the floor by this much at its worst (m; 0 when never), and when. */
 	sink: number;
 	sinkAt: number;
@@ -385,9 +385,30 @@ function idleStart(
 	}
 }
 
+/** What a clip is, as a spec or the agent says; an unset flag goes by the clip's name. */
+export interface ClipFlags {
+	loop?: boolean;
+	airborne?: boolean;
+}
+
 export interface MotionOptions {
-	/** Whether each clip loops, by name, as a spec says; other clips go by their names. */
-	loops?: Record<string, boolean>;
+	/** Each clip's flags, by clip name; other clips go by their names. */
+	clips?: Record<string, ClipFlags>;
+}
+
+/** A clip's loop and airborne flags, and those set against its name. */
+export function clipFlags(
+	name: string,
+	set: ClipFlags = {}
+): { loop: boolean; airborne: boolean; declared: string[] } {
+	const byName = { loop: LOOPING_CLIP.test(name), airborne: AIRBORNE_CLIP.test(name) };
+	const loop = set.loop ?? byName.loop;
+	const airborne = set.airborne ?? byName.airborne;
+	const declared = [
+		...(loop !== byName.loop ? [loop ? 'loops' : 'plays once'] : []),
+		...(airborne !== byName.airborne ? [airborne ? 'airborne' : 'grounded'] : [])
+	];
+	return { loop, airborne, declared };
 }
 
 /** Measure every clip; `[]` when the GLB has none. */
@@ -409,11 +430,17 @@ export function inspectMotion(
 	const size = rest.getSize(new THREE.Vector3());
 	const weld = weldFor(Math.max(size.x, size.y, size.z));
 	const restCentres = new Map(parts.map((p) => [p.name, partCentre(THREE, p, stride)]));
-	const loops = (clip: AnimationClip) => opts.loops?.[clip.name] ?? LOOPING_CLIP.test(clip.name);
-	const idle = idleStart(THREE, root, parts, stride, gltf.animations.filter(loops));
+	const flags = (clip: AnimationClip) => clipFlags(clip.name, opts.clips?.[clip.name]);
+	const idle = idleStart(
+		THREE,
+		root,
+		parts,
+		stride,
+		gltf.animations.filter((c) => flags(c).loop)
+	);
 
 	return gltf.animations.map((clip) => {
-		const loop = loops(clip);
+		const { loop, airborne, declared } = flags(clip);
 		const locomotion = LOCOMOTION_CLIP.test(clip.name);
 		const pose = poser(THREE, root, clip);
 		const ground = floorTracker(THREE, meshes, stride, floor, restCentre);
@@ -448,7 +475,8 @@ export function inspectMotion(
 			tracks: clip.tracks.length,
 			loop,
 			locomotion,
-			airborne: AIRBORNE_CLIP.test(clip.name),
+			airborne,
+			declared,
 			...rig,
 			...ground.result(),
 			...travelOf(THREE, root, clip, paths.body(), locomotion, size.y),

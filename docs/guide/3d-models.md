@@ -5,7 +5,7 @@ description: The 3D models job — build models from a models.json spec with che
 
 # 3D models jobs
 
-A **3D models** job in the Jobs tab builds the 3D models a project needs, then animates the ones that move. Each model is code: a build module that `check_3d` exports to a GLB, checks and renders, the same way the Code tab's agent makes one by hand. The job does every model in a list, one after another, and writes a report at the end.
+A **3D models** job in the Jobs tab builds the 3D models a project needs, then animates the ones that move. Each model is code: a build module that `check_3d` exports to a GLB, checks and renders, the same way the Code tab's agent makes one by hand. It does every model in a list, then writes a report.
 
 ## Tell it what to make
 
@@ -14,7 +14,7 @@ The job reads a spec, `models.json`, from **Models spec** (by default `assets/ha
 - an id and a title, and a description of how it looks;
 - `height_m`, its height in metres, so the whole set shares one scale;
 - `parts`, the named pivots at its joints, for a model that moves. A planned biped gets `Pelvis`, `Spine`, `Neck`, and `Shoulder`, `Elbow`, `Hand`, `Hip`, `Knee`, `Foot` per side (`Hip_L`); a quadruped gets `Shoulder` or `Hip`, `Knee`, `Foot` per leg (`Knee_FL`, `Foot_HR`). `Pelvis` moves too, so hips can drop;
-- `clips`, each with a name, a length in seconds, whether it loops, and what happens in it.
+- `clips`, each with a name, a length in seconds, whether it loops, `airborne` when it leaves the floor and its name doesn't say so, and what happens in it.
 
 A static prop such as a crate or a tree has no parts and no clips. If the spec file doesn't exist, the run writes one from **What to make**, on the job's own model. A spec that exists is read as it is and never rewritten; if it has problems, the run stops and lists them.
 
@@ -22,12 +22,12 @@ Guided planning can write the spec for you: see "From guided planning" below.
 
 ## Choose the two models
 
-Building a model and animating it are different skills, so the job has two model rows:
+Building and animating are different skills, so the job has two model rows:
 
 - **Creation model** builds every model.
 - **Animation model** writes the clips for every model that has them.
 
-Each row is **Same as this job** until you press **Change…** and pick another model. The job's own model (under **Model**) only writes the spec. A row whose model can't see images says so in one line. It still works, since `check_3d` reports in text too, but a model that sees its sheets does better.
+Each row is **Same as this job** until you press **Change…** and pick another model. The job's own model (under **Model**) only writes the spec. A row whose model can't see images says so in one line. It still works, since `check_3d` reports in text too.
 
 ## How a run goes
 

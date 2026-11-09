@@ -11,6 +11,7 @@ import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { checkGlb, type CheckOptions } from '#lib/glb/check.ts';
+import type { ClipFlags } from '#lib/glb/motion.ts';
 import type { GlbReport } from '#lib/glb/report.ts';
 import {
 	check3dFile,
@@ -46,7 +47,7 @@ export default function build(THREE, kit) {
   return asset;
 }
 \`\`\`
-Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. A walk or run plays in place: the body stays over the origin and planted feet move back (-z) at one steady speed. A loop ends on its first pose at the same speed; a one-shot starts and ends at rest. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. kit.texture('textures/bark.png') gives a Texture from a PNG next to the module; pass the path as a string literal. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
+Animate with tracks on named nodes, e.g. new THREE.QuaternionKeyframeTrack('Shin_L.quaternion', [0, 0.5], [...]); every call checks each clip, and clip: "Walk" shows it moving. A walk or run plays in place: the body stays over the origin and planted feet move back (-z) at one steady speed. A loop ends on its first pose at the same speed; a one-shot starts and ends at rest. Names decide which clips loop (Idle, Walk, Run, Fly, Hover, Swim) and which may leave the floor (runs, jumps, flight); pass clips to say otherwise. Clips may live in their own module, passed as anim: its default export animate(THREE, object, kit) gets the built object and returns an array of AnimationClip. kit.texture('textures/bark.png') gives a Texture from a PNG next to the module; pass the path as a string literal. To change an existing clip, call check_3d with clip on it first, before editing, and after each change; look at poses this way, not with scripts of your own.
 Name every mesh. Units are metres, y is up, the front faces +z.`;
 
 interface Args {
@@ -114,6 +115,25 @@ function showProblem(clip: unknown, view: unknown, spec: unknown): string | null
 	return null;
 }
 
+/** Each clip's `loop` and `airborne` flags, or why `clips` can't be used. */
+function clipFlagsArg(raw: unknown): Record<string, ClipFlags> | undefined | string {
+	if (raw === undefined) return undefined;
+	const bad =
+		'clips must map clip names to { loop, airborne }, e.g. { "Hover": { "loop": true, "airborne": true } }.';
+	const isObject = (v: unknown): v is Record<string, unknown> =>
+		!!v && typeof v === 'object' && !Array.isArray(v);
+	const isFlag = (v: unknown) => v === undefined || typeof v === 'boolean';
+	if (!isObject(raw)) return bad;
+	const out: Record<string, ClipFlags> = {};
+	for (const [name, v] of Object.entries(raw)) {
+		if (!isObject(v)) return bad;
+		const { loop, airborne, ...rest } = v;
+		if (Object.keys(rest).length || !isFlag(loop) || !isFlag(airborne)) return bad;
+		out[name] = { loop: loop as boolean | undefined, airborne: airborne as boolean | undefined };
+	}
+	return out;
+}
+
 /** The arguments, checked, or why they can't be used. */
 function parseArgs(args: Record<string, unknown>): Args | string {
 	const path = typeof args.path === 'string' ? args.path.trim() : '';
@@ -125,6 +145,8 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 	const { height, ground, max_triangles: max, clip, view, spec_height: spec } = args;
 	const bad = numberProblem(height, max) ?? showProblem(clip, view, spec);
 	if (bad) return bad;
+	const flags = clipFlagsArg(args.clips);
+	if (typeof flags === 'string') return flags;
 	const out = outPath(args.out, path, height !== undefined || ground === true);
 	if (typeof out === 'string') return out;
 	return {
@@ -137,7 +159,8 @@ function parseArgs(args: Record<string, unknown>): Args | string {
 			maxTriangles: max as number | undefined,
 			clip: typeof clip === 'string' ? clip.trim() : undefined,
 			view: typeof view === 'string' ? view.trim() : undefined,
-			specHeight: spec as number | undefined
+			specHeight: spec as number | undefined,
+			clips: flags
 		}
 	};
 }
@@ -235,10 +258,24 @@ async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 		...missingLine(got.missing),
 		...clampedLine(got.clamped),
 		checked.text,
+		...unknownClipsLine(a.opts.clips, checked.report),
 		...animBesideLine(got.animBeside, checked.report),
 		...(sees ? [sheetNote(checked)] : [])
 	];
 	return toolResult(lines.join('\n'), checked.png ?? undefined);
+}
+
+/** The line naming `clips` entries the GLB has no clip for, so a typo isn't silently ignored. */
+function unknownClipsLine(
+	flags: Record<string, ClipFlags> | undefined,
+	report: GlbReport
+): string[] {
+	if (!flags) return [];
+	const has = new Set(report.animations.map((a) => a.name));
+	const unknown = Object.keys(flags).filter((n) => !has.has(n));
+	return unknown.length
+		? [`clips names ${unknown.join(', ')}, which the GLB has no clip for.`]
+		: [];
 }
 
 /** The line pointing at an unpassed animation module, when the GLB came out with no clips. */
@@ -307,6 +344,15 @@ registerTool({
 						type: 'string',
 						description:
 							'A part to see close up instead of the whole: a mesh or pivot name, or "head". The same six views, framed on it.'
+					},
+					clips: {
+						type: 'object',
+						description:
+							'Per clip, what it is when its name says otherwise: { "Hover": { "loop": true, "airborne": true } }. loop: it cycles, so it must end on its first pose. airborne: it leaves the floor on purpose. A flag you leave out goes by the name. The clip line says what you set.',
+						additionalProperties: {
+							type: 'object',
+							properties: { loop: { type: 'boolean' }, airborne: { type: 'boolean' } }
+						}
 					},
 					spec_height: {
 						type: 'number',

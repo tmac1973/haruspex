@@ -96,6 +96,7 @@ describe('parse', () => {
 						clips: [
 							{ name: 'Idle', seconds: 2 },
 							{ name: 'fly_loop', seconds: 1 },
+							{ name: 'Hover', seconds: 1 },
 							{ name: 'attack', seconds: 1 },
 							{ name: 'swim', seconds: 1, loop: false }
 						]
@@ -103,7 +104,28 @@ describe('parse', () => {
 				]
 			})
 		);
-		expect(s.entries[0].clips.map((c) => c.loop)).toEqual([true, true, false, false]);
+		expect(s.entries[0].clips.map((c) => c.loop)).toEqual([true, true, true, false, false]);
+	});
+
+	it('keeps airborne only when the spec sets it, and writes it back', () => {
+		const s = ok(
+			JSON.stringify({
+				entries: [
+					{
+						id: 'imp',
+						height_m: 0.5,
+						parts: ['wing_l'],
+						clips: [
+							{ name: 'Levitate', seconds: 1, airborne: true },
+							{ name: 'Idle', seconds: 1 }
+						]
+					}
+				]
+			})
+		);
+		expect(s.entries[0].clips.map((c) => c.airborne)).toEqual([true, undefined]);
+		const again = ok(renderModelSpec(s));
+		expect(again.entries[0].clips.map((c) => c.airborne)).toEqual([true, undefined]);
 	});
 
 	it('round-trips through render', () => {

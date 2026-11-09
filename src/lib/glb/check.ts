@@ -109,7 +109,7 @@ function whatToShow(
 function describe(
 	{ THREE, gltf }: { THREE: Three; gltf: LoadedGlb },
 	report: GlbReport,
-	{ clip, loops, view }: CheckOptions,
+	{ clip, clips: flags, view }: CheckOptions,
 	normalisedFrom: Bounds | undefined
 ): Pick<GlbCheck, 'text' | 'png' | 'clip' | 'closeUp'> | { problems: string[] } {
 	const asked = whatToShow(THREE, gltf, report, clip, view);
@@ -119,7 +119,7 @@ function describe(
 	}
 	const { anim, close } = asked;
 	// After normalising, so the floor is where the written GLB has it.
-	const clips = inspectMotion(THREE, gltf, { loops });
+	const clips = inspectMotion(THREE, gltf, { clips: flags });
 	const motion = anim && clips.find((c) => c.name === anim.name);
 	const png =
 		anim && motion

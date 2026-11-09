@@ -8,7 +8,7 @@
 import { checkGlb } from '#lib/glb/check.ts';
 import { HEIGHT_TOLERANCE } from '#lib/glb/report.ts';
 import { disposeTree, loadGlb } from '#lib/glb/load.ts';
-import { inspectMotion, type ClipMotion } from '#lib/glb/motion.ts';
+import { inspectMotion, type ClipFlags, type ClipMotion } from '#lib/glb/motion.ts';
 import { clipNotes, clipProblems } from '#lib/glb/motionFormat.ts';
 import {
 	errorLines,
@@ -73,8 +73,11 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 		);
 	}
 
-	const loops = Object.fromEntries(entry.clips.map((c) => [c.name, c.loop]));
-	const checked = await checkGlb(run.glb, { loops });
+	// The spec says what each clip is; the agent's own check_3d flags don't count here.
+	const flags = Object.fromEntries(
+		entry.clips.map((c) => [c.name, { loop: c.loop, airborne: c.airborne }])
+	);
+	const checked = await checkGlb(run.glb, { clips: flags });
 	if ('problems' in checked) {
 		return notDone(
 			checked.problems,
@@ -92,7 +95,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 		);
 	}
 
-	const seen = await inspectNodes(checked.bytes, entry.parts, loops);
+	const seen = await inspectNodes(checked.bytes, entry.parts, flags);
 	problems.push(...seen.problems);
 	problems.push(...checked.invalid.map((l) => `glTF validation: ${l.replace(/^- /, '')}`));
 	const clipSheets: Record<string, string> = {};
@@ -100,7 +103,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 		problems.push(...clipVerdict(entry, seen.clips, run.missing));
 		for (const c of entry.clips) {
 			if (!seen.clips.some((m) => m.name === c.name)) continue;
-			const shown = await checkGlb(checked.bytes, { clip: c.name, loops });
+			const shown = await checkGlb(checked.bytes, { clip: c.name, clips: flags });
 			if (!('problems' in shown) && shown.png !== null) clipSheets[c.name] = shown.png;
 		}
 	}
@@ -138,7 +141,7 @@ export async function judgeModel(input: JudgeInput): Promise<ModelVerdict> {
 async function inspectNodes(
 	glb: Uint8Array,
 	parts: string[],
-	loops: Record<string, boolean>
+	flags: Record<string, ClipFlags>
 ): Promise<{ problems: string[]; clips: ClipMotion[] }> {
 	const loaded = await loadGlb(glb);
 	if ('error' in loaded) return { problems: [loaded.error], clips: [] };
@@ -149,7 +152,7 @@ async function inspectNodes(
 	const problems = parts
 		.filter((p) => !has(p))
 		.map((p) => `Missing part "${p}": name the pivot exactly so.`);
-	const clips = inspectMotion(THREE, gltf, { loops });
+	const clips = inspectMotion(THREE, gltf, { clips: flags });
 	disposeTree(gltf.scene);
 	return { problems, clips };
 }

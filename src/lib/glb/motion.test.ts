@@ -59,12 +59,31 @@ describe('inspectMotion', () => {
 			THREE,
 			gltf(root, [still('Idle'), still('Walk'), still('Wave')]),
 			{
-				loops: { Wave: true }
+				clips: { Wave: { loop: true } }
 			}
 		);
 		expect([i.loop, i.locomotion]).toEqual([true, false]);
 		expect([w.loop, w.locomotion]).toEqual([true, true]);
 		expect([a.loop, a.locomotion]).toEqual([true, false]);
+	});
+
+	it("takes the caller's loop and airborne flags over the name, and says which it set", () => {
+		const root = pivotRig();
+		const still = (name: string) => clip(name, 1, turn('Shoulder', [0, 0, 1], [0, 1], [0, 0]));
+		const [l, r] = inspectMotion(THREE, gltf(root, [still('Levitate'), still('Run')]), {
+			clips: { Levitate: { loop: true, airborne: true }, Run: { loop: true, airborne: false } }
+		});
+		expect([l.loop, l.airborne, l.declared]).toEqual([true, true, ['loops', 'airborne']]);
+		// Run loops by its name already, so only the airborne flag goes against it.
+		expect([r.loop, r.airborne, r.declared]).toEqual([true, false, ['grounded']]);
+	});
+
+	it('loops flight and lets it leave the floor (#1058)', () => {
+		const root = pivotRig();
+		const still = (name: string) => clip(name, 1, turn('Shoulder', [0, 0, 1], [0, 1], [0, 0]));
+		const [h, g] = inspectMotion(THREE, gltf(root, [still('Hover'), still('Glide')]));
+		expect([h.loop, h.airborne, h.locomotion]).toEqual([true, true, false]);
+		expect([g.loop, g.airborne]).toEqual([true, true]);
 	});
 
 	it("measures a walk's travel and names the track that carries it", () => {

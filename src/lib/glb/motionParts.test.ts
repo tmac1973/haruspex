@@ -257,6 +257,13 @@ describe('joint folds', () => {
 		expect(jointsOf(leg('Forearm_L')).map((j) => j.sign)).toEqual([-1]);
 	});
 
+	it("leaves a wing's elbow out, by its name or its wing's (#1058)", () => {
+		expect(jointsOf(leg('WingElbow_L'))).toEqual([]);
+		const wing = leg('Elbow_L');
+		wing.getObjectByName('Thigh_L')!.name = 'Wing_L';
+		expect(jointsOf(wing)).toEqual([]);
+	});
+
 	it('measures to the shin mesh when the knee pivot holds only meshes', () => {
 		// The #1032 knight: Hip_L > Knee_L, with the shin and a kneecap as meshes.
 		const hips = new THREE.Object3D();

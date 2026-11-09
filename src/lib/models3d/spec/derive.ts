@@ -29,6 +29,7 @@ function clip(c: Record<string, unknown>): ModelClip {
 		name,
 		seconds: parsedOrNaN(c.seconds),
 		loop: typeof c.loop === 'boolean' ? c.loop : LOOPING_CLIP.test(name),
+		...(typeof c.airborne === 'boolean' ? { airborne: c.airborne } : {}),
 		action: trimmed(c.action)
 	};
 }

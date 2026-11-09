@@ -4,7 +4,13 @@ import { SUBMIT_MODEL_SPEC_TOOL } from '#lib/agent/jobs/types/model-generation/t
 import { DRAW_TEXTURE_TOOL } from '#lib/agent/tools/draw-texture.ts';
 import { modelFiles } from '#lib/models3d/spec/paths.ts';
 import { RIG_PARTS_LINES } from '#lib/models3d/spec/rigs.ts';
-import { MAX_ENTRIES, type ModelEntry, type ModelSpec } from '#lib/models3d/spec/types.ts';
+import { clipFlags } from '#lib/glb/motion.ts';
+import {
+	MAX_ENTRIES,
+	type ModelClip,
+	type ModelEntry,
+	type ModelSpec
+} from '#lib/models3d/spec/types.ts';
 
 /** The spec stage's system prompt: list the models from the user's description. */
 export function modelSpecPrompt(description: string, specPath: string): string {
@@ -25,7 +31,9 @@ export function modelSpecPrompt(description: string, specPath: string): string {
 		'     (a door is about 2, a person 1.8, a crate 0.6).',
 		'   - parts and clips only for a model that moves. parts are the pivot names',
 		...RIG_PARTS_LINES,
-		'   - clips: name, seconds (0.2 to 10), loop, and action (what happens).',
+		'   - clips: name, seconds (0.2 to 10), loop, and action (what happens). Set',
+		'     airborne: true on a clip that leaves the floor on purpose, unless its',
+		'     name already says so (Fly, Hover, Jump, Run).',
 		'   - A static prop (crate, tree, rock) has no parts and no clips.',
 		'',
 		`The runner writes the result to ${specPath}, gives each entry its id and`,
@@ -180,6 +188,30 @@ export function animateSystemPrompt(): string {
 }
 
 /** The first animation message: the clips, and the build module so the hierarchy is in view. */
+/** What the spec says of a clip leaving the floor, when it says anything. */
+function airborneWord(c: ModelClip): string {
+	if (c.airborne === undefined) return '';
+	return c.airborne ? ', leaves the floor' : ', stays on the floor';
+}
+
+/**
+ * check_3d's `clips` argument for the spec's flags its clip names don't
+ * imply, so the agent's own checks judge each clip as the verdict will.
+ */
+function clipsArg(entry: ModelEntry): string {
+	const set = entry.clips.filter(
+		(c) => clipFlags(c.name, { loop: c.loop, airborne: c.airborne }).declared.length
+	);
+	if (!set.length) return '';
+	const arg = Object.fromEntries(
+		set.map((c) => [
+			c.name,
+			{ loop: c.loop, ...(c.airborne === undefined ? {} : { airborne: c.airborne }) }
+		])
+	);
+	return `, clips ${JSON.stringify(arg)}`;
+}
+
 export function animateEntryPrompt(entry: ModelEntry, buildSource: string): string {
 	const f = modelFiles(entry);
 	return [
@@ -193,11 +225,12 @@ export function animateEntryPrompt(entry: ModelEntry, buildSource: string): stri
 		'',
 		'Clips:',
 		...entry.clips.map(
-			(c) => `- ${c.name}: ${c.seconds} s, ${c.loop ? 'loops' : 'plays once'}. ${c.action}`
+			(c) =>
+				`- ${c.name}: ${c.seconds} s, ${c.loop ? 'loops' : 'plays once'}${airborneWord(c)}. ${c.action}`
 		),
 		'',
 		`Write ${f.anim}. Check each clip with check_3d (path ${f.build}, anim ${f.anim},`,
-		`out ${f.glb}, clip <name>). Do not edit ${entry.id}.js.`,
+		`out ${f.glb}, clip <name>${clipsArg(entry)}). Do not edit ${entry.id}.js.`,
 		'',
 		`${f.build}:`,
 		'```js',
@@ -216,11 +249,11 @@ export function animateRepairPrompt(entry: ModelEntry, problems: string[]): stri
 		'',
 		'Clips: ' +
 			entry.clips
-				.map((c) => `${c.name} (${c.seconds} s, ${c.loop ? 'loops' : 'once'})`)
+				.map((c) => `${c.name} (${c.seconds} s, ${c.loop ? 'loops' : 'once'}${airborneWord(c)})`)
 				.join(', ') +
 			'.',
 		'',
 		`Read ${f.anim} and ${f.build}. Fix ${entry.id}.anim.js only, and check each clip`,
-		`again (path ${f.build}, anim ${f.anim}, out ${f.glb}, clip <name>).`
+		`again (path ${f.build}, anim ${f.anim}, out ${f.glb}, clip <name>${clipsArg(entry)}).`
 	].join('\n');
 }

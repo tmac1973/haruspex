@@ -198,7 +198,8 @@ export function formatClipLines(clips: ClipMotion[]): string[] {
 			const inPlace = c.treadmill && c.stance ? `, in place at ${speed(c.stance)}` : '';
 			const notes = clipNotes(c);
 			const note = notes.length ? ` Note: ${notes.join('; ')}.` : '';
-			return `- ${c.name} (${c.duration.toFixed(2)} s, ${c.tracks} tracks, ends ${cm(c.seam)} from its start${inPlace}): ${p.length ? p.join('; ') : 'no problems found'}.${note}`;
+			const set = c.declared.length ? `, set as ${c.declared.join(' and ')}` : '';
+			return `- ${c.name} (${c.duration.toFixed(2)} s, ${c.tracks} tracks, ends ${cm(c.seam)} from its start${inPlace}${set}): ${p.length ? p.join('; ') : 'no problems found'}.${note}`;
 		})
 	];
 }
@@ -206,7 +207,8 @@ export function formatClipLines(clips: ClipMotion[]): string[] {
 /** One clip's detail; `sheet` says the motion sheet came with it. */
 export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 	const p = clipProblems(c);
-	const lines = [`Clip ${c.name}: ${c.duration.toFixed(2)} s, ${c.tracks} tracks.`];
+	const set = c.declared.length ? `, set as ${c.declared.join(' and ')}` : '';
+	const lines = [`Clip ${c.name}: ${c.duration.toFixed(2)} s, ${c.tracks} tracks${set}.`];
 	if (sheet) {
 		lines.push(
 			`Motion sheet: top row 8 frames from the right, middle row the same from the front, bottom all frames overlaid (later ones darker) with trails of the parts that move most (${c.fastest.join(', ') || 'none'}), a dot where each starts.`

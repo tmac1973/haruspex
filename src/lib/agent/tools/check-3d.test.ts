@@ -249,6 +249,32 @@ describe('check_3d', () => {
 		expect(out.result).toBe(['Wrote a.glb.', 'Clip Walk: 1.00 s.', MOTION_NOTE].join('\n'));
 	});
 
+	it('passes clips flags through and names any the GLB has no clip for', async () => {
+		files.set('/proj/a.js', enc(MODULE));
+		glb.checkGlb.mockResolvedValueOnce({
+			bytes: GLB,
+			report: { animations: [{ name: 'Hover', duration: 1, tracks: 2 }] },
+			text: 'Clip checks:',
+			png: null
+		});
+		const clips = { Hover: { loop: true, airborne: true }, Hovr: { airborne: true } };
+		const out = await call({ path: 'a.js', clips });
+		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({ clips });
+		expect(out.result).toContain('clips names Hovr, which the GLB has no clip for.');
+	});
+
+	it('refuses clips that are not names mapped to loop and airborne', async () => {
+		for (const clips of [
+			[],
+			{ Hover: true },
+			{ Hover: { loop: 'yes' } },
+			{ Hover: { fly: true } }
+		]) {
+			expect((await call({ path: 'a.js', clips })).result).toMatch(/clips must map/);
+		}
+		expect(glb.checkGlb).not.toHaveBeenCalled();
+	});
+
 	it('passes clip through for a .glb, writing nothing', async () => {
 		files.set('/proj/b.glb', [...GLB]);
 		await call({ path: 'b.glb', clip: 'Idle' });

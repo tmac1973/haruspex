@@ -310,7 +310,19 @@ function lowerPart(node: Object3D): Object3D | undefined {
 	return meshes.sort((a, b) => reach(b) - reach(a)).find((m) => reach(m) > 1e-3);
 }
 
-/** Knees and elbows found by name: bones or pivot nodes, never meshes. */
+/** Whether a node is in a wing: its own name or an ancestor's says so. */
+function inWing(node: Object3D, root: Object3D): boolean {
+	for (let n: Object3D | null = node; n && n !== root; n = n.parent) {
+		if (n.name.toLowerCase().includes('wing')) return true;
+	}
+	return false;
+}
+
+/**
+ * Knees and elbows found by name: bones or pivot nodes, never meshes. A
+ * wing's elbow folds in the wing's own plane, not the side view, so wings
+ * are left out.
+ */
 export function jointsOf(root: Object3D): Joint[] {
 	const out: Joint[] = [];
 	root.traverse((node) => {
@@ -321,7 +333,7 @@ export function jointsOf(root: Object3D): Joint[] {
 			: FORWARD.some((w) => name.includes(w))
 				? -1
 				: 0;
-		if (!sign) return;
+		if (!sign || inWing(node, root)) return;
 		const child = lowerPart(node);
 		if (child) out.push({ node, parent: node.parent, child, sign });
 	});
