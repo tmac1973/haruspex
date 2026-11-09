@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import vfs from 'pdfmake/build/vfs_fonts.js';
 import { base64ToBytes } from '#lib/utils/base64.ts';
-import { drawable, fontCoverage, missingNote, type Coverage } from './glyphs';
+import { drawable, fontCoverage, fontMeasure, missingNote, type Coverage } from './glyphs';
 
 const roboto: Coverage = fontCoverage(base64ToBytes(vfs['Roboto-Regular.ttf'] as string));
 
@@ -54,5 +54,24 @@ describe('missingNote', () => {
 		const note = missingNote(many);
 		expect(note).toContain('漢 字 仮 名');
 		expect(note).toContain(`and ${many.size - 12} more`);
+	});
+});
+
+describe('fontMeasure', () => {
+	const measure = fontMeasure(base64ToBytes(vfs['Roboto-Regular.ttf'] as string));
+
+	it("reads Roboto's own widths", () => {
+		// A digit is 1151 of Roboto's 2048 units to the em.
+		expect(measure('0', 10)).toBeCloseTo(5.62, 2);
+		expect(measure('0000', 10)).toBeCloseTo(22.46, 1);
+		expect(measure('MMMM', 10)).toBeGreaterThan(measure('iiii', 10) * 2);
+	});
+
+	it('measures Greek and Cyrillic, and gives what it lacks an average width', () => {
+		expect(measure('Ω', 10)).toBeGreaterThan(5);
+		expect(measure('Ж', 10)).toBeGreaterThan(5);
+		const avg = measure('漢', 10);
+		expect(avg).toBeGreaterThan(4);
+		expect(avg).toBeLessThan(7);
 	});
 });

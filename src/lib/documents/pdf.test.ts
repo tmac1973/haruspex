@@ -64,6 +64,33 @@ describe('buildPdf', () => {
 		}
 	});
 
+	it('turns the page for a wide table and back after it', async () => {
+		const head =
+			'| ' + Array.from({ length: 7 }, (_, i) => `Quarterly-figure-${i}`).join(' | ') + ' |';
+		const md = `Intro.\n\n## Sales\n\n${head}\n${'| --- '.repeat(7)}|\n${head}\n\nAfter.`;
+		const pdf = await buildPdf(md, new Map(), noConvert);
+		expect(pdf.pages).toBe(3);
+		expect(pdf.landscaped).toHaveLength(1);
+		const task = pdfjs.getDocument({ data: pdf.bytes.slice() });
+		const doc = await task.promise;
+		const sizes = [];
+		for (let n = 1; n <= 3; n++) sizes.push((await doc.getPage(n)).view.slice(2));
+		await task.destroy();
+		expect(sizes).toEqual([
+			[612, 792],
+			[792, 612],
+			[612, 792]
+		]);
+		expect(await pageText(pdf.bytes, 2)).toContain('Sales');
+	});
+
+	it('refuses a table too wide for a landscape page', async () => {
+		const head =
+			'| ' + Array.from({ length: 12 }, (_, i) => `Quarterly-figure-${i}`).join(' | ') + ' |';
+		const md = `${head}\n${'| --- '.repeat(12)}|`;
+		await expect(buildPdf(md, new Map(), noConvert)).rejects.toThrow(/About \d columns fit/);
+	});
+
 	it('titles the PDF after its first heading', async () => {
 		const pdf = await buildPdf('Intro.\n\n## Heat **Pumps**', new Map(), noConvert);
 		expect(ascii(pdf.bytes)).toContain('(Heat Pumps)');

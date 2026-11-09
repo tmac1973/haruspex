@@ -16,8 +16,25 @@ function context(images: ContentContext['images'] = new Map()): ContentContext {
 		mono: 'winansi',
 		missing: new Set(),
 		width: 500,
-		height: 680
+		height: 680,
+		// Half an em a character: a word of 16 is 80 pt at the table's 10 pt.
+		measure: { regular: half, bold: half },
+		landscapeWidth: 680,
+		pageName: 'a Letter',
+		landscaped: []
 	};
+}
+
+const half = (text: string, size: number) => text.length * size * 0.5;
+
+/** A markdown table of `columns` columns, every cell a `chars`-letter word. */
+function wideTable(columns: number, chars: number): string {
+	const row = (fill: string) =>
+		'| ' +
+		Array.from({ length: columns }, (_, c) => fill + String(c).padStart(2, '0')).join(' | ') +
+		' |';
+	const word = 'x'.repeat(chars - 2);
+	return [row(word.toUpperCase()), '|' + ' --- |'.repeat(columns), row(word)].join('\n');
 }
 
 // pdfmake content is loosely typed; the tests read it as plain objects.
@@ -184,5 +201,38 @@ describe('pictures', () => {
 		expect(imageOptions('centre 150%')).toEqual({ alignment: 'center', fraction: 1 });
 		expect(imageOptions('right 2%')).toEqual({ alignment: 'right', fraction: 0.05 });
 		expect(imageOptions(null)).toEqual({ alignment: 'left', fraction: undefined });
+	});
+});
+
+describe('a table wider than the page', () => {
+	it('stays on the page when its columns fit', () => {
+		const [table] = blocks(lex(wideTable(5, 16)), context()) as Any[];
+		expect(table.pageOrientation).toBeUndefined();
+		expect(table.pageBreak).toBeUndefined();
+	});
+
+	it('goes on a landscape page with its heading, and the page after turns back', () => {
+		// Six columns of 80 pt words and 12 pt padding: 552 pt, over 500 and under 680.
+		const ctx = context();
+		const out = blocks(lex(`Intro.\n\n## Sales\n\n${wideTable(6, 16)}\n\nAfter.`), ctx) as Any[];
+		expect(out.map((n) => [n.pageBreak, n.pageOrientation])).toEqual([
+			[undefined, undefined],
+			['before', 'landscape'],
+			[undefined, 'landscape'],
+			['before', 'portrait']
+		]);
+		expect(ctx.landscaped).toEqual(['XXXXXXXXXXXXXX00, XXXXXXXXXXXXXX01, XXXXXXXXXXXXXX02, …']);
+	});
+
+	it('starts the landscape page itself with no heading before it', () => {
+		const out = blocks(lex(`Intro.\n\n${wideTable(6, 16)}`), context()) as Any[];
+		expect([out[1].pageBreak, out[1].pageOrientation]).toEqual(['before', 'landscape']);
+	});
+
+	it('is refused with a budget when it is too wide for landscape too', () => {
+		// Eight columns: 736 pt, over 680, so about seven fit.
+		expect(() => blocks(lex(wideTable(8, 16)), context())).toThrow(
+			/its 8 columns need about 736 pt at their narrowest, and a Letter page turned sideways has 680 pt\. About 7 columns fit\./
+		);
 	});
 });

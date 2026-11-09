@@ -18,8 +18,8 @@ import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildWriteDiff } from '#lib/code/diff.ts';
 import { buildPptx } from '#lib/slides/pptx.ts';
-import { pdfFromMarkdown } from '#lib/documents/pdf.ts';
 import { missingNote } from '#lib/documents/glyphs.ts';
+import { landscapeNote, pdfFromMarkdown } from '#lib/documents/pdf.ts';
 import { attachPdfPreview } from '#lib/documents/preview.ts';
 import { PAGE_SIZES, PDF_STYLES, pdfOptions } from '#lib/documents/looks.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
@@ -773,8 +773,10 @@ async function titledWrite(
 		return send(relPath, overwrite);
 	};
 	const out = await draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
-	const note = missingNote(pdf.missing);
-	if (note && out.result.startsWith('Wrote:')) out.result += `\n${note}`;
+	if (out.result.startsWith('Wrote:')) {
+		const notes = [missingNote(pdf.missing), landscapeNote(pdf.landscaped)].filter(Boolean);
+		for (const note of notes) out.result += `\n${note}`;
+	}
 	return attachPdfPreview(out, ctx, written, pdf.bytes);
 }
 

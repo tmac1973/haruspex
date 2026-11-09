@@ -7,7 +7,7 @@ import { MAX_DRAFT_REWRITES } from '#lib/agent/tools/_drafts.ts';
 const mocks = vi.hoisted(() => ({
 	disk: new Set<string>(),
 	askFileConflict: vi.fn(),
-	pdf: { pages: 1, missing: new Set<string>() },
+	pdf: { pages: 1, missing: new Set<string>(), landscaped: [] as string[] },
 	render: vi.fn(),
 	build: vi.fn()
 }));
@@ -18,13 +18,15 @@ vi.mock('@tauri-apps/api/core', async () =>
 vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => false }));
 vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({ askFileConflict: mocks.askFileConflict }));
 // The PDF itself is built and tested in `documents/`; here it is bytes to write.
-vi.mock('#lib/documents/pdf.ts', () => ({
+vi.mock('#lib/documents/pdf.ts', async (original) => ({
+	landscapeNote: (await original<typeof import('#lib/documents/pdf.ts')>()).landscapeNote,
 	pdfFromMarkdown: async (...args: unknown[]) => {
 		mocks.build(...args);
 		return {
 			bytes: new TextEncoder().encode('%PDF-1.7'),
 			pages: mocks.pdf.pages,
-			missing: mocks.pdf.missing
+			missing: mocks.pdf.missing,
+			landscaped: mocks.pdf.landscaped
 		};
 	}
 }));
@@ -66,7 +68,7 @@ beforeEach(() => {
 	mocks.disk.clear();
 	mocks.askFileConflict.mockReset();
 	mocks.askFileConflict.mockResolvedValue('overwrite');
-	mocks.pdf = { pages: 1, missing: new Set() };
+	mocks.pdf = { pages: 1, missing: new Set(), landscaped: [] };
 	// The preview has its own tests; these see it only where they turn it on.
 	ctx.visionSupported = false;
 	ctx.pendingImages = [];
@@ -146,6 +148,14 @@ describe('fs_write_document paths', () => {
 		const out = await write({ path: 'hp.pdf', content: DRAFT, style: 'fancy' });
 		expect(out.result).toContain('style must be one of plain, report, letter.');
 		expect(writes()).toEqual([]);
+	});
+
+	it('says which tables went on a landscape page', async () => {
+		mocks.pdf.landscaped = ['Region, Q1, Q2, …'];
+		const out = await write({ path: 'hp.pdf', content: DRAFT });
+		expect(out.result).toBe(
+			'Wrote: hp.pdf (1 page)\nA table too wide for the page is on a landscape page: (Region, Q1, Q2, …).'
+		);
 	});
 
 	it('names the characters the fonts could not draw', async () => {
