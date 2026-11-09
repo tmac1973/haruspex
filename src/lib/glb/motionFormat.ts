@@ -45,17 +45,40 @@ const mps = (v: number) => `${v.toFixed(2)} m/s`;
 export const hitches = (c: ClipMotion) =>
 	c.loop && !!c.hitch && c.hitch.jump > HITCH_MIN * Math.max(1, c.height);
 
-/** One-shots that start or end away from the rest pose, so a game's blend into or out of them pops. */
+/** Whether a one-shot's end is away from both the rest pose and Idle's first pose (m). */
+const awayFrom = (rest: number, idle: number | undefined, limit: number) =>
+	rest > limit && !(idle !== undefined && idle <= limit);
+
+/** `, 5 cm and 8 cm from Idle's first pose` for the ends that are off, or `''` with no Idle. */
+function fromIdle(i: ClipMotion['fromIdle'], start: boolean, end: boolean): string {
+	if (!i) return '';
+	const off = [start && cm(i.start), end && cm(i.end)].filter(Boolean).join(' and ');
+	return `, ${off} from ${i.clip}'s first pose`;
+}
+
+/**
+ * One-shots that start or end away from both the rest pose and Idle's first
+ * pose, so a game's blend into or out of them pops.
+ */
 function restProblems(c: ClipMotion): string[] {
 	if (c.loop) return [];
-	const r = c.fromRest;
-	const starts = r.start > seamLimit(c);
-	const ends = r.end > seamLimit(c) && !ENDS_DOWN.test(c.name);
+	const limit = seamLimit(c);
+	const { fromRest: r, fromIdle: i } = c;
+	const starts = awayFrom(r.start, i?.start, limit);
+	const ends = awayFrom(r.end, i?.end, limit) && !ENDS_DOWN.test(c.name);
+	if (!starts && !ends) return [];
+	const to = i ? `the rest pose or ${i.clip}'s first pose` : 'the rest pose';
+	const why = `a one-shot starts and ends at ${to}, so the game can blend into and out of it`;
+	// Both ends at one pose: say so, or a model keys a new last pose for a first one that is off.
+	if (starts && ends && c.seam <= limit) {
+		return [
+			`starts and ends at the same pose, ${cm(r.start)} from the rest pose (${r.startPart})${fromIdle(i, true, false)}: ${why}`
+		];
+	}
 	const parts = [...new Set([starts && r.startPart, ends && r.endPart].filter(Boolean))].join(', ');
 	const where = [starts && `starts ${cm(r.start)}`, ends && `ends ${cm(r.end)}`].filter(Boolean);
-	if (!where.length) return [];
 	return [
-		`${where.join(' and ')} from the rest pose (${parts}): a one-shot starts and ends at the rest pose, so the game can blend into and out of it`
+		`${where.join(' and ')} from the rest pose (${parts})${fromIdle(i, starts, ends)}: ${why}`
 	];
 }
 
@@ -197,7 +220,7 @@ export function formatClip(c: ClipMotion, sheet: boolean): string[] {
 			? `Joints checked: ${c.jointsChecked.join(', ')}.`
 			: 'No knee or elbow joints found by name: a pivot or bone named like Knee_L or Elbow_R, with the lower limb (a pivot or a mesh) under it, has its fold checked.',
 		`Ends ${cm(c.seam)} from where it starts${c.seamPart ? ` (${c.seamPart} moves most)` : ''}: a loop needs this near 0.`,
-		`Starts ${cm(c.fromRest.start)} and ends ${cm(c.fromRest.end)} from the rest pose.`,
+		`Starts ${cm(c.fromRest.start)} and ends ${cm(c.fromRest.end)} from the rest pose${c.fromIdle ? `, ${cm(c.fromIdle.start)} and ${cm(c.fromIdle.end)} from ${c.fromIdle.clip}'s first pose` : ''}.`,
 		c.reachPart
 			? `Key pose: ${c.reachPart} gets ${cm(c.reach)} from where it starts (${Math.round((100 * c.reach) / (c.height || 1))}% of the model's height), at ${sec(c.reachAt)}. A timid key pose reads as no motion in a game: push it further if it is.`
 			: 'Nothing moves.',

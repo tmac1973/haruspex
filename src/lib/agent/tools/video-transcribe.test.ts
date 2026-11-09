@@ -24,6 +24,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { transcriptReport } from './video-transcribe';
+import { formatDuration } from '#lib/video/report.ts';
 import { parseChapters, parseOp, parseTime } from '#lib/video/args.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
@@ -107,7 +108,12 @@ describe('the transcript report', () => {
 		};
 		const text = transcriptReport([long], 2000);
 		expect(text.length).toBeLessThan(2400);
-		expect(text).toContain('cut here to fit');
+		const at = text.match(/goes on at (\S+):/)![1];
+		expect(text).toContain(`ask again with paths: ["ep010/raw/obs.mp4"] and from: "${at}"`);
+		const rest = transcriptReport([long], 2000, parseTime(at)!);
+		expect(rest).toContain(`ep010/raw/obs.mp4 (32:23, en, from ${at}):`);
+		expect(rest).toContain(`[${formatDuration(parseTime(at)!)}] words`);
+		expect(rest).not.toContain('[0:00]');
 	});
 
 	it('points to the better model when base.en was used', () => {

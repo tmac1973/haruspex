@@ -32,6 +32,7 @@ function motion(over: Partial<ClipMotion> = {}): ClipMotion {
 		treadmill: false,
 		hitch: null,
 		fromRest: { start: 0, startPart: '', end: 0, endPart: '' },
+		fromIdle: null,
 		sparse: { tracks: [], gap: 0 },
 		dense: { tracks: 0, perSecond: 0 },
 		dead: [],
@@ -135,13 +136,32 @@ describe('clipProblems', () => {
 		const fromRest = { start: 0.06, startPart: 'Sword', end: 0.2, endPart: 'Torso' };
 		const why =
 			'a one-shot starts and ends at the rest pose, so the game can blend into and out of it';
-		expect(clipProblems(motion({ name: 'Attack', fromRest }))).toEqual([
+		expect(clipProblems(motion({ name: 'Attack', fromRest, seam: 0.2 }))).toEqual([
 			`starts 6 cm and ends 20 cm from the rest pose (Sword, Torso): ${why}`
 		]);
 		expect(clipProblems(motion({ name: 'Die', fromRest }))).toEqual([
 			`starts 6 cm from the rest pose (Sword): ${why}`
 		]);
 		expect(clipProblems(motion({ name: 'Idle', loop: true, fromRest }))).toEqual([]);
+	});
+
+	it('says when a one-shot starts and ends at one pose away from rest', () => {
+		const fromRest = { start: 0.05, startPart: 'Blade', end: 0.05, endPart: 'Blade' };
+		expect(clipProblems(motion({ name: 'Attack', fromRest, seam: 0 }))).toEqual([
+			'starts and ends at the same pose, 5 cm from the rest pose (Blade): a one-shot starts and ends at the rest pose, so the game can blend into and out of it'
+		]);
+	});
+
+	it("lets a one-shot start and end at Idle's first pose instead of rest", () => {
+		const fromRest = { start: 0.08, startPart: 'Hand_L', end: 0.08, endPart: 'Hand_L' };
+		const atIdle = { clip: 'Idle', start: 0, startPart: '', end: 0.001, endPart: 'Hand_L' };
+		expect(clipProblems(motion({ name: 'Attack', fromRest, fromIdle: atIdle }))).toEqual([]);
+		const offIdle = { ...atIdle, end: 0.12, endPart: 'Hand_R' };
+		expect(
+			clipProblems(motion({ name: 'Attack', fromRest, seam: 0.12, fromIdle: offIdle }))
+		).toEqual([
+			"ends 8 cm from the rest pose (Hand_L), 12 cm from Idle's first pose: a one-shot starts and ends at the rest pose or Idle's first pose, so the game can blend into and out of it"
+		]);
 	});
 
 	it('notes sparse and dense keys without calling them problems', () => {

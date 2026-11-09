@@ -112,6 +112,17 @@ describe('inspectMotion', () => {
 		expect(r.fromRest.end).toBeLessThan(1e-4);
 	});
 
+	it("measures a one-shot's ends from Idle's first pose", () => {
+		const idle = clip('Idle', 1, turn('Shoulder', [0, 0, 1], [0, 1], [30, 30]));
+		const attack = clip('Attack', 1, turn('Shoulder', [0, 0, 1], [0, 0.5, 1], [30, 80, 30]));
+		const [i, a] = inspectMotion(THREE, gltf(pivotRig(), [idle, attack]));
+		expect(i.fromIdle).toBeNull();
+		expect(a.fromRest.start).toBeGreaterThan(0.1);
+		expect(a.fromIdle?.clip).toBe('Idle');
+		expect(a.fromIdle?.start).toBeLessThan(1e-4);
+		expect(a.fromIdle?.end).toBeLessThan(1e-4);
+	});
+
 	it('leaves the scene at rest', () => {
 		const root = pivotRig();
 		const arm = root.getObjectByName('Arm')!;

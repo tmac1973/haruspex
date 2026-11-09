@@ -21,7 +21,12 @@ import { allInvokeArgs } from '#lib/testing/invoke.ts';
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { endClip, parseCut, parseOp } from '#lib/video/args.ts';
-import { formatTime, itemLine, summaryReport } from '#lib/video/report.ts';
+import {
+	formatTime,
+	itemLine,
+	summaryReport,
+	timelineTranscriptReport
+} from '#lib/video/report.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 
@@ -132,6 +137,30 @@ describe('the summary report', () => {
 		expect(formatTime(0)).toBe('0:00.0');
 		expect(formatTime(65.04)).toBe('1:05.0');
 		expect(formatTime(3725.55)).toBe('62:05.6');
+	});
+});
+
+describe("the cut's transcript", () => {
+	const lines = Array.from({ length: 400 }, (_, i) => ({
+		start: 5 + i,
+		end: 6 + i,
+		text: 'words '.repeat(5),
+		index: 2
+	}));
+	const t = { project: 'ep010/ep010.kdenlive', lines, untranscribed: [1], totalSecs: 405 };
+
+	it('names a clip with no transcript by its file', () => {
+		const text = timelineTranscriptReport(t, { items: summary.items });
+		expect(text).toContain('Clip 1 (intro001/intro.mp4) has no transcript yet.');
+	});
+
+	it('says where a cut-off transcript goes on, and reads on from there', () => {
+		const text = timelineTranscriptReport(t, { cap: 2000 });
+		const at = text.match(/the rest starts at (\S+):/)![1];
+		expect(text).toContain(`ask again with transcript_from: "${at}"`);
+		const rest = timelineTranscriptReport(t, { cap: 2000, from: 5 + 60 });
+		expect(rest).toContain("The cut's speech from 1:05.0, in the video's time:");
+		expect(rest.split('\n')[1]).toMatch(/^\[1:05\] words/);
 	});
 });
 

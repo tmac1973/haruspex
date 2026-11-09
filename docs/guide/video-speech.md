@@ -13,6 +13,8 @@ Ask "transcribe ep012". Each clip with sound is transcribed with timestamps, in 
 
 Transcripts are kept in the episode's `.haruspex/transcripts/` folder, so asking again is instant until a clip changes. The sound is extracted once to `.haruspex/audio/`.
 
+A long transcript reaches the assistant in parts: each part says where the next one starts, in the clip's time or the cut's, and the assistant asks for it from there.
+
 ### The transcription model
 
 Settings → Video editing → **Transcription** shows the model. Until you download one, it is voice input's whisper base.en: fast, English only, and it misses words. **Download large-v3-turbo (1.6 GB)** gets a more accurate one that knows more languages; ask to transcribe again with the new model afterwards. **Delete** removes it.
