@@ -2,7 +2,7 @@
  * Running one iteration's tool calls and appending their results.
  */
 
-import type { ChatCompletionResponse } from '#lib/api.ts';
+import type { ChatCompletionResponse, ChatMessage } from '#lib/api.ts';
 import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
@@ -87,6 +87,13 @@ function toolRoundContent(
 	return text;
 }
 
+/** The response's `reasoning_details` and their `served_by`, for the tool round's message. */
+function reasoningEcho(response: ChatCompletionResponse | undefined): Partial<ChatMessage> {
+	if (!response?.reasoning_details?.length) return {};
+	const { reasoning_details, served_by } = response;
+	return served_by ? { reasoning_details, served_by } : { reasoning_details };
+}
+
 /**
  * Execute the model's tool calls: append the assistant tool_calls message,
  * then run each tool (raced against the abort signal), stream its result back
@@ -119,7 +126,9 @@ export async function executeToolCalls(
 	// Append assistant message with tool calls, with `toolRoundContent`.
 	// For OpenRouter reasoning models, echo `reasoning_details` back
 	// unmodified so multi-turn reasoning quality is preserved across the
-	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim).
+	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim),
+	// with `served_by`, which keeps the next request on the provider that
+	// can verify them.
 	const roundText = toolRoundContent(options, response, steeringReply);
 	appendMessage(ctx, {
 		role: 'assistant',
@@ -132,9 +141,7 @@ export async function executeToolCalls(
 				arguments: JSON.stringify(tc.wire?.arguments ?? tc.arguments)
 			}
 		})),
-		...(response?.reasoning_details?.length
-			? { reasoning_details: response.reasoning_details }
-			: {})
+		...reasoningEcho(response)
 	});
 
 	// Read-only calls run side by side when the lane takes parallel requests;

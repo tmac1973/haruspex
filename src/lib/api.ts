@@ -5,7 +5,7 @@ import { logDebug, isVerbosePayloads, previewPayload } from '#lib/debugLog.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 import { localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { baseUrl } from '#lib/ports.ts';
-import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
+import { OPENROUTER_ATTRIBUTION_HEADERS, openRouterProviderSlug } from '#lib/openrouter.ts';
 import { isAbortError, errMessage } from '#lib/utils/error.ts';
 import { readErrorText, urlForReport } from '#lib/utils/http.ts';
 import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
@@ -81,6 +81,22 @@ export interface ChatMessage {
 	 * we never mutate them, just pass them through. Other backends ignore it.
 	 */
 	reasoning_details?: unknown[];
+	/**
+	 * Who wrote `reasoning_details`. Never sent: while the thread stays on
+	 * that model, its OpenRouter requests are pinned to that provider (see
+	 * `providerPin`).
+	 */
+	served_by?: ServedBy;
+}
+
+/**
+ * The OpenRouter provider that served a response ("Google AI Studio"), and
+ * the model id the request asked for. Reasoning signatures only verify at
+ * the provider that made them: Gemini's from AI Studio fail on Vertex.
+ */
+export interface ServedBy {
+	provider: string;
+	model: string;
 }
 
 /**
@@ -299,6 +315,8 @@ export interface StreamChunk {
 	};
 	finish_reason: string | null;
 	usage?: Usage;
+	/** The OpenRouter provider streaming this response. */
+	served_by?: ServedBy;
 	/** OpenRouter mid-stream error object (top-level `error` on the chunk). */
 	error?: { code?: number; message?: string; metadata?: { error_type?: string } };
 }
@@ -315,6 +333,8 @@ export interface ChatCompletionResponse {
 	 * didn't return any (local llama-server, non-reasoning models).
 	 */
 	reasoning_details?: unknown[] | null;
+	/** The OpenRouter provider that served it; other backends don't say. */
+	served_by?: ServedBy;
 }
 
 export class ApiError extends Error {
@@ -429,21 +449,60 @@ function summarizeRequestBody(body: Record<string, unknown>): unknown {
 		tools: tools?.map((t) => t.function.name),
 		temperature: body.temperature,
 		max_tokens: body.max_tokens,
-		tool_choice: body.tool_choice
+		tool_choice: body.tool_choice,
+		provider: body.provider
 	};
+}
+
+/**
+ * The provider a thread's OpenRouter requests must stay on: the one that
+ * wrote its latest `reasoning_details`, while the thread is still on that
+ * model. Null when nothing needs pinning.
+ */
+export function providerPin(messages: ChatMessage[], model: string): string | null {
+	const source = messages.findLast((m) => m.reasoning_details?.length && m.served_by)?.served_by;
+	return source && source.model === model ? source.provider : null;
+}
+
+/** The thread as sent: without `served_by`, which is ours, not the API's. */
+function wireMessages(messages: ChatMessage[]): ChatMessage[] {
+	return messages.map((m) => {
+		if (!m.served_by) return m;
+		const wire = { ...m };
+		delete wire.served_by;
+		return wire;
+	});
+}
+
+/**
+ * OpenRouter's routing slug for `providerPin`, or undefined when the request
+ * isn't pinned.
+ */
+async function pinnedProviderSlug(
+	endpoint: { isOpenRouter: boolean; model: string },
+	messages: ChatMessage[]
+): Promise<string | undefined> {
+	if (!endpoint.isOpenRouter) return undefined;
+	const provider = providerPin(messages, endpoint.model);
+	return provider ? openRouterProviderSlug(provider) : undefined;
 }
 
 function buildRequestBody(
 	options: ChatCompletionOptions,
 	modelName: string = 'default',
-	isOpenRouter = false
+	isOpenRouter = false,
+	/** `pinnedProviderSlug`: no fallback to another provider, which would reject the signatures. */
+	providerSlug?: string
 ): Record<string, unknown> {
 	const isStream = options.stream ?? true;
 	const body: Record<string, unknown> = {
 		model: modelName,
-		messages: options.messages,
+		messages: wireMessages(options.messages),
 		stream: isStream
 	};
+	if (isOpenRouter && providerSlug) {
+		body.provider = { order: [providerSlug], allow_fallbacks: false };
+	}
 
 	if (isStream) {
 		body.stream_options = { include_usage: true };
@@ -539,9 +598,10 @@ export async function* readSseData(
  * malformed payloads. Keeps parseSSE's loop flat instead of nesting
  * data/try/choices/usage four deep.
  */
-function parseSSEData(data: string): StreamChunk | null {
+function parseSSEData(data: string, model?: string): StreamChunk | null {
 	try {
 		const parsed = JSON.parse(data);
+		const servedBy = servedByOf(parsed, model);
 		// OpenRouter mid-stream error: after the first token, HTTP is already
 		// 200 and the error arrives in-band as a top-level `error` object with
 		// a sentinel `finish_reason: "error"` choice. Surface it so the chat
@@ -559,6 +619,7 @@ function parseSSEData(data: string): StreamChunk | null {
 				finish_reason: parsed.choices[0].finish_reason
 			};
 			if (parsed.usage) chunk.usage = parsed.usage;
+			if (servedBy) chunk.served_by = servedBy;
 			return chunk;
 		}
 		// Final usage-only chunk (no choices) when stream_options.include_usage is set.
@@ -567,6 +628,12 @@ function parseSSEData(data: string): StreamChunk | null {
 	} catch {
 		return null; // skip malformed JSON chunks
 	}
+}
+
+/** OpenRouter's top-level `provider` on a response or chunk, for `model`. */
+function servedByOf(parsed: unknown, model: string | undefined): ServedBy | undefined {
+	const provider = (parsed as { provider?: unknown } | null)?.provider;
+	return model && typeof provider === 'string' && provider ? { provider, model } : undefined;
 }
 
 /**
@@ -629,9 +696,10 @@ async function sendChatRequest(
 	throw lastError ?? new ApiError('Failed to connect to the AI model. Is it still loading?');
 }
 
-export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk> {
+/** `model`, when given, is the requested model, recorded in each chunk's `served_by`. */
+export async function* parseSSE(response: Response, model?: string): AsyncGenerator<StreamChunk> {
 	for await (const data of readSseData(response.body!.getReader())) {
-		const chunk = parseSSEData(data);
+		const chunk = parseSSEData(data, model);
 		if (chunk) yield chunk;
 	}
 }
@@ -647,7 +715,8 @@ export async function* chatCompletionStream(
 	const body = buildRequestBody(
 		{ ...options, stream: true },
 		endpoint.model,
-		endpoint.isOpenRouter
+		endpoint.isOpenRouter,
+		await pinnedProviderSlug(endpoint, options.messages)
 	);
 	const reqId = nextRequestId++;
 	logDebug(
@@ -675,13 +744,16 @@ export async function* chatCompletionStream(
 	let toolCallChunks = 0;
 	let lastFinish: string | null = null;
 	let lastUsage: Usage | undefined;
+	let provider: string | undefined;
 	try {
-		for await (const chunk of parseSSE(response)) {
+		const model = endpoint.isOpenRouter ? endpoint.model : undefined;
+		for await (const chunk of parseSSE(response, model)) {
 			chunkCount++;
 			if (chunk.delta.content) contentLen += chunk.delta.content.length;
 			if (chunk.delta.tool_calls && chunk.delta.tool_calls.length > 0) toolCallChunks++;
 			if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 			if (chunk.usage) lastUsage = chunk.usage;
+			if (chunk.served_by) provider = chunk.served_by.provider;
 			yield chunk;
 		}
 	} finally {
@@ -690,6 +762,7 @@ export async function* chatCompletionStream(
 			contentLen,
 			toolCallChunks,
 			finish_reason: lastFinish,
+			provider,
 			usage: lastUsage
 		});
 	}
@@ -706,7 +779,8 @@ export async function chatCompletion(
 	const body = buildRequestBody(
 		{ ...options, stream: false },
 		endpoint.model,
-		endpoint.isOpenRouter
+		endpoint.isOpenRouter,
+		await pinnedProviderSlug(endpoint, options.messages)
 	);
 	const reqId = nextRequestId++;
 	logDebug(
@@ -747,9 +821,11 @@ export async function chatCompletion(
 			? choice.message.reasoning_details
 			: null;
 	const fullContent = combineReasoningAndContent(reasoning, content);
+	const servedBy = servedByOf(data, endpoint.isOpenRouter ? endpoint.model : undefined);
 
 	logDebug('api', `non-stream request #${reqId} response`, {
 		finish_reason: choice.finish_reason,
+		provider: servedBy?.provider,
 		content_len: content ? content.length : 0,
 		has_reasoning: !!reasoning,
 		tool_call_count: choice.message?.tool_calls?.length ?? 0,
@@ -772,6 +848,7 @@ export async function chatCompletion(
 		tool_calls: choice.message?.tool_calls,
 		finish_reason: choice.finish_reason ?? 'stop',
 		usage: data.usage,
-		reasoning_details: reasoningDetails
+		reasoning_details: reasoningDetails,
+		...(servedBy ? { served_by: servedBy } : {})
 	};
 }

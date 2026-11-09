@@ -10,6 +10,7 @@ import {
 } from '#lib/api.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import { clearDebugLogs, getDebugLogs, setVerbosePayloads } from '#lib/debugLog.ts';
+import { resetOpenRouterProviderSlugs } from '#lib/openrouter.ts';
 
 // Mock the settings module so resolveChatEndpoint (via resolveBackendDescriptor)
 // sees the backend we want. vi.hoisted ensures the mock fns are available when
@@ -432,6 +433,147 @@ describe('parseSSE — OpenRouter behaviors', () => {
 		expect(chunks).toHaveLength(2);
 		expect(chunks[1].error?.code).toBe(429);
 		expect(chunks[1].finish_reason).toBe('error');
+	});
+
+	it('records the provider that served each chunk, with the model asked for', async () => {
+		const response = createMockResponse([
+			'data: {"provider":"Google AI Studio","choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\n',
+			'data: [DONE]\n\n'
+		]);
+		const chunks = [];
+		for await (const chunk of parseSSE(response, 'google/gemini-4-argon')) chunks.push(chunk);
+		expect(chunks[0].served_by).toEqual({
+			provider: 'Google AI Studio',
+			model: 'google/gemini-4-argon'
+		});
+	});
+});
+
+describe('OpenRouter provider pin', () => {
+	const MODEL = 'google/gemini-4-argon';
+	const reasoningRound = (model = MODEL): ChatMessage => ({
+		role: 'assistant',
+		content: '',
+		tool_calls: [
+			{ id: 'c1', type: 'function', function: { name: 'fs_list_dir', arguments: '{}' } }
+		],
+		reasoning_details: [{ type: 'reasoning.encrypted', data: 'sig', id: 'c1' }],
+		served_by: { provider: 'Google', model }
+	});
+	const thread = (round: ChatMessage): ChatMessage[] => [
+		{ role: 'user', content: 'go' },
+		round,
+		{ role: 'tool', tool_call_id: 'c1', content: '[]' }
+	];
+
+	function useOpenRouter() {
+		getApiKeyValueMock.mockReturnValue('sk-or-v1-test');
+		getSettingsMock.mockReturnValue({
+			inferenceBackend: {
+				mode: 'remote',
+				remoteBaseUrl: 'https://openrouter.ai/api',
+				remoteApiKey: '',
+				remoteApiKeyId: 'key-test',
+				remoteModelId: MODEL,
+				remoteBackendKind: 'openrouter'
+			}
+		});
+	}
+
+	/** Answers the provider list and the chat; returns the chat bodies sent. */
+	function stubFetch(): { bodies: Record<string, unknown>[]; urls: string[] } {
+		const bodies: Record<string, unknown>[] = [];
+		const urls: string[] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string, init?: RequestInit) => {
+				urls.push(url);
+				if (url.endsWith('/v1/providers')) {
+					return {
+						ok: true,
+						json: async () => ({ data: [{ name: 'Google', slug: 'google-vertex' }] })
+					};
+				}
+				bodies.push(JSON.parse(init?.body as string));
+				return {
+					ok: true,
+					json: async () => ({
+						provider: 'Google',
+						choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+					})
+				};
+			})
+		);
+		return { bodies, urls };
+	}
+
+	beforeEach(() => resetOpenRouterProviderSlugs());
+
+	it('pins the provider that wrote the reasoning, by its slug, with no fallback', async () => {
+		useOpenRouter();
+		const { bodies } = stubFetch();
+
+		const result = await chatCompletion({ messages: thread(reasoningRound()) });
+
+		expect(bodies[0].provider).toEqual({ order: ['google-vertex'], allow_fallbacks: false });
+		expect(result.served_by).toEqual({ provider: 'Google', model: MODEL });
+	});
+
+	it('never sends served_by itself', async () => {
+		useOpenRouter();
+		const { bodies } = stubFetch();
+
+		await chatCompletion({ messages: thread(reasoningRound()) });
+
+		const sent = bodies[0].messages as ChatMessage[];
+		expect(sent[1].served_by).toBeUndefined();
+		expect(sent[1].reasoning_details).toHaveLength(1);
+	});
+
+	it("doesn't pin a thread whose reasoning came from another model", async () => {
+		useOpenRouter();
+		const { bodies, urls } = stubFetch();
+
+		await chatCompletion({ messages: thread(reasoningRound('anthropic/claude-sonnet-4.5')) });
+
+		expect(bodies[0].provider).toBeUndefined();
+		expect(urls.some((u) => u.endsWith('/v1/providers'))).toBe(false);
+	});
+
+	it("doesn't pin a thread without reasoning_details", async () => {
+		useOpenRouter();
+		const { bodies } = stubFetch();
+
+		await chatCompletion({ messages: [{ role: 'user', content: 'hi' }] });
+
+		expect(bodies[0].provider).toBeUndefined();
+	});
+
+	it('guesses the slug when the provider list fails', async () => {
+		useOpenRouter();
+		const bodies: Record<string, unknown>[] = [];
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string, init?: RequestInit) => {
+				if (url.endsWith('/v1/providers')) return { ok: false, status: 503 };
+				bodies.push(JSON.parse(init?.body as string));
+				return {
+					ok: true,
+					json: async () => ({
+						choices: [{ message: { content: 'ok', role: 'assistant' }, finish_reason: 'stop' }]
+					})
+				};
+			})
+		);
+		const round = {
+			...reasoningRound(),
+			served_by: { provider: 'Google AI Studio', model: MODEL }
+		};
+
+		await chatCompletion({ messages: thread(round) });
+
+		expect(bodies[0].provider).toEqual({ order: ['google-ai-studio'], allow_fallbacks: false });
 	});
 });
 

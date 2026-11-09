@@ -6,8 +6,38 @@ import {
 	isOpenRouterToolCapable,
 	isOpenRouterVisionCapable,
 	matchesOpenRouterQuery,
+	parseOpenRouterProviders,
+	slugFromProviderName,
 	type OpenRouterModel
 } from '#lib/openrouter.ts';
+
+describe('parseOpenRouterProviders', () => {
+	it('maps display names to routing slugs', () => {
+		const map = parseOpenRouterProviders({
+			data: [
+				{ name: 'Google', slug: 'google-vertex' },
+				{ name: 'Google AI Studio', slug: 'google-ai-studio' },
+				{ name: 42, slug: 'skipped' }
+			]
+		});
+		expect([...map]).toEqual([
+			['Google', 'google-vertex'],
+			['Google AI Studio', 'google-ai-studio']
+		]);
+	});
+
+	it('is empty for a body without a data array', () => {
+		expect(parseOpenRouterProviders(null).size).toBe(0);
+		expect(parseOpenRouterProviders({ data: 'x' }).size).toBe(0);
+	});
+});
+
+describe('slugFromProviderName', () => {
+	it('kebab-cases the name', () => {
+		expect(slugFromProviderName('Google AI Studio')).toBe('google-ai-studio');
+		expect(slugFromProviderName('  Together (FP8) ')).toBe('together-fp8');
+	});
+});
 
 const toolModel = (id: string, name: string): OpenRouterModel => ({
 	id,
