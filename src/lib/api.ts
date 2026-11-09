@@ -16,6 +16,14 @@ import {
 	pinnedRateLimitDelay,
 	rateLimitGiveUpMessage
 } from '#lib/rateLimitWait.ts';
+import {
+	capImages,
+	countImages,
+	imageLimitFromError,
+	imageLimitKey,
+	knownImageLimit,
+	rememberImageLimit
+} from '#lib/imageLimit.ts';
 
 let nextRequestId = 1;
 
@@ -494,6 +502,15 @@ async function pinnedProvider(
 	return name ? { name, slug: await openRouterProviderSlug(name) } : undefined;
 }
 
+/** `messages` cut to the picture cap learned for `endpoint`, if one was. */
+function withinImageLimit(
+	messages: ChatMessage[],
+	endpoint: { url: string; model: string }
+): ChatMessage[] {
+	const limit = knownImageLimit(imageLimitKey(endpoint.url, endpoint.model));
+	return limit === undefined ? messages : capImages(messages, limit);
+}
+
 function buildRequestBody(
 	options: ChatCompletionOptions,
 	modelName: string = 'default',
@@ -689,22 +706,40 @@ async function tryChatRequest(
  *
  * A 429 on a request pinned to `pinnedProvider` waits longer (see
  * `rateLimitWait.ts`), since no other provider can take it.
+ *
+ * A 400 that names a cap on pictures per request goes again once with the
+ * pictures cut to that cap, which is remembered under `limitKey` for the
+ * requests after it (see `imageLimit.ts`).
  */
 async function sendChatRequest(
 	url: string,
 	headers: HeadersInit,
-	body: unknown,
+	body: Record<string, unknown>,
 	signal: AbortSignal | undefined,
 	reqId: number,
 	label: string,
+	limitKey: string,
 	pinnedProvider?: string
 ): Promise<Response> {
-	const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body), signal };
+	let init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body), signal };
 	let retries = 0;
 	let rateLimitWaits = 0;
 	let waitedMs = 0;
+	let imagesCapped = false;
 	for (let attempt = 0; ; attempt++) {
-		const result = await tryChatRequest(url, init, reqId, label, attempt);
+		let result: ChatTry;
+		try {
+			result = await tryChatRequest(url, init, reqId, label, attempt);
+		} catch (e) {
+			const capped = imagesCapped ? null : withImageLimit(e, body, limitKey);
+			if (!capped) throw e;
+			imagesCapped = true;
+			init = { ...init, body: JSON.stringify(capped) };
+			logDebug('api', `${label} request #${reqId} resent with fewer pictures`, {
+				limit: knownImageLimit(limitKey)
+			});
+			continue;
+		}
 		if ('response' in result) return result.response;
 
 		if (pinnedProvider && result.error.statusCode === 429) {
@@ -741,6 +776,24 @@ async function sendChatRequest(
 	}
 }
 
+/**
+ * `body` cut to the picture cap that `error` names, remembering the cap under
+ * `limitKey`; null when `error` names none or `body` is already within it.
+ */
+function withImageLimit(
+	error: unknown,
+	body: Record<string, unknown>,
+	limitKey: string
+): Record<string, unknown> | null {
+	if (!(error instanceof ApiError) || error.statusCode !== 400) return null;
+	const limit = imageLimitFromError(error.message);
+	if (limit === null) return null;
+	rememberImageLimit(limitKey, limit);
+	const messages = body.messages as ChatMessage[];
+	if (countImages(messages) <= limit) return null;
+	return { ...body, messages: capImages(messages, limit) };
+}
+
 /** `model`, when given, is the requested model, recorded in each chunk's `served_by`. */
 export async function* parseSSE(response: Response, model?: string): AsyncGenerator<StreamChunk> {
 	for await (const data of readSseData(response.body!.getReader())) {
@@ -759,7 +812,7 @@ export async function* chatCompletionStream(
 	const endpoint = resolveChatEndpoint(port, options.backend);
 	const pin = await pinnedProvider(endpoint, options.messages);
 	const body = buildRequestBody(
-		{ ...options, stream: true },
+		{ ...options, messages: withinImageLimit(options.messages, endpoint), stream: true },
 		endpoint.model,
 		endpoint.isOpenRouter,
 		pin?.slug
@@ -778,6 +831,7 @@ export async function* chatCompletionStream(
 		signal,
 		reqId,
 		'stream',
+		imageLimitKey(endpoint.url, endpoint.model),
 		pin?.name
 	);
 
@@ -825,7 +879,7 @@ export async function chatCompletion(
 	const endpoint = resolveChatEndpoint(port, options.backend);
 	const pin = await pinnedProvider(endpoint, options.messages);
 	const body = buildRequestBody(
-		{ ...options, stream: false },
+		{ ...options, messages: withinImageLimit(options.messages, endpoint), stream: false },
 		endpoint.model,
 		endpoint.isOpenRouter,
 		pin?.slug
@@ -844,6 +898,7 @@ export async function chatCompletion(
 		signal,
 		reqId,
 		'non-stream',
+		imageLimitKey(endpoint.url, endpoint.model),
 		pin?.name
 	);
 

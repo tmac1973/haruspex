@@ -11,6 +11,7 @@ import {
 import type { ChatMessage } from '#lib/api.ts';
 import { clearDebugLogs, getDebugLogs, setVerbosePayloads } from '#lib/debugLog.ts';
 import { resetOpenRouterProviderSlugs } from '#lib/openrouter.ts';
+import { countImages, resetImageLimits } from '#lib/imageLimit.ts';
 import {
 	PINNED_RATE_LIMIT_DELAYS_MS,
 	setRateLimitWaitListener,
@@ -247,6 +248,65 @@ describe('chatCompletionStream', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 
 		vi.unstubAllGlobals();
+	});
+
+	/**
+	 * #1053: vLLM refuses a prompt with more pictures than its cap, and a long
+	 * Code turn piles up tool pictures past it. The request goes again with
+	 * the newest pictures only, and the next request is cut before it is sent.
+	 */
+	it('resends with fewer pictures when the server names a cap, then remembers it', async () => {
+		resetImageLimits();
+		const refusal =
+			'{"error":{"message":"OpenAIException - At most 2 image(s) may be provided in one prompt."}}';
+		const sent: ChatMessage[][] = [];
+		const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+			const messages = JSON.parse(init.body as string).messages as ChatMessage[];
+			sent.push(messages);
+			if (countImages(messages) > 2)
+				return { ok: false, status: 400, text: async (): Promise<string> => refusal };
+			return createMockResponse(['data: [DONE]\n\n']);
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		const picture = (url: string) => ({ type: 'image_url' as const, image_url: { url } });
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: [picture('data:a'), picture('data:b'), picture('data:c')] }
+		];
+
+		const consume = async () => {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			for await (const _chunk of chatCompletionStream({ messages })) {
+				// consume
+			}
+		};
+		await consume();
+		expect(sent.map(countImages)).toEqual([3, 2]);
+		const kept = (sent[1][0].content as { type: string }[]).filter((p) => p.type === 'image_url');
+		expect(kept).toEqual([picture('data:b'), picture('data:c')]);
+
+		await consume();
+		expect(sent.map(countImages)).toEqual([3, 2, 2]);
+		resetImageLimits();
+	});
+
+	it('does not resend when the pictures are already within the named cap', async () => {
+		resetImageLimits();
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 400,
+			text: async () => 'At most 4 image(s) may be provided in one prompt.'
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const stream = chatCompletionStream({ messages: [{ role: 'user', content: 'hi' }] });
+		await expect(async () => {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			for await (const _chunk of stream) {
+				// consume
+			}
+		}).rejects.toThrow('At most 4 image');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		resetImageLimits();
 	});
 
 	it('propagates AbortError', async () => {
