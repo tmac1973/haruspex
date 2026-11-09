@@ -32,7 +32,7 @@ When the window's folder holds more than one file of a kind, a tree of them sits
 - The camera keeps its angle from one model to the next, scaled to each model's size, so they're seen the same way.
 - The grid is the floor, at the model's lowest point.
 - **Animation** picks which clip loops; **Rest pose** stops it. It only shows when the model has clips.
-- The bar gives its meshes, triangles and size in units.
+- The bar gives its meshes, triangles and size in units, and how it moves: **skinned** with its bone count when a skeleton bends the mesh, or **rigid** with its animated nodes when the clips turn whole parts on pivots. A model with no skin and no clips shows neither.
 
 ## Look at an image
 

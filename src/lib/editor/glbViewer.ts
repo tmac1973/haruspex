@@ -6,12 +6,15 @@
 
 import type { AnimationClip, AnimationMixer, Mesh, Object3D } from 'three';
 import { disposeTree } from '#lib/glb/load.ts';
+import { rigOf, trackNodes, type Rig } from '#lib/glb/rig.ts';
 
 export interface GlbStats {
 	meshes: number;
 	triangles: number;
 	size: [number, number, number];
 	animations: number;
+	/** How it moves; null for a model with no skin and no clips. */
+	rig: Rig | null;
 }
 
 export interface GlbView {
@@ -109,7 +112,7 @@ export async function mountGlbView(
 	});
 
 	return {
-		stats: countStats(root, [sizes.x, sizes.y, sizes.z], gltf.animations.length),
+		stats: countStats(THREE, root, [sizes.x, sizes.y, sizes.z], gltf.animations),
 		clips: gltf.animations.map((clip, i) => clip.name || `Clip ${i + 1}`),
 		playClip,
 		resetCamera: () => place(VIEW),
@@ -145,7 +148,12 @@ function clipPlayer(
 	return { mixer, playClip };
 }
 
-function countStats(root: Object3D, size: [number, number, number], animations: number): GlbStats {
+function countStats(
+	THREE: typeof import('three'),
+	root: Object3D,
+	size: [number, number, number],
+	animations: AnimationClip[]
+): GlbStats {
 	let meshes = 0;
 	let triangles = 0;
 	root.traverse((o) => {
@@ -156,5 +164,8 @@ function countStats(root: Object3D, size: [number, number, number], animations: 
 		const pos = geo.getAttribute('position');
 		triangles += Math.floor((geo.index ? geo.index.count : (pos?.count ?? 0)) / 3);
 	});
-	return { meshes, triangles, size, animations };
+	// Skinned, or rigid when clips move it; a model with neither has no rig.
+	const rig = rigOf(root, trackNodes(THREE, animations));
+	const moves = rig.rig === 'skinned' || animations.length > 0;
+	return { meshes, triangles, size, animations: animations.length, rig: moves ? rig : null };
 }

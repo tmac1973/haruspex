@@ -13,6 +13,7 @@
 	import { onMount } from 'svelte';
 	import { mountGlbView, type GlbView } from '#lib/editor/glbViewer.ts';
 	import { readViewerBytes, viewerError } from '#lib/editor/viewerFile.ts';
+	import type { Rig } from '#lib/glb/rig.ts';
 
 	let { workdir, relPath }: { workdir: string; relPath: string } = $props();
 
@@ -60,8 +61,16 @@
 			`${s.triangles.toLocaleString()} triangles`,
 			`${s.size.map(fmt).join(' × ')} units`
 		];
+		if (s.rig) parts.push(rigLabel(s.rig));
 		return parts.join(' · ');
 	});
+
+	function rigLabel({ rig, bones }: Rig): string {
+		if (rig === 'skinned') return `skinned, ${bones} ${bones === 1 ? 'bone' : 'bones'}`;
+		// A rigid rig whose clips move only meshes has no pivot nodes to count.
+		if (bones === 0) return 'rigid';
+		return `rigid, ${bones} animated ${bones === 1 ? 'node' : 'nodes'}`;
+	}
 
 	function pick(value: string): void {
 		clip = value;
@@ -76,7 +85,11 @@
 		{#if error}<p class="note error">{error}</p>{/if}
 	</div>
 	<div class="bar">
-		<span class="summary" title="Drag to orbit, scroll to zoom, right-drag to pan">{summary}</span>
+		<span
+			class="summary"
+			title="Drag to orbit, scroll to zoom, right-drag to pan. Skinned: a skeleton bends the mesh. Rigid: clips turn whole parts on their nodes."
+			>{summary}</span
+		>
 		{#if view && view.clips.length}
 			<select
 				aria-label="Animation"

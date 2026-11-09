@@ -6,10 +6,9 @@
  * tracks. Samples each clip at a fixed number of frames, so the cost
  * doesn't grow with its length. Leaves the scene in its rest pose.
  */
-import type { AnimationClip, Object3D, SkinnedMesh } from 'three';
+import type { AnimationClip, Object3D } from 'three';
 import type { LoadedGlb, Three } from '#lib/glb/load.ts';
 import {
-	isSkinned,
 	median,
 	meshesOf,
 	partCentre,
@@ -21,6 +20,7 @@ import {
 } from '#lib/glb/motionPose.ts';
 import { contactTracker, jointTracker, PLANTED, slideTracker } from '#lib/glb/motionParts.ts';
 import { trackChecks, type TrackChecks } from '#lib/glb/motionTracks.ts';
+import { rigOf, trackNodes, type Rig } from '#lib/glb/rig.ts';
 import { weldFor } from '#lib/glb/report.ts';
 import { LOOPING_CLIP } from '#lib/models3d/spec/types.ts';
 
@@ -56,7 +56,7 @@ export interface EndsOff {
 	endPart: string;
 }
 
-export interface ClipMotion extends TrackChecks {
+export interface ClipMotion extends TrackChecks, Rig {
 	name: string;
 	duration: number;
 	tracks: number;
@@ -66,9 +66,6 @@ export interface ClipMotion extends TrackChecks {
 	locomotion: boolean;
 	/** Whether its name lets it leave the floor (a run, a jump). */
 	airborne: boolean;
-	rig: 'skinned' | 'rigid';
-	/** Skeleton bones, or for a rigid rig the animated nodes that aren't meshes. */
-	bones: number;
 	/** Through the floor by this much at its worst (m; 0 when never), and when. */
 	sink: number;
 	sinkAt: number;
@@ -127,27 +124,6 @@ export interface ClipMotion extends TrackChecks {
 export function sampleTimes(duration: number, frames: number): number[] {
 	if (duration <= 0) return [0];
 	return Array.from({ length: frames }, (_, f) => (duration * f) / (frames - 1));
-}
-
-function rigOf(root: Object3D, clipNodes: Set<string>): { rig: ClipMotion['rig']; bones: number } {
-	const skinned = meshesOf(root).filter(isSkinned) as SkinnedMesh[];
-	if (skinned.length) {
-		const bones = new Set(skinned.flatMap((m) => m.skeleton.bones));
-		return { rig: 'skinned', bones: bones.size };
-	}
-	let n = 0;
-	root.traverse((o) => {
-		if (!(o as { isMesh?: boolean }).isMesh && clipNodes.has(o.name)) n++;
-	});
-	return { rig: 'rigid', bones: n };
-}
-
-function trackNodes(gltf: LoadedGlb, THREE: Three): Set<string> {
-	const out = new Set<string>();
-	for (const clip of gltf.animations) {
-		for (const t of clip.tracks) out.add(THREE.PropertyBinding.parseTrackName(t.name).nodeName);
-	}
-	return out;
 }
 
 type Vec = InstanceType<Three['Vector3']>;
@@ -429,7 +405,7 @@ export function inspectMotion(
 	const rest = posedBox(THREE, meshes, stride);
 	const floor = rest.min.y;
 	const restCentre = rest.getCenter(new THREE.Vector3());
-	const rig = rigOf(root, trackNodes(gltf, THREE));
+	const rig = rigOf(root, trackNodes(THREE, gltf.animations));
 	const size = rest.getSize(new THREE.Vector3());
 	const weld = weldFor(Math.max(size.x, size.y, size.z));
 	const restCentres = new Map(parts.map((p) => [p.name, partCentre(THREE, p, stride)]));
