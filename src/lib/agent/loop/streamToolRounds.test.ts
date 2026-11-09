@@ -354,6 +354,23 @@ describe('what a streamed round keeps', () => {
 		]);
 	});
 
+	it('record which provider wrote the reasoning_details', async () => {
+		const servedBy = { provider: 'Google AI Studio', model: 'google/gemini-4-argon' };
+		streams.push(
+			[
+				{
+					...c({ reasoning_details: [{ type: 'reasoning.encrypted', data: 'x', index: 0 }] }),
+					served_by: servedBy
+				},
+				...toolRound('a', 'src/a.ts')
+			],
+			answerRound('Fixed.')
+		);
+		await runAgentLoop(options());
+
+		expect(sent[1].at(-2)?.served_by).toEqual(servedBy);
+	});
+
 	it('stream the forced final tool call too', async () => {
 		const submit: ToolDefinition = {
 			type: 'function',

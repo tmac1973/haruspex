@@ -14,7 +14,10 @@
  *   - `GET /api/v1/key` — the caller's key status (credits remaining, free-tier
  *     limits). Requires the Bearer key.
  *
- * Both are plain `fetch()` from the frontend — OpenRouter is CORS-open and
+ * Plus `GET /api/v1/providers` (no auth), for the slug `api.ts` pins a
+ * reasoning thread's provider by.
+ *
+ * All are plain `fetch()` from the frontend — OpenRouter is CORS-open and
  * there's no benefit to proxying through Rust. The catalog is cached by
  * `stores/openrouterCatalog.svelte.ts` with a 24 h TTL, apart from settings.
  */
@@ -264,4 +267,56 @@ export async function fetchOpenRouterKeyStatus(
 	}
 	const data = await res.json();
 	return parseOpenRouterKeyStatus(data);
+}
+
+/**
+ * Parse `GET /api/v1/providers` into a display name → slug map. A response
+ * names the provider that served it ("Google"), but routing takes the slug
+ * ("google-vertex"), and the two don't always match.
+ */
+export function parseOpenRouterProviders(data: unknown): Map<string, string> {
+	const out = new Map<string, string>();
+	const rows = (data as { data?: unknown } | null)?.data;
+	if (!Array.isArray(rows)) return out;
+	for (const row of rows) {
+		const { name, slug } = (row ?? {}) as { name?: unknown; slug?: unknown };
+		if (typeof name === 'string' && typeof slug === 'string') out.set(name, slug);
+	}
+	return out;
+}
+
+/** The guess when the provider list can't be had: most slugs are the name, kebab-cased. */
+export function slugFromProviderName(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-|-$/g, '');
+}
+
+let providerSlugs: Promise<Map<string, string>> | null = null;
+
+/**
+ * The routing slug for the provider a response names. Fetches OpenRouter's
+ * provider list once per run (no auth); when that fails, the next call tries
+ * again and this one falls back to `slugFromProviderName`.
+ */
+export async function openRouterProviderSlug(name: string): Promise<string> {
+	providerSlugs ??= fetch(`${OPENROUTER_BASE_URL}/v1/providers`, {
+		headers: OPENROUTER_ATTRIBUTION_HEADERS
+	}).then(async (res) => {
+		if (!res.ok) throw new Error(`OpenRouter provider list failed (${res.status})`);
+		return parseOpenRouterProviders(await res.json());
+	});
+	try {
+		return (await providerSlugs).get(name) ?? slugFromProviderName(name);
+	} catch (err) {
+		providerSlugs = null;
+		console.warn('OpenRouter provider list unavailable; guessing the slug', err);
+		return slugFromProviderName(name);
+	}
+}
+
+/** Forget the fetched provider list. For tests. */
+export function resetOpenRouterProviderSlugs(): void {
+	providerSlugs = null;
 }

@@ -14,6 +14,7 @@
 
 import type {
 	ChatCompletionResponse,
+	ServedBy,
 	StreamChunk,
 	ToolCall,
 	ToolCallDelta,
@@ -65,6 +66,7 @@ export class StreamResponseAssembler {
 	private readonly calls = new Map<number, PartialToolCall>();
 	private finishReason: string | null = null;
 	private usage: Usage | undefined;
+	private servedBy: ServedBy | undefined;
 	private readonly details = new ReasoningDetailsAssembler();
 
 	push(chunk: StreamChunk): void {
@@ -77,6 +79,7 @@ export class StreamResponseAssembler {
 		for (const item of delta.reasoning_details ?? []) this.details.push(item);
 		if (chunk.finish_reason) this.finishReason = chunk.finish_reason;
 		if (chunk.usage) this.usage = chunk.usage;
+		if (chunk.served_by) this.servedBy = chunk.served_by;
 	}
 
 	private pushCall(tc: ToolCallDelta): void {
@@ -107,7 +110,8 @@ export class StreamResponseAssembler {
 			tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
 			finish_reason: this.finishReason ?? 'stop',
 			usage: this.usage,
-			reasoning_details: this.details.finish()
+			reasoning_details: this.details.finish(),
+			...(this.servedBy ? { served_by: this.servedBy } : {})
 		};
 	}
 }

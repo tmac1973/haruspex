@@ -29,6 +29,8 @@
 	import LeanModeNotice from '#lib/components/LeanModeNotice.svelte';
 	import { shouldOfferLean } from '#lib/lean/nudges.ts';
 	import Toasts from '#lib/components/Toasts.svelte';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { rateLimitWaitMessage, setRateLimitWaitListener } from '#lib/rateLimitWait.ts';
 	import {
 		isLogViewerOpen,
 		openLogViewer,
@@ -164,6 +166,15 @@
 	// The main window does the background tasks the frontend follows (a picture
 	// drawn after its turn), and picks up the ones a restart cut short.
 	onMount(() => void startTaskRunner().catch(() => {}));
+
+	// A model call waiting out a rate limit on the one provider it can use
+	// says so, in whichever window made the call.
+	onMount(() => {
+		setRateLimitWaitListener((wait) =>
+			showToast(rateLimitWaitMessage(wait), { duration: wait.delayMs })
+		);
+		return () => setRateLimitWaitListener(null);
+	});
 
 	// Other clients' way into this window's Code sessions (plan/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.

@@ -5,10 +5,17 @@ import { logDebug, isVerbosePayloads, previewPayload } from '#lib/debugLog.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 import { localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { baseUrl } from '#lib/ports.ts';
-import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
+import { OPENROUTER_ATTRIBUTION_HEADERS, openRouterProviderSlug } from '#lib/openrouter.ts';
 import { isAbortError, errMessage } from '#lib/utils/error.ts';
 import { readErrorText, urlForReport } from '#lib/utils/http.ts';
 import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
+import {
+	PINNED_RATE_LIMIT_DELAYS_MS,
+	notifyRateLimitWait,
+	parseRetryAfter,
+	pinnedRateLimitDelay,
+	rateLimitGiveUpMessage
+} from '#lib/rateLimitWait.ts';
 
 let nextRequestId = 1;
 
@@ -81,6 +88,22 @@ export interface ChatMessage {
 	 * we never mutate them, just pass them through. Other backends ignore it.
 	 */
 	reasoning_details?: unknown[];
+	/**
+	 * Who wrote `reasoning_details`. Never sent: while the thread stays on
+	 * that model, its OpenRouter requests are pinned to that provider (see
+	 * `providerPin`).
+	 */
+	served_by?: ServedBy;
+}
+
+/**
+ * The OpenRouter provider that served a response ("Google AI Studio"), and
+ * the model id the request asked for. Reasoning signatures only verify at
+ * the provider that made them: Gemini's from AI Studio fail on Vertex.
+ */
+export interface ServedBy {
+	provider: string;
+	model: string;
 }
 
 /**
@@ -299,6 +322,8 @@ export interface StreamChunk {
 	};
 	finish_reason: string | null;
 	usage?: Usage;
+	/** The OpenRouter provider streaming this response. */
+	served_by?: ServedBy;
 	/** OpenRouter mid-stream error object (top-level `error` on the chunk). */
 	error?: { code?: number; message?: string; metadata?: { error_type?: string } };
 }
@@ -315,6 +340,8 @@ export interface ChatCompletionResponse {
 	 * didn't return any (local llama-server, non-reasoning models).
 	 */
 	reasoning_details?: unknown[] | null;
+	/** The OpenRouter provider that served it; other backends don't say. */
+	served_by?: ServedBy;
 }
 
 export class ApiError extends Error {
@@ -429,21 +456,60 @@ function summarizeRequestBody(body: Record<string, unknown>): unknown {
 		tools: tools?.map((t) => t.function.name),
 		temperature: body.temperature,
 		max_tokens: body.max_tokens,
-		tool_choice: body.tool_choice
+		tool_choice: body.tool_choice,
+		provider: body.provider
 	};
+}
+
+/**
+ * The provider a thread's OpenRouter requests must stay on: the one that
+ * wrote its latest `reasoning_details`, while the thread is still on that
+ * model. Null when nothing needs pinning.
+ */
+export function providerPin(messages: ChatMessage[], model: string): string | null {
+	const source = messages.findLast((m) => m.reasoning_details?.length && m.served_by)?.served_by;
+	return source && source.model === model ? source.provider : null;
+}
+
+/** The thread as sent: without `served_by`, which is ours, not the API's. */
+function wireMessages(messages: ChatMessage[]): ChatMessage[] {
+	return messages.map((m) => {
+		if (!m.served_by) return m;
+		const wire = { ...m };
+		delete wire.served_by;
+		return wire;
+	});
+}
+
+/**
+ * `providerPin`'s provider, by name and by OpenRouter's routing slug, or
+ * undefined when the request isn't pinned.
+ */
+async function pinnedProvider(
+	endpoint: { isOpenRouter: boolean; model: string },
+	messages: ChatMessage[]
+): Promise<{ name: string; slug: string } | undefined> {
+	if (!endpoint.isOpenRouter) return undefined;
+	const name = providerPin(messages, endpoint.model);
+	return name ? { name, slug: await openRouterProviderSlug(name) } : undefined;
 }
 
 function buildRequestBody(
 	options: ChatCompletionOptions,
 	modelName: string = 'default',
-	isOpenRouter = false
+	isOpenRouter = false,
+	/** `pinnedProvider`'s slug: no fallback to another provider, which would reject the signatures. */
+	providerSlug?: string
 ): Record<string, unknown> {
 	const isStream = options.stream ?? true;
 	const body: Record<string, unknown> = {
 		model: modelName,
-		messages: options.messages,
+		messages: wireMessages(options.messages),
 		stream: isStream
 	};
+	if (isOpenRouter && providerSlug) {
+		body.provider = { order: [providerSlug], allow_fallbacks: false };
+	}
 
 	if (isStream) {
 		body.stream_options = { include_usage: true };
@@ -539,9 +605,10 @@ export async function* readSseData(
  * malformed payloads. Keeps parseSSE's loop flat instead of nesting
  * data/try/choices/usage four deep.
  */
-function parseSSEData(data: string): StreamChunk | null {
+function parseSSEData(data: string, model?: string): StreamChunk | null {
 	try {
 		const parsed = JSON.parse(data);
+		const servedBy = servedByOf(parsed, model);
 		// OpenRouter mid-stream error: after the first token, HTTP is already
 		// 200 and the error arrives in-band as a top-level `error` object with
 		// a sentinel `finish_reason: "error"` choice. Surface it so the chat
@@ -559,6 +626,7 @@ function parseSSEData(data: string): StreamChunk | null {
 				finish_reason: parsed.choices[0].finish_reason
 			};
 			if (parsed.usage) chunk.usage = parsed.usage;
+			if (servedBy) chunk.served_by = servedBy;
 			return chunk;
 		}
 		// Final usage-only chunk (no choices) when stream_options.include_usage is set.
@@ -569,11 +637,58 @@ function parseSSEData(data: string): StreamChunk | null {
 	}
 }
 
+/** OpenRouter's top-level `provider` on a response or chunk, for `model`. */
+function servedByOf(parsed: unknown, model: string | undefined): ServedBy | undefined {
+	const provider = (parsed as { provider?: unknown } | null)?.provider;
+	return model && typeof provider === 'string' && provider ? { provider, model } : undefined;
+}
+
+/** One try's outcome: the OK response, or a failure worth retrying. */
+type ChatTry = { response: Response } | { error: ApiError; retryAfterMs?: number };
+
+/**
+ * One POST. Rethrows AbortError as-is and throws a non-retriable status as
+ * ApiError; a dropped connection or a retriable status comes back as `error`.
+ */
+async function tryChatRequest(
+	url: string,
+	init: RequestInit,
+	reqId: number,
+	label: string,
+	attempt: number
+): Promise<ChatTry> {
+	let response: Response;
+	try {
+		response = await fetch(url, init);
+	} catch (e) {
+		if (isAbortError(e)) {
+			logDebug('api', `${label} request #${reqId} aborted before response`);
+			throw e;
+		}
+		// A dropped/refused connection is transient (sidecar restarting) — retry.
+		logDebug('api', `${label} request #${reqId} fetch failed`, { error: errMessage(e), attempt });
+		return { error: new ApiError('Failed to connect to the AI model. Is it still loading?') };
+	}
+	if (response.ok) return { response };
+
+	const text = await readErrorText(response);
+	logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
+		body: previewPayload(text),
+		attempt
+	});
+	const error = new ApiError(`Server error: ${text}`, response.status);
+	if (!isRetriableStatus(response.status)) throw error; // client error (4xx) — retrying won't help
+	return { error, retryAfterMs: parseRetryAfter(response.headers?.get('retry-after')) };
+}
+
 /**
  * POST a chat request and return the OK response. Shared by the streaming and
  * non-streaming paths: rethrows AbortError as-is, maps other fetch failures
  * and non-2xx statuses to ApiError. `label` ("stream" / "non-stream") only
  * tags the debug logs.
+ *
+ * A 429 on a request pinned to `pinnedProvider` waits longer (see
+ * `rateLimitWait.ts`), since no other provider can take it.
  */
 async function sendChatRequest(
 	url: string,
@@ -581,57 +696,55 @@ async function sendChatRequest(
 	body: unknown,
 	signal: AbortSignal | undefined,
 	reqId: number,
-	label: string
+	label: string,
+	pinnedProvider?: string
 ): Promise<Response> {
-	const payload = JSON.stringify(body);
-	let lastError: ApiError | undefined;
-	for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
-		if (attempt > 0) {
-			const delay = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
-			logDebug(
-				'api',
-				`${label} request #${reqId} retry ${attempt}/${MAX_TRANSIENT_RETRIES} after ${delay}ms`,
-				{ reason: lastError?.message }
-			);
-			await abortableDelay(delay, signal); // rejects on abort → propagates out
-		}
+	const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body), signal };
+	let retries = 0;
+	let rateLimitWaits = 0;
+	let waitedMs = 0;
+	for (let attempt = 0; ; attempt++) {
+		const result = await tryChatRequest(url, init, reqId, label, attempt);
+		if ('response' in result) return result.response;
 
-		let response: Response;
-		try {
-			response = await fetch(url, { method: 'POST', headers, body: payload, signal });
-		} catch (e) {
-			if (isAbortError(e)) {
-				logDebug('api', `${label} request #${reqId} aborted before response`);
-				throw e;
+		if (pinnedProvider && result.error.statusCode === 429) {
+			const delay = pinnedRateLimitDelay(rateLimitWaits, result.retryAfterMs);
+			if (delay === null) {
+				throw new ApiError(rateLimitGiveUpMessage(pinnedProvider, waitedMs), 429);
 			}
-			// A dropped/refused connection is transient (sidecar restarting) — retry.
-			logDebug('api', `${label} request #${reqId} fetch failed`, { error: errMessage(e), attempt });
-			lastError = new ApiError('Failed to connect to the AI model. Is it still loading?');
+			rateLimitWaits++;
+			waitedMs += delay;
+			logDebug('api', `${label} request #${reqId} waiting ${delay}ms on ${pinnedProvider}`, {
+				wait: rateLimitWaits,
+				retryAfterMs: result.retryAfterMs
+			});
+			notifyRateLimitWait({
+				provider: pinnedProvider,
+				delayMs: delay,
+				wait: rateLimitWaits,
+				waits: PINNED_RATE_LIMIT_DELAYS_MS.length
+			});
+			await abortableDelay(delay, signal); // rejects on abort → propagates out
 			continue;
 		}
 
-		if (!response.ok) {
-			const text = await readErrorText(response);
-			logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
-				body: previewPayload(text),
-				attempt
-			});
-			const err = new ApiError(`Server error: ${text}`, response.status);
-			if (isRetriableStatus(response.status)) {
-				lastError = err;
-				continue;
-			}
-			throw err; // client error (4xx) — retrying won't help
-		}
-		return response;
+		// Exhausted all attempts on a transient failure.
+		if (retries >= MAX_TRANSIENT_RETRIES) throw result.error;
+		retries++;
+		const delay = RETRY_BASE_DELAY_MS * 2 ** (retries - 1);
+		logDebug(
+			'api',
+			`${label} request #${reqId} retry ${retries}/${MAX_TRANSIENT_RETRIES} after ${delay}ms`,
+			{ reason: result.error.message }
+		);
+		await abortableDelay(delay, signal); // rejects on abort → propagates out
 	}
-	// Exhausted all attempts on a transient failure.
-	throw lastError ?? new ApiError('Failed to connect to the AI model. Is it still loading?');
 }
 
-export async function* parseSSE(response: Response): AsyncGenerator<StreamChunk> {
+/** `model`, when given, is the requested model, recorded in each chunk's `served_by`. */
+export async function* parseSSE(response: Response, model?: string): AsyncGenerator<StreamChunk> {
 	for await (const data of readSseData(response.body!.getReader())) {
-		const chunk = parseSSEData(data);
+		const chunk = parseSSEData(data, model);
 		if (chunk) yield chunk;
 	}
 }
@@ -644,10 +757,12 @@ export async function* chatCompletionStream(
 	// Stored keys and llama-server's key are read once per run; wait for that.
 	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
+	const pin = await pinnedProvider(endpoint, options.messages);
 	const body = buildRequestBody(
 		{ ...options, stream: true },
 		endpoint.model,
-		endpoint.isOpenRouter
+		endpoint.isOpenRouter,
+		pin?.slug
 	);
 	const reqId = nextRequestId++;
 	logDebug(
@@ -662,7 +777,8 @@ export async function* chatCompletionStream(
 		body,
 		signal,
 		reqId,
-		'stream'
+		'stream',
+		pin?.name
 	);
 
 	if (!response.body) {
@@ -675,13 +791,16 @@ export async function* chatCompletionStream(
 	let toolCallChunks = 0;
 	let lastFinish: string | null = null;
 	let lastUsage: Usage | undefined;
+	let provider: string | undefined;
 	try {
-		for await (const chunk of parseSSE(response)) {
+		const model = endpoint.isOpenRouter ? endpoint.model : undefined;
+		for await (const chunk of parseSSE(response, model)) {
 			chunkCount++;
 			if (chunk.delta.content) contentLen += chunk.delta.content.length;
 			if (chunk.delta.tool_calls && chunk.delta.tool_calls.length > 0) toolCallChunks++;
 			if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 			if (chunk.usage) lastUsage = chunk.usage;
+			if (chunk.served_by) provider = chunk.served_by.provider;
 			yield chunk;
 		}
 	} finally {
@@ -690,6 +809,7 @@ export async function* chatCompletionStream(
 			contentLen,
 			toolCallChunks,
 			finish_reason: lastFinish,
+			provider,
 			usage: lastUsage
 		});
 	}
@@ -703,10 +823,12 @@ export async function chatCompletion(
 	// Stored keys and llama-server's key are read once per run; wait for that.
 	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
+	const pin = await pinnedProvider(endpoint, options.messages);
 	const body = buildRequestBody(
 		{ ...options, stream: false },
 		endpoint.model,
-		endpoint.isOpenRouter
+		endpoint.isOpenRouter,
+		pin?.slug
 	);
 	const reqId = nextRequestId++;
 	logDebug(
@@ -721,7 +843,8 @@ export async function chatCompletion(
 		body,
 		signal,
 		reqId,
-		'non-stream'
+		'non-stream',
+		pin?.name
 	);
 
 	const data = await response.json();
@@ -747,9 +870,11 @@ export async function chatCompletion(
 			? choice.message.reasoning_details
 			: null;
 	const fullContent = combineReasoningAndContent(reasoning, content);
+	const servedBy = servedByOf(data, endpoint.isOpenRouter ? endpoint.model : undefined);
 
 	logDebug('api', `non-stream request #${reqId} response`, {
 		finish_reason: choice.finish_reason,
+		provider: servedBy?.provider,
 		content_len: content ? content.length : 0,
 		has_reasoning: !!reasoning,
 		tool_call_count: choice.message?.tool_calls?.length ?? 0,
@@ -772,6 +897,7 @@ export async function chatCompletion(
 		tool_calls: choice.message?.tool_calls,
 		finish_reason: choice.finish_reason ?? 'stop',
 		usage: data.usage,
-		reasoning_details: reasoningDetails
+		reasoning_details: reasoningDetails,
+		...(servedBy ? { served_by: servedBy } : {})
 	};
 }
