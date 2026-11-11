@@ -279,8 +279,10 @@ export async function runInPty(
 				break;
 			}
 			if (await rejected(now)) {
+				const result = await rejectedLineResult(sessionId, start);
+				await clearRejectedLine(sessionId);
 				release();
-				return await rejectedLineResult(sessionId, start);
+				return result;
 			}
 			if (Date.now() >= deadline) break;
 			await sleep(PTY_POLL_MS);
@@ -332,6 +334,22 @@ function rejectionWatch(
 }
 
 /**
+ * Wipe a refused line off the prompt. Fish 4 keeps it in the editor so the
+ * user can fix it, which means the next command pasted in lands on the end of
+ * it and is refused in turn. Ctrl-C at a prompt discards the whole edit buffer
+ * (every line of a multi-line paste) in fish, bash and zsh alike. Skipped if a
+ * command did start after all, so it can't be interrupted by mistake.
+ */
+async function clearRejectedLine(sessionId: number): Promise<void> {
+	if (await pendingCommand(sessionId)) return;
+	try {
+		await invoke('shell_write', { sessionId, data: '\x03' });
+	} catch {
+		// Nothing to clear if the terminal has gone.
+	}
+}
+
+/**
  * The result for a line the shell refused to run: what it printed instead,
  * reported as a failure the model can act on, with a pointer at the likely
  * cause when the shell is fish.
@@ -350,7 +368,7 @@ async function rejectedLineResult(sessionId: number, start: ShellCtxSnapshot): P
 		? "\n\nThis terminal runs fish, which does not accept bash syntax. Rewrite the command in fish syntax, or run it as `bash -c '…'`."
 		: '';
 	return (
-		'Exit code: none — the shell did not run this command; it rejected the line.' +
+		'Exit code: none — the shell did not run this command; it rejected the line, and the line has been cleared from the prompt.' +
 		(said ? `\nShell output:\n${said}` : '') +
 		hint
 	);
