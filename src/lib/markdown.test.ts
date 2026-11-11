@@ -807,6 +807,12 @@ describe('renderMarkdown code-path links', () => {
 		expect(html).not.toContain('<a ');
 	});
 
+	it('turns a link to a file at the top of the folder into a button', () => {
+		const html = renderMarkdown('See [the stats file](stats.js).', undefined, link);
+		expect(buttons(html)).toEqual(['stats.js']);
+		expect(html).not.toContain('<a ');
+	});
+
 	it('leaves links to URLs, anchors and files outside the folder as links', () => {
 		const html = renderMarkdown(
 			'[site](https://example.com/a.ts), [top](#top), [conf](/etc/app.conf)',
