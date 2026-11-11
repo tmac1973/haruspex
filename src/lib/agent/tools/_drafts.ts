@@ -66,6 +66,23 @@ export const DOCUMENT: DraftKind = {
 	how: 'write it whole again starting with the same first line'
 };
 
+/**
+ * A built document (PDF, Word, LibreOffice) is revised when it keeps its
+ * title, its first heading or its first line. Fixing a layout often means
+ * rewording an opening paragraph, so the line alone is too strict; a later
+ * part, written as a second call, starts at a later heading.
+ */
+export const BUILT_DOCUMENT: DraftKind = {
+	keeps: (before, now) => before.some((s, i) => s !== '' && s === now[i]),
+	how: 'write it whole again with the same title, first heading or first line'
+};
+
+/** What a revised built document keeps: its title, first heading and first line. */
+export function documentSignature(content: string, title: unknown): string[] {
+	const heading = content.split('\n').find((l) => /^\s*#{1,6}\s/.test(l)) ?? '';
+	return [typeof title === 'string' ? normText(title) : '', firstLine(heading), firstLine(content)];
+}
+
 /** A spreadsheet is revised when its first sheet keeps its header and first record. */
 export const SPREADSHEET: DraftKind = {
 	keeps: (before, now) =>
@@ -129,5 +146,9 @@ export function noteDraft(
  */
 export function draftRewriteHint(turn: Set<string>, path: string, kind: DraftKind): string {
 	if (!revisable(turn, path)) return '';
-	return `To revise a file you created or were shown this turn, ${kind.how}. `;
+	return (
+		`This write starts differently from the one before, so it was taken for a ` +
+		`second part rather than a revision. To revise a file you created or were ` +
+		`shown this turn, ${kind.how}. `
+	);
 }

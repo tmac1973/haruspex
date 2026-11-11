@@ -66,6 +66,40 @@ function tocLevels(tree: Block[]): [number, number] {
 	return [top, top + 1];
 }
 
+/** A table cell's padding, in characters. */
+const CELL_PAD = 2;
+/** A table character's average width, as a share of the font size. */
+const CHAR_EM = 0.55;
+
+/**
+ * Each column's share of a table's width. Word may refit a table when it
+ * opens one, but LibreOffice keeps the widths it is given, and an even split
+ * breaks a long word in a narrow column. So, as the PDF does (`tableFit.ts`),
+ * every column first gets its longest word, then the room left goes to the
+ * columns with the longest text. Counted in characters: neither format
+ * embeds its font, so there is nothing exact to measure.
+ */
+export function columnShares(texts: string[][], width: number, fontSize: number): number[] {
+	const len = (s: string) => [...s].length;
+	const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+	const least = texts[0].map(
+		(_, c) =>
+			Math.max(1, ...texts.map((row) => Math.max(...(row[c] ?? '').split(/\s+/).map(len)))) +
+			CELL_PAD
+	);
+	const most = least.map((w, c) =>
+		Math.max(w, ...texts.map((row) => len(row[c] ?? '') + CELL_PAD))
+	);
+	const room = width / (fontSize * CHAR_EM) - sum(least);
+	const extra = sum(most) - sum(least);
+	const widths =
+		room <= 0 || extra === 0
+			? least
+			: least.map((w, c) => w + (most[c] - w) * Math.min(1, room / extra));
+	const total = sum(widths);
+	return widths.map((w) => w / total);
+}
+
 /**
  * A picture's size in points: its natural size at 96 dpi, or the share of
  * the text width its title asks for, never wider than the text nor taller

@@ -40,8 +40,10 @@ import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
 import {
+	BUILT_DOCUMENT,
 	DOCUMENT,
 	SPREADSHEET,
+	documentSignature,
 	draftRewriteHint,
 	firstLine,
 	mayRewriteDraft,
@@ -243,6 +245,9 @@ function repeatWriteMessage(relPath: string, editable: boolean, hint = ''): stri
 			`on disk now, not from this write.`
 		);
 	}
+	// A rewrite that could still land: a new name would leave a worse copy
+	// beside the good one.
+	if (hint) return refused + hint;
 	const dot = relPath.lastIndexOf('.');
 	const next = dot > 0 ? `${relPath.slice(0, dot)}-2${relPath.slice(dot)}` : `${relPath}-2`;
 	return (
@@ -778,6 +783,7 @@ async function documentWrite(
 	const content = args.content as string;
 	const options = documentOptions(args, globalThis.navigator?.language);
 	if ('error' in options) return toolResult(toolError(options.error));
+	const signature = documentSignature(content, args.title);
 	const office = OFFICE_FORMATS[choice.command];
 	if (office) {
 		let bytes: Uint8Array;
@@ -787,7 +793,7 @@ async function documentWrite(
 			return toolResult(toolInvokeError(tool, e));
 		}
 		const write = rawDocumentWrite(choice.command, bytes, workdir);
-		return draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
+		return draftWrite(tool, BUILT_DOCUMENT, signature, choice.path, write, ctx);
 	}
 	let pdf: Awaited<ReturnType<typeof pdfFromMarkdown>>;
 	try {
@@ -803,7 +809,7 @@ async function documentWrite(
 		written = relPath;
 		return send(relPath, overwrite);
 	};
-	const out = await draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
+	const out = await draftWrite(tool, BUILT_DOCUMENT, signature, choice.path, write, ctx);
 	if (out.result.startsWith('Wrote:')) {
 		const notes = [missingNote(pdf.missing), landscapeNote(pdf.landscaped)].filter(Boolean);
 		for (const note of notes) out.result += `\n${note}`;

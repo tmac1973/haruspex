@@ -224,8 +224,24 @@ describe('rewriting a document in the same turn', () => {
 		const out = await write({ path: 'long.pdf', content: '## Part two\n\nThe rest.' });
 		const error = JSON.parse(out.result).error;
 		expect(error).toContain('already written in this turn');
-		expect(error).toContain('same first line');
+		expect(error).toContain('same title, first heading or first line');
+		expect(error).toContain('starts differently');
+		// It could still be revised, so a second copy under a new name is no answer.
+		expect(error).not.toContain('"long-2.pdf"');
 		expect(writes()).toHaveLength(1);
+	});
+
+	it('rewrites a document whose opening paragraph changed when its title stays', async () => {
+		const table = '\n\n| a | b |\n|---|---|\n| 1 | 2 |';
+		await write({ path: 'wide.pdf', title: 'Wide', content: `An intro.${table}` });
+		const out = await write({ path: 'wide.pdf', title: 'Wide', content: `A new intro.${table}` });
+		expect(out.result).toBe('Wrote: wide.pdf (1 page)');
+	});
+
+	it('rewrites a document whose opening paragraph changed when its first heading stays', async () => {
+		await write({ path: 'wide.pdf', content: 'An intro.\n\n## Prices\n\nText.' });
+		const out = await write({ path: 'wide.pdf', content: 'A new intro.\n\n## Prices\n\nText.' });
+		expect(out.result).toBe('Wrote: wide.pdf (1 page)');
 	});
 
 	it(`allows ${MAX_DRAFT_REWRITES} rewrites, then refuses`, async () => {
@@ -237,7 +253,7 @@ describe('rewriting a document in the same turn', () => {
 		const out = await write({ path: 'r.pdf', content: SHORTER });
 		const error = JSON.parse(out.result).error;
 		expect(error).toContain('already written in this turn');
-		expect(error).not.toContain('same first line');
+		expect(error).not.toContain('first heading or first line');
 		expect(error).toContain('"r-2.pdf"');
 	});
 
@@ -254,7 +270,7 @@ describe('rewriting a document in the same turn', () => {
 		const out = await write({ path: 'report.docx', content: SHORTER });
 		const error = JSON.parse(out.result).error;
 		expect(error).toContain('already written in this turn');
-		expect(error).not.toContain('same first line');
+		expect(error).not.toContain('first heading or first line');
 		expect(writes()).toHaveLength(1);
 	});
 

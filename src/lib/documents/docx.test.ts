@@ -73,6 +73,19 @@ describe('buildDocx', () => {
 		expect(body.match(/<w:gridCol /g)).toHaveLength(2);
 	});
 
+	it('gives a long word room instead of splitting the width evenly', async () => {
+		const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+		const md =
+			`| Fruit | ${months.join(' | ')} |\n|${'---|'.repeat(9)}\n` +
+			`| Strawberries | ${months.map(() => '3.50').join(' | ')} |`;
+		const { body } = await build(md);
+		const widths = [...body.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) => +m[1]);
+		expect(widths).toHaveLength(9);
+		expect(widths[0]).toBeGreaterThan(widths[1] * 1.8);
+		// The grid fills the text width (6.5 in on Letter at 1 in margins, or near it).
+		expect(widths.reduce((a, b) => a + b)).toBeGreaterThan(8000);
+	});
+
 	it('embeds a picture once, sized to the page, with its type declared', async () => {
 		const md = '![Chart](c.png "center 50%")\n\n![Again](c.png)';
 		const { zip, body, part } = await build(md, PLAIN, new Map([['c.png', png]]));

@@ -1,6 +1,12 @@
 import type { SlideImage } from '#lib/slides/types.ts';
-import type { Block, ListItem, Run } from '#lib/documents/model.ts';
-import { escapeXml, imageExtension, imageSize, type Prepared } from '#lib/documents/office.ts';
+import { runText, type Block, type ListItem, type Run } from '#lib/documents/model.ts';
+import {
+	columnShares,
+	escapeXml,
+	imageExtension,
+	imageSize,
+	type Prepared
+} from '#lib/documents/office.ts';
 
 /**
  * The body of a Word document (`word/document.xml`) from the tree: styles
@@ -11,6 +17,8 @@ import { escapeXml, imageExtension, imageSize, type Prepared } from '#lib/docume
 /** Points to the units Word measures in. */
 export const TWIPS = 20;
 const EMU = 12700;
+/** A table's text size, in points: the body's, as every look has it. */
+const TABLE_SIZE = 11;
 /** A list level's indent, in twips. */
 export const LIST_INDENT = 360;
 
@@ -124,8 +132,11 @@ export class DocxBody {
 	}
 
 	private table(t: Extract<Block, { kind: 'table' }>): string {
-		const columns = t.align.length;
-		const width = Math.floor(((this.doc.page.width - this.doc.page.margin * 2) * TWIPS) / columns);
+		const textWidth = this.doc.page.width - this.doc.page.margin * 2;
+		const texts = [t.header, ...t.rows].map((r) => r.map(runText));
+		const grid = columnShares(texts, textWidth, TABLE_SIZE)
+			.map((share) => `<w:gridCol w:w="${Math.floor(share * textWidth * TWIPS)}"/>`)
+			.join('');
 		const cell = (runs: Run[], c: number, header: boolean) => {
 			const shade = header ? '<w:shd w:val="clear" w:color="auto" w:fill="EEF0F3"/>' : '';
 			const jc = t.align[c] === 'left' ? '' : `<w:jc w:val="${t.align[c]}"/>`;
@@ -148,7 +159,7 @@ export class DocxBody {
 			'<w:top w:w="60" w:type="dxa"/><w:left w:w="110" w:type="dxa"/>' +
 			'<w:bottom w:w="60" w:type="dxa"/><w:right w:w="110" w:type="dxa"/>' +
 			'</w:tblCellMar></w:tblPr><w:tblGrid>' +
-			`<w:gridCol w:w="${width}"/>`.repeat(columns) +
+			grid +
 			'</w:tblGrid>' +
 			row(t.header, true) +
 			t.rows.map((r) => row(r, false)).join('') +
