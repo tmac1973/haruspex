@@ -59,9 +59,23 @@ describe('buildOdt', () => {
 
 	it('writes a table with a header row and aligned cells', async () => {
 		const { body } = await build('| Item | Cost |\n|---|---|\n| Pump | 1,200 |');
-		expect(body).toContain('<table:table-column table:number-columns-repeated="2"/>');
+		expect(body).toContain('<table:table-column table:style-name="Table1.C1"/>');
+		expect(body).toContain('<table:table-column table:style-name="Table1.C2"/>');
 		expect(body).toContain('<table:table-header-rows>');
 		expect(body).toContain('text:style-name="Table_20_Contents_right">1,200');
+	});
+
+	it('gives a long word room instead of splitting the width evenly', async () => {
+		const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+		const md =
+			`| Fruit | ${months.join(' | ')} |\n|${'---|'.repeat(9)}\n` +
+			`| Strawberries | ${months.map(() => '3.50').join(' | ')} |`;
+		const { body } = await build(md);
+		const widths = [...body.matchAll(/style:column-width="([\d.]+)pt"/g)].map((m) => +m[1]);
+		expect(widths).toHaveLength(9);
+		expect(widths[0]).toBeGreaterThan(widths[1] * 1.8);
+		// Strawberries at 10pt, with its padding.
+		expect(widths[0]).toBeGreaterThan(70);
 	});
 
 	it('embeds a picture once, in the manifest, sized to the page', async () => {

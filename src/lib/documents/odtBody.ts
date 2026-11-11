@@ -1,6 +1,12 @@
 import type { SlideImage } from '#lib/slides/types.ts';
-import type { Align, Block, ListItem, Run } from '#lib/documents/model.ts';
-import { escapeXml, imageExtension, imageSize, type Prepared } from '#lib/documents/office.ts';
+import { runText, type Align, type Block, type ListItem, type Run } from '#lib/documents/model.ts';
+import {
+	columnShares,
+	escapeXml,
+	imageExtension,
+	imageSize,
+	type Prepared
+} from '#lib/documents/office.ts';
 
 /**
  * The body of a LibreOffice document (`content.xml`) from the tree. Named
@@ -8,11 +14,16 @@ import { escapeXml, imageExtension, imageSize, type Prepared } from '#lib/docume
  * are automatic styles, made here as they're used.
  */
 
+/** A table's text size, in points (`Table Contents` in `odtStyles.ts`). */
+const TABLE_SIZE = 10;
+
 export class OdtBody {
 	/** Pictures by path: their file under Pictures/ and the image. */
 	readonly media = new Map<string, { file: string; image: SlideImage }>();
 	/** Automatic text styles by name: their properties. */
 	readonly textStyles = new Map<string, string>();
+	/** Automatic column styles by name: their width in points. */
+	readonly columnStyles = new Map<string, number>();
 	private frames = 0;
 	private tables = 0;
 
@@ -126,9 +137,18 @@ export class OdtBody {
 			'</table:table-cell>';
 		const row = (cells: Run[][], header: boolean) =>
 			`<table:table-row>${cells.map((r, c) => cell(r, c, header)).join('')}</table:table-row>`;
+		const textWidth = this.doc.page.width - this.doc.page.margin * 2;
+		const texts = [t.header, ...t.rows].map((r) => r.map(runText));
+		const columns = columnShares(texts, textWidth, TABLE_SIZE)
+			.map((share, c) => {
+				const name = `Table${n}.C${c + 1}`;
+				this.columnStyles.set(name, share * textWidth);
+				return `<table:table-column table:style-name="${name}"/>`;
+			})
+			.join('');
 		return (
 			`<table:table table:name="Table${n}" table:style-name="Table">` +
-			`<table:table-column table:number-columns-repeated="${t.align.length}"/>` +
+			columns +
 			`<table:table-header-rows>${row(t.header, true)}</table:table-header-rows>` +
 			t.rows.map((r) => row(r, false)).join('') +
 			'</table:table>'

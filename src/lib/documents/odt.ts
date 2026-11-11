@@ -107,6 +107,12 @@ function content(text: string, body: OdtBody, doc: Prepared): string {
 				`<style:style style:name="${name}" style:family="text"><style:text-properties${props}/></style:style>`
 		)
 		.join('');
+	const columnStyles = [...body.columnStyles]
+		.map(
+			([name, width]) =>
+				`<style:style style:name="${name}" style:family="table-column"><style:table-column-properties style:column-width="${width.toFixed(2)}pt"/></style:style>`
+		)
+		.join('');
 	const textWidth = doc.page.width - doc.page.margin * 2;
 	const align = (name: string, parent: string, value: string) =>
 		`<style:style style:name="${name}" style:family="paragraph" style:parent-style-name="${parent}"><style:paragraph-properties fo:text-align="${value}"/></style:style>`;
@@ -124,6 +130,7 @@ function content(text: string, body: OdtBody, doc: Prepared): string {
 	return (
 		`${XML}<office:document-content ${NS}>${FONTS}<office:automatic-styles>` +
 		textStyles +
+		columnStyles +
 		cellAligns +
 		'<style:style style:name="Page_Break" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:break-after="page"/></style:style>' +
 		'<style:style style:name="Sect_Contents" style:family="section"><style:section-properties style:editable="false"/></style:style>' +

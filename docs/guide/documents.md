@@ -16,7 +16,7 @@ All three formats keep the shape of the assistant's markdown:
 - Headings, paragraphs, **bold**, _italic_ and struck-through text. In Word and LibreOffice the headings are real headings, so the navigation pane lists them.
 - Links you can click, for web and email addresses. A link to a file in the folder is written as plain text.
 - Bulleted and numbered lists, nested as deep as you like, and checklists.
-- Tables with a bold header row that repeats on each page. A column of numbers lines up on the right.
+- Tables with a bold header row that repeats on each page. A column of numbers lines up on the right. Each column is wide enough for its longest word, and the rest of the width goes to the columns with the most text.
 - Code blocks in a fixed-width font on a grey panel, and quotes beside a rule.
 - Page numbers at the foot of each page. A PDF leaves them off a one-page document.
 
@@ -33,7 +33,7 @@ Ask for any of these in your message and the assistant passes them along:
 
 ## The assistant checks its PDF
 
-After writing a PDF, the assistant is told how many pages it came to. If the model can see images, it is also shown the pages, four to a picture, up to the first eight. It looks for a table too narrow to read, a picture missing or too small, a mostly empty page, or more pages than you asked for, and may write the document again to fix it. It can do that up to three times in one answer, even for a file that was there before and that you said to overwrite.
+After writing a PDF, the assistant is told how many pages it came to. If the model can see images, it is also shown the pages, four to a picture, up to the first eight. It looks for a table too narrow to read, a picture missing or too small, a mostly empty page, or more pages than you asked for, and may write the document again to fix it. It can do that up to three times in one answer, as long as the new version keeps the title, the first heading or the first line, even for a file that was there before and that you said to overwrite.
 
 A model that can't see images gets only the page count.
 
