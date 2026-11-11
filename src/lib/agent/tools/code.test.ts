@@ -661,6 +661,9 @@ describe('run_command background / watch', () => {
 		expect(out.result).toContain("Unsupported use of '='");
 		expect(out.result).toContain('runs fish');
 		expect(invoke).toHaveBeenCalledWith('shell_output_since', { sessionId: 1, from: 100 });
+		// Fish 4 keeps the refused line in its editor; Ctrl-C clears it so the
+		// next command isn't appended to it.
+		expect(invoke).toHaveBeenLastCalledWith('shell_write', { sessionId: 1, data: '\x03' });
 	});
 
 	it('does not read a running command as rejected', async () => {
