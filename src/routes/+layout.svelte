@@ -264,10 +264,12 @@
 	});
 
 	onMount(() => {
-		document.addEventListener('click', openExternalLinks);
+		// Capture: SvelteKit's router listens on <html>, below `document`, so a
+		// bubbling listener here would see a path link only after it had routed.
+		document.addEventListener('click', openExternalLinks, true);
 		document.addEventListener('contextmenu', suppressLinkContextMenu);
 		return () => {
-			document.removeEventListener('click', openExternalLinks);
+			document.removeEventListener('click', openExternalLinks, true);
 			document.removeEventListener('contextmenu', suppressLinkContextMenu);
 		};
 	});

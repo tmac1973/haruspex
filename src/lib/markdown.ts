@@ -165,7 +165,10 @@ const marked = new Marked({
 		link(token) {
 			const linker = activeLinker;
 			if (!linker || /^[a-z][a-z0-9+.-]*:|^#/i.test(token.href)) return false;
-			const ref = linker(token.href);
+			// A bare `stats.js` in prose may be a word, but as a link target it
+			// can only be a file, so it gets the `./` that makes it a path.
+			const href = token.href.includes('/') ? token.href : `./${token.href}`;
+			const ref = linker(href);
 			if (!ref) return false;
 			// The text renders unlinked, so a path in it doesn't nest a button.
 			activeLinker = null;
