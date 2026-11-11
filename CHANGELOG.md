@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.2.18](https://github.com/tmac1973/haruspex/compare/v0.2.17...v0.2.18) (2026-11-11)
+
+
+### Features
+
+* **documents:** a PDF's page size, style, title and contents ([#1060](https://github.com/tmac1973/haruspex/issues/1060)) ([#1066](https://github.com/tmac1973/haruspex/issues/1066)) ([9868a32](https://github.com/tmac1973/haruspex/commit/9868a3246768f3ca041be80e462ade698ad0ffe5))
+* **documents:** build PDFs with pdfmake: Unicode text, real markdown and page numbers ([#1060](https://github.com/tmac1973/haruspex/issues/1060)) ([#1061](https://github.com/tmac1973/haruspex/issues/1061)) ([4620f43](https://github.com/tmac1973/haruspex/commit/4620f43a600b028087d7bcfccc68fc292cce7381))
+* **documents:** build Word and LibreOffice files from the parsed markdown ([#1068](https://github.com/tmac1973/haruspex/issues/1068)) ([#1071](https://github.com/tmac1973/haruspex/issues/1071)) ([85e0417](https://github.com/tmac1973/haruspex/commit/85e04174fb98d41fb6c6dae9c17071599ea2ea45))
+* **documents:** show the model its PDF, and keep headings off a page's foot ([#1060](https://github.com/tmac1973/haruspex/issues/1060)) ([#1064](https://github.com/tmac1973/haruspex/issues/1064)) ([fcb9550](https://github.com/tmac1973/haruspex/commit/fcb95502d3fa8f8098dd34db7b1a6bfa15bc70a1))
+* **documents:** turn a PDF's page for a wide table, or refuse it with a budget ([#1060](https://github.com/tmac1973/haruspex/issues/1060)) ([#1069](https://github.com/tmac1973/haruspex/issues/1069)) ([f879e82](https://github.com/tmac1973/haruspex/commit/f879e8201a79b6fee8a81b0d69effa2c86792973))
+* **viewer:** name a model's rig, skinned or rigid, in the 3D viewer's bar ([#1057](https://github.com/tmac1973/haruspex/issues/1057)) ([9bae7f8](https://github.com/tmac1973/haruspex/commit/9bae7f87ebc3ae43835f1197fd2e74e5c4bee158))
+
+
+### Bug Fixes
+
+* **api:** pin a reasoning thread to the OpenRouter provider that signed it ([#1052](https://github.com/tmac1973/haruspex/issues/1052)) ([b803235](https://github.com/tmac1973/haruspex/commit/b8032359cce932decfa3df09a391391154777b1b))
+* **api:** resend with fewer pictures when a server caps them per request ([#1053](https://github.com/tmac1973/haruspex/issues/1053)) ([#1054](https://github.com/tmac1973/haruspex/issues/1054)) ([62fea6d](https://github.com/tmac1973/haruspex/commit/62fea6d4c784e1f5ff1c42dbdbccbae9980aeb6a))
+* **check_3d:** bring in the 3d_model_checker_mcp trial fixes ([#1063](https://github.com/tmac1973/haruspex/issues/1063)) ([#1070](https://github.com/tmac1973/haruspex/issues/1070)) ([abfba32](https://github.com/tmac1973/haruspex/commit/abfba3281c2709d5b9b87dfe7f1414c747561d51))
+* **check_3d:** let the model and the spec say which clips loop and fly ([#1058](https://github.com/tmac1973/haruspex/issues/1058)) ([#1059](https://github.com/tmac1973/haruspex/issues/1059)) ([ad7ce0a](https://github.com/tmac1973/haruspex/commit/ad7ce0a26ee9e8af6e263d79de9d4f330bb88cc7))
+* **code:** open a link to a top-level file instead of a 404 ([#1075](https://github.com/tmac1973/haruspex/issues/1075)) ([f43a5ea](https://github.com/tmac1973/haruspex/commit/f43a5ea2eddc25eb73a32ffed5ce29fe3e51a79c))
+* **code:** open file links in the transcript instead of a 404 ([#1050](https://github.com/tmac1973/haruspex/issues/1050)) ([2d710bd](https://github.com/tmac1973/haruspex/commit/2d710bd99c261a750c1dcdfac10fd53392de1058))
+* **documents:** size office table columns, and let a reworded opening revise a PDF ([#1076](https://github.com/tmac1973/haruspex/issues/1076)) ([a9369c2](https://github.com/tmac1973/haruspex/commit/a9369c201828bb9bedb0df9f944b5a031274e50c))
+* **run_command:** clear a line fish rejected so the next command runs on its own ([#1077](https://github.com/tmac1973/haruspex/issues/1077)) ([#1078](https://github.com/tmac1973/haruspex/issues/1078)) ([d600f92](https://github.com/tmac1973/haruspex/commit/d600f92333f3f67922a04d7d903d3565147203f7))
+* **search:** stop sending the model to reddit, and say so when reddit blocks a fetch ([#1067](https://github.com/tmac1973/haruspex/issues/1067)) ([91ba2b2](https://github.com/tmac1973/haruspex/commit/91ba2b281884f7e84f1c254a8b7fb599339471f1)), closes [#799](https://github.com/tmac1973/haruspex/issues/799)
+* **tools:** honest answers for the [#1055](https://github.com/tmac1973/haruspex/issues/1055) check_3d, delegate and video reports ([#1056](https://github.com/tmac1973/haruspex/issues/1056)) ([d092ff4](https://github.com/tmac1973/haruspex/commit/d092ff4f1cde5d44b8cd483f89c06e439c121b7f))
+
+
+### Code Refactoring
+
+* **3d:** keep the 3D core free of the app's imports ([#1063](https://github.com/tmac1973/haruspex/issues/1063)) ([#1065](https://github.com/tmac1973/haruspex/issues/1065)) ([b48442f](https://github.com/tmac1973/haruspex/commit/b48442f93d2854e9044ca496b90198cb739d22af))
+
 ## [0.2.17](https://github.com/tmac1973/haruspex/compare/v0.2.16...v0.2.17) (2026-11-08)
 
 
