@@ -1,0 +1,449 @@
+<script lang="ts">
+	/**
+	 * One camera's form in Settings → Cameras: a network camera by its RTSP
+	 * address, or a USB webcam. Edits a draft; nothing is saved until Save.
+	 *
+	 * A password typed here goes to the secret store on Save. Test needs it
+	 * before then, so it is kept under a separate key for the test
+	 * (`camera:<id>:test`) and deleted when the form closes, which leaves the
+	 * saved password alone until Save.
+	 */
+	import { invoke } from '@tauri-apps/api/core';
+	import { onDestroy } from 'svelte';
+	import { redactCameraError, splitUrlCredentials } from '#lib/camera/credentials.ts';
+	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
+	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+	import type { CameraListenResult } from '#lib/ipc/gen/CameraListenResult.ts';
+	import type { CameraPermission } from '#lib/ipc/gen/CameraPermission.ts';
+	import type { UsbDevices } from '#lib/ipc/gen/UsbDevices.ts';
+	import { forgetCameraPassword, withStoredCameraPassword } from '#lib/stores/cameraSecrets.ts';
+	import { errMessage } from '#lib/utils/error.ts';
+	import { videoOverrides } from '#lib/video/binaries.ts';
+
+	interface Props {
+		/** The camera to edit; a new one carries a fresh id and no name. */
+		camera: CameraConfig;
+		/** Every other camera's name, for the duplicate check. */
+		otherNames: string[];
+		/** The camera as it should be stored, its password already in the secret store. */
+		onSave: (camera: CameraConfig) => void;
+		onCancel: () => void;
+	}
+
+	let { camera, otherNames, onSave, onCancel }: Props = $props();
+
+	// The form starts from the camera it was opened with; the parent remounts it per camera.
+	// svelte-ignore state_referenced_locally
+	const start = camera;
+	const startRtsp = start.source.kind === 'rtsp' ? start.source : null;
+	const startUsb = start.source.kind === 'usb' ? start.source : null;
+
+	let kind = $state<'rtsp' | 'usb'>(start.source.kind);
+	let name = $state(start.name);
+	let url = $state(startRtsp?.url ?? '');
+	let substreamUrl = $state(startRtsp?.substreamUrl ?? '');
+	let username = $state(startRtsp?.username ?? '');
+	let password = $state('');
+	const passwordSaved = !!startRtsp?.passwordRef;
+	let videoDevice = $state(startUsb?.videoDevice ?? '');
+	let audioDevice = $state(startUsb?.audioDevice ?? '');
+	let permission = $state<CameraPermission>(start.permission);
+	let caps = $state<CameraCaps | null>(start.caps);
+
+	let devices = $state<UsbDevices | null>(null);
+	let devicesError = $state('');
+	let saving = $state(false);
+	let saveError = $state('');
+
+	let testing = $state(false);
+	let frame = $state('');
+	let level = $state<number | null>(null);
+	let testError = $state('');
+	/** The key a password typed for Test was kept under, deleted when the form closes. */
+	let testKey: string | null = null;
+
+	const nameError = $derived.by(() => {
+		const n = name.trim();
+		if (!n) return 'Give it a name.';
+		const lower = n.toLowerCase();
+		return otherNames.some((o) => o.toLowerCase() === lower) ? 'Another camera has this name.' : '';
+	});
+
+	const sourceError = $derived.by(() => {
+		if (kind === 'usb') return videoDevice ? '' : 'Pick a webcam.';
+		return /^rtsps?:\/\/\S+/i.test(url.trim()) ? '' : 'Enter an address starting rtsp://.';
+	});
+
+	/** Move a `user:pass@` written into an address into the fields. */
+	function takeCredentials(which: 'url' | 'substream') {
+		const split = splitUrlCredentials(which === 'url' ? url : substreamUrl);
+		if (which === 'url') url = split.url;
+		else substreamUrl = split.url;
+		if (split.username !== null) username = split.username;
+		if (split.password !== null) password = split.password;
+	}
+
+	async function loadDevices() {
+		devicesError = '';
+		try {
+			devices = await invoke<UsbDevices>('camera_usb_devices', { overrides: videoOverrides() });
+			if (!videoDevice && devices.video.length) pickVideo(devices.video[0].id);
+		} catch (e) {
+			devicesError = errMessage(e);
+		}
+	}
+
+	/** Pick a webcam, and the microphone that seems to be its own. */
+	function pickVideo(id: string) {
+		videoDevice = id;
+		const own = devices?.video.find((v) => v.id === id)?.audioDevice;
+		audioDevice = own ?? '';
+	}
+
+	function setKind(next: 'rtsp' | 'usb') {
+		kind = next;
+		frame = '';
+		level = null;
+		testError = '';
+		if (next === 'usb' && !devices) void loadDevices();
+	}
+
+	if (start.source.kind === 'usb') void loadDevices();
+
+	/** The form as a camera, with `passwordRef` as given. */
+	function draft(passwordRef: string | null): CameraConfig {
+		takeCredentials('url');
+		if (substreamUrl.trim()) takeCredentials('substream');
+		return {
+			...start,
+			name: name.trim(),
+			source:
+				kind === 'rtsp'
+					? {
+							kind: 'rtsp',
+							url: url.trim(),
+							substreamUrl: substreamUrl.trim() || null,
+							username: username.trim(),
+							passwordRef
+						}
+					: { kind: 'usb', videoDevice, audioDevice: audioDevice || null },
+			permission,
+			// No pan/tilt control yet.
+			ptz: 'none',
+			caps
+		};
+	}
+
+	const savedRef = startRtsp?.passwordRef ?? null;
+
+	async function forgetTestPassword() {
+		if (!testKey) return;
+		const key = testKey;
+		testKey = null;
+		await forgetCameraPassword({
+			...start,
+			source: { kind: 'rtsp', url: '', substreamUrl: null, username: '', passwordRef: key }
+		});
+	}
+
+	/** The camera to test, its typed password kept under the test key. */
+	async function testCamera(): Promise<CameraConfig> {
+		if (kind !== 'rtsp' || !password) return draft(savedRef);
+		const kept = await withStoredCameraPassword(
+			{ ...draft(null), id: `${start.id}:test` },
+			password
+		);
+		if (kept.source.kind === 'rtsp') testKey = kept.source.passwordRef;
+		return { ...kept, id: start.id };
+	}
+
+	async function test() {
+		testing = true;
+		testError = '';
+		frame = '';
+		level = null;
+		const typed = password;
+		try {
+			const config = await testCamera();
+			const overrides = videoOverrides();
+			caps = await invoke<CameraCaps>('camera_probe', { config, overrides });
+			frame = await invoke<string>('camera_snapshot', { config, overrides });
+			if (caps.hasAudio) {
+				const heard = await invoke<CameraListenResult>('camera_listen', {
+					config,
+					seconds: 3,
+					transcribe: false,
+					overrides
+				});
+				level = heard.levelDb;
+			}
+		} catch (e) {
+			testError = redactCameraError(errMessage(e), typed);
+		} finally {
+			testing = false;
+		}
+	}
+
+	async function save() {
+		saving = true;
+		saveError = '';
+		try {
+			let next = draft(kind === 'rtsp' ? savedRef : null);
+			if (kind === 'rtsp' && password) next = await withStoredCameraPassword(next, password);
+			// A camera that was on the network and is now USB drops its password.
+			if (kind === 'usb' && savedRef) void forgetCameraPassword(start);
+			await forgetTestPassword();
+			onSave(next);
+		} catch (e) {
+			saveError = `Couldn't save the password: ${redactCameraError(errMessage(e), password)}`;
+		} finally {
+			saving = false;
+		}
+	}
+
+	function cancel() {
+		void forgetTestPassword();
+		onCancel();
+	}
+
+	onDestroy(() => void forgetTestPassword());
+
+	function levelText(db: number): string {
+		return db <= -120 ? 'Silent' : `${Math.round(db)} dB`;
+	}
+
+	/** A bar from -60 dB (empty) to 0 dB (full). */
+	function levelPercent(db: number): number {
+		return Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+	}
+</script>
+
+<div class="form">
+	<span class="label">Kind</span>
+	<div class="segmented" role="group" aria-label="Kind">
+		<button type="button" class:active={kind === 'rtsp'} onclick={() => setKind('rtsp')}
+			>Network</button
+		>
+		<button type="button" class:active={kind === 'usb'} onclick={() => setKind('usb')}>USB</button>
+	</div>
+
+	<label for="cam-name-{start.id}">Name</label>
+	<div>
+		<input
+			id="cam-name-{start.id}"
+			bind:value={name}
+			placeholder="Kitchen"
+			title="What you and the assistant call it."
+		/>
+		{#if nameError}<p class="error">{nameError}</p>{/if}
+	</div>
+
+	{#if kind === 'rtsp'}
+		<label for="cam-url-{start.id}">RTSP address</label>
+		<div>
+			<input
+				id="cam-url-{start.id}"
+				bind:value={url}
+				onchange={() => takeCredentials('url')}
+				placeholder="rtsp://192.168.1.50:554/ch0"
+				title="The camera's main stream, from its manual or web page. A user name and password in the address move to their own fields."
+			/>
+			{#if sourceError}<p class="error">{sourceError}</p>{/if}
+		</div>
+
+		<label for="cam-user-{start.id}">User name</label>
+		<input id="cam-user-{start.id}" bind:value={username} autocomplete="off" />
+
+		<label for="cam-pass-{start.id}">Password</label>
+		<input
+			id="cam-pass-{start.id}"
+			type="password"
+			bind:value={password}
+			autocomplete="off"
+			placeholder={passwordSaved ? 'saved' : ''}
+			title="Kept in the system keychain, not in the settings. Leave blank to keep the saved one."
+		/>
+
+		<label for="cam-sub-{start.id}">Substream</label>
+		<input
+			id="cam-sub-{start.id}"
+			bind:value={substreamUrl}
+			onchange={() => takeCredentials('substream')}
+			placeholder="Optional"
+			title="A smaller stream from the same camera, used by the ambient log. Leave blank to use the main stream."
+		/>
+	{:else}
+		<label for="cam-video-{start.id}">Webcam</label>
+		<div>
+			<select
+				id="cam-video-{start.id}"
+				value={videoDevice}
+				onchange={(e) => pickVideo(e.currentTarget.value)}
+			>
+				{#if !devices}<option value="">Looking…</option>{/if}
+				{#if devices && devices.video.length === 0}<option value="">No webcams found</option>{/if}
+				{#each devices?.video ?? [] as v (v.id)}
+					<option value={v.id}>{v.name}</option>
+				{/each}
+			</select>
+			{#if devicesError}<p class="error">{devicesError}</p>{/if}
+			{#if sourceError && devices}<p class="error">{sourceError}</p>{/if}
+		</div>
+
+		<label for="cam-mic-{start.id}">Microphone</label>
+		<select
+			id="cam-mic-{start.id}"
+			bind:value={audioDevice}
+			title="The webcam's own microphone is picked when one matches its name."
+		>
+			<option value="">None</option>
+			{#each devices?.audio ?? [] as a (a.id)}
+				<option value={a.id}>{a.name}</option>
+			{/each}
+		</select>
+	{/if}
+
+	<span class="label">Permission</span>
+	<div
+		class="segmented"
+		role="group"
+		aria-label="Permission"
+		title="Ask shows an approval prompt each time the assistant uses this camera. Jobs only use cameras set to Allow."
+	>
+		<button type="button" class:active={permission === 'ask'} onclick={() => (permission = 'ask')}
+			>Ask</button
+		>
+		<button
+			type="button"
+			class:active={permission === 'allow'}
+			onclick={() => (permission = 'allow')}>Allow</button
+		>
+	</div>
+</div>
+
+{#if frame || caps || level !== null || testError}
+	<div class="test-result">
+		{#if frame}<img src={frame} alt="What {name.trim() || 'the camera'} sees" />{/if}
+		<div class="test-notes">
+			{#if caps && frame}
+				<p class="help">
+					{caps.width}×{caps.height}{caps.videoCodec ? ` · ${caps.videoCodec}` : ''}
+				</p>
+			{/if}
+			{#if level !== null}
+				<p class="help">Sound: {levelText(level)}</p>
+				<div class="meter" aria-hidden="true">
+					<div class="meter-fill" style:width="{levelPercent(level)}%"></div>
+				</div>
+			{:else if caps && frame && !caps.hasAudio}
+				<p class="help">No sound in this stream.</p>
+			{/if}
+			{#if testError}<p class="error">{testError}</p>{/if}
+		</div>
+	</div>
+{/if}
+
+<div class="actions">
+	<button
+		type="button"
+		class="btn btn-small"
+		onclick={test}
+		disabled={testing || !!sourceError}
+		title="Shows a frame and listens for 3 seconds."
+	>
+		{testing ? 'Testing…' : 'Test'}
+	</button>
+	{#if saveError}<span class="error">{saveError}</span>{/if}
+	<span class="spacer"></span>
+	<button type="button" class="btn btn-small" onclick={cancel}>Cancel</button>
+	<button
+		type="button"
+		class="btn btn-primary btn-small"
+		disabled={saving || !!nameError || !!sourceError}
+		onclick={save}>Save</button
+	>
+</div>
+
+<style>
+	.form {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 8px 12px;
+		align-items: start;
+		font-size: 0.85rem;
+	}
+
+	.form > label,
+	.label {
+		padding-top: 6px;
+		color: var(--text-secondary);
+	}
+
+	input,
+	select {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 5px 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: 6px;
+		background: var(--bg-input);
+		color: var(--text-primary);
+		font: inherit;
+	}
+
+	.test-result {
+		display: flex;
+		gap: 12px;
+		align-items: flex-start;
+		margin-top: 10px;
+	}
+
+	.test-result img {
+		max-width: 240px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+	}
+
+	.test-notes {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.meter {
+		height: 6px;
+		max-width: 160px;
+		margin-top: 4px;
+		border-radius: 3px;
+		background: var(--border);
+		overflow: hidden;
+	}
+
+	.meter-fill {
+		height: 100%;
+		background: var(--accent);
+	}
+
+	.help {
+		margin: 0 0 4px;
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+	}
+
+	.error {
+		margin: 4px 0 0;
+		color: var(--error-text);
+		font-size: 0.8rem;
+		overflow-wrap: anywhere;
+	}
+
+	.actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+	}
+
+	.spacer {
+		flex: 1;
+	}
+</style>

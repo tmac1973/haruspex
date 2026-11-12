@@ -5,8 +5,6 @@ description: What each Settings section holds, its defaults, and where to read m
 
 # Settings reference
 
-Each section lists its main options, defaults and a page with more.
-
 ## Open Settings
 
 Click the gear in the header; again, or **← Back**, closes.
@@ -121,6 +119,13 @@ See the `integrations` page.
 
 See the `integrations` page.
 
+## Cameras
+
+- **Add camera**: Network (RTSP) or USB. **Permission**: Ask (default) or Allow.
+- **Trusted servers**: none.
+
+See the `cameras` page.
+
 ## Shell
 
 The Shell tab's terminal and its assistant.
@@ -152,15 +157,11 @@ See the `code` page.
 
 ## Image
 
-Where pictures are generated, if anywhere.
-
 - **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest.
 
 See the `images` page.
 
 ## Music
-
-Where songs are made, if anywhere.
 
 - **Backend**: None (default) or llama-toolchest.
 - **Default length**: 30 seconds.
@@ -196,8 +197,6 @@ Use your Code sessions from other computers. Off; port 8788.
 See the `remote-control` page.
 
 ## Feedback
-
-Report a bug or ask for a feature.
 
 - **Open feedback issue…**: a filled-in GitHub issue, API keys removed; check it first.
 - **Save Full Diagnostics…**: saves logs to attach to the issue.

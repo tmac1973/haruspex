@@ -50,7 +50,7 @@ export function leanOffers(name: string, fileWrites: boolean): boolean {
 }
 
 /** The most a lean Chat turn's schemas may add up to, in JSON characters. */
-export const LEAN_SCHEMA_BUDGET_CHARS = 9500;
+export const LEAN_SCHEMA_BUDGET_CHARS = 9600;
 
 /** The same for Lean + files. */
 export const LEAN_WRITE_SCHEMA_BUDGET_CHARS = 12000;

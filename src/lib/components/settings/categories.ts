@@ -11,6 +11,7 @@ export type Category =
 	| 'integrations'
 	| 'mcp'
 	| 'screen'
+	| 'cameras'
 	| 'shell'
 	| 'code'
 	| 'image'

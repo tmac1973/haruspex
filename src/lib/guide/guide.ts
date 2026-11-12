@@ -46,6 +46,7 @@ const ORDER = [
 	'video-speech',
 	'textures',
 	'integrations',
+	'cameras',
 	'search-and-network',
 	'guest-chat',
 	'remote-control',
