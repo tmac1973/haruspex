@@ -1,6 +1,6 @@
 ---
 title: Cameras
-description: Add a network camera (found over ONVIF or by its RTSP address) or a USB webcam, test it, choose Ask or Allow, pick trusted servers, and let the assistant look and listen in Chat.
+description: Add a network camera (found over ONVIF or by its RTSP address) or a USB webcam, test it, choose Ask or Allow, pick trusted servers, and let the assistant look, listen and turn a camera in Chat.
 ---
 
 # Cameras
@@ -34,9 +34,13 @@ The password goes in the system keychain, or Haruspex's encrypted secrets file w
 
 Click **Add camera**, set **Kind** to **USB**, and pick the **Webcam**. **Microphone** picks the webcam's own microphone when one matches its name; choose another, or **None**.
 
+On Linux, a webcam that can pan and tilt (such as an OBSBOT Tiny) can set **Pan/tilt** to **Pan/tilt (UVC)**. The option is greyed out for a webcam that can't, and on macOS and Windows.
+
 ## Test a camera
 
 Click **Test** in the camera's form. Haruspex shows one frame with its size and codec, then listens for 3 seconds and shows how loud it was ("Silent" when nothing was heard). If it fails, the reason from ffmpeg is shown, with the password taken out.
+
+A camera with pan/tilt also gets **Left**, **Right**, **Up**, **Down** and **Home** buttons: each turns it about 10° (Home recentres it) and shows a new frame.
 
 Test uses ffmpeg and ffprobe, the same ones Settings → Video editing finds or is set to.
 
@@ -59,15 +63,16 @@ Only servers on your own network can be marked: private addresses (192.168.x.x, 
 
 ## Let the assistant look and listen
 
-In Chat, the assistant can use your cameras with three tools:
+In Chat, the assistant can use your cameras with these tools:
 
 | Tool | What it does |
 |---|---|
-| `camera_list` | Lists your cameras, whether each has sound or can be aimed, and its permission. |
+| `camera_list` | Lists your cameras, whether each has sound or can be aimed (with its presets), and its permission. |
 | `camera_snapshot` | Takes one picture from a camera and looks at it. Needs a model that can see images. |
 | `camera_listen` | Records up to 30 seconds of sound (10 by default), transcribes it on this computer, and says how loud it was. The clip isn't kept. |
+| `camera_look` | Turns a pan/tilt camera left, right, up or down (about 10°, 30° or 60°; less for up and down), back home, or to a preset by name, then takes a picture. |
 
-Ask "what's on the kitchen counter?" or "what's being said in the kitchen?" and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.
+Ask "what's on the kitchen counter?", "what's being said in the kitchen?" or "turn the kitchen camera left and look at the door", and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.
 
 The tools only appear when you have a camera and the chat model is the local one or a trusted server (see below). With OpenRouter or any other server they aren't offered, and a call is refused. They don't appear in the Code or Shell tabs, or in lean mode.
 
@@ -75,7 +80,8 @@ Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask c
 
 ## What it doesn't do
 
-- The assistant can't turn a camera yet: **Pan/tilt** is saved for later.
-- No zoom, and no pan/tilt for USB webcams.
+- No zoom.
+- No pan/tilt for USB webcams on macOS or Windows.
+- Without a model that can see images, `camera_look` still turns the camera but takes no picture.
 - No recording: Haruspex keeps no video or sound clip.
 - No vendor cloud cameras (Ring, Nest, Tapo cloud, Wyze cloud).

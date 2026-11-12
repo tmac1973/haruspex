@@ -2,6 +2,7 @@
 //! frontend, and the ffmpeg and ffprobe paths set in Settings → Video editing
 //! (`overrides`), which the cameras share with the video tools.
 
+use super::aim::{self, Aim, CameraAimResult};
 use super::capture::{self, SNAPSHOT_MAX_WIDTH};
 use super::onvif::discovery::{self, DiscoveredCamera};
 use super::onvif::{self, ptz::Ptz, OnvifConnection};
@@ -129,4 +130,27 @@ pub async fn camera_onvif_presets(config: CameraConfig) -> Result<Vec<OnvifPrese
         .ok_or("This camera has no ONVIF service. Find it again under Settings → Cameras.")?;
     let creds = Credentials::for_source(&config.source).await?;
     Ptz::open(endpoint, creds).await?.presets().await
+}
+
+/// Turn the camera, or send it to a preset, and wait for it to settle.
+#[tauri::command]
+pub async fn camera_aim(config: CameraConfig, aim: Aim) -> Result<CameraAimResult, String> {
+    aim::aim(&config, &aim).await
+}
+
+/// Whether the USB webcam at `device` can pan or tilt over UVC. Always false
+/// off Linux.
+#[tauri::command]
+pub async fn camera_uvc_supported(device: String) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        tokio::task::spawn_blocking(move || super::uvc::supported(&device))
+            .await
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = device;
+        false
+    }
 }

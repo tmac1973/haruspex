@@ -121,7 +121,7 @@ See the `integrations` page.
 
 ## Cameras
 
-- **Add camera**: Network (RTSP) or USB. **Pan/tilt**: None or ONVIF. **Permission**: Ask (default) or Allow.
+- **Add camera**: Network or USB. **Pan/tilt**: None, ONVIF or UVC (Linux). **Permission**: Ask (default) or Allow.
 - **Trusted servers**: none.
 
 See the `cameras` page.

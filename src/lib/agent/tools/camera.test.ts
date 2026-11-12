@@ -7,7 +7,14 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 // Side-effect import registers the camera tools in the shared registry.
 import '#lib/agent/tools/camera.ts';
-import { describeHeard, listenSeconds } from '#lib/agent/tools/camera.ts';
+import {
+	CANT_MOVE,
+	DIRECTION_OR_PRESET,
+	describeAim,
+	describeHeard,
+	listenSeconds,
+	parseAim
+} from '#lib/agent/tools/camera.ts';
 import { ASK_IN_JOB, NOT_LOCAL, NO_CAMERAS } from '#lib/agent/tools/_cameraGate.ts';
 import { executeTool, getToolSchemas, type ToolSchemaOpts } from '#lib/agent/tools/registry.ts';
 import { defaultWatcherConfig, updateSettings } from '#lib/stores/settings.ts';
@@ -51,6 +58,7 @@ beforeEach(() => {
 	vi.mocked(invoke).mockImplementation(async (cmd) => {
 		if (cmd === 'camera_snapshot') return FRAME;
 		if (cmd === 'camera_listen') return { transcript: 'the kettle is on', levelDb: -28.4 };
+		if (cmd === 'camera_aim') return { atLimit: false };
 		throw new Error(`unexpected invoke: ${cmd}`);
 	});
 	updateSettings({ cameras: [camera()], cameraTrustedServers: [] });
@@ -59,7 +67,7 @@ beforeEach(() => {
 describe('which turns are offered the camera tools', () => {
 	it('offers them in Chat with cameras and the local model', () => {
 		expect(names()).toEqual(
-			expect.arrayContaining(['camera_list', 'camera_snapshot', 'camera_listen'])
+			expect.arrayContaining(['camera_list', 'camera_snapshot', 'camera_listen', 'camera_look'])
 		);
 	});
 
@@ -199,7 +207,15 @@ describe('camera_list', () => {
 	it('describes each camera without asking, even on Ask', async () => {
 		updateSettings({
 			cameras: [
-				camera({ permission: 'ask', ptz: 'onvif' }),
+				camera({
+					permission: 'ask',
+					ptz: 'onvif',
+					onvif: {
+						xaddr: 'http://192.168.1.50/onvif/device_service',
+						profileToken: 'Profile_0',
+						presets: [{ token: '0', name: 'Door' }]
+					}
+				}),
 				camera({
 					id: 'cam-2',
 					name: 'Desk',
@@ -211,7 +227,14 @@ describe('camera_list', () => {
 		const out = await executeTool('camera_list', {}, chat());
 		expect(getPendingCameraUse()).toBeNull();
 		expect(JSON.parse(out.result)).toEqual([
-			{ name: 'Kitchen', kind: 'network', has_audio: true, can_aim: true, permission: 'ask' },
+			{
+				name: 'Kitchen',
+				kind: 'network',
+				has_audio: true,
+				can_aim: true,
+				presets: ['Door'],
+				permission: 'ask'
+			},
 			{ name: 'Desk', kind: 'usb', has_audio: false, can_aim: false, permission: 'allow' }
 		]);
 	});
@@ -292,5 +315,146 @@ describe('camera_listen', () => {
 			'Silence (level -72 dB).'
 		);
 		expect(describeHeard('Kitchen', 10, { transcript: ' ', levelDb: -30 })).toContain('no words');
+	});
+});
+
+describe('camera_look', () => {
+	const ENDPOINT = {
+		xaddr: 'http://192.168.1.50/onvif/device_service',
+		profileToken: 'Profile_0',
+		presets: [{ token: '0', name: 'Door' }]
+	};
+	const aimable = (over: Partial<CameraConfig> = {}) =>
+		camera({ ptz: 'onvif', onvif: ENDPOINT, ...over });
+
+	beforeEach(() => updateSettings({ cameras: [aimable()] }));
+
+	it('turns the camera, then gives the model one picture of where it points', async () => {
+		const ctx = chat();
+		const out = await executeTool('camera_look', { camera: 'Kitchen', direction: 'left' }, ctx);
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).toEqual([
+			'camera_aim',
+			'camera_snapshot'
+		]);
+		expect(invoke).toHaveBeenCalledWith('camera_aim', {
+			config: expect.objectContaining({ id: 'cam-1' }),
+			aim: { direction: 'left', amount: 'medium' }
+		});
+		expect(ctx.pendingImages).toHaveLength(1);
+		expect(out.thumbDataUrl).toBe(FRAME);
+		expect(out.result).toMatch(/^Turned Kitchen left about 30° and took a picture/);
+	});
+
+	it('goes to a preset by name', async () => {
+		await executeTool('camera_look', { camera: 'Kitchen', preset: 'Door' }, chat());
+		expect(invoke).toHaveBeenCalledWith('camera_aim', {
+			config: expect.anything(),
+			aim: { preset: 'Door' }
+		});
+	});
+
+	it('wants exactly one of a direction or a preset', async () => {
+		for (const args of [{}, { direction: 'left', preset: 'Door' }, { direction: ' ' }]) {
+			const out = await executeTool('camera_look', { camera: 'Kitchen', ...args }, chat());
+			expect(error(out.result)).toBe(DIRECTION_OR_PRESET);
+		}
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it("refuses a camera that can't move, without asking", async () => {
+		updateSettings({ cameras: [camera({ permission: 'ask' })] });
+		const out = await executeTool('camera_look', { camera: 'Kitchen', direction: 'up' }, chat());
+		expect(error(out.result)).toBe(CANT_MOVE);
+		expect(getPendingCameraUse()).toBeNull();
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it('asks to move an Ask camera', async () => {
+		updateSettings({ cameras: [aimable({ permission: 'ask' })] });
+		const run = executeTool('camera_look', { camera: 'Kitchen', direction: 'home' }, chat());
+		await vi.waitFor(() => expect(getPendingCameraUse()?.action).toBe('move'));
+		expect(invoke).not.toHaveBeenCalled();
+		resolveCameraUse('allow');
+		expect((await run).result).toContain('home position');
+	});
+
+	it('refuses an Ask camera in a job, and an untrusted server', async () => {
+		updateSettings({ cameras: [aimable({ permission: 'ask' })] });
+		const job = await runWithAutoApprove(() =>
+			executeTool(
+				'camera_look',
+				{ camera: 'Kitchen', direction: 'left' },
+				makeToolContext({ interactive: false })
+			)
+		);
+		expect(error(job.result)).toBe(ASK_IN_JOB);
+		const remote = await executeTool(
+			'camera_look',
+			{ camera: 'Kitchen', direction: 'left' },
+			chat({ backend: OPENROUTER })
+		);
+		expect(error(remote.result)).toBe(NOT_LOCAL);
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it('still moves for a model that cannot see, and says no picture was taken', async () => {
+		const ctx = chat({ visionSupported: false });
+		const out = await executeTool('camera_look', { camera: 'Kitchen', direction: 'right' }, ctx);
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).toEqual(['camera_aim']);
+		expect(out.result).toContain('no picture was taken');
+		expect(ctx.pendingImages).toHaveLength(0);
+	});
+
+	it('shows the camera moving through the move and the picture', async () => {
+		const seen: unknown[] = [];
+		vi.mocked(invoke).mockImplementation(async (cmd) => {
+			seen.push(activeCameraUses());
+			return cmd === 'camera_aim' ? { atLimit: false } : FRAME;
+		});
+		await executeTool('camera_look', { camera: 'Kitchen', direction: 'left' }, chat());
+		expect(seen).toEqual([
+			[{ cameraId: 'cam-1', kind: 'move' }],
+			[{ cameraId: 'cam-1', kind: 'move' }]
+		]);
+		expect(activeCameraUses()).toEqual([]);
+	});
+
+	it('reports a failed move as an error', async () => {
+		vi.mocked(invoke).mockRejectedValue('This camera has no ONVIF pan/tilt.');
+		const out = await executeTool('camera_look', { camera: 'Kitchen', direction: 'left' }, chat());
+		expect(error(out.result)).toBe('Kitchen: This camera has no ONVIF pan/tilt.');
+	});
+
+	it('reads the arguments', () => {
+		expect(parseAim({ direction: 'Up', amount: 'LARGE' })).toEqual({
+			direction: 'up',
+			amount: 'large'
+		});
+		expect(parseAim({ preset: ' Door ' })).toEqual({ preset: 'Door' });
+		expect(parseAim({ direction: 'sideways' })).toHaveProperty('error');
+		expect(parseAim({ direction: 'left', amount: 'huge' })).toHaveProperty('error');
+	});
+
+	it('says how far it turned', () => {
+		expect(describeAim('Desk', { direction: 'down', amount: 'small' }, false)).toBe(
+			'Turned Desk down about 10°'
+		);
+		expect(describeAim('Desk', { direction: 'up', amount: 'large' }, true)).toBe(
+			'Turned Desk up about 40°, as far as it goes that way'
+		);
+	});
+
+	it('counts a UVC webcam as aimable', async () => {
+		updateSettings({
+			cameras: [
+				camera({
+					ptz: 'uvc',
+					source: { kind: 'usb', videoDevice: '/dev/video0', audioDevice: null }
+				})
+			]
+		});
+		const list = JSON.parse((await executeTool('camera_list', {}, chat())).result);
+		expect(list[0]).toMatchObject({ can_aim: true });
+		expect(list[0]).not.toHaveProperty('presets');
 	});
 });

@@ -412,6 +412,8 @@ pub fn run() {
             camera::commands::camera_onvif_discover,
             camera::commands::camera_onvif_connect,
             camera::commands::camera_onvif_presets,
+            camera::commands::camera_aim,
+            camera::commands::camera_uvc_supported,
             video::commands::video_binaries_status,
             video::commands::video_probe_folder,
             video::commands::video_probe_file,

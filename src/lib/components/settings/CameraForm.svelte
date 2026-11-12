@@ -7,11 +7,13 @@
 	 * A password typed here goes to the secret store on Save. Test needs it
 	 * before then, so it is kept under a separate key for the test
 	 * (`camera:<id>:test`) and deleted when the form closes, which leaves the
-	 * saved password alone until Save.
+	 * saved password alone until Save. The aim buttons use the same test camera.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { onDestroy } from 'svelte';
 	import { redactCameraError, splitUrlCredentials } from '#lib/camera/credentials.ts';
+	import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
+	import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
 	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import type { CameraListenResult } from '#lib/ipc/gen/CameraListenResult.ts';
@@ -55,7 +57,7 @@
 	let audioDevice = $state(startUsb?.audioDevice ?? '');
 	let permission = $state<CameraPermission>(start.permission);
 	let caps = $state<CameraCaps | null>(start.caps);
-	let ptz = $state<PtzKind>(start.ptz === 'onvif' ? 'onvif' : 'none');
+	let ptz = $state<PtzKind>(start.ptz);
 	let onvif = $state<OnvifEndpoint | null>(start.onvif);
 
 	let found = $state<DiscoveredCamera[] | null>(null);
@@ -67,6 +69,8 @@
 
 	let devices = $state<UsbDevices | null>(null);
 	let devicesError = $state('');
+	/** Whether the picked webcam can pan or tilt; null while unknown. */
+	let uvcSupported = $state<boolean | null>(null);
 	let saving = $state(false);
 	let saveError = $state('');
 
@@ -74,6 +78,7 @@
 	let frame = $state('');
 	let level = $state<number | null>(null);
 	let testError = $state('');
+	let aiming = $state(false);
 	/** The key a password typed for Test was kept under, deleted when the form closes. */
 	let testKey: string | null = null;
 
@@ -87,6 +92,32 @@
 	const sourceError = $derived.by(() => {
 		if (kind === 'usb') return videoDevice ? '' : 'Pick a webcam.';
 		return /^rtsps?:\/\/\S+/i.test(url.trim()) ? '' : 'Enter an address starting rtsp://.';
+	});
+
+	$effect(() => {
+		const device = videoDevice;
+		if (kind !== 'usb' || !device) {
+			uvcSupported = null;
+			return;
+		}
+		let current = true;
+		uvcSupported = null;
+		void invoke<boolean>('camera_uvc_supported', { device })
+			.then((ok) => {
+				if (current) uvcSupported = ok;
+			})
+			.catch(() => {
+				if (current) uvcSupported = false;
+			});
+		return () => {
+			current = false;
+		};
+	});
+
+	/** The pan/tilt the camera would be saved with. */
+	const savedPtz = $derived.by((): PtzKind => {
+		if (kind === 'rtsp') return ptz === 'onvif' && onvif ? 'onvif' : 'none';
+		return ptz === 'uvc' && uvcSupported !== false ? 'uvc' : 'none';
 	});
 
 	/** Move a `user:pass@` written into an address into the fields. */
@@ -143,8 +174,7 @@
 						}
 					: { kind: 'usb', videoDevice, audioDevice: audioDevice || null },
 			permission,
-			// USB pan/tilt comes later; a network camera aims over ONVIF.
-			ptz: kind === 'rtsp' && onvif ? ptz : 'none',
+			ptz: savedPtz,
 			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
 			caps
 		};
@@ -272,6 +302,33 @@
 			testError = redactCameraError(errMessage(e), typed);
 		} finally {
 			testing = false;
+		}
+	}
+
+	const AIMS: { direction: AimDirection; label: string; title: string }[] = [
+		{ direction: 'left', label: 'Left', title: 'Turns the camera about 10° left.' },
+		{ direction: 'right', label: 'Right', title: 'Turns the camera about 10° right.' },
+		{ direction: 'up', label: 'Up', title: 'Tilts the camera about 10° up.' },
+		{ direction: 'down', label: 'Down', title: 'Tilts the camera about 10° down.' },
+		{ direction: 'home', label: 'Home', title: 'Points the camera back to its home position.' }
+	];
+
+	/** Turn the camera a little and show what it sees now. */
+	async function aimTest(direction: AimDirection) {
+		aiming = true;
+		testError = '';
+		const typed = password;
+		try {
+			const config = await testCamera();
+			await invoke<CameraAimResult>('camera_aim', {
+				config,
+				aim: { direction, amount: 'small' }
+			});
+			frame = await invoke<string>('camera_snapshot', { config, overrides: videoOverrides() });
+		} catch (e) {
+			testError = redactCameraError(errMessage(e), typed);
+		} finally {
+			aiming = false;
 		}
 	}
 
@@ -460,6 +517,16 @@
 				<option value={a.id}>{a.name}</option>
 			{/each}
 		</select>
+
+		<label for="cam-uvc-{start.id}">Pan/tilt</label>
+		<select
+			id="cam-uvc-{start.id}"
+			bind:value={ptz}
+			title="UVC lets the assistant turn a webcam that can pan and tilt. Linux only."
+		>
+			<option value="none">None</option>
+			<option value="uvc" disabled={!uvcSupported}>Pan/tilt (UVC)</option>
+		</select>
 	{/if}
 
 	<span class="label">Permission</span>
@@ -512,6 +579,19 @@
 	>
 		{testing ? 'Testing…' : 'Test'}
 	</button>
+	{#if savedPtz !== 'none'}
+		<div class="aim" role="group" aria-label="Aim">
+			{#each AIMS as a (a.direction)}
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={() => aimTest(a.direction)}
+					disabled={aiming || testing || !!sourceError}
+					title={a.title}>{a.label}</button
+				>
+			{/each}
+		</div>
+	{/if}
 	{#if saveError}<span class="error">{saveError}</span>{/if}
 	<span class="spacer"></span>
 	<button type="button" class="btn btn-small" onclick={cancel}>Cancel</button>
@@ -629,6 +709,12 @@
 		align-items: center;
 		gap: 8px;
 		margin-top: 10px;
+	}
+
+	.aim {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
 	}
 
 	.spacer {

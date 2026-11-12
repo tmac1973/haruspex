@@ -10,10 +10,13 @@
 //!
 //! See `plan/camera-integration/` for the design.
 
+pub mod aim;
 pub mod capture;
 pub mod commands;
 pub mod onvif;
 pub mod usb;
+#[cfg(target_os = "linux")]
+pub(crate) mod uvc;
 
 use serde::{Deserialize, Serialize};
 

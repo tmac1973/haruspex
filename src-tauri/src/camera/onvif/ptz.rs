@@ -7,11 +7,9 @@ use crate::camera::{Credentials, OnvifEndpoint, OnvifPreset};
 use std::time::Duration;
 
 /// The longest a [`Ptz::move_by`] runs before it stops.
-#[allow(dead_code, reason = "camera_look (phase 06) moves cameras")]
 pub(crate) const MAX_MOVE: Duration = Duration::from_secs(10);
 
 /// Where the camera points and whether it is moving, as far as it says.
-#[allow(dead_code, reason = "camera_look (phase 06) reads it")]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct PtzStatus {
     /// Normalized, -1 to 1, when the camera reports its position.
@@ -28,7 +26,6 @@ pub(crate) struct Ptz {
     profile: String,
 }
 
-#[allow(dead_code, reason = "camera_look (phase 06) moves cameras")]
 impl Ptz {
     /// Open the PTZ service of the camera at `endpoint` (its clock read, its
     /// PTZ address looked up). Errors are redacted.
