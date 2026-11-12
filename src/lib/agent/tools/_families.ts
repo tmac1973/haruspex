@@ -85,6 +85,11 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
 		has: byCategory('desktop')
 	},
 	{
+		id: 'camera',
+		line: "camera — look and listen through the user's cameras",
+		has: byCategory('camera')
+	},
+	{
 		id: 'skill-writing',
 		line: 'skill-writing — create or change a skill, or write AGENTS.md',
 		has: byCategory('skills-write')

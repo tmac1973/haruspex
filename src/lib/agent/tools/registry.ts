@@ -1,5 +1,5 @@
 import { textureFiles, transitionFiles } from '#lib/assets/texture.ts';
-import type { ToolDefinition } from '#lib/api.ts';
+import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { coerceArgsToSchema } from '#lib/agent/tools/_coerce.ts';
@@ -33,6 +33,7 @@ import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
 import { sessionSpecialists } from '#lib/specialists/session.ts';
 import { helperForTool, sessionHelpers } from '#lib/helpers/registry.ts';
+import { cameraAccessRefusal, camerasUsable } from '#lib/agent/tools/_cameraGate.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -133,6 +134,13 @@ interface ToolFilterOpts {
 	hasContacts: boolean;
 	/** The user has switched screen capture on in Settings → Screen. */
 	screenCapture: boolean;
+	/**
+	 * Cameras are set up, this turn's model may see and hear them (local, or a
+	 * server trusted in Settings → Cameras), AND someone is there: a research
+	 * job runs without an allowlist, and jobs reach cameras only through a job
+	 * type that lists the tools.
+	 */
+	cameras: boolean;
 	/**
 	 * An image backend is set up AND someone is there to see the picture. The
 	 * second half matters: a research job runs without an allowlist, so it gets
@@ -304,6 +312,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'calendar' && !opts.hasCalendar) return false;
 	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
+	if (reg.category === 'camera' && !opts.cameras) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
 	if (reg.category === 'music' && !opts.musicGeneration) return false;
 	if (reg.category === 'speech' && !opts.interactive) return false;
@@ -344,7 +353,8 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		CODE_TAB_ONLY.has(name) ||
 		reg.category === 'video' ||
 		reg.category === 'interaction' ||
-		reg.category === 'desktop'
+		reg.category === 'desktop' ||
+		reg.category === 'camera'
 	);
 }
 
@@ -441,6 +451,11 @@ export interface ToolSchemaOpts {
 	 * The `tasks` tools are offered only when it has started a task.
 	 */
 	taskOwner?: string;
+	/**
+	 * The model this turn runs on; null or absent means Settings. The camera
+	 * tools are offered only when it may see and hear them.
+	 */
+	backend?: BackendOverride | null;
 }
 
 /** The schemas this turn sends: today, every tool it is offered. */
@@ -492,6 +507,7 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
+		cameras: interactive && !opts.codeMode && !opts.shellMode && camerasUsable(opts.backend),
 		imageGeneration: interactive && imageEntries().length > 0,
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
 		videoGeneration: interactive && getSettings().videoGenBackendKind !== 'none',
@@ -844,6 +860,13 @@ async function runTool(
 		return toolResult(
 			toolError('Screen capture is off. The user can turn it on in Settings → Screen.')
 		);
+	}
+
+	// And for cameras: none set up, a model that may not see or hear them, or
+	// a turn outside Chat. The tool itself then checks the camera's own Ask.
+	if (reg.category === 'camera') {
+		const refusal = cameraAccessRefusal(ctx);
+		if (refusal) return toolResult(toolError(refusal));
 	}
 
 	const early = await generationOrSkill(reg, ctx);

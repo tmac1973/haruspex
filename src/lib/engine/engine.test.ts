@@ -137,6 +137,7 @@ import { askMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 import { askRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
 import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { askScreenCapture } from '#lib/stores/screenCaptureApproval.svelte.ts';
+import { askCameraUse } from '#lib/stores/cameraApproval.svelte.ts';
 import { askFileConflict, resolveConflict } from '#lib/stores/fileConflict.svelte.ts';
 import { dispatch, setResync } from './dispatch.ts';
 import { emptyMirror, reduce, type Mirror } from './reduce.ts';
@@ -460,6 +461,19 @@ describe('prompts', () => {
 		});
 		await answerPrompt('main', p.promptId, { kind: 'screen-capture', choice: 'allow' });
 		expect(await shot).toBe('allow');
+	});
+
+	it("answers the assistant's camera prompt, in the chat that asked", async () => {
+		const use = askCameraUse({ cameras: ['Kitchen'], action: 'listen', chatId: 'c1' });
+		const [p] = currentPrompts('main');
+		expect(p).toMatchObject({
+			kind: 'camera',
+			chatId: 'c1',
+			answerable: true,
+			detail: { cameras: ['Kitchen'], action: 'listen' }
+		});
+		await answerPrompt('main', p.promptId, { kind: 'camera', choice: 'deny' });
+		expect(await use).toBe('deny');
 	});
 
 	it('answers the file-exists question, in the chat that asked', async () => {

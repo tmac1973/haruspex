@@ -302,6 +302,7 @@ export type PromptKind =
 	| 'skill'
 	| 'repo-trust'
 	| 'screen-capture'
+	| 'camera'
 	| 'file-conflict';
 
 /** Something a turn is waiting on a person for. */
@@ -334,6 +335,7 @@ export type PromptAnswer =
 	| { kind: 'skill'; action: 'reject'; reason: string }
 	| { kind: 'repo-trust'; trust: boolean }
 	| { kind: 'screen-capture'; choice: 'allow' | 'deny' }
+	| { kind: 'camera'; choice: 'allow' | 'deny' }
 	/** Replace the file, save under a free name next to it (`counter`), or don't write. */
 	| { kind: 'file-conflict'; choice: 'overwrite' | 'counter' | 'cancel' };
 

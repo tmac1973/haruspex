@@ -1,6 +1,6 @@
 ---
 title: Cameras
-description: Add a network (RTSP) camera or a USB webcam, test it, choose Ask or Allow, and pick which of your own servers may see and hear it.
+description: Add a network (RTSP) camera or a USB webcam, test it, choose Ask or Allow, pick which of your own servers may see and hear it, and let the assistant look and listen in Chat.
 ---
 
 # Cameras
@@ -45,9 +45,25 @@ Frames and sound from your cameras go to the local model. A remote model only ge
 
 Only servers on your own network can be marked: private addresses (192.168.x.x, 10.x.x.x, 172.16–31.x.x), this computer, link-local addresses, and names ending `.local` or `.internal`. A public server, and OpenRouter, can never be trusted.
 
+## Let the assistant look and listen
+
+In Chat, the assistant can use your cameras with three tools:
+
+| Tool | What it does |
+|---|---|
+| `camera_list` | Lists your cameras, whether each has sound or can be aimed, and its permission. |
+| `camera_snapshot` | Takes one picture from a camera and looks at it. Needs a model that can see images. |
+| `camera_listen` | Records up to 30 seconds of sound (10 by default), transcribes it on this computer, and says how loud it was. The clip isn't kept. |
+
+Ask "what's on the kitchen counter?" or "what's being said in the kitchen?" and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.
+
+The tools only appear when you have a camera and the chat model is the local one or a trusted server (see below). With OpenRouter or any other server they aren't offered, and a call is refused. They don't appear in the Code or Shell tabs, or in lean mode.
+
+Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask camera.
+
 ## What it doesn't do
 
 - No pan or tilt control yet.
 - No ONVIF or network discovery yet: paste the camera's address.
-- No recording: a test takes one frame and a 3-second clip, and keeps neither.
+- No recording: Haruspex keeps no video or sound clip.
 - No vendor cloud cameras (Ring, Nest, Tapo cloud, Wyze cloud).
