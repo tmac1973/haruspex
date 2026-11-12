@@ -1,5 +1,5 @@
 //! The camera watcher's log: one row per event, searchable by what was said
-//! (and, from phase 08, by its caption) through `camera_events_fts`.
+//! and by its caption through `camera_events_fts`.
 
 use super::*;
 use rusqlite::{params, params_from_iter, types::Value};
@@ -136,6 +136,30 @@ impl Database {
             )
             .map_err(|e| format!("Saving the thumbnail failed: {e}"))?;
         Ok(())
+    }
+
+    /// Save an event's caption: `Some` marks it done, `None` skipped (no
+    /// picture, or a model that can't see). The update trigger re-indexes it.
+    pub fn set_camera_event_caption(&self, id: i64, caption: Option<&str>) -> Result<(), String> {
+        let caption = caption.map(str::trim).filter(|c| !c.is_empty());
+        let status = if caption.is_some() { "done" } else { "skipped" };
+        self.conn()
+            .execute(
+                "UPDATE camera_events SET caption = ?1, caption_status = ?2 WHERE id = ?3",
+                params![caption, status, id],
+            )
+            .map_err(|e| format!("Saving the caption failed: {e}"))?;
+        Ok(())
+    }
+
+    /// The events still waiting for a caption, oldest first.
+    pub fn pending_camera_events(&self, limit: u32) -> Result<Vec<CameraEvent>, String> {
+        let sql = format!(
+            "SELECT {COLS} FROM camera_events e WHERE e.caption_status = 'pending'
+             ORDER BY e.started_at ASC, e.id ASC LIMIT ?1"
+        );
+        let limit = i64::from(limit.clamp(1, MAX_LIMIT));
+        self.query_camera_events(&sql, vec![Value::Integer(limit)])
     }
 
     /// The newest events first.
@@ -374,6 +398,36 @@ mod tests {
         assert_eq!(db.list_camera_events(&all()).unwrap().len(), 1);
         assert_eq!(db.clear_camera_events(None).unwrap(), (1, Vec::new()));
         assert!(db.list_camera_events(&all()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn captions_are_saved_searchable_and_leave_the_pending_list() {
+        let db = Database::open_in_memory();
+        let a = db.insert_camera_event(&event("door", 2_000, "")).unwrap();
+        let b = db.insert_camera_event(&event("door", 1_000, "")).unwrap();
+        let c = db.insert_camera_event(&event("door", 3_000, "")).unwrap();
+        let pending = |db: &Database| {
+            db.pending_camera_events(10)
+                .unwrap()
+                .into_iter()
+                .map(|e| e.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(pending(&db), [b, a, c]);
+        db.set_camera_event_caption(a, Some(" A man holds a parcel. "))
+            .unwrap();
+        db.set_camera_event_caption(b, Some("  ")).unwrap();
+        assert_eq!(pending(&db), [c]);
+        let rows = db.list_camera_events(&all()).unwrap();
+        let row = |id| rows.iter().find(|e| e.id == id).unwrap();
+        assert_eq!(row(a).caption.as_deref(), Some("A man holds a parcel."));
+        assert_eq!(row(a).caption_status, "done");
+        assert_eq!(row(b).caption, None);
+        assert_eq!(row(b).caption_status, "skipped");
+        let found = db.search_camera_events("parcel", &all()).unwrap();
+        assert_eq!(found.iter().map(|e| e.id).collect::<Vec<_>>(), [a]);
+        db.set_camera_event_caption(c, None).unwrap();
+        assert!(pending(&db).is_empty());
     }
 
     #[test]

@@ -71,6 +71,7 @@ In Chat, the assistant can use your cameras with these tools:
 | `camera_snapshot` | Takes one picture from a camera and looks at it. Needs a model that can see images. |
 | `camera_listen` | Records up to 30 seconds of sound (10 by default), transcribes it on this computer, and says how loud it was. The clip isn't kept. |
 | `camera_look` | Turns a pan/tilt camera left, right, up or down (about 10°, 30° or 60°; less for up and down), back home, or to a preset by name, then takes a picture. |
+| `camera_log` | Searches the ambient log (see the `camera-log` page). |
 
 Ask "what's on the kitchen counter?", "what's being said in the kitchen?" or "turn the kitchen camera left and look at the door", and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.
 
@@ -83,5 +84,5 @@ Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask c
 - No zoom.
 - No pan/tilt for USB webcams on macOS or Windows.
 - Without a model that can see images, `camera_look` still turns the camera but takes no picture.
-- No recording: Haruspex keeps no video or sound clip.
+- No recording: Haruspex keeps no video or sound clip. The ambient log keeps text and one small picture per entry.
 - No vendor cloud cameras (Ring, Nest, Tapo cloud, Wyze cloud).

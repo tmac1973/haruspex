@@ -243,6 +243,28 @@ pub async fn camera_event_thumb(db: tauri::State<'_, Database>, id: i64) -> Resu
     .await
 }
 
+/// Save an event's caption, or mark it skipped with none.
+#[tauri::command]
+pub async fn camera_event_set_caption(
+    db: tauri::State<'_, Database>,
+    id: i64,
+    caption: Option<String>,
+) -> Result<(), String> {
+    on_db(&db, move |db| {
+        db.set_camera_event_caption(id, caption.as_deref())
+    })
+    .await
+}
+
+/// The events waiting for a caption, oldest first.
+#[tauri::command]
+pub async fn camera_events_pending(
+    db: tauri::State<'_, Database>,
+    limit: u32,
+) -> Result<Vec<CameraEvent>, String> {
+    on_db(&db, move |db| db.pending_camera_events(limit)).await
+}
+
 /// Delete one event and its thumbnail.
 #[tauri::command]
 pub async fn camera_event_delete(db: tauri::State<'_, Database>, id: i64) -> Result<(), String> {

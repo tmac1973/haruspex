@@ -420,6 +420,8 @@ pub fn run() {
             camera::commands::camera_events_list,
             camera::commands::camera_events_search,
             camera::commands::camera_event_thumb,
+            camera::commands::camera_event_set_caption,
+            camera::commands::camera_events_pending,
             camera::commands::camera_event_delete,
             camera::commands::camera_events_clear,
             video::commands::video_binaries_status,

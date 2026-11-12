@@ -7,6 +7,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 // Side-effect import registers the camera tools in the shared registry.
 import '#lib/agent/tools/camera.ts';
+import '#lib/agent/tools/camera-log.ts';
 import {
 	CANT_MOVE,
 	DIRECTION_OR_PRESET,
@@ -456,5 +457,154 @@ describe('camera_look', () => {
 		const list = JSON.parse((await executeTool('camera_list', {}, chat())).result);
 		expect(list[0]).toMatchObject({ can_aim: true });
 		expect(list[0]).not.toHaveProperty('presets');
+	});
+});
+
+describe('camera_log', () => {
+	const at = new Date(2026, 10, 12, 14, 3).getTime();
+	const event = (id: number, cameraId: string, startedAt = at + id) => ({
+		id,
+		cameraId,
+		startedAt,
+		endedAt: startedAt + 4_000,
+		trigger: 'sound',
+		levelDb: -30,
+		transcript: `words ${id}`,
+		caption: id === 1 ? null : `caption ${id}`,
+		captionStatus: id === 1 ? 'pending' : 'done',
+		hasThumb: true
+	});
+	const porch = () => camera({ id: 'cam-2', name: 'Porch' });
+	let calls: { cmd: string; args: Record<string, unknown> }[] = [];
+
+	beforeEach(() => {
+		calls = [];
+		vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+			const a = (args ?? {}) as Record<string, unknown>;
+			calls.push({ cmd, args: a });
+			if (cmd === 'camera_events_list' || cmd === 'camera_events_search') {
+				const all = [event(1, 'cam-1'), event(2, 'cam-2'), event(3, 'cam-1')];
+				return all
+					.filter((e) => !a.cameraId || e.cameraId === a.cameraId)
+					.sort((x, y) => y.startedAt - x.startedAt)
+					.slice(0, a.limit as number);
+			}
+			throw new Error(`unexpected invoke: ${cmd}`);
+		});
+		updateSettings({ cameras: [camera(), porch()] });
+	});
+
+	it('is offered with the other camera tools, and to a job through its allowlist', () => {
+		expect(names()).toContain('camera_log');
+		const job = getToolSchemas({ hasWorkingDir: false, toolAllowlist: ['camera_log'] });
+		expect(job.map((s) => s.function.name)).toEqual(['camera_log']);
+	});
+
+	it('lists every camera newest first as text, with no pictures', async () => {
+		const ctx = chat();
+		const out = await executeTool('camera_log', {}, ctx);
+		expect(calls).toEqual([
+			{ cmd: 'camera_events_list', args: expect.objectContaining({ limit: 20 }) }
+		]);
+		expect(calls[0].args.cameraId).toBeUndefined();
+		const lines = out.result.split('\n');
+		expect(lines[0]).toBe('3 entries, newest first (local time):');
+		expect(lines[1]).toMatch(/· Kitchen · sound — Seen: caption 3\. Heard: "words 3"$/);
+		expect(lines[2]).toContain('· Porch ·');
+		expect(lines[3]).toContain('Seen: caption pending.');
+		expect(out.thumbDataUrl).toBeUndefined();
+		expect(ctx.pendingImages).toHaveLength(0);
+	});
+
+	it('searches one camera within a time window', async () => {
+		const out = await executeTool(
+			'camera_log',
+			{ camera: 'kitchen', query: ' parcel ', since: '2026-11-12T00:00', until: 'today', limit: 5 },
+			chat()
+		);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].cmd).toBe('camera_events_search');
+		expect(calls[0].args).toMatchObject({
+			query: 'parcel',
+			cameraId: 'cam-1',
+			since: new Date(2026, 10, 12).getTime(),
+			limit: 5
+		});
+		expect(typeof calls[0].args.until).toBe('number');
+		expect(out.result).not.toContain('Porch');
+	});
+
+	it('refuses a time it cannot read, before reading anything', async () => {
+		const out = await executeTool('camera_log', { since: 'soonish' }, chat());
+		expect(error(out.result)).toContain('"soonish"');
+		expect(calls).toEqual([]);
+	});
+
+	it('says so when nothing matches, and when the ambient log is off', async () => {
+		vi.mocked(invoke).mockResolvedValue([]);
+		const out = await executeTool('camera_log', { camera: 'Porch', query: 'dog' }, chat());
+		expect(out.result).toBe(
+			`No entries in Porch's log matching "dog" for that time. The ambient log is off; Settings → Cameras turns it on.`
+		);
+	});
+
+	it('asks once for every Ask camera, and reads them after Allow', async () => {
+		updateSettings({
+			cameras: [
+				camera({ permission: 'ask' }),
+				porch(),
+				camera({ id: 'cam-3', name: 'Hall', permission: 'ask' })
+			]
+		});
+		const run = executeTool('camera_log', {}, chat());
+		await vi.waitFor(() => expect(getPendingCameraUse()).not.toBeNull());
+		expect(getPendingCameraUse()).toMatchObject({
+			cameras: ['Kitchen', 'Hall'],
+			action: 'read_log'
+		});
+		expect(calls).toEqual([]);
+		resolveCameraUse('allow');
+		const out = await run;
+		// Every camera: one read, unfiltered.
+		expect(calls).toHaveLength(1);
+		expect(calls[0].args.cameraId).toBeUndefined();
+		expect(out.result).toContain('3 entries');
+	});
+
+	it('reads only the Allow cameras when the user declines the Ask ones', async () => {
+		updateSettings({ cameras: [camera({ permission: 'ask' }), porch()] });
+		const run = executeTool('camera_log', {}, chat());
+		await vi.waitFor(() => expect(getPendingCameraUse()).not.toBeNull());
+		resolveCameraUse('deny');
+		const out = await run;
+		expect(calls.map((c) => c.args.cameraId)).toEqual(['cam-2']);
+		expect(out.result).not.toContain('Kitchen ·');
+		expect(out.result).toContain('Left out Kitchen: the user declined.');
+	});
+
+	it('gives a job only the Allow cameras, without asking', async () => {
+		updateSettings({ cameras: [camera({ permission: 'ask' }), porch()] });
+		const out = await runWithAutoApprove(() =>
+			executeTool('camera_log', {}, makeToolContext({ interactive: false }))
+		);
+		expect(getPendingCameraUse()).toBeNull();
+		expect(calls.map((c) => c.args.cameraId)).toEqual(['cam-2']);
+		expect(out.result).toContain("set to Ask, so jobs can't read them");
+	});
+
+	it('refuses a job when every camera is Ask, or it names an Ask camera', async () => {
+		updateSettings({ cameras: [camera({ permission: 'ask' })] });
+		const job = makeToolContext({ interactive: false });
+		expect(error((await executeTool('camera_log', {}, job)).result)).toBe(ASK_IN_JOB);
+		expect(error((await executeTool('camera_log', { camera: 'Kitchen' }, job)).result)).toBe(
+			ASK_IN_JOB
+		);
+		expect(calls).toEqual([]);
+	});
+
+	it('refuses a model that may not read the cameras', async () => {
+		const out = await executeTool('camera_log', {}, chat({ backend: OPENROUTER }));
+		expect(error(out.result)).toBe(NOT_LOCAL);
+		expect(calls).toEqual([]);
 	});
 });

@@ -18,6 +18,7 @@
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import type { CameraListenResult } from '#lib/ipc/gen/CameraListenResult.ts';
 	import type { CameraPermission } from '#lib/ipc/gen/CameraPermission.ts';
+	import type { MotionSensitivity } from '#lib/ipc/gen/MotionSensitivity.ts';
 	import type { DiscoveredCamera } from '#lib/ipc/gen/DiscoveredCamera.ts';
 	import type { OnvifConnection } from '#lib/ipc/gen/OnvifConnection.ts';
 	import type { OnvifEndpoint } from '#lib/ipc/gen/OnvifEndpoint.ts';
@@ -59,6 +60,11 @@
 	let caps = $state<CameraCaps | null>(start.caps);
 	let ptz = $state<PtzKind>(start.ptz);
 	let onvif = $state<OnvifEndpoint | null>(start.onvif);
+	let watchOn = $state(start.watcher.enabled);
+	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
+	let hoursEnd = $state(start.watcher.activeHours?.end ?? '');
+	let sensitivity = $state<MotionSensitivity>(start.watcher.motionSensitivity);
+	let soundDb = $state(start.watcher.soundThresholdDb);
 
 	let found = $state<DiscoveredCamera[] | null>(null);
 	let finding = $state(false);
@@ -93,6 +99,10 @@
 		if (kind === 'usb') return videoDevice ? '' : 'Pick a webcam.';
 		return /^rtsps?:\/\/\S+/i.test(url.trim()) ? '' : 'Enter an address starting rtsp://.';
 	});
+
+	const hoursError = $derived(
+		watchOn && !hoursStart !== !hoursEnd ? 'Set both times, or neither to log all day.' : ''
+	);
 
 	$effect(() => {
 		const device = videoDevice;
@@ -174,6 +184,12 @@
 						}
 					: { kind: 'usb', videoDevice, audioDevice: audioDevice || null },
 			permission,
+			watcher: {
+				enabled: watchOn,
+				activeHours: hoursStart && hoursEnd ? { start: hoursStart, end: hoursEnd } : null,
+				motionSensitivity: sensitivity,
+				soundThresholdDb: soundDb
+			},
 			ptz: savedPtz,
 			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
 			caps
@@ -545,6 +561,60 @@
 			onclick={() => (permission = 'allow')}>Allow</button
 		>
 	</div>
+
+	<span class="label">Ambient log</span>
+	<div class="watch">
+		<label
+			class="toggle-row"
+			title="While Haruspex is open, motion or speech logs an entry: what was said, a one-line caption and one small picture. No video or sound is kept."
+		>
+			<input type="checkbox" bind:checked={watchOn} />
+			<span>Log motion and speech</span>
+		</label>
+	</div>
+
+	{#if watchOn}
+		<label for="cam-from-{start.id}">Active hours</label>
+		<div>
+			<div class="hours">
+				<input
+					id="cam-from-{start.id}"
+					type="time"
+					bind:value={hoursStart}
+					aria-label="From"
+					title="Leave both empty to log all day. An end before the start runs past midnight."
+				/>
+				<span>to</span>
+				<input id="cam-to-{start.id}" type="time" bind:value={hoursEnd} aria-label="To" />
+			</div>
+			{#if hoursError}<p class="error">{hoursError}</p>{/if}
+		</div>
+
+		<label for="cam-motion-{start.id}">Motion</label>
+		<select
+			id="cam-motion-{start.id}"
+			bind:value={sensitivity}
+			title="How much of the picture must change to count. High notices small movements, and more false alarms."
+		>
+			<option value="low">Low</option>
+			<option value="medium">Medium</option>
+			<option value="high">High</option>
+		</select>
+
+		<label for="cam-sound-{start.id}">Sound</label>
+		<div class="sound">
+			<input
+				id="cam-sound-{start.id}"
+				type="range"
+				min="-60"
+				max="-10"
+				step="1"
+				bind:value={soundDb}
+				title="How loud sound must be to log an entry. Lower catches quieter speech, and more background noise."
+			/>
+			<span>{Math.round(soundDb)} dB</span>
+		</div>
+	{/if}
 </div>
 
 {#if frame || caps || level !== null || testError}
@@ -598,7 +668,7 @@
 	<button
 		type="button"
 		class="btn btn-primary btn-small"
-		disabled={saving || !!nameError || !!sourceError}
+		disabled={saving || !!nameError || !!sourceError || !!hoursError}
 		onclick={save}>Save</button
 	>
 </div>
@@ -618,7 +688,7 @@
 		color: var(--text-secondary);
 	}
 
-	input,
+	input:not([type='checkbox']),
 	select {
 		width: 100%;
 		box-sizing: border-box;
@@ -628,6 +698,33 @@
 		background: var(--bg-input);
 		color: var(--text-primary);
 		font: inherit;
+	}
+
+	.watch {
+		padding-top: 4px;
+	}
+
+	.hours,
+	.sound {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.hours input {
+		width: auto;
+	}
+
+	.sound input {
+		flex: 1;
+		padding: 0;
+		border: none;
+		background: none;
+	}
+
+	.sound span {
+		min-width: 3.5em;
+		color: var(--text-secondary);
 	}
 
 	.found {

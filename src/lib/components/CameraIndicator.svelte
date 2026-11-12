@@ -2,7 +2,8 @@
 	/**
 	 * The header's sign that a camera is in use: shown while any camera tool is
 	 * taking a picture or listening (`stores/cameraActivity.svelte.ts`), with
-	 * the cameras' names. Clicking it opens Settings → Cameras.
+	 * the cameras' names, and calmer while the only use is an ambient-log
+	 * watcher. Clicking it opens Settings → Cameras.
 	 */
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { openSettings } from '#lib/stores/settingsNav.svelte.ts';
@@ -19,13 +20,18 @@
 	const nameOf = (id: string) => getLiveSettings().cameras.find((c) => c.id === id)?.name ?? id;
 	const names = $derived([...new Set(uses.map((u) => nameOf(u.cameraId)))]);
 	const tooltip = $derived(uses.map((u) => `${nameOf(u.cameraId)}: ${DOING[u.kind]}`).join('\n'));
+	/** Only watchers: the ambient log is on, but nothing is being taken right now. */
+	const onlyWatching = $derived(uses.length > 0 && uses.every((u) => u.kind === 'watch'));
 </script>
 
 {#if names.length > 0}
 	<button
 		class="camera-badge"
+		class:watching={onlyWatching}
 		title={tooltip}
-		aria-label={`Camera in use: ${names.join(', ')}`}
+		aria-label={onlyWatching
+			? `Watching: ${names.join(', ')}`
+			: `Camera in use: ${names.join(', ')}`}
 		onclick={() => openSettings('cameras')}
 	>
 		<svg
@@ -69,5 +75,15 @@
 
 	.camera-badge:hover {
 		background: color-mix(in srgb, var(--error-text) 18%, var(--bg-secondary));
+	}
+
+	.camera-badge.watching {
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, var(--bg-secondary));
+	}
+
+	.camera-badge.watching:hover {
+		background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary));
 	}
 </style>

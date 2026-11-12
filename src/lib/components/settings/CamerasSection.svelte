@@ -5,12 +5,15 @@
 	 * One camera's form is open at a time and saves only on its Save.
 	 */
 	import CameraForm from '#lib/components/settings/CameraForm.svelte';
+	import CameraEventLog from '#lib/components/settings/CameraEventLog.svelte';
+	import { cameraWatchStatus } from '#lib/stores/cameraActivity.svelte.ts';
 	import { isTrustableServer, trustedServerKey } from '#lib/camera/trust.ts';
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import { forgetCameraPassword } from '#lib/stores/cameraSecrets.ts';
 	import {
 		defaultWatcherConfig,
 		getSettings,
+		setCameraEventRetentionDays,
 		setCameraTrustedServers,
 		setCameras
 	} from '#lib/stores/settings.ts';
@@ -19,6 +22,10 @@
 	/** The list as saved, read again after every change. */
 	let cameras = $state<CameraConfig[]>(getSettings().cameras);
 	let openId = $state<string | null>(null);
+	/** The camera whose Activity is shown. */
+	let logId = $state<string | null>(null);
+	let retentionDays = $state(getSettings().cameraEventRetentionDays);
+	const watchErrors = $derived(cameraWatchStatus().errors);
 	/** A camera added but not yet saved: dropped if its form is cancelled. */
 	let pending = $state<CameraConfig | null>(null);
 	const shown = $derived(pending ? [...cameras, pending] : cameras);
@@ -57,6 +64,17 @@
 		openId = openId === id ? null : id;
 	}
 
+	function toggleLog(id: string) {
+		logId = logId === id ? null : id;
+	}
+
+	/** Days of the ambient log to keep, 1 to 90. */
+	function setRetention(raw: number) {
+		const days = Math.min(Math.max(Math.round(Number.isFinite(raw) ? raw : 7), 1), 90);
+		retentionDays = days;
+		setCameraEventRetentionDays(days);
+	}
+
 	function commit(next: CameraConfig) {
 		const exists = cameras.some((c) => c.id === next.id);
 		save(exists ? cameras.map((c) => (c.id === next.id ? next : c)) : [...cameras, next]);
@@ -73,6 +91,7 @@
 		void forgetCameraPassword($state.snapshot(camera) as CameraConfig);
 		save(cameras.filter((c) => c.id !== camera.id));
 		if (openId === camera.id) openId = null;
+		if (logId === camera.id) logId = null;
 	}
 
 	function where(c: CameraConfig): string {
@@ -119,6 +138,13 @@
 						>
 						<button
 							class="btn btn-small"
+							aria-expanded={logId === c.id}
+							aria-label={`${c.name} activity`}
+							title="Entries from the ambient log, newest first."
+							onclick={() => toggleLog(c.id)}>Activity</button
+						>
+						<button
+							class="btn btn-small"
 							aria-expanded={openId === c.id}
 							aria-label={`Edit ${c.name}`}
 							onclick={() => toggle(c.id)}>Edit</button
@@ -128,6 +154,14 @@
 						>
 					{/if}
 				</div>
+				{#if c !== pending && c.watcher.enabled && watchErrors[c.id]}
+					<p class="error">Ambient log: {watchErrors[c.id]}</p>
+				{/if}
+				{#if logId === c.id && c !== pending}
+					<div class="editor">
+						<CameraEventLog cameraId={c.id} cameraName={c.name} />
+					</div>
+				{/if}
 				{#if openId === c.id}
 					<div class="editor">
 						{#key c.id}
@@ -149,6 +183,27 @@
 			<button class="btn" onclick={add}>Add camera</button>
 		</div>
 	{/if}
+</section>
+
+<section class="settings-section">
+	<h2>Ambient log</h2>
+	<p
+		class="help"
+		title="Entries older than this are deleted with their pictures. Turn the log on for a camera under Edit."
+	>
+		How long to keep what the cameras log.
+	</p>
+	<label class="retention">
+		<span>Keep entries for</span>
+		<input
+			type="number"
+			min="1"
+			max="90"
+			value={retentionDays}
+			onchange={(e) => setRetention(e.currentTarget.valueAsNumber)}
+		/>
+		<span>days</span>
+	</label>
 </section>
 
 <section class="settings-section">
@@ -244,6 +299,31 @@
 
 	.actions {
 		margin-top: 10px;
+	}
+
+	.error {
+		margin: 6px 0 0;
+		color: var(--error-text);
+		font-size: 0.8rem;
+		overflow-wrap: anywhere;
+	}
+
+	.retention {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+		font-size: 0.85rem;
+	}
+
+	.retention input {
+		width: 5em;
+		padding: 5px 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: 6px;
+		background: var(--bg-input);
+		color: var(--text-primary);
+		font: inherit;
 	}
 
 	.server {

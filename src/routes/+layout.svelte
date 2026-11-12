@@ -67,6 +67,7 @@
 		applyTheme,
 		applyUiScale,
 		getActiveLocalModelFilename,
+		getLiveSettings,
 		getSettings,
 		resetUiScale,
 		setActiveLocalModel,
@@ -84,6 +85,9 @@
 	import '#lib/styles/app.css';
 	import { startEngine } from '#lib/engine/index.ts';
 	import { syncOwnerApi } from '#lib/owner/service.ts';
+	import { startCaptioner } from '#lib/camera/captioner.ts';
+	import { syncCameraWatchers } from '#lib/camera/watchSync.ts';
+	import { watchCameraWatchers } from '#lib/stores/cameraActivity.svelte.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
 	import { installMarkdownActions } from '#lib/markdownActions.ts';
 	import {
@@ -324,6 +328,14 @@
 		void maybeFlushPendingRestart();
 	});
 
+	// Settings → Cameras' ambient log: the main window keeps Rust's watchers
+	// in step with the cameras and the retention window (only a change is
+	// pushed), on load and after every settings change.
+	$effect(() => {
+		const settings = getLiveSettings();
+		if (!detached) syncCameraWatchers(settings);
+	});
+
 	onMount(async () => {
 		applyTheme();
 		applyAccent();
@@ -389,6 +401,11 @@
 		// Settings → Remote control, if it is on. Main window only, like
 		// remote chat: one server for the app.
 		void syncOwnerApi();
+		// The ambient log: the header shows running watchers, and each logged
+		// event is captioned once no chat turn needs the model. Main window
+		// only, like the watchers themselves.
+		void watchCameraWatchers().catch((e: unknown) => console.warn('Camera watchers:', e));
+		void startCaptioner().catch((e: unknown) => console.warn('Camera captions:', e));
 
 		try {
 			version = await getVersion();

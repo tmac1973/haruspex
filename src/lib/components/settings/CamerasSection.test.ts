@@ -47,6 +47,32 @@ vi.mock('@tauri-apps/api/core', async () =>
 					{ token: '1', name: 'Window' }
 				];
 			},
+			camera_events_list: (a) => {
+				state.calls.push({ cmd: 'camera_events_list', args: a });
+				return [
+					{
+						id: 7,
+						cameraId: 'k1',
+						startedAt: new Date(2026, 10, 12, 9, 15).getTime(),
+						endedAt: new Date(2026, 10, 12, 9, 16).getTime(),
+						trigger: 'both',
+						levelDb: -25,
+						transcript: 'Parcel for you.',
+						caption: 'A man leaves a box at the door.',
+						captionStatus: 'done',
+						hasThumb: true
+					}
+				];
+			},
+			camera_event_thumb: 'data:image/jpeg;base64,THUMB',
+			camera_event_delete: (a) => {
+				state.calls.push({ cmd: 'camera_event_delete', args: a });
+				return null;
+			},
+			camera_events_clear: (a) => {
+				state.calls.push({ cmd: 'camera_events_clear', args: a });
+				return 1;
+			},
 			camera_usb_devices: {
 				video: [{ id: '/dev/video0', name: 'OBSBOT Tiny', audioDevice: 'alsa_input.obsbot' }],
 				audio: [{ id: 'alsa_input.obsbot', name: 'OBSBOT Tiny Microphone' }]
@@ -243,5 +269,91 @@ describe('trusted servers', () => {
 		await fireEvent.click(lan);
 		expect(getSettings().cameraTrustedServers).toEqual(['http://192.168.1.20:8080']);
 		expect(() => structuredClone(getSettings())).not.toThrow();
+	});
+});
+
+function kitchen(over: Partial<CameraConfig> = {}): CameraConfig {
+	return {
+		id: 'k1',
+		name: 'Kitchen',
+		source: { kind: 'usb', videoDevice: '/dev/video0', audioDevice: null },
+		permission: 'allow',
+		ptz: 'none',
+		onvif: null,
+		watcher: { ...defaultWatcherConfig },
+		caps: null,
+		...over
+	};
+}
+
+describe('the ambient log', () => {
+	it("saves a camera's watcher settings from its form", async () => {
+		setCameras([kitchen()]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		expect(screen.queryByLabelText(/^Motion$/)).toBeNull();
+
+		await fireEvent.click(screen.getByLabelText('Log motion and speech'));
+		await fireEvent.input(input(/^From$/), { target: { value: '08:00' } });
+		await screen.findByText('Set both times, or neither to log all day.');
+		expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(true);
+		await fireEvent.input(input(/^To$/), { target: { value: '18:30' } });
+		await fireEvent.change(input(/^Motion$/), { target: { value: 'high' } });
+		await fireEvent.input(input(/^Sound$/), { target: { value: '-45' } });
+		await fireEvent.click(screen.getByText('Save'));
+
+		await waitFor(() => expect(getSettings().cameras[0].watcher.enabled).toBe(true));
+		expect(getSettings().cameras[0].watcher).toEqual({
+			enabled: true,
+			activeHours: { start: '08:00', end: '18:30' },
+			motionSensitivity: 'high',
+			soundThresholdDb: -45
+		});
+	});
+
+	it('keeps the retention between 1 and 90 days', async () => {
+		render(CamerasSection);
+		const days = input(/Keep entries for/);
+		expect(days.value).toBe('7');
+		await fireEvent.change(days, { target: { value: '30' } });
+		expect(getSettings().cameraEventRetentionDays).toBe(30);
+		await fireEvent.change(days, { target: { value: '400' } });
+		expect(getSettings().cameraEventRetentionDays).toBe(90);
+		expect(days.value).toBe('90');
+	});
+
+	it("shows a camera's latest entries, and deletes one or all", async () => {
+		setCameras([kitchen()]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+
+		await screen.findByText('A man leaves a box at the door.');
+		screen.getByText('“Parcel for you.”');
+		expect(state.calls[0]).toEqual({
+			cmd: 'camera_events_list',
+			args: { cameraId: 'k1', limit: 50 }
+		});
+		await waitFor(() =>
+			expect(document.querySelector('img')?.getAttribute('src')).toBe(
+				'data:image/jpeg;base64,THUMB'
+			)
+		);
+
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		await fireEvent.click(screen.getByText('Clear all'));
+		expect(state.calls.some((c) => c.cmd === 'camera_events_clear')).toBe(false);
+
+		await fireEvent.click(screen.getByLabelText(/^Delete the entry from/));
+		await screen.findByText('No entries.');
+		expect(state.calls).toContainEqual({ cmd: 'camera_event_delete', args: { id: 7 } });
+
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+		await screen.findByText('Clear all');
+		confirm.mockReturnValue(true);
+		await fireEvent.click(screen.getByText('Clear all'));
+		await screen.findByText('No entries.');
+		expect(state.calls).toContainEqual({ cmd: 'camera_events_clear', args: { cameraId: 'k1' } });
+		confirm.mockRestore();
 	});
 });

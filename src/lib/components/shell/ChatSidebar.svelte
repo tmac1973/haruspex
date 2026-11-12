@@ -122,6 +122,7 @@
 		if (consumer === 'code') return 'a Code session';
 		if (consumer === 'memory') return 'a memory extraction pass';
 		if (consumer === 'subagent') return 'a research sub-agent';
+		if (consumer === 'camera') return 'a camera caption';
 		if (consumer.kind === 'job') return `job "${consumer.jobName}"`;
 		if (consumer.kind === 'home') return `Home's ${consumer.label}`;
 		return 'a remote guest';

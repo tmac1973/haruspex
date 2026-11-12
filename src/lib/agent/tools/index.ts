@@ -27,6 +27,7 @@ import '#lib/agent/tools/calendar.ts';
 import '#lib/agent/tools/contacts.ts';
 import '#lib/agent/tools/screen.ts';
 import '#lib/agent/tools/camera.ts';
+import '#lib/agent/tools/camera-log.ts';
 import '#lib/agent/tools/image-gen.ts';
 import '#lib/agent/tools/image-edit.ts';
 import '#lib/agent/tools/image-upscale.ts';

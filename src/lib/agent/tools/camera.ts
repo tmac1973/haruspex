@@ -9,6 +9,8 @@
  * `camera_look` aims a pan/tilt camera (ONVIF, or UVC on Linux) by a
  * direction or a saved preset, then takes a picture like `camera_snapshot`.
  *
+ * `camera_log` (in `camera-log.ts`) reads the ambient log.
+ *
  * Every call goes through `_cameraGate.ts` first: a model on this computer or
  * a trusted server, a camera by that name, and its Ask / Allow permission.
  * While a camera is in use the header shows it (`cameraActivity`).
@@ -25,6 +27,7 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { cameraAccessRefusal, cameraGate, resolveCamera } from '#lib/agent/tools/_cameraGate.ts';
+import { stamp } from '#lib/camera/log.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { withCameraActivity } from '#lib/stores/cameraActivity.svelte.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
@@ -54,14 +57,8 @@ export function canAim(camera: CameraConfig): boolean {
 	return false;
 }
 
-/** Local date and time, to the second: "2026-11-12 14:03:22". */
-function stamp(d = new Date()): string {
-	const p = (n: number) => String(n).padStart(2, '0');
-	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
-
 /** A command's error as the model may see it: no address with a user name in it. */
-function errorText(e: unknown): string {
+export function errorText(e: unknown): string {
 	return redactCameraError(e instanceof Error ? e.message : String(e), '');
 }
 
@@ -313,7 +310,7 @@ registerTool({
 });
 
 /** A refusal from the gate: the user's no as a plain answer, everything else as an error. */
-function refused(gate: { refusal: string; declined?: boolean }) {
+export function refused(gate: { refusal: string; declined?: boolean }) {
 	return toolResult(gate.declined ? gate.refusal : toolError(gate.refusal));
 }
 

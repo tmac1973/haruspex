@@ -7,7 +7,7 @@ description: What each Settings section holds, its defaults, and where to read m
 
 ## Open Settings
 
-Click the gear in the header; again, or **← Back**, closes.
+Click the gear in the header; **← Back** closes.
 
 ## General
 
@@ -30,7 +30,7 @@ Where the model runs, which model, and defaults.
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4), for chats, jobs and subtasks at once.
+- **Parallel streams**: 1 (also 2 or 4).
 - **Extra llama-server arguments**: empty; they override Haruspex's.
 - **Model defaults**: reasoning on, medium effort; replies to 8192 tokens, 65536 for a file.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
@@ -55,7 +55,7 @@ What the assistant remembers between chats.
 
 - **Carry facts and preferences from one conversation into the next**: on. Needs a 65 MB model.
 - **Ask before saving something you asked me to remember**: on.
-- **Find duplicates**: merges memories that say the same thing, if you approve.
+- **Find duplicates**: merges repeated memories, if you approve.
 - A list of everything remembered, to edit or delete.
 
 See the `memory` page.
@@ -122,9 +122,10 @@ See the `integrations` page.
 ## Cameras
 
 - **Add camera**: Network or USB. **Pan/tilt**: None, ONVIF or UVC (Linux). **Permission**: Ask (default) or Allow.
+- **Ambient log**: off. **Keep entries for**: 7 days.
 - **Trusted servers**: none.
 
-See the `cameras` page.
+See the `cameras` and `camera-log` pages.
 
 ## Shell
 
@@ -186,7 +187,7 @@ See the `video-editing` and `video-render` pages.
 - **Let people on your network chat with this Haruspex**: off. Uses HTTPS.
 - **Who can connect**: **People with the link**.
 - **Port**: 8787.
-- Once on: a link and QR code to share, and guests you can disconnect.
+- Once on: a link and QR code, and guests you can disconnect.
 
 See the `guest-chat` page.
 

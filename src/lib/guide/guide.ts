@@ -47,6 +47,7 @@ const ORDER = [
 	'textures',
 	'integrations',
 	'cameras',
+	'camera-log',
 	'search-and-network',
 	'guest-chat',
 	'remote-control',

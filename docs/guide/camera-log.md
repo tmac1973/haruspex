@@ -1,0 +1,55 @@
+---
+title: Camera ambient log
+description: Turn on a camera's ambient log, set its hours and triggers, browse or delete entries in Settings → Cameras, and ask the assistant what happened.
+---
+
+# Camera ambient log
+
+A camera's ambient log writes an entry each time something moves or someone speaks in front of it. You can then ask the assistant "did anyone come by today?". It's off for every camera until you turn it on.
+
+## Turn it on
+
+1. Go to Settings → Cameras and click **Edit** on the camera.
+2. Turn on **Log motion and speech**.
+3. Optionally set **Active hours**, such as 08:00 to 18:30. Leave both empty to log all day; an end before the start runs past midnight.
+4. Set **Motion** (Low, Medium or High: how much of the picture must change) and **Sound** (how loud it must be, -35 dB by default; lower catches quieter speech, and more noise).
+5. Click **Save**. Watching starts within a few seconds.
+
+A network camera's **Substream**, when it has one, is what's watched; the main stream is recorded only while something is happening.
+
+While a camera is being watched, the camera badge in the header names it, in the accent colour rather than red. It turns red while the assistant takes a picture or listens.
+
+## What an entry keeps
+
+- When it started, and whether motion, sound or both set it off.
+- What was said, transcribed on this computer.
+- A one-sentence caption of what was seen, written by the chat model.
+- One small picture.
+
+No video or sound clip is kept: each is deleted once it's transcribed.
+
+## Captions
+
+The chat model writes each caption from the entry's picture. A caption waits until no chat, Code or job turn needs the model, so a reply is never slowed; it appears a little after the turn ends.
+
+Captions are only written by the local model or a server you trust in Settings → Cameras (see the `cameras` page). With any other model, entries wait with "caption pending" until you switch back. A model that can't see images leaves them with no caption.
+
+## How long entries are kept
+
+The **Ambient log** card in Settings → Cameras sets **Keep entries for**: 7 days by default, 1 to 90. Older entries and their pictures are deleted.
+
+## Browse and delete entries
+
+Click **Activity** on a camera in Settings → Cameras to see its latest 50 entries, newest first, with their pictures. **Delete** removes one; **Clear all** removes every entry for that camera after you confirm.
+
+## Ask the assistant
+
+In Chat, the `camera_log` tool searches the log: by camera, by words said or seen, and by time ("today", "yesterday", "last 3 hours", or a date). It gets text only, never the pictures. Ask "did anyone come by this afternoon?" or "what did the delivery driver say?".
+
+A camera set to Ask shows one prompt for all such cameras when the assistant reads the log; **Deny** leaves them out. Jobs only read cameras set to Allow.
+
+## What it doesn't do
+
+- It only runs while Haruspex is open.
+- No face or person recognition: captions don't say who someone is.
+- No alerts or notifications when something happens.
