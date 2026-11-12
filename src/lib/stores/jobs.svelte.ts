@@ -8,7 +8,8 @@ export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval'
  * single meta-report. `guided_planning` = an interactive run that asks the user
  * questions and writes a project overview + phased implementation plan.
  * `autonomous_coding` = an unattended coding loop over a folder of plan files
- * (decisions resolved up front via a preflight interview).
+ * (decisions resolved up front via a preflight interview). `camera_digest` =
+ * a summary of the cameras' ambient logs over a period.
  *
  * Each type's behavior lives in its module under `#lib/agent/jobs/types/<id>/`.
  */
@@ -16,6 +17,7 @@ export type JobType =
 	| 'research'
 	| 'email_digest'
 	| 'news_digest'
+	| 'camera_digest'
 	| 'audit'
 	| 'guided_planning'
 	| 'autonomous_coding'

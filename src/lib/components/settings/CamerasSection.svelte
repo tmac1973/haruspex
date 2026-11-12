@@ -8,6 +8,7 @@
 	import CameraEventLog from '#lib/components/settings/CameraEventLog.svelte';
 	import { cameraWatchStatus } from '#lib/stores/cameraActivity.svelte.ts';
 	import { isTrustableServer, trustedServerKey } from '#lib/camera/trust.ts';
+	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import { forgetCameraPassword } from '#lib/stores/cameraSecrets.ts';
 	import {
@@ -39,6 +40,8 @@
 	function save(list: CameraConfig[]) {
 		setCameras($state.snapshot(list) as CameraConfig[]);
 		cameras = getSettings().cameras;
+		// The Camera digest job type needs a camera set to Allow.
+		invalidateTypeAvailability();
 	}
 
 	function blankCamera(): CameraConfig {
@@ -105,6 +108,7 @@
 		if (on) next.push(url);
 		trusted = next;
 		setCameraTrustedServers([...next]);
+		invalidateTypeAvailability();
 	}
 </script>
 

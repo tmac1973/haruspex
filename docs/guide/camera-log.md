@@ -1,6 +1,6 @@
 ---
 title: Camera ambient log
-description: Turn on a camera's ambient log, set its hours and triggers, browse or delete entries in Settings → Cameras, and ask the assistant what happened.
+description: Turn on a camera's ambient log, set its hours and triggers, browse or delete entries in Settings → Cameras, ask the assistant what happened, or summarise it on a schedule with a Camera digest job.
 ---
 
 # Camera ambient log
@@ -47,6 +47,17 @@ Click **Activity** on a camera in Settings → Cameras to see its latest 50 entr
 In Chat, the `camera_log` tool searches the log: by camera, by words said or seen, and by time ("today", "yesterday", "last 3 hours", or a date). It gets text only, never the pictures. Ask "did anyone come by this afternoon?" or "what did the delivery driver say?".
 
 A camera set to Ask shows one prompt for all such cameras when the assistant reads the log; **Deny** leaves them out. Jobs only read cameras set to Allow.
+
+## Summarise the log on a schedule
+
+A **Camera digest** job (Jobs tab) summarises the log and picks out moments worth knowing about. Set its **Schedule**, such as Daily at 19:00 (see the `jobs` page).
+
+- **Cameras**: the ones to read. None ticked reads every camera set to Allow. A camera set to Ask is greyed out, and skipped with a note if it was ticked before.
+- **Period**: since the last run (the last 24 hours on the first), the last 24 hours, or today.
+- **Include a snapshot**: also takes a fresh picture from each camera. Skipped when the job's model can't see images.
+- **Focus**: optional, such as "only mention people and deliveries".
+
+It needs a camera set to Allow and the local model or a trusted server; the editor says so when either is missing. A period with no entries ends with "Nothing was logged." without using the model.
 
 ## What it doesn't do
 

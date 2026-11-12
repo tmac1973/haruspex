@@ -77,7 +77,7 @@ Ask "what's on the kitchen counter?", "what's being said in the kitchen?" or "tu
 
 The tools only appear when you have a camera and the chat model is the local one or a trusted server (see below). With OpenRouter or any other server they aren't offered, and a call is refused. They don't appear in the Code or Shell tabs, or in lean mode.
 
-Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask camera.
+Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask camera. A Camera digest job summarises the log on a schedule (see the `camera-log` page).
 
 ## What it doesn't do
 
