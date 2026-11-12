@@ -7,7 +7,9 @@ use super::capture::{self, SNAPSHOT_MAX_WIDTH};
 use super::onvif::discovery::{self, DiscoveredCamera};
 use super::onvif::{self, ptz::Ptz, OnvifConnection};
 use super::usb::{self, UsbDevices};
+use super::watcher::{remove_files, CameraWatchStatus, WatcherRegistry};
 use super::{CameraCaps, CameraConfig, Credentials, OnvifPreset};
+use crate::db::{CameraEvent, CameraEventFilter, Database};
 use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -153,4 +155,115 @@ pub async fn camera_uvc_supported(device: String) -> bool {
         let _ = device;
         false
     }
+}
+
+/// Take the cameras' watcher settings and how many days of events to keep:
+/// delete older events, and start or stop watchers to match. The first call
+/// starts the 30-second schedule.
+#[tauri::command]
+pub async fn camera_watch_set(
+    app: tauri::AppHandle,
+    registry: tauri::State<'_, WatcherRegistry>,
+    configs: Vec<CameraConfig>,
+    retention_days: u32,
+    overrides: BinaryOverrides,
+) -> Result<CameraWatchStatus, String> {
+    let registry = registry.inner().clone();
+    Ok(registry.set(&app, configs, retention_days, overrides).await)
+}
+
+/// The cameras being watched, and what last went wrong for each.
+#[tauri::command]
+pub async fn camera_watch_status(
+    registry: tauri::State<'_, WatcherRegistry>,
+) -> Result<CameraWatchStatus, String> {
+    Ok(registry.status())
+}
+
+/// Run a database read or write off the main thread.
+async fn on_db<T: Send + 'static>(
+    db: &tauri::State<'_, Database>,
+    f: impl FnOnce(Database) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || f(db))
+        .await
+        .map_err(|e| format!("db task panicked: {e}"))?
+}
+
+/// The newest events, of one camera or all, started within `since`..`until`
+/// (epoch ms) if given; without thumbnails.
+#[tauri::command]
+pub async fn camera_events_list(
+    db: tauri::State<'_, Database>,
+    camera_id: Option<String>,
+    since: Option<i64>,
+    until: Option<i64>,
+    limit: u32,
+) -> Result<Vec<CameraEvent>, String> {
+    let filter = CameraEventFilter {
+        camera_id,
+        since,
+        until,
+        limit,
+    };
+    on_db(&db, move |db| db.list_camera_events(&filter)).await
+}
+
+/// The newest events whose transcript or caption has every word of `query`.
+#[tauri::command]
+pub async fn camera_events_search(
+    db: tauri::State<'_, Database>,
+    query: String,
+    camera_id: Option<String>,
+    since: Option<i64>,
+    until: Option<i64>,
+    limit: u32,
+) -> Result<Vec<CameraEvent>, String> {
+    let filter = CameraEventFilter {
+        camera_id,
+        since,
+        until,
+        limit,
+    };
+    on_db(&db, move |db| db.search_camera_events(&query, &filter)).await
+}
+
+/// An event's thumbnail as a `data:image/jpeg;base64,` URL.
+#[tauri::command]
+pub async fn camera_event_thumb(db: tauri::State<'_, Database>, id: i64) -> Result<String, String> {
+    on_db(&db, move |db| {
+        let path = db
+            .camera_event_thumb_path(id)?
+            .ok_or("This event has no picture.")?;
+        let jpeg = std::fs::read(&path).map_err(|_| "This event's picture is missing.")?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&jpeg);
+        Ok(format!("data:image/jpeg;base64,{encoded}"))
+    })
+    .await
+}
+
+/// Delete one event and its thumbnail.
+#[tauri::command]
+pub async fn camera_event_delete(db: tauri::State<'_, Database>, id: i64) -> Result<(), String> {
+    on_db(&db, move |db| {
+        remove_files(&db.delete_camera_event(id)?);
+        Ok(())
+    })
+    .await
+}
+
+/// Delete one camera's events, or every camera's, and their thumbnails; how
+/// many were deleted.
+#[tauri::command]
+pub async fn camera_events_clear(
+    db: tauri::State<'_, Database>,
+    camera_id: Option<String>,
+) -> Result<u32, String> {
+    on_db(&db, move |db| {
+        let (count, thumbs) = db.clear_camera_events(camera_id.as_deref())?;
+        remove_files(&thumbs);
+        Ok(count as u32)
+    })
+    .await
 }

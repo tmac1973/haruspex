@@ -13,10 +13,13 @@
 pub mod aim;
 pub mod capture;
 pub mod commands;
+pub(crate) mod detect;
 pub mod onvif;
+pub(crate) mod shared;
 pub mod usb;
 #[cfg(target_os = "linux")]
 pub(crate) mod uvc;
+pub mod watcher;
 
 use serde::{Deserialize, Serialize};
 

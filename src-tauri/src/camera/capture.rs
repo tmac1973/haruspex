@@ -13,7 +13,7 @@ pub const MAX_LISTEN_SECS: u32 = 30;
 const GRAB_TIMEOUT: Duration = Duration::from_secs(15);
 /// ffmpeg's RTSP socket timeout, in microseconds.
 const RTSP_TIMEOUT_US: &str = "10000000";
-const NO_MICROPHONE: &str = "This camera has no microphone.";
+pub(crate) const NO_MICROPHONE: &str = "This camera has no microphone.";
 
 /// The OS a USB device is read on; it decides ffmpeg's input device.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,8 +229,21 @@ async fn run(
     Ok(out.stdout)
 }
 
+/// The shared-files folder of a USB camera whose watcher is running.
+fn watched_usb(cfg: &CameraConfig) -> Option<std::path::PathBuf> {
+    match cfg.source {
+        CameraSource::Usb { .. } => super::shared::dir_for(&cfg.id),
+        CameraSource::Rtsp { .. } => None,
+    }
+}
+
 /// One frame from the camera as JPEG, at most `max_width` wide.
+/// A webcam with a watcher running is read from the watcher's files, since it
+/// can't be opened twice.
 pub async fn snapshot(ffmpeg: &str, cfg: &CameraConfig, max_width: u32) -> Result<Vec<u8>, String> {
+    if let Some(dir) = watched_usb(cfg) {
+        return super::shared::snapshot(&dir, max_width).await;
+    }
     let input = video_input(cfg).await?;
     let mut args = strings(&["-nostdin"]);
     args.extend(input.args);
@@ -253,6 +266,14 @@ pub async fn record_audio(
     seconds: u32,
 ) -> Result<Vec<u8>, String> {
     let seconds = seconds.clamp(1, MAX_LISTEN_SECS);
+    if let Some(dir) = watched_usb(cfg) {
+        if let CameraSource::Usb { audio_device, .. } = &cfg.source {
+            if audio_device.as_deref().is_none_or(|d| d.trim().is_empty()) {
+                return Err(NO_MICROPHONE.into());
+            }
+        }
+        return super::shared::record_audio(&dir, seconds).await;
+    }
     let input = audio_input(cfg).await?;
     let mut args = strings(&["-nostdin"]);
     args.extend(input.args);
@@ -305,7 +326,7 @@ pub(crate) fn parse_probe(json: &str) -> Result<CameraCaps, String> {
 }
 
 /// Where a WAV's `data` chunk starts (after its header) in `wav`.
-fn data_chunk(wav: &[u8]) -> Option<usize> {
+pub(crate) fn data_chunk(wav: &[u8]) -> Option<usize> {
     if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
         return None;
     }
@@ -465,6 +486,46 @@ mod tests {
         );
         let tagged = "[rtsp @ 0x5640401404] Invalid data found when processing input";
         assert_eq!(explain(tagged, &input.creds), tagged);
+    }
+
+    #[tokio::test]
+    async fn a_watched_webcam_is_read_from_the_watchers_files() {
+        use crate::camera::shared;
+        let dir = crate::test_util::temp_dir("camera_watched");
+        let cfg = CameraConfig {
+            id: "watched-usb".into(),
+            ..usb("/dev/video-none", Some("hw:9,0"))
+        };
+        std::fs::write(
+            dir.join(shared::LATEST),
+            shared::tests::tiny_jpeg(1920, 1080),
+        )
+        .unwrap();
+        let _guard = shared::register(&cfg.id, &dir);
+        // No ffmpeg is run: the device is never opened.
+        let jpeg = snapshot("/no/ffmpeg", &cfg, 640).await.unwrap();
+        let img = image::load_from_memory(&jpeg).unwrap();
+        assert_eq!((img.width(), img.height()), (640, 360));
+        let writer = {
+            let dir = dir.to_path_buf();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                let wav = shared::wav_from_pcm(&vec![0x40u8; 32_000]);
+                std::fs::write(dir.join("seg004.wav"), wav).unwrap();
+            })
+        };
+        let wav = record_audio("/no/ffmpeg", &cfg, 1).await.unwrap();
+        writer.await.unwrap();
+        assert_eq!(data_chunk(&wav), Some(44));
+        assert_eq!(wav.len(), 44 + 32_000);
+        let no_mic = CameraConfig {
+            id: "watched-usb".into(),
+            ..usb("/dev/video-none", None)
+        };
+        assert_eq!(
+            record_audio("/no/ffmpeg", &no_mic, 1).await.unwrap_err(),
+            NO_MICROPHONE
+        );
     }
 
     #[test]
