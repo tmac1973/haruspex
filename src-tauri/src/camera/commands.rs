@@ -3,8 +3,10 @@
 //! (`overrides`), which the cameras share with the video tools.
 
 use super::capture::{self, SNAPSHOT_MAX_WIDTH};
+use super::onvif::discovery::{self, DiscoveredCamera};
+use super::onvif::{self, ptz::Ptz, OnvifConnection};
 use super::usb::{self, UsbDevices};
-use super::{CameraCaps, CameraConfig};
+use super::{CameraCaps, CameraConfig, Credentials, OnvifPreset};
 use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -92,4 +94,39 @@ pub async fn camera_probe(
 pub async fn camera_usb_devices(overrides: BinaryOverrides) -> Result<UsbDevices, String> {
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await.ok();
     usb::list_devices(ffmpeg.as_deref()).await
+}
+
+/// The ONVIF cameras that answer on the local network within 3 seconds.
+#[tauri::command]
+pub async fn camera_onvif_discover() -> Result<Vec<DiscoveredCamera>, String> {
+    discovery::discover(discovery::PROBE_WAIT).await
+}
+
+/// Sign in to the camera at `xaddr` (its ONVIF device service) and read its
+/// streams, and its pan/tilt and presets if it has them.
+#[tauri::command]
+pub async fn camera_onvif_connect(
+    xaddr: String,
+    username: String,
+    password: String,
+) -> Result<OnvifConnection, String> {
+    let redactor = Credentials {
+        username: username.clone(),
+        password: password.clone(),
+    };
+    let creds = Credentials { username, password };
+    onvif::connect(&xaddr, creds)
+        .await
+        .map_err(|e| redactor.redact(&e))
+}
+
+/// Read a saved camera's presets again, with its saved user name and password.
+#[tauri::command]
+pub async fn camera_onvif_presets(config: CameraConfig) -> Result<Vec<OnvifPreset>, String> {
+    let endpoint = config
+        .onvif
+        .as_ref()
+        .ok_or("This camera has no ONVIF service. Find it again under Settings → Cameras.")?;
+    let creds = Credentials::for_source(&config.source).await?;
+    Ptz::open(endpoint, creds).await?.presets().await
 }

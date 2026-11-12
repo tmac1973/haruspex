@@ -1,6 +1,6 @@
 ---
 title: Cameras
-description: Add a network (RTSP) camera or a USB webcam, test it, choose Ask or Allow, pick which of your own servers may see and hear it, and let the assistant look and listen in Chat.
+description: Add a network camera (found over ONVIF or by its RTSP address) or a USB webcam, test it, choose Ask or Allow, pick trusted servers, and let the assistant look and listen in Chat.
 ---
 
 # Cameras
@@ -15,6 +15,18 @@ Settings → Cameras lists the cameras Haruspex can use: network cameras that st
 4. Fill in **User name** and **Password**. If the address you pasted has them in it (`rtsp://admin:secret@…`), they move into these fields by themselves.
 5. Optionally fill in **Substream**: a smaller stream from the same camera, used by the ambient log.
 6. Click **Save**.
+
+## Find a camera on the network
+
+Many network cameras speak ONVIF, which lets Haruspex find them and read their addresses for you.
+
+1. In a new camera's form, click **Find cameras**. Haruspex looks for 3 seconds and lists the cameras that answer.
+2. Click yours. A blank **Name** takes the name the camera gives itself.
+3. Fill in **User name** and **Password**, then click **Connect**.
+
+Haruspex signs in and fills in **RTSP address** (the camera's sharpest stream) and **Substream** (its smallest). If the camera can pan and tilt, **Pan/tilt** is set to **ONVIF** and its saved positions are listed as **Presets**; **Refresh presets** reads them again after you change them on the camera.
+
+A camera that isn't listed may have ONVIF turned off, or be on another network: type its address instead. Cameras are reached directly, never through the proxy in Settings → Network.
 
 The password goes in the system keychain, or Haruspex's encrypted secrets file where there is no keychain, never in the settings. A saved password shows as "saved"; leave the field blank to keep it.
 
@@ -63,7 +75,7 @@ Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask c
 
 ## What it doesn't do
 
-- No pan or tilt control yet.
-- No ONVIF or network discovery yet: paste the camera's address.
+- The assistant can't turn a camera yet: **Pan/tilt** is saved for later.
+- No zoom, and no pan/tilt for USB webcams.
 - No recording: Haruspex keeps no video or sound clip.
 - No vendor cloud cameras (Ring, Nest, Tapo cloud, Wyze cloud).

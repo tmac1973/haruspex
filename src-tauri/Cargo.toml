@@ -117,6 +117,11 @@ rmcp = { version = "3.5.1", features = ["client", "transport-child-process", "tr
 tar = "0.4.46"
 flate2 = "1.1.10"
 quick-xml = "0.42.0"
+# ONVIF cameras: WS-Security's password digest is SHA-1, and discovery sends
+# its multicast probe out of each network interface in turn.
+sha1 = "0.11.0"
+if-addrs = "0.15.0"
+socket2 = "0.6.5"
 ical = "0.11.0"
 rrule = "0.14.0"
 chrono = "0.4.45"

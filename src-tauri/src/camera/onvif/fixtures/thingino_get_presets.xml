@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" xmlns:SOAP-ENC="http://www.w3.org/2003/05/soap-encoding" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
+<SOAP-ENV:Header/>
+<SOAP-ENV:Body>
+<tptz:GetPresetsResponse>
+<tptz:Preset token="0"><tt:Name>Door</tt:Name><tt:PTZPosition><tt:PanTilt x="-0.4" y="0.1" space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace"/></tt:PTZPosition></tptz:Preset>
+<tptz:Preset token="1"><tt:Name>Window</tt:Name><tt:PTZPosition><tt:PanTilt x="0.6" y="0" space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace"/></tt:PTZPosition></tptz:Preset>
+</tptz:GetPresetsResponse>
+</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>

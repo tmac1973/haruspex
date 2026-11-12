@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * One camera's form in Settings → Cameras: a network camera by its RTSP
-	 * address, or a USB webcam. Edits a draft; nothing is saved until Save.
+	 * address (typed, or found over ONVIF), or a USB webcam. Edits a draft;
+	 * nothing is saved until Save.
 	 *
 	 * A password typed here goes to the secret store on Save. Test needs it
 	 * before then, so it is kept under a separate key for the test
@@ -15,6 +16,11 @@
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import type { CameraListenResult } from '#lib/ipc/gen/CameraListenResult.ts';
 	import type { CameraPermission } from '#lib/ipc/gen/CameraPermission.ts';
+	import type { DiscoveredCamera } from '#lib/ipc/gen/DiscoveredCamera.ts';
+	import type { OnvifConnection } from '#lib/ipc/gen/OnvifConnection.ts';
+	import type { OnvifEndpoint } from '#lib/ipc/gen/OnvifEndpoint.ts';
+	import type { OnvifPreset } from '#lib/ipc/gen/OnvifPreset.ts';
+	import type { PtzKind } from '#lib/ipc/gen/PtzKind.ts';
 	import type { UsbDevices } from '#lib/ipc/gen/UsbDevices.ts';
 	import { forgetCameraPassword, withStoredCameraPassword } from '#lib/stores/cameraSecrets.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -49,6 +55,15 @@
 	let audioDevice = $state(startUsb?.audioDevice ?? '');
 	let permission = $state<CameraPermission>(start.permission);
 	let caps = $state<CameraCaps | null>(start.caps);
+	let ptz = $state<PtzKind>(start.ptz === 'onvif' ? 'onvif' : 'none');
+	let onvif = $state<OnvifEndpoint | null>(start.onvif);
+
+	let found = $state<DiscoveredCamera[] | null>(null);
+	let finding = $state(false);
+	let picked = $state<DiscoveredCamera | null>(null);
+	let connecting = $state(false);
+	let onvifError = $state('');
+	let refreshing = $state(false);
 
 	let devices = $state<UsbDevices | null>(null);
 	let devicesError = $state('');
@@ -128,13 +143,89 @@
 						}
 					: { kind: 'usb', videoDevice, audioDevice: audioDevice || null },
 			permission,
-			// No pan/tilt control yet.
-			ptz: 'none',
+			// USB pan/tilt comes later; a network camera aims over ONVIF.
+			ptz: kind === 'rtsp' && onvif ? ptz : 'none',
+			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
 			caps
 		};
 	}
 
 	const savedRef = startRtsp?.passwordRef ?? null;
+
+	/** What a found camera is called in the list. */
+	function foundLabel(c: DiscoveredCamera): string {
+		let host = c.xaddr;
+		try {
+			host = new URL(c.xaddr).host;
+		} catch {
+			// Shown as given.
+		}
+		const title = c.name || c.hardware;
+		return title ? `${title} · ${host}` : host;
+	}
+
+	async function findCameras() {
+		finding = true;
+		onvifError = '';
+		picked = null;
+		try {
+			found = await invoke<DiscoveredCamera[]>('camera_onvif_discover');
+		} catch (e) {
+			onvifError = errMessage(e);
+		} finally {
+			finding = false;
+		}
+	}
+
+	function pickFound(c: DiscoveredCamera) {
+		picked = c;
+		onvifError = '';
+		if (!name.trim() && c.name) name = c.name;
+	}
+
+	/** Sign in to the picked camera and fill in its streams and pan/tilt. */
+	async function connectFound() {
+		if (!picked) return;
+		if (!password && passwordSaved) {
+			onvifError = 'Type the password again to connect.';
+			return;
+		}
+		connecting = true;
+		onvifError = '';
+		const typed = password;
+		try {
+			const got = await invoke<OnvifConnection>('camera_onvif_connect', {
+				xaddr: picked.xaddr,
+				username: username.trim(),
+				password
+			});
+			url = got.mainUrl;
+			substreamUrl = got.subUrl === got.mainUrl ? '' : got.subUrl;
+			onvif = { xaddr: picked.xaddr, profileToken: got.profileToken, presets: got.presets };
+			ptz = got.hasPtz ? 'onvif' : 'none';
+			found = null;
+			picked = null;
+		} catch (e) {
+			onvifError = redactCameraError(errMessage(e), typed);
+		} finally {
+			connecting = false;
+		}
+	}
+
+	async function refreshPresets() {
+		refreshing = true;
+		onvifError = '';
+		const typed = password;
+		try {
+			const config = await testCamera();
+			const presets = await invoke<OnvifPreset[]>('camera_onvif_presets', { config });
+			if (onvif) onvif = { ...onvif, presets };
+		} catch (e) {
+			onvifError = redactCameraError(errMessage(e), typed);
+		} finally {
+			refreshing = false;
+		}
+	}
 
 	async function forgetTestPassword() {
 		if (!testKey) return;
@@ -239,6 +330,48 @@
 	</div>
 
 	{#if kind === 'rtsp'}
+		<span class="label">Find</span>
+		<div>
+			<button
+				type="button"
+				class="btn btn-small"
+				onclick={findCameras}
+				disabled={finding}
+				title="Looks for ONVIF cameras on the local network for 3 seconds. You can also type the address below."
+			>
+				{finding ? 'Looking…' : 'Find cameras'}
+			</button>
+			{#if found && found.length === 0}
+				<p class="help">No ONVIF cameras answered.</p>
+			{/if}
+			{#if found && found.length}
+				<ul class="found" aria-label="Cameras found">
+					{#each found as c (c.xaddr)}
+						<li>
+							<button
+								type="button"
+								class:active={picked?.xaddr === c.xaddr}
+								onclick={() => pickFound(c)}>{foundLabel(c)}</button
+							>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if picked}
+				<p class="help">Enter its user name and password below, then connect.</p>
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={connectFound}
+					disabled={connecting}
+					title="Signs in over ONVIF and fills in the stream addresses and pan/tilt."
+				>
+					{connecting ? 'Connecting…' : 'Connect'}
+				</button>
+			{/if}
+			{#if onvifError}<p class="error">{onvifError}</p>{/if}
+		</div>
+
 		<label for="cam-url-{start.id}">RTSP address</label>
 		<div>
 			<input
@@ -272,6 +405,32 @@
 			placeholder="Optional"
 			title="A smaller stream from the same camera, used by the ambient log. Leave blank to use the main stream."
 		/>
+
+		<label for="cam-ptz-{start.id}">Pan/tilt</label>
+		<div>
+			<select
+				id="cam-ptz-{start.id}"
+				bind:value={ptz}
+				title="ONVIF lets the assistant turn the camera. It needs the camera found with Find cameras."
+			>
+				<option value="none">None</option>
+				<option value="onvif" disabled={!onvif}>ONVIF</option>
+			</select>
+			{#if ptz === 'onvif' && onvif}
+				<p class="help presets">
+					Presets: {onvif.presets.length ? onvif.presets.map((p) => p.name).join(', ') : 'none'}
+				</p>
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={refreshPresets}
+					disabled={refreshing}
+					title="Reads the positions saved on the camera again."
+				>
+					{refreshing ? 'Reading…' : 'Refresh presets'}
+				</button>
+			{/if}
+		</div>
 	{:else}
 		<label for="cam-video-{start.id}">Webcam</label>
 		<div>
@@ -389,6 +548,35 @@
 		background: var(--bg-input);
 		color: var(--text-primary);
 		font: inherit;
+	}
+
+	.found {
+		list-style: none;
+		margin: 6px 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.found button {
+		width: 100%;
+		text-align: left;
+		padding: 5px 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: 6px;
+		background: var(--bg-input);
+		color: var(--text-primary);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.found button.active {
+		border-color: var(--accent);
+	}
+
+	.presets {
+		margin-top: 6px;
 	}
 
 	.test-result {

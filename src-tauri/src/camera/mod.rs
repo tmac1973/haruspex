@@ -12,6 +12,7 @@
 
 pub mod capture;
 pub mod commands;
+pub mod onvif;
 pub mod usb;
 
 use serde::{Deserialize, Serialize};

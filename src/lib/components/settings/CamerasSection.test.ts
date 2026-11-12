@@ -23,6 +23,30 @@ vi.mock('@tauri-apps/api/core', async () =>
 			},
 			camera_snapshot: 'data:image/jpeg;base64,AAAA',
 			camera_listen: { transcript: null, levelDb: -32.4 },
+			camera_onvif_discover: [
+				{
+					xaddr: 'http://192.168.1.184/onvif/device_service',
+					name: 'Thingino',
+					hardware: 'Cinnado_D1'
+				}
+			],
+			camera_onvif_connect: (a) => {
+				state.calls.push({ cmd: 'camera_onvif_connect', args: a });
+				return {
+					mainUrl: 'rtsp://192.168.1.184:554/ch0',
+					subUrl: 'rtsp://192.168.1.184:554/ch1',
+					profileToken: 'Profile_0',
+					hasPtz: true,
+					presets: [{ token: '0', name: 'Door' }]
+				};
+			},
+			camera_onvif_presets: (a) => {
+				state.calls.push({ cmd: 'camera_onvif_presets', args: a });
+				return [
+					{ token: '0', name: 'Door' },
+					{ token: '1', name: 'Window' }
+				];
+			},
 			camera_usb_devices: {
 				video: [{ id: '/dev/video0', name: 'OBSBOT Tiny', audioDevice: 'alsa_input.obsbot' }],
 				audio: [{ id: 'alsa_input.obsbot', name: 'OBSBOT Tiny Microphone' }]
@@ -124,6 +148,50 @@ describe('adding a network camera', () => {
 			videoDevice: '/dev/video0',
 			audioDevice: 'alsa_input.obsbot'
 		});
+	});
+});
+
+describe('finding an ONVIF camera', () => {
+	it('fills in the streams and pan/tilt from the camera it connects to', async () => {
+		render(CamerasSection);
+		await fireEvent.click(screen.getByText('Add camera'));
+		await fireEvent.click(screen.getByText('Find cameras'));
+		await fireEvent.click(await screen.findByText('Thingino · 192.168.1.184'));
+		expect(input(/^Name$/).value).toBe('Thingino');
+
+		await fireEvent.input(input(/User name/), { target: { value: 'root' } });
+		await fireEvent.input(input(/^Password$/), { target: { value: 'pw' } });
+		await fireEvent.click(screen.getByText('Connect'));
+
+		await waitFor(() => expect(input(/RTSP address/).value).toBe('rtsp://192.168.1.184:554/ch0'));
+		expect(state.calls[0]).toEqual({
+			cmd: 'camera_onvif_connect',
+			args: { xaddr: 'http://192.168.1.184/onvif/device_service', username: 'root', password: 'pw' }
+		});
+		expect(input(/Substream/).value).toBe('rtsp://192.168.1.184:554/ch1');
+		expect(input(/Pan\/tilt/).value).toBe('onvif');
+		screen.getByText('Presets: Door');
+
+		await fireEvent.click(screen.getByText('Refresh presets'));
+		await screen.findByText('Presets: Door, Window');
+		const asked = state.calls[1].args!.config as CameraConfig;
+		expect(asked.onvif?.profileToken).toBe('Profile_0');
+		expect(asked.source).toMatchObject({ passwordRef: expect.stringMatching(/:test$/) });
+
+		await fireEvent.click(screen.getByText('Save'));
+		await waitFor(() => expect(getSettings().cameras).toHaveLength(1));
+		const [cam] = getSettings().cameras;
+		expect(cam.ptz).toBe('onvif');
+		expect(cam.onvif).toEqual({
+			xaddr: 'http://192.168.1.184/onvif/device_service',
+			profileToken: 'Profile_0',
+			presets: [
+				{ token: '0', name: 'Door' },
+				{ token: '1', name: 'Window' }
+			]
+		});
+		expect(JSON.stringify(getSettings())).not.toContain('"pw"');
+		expect(() => structuredClone(getSettings())).not.toThrow();
 	});
 });
 
