@@ -119,14 +119,14 @@ pub async fn video_encoders_test(
 ) -> Result<Vec<super::encode::EncoderOption>, String> {
     use tauri::Manager;
     let found = binaries::resolve(&overrides).await;
-    let ffmpeg = found.require(Tool::Ffmpeg)?;
     let melt = found.require(Tool::Melt)?;
+    let ffmpeg = binaries::hardware_probe_ffmpeg(&overrides).await;
     let scratch = app
         .path()
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("haruspex"))
         .join("video-encoder-test");
-    Ok(super::encode::test_encoders(ffmpeg, melt, &scratch).await)
+    Ok(super::encode::test_encoders(ffmpeg.as_deref(), melt, &scratch).await)
 }
 
 /// Running transcriptions, by the id the frontend gave, for cancelling.

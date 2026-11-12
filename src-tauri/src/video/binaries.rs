@@ -1,12 +1,16 @@
 //! Finding ffmpeg, ffprobe and melt.
 //!
-//! None of them is bundled. melt comes with Kdenlive (and Shotcut), and so do
-//! ffmpeg and ffprobe on macOS and Windows, so the one thing a user installs is
-//! Kdenlive. Each binary is looked for in three places, first hit wins:
+//! ffmpeg and ffprobe ship with the app as LGPL builds (`haruspex-ffmpeg`,
+//! `haruspex-ffprobe`), which the cameras need too. melt is not bundled: it
+//! comes with Kdenlive (and Shotcut), so the one thing a user installs for the
+//! video tools is Kdenlive. Each binary is looked for in these places, first
+//! hit wins:
 //!
 //! 1. The path the user set in Settings → Video editing.
-//! 2. PATH.
-//! 3. Inside a Kdenlive install. On Linux that is the distro's `/usr/bin`,
+//! 2. The bundled copy (ffmpeg and ffprobe only), found as the other sidecars
+//!    are: see `runtimes::resolve_binary`.
+//! 3. PATH.
+//! 4. Inside a Kdenlive install. On Linux that is the distro's `/usr/bin`,
 //!    which PATH already covers; on macOS the app bundle; on Windows Kdenlive's
 //!    `bin` folder.
 //!
@@ -80,6 +84,8 @@ impl BinaryOverrides {
 pub enum BinarySource {
     /// The path set in Settings → Video editing.
     Override,
+    /// The copy that ships with Haruspex.
+    Bundled,
     Path,
     /// Inside a Kdenlive install.
     Kdenlive,
@@ -227,12 +233,32 @@ async fn version_of(path: &Path) -> Option<String> {
     Some(line.chars().take(120).collect())
 }
 
+/// The copy of `tool` that ships with the app. melt is not bundled.
+fn bundled(tool: Tool) -> Option<PathBuf> {
+    match tool {
+        Tool::Ffmpeg | Tool::Ffprobe => crate::runtimes::resolve_binary(tool.name()).ok(),
+        Tool::Melt => None,
+    }
+}
+
 /// Candidates for `tool`, in the order they are tried.
 fn candidates(tool: Tool, overrides: &BinaryOverrides) -> Vec<(PathBuf, BinarySource)> {
+    candidates_with(tool, overrides, bundled(tool))
+}
+
+/// [`candidates`] with the bundled copy given, so tests can place one.
+fn candidates_with(
+    tool: Tool,
+    overrides: &BinaryOverrides,
+    bundled: Option<PathBuf>,
+) -> Vec<(PathBuf, BinarySource)> {
     let mut out = Vec::new();
     let set = overrides.get(tool).trim();
     if !set.is_empty() {
         out.push((PathBuf::from(set), BinarySource::Override));
+    }
+    if let Some(p) = bundled {
+        out.push((p, BinarySource::Bundled));
     }
     if let Some(p) = which_any(&path_dirs(), tool.file_names()) {
         out.push((p, BinarySource::Path));
@@ -248,7 +274,18 @@ async fn find(
     overrides: &BinaryOverrides,
     hints: &mut Vec<String>,
 ) -> Option<FoundBinary> {
-    for (path, source) in candidates(tool, overrides) {
+    first_that_runs(tool, candidates(tool, overrides), hints).await
+}
+
+/// The first of `list` that answers `-version`. A bundled copy that doesn't
+/// (a placeholder in a dev checkout, a wrong architecture) is passed over
+/// quietly for PATH; only a broken override earns a hint.
+async fn first_that_runs(
+    tool: Tool,
+    list: Vec<(PathBuf, BinarySource)>,
+    hints: &mut Vec<String>,
+) -> Option<FoundBinary> {
+    for (path, source) in list {
         match version_of(&path).await {
             Some(version) => {
                 return Some(FoundBinary {
@@ -266,6 +303,20 @@ async fn find(
         }
     }
     None
+}
+
+/// An ffmpeg to ask which hardware encoders melt can open: the first that
+/// runs, passing over the bundled one. Our LGPL build has no hardware
+/// encoders, so it would turn every one down; an ffmpeg from the system or
+/// Kdenlive is built like melt's own.
+pub async fn hardware_probe_ffmpeg(overrides: &BinaryOverrides) -> Option<String> {
+    let list = candidates(Tool::Ffmpeg, overrides)
+        .into_iter()
+        .filter(|(_, source)| *source != BinarySource::Bundled)
+        .collect();
+    first_that_runs(Tool::Ffmpeg, list, &mut Vec::new())
+        .await
+        .map(|found| found.path)
 }
 
 /// Whether Kdenlive is installed as a Flatpak, whose melt can't be run from
@@ -388,6 +439,58 @@ mod tests {
         assert_eq!(list[0], (set, BinarySource::Override));
     }
 
+    #[test]
+    fn the_bundled_copy_comes_after_the_override_and_before_path() {
+        let dir = temp_dir("bundled_order");
+        let set = make_exe(&dir, "my-ffmpeg", "");
+        let ours = make_exe(&dir, "haruspex-ffmpeg", "");
+        let overrides = BinaryOverrides {
+            ffmpeg: set.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let list = candidates_with(Tool::Ffmpeg, &overrides, Some(ours.clone()));
+        assert_eq!(list[0], (set, BinarySource::Override));
+        assert_eq!(list[1], (ours, BinarySource::Bundled));
+        let sources: Vec<_> = list.iter().map(|(_, s)| *s).collect();
+        let after: Vec<_> = sources[2..].to_vec();
+        assert!(
+            after
+                .iter()
+                .all(|s| matches!(s, BinarySource::Path | BinarySource::Kdenlive)),
+            "{sources:?}"
+        );
+        // PATH, when there is one, is tried before Kdenlive.
+        let first_kdenlive = after.iter().position(|s| *s == BinarySource::Kdenlive);
+        let last_path = after.iter().rposition(|s| *s == BinarySource::Path);
+        if let (Some(k), Some(p)) = (first_kdenlive, last_path) {
+            assert!(p < k, "{sources:?}");
+        }
+    }
+
+    #[test]
+    fn melt_is_never_bundled() {
+        assert_eq!(bundled(Tool::Melt), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_bundled_copy_that_does_not_run_is_skipped() {
+        let dir = temp_dir("bundled_broken");
+        let broken = make_exe(&dir, "haruspex-ffmpeg", "#!/bin/sh\nexit 1\n");
+        let fallback = make_exe(&dir, "ffmpeg", "#!/bin/sh\necho 'ffmpeg version 8.1'\n");
+        let list = vec![
+            (broken, BinarySource::Bundled),
+            (fallback.clone(), BinarySource::Path),
+        ];
+        let mut hints = Vec::new();
+        let found = first_that_runs(Tool::Ffmpeg, list, &mut hints)
+            .await
+            .expect("PATH copy should be found");
+        assert_eq!(found.source, BinarySource::Path);
+        assert_eq!(found.path, fallback.to_string_lossy());
+        assert!(hints.is_empty(), "{hints:?}");
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn version_is_the_first_line_from_either_stream() {
@@ -424,7 +527,8 @@ mod tests {
     }
 
     /// The real lookup on this machine: with Kdenlive installed and nothing on
-    /// PATH, all three come from the Kdenlive install.
+    /// PATH, all three come from the Kdenlive install, bar a bundled ffmpeg or
+    /// ffprobe that runs.
     /// `PATH=/usr/bin:/bin cargo test -- --ignored finds_kdenlives_own --nocapture`
     #[tokio::test]
     #[ignore = "needs Kdenlive installed"]
@@ -435,7 +539,13 @@ mod tests {
             let found = status
                 .get(tool)
                 .unwrap_or_else(|| panic!("{} not found", tool.name()));
-            assert_eq!(found.source, BinarySource::Kdenlive, "{}", tool.name());
+            assert!(
+                found.source == BinarySource::Kdenlive
+                    || (tool != Tool::Melt && found.source == BinarySource::Bundled),
+                "{}: {:?}",
+                tool.name(),
+                found.source
+            );
         }
     }
 

@@ -65,11 +65,19 @@ call plain `node`, so we link one into the app's data directory.
 | `haruspex-node-{triple}` | nodejs.org | — | Runs npm-packaged MCP servers |
 | `haruspex-uv-{triple}` | astral-sh/uv | — | Runs PyPI-packaged MCP servers |
 | `haruspex-sd-server-{triple}` | stable-diffusion.cpp | Vulkan / Metal | Local image generation |
+| `haruspex-ffmpeg-{triple}` | FFmpeg (LGPL) | — | Video tools, cameras |
+| `haruspex-ffprobe-{triple}` | FFmpeg (LGPL) | — | Video tools, cameras |
 
 `sd-server` is DOWNLOADED, not built — upstream ships a Vulkan/Metal binary for
 every triple we target. Its shared libraries live in `binaries/sd-libs/`, apart
 from `binaries/libs/`, because it carries its own ggml whose sonames collide
 with llama.cpp's; see `docs/image-generation.md`.
+
+`ffmpeg` and `ffprobe` are DOWNLOADED from this repo's `ffmpeg-<tag>` release by
+`./scripts/fetch-ffmpeg.sh` (checked against its `SHA256SUMS`). That release is
+built by the `Build ffmpeg` workflow (`scripts/build-ffmpeg.sh`): LGPL only, no
+x264/x265; run it when the tag changes, before an app release. When the fetch
+is skipped, `dev-setup.sh` leaves a placeholder and the app uses ffmpeg on PATH.
 
 `node` and `uv` are bundled so a user never needs a terminal to install an MCP
 server. They are fetched by `./scripts/fetch-node.sh` and `./scripts/fetch-uv.sh`;

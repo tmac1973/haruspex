@@ -268,6 +268,13 @@ jobs:
           ./scripts/fetch-node.sh --target ${{ matrix.target }}
           ./scripts/fetch-uv.sh --target ${{ matrix.target }}
 
+      # The LGPL ffmpeg and ffprobe the video tools and cameras run. Built by
+      # build-ffmpeg.yml, which must have published the pinned tag's release;
+      # without it tauri-build fails on the missing externalBin.
+      - name: Download ffmpeg and ffprobe
+        shell: bash
+        run: ./scripts/fetch-ffmpeg.sh --target ${{ matrix.target }}
+
       # The bundled image engine. Not optional in the way a missing feature is
       # optional: tauri-build validates every externalBin path at compile time,
       # so without this the whole build fails with "resource path ... doesn't

@@ -42,7 +42,12 @@ const SIDECARS = [
 		licence: 'MIT and others',
 		url: 'https://github.com/nodejs/node/blob/main/LICENSE'
 	},
-	{ name: 'uv', licence: 'MIT or Apache-2.0', url: 'https://github.com/astral-sh/uv' }
+	{ name: 'uv', licence: 'MIT or Apache-2.0', url: 'https://github.com/astral-sh/uv' },
+	{
+		name: 'FFmpeg (ffmpeg, ffprobe) with LAME',
+		licence: 'LGPL-3.0-or-later',
+		url: 'https://github.com/FFmpeg/FFmpeg'
+	}
 ];
 
 const mtime = (p) => (existsSync(p) ? statSync(p).mtimeMs : 0);

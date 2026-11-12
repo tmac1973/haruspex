@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
+import type { BinarySource } from '#lib/ipc/gen/BinarySource.ts';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
@@ -36,7 +37,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 import VideoEditingSection from './VideoEditingSection.svelte';
 import { updateSettings } from '#lib/stores/settings.ts';
 
-const found = (name: string, source: 'path' | 'kdenlive' | 'override' = 'path') => ({
+const found = (name: string, source: BinarySource = 'path') => ({
 	path: `/usr/bin/${name}`,
 	version: `${name} 7.1`,
 	source
@@ -83,6 +84,12 @@ describe('VideoEditingSection', () => {
 		render(VideoEditingSection);
 		await screen.findByText('melt 7.1 (Kdenlive)');
 		screen.getByText('ffmpeg 7.1 (PATH)');
+	});
+
+	it('says when ffmpeg is the copy that ships with Haruspex', async () => {
+		status = { ...status, ffmpeg: found('ffmpeg', 'bundled') };
+		render(VideoEditingSection);
+		await screen.findByText('ffmpeg 7.1 (bundled)');
 	});
 
 	it('turns the video tools on with its switch', async () => {

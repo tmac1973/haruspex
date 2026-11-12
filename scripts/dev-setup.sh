@@ -101,6 +101,24 @@ if [ "$SKIP_RUNTIMES" = false ]; then
     echo
 fi
 
+# ---- Download ffmpeg and ffprobe (video tools, cameras) ----
+# Our LGPL build from this repo's ffmpeg-<tag> release. tauri-build wants every
+# externalBin on disk, so when the download is skipped a placeholder stands in;
+# it answers nothing to `-version`, so the app passes over it for the ffmpeg on
+# PATH. A later run replaces it, since the script checks its .version stamp.
+"$SCRIPT_DIR/fetch-ffmpeg.sh" --target "$TARGET_TRIPLE"
+FF_EXT=""
+case "$TARGET_TRIPLE" in *windows*) FF_EXT=".exe" ;; esac
+for name in haruspex-ffmpeg haruspex-ffprobe; do
+    stub="$BINARIES_DIR/$name-$TARGET_TRIPLE$FF_EXT"
+    if [ ! -e "$stub" ]; then
+        echo '#!/bin/sh' > "$stub"
+        chmod +x "$stub"
+        echo "   Placeholder: $stub (ffmpeg comes from PATH)"
+    fi
+done
+echo
+
 # ---- Download Pyodide runtime (Python sandbox) ----
 # Phase 11 — needed by the in-browser Python code-execution tool.
 # Idempotent and self-contained; safe to re-run.

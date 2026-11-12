@@ -67,6 +67,18 @@ own tree. Both are bundled as application resources.
 Neither runtime is modified. `uv` provisions its own CPython on demand, so no
 Python distribution is bundled with Haruspex.
 
+## Bundled ffmpeg
+
+Haruspex bundles `ffmpeg` and `ffprobe` from [FFmpeg](https://ffmpeg.org/),
+built from the unmodified upstream tag pinned in `scripts/build-ffmpeg.sh`
+with [LAME](https://lame.sourceforge.io/) linked in. The build is LGPL only
+(`--enable-version3`, no `--enable-gpl` or `--enable-nonfree`), so the
+binaries are distributed under the
+[GNU LGPL v3 or later](https://www.gnu.org/licenses/lgpl-3.0.html); LAME is
+LGPL 2 or later. `scripts/build-ffmpeg.sh` is the complete build recipe, and the
+source is at <https://github.com/FFmpeg/FFmpeg> and
+<https://sourceforge.net/projects/lame/>.
+
 ## Bundled libraries
 
 | Component      | Upstream                                         | License                                                                        |

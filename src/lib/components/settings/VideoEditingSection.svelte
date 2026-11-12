@@ -22,7 +22,7 @@
 		melt: 'videoMeltPath'
 	} as const;
 	const LOOKED =
-		'Looked in the path set here, then PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).';
+		'Looked in the path set here, then the ffmpeg and ffprobe that ship with Haruspex, then PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).';
 
 	let paths = $state<Record<Tool, string>>({
 		ffmpeg: getSettings().videoFfmpegPath,
@@ -182,10 +182,15 @@
 		updateSettings({ videoIntroPath: intro.trim(), videoOutroPath: outro.trim() });
 	}
 
+	const WHERE: Record<FoundBinary['source'], string> = {
+		override: 'set here',
+		bundled: 'bundled',
+		path: 'PATH',
+		kdenlive: 'Kdenlive'
+	};
+
 	function describe(found: FoundBinary): string {
-		const where =
-			found.source === 'override' ? 'set here' : found.source === 'kdenlive' ? 'Kdenlive' : 'PATH';
-		return `${found.version} (${where})`;
+		return `${found.version} (${WHERE[found.source]})`;
 	}
 </script>
 
