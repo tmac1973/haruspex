@@ -124,13 +124,18 @@ impl VideoBinariesStatus {
 
     /// The path to run, or the error a tool reports when it is missing.
     pub fn require(&self, tool: Tool) -> Result<&str, String> {
-        self.get(tool).map(|b| b.path.as_str()).ok_or_else(|| {
-            format!(
-                "{} was not found. The user can check Settings → Video editing.",
-                tool.name()
-            )
-        })
+        self.get(tool)
+            .map(|b| b.path.as_str())
+            .ok_or_else(|| not_found(tool))
     }
+}
+
+/// The error a tool reports when `tool` is missing.
+fn not_found(tool: Tool) -> String {
+    format!(
+        "{} was not found. The user can check Settings → Video editing.",
+        tool.name()
+    )
 }
 
 /// Whether `path` is a file this user may run.
@@ -317,6 +322,13 @@ pub async fn hardware_probe_ffmpeg(overrides: &BinaryOverrides) -> Option<String
     first_that_runs(Tool::Ffmpeg, list, &mut Vec::new())
         .await
         .map(|found| found.path)
+}
+
+/// One tool's path, found the same way as [`resolve`] without looking for the
+/// others. The cameras need ffmpeg and ffprobe, not melt.
+pub async fn resolve_tool(tool: Tool, overrides: &BinaryOverrides) -> Result<String, String> {
+    let found = find(tool, overrides, &mut Vec::new()).await;
+    found.map(|f| f.path).ok_or_else(|| not_found(tool))
 }
 
 /// Whether Kdenlive is installed as a Flatpak, whose melt can't be run from

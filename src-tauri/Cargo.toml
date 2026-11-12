@@ -150,6 +150,9 @@ xcb = "1.7"
 # Already in the tree through wry; named here for WebViewExt::set_cors_allowlist
 # (image_cache::protocol::webview_plugin).
 webkit2gtk = { version = "2.0", features = ["v2_34"] }
+# Lists USB webcams for Settings → Cameras (`camera::usb`): VIDIOC_QUERYCAP
+# tells a capture node from a webcam's metadata node.
+v4l = "0.14"
 
 # macOS (CoreGraphics/objc2) and Windows (Win32 GDI) capture goes through xcap
 # rather than hand-written unsafe blocks for each. Deliberately not used on

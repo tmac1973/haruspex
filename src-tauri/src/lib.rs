@@ -6,6 +6,7 @@ mod artifact_frame;
 mod audio;
 mod audio_cache;
 mod blob_cache;
+mod camera;
 mod clipboard;
 mod code_tools;
 mod comfy;
@@ -404,6 +405,10 @@ pub fn run() {
             audio_cache::commands::audio_rehydrate,
             audio_cache::commands::audio_cache_size,
             audio_cache::commands::audio_cache_clear,
+            camera::commands::camera_snapshot,
+            camera::commands::camera_listen,
+            camera::commands::camera_probe,
+            camera::commands::camera_usb_devices,
             video::commands::video_binaries_status,
             video::commands::video_probe_folder,
             video::commands::video_probe_file,
