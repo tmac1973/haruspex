@@ -322,7 +322,8 @@ function shoot(camera: CameraConfig): Promise<string> {
 
 /** The most turns a sweep makes to reach either end. */
 export const SWEEP_MAX_TURNS = 8;
-const SWEEP_STEP: Aim = { direction: 'right', amount: 'large' };
+/** Medium, not large: a large turn on a Cinnado D1 leaves gaps between the pictures. */
+const SWEEP_STEP: Aim = { direction: 'right', amount: 'medium' };
 
 export interface Sweep {
 	/** Pictures, leftmost first. */
@@ -333,7 +334,7 @@ export interface Sweep {
 }
 
 /**
- * Turn the camera to its far left, then right a large step at a time taking a
+ * Turn the camera to its far left, then right a step at a time taking a
  * picture at each stop, until it goes no further or `room` pictures are taken;
  * then send it home. A turn that leaves the picture unchanged takes none.
  */
@@ -365,7 +366,7 @@ registerTool({
 		function: {
 			name: 'camera_look_around',
 			description:
-				"Sweep one of the user's pan/tilt cameras across its whole range, left to right, taking a picture at each stop, then point it back home. Use it when the user asks to look around, scan or survey the room. It keeps the camera's tilt: turn it up or down with camera_look first if needed. Takes up to a minute.",
+				"Sweep one of the user's pan/tilt cameras across its whole range, left to right, taking a picture at each stop, then point it back home. Use it when the user asks to look around, scan or survey the room. It keeps the camera's tilt: turn it up or down with camera_look first if needed. Takes a minute or two.",
 			parameters: {
 				type: 'object',
 				properties: { camera: CAMERA_PARAM },
@@ -426,7 +427,7 @@ export function describeSweep(name: string, sweep: Sweep, when: string): string 
 	const n = sweep.shots.length;
 	const from = sweep.leftEnd ? 'its far left' : 'as far left as it went';
 	const to = sweep.rightEnd ? 'its far right' : 'as far right as the pictures allowed';
-	return `Swept ${name} from ${from} to ${to} and took ${n} picture${n === 1 ? '' : 's'} at ${when}, numbered 1 (leftmost) to ${n} (rightmost), each a large turn (about 60°) apart. It is back at its home position. You can now see them — describe the whole view in your next response.`;
+	return `Swept ${name} from ${from} to ${to} and took ${n} picture${n === 1 ? '' : 's'} at ${when}, numbered 1 (leftmost) to ${n} (rightmost), evenly spaced. Neighbouring pictures may overlap, so don't count the same thing twice. It is back at its home position. You can now see them — describe the whole view in your next response.`;
 }
 
 /** A refusal from the gate: the user's no as a plain answer, everything else as an error. */
