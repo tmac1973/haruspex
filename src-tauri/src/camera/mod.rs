@@ -81,6 +81,21 @@ pub struct PtzCalibration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub sweep: Option<SweepRange>,
+    /// Home as set in Haruspex (Set home here): this many pulses from the
+    /// camera's own home. Thingino ignores ONVIF's SetHomePosition, so going
+    /// home is the camera's home and then these steps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub home_offset: Option<HomeOffset>,
+}
+
+/// Pulses from the camera's own home: right and up are positive.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeOffset {
+    pub pan: i32,
+    pub tilt: i32,
 }
 
 /// Where a look-around starts and ends, in pulses from the left end.

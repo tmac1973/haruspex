@@ -47,7 +47,8 @@ vi.mock('@tauri-apps/api/core', async () =>
 				unmoved: false,
 				turnedViews: 0.556,
 				rehomed: false,
-				panPulses: 7
+				panPulses: 7,
+				tiltPulses: 1
 			}),
 			camera_calibrate: (a) => {
 				state.calls.push({ cmd: 'camera_calibrate', args: a });
@@ -272,12 +273,17 @@ describe('calibrating pan/tilt', () => {
 		);
 		await fireEvent.click(screen.getByText('Set right edge'));
 		await screen.findByText(/looks around only from 2\.8 to 3\.9 from the left end/);
+		// Home becomes where it points now: 2 pulses right of the camera's own.
+		await fireEvent.click(screen.getByText('Set home here'));
+		await screen.findByText(/home \(set here\) is 3\.9 from the left end/);
+		screen.getByText("Camera's own home");
 		await fireEvent.input(input(/^Note$/), {
 			target: { value: ' Faces the sofa; behind it is a wall ' }
 		});
 		await fireEvent.click(screen.getByText('Save'));
 		await waitFor(() => expect(getSettings().cameras[0].calibration?.rangePulses).toBe(9));
 		expect(getSettings().cameras[0].calibration?.sweep).toEqual({ from: 5, to: 7 });
+		expect(getSettings().cameras[0].calibration?.homeOffset).toEqual({ pan: 2, tilt: 0 });
 		expect(getSettings().cameras[0].note).toBe('Faces the sofa; behind it is a wall');
 		expect(() => structuredClone(getSettings())).not.toThrow();
 	});

@@ -31,4 +31,8 @@ rehomed: boolean,
  * its pan, while that is known: since it last went home and only turned
  * by calibrated steps.
  */
-panPulses: number | null, };
+panPulses: number | null, 
+/**
+ * The same for tilt, in pulses from the bottom.
+ */
+tiltPulses: number | null, };

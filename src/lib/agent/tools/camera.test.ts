@@ -524,6 +524,18 @@ describe('camera_look', () => {
 		).toBe(
 			'about 5 picture widths end to end; home is 2.8 from the left end; tilts about 1.6 picture heights, home 0.8 from the bottom'
 		);
+		expect(
+			describeRange({
+				pulseMs: 400,
+				viewsPerPulse: 0.5,
+				rangePulses: 9,
+				homePulses: 5,
+				tilt: { viewsPerPulse: 0.5, rangePulses: 6, homePulses: 1 },
+				homeOffset: { pan: -2, tilt: 2 }
+			})
+		).toBe(
+			'about 4.5 picture widths end to end; home (set here) is 1.5 from the left end; tilts about 3 picture heights, home (set here) 1.5 from the bottom'
+		);
 	});
 
 	it('counts a UVC webcam as aimable', async () => {
@@ -703,7 +715,14 @@ function fakeCamera(left: number, right: number) {
 		const next = Math.max(-left, Math.min(right, pos + step));
 		const unmoved = step !== 0 && next === pos;
 		pos = next;
-		return { atLimit: unmoved, unmoved, turnedViews: null, rehomed: false, panPulses: null };
+		return {
+			atLimit: unmoved,
+			unmoved,
+			turnedViews: null,
+			rehomed: false,
+			panPulses: null,
+			tiltPulses: null
+		};
 	};
 	const take = async () => `frame@${pos}`;
 	return { aim, take, moves };

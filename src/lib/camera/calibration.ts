@@ -10,13 +10,18 @@ import type { PtzCalibration } from '#lib/ipc/gen/PtzCalibration.ts';
  */
 export function describeRange(cal: PtzCalibration): string {
 	const round = (v: number) => Math.round(v * 10) / 10;
+	const off = cal.homeOffset ?? { pan: 0, tilt: 0 };
+	const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
+	const home = cal.homeOffset ? 'home (set here)' : 'home';
 	let text = `about ${round(cal.rangePulses * cal.viewsPerPulse)} picture widths end to end`;
 	if (cal.homePulses != null) {
-		text += `; home is ${round(cal.homePulses * cal.viewsPerPulse)} from the left end`;
+		const pan = clamp(cal.homePulses + off.pan, cal.rangePulses);
+		text += `; ${home} is ${round(pan * cal.viewsPerPulse)} from the left end`;
 	}
 	const tilt = cal.tilt;
 	if (tilt) {
-		text += `; tilts about ${round(tilt.rangePulses * tilt.viewsPerPulse)} picture heights, home ${round(tilt.homePulses * tilt.viewsPerPulse)} from the bottom`;
+		const up = clamp(tilt.homePulses + off.tilt, tilt.rangePulses);
+		text += `; tilts about ${round(tilt.rangePulses * tilt.viewsPerPulse)} picture heights, ${home} ${round(up * tilt.viewsPerPulse)} from the bottom`;
 	}
 	const sweep = cal.sweep;
 	if (sweep) {

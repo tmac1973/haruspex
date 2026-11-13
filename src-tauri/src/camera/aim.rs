@@ -78,6 +78,8 @@ pub struct CameraAimResult {
     /// its pan, while that is known: since it last went home and only turned
     /// by calibrated steps.
     pub pan_pulses: Option<u32>,
+    /// The same for tilt, in pulses from the bottom.
+    pub tilt_pulses: Option<u32>,
 }
 
 /// The ONVIF speed for every move: half of the camera's fastest.
@@ -302,89 +304,132 @@ pub(crate) async fn aim(
         _ => last_turn::forget(&config.id),
     }
     if let Ok(done) = result.as_mut() {
-        done.pan_pulses = position::after(config, aim, done);
+        let at = position::after(config, aim, done).unwrap_or_default();
+        done.pan_pulses = at.pan;
+        done.tilt_pulses = at.tilt;
     }
     super::detect::hold_motion(&config.id, now() + super::detect::AFTER_TURN_MS);
     result
 }
 
-/// Where each calibrated camera points: pulses from the left end of its pan.
-/// Known from when it goes home (or is calibrated, which ends at home) until
-/// a turn this can't count, such as a preset or an uncalibrated move.
+/// Where each calibrated camera points: pulses from the left end of its pan
+/// and from the bottom of its tilt. Known from when it goes home (or is
+/// calibrated, which ends at the camera's own home) until a turn this can't
+/// count, such as a preset or an uncalibrated move.
 pub(crate) mod position {
     use super::{pulses_for, Aim, AimDirection, CameraAimResult};
-    use crate::camera::CameraConfig;
+    use crate::camera::{CameraConfig, PtzCalibration};
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
 
-    static AT: LazyLock<Mutex<HashMap<String, u32>>> = LazyLock::new(Default::default);
+    /// Pan and tilt, each `None` while unknown.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub(crate) struct At {
+        pub pan: Option<u32>,
+        pub tilt: Option<u32>,
+    }
 
-    fn at() -> std::sync::MutexGuard<'static, HashMap<String, u32>> {
+    static AT: LazyLock<Mutex<HashMap<String, At>>> = LazyLock::new(Default::default);
+
+    fn at() -> std::sync::MutexGuard<'static, HashMap<String, At>> {
         AT.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    pub(crate) fn set(camera_id: &str, pulses: Option<u32>) {
-        match pulses {
+    pub(crate) fn set(camera_id: &str, now: Option<At>) {
+        match now {
             Some(p) => at().insert(camera_id.to_string(), p),
             None => at().remove(camera_id),
         };
     }
 
+    /// The camera's own home.
+    pub(crate) fn camera_home(cal: &PtzCalibration) -> At {
+        At {
+            pan: cal.home_pulses,
+            tilt: cal.tilt.as_ref().map(|t| t.home_pulses),
+        }
+    }
+
+    /// Home as Haruspex keeps it: the camera's own, moved by the offset set
+    /// with Set home here, inside the range.
+    pub(crate) fn home(cal: &PtzCalibration) -> At {
+        let own = camera_home(cal);
+        let off = cal.home_offset.unwrap_or_default();
+        let shift = |p: Option<u32>, by: i32, max: u32| {
+            p.map(|p| (i64::from(p) + i64::from(by)).clamp(0, i64::from(max)) as u32)
+        };
+        At {
+            pan: shift(own.pan, off.pan, cal.range_pulses),
+            tilt: shift(
+                own.tilt,
+                off.tilt,
+                cal.tilt.as_ref().map_or(0, |t| t.range_pulses),
+            ),
+        }
+    }
+
     /// Where the camera points after `aim` did `done`, and remember it.
-    pub(super) fn after(config: &CameraConfig, aim: &Aim, done: &CameraAimResult) -> Option<u32> {
+    pub(super) fn after(config: &CameraConfig, aim: &Aim, done: &CameraAimResult) -> Option<At> {
         let cal = config.calibration.as_ref()?;
-        let home = || cal.home_pulses;
         let id = &config.id;
-        let now = at().get(id).copied();
+        let now = at().get(id).copied().unwrap_or_default();
         let next = match aim {
             Aim::Preset { .. } => None,
             Aim::Move {
                 direction: AimDirection::Home,
                 ..
-            } => home(),
-            _ if done.rehomed => home(),
-            Aim::Move {
-                direction: AimDirection::Up | AimDirection::Down,
-                ..
+            } => Some(home(cal)),
+            Aim::Move { direction, .. } | Aim::Pulses { direction, .. } => {
+                let tilting = matches!(direction, AimDirection::Up | AimDirection::Down);
+                let pulses = match aim {
+                    Aim::Pulses { pulses, .. } => (*pulses).clamp(1, 20),
+                    Aim::Move { amount, .. } => {
+                        let per = if tilting {
+                            cal.tilt.as_ref().map_or(1.0, |t| t.views_per_pulse)
+                        } else {
+                            cal.views_per_pulse
+                        };
+                        pulses_for(*amount, per)
+                    }
+                    Aim::Preset { .. } => 0,
+                };
+                // A stuck tilt went home before it tried again.
+                let from = if done.rehomed { home(cal) } else { now };
+                let up = matches!(direction, AimDirection::Right | AimDirection::Up);
+                Some(if tilting {
+                    At {
+                        pan: from.pan,
+                        tilt: cal
+                            .tilt
+                            .as_ref()
+                            .and_then(|t| step(from.tilt, up, pulses, t.range_pulses, done)),
+                    }
+                } else {
+                    At {
+                        pan: step(from.pan, up, pulses, cal.range_pulses, done),
+                        tilt: from.tilt,
+                    }
+                })
             }
-            | Aim::Pulses {
-                direction: AimDirection::Up | AimDirection::Down,
-                ..
-            } => now,
-            Aim::Move { direction, amount } => step(
-                now,
-                *direction,
-                pulses_for(*amount, cal.views_per_pulse),
-                cal.range_pulses,
-                done,
-            ),
-            Aim::Pulses { direction, pulses } => step(
-                now,
-                *direction,
-                (*pulses).clamp(1, 20),
-                cal.range_pulses,
-                done,
-            ),
         };
         set(id, next);
         next
     }
 
-    /// `pulses` left or right from `now`, kept inside the range; a turn that
-    /// didn't move ends at that end of the range whatever `now` was.
+    /// `pulses` up the range (`up`: right or up) or down it from `now`, kept
+    /// inside it; a turn that didn't move ends at that end whatever `now` was.
     fn step(
         now: Option<u32>,
-        direction: AimDirection,
+        up: bool,
         pulses: u32,
         range: u32,
         done: &CameraAimResult,
     ) -> Option<u32> {
-        let right = direction == AimDirection::Right;
         if done.unmoved {
-            return Some(if right { range } else { 0 });
+            return Some(if up { range } else { 0 });
         }
         let now = now?;
-        Some(if right {
+        Some(if up {
             (now + pulses).min(range)
         } else {
             now.saturating_sub(pulses)
@@ -394,6 +439,7 @@ pub(crate) mod position {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::camera::{HomeOffset, TiltCalibration};
 
         #[test]
         fn steps_stay_in_the_range_and_a_stuck_turn_is_at_its_end() {
@@ -402,12 +448,39 @@ pub(crate) mod position {
                 unmoved: true,
                 ..Default::default()
             };
-            assert_eq!(step(Some(5), AimDirection::Right, 2, 9, &moved), Some(7));
-            assert_eq!(step(Some(8), AimDirection::Right, 2, 9, &moved), Some(9));
-            assert_eq!(step(Some(1), AimDirection::Left, 2, 9, &moved), Some(0));
-            assert_eq!(step(None, AimDirection::Left, 1, 9, &moved), None);
-            assert_eq!(step(None, AimDirection::Left, 1, 9, &stuck), Some(0));
-            assert_eq!(step(Some(3), AimDirection::Right, 1, 9, &stuck), Some(9));
+            assert_eq!(step(Some(5), true, 2, 9, &moved), Some(7));
+            assert_eq!(step(Some(8), true, 2, 9, &moved), Some(9));
+            assert_eq!(step(Some(1), false, 2, 9, &moved), Some(0));
+            assert_eq!(step(None, false, 1, 9, &moved), None);
+            assert_eq!(step(None, false, 1, 9, &stuck), Some(0));
+            assert_eq!(step(Some(3), true, 1, 9, &stuck), Some(9));
+        }
+
+        #[test]
+        fn home_is_the_cameras_own_moved_by_the_offset_and_kept_in_range() {
+            let mut cal = PtzCalibration {
+                pulse_ms: 400,
+                views_per_pulse: 0.5,
+                range_pulses: 9,
+                home_pulses: Some(5),
+                tilt: Some(TiltCalibration {
+                    views_per_pulse: 0.5,
+                    range_pulses: 6,
+                    home_pulses: 1,
+                }),
+                sweep: None,
+                home_offset: None,
+            };
+            let at = |pan, tilt| At {
+                pan: Some(pan),
+                tilt: Some(tilt),
+            };
+            assert_eq!(home(&cal), at(5, 1));
+            cal.home_offset = Some(HomeOffset { pan: -2, tilt: 3 });
+            assert_eq!(home(&cal), at(3, 4));
+            cal.home_offset = Some(HomeOffset { pan: 9, tilt: -4 });
+            assert_eq!(home(&cal), at(9, 0));
+            assert_eq!(camera_home(&cal), at(5, 1));
         }
     }
 }
@@ -611,6 +684,24 @@ async fn aim_onvif(
                     ptz.goto_preset(&token).await?;
                 }
                 settle_after_goto(ptz).await;
+                // Home set in Haruspex: steps from the camera's own.
+                let off = calibration.and_then(|c| c.home_offset).unwrap_or_default();
+                if off.pan != 0 {
+                    let way = if off.pan > 0 {
+                        AimDirection::Right
+                    } else {
+                        AimDirection::Left
+                    };
+                    pulse(ptz, way, off.pan.unsigned_abs()).await?;
+                }
+                if off.tilt != 0 {
+                    let way = if off.tilt > 0 {
+                        AimDirection::Up
+                    } else {
+                        AimDirection::Down
+                    };
+                    pulse(ptz, way, off.tilt.unsigned_abs()).await?;
+                }
                 Ok(None)
             }
         },

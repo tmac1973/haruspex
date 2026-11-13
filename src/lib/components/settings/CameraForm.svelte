@@ -68,6 +68,8 @@
 	let calibrateError = $state('');
 	/** Where the camera points, in pulses from the left end, while known. */
 	let panAt = $state<number | null>(null);
+	/** The same for tilt, in pulses from the bottom. */
+	let tiltAt = $state<number | null>(null);
 	let note = $state(start.note ?? '');
 	let watchOn = $state(start.watcher.enabled);
 	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
@@ -307,11 +309,17 @@
 				config,
 				overrides: videoOverrides()
 			});
-			// Edges set before still count if they fit the range measured now.
+			// Edges set before still count if they fit the range measured now,
+			// and a home set here is kept: it is steps from the camera's own.
 			const kept = calibration?.sweep;
-			calibration = kept && kept.to <= fresh.rangePulses ? { ...fresh, sweep: { ...kept } } : fresh;
-			// Calibrate ends at home.
+			calibration = {
+				...fresh,
+				...(kept && kept.to <= fresh.rangePulses ? { sweep: { ...kept } } : {}),
+				...(calibration?.homeOffset ? { homeOffset: { ...calibration.homeOffset } } : {})
+			};
+			// Calibrate ends at the camera's own home.
 			panAt = fresh.homePulses ?? null;
+			tiltAt = fresh.tilt?.homePulses ?? null;
 		} catch (e) {
 			calibrateError = redactCameraError(errMessage(e), typed);
 		} finally {
@@ -403,6 +411,7 @@
 				overrides: videoOverrides()
 			});
 			panAt = moved.panPulses;
+			tiltAt = moved.tiltPulses;
 			frame = await invoke<string>('camera_snapshot', { config, overrides: videoOverrides() });
 		} catch (e) {
 			testError = redactCameraError(errMessage(e), typed);
@@ -419,6 +428,25 @@
 		// Edges set the wrong way round swap rather than cover nothing.
 		const sweep = { from: Math.min(next.from, next.to), to: Math.max(next.from, next.to) };
 		calibration = { ...calibration, sweep };
+	}
+
+	/**
+	 * Make where the camera points now its home in Haruspex: steps from the
+	 * camera's own home, since a Thingino camera won't save a new one.
+	 */
+	function setHome() {
+		if (!calibration || panAt === null || calibration.homePulses == null) return;
+		const tilt = calibration.tilt;
+		const homeOffset = {
+			pan: panAt - calibration.homePulses,
+			tilt: tilt && tiltAt !== null ? tiltAt - tilt.homePulses : 0
+		};
+		calibration = { ...calibration, homeOffset };
+	}
+
+	function clearHome() {
+		if (!calibration) return;
+		calibration = { ...calibration, homeOffset: undefined };
 	}
 
 	function clearEdges() {
@@ -633,6 +661,24 @@
 						>
 						{#if calibration.sweep}
 							<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
+						{/if}
+					</div>
+					<div class="edges">
+						<button
+							type="button"
+							class="btn btn-small"
+							onclick={setHome}
+							disabled={panAt === null || calibration.homePulses == null}
+							title="Home (and where a look-around ends) becomes where the camera points now, tilt included. Turn it with the buttons below first."
+							>Set home here</button
+						>
+						{#if calibration.homeOffset}
+							<button
+								type="button"
+								class="btn btn-small"
+								onclick={clearHome}
+								title="Home goes back to the one saved on the camera.">Camera's own home</button
+							>
 						{/if}
 					</div>
 				{/if}

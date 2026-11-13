@@ -21,6 +21,15 @@ Network cameras don't say how far a turn went, and many (including Thingino came
 
 Calibrate again after moving the camera or changing its home position. **Connect** clears the calibration, since it may be a different camera. A USB webcam needs none: it reports its own angles.
 
+## Set where home is
+
+Home is where **Home** sends the camera and where a look-around ends. A camera's own home can point somewhere useless, such as the ceiling. After calibrating:
+
+1. Turn the camera with **Left**, **Right**, **Up** and **Down** (starting from **Home**) until it points where home should be.
+2. Click **Set home here**, then **Save**.
+
+Haruspex keeps this home itself, as steps from the camera's own (Thingino cameras ignore a new home sent to them), so going home takes a few seconds longer. **Camera's own home** goes back to the camera's. It is kept when you calibrate again.
+
 ## Choose the part worth looking around
 
 A camera on a shelf may face a wall for half its turn. After calibrating, mark the part a look-around should cover:
