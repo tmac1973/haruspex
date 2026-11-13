@@ -18,5 +18,9 @@ export function describeRange(cal: PtzCalibration): string {
 	if (tilt) {
 		text += `; tilts about ${round(tilt.rangePulses * tilt.viewsPerPulse)} picture heights, home ${round(tilt.homePulses * tilt.viewsPerPulse)} from the bottom`;
 	}
+	const sweep = cal.sweep;
+	if (sweep) {
+		text += `; looks around only from ${round(sweep.from * cal.viewsPerPulse)} to ${round(sweep.to * cal.viewsPerPulse)} from the left end`;
+	}
 	return text;
 }

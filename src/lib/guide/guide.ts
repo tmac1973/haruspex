@@ -34,6 +34,7 @@ const ORDER = [
 	'write-skills',
 	'media-skills',
 	'jobs',
+	'job-types',
 	'3d-models',
 	'memory',
 	'images',
@@ -47,6 +48,7 @@ const ORDER = [
 	'textures',
 	'integrations',
 	'cameras',
+	'camera-chat',
 	'camera-pan-tilt',
 	'camera-log',
 	'search-and-network',
@@ -54,6 +56,7 @@ const ORDER = [
 	'remote-control',
 	'remote-control-api',
 	'settings',
+	'settings-tools',
 	'shortcuts',
 	'model-feedback',
 	'troubleshooting'

@@ -46,6 +46,10 @@ export interface SweepPlan {
 	stepViews: number | null;
 	/** Steps from the left end to the right, when calibrated. */
 	steps: number | null;
+	/** From the left end to where the pictures start, when edges are set. */
+	toStart?: Aim;
+	/** The sweep keeps between the edges set in Settings → Cameras. */
+	edges?: boolean;
 }
 
 /**
@@ -63,16 +67,21 @@ export function sweepPlan(cal: PtzCalibration | undefined, room: number): SweepP
 			steps: null
 		};
 	}
+	const from = Math.min(cal.sweep?.from ?? 0, cal.rangePulses);
+	const to = Math.max(from, Math.min(cal.sweep?.to ?? cal.rangePulses, cal.rangePulses));
+	const span = to - from;
 	let pulses = Math.max(1, Math.floor(SWEEP_OVERLAP / cal.viewsPerPulse));
-	if (Math.ceil(cal.rangePulses / pulses) + 1 > room) {
-		pulses = Math.ceil(cal.rangePulses / Math.max(1, room - 1));
+	if (Math.ceil(span / pulses) + 1 > room) {
+		pulses = Math.ceil(span / Math.max(1, room - 1));
 	}
 	return {
 		toLeft: { direction: 'left', pulses: Math.min(20, cal.rangePulses + 1) },
 		repeatToLeft: false,
 		step: { direction: 'right', pulses },
 		stepViews: pulses * cal.viewsPerPulse,
-		steps: Math.ceil(cal.rangePulses / pulses)
+		steps: Math.ceil(span / pulses),
+		...(from > 0 ? { toStart: { direction: 'right', pulses: from } as Aim } : {}),
+		...(cal.sweep ? { edges: true } : {})
 	};
 }
 
@@ -104,6 +113,7 @@ export async function runSweep(
 		// A calibrated camera turned its whole range left is at the end.
 		await aim(plan.toLeft);
 		leftEnd = true;
+		if (plan.toStart) await aim(plan.toStart);
 	}
 	const shots = [await take()];
 	let rightEnd = false;
@@ -128,7 +138,7 @@ registerTool({
 		function: {
 			name: 'camera_look_around',
 			description:
-				"Sweep one of the user's pan/tilt cameras across its whole range, left to right, taking a picture at each stop, then point it back home. Use it when the user asks to look around, scan or survey the room. It keeps the camera's tilt: turn it up or down with camera_look first if needed. Takes a minute or two.",
+				"Sweep one of the user's pan/tilt cameras across its range (or the part of it set in Settings), left to right, taking a picture at each stop, then point it back home. Use it when the user asks to look around, scan or survey the room. It keeps the camera's tilt: turn it up or down with camera_look first if needed. Takes a minute or two.",
 			parameters: {
 				type: 'object',
 				properties: { camera: CAMERA_PARAM },
@@ -180,7 +190,7 @@ registerTool({
 			})
 		);
 		return {
-			result: describeSweep(camera.name, sweep, when, plan.stepViews),
+			result: describeSweep(camera.name, sweep, when, plan.stepViews, plan.edges),
 			thumbDataUrl: sweep.shots[0]
 		};
 	}
@@ -191,11 +201,20 @@ export function describeSweep(
 	name: string,
 	sweep: Sweep,
 	when: string,
-	stepViews: number | null
+	stepViews: number | null,
+	edges = false
 ): string {
 	const n = sweep.shots.length;
-	const from = sweep.leftEnd ? 'its far left' : 'as far left as it went';
-	const to = sweep.rightEnd ? 'its far right' : 'as far right as the pictures allowed';
+	const from = edges
+		? 'the left edge set for it'
+		: sweep.leftEnd
+			? 'its far left'
+			: 'as far left as it went';
+	const to = edges
+		? 'the right edge set for it'
+		: sweep.rightEnd
+			? 'its far right'
+			: 'as far right as the pictures allowed';
 	const spacing =
 		stepViews == null
 			? "Neighbouring pictures may overlap, so don't count the same thing twice."

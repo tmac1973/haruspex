@@ -39,6 +39,7 @@ pub(crate) async fn calibrate(cfg: &CameraConfig, ffmpeg: &str) -> Result<PtzCal
     let result = measure(cfg, ffmpeg, &ptz).await;
     // Home either way, so a failed run doesn't leave it facing a wall.
     let _ = ptz.goto_home().await;
+    super::aim::position::set(&cfg.id, result.as_ref().ok().and_then(|c| c.home_pulses));
     super::detect::hold_motion(&cfg.id, now() + super::detect::AFTER_TURN_MS);
     result
 }
@@ -63,6 +64,7 @@ async fn measure(cfg: &CameraConfig, ffmpeg: &str, ptz: &Ptz) -> Result<PtzCalib
         range_pulses,
         home_pulses: Some(home_pulses),
         tilt,
+        sweep: None,
     })
 }
 

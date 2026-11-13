@@ -66,7 +66,7 @@ Servers, watchers and long builds run in the background. **Running: N** in the h
 
 ## Command approval and limits
 
-Safe-looking commands just run. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes. Settings → Code holds the time, step and log limits and **Auto-approve commands**; see the `settings` page.
+Safe-looking commands just run. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes. Settings → Code holds the time, step and log limits and **Auto-approve commands**; see the `settings-tools` page.
 
 ## What it doesn't do yet
 

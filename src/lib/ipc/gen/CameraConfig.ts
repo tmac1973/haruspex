@@ -23,4 +23,9 @@ caps: CameraCaps | null,
  * How far this camera's pan turns go, measured by Calibrate in
  * Settings → Cameras. Only an ONVIF camera has one.
  */
-calibration?: PtzCalibration, };
+calibration?: PtzCalibration, 
+/**
+ * What the user tells the assistant about this camera ("faces the living
+ * room; behind it is a wall"). Given to the model with the camera list.
+ */
+note?: string, };

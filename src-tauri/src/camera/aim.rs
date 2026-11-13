@@ -74,6 +74,10 @@ pub struct CameraAimResult {
     /// A tilt that didn't move was tried again from home, so the pan is back
     /// at home too.
     pub rehomed: bool,
+    /// Where a calibrated camera now points, in pulses from the left end of
+    /// its pan, while that is known: since it last went home and only turned
+    /// by calibrated steps.
+    pub pan_pulses: Option<u32>,
 }
 
 /// The ONVIF speed for every move: half of the camera's fastest.
@@ -297,8 +301,115 @@ pub(crate) async fn aim(
         // Home, a preset or an unchecked turn: the last view no longer counts.
         _ => last_turn::forget(&config.id),
     }
+    if let Ok(done) = result.as_mut() {
+        done.pan_pulses = position::after(config, aim, done);
+    }
     super::detect::hold_motion(&config.id, now() + super::detect::AFTER_TURN_MS);
     result
+}
+
+/// Where each calibrated camera points: pulses from the left end of its pan.
+/// Known from when it goes home (or is calibrated, which ends at home) until
+/// a turn this can't count, such as a preset or an uncalibrated move.
+pub(crate) mod position {
+    use super::{pulses_for, Aim, AimDirection, CameraAimResult};
+    use crate::camera::CameraConfig;
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+
+    static AT: LazyLock<Mutex<HashMap<String, u32>>> = LazyLock::new(Default::default);
+
+    fn at() -> std::sync::MutexGuard<'static, HashMap<String, u32>> {
+        AT.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub(crate) fn set(camera_id: &str, pulses: Option<u32>) {
+        match pulses {
+            Some(p) => at().insert(camera_id.to_string(), p),
+            None => at().remove(camera_id),
+        };
+    }
+
+    /// Where the camera points after `aim` did `done`, and remember it.
+    pub(super) fn after(config: &CameraConfig, aim: &Aim, done: &CameraAimResult) -> Option<u32> {
+        let cal = config.calibration.as_ref()?;
+        let home = || cal.home_pulses;
+        let id = &config.id;
+        let now = at().get(id).copied();
+        let next = match aim {
+            Aim::Preset { .. } => None,
+            Aim::Move {
+                direction: AimDirection::Home,
+                ..
+            } => home(),
+            _ if done.rehomed => home(),
+            Aim::Move {
+                direction: AimDirection::Up | AimDirection::Down,
+                ..
+            }
+            | Aim::Pulses {
+                direction: AimDirection::Up | AimDirection::Down,
+                ..
+            } => now,
+            Aim::Move { direction, amount } => step(
+                now,
+                *direction,
+                pulses_for(*amount, cal.views_per_pulse),
+                cal.range_pulses,
+                done,
+            ),
+            Aim::Pulses { direction, pulses } => step(
+                now,
+                *direction,
+                (*pulses).clamp(1, 20),
+                cal.range_pulses,
+                done,
+            ),
+        };
+        set(id, next);
+        next
+    }
+
+    /// `pulses` left or right from `now`, kept inside the range; a turn that
+    /// didn't move ends at that end of the range whatever `now` was.
+    fn step(
+        now: Option<u32>,
+        direction: AimDirection,
+        pulses: u32,
+        range: u32,
+        done: &CameraAimResult,
+    ) -> Option<u32> {
+        let right = direction == AimDirection::Right;
+        if done.unmoved {
+            return Some(if right { range } else { 0 });
+        }
+        let now = now?;
+        Some(if right {
+            (now + pulses).min(range)
+        } else {
+            now.saturating_sub(pulses)
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn steps_stay_in_the_range_and_a_stuck_turn_is_at_its_end() {
+            let moved = CameraAimResult::default();
+            let stuck = CameraAimResult {
+                unmoved: true,
+                ..Default::default()
+            };
+            assert_eq!(step(Some(5), AimDirection::Right, 2, 9, &moved), Some(7));
+            assert_eq!(step(Some(8), AimDirection::Right, 2, 9, &moved), Some(9));
+            assert_eq!(step(Some(1), AimDirection::Left, 2, 9, &moved), Some(0));
+            assert_eq!(step(None, AimDirection::Left, 1, 9, &moved), None);
+            assert_eq!(step(None, AimDirection::Left, 1, 9, &stuck), Some(0));
+            assert_eq!(step(Some(3), AimDirection::Right, 1, 9, &stuck), Some(9));
+        }
+    }
 }
 
 fn direction_of(aim: &Aim) -> Option<AimDirection> {
@@ -718,6 +829,7 @@ mod tests {
             watcher: WatcherConfig::default(),
             caps: None,
             calibration: None,
+            note: None,
         }
     }
 

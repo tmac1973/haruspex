@@ -703,7 +703,7 @@ function fakeCamera(left: number, right: number) {
 		const next = Math.max(-left, Math.min(right, pos + step));
 		const unmoved = step !== 0 && next === pos;
 		pos = next;
-		return { atLimit: unmoved, unmoved, turnedViews: null, rehomed: false };
+		return { atLimit: unmoved, unmoved, turnedViews: null, rehomed: false, panPulses: null };
 	};
 	const take = async () => `frame@${pos}`;
 	return { aim, take, moves };
@@ -773,6 +773,19 @@ describe('planning a sweep from a calibration', () => {
 		expect(sweep.rightEnd).toBe(true);
 		expect(sweep.shots).toEqual([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4].map((p) => `frame@${p}`));
 		expect(cam.moves.filter((m) => m === 'left')).toHaveLength(1);
+	});
+
+	it('keeps between the edges set for it', async () => {
+		// Left end at -5 from home, right end at 4: edges from 2 to 6 pulses in.
+		const cam = fakeCamera(5, 4);
+		const plan = sweepPlan({ ...d1, sweep: { from: 2, to: 6 } }, 10);
+		expect(plan.toStart).toEqual({ direction: 'right', pulses: 2 });
+		expect(plan.steps).toBe(4);
+		const sweep = await runSweep(cam.aim, cam.take, 10, plan);
+		expect(sweep.shots).toEqual([-3, -2, -1, 0, 1].map((p) => `frame@${p}`));
+		expect(describeSweep('Kitchen', sweep, '10:00', plan.stepViews, plan.edges)).toMatch(
+			/^Swept Kitchen from the left edge set for it to the right edge set for it/
+		);
 	});
 
 	it('suggests calibrating when an uncalibrated sweep ran out of pictures', () => {

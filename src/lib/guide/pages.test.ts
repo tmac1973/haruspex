@@ -37,6 +37,7 @@ const PAGES = [
 	'write-skills',
 	'media-skills',
 	'jobs',
+	'job-types',
 	'3d-models',
 	'memory',
 	'images',
@@ -50,6 +51,7 @@ const PAGES = [
 	'textures',
 	'integrations',
 	'cameras',
+	'camera-chat',
 	'camera-pan-tilt',
 	'camera-log',
 	'search-and-network',
@@ -57,6 +59,7 @@ const PAGES = [
 	'remote-control',
 	'remote-control-api',
 	'settings',
+	'settings-tools',
 	'shortcuts',
 	'model-feedback',
 	'troubleshooting'
@@ -112,14 +115,16 @@ describe('the user guide', () => {
 		}
 	});
 
-	it('names every Settings section on the settings page', () => {
+	it('names every Settings section on one of the two settings pages', () => {
 		const panel = readFileSync(
 			join(process.cwd(), 'src/lib/components/settings/SettingsPanel.svelte'),
 			'utf8'
 		);
 		const sections = [...panel.matchAll(/id: '[a-z-]+',\s*label: '([^']+)'/g)].map((m) => m[1]);
 		expect(sections.length).toBeGreaterThan(10);
-		const settings = pages.find((p) => p.name === 'settings')!.raw;
+		const settings = ['settings', 'settings-tools']
+			.map((name) => pages.find((p) => p.name === name)!.raw)
+			.join('\n');
 		for (const label of sections) {
 			expect(settings, label).toContain(`## ${label}`);
 		}

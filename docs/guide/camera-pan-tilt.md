@@ -21,6 +21,16 @@ Network cameras don't say how far a turn went, and many (including Thingino came
 
 Calibrate again after moving the camera or changing its home position. **Connect** clears the calibration, since it may be a different camera. A USB webcam needs none: it reports its own angles.
 
+## Choose the part worth looking around
+
+A camera on a shelf may face a wall for half its turn. After calibrating, mark the part a look-around should cover:
+
+1. Turn the camera with **Left** and **Right** (or **Home**) until it points at one edge of what matters.
+2. Click **Set left edge**. Turn it to the other edge and click **Set right edge**.
+3. Click **Save**. **Whole range** clears the edges.
+
+The edges are kept when you calibrate again, as long as they still fit. The buttons work only while Haruspex knows where the camera points: after **Home** or Calibrate, and the turns since.
+
 ## Ask the assistant to turn it
 
 `camera_look` turns a camera left, right, up or down (small, medium or large), home, or to a preset by name, then takes a picture. How the assistant is told how far it went:

@@ -135,7 +135,7 @@ describe('video_probe', () => {
 		expect(invoke).toHaveBeenCalledWith('video_probe_folder', {
 			workingDir: '/videos',
 			episode: 'ep010',
-			overrides: { ffmpeg: '', ffprobe: '', melt: '' }
+			overrides: { ffmpeg: '', ffprobe: '', melt: '', ffmpegChoice: 'auto' }
 		});
 		expect(out.result).toContain('1 clips in ep010:');
 		expect(out.result).toContain('- ep010/raw/obs.mp4 · 32:23 · 1920×1080 @ 60 · h264 · aac 2ch');

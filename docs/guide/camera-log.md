@@ -32,7 +32,7 @@ No video or sound clip is kept: each is deleted once it's transcribed.
 
 The chat model writes each caption from the entry's picture. A caption waits until no chat, Code or job turn needs the model, so a reply is never slowed; it appears a little after the turn ends.
 
-Captions are only written by the local model or a server you trust in Settings → Cameras (see the `cameras` page). With any other model, entries wait with "caption pending" until you switch back. A model that can't see images leaves them with no caption.
+Captions are only written by the local model or a server you trust in Settings → Cameras (see the `camera-chat` page). With any other model, entries wait with "caption pending" until you switch back. A model that can't see images leaves them with no caption.
 
 ## How long entries are kept
 

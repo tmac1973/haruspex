@@ -191,7 +191,7 @@ describe('video_cut', () => {
 				normalize: null
 			},
 			settings: {
-				overrides: { ffmpeg: '', ffprobe: '', melt: '' },
+				overrides: { ffmpeg: '', ffprobe: '', melt: '', ffmpegChoice: 'auto' },
 				intro: '/elsewhere/intro.mp4',
 				outro: '',
 				preset: '1440p60'

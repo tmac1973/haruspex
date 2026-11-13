@@ -66,6 +66,9 @@
 	let calibration = $state<PtzCalibration | undefined>(start.calibration);
 	let calibrating = $state(false);
 	let calibrateError = $state('');
+	/** Where the camera points, in pulses from the left end, while known. */
+	let panAt = $state<number | null>(null);
+	let note = $state(start.note ?? '');
 	let watchOn = $state(start.watcher.enabled);
 	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
 	let hoursEnd = $state(start.watcher.activeHours?.end ?? '');
@@ -204,7 +207,8 @@
 			ptz: savedPtz,
 			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
 			caps,
-			calibration: savedPtz === 'onvif' ? $state.snapshot(calibration) : undefined
+			calibration: savedPtz === 'onvif' ? $state.snapshot(calibration) : undefined,
+			note: note.trim() || undefined
 		};
 	}
 
@@ -299,10 +303,15 @@
 		const typed = password;
 		try {
 			const config = await testCamera();
-			calibration = await invoke<PtzCalibration>('camera_calibrate', {
+			const fresh = await invoke<PtzCalibration>('camera_calibrate', {
 				config,
 				overrides: videoOverrides()
 			});
+			// Edges set before still count if they fit the range measured now.
+			const kept = calibration?.sweep;
+			calibration = kept && kept.to <= fresh.rangePulses ? { ...fresh, sweep: { ...kept } } : fresh;
+			// Calibrate ends at home.
+			panAt = fresh.homePulses ?? null;
 		} catch (e) {
 			calibrateError = redactCameraError(errMessage(e), typed);
 		} finally {
@@ -388,17 +397,33 @@
 		const typed = password;
 		try {
 			const config = await testCamera();
-			await invoke<CameraAimResult>('camera_aim', {
+			const moved = await invoke<CameraAimResult>('camera_aim', {
 				config,
 				aim: { direction, amount: 'small' },
 				overrides: videoOverrides()
 			});
+			panAt = moved.panPulses;
 			frame = await invoke<string>('camera_snapshot', { config, overrides: videoOverrides() });
 		} catch (e) {
 			testError = redactCameraError(errMessage(e), typed);
 		} finally {
 			aiming = false;
 		}
+	}
+
+	/** Make where the camera points now one edge of what a look-around covers. */
+	function setEdge(side: 'from' | 'to') {
+		if (!calibration || panAt === null) return;
+		const now = calibration.sweep ?? { from: 0, to: calibration.rangePulses };
+		const next = { ...now, [side]: panAt };
+		// Edges set the wrong way round swap rather than cover nothing.
+		const sweep = { from: Math.min(next.from, next.to), to: Math.max(next.from, next.to) };
+		calibration = { ...calibration, sweep };
+	}
+
+	function clearEdges() {
+		if (!calibration) return;
+		calibration = { ...calibration, sweep: undefined };
 	}
 
 	async function save() {
@@ -453,6 +478,16 @@
 			title="What you and the assistant call it."
 		/>
 		{#if nameError}<p class="error">{nameError}</p>{/if}
+	</div>
+
+	<label for="cam-note-{start.id}">Note</label>
+	<div>
+		<input
+			id="cam-note-{start.id}"
+			bind:value={note}
+			placeholder="Faces the living room; behind it is a wall"
+			title="Told to the assistant with the camera list: what the camera looks at, what to ignore."
+		/>
 	</div>
 
 	{#if kind === 'rtsp'}
@@ -579,6 +614,27 @@
 				</button>
 				{#if calibration}
 					<p class="help">Turns {describeRange(calibration)}.</p>
+					<div class="edges">
+						<button
+							type="button"
+							class="btn btn-small"
+							onclick={() => setEdge('from')}
+							disabled={panAt === null}
+							title="Look around starts where the camera points now. Turn it with the buttons below, or Home, first."
+							>Set left edge</button
+						>
+						<button
+							type="button"
+							class="btn btn-small"
+							onclick={() => setEdge('to')}
+							disabled={panAt === null}
+							title="Look around ends where the camera points now. Turn it with the buttons below, or Home, first."
+							>Set right edge</button
+						>
+						{#if calibration.sweep}
+							<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
+						{/if}
+					</div>
 				{/if}
 				{#if calibrateError}<p class="error">{calibrateError}</p>{/if}
 			{/if}
@@ -792,6 +848,13 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+	}
+
+	.edges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 4px;
 	}
 
 	.hours input,

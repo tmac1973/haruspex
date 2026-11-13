@@ -47,6 +47,11 @@ pub struct CameraConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub calibration: Option<PtzCalibration>,
+    /// What the user tells the assistant about this camera ("faces the living
+    /// room; behind it is a wall"). Given to the model with the camera list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub note: Option<String>,
 }
 
 /// A network camera's pan, measured in picture widths rather than degrees:
@@ -70,6 +75,21 @@ pub struct PtzCalibration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub tilt: Option<TiltCalibration>,
+    /// The part of the pan worth looking at, in pulses from the left end:
+    /// a look-around sweeps only from `sweep_from` to `sweep_to`. `None` is
+    /// the whole range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sweep: Option<SweepRange>,
+}
+
+/// Where a look-around starts and ends, in pulses from the left end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SweepRange {
+    pub from: u32,
+    pub to: u32,
 }
 
 /// A network camera's tilt, measured in picture heights.

@@ -71,7 +71,7 @@ registerTool({
 		function: {
 			name: 'camera_list',
 			description:
-				"List the user's cameras: name, kind (network or usb), whether it has sound, whether it can be aimed (and its saved presets), and whether each use asks the user first.",
+				"List the user's cameras: name, kind (network or usb), whether it has sound, whether it can be aimed (and its saved presets and range), the user's note about it, and whether each use asks the user first.",
 			parameters: { type: 'object', properties: {} }
 		}
 	},
@@ -88,6 +88,7 @@ registerTool({
 				? { presets: (c.onvif?.presets ?? []).map((p) => p.name) }
 				: {}),
 			...(canAim(c) && c.calibration ? { pan_range: describeRange(c.calibration) } : {}),
+			...(c.note?.trim() ? { note: c.note.trim() } : {}),
 			permission: c.permission
 		}));
 		return toolResult(JSON.stringify(cameras));

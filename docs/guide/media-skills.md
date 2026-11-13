@@ -44,7 +44,7 @@ It knows what the image models can do, so for something it can't (extending on L
 - It draws the ground to stand apart from the sprites: each texture is measured against them, and redrawn lighter or darker if they would be hard to see on it (see the `textures` page).
 - It doesn't replace a file that exists unless you ask.
 
-For more than about eight assets it suggests an Asset generation job (see the `jobs` page).
+For more than about eight assets it suggests an Asset generation job (see the `job-types` page).
 
 ## Make a song: write-song
 

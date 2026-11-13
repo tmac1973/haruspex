@@ -42,6 +42,13 @@ vi.mock('@tauri-apps/api/core', async () =>
 					presets: [{ token: '0', name: 'Door' }]
 				};
 			},
+			camera_aim: () => ({
+				atLimit: false,
+				unmoved: false,
+				turnedViews: 0.556,
+				rehomed: false,
+				panPulses: 7
+			}),
 			camera_calibrate: (a) => {
 				state.calls.push({ cmd: 'camera_calibrate', args: a });
 				return { pulseMs: 400, viewsPerPulse: 0.556, rangePulses: 9, homePulses: 5 };
@@ -256,8 +263,22 @@ describe('calibrating pan/tilt', () => {
 			'Turns about 5 picture widths end to end; home is 2.8 from the left end.'
 		);
 		screen.getByText('Calibrate again');
+		// Calibrate ends at home, 5 pulses in; Right turns it to 7.
+		await fireEvent.click(screen.getByText('Set left edge'));
+		await fireEvent.click(screen.getByText('Right'));
+		// The turn and its new frame finish before the edge can be set.
+		await waitFor(() =>
+			expect((screen.getByText('Right') as HTMLButtonElement).disabled).toBe(false)
+		);
+		await fireEvent.click(screen.getByText('Set right edge'));
+		await screen.findByText(/looks around only from 2\.8 to 3\.9 from the left end/);
+		await fireEvent.input(input(/^Note$/), {
+			target: { value: ' Faces the sofa; behind it is a wall ' }
+		});
 		await fireEvent.click(screen.getByText('Save'));
 		await waitFor(() => expect(getSettings().cameras[0].calibration?.rangePulses).toBe(9));
+		expect(getSettings().cameras[0].calibration?.sweep).toEqual({ from: 5, to: 7 });
+		expect(getSettings().cameras[0].note).toBe('Faces the sofa; behind it is a wall');
 		expect(() => structuredClone(getSettings())).not.toThrow();
 	});
 });

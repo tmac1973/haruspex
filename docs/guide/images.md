@@ -62,7 +62,7 @@ A tiling texture, such as "a 32 px gravel tile", or the edge tiles where two tex
 
 ## Make a whole set of game art
 
-The **Asset generation** job draws all of a project's sprites, icons and tiling textures in one style, checks each one, retries failures and writes a report. A texture it draws in code that the check rejects is redrawn up to twice, then kept and marked for **Review assets**. Guided planning can hand off to it. See the `jobs` page.
+The **Asset generation** job draws all of a project's sprites, icons and tiling textures in one style, checks each one, retries failures and writes a report. A texture it draws in code that the check rejects is redrawn up to twice, then kept and marked for **Review assets**. Guided planning can hand off to it. See the `job-types` page.
 
 ## What it costs your computer
 

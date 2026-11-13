@@ -567,6 +567,7 @@ mod tests {
             watcher: WatcherConfig::default(),
             caps: None,
             calibration: None,
+            note: None,
         }
     }
 

@@ -25,4 +25,10 @@ turnedViews: number | null,
  * A tilt that didn't move was tried again from home, so the pan is back
  * at home too.
  */
-rehomed: boolean, };
+rehomed: boolean, 
+/**
+ * Where a calibrated camera now points, in pulses from the left end of
+ * its pan, while that is known: since it last went home and only turned
+ * by calibrated steps.
+ */
+panPulses: number | null, };
