@@ -281,9 +281,9 @@ cd "$SRC"
     --disable-debug \
     --enable-libmp3lame \
     --disable-encoders \
-    --enable-encoder=png,mjpeg,pcm_s16le,flac,aac,libmp3lame${HW_ENCODERS:+,$HW_ENCODERS} \
+    --enable-encoder=png,mjpeg,rawvideo,wrapped_avframe,pcm_s16le,flac,aac,libmp3lame${HW_ENCODERS:+,$HW_ENCODERS} \
     --disable-muxers \
-    --enable-muxer=image2,image2pipe,wav,flac,mp3,adts,null \
+    --enable-muxer=image2,image2pipe,rawvideo,segment,wav,flac,mp3,adts,null \
     --disable-protocols \
     --enable-protocol=file,pipe,rtp,tcp,udp,http,https,tls,httpproxy \
     --disable-indevs \

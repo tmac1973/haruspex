@@ -41,8 +41,9 @@ const CHECK_EVERY: Duration = Duration::from_millis(500);
 const THUMB_AFTER_MS: i64 = 1_000;
 /// The widest an event's thumbnail is kept.
 pub(crate) const THUMB_WIDTH: u32 = 640;
-/// The longest an event recorder runs, a little past an event's maximum.
-const RECORD_MAX_SECS: u32 = 75;
+/// How much sound from before an event opened is kept with it, at least: the
+/// start of what set it off. Sound is kept in segments, so up to one more.
+const PRE_ROLL: Duration = Duration::from_secs(3);
 /// How long a recorder has to finish its files after `q`.
 const RECORDER_STOP: Duration = Duration::from_secs(5);
 /// The most of ffmpeg's errors kept, from the end.
@@ -163,7 +164,8 @@ fn strings(args: &[&str]) -> Vec<String> {
 }
 
 /// The watcher's ffmpeg options: scene scores and sound levels to stdout as
-/// metadata lines and, for a webcam, the shared files into `dir`.
+/// metadata lines, the sound as segments into `dir` and, for a webcam, the
+/// latest picture there too.
 pub(crate) fn watch_args(input: &Input, audio: bool, scene: f64, dir: &Path) -> Vec<String> {
     let (mut args, v, a) = input.args();
     args.splice(0..0, strings(&["-nostdin", "-y"]));
@@ -183,11 +185,9 @@ pub(crate) fn watch_args(input: &Input, audio: bool, scene: f64, dir: &Path) -> 
             detect::LEVEL_FRAME_SAMPLES
         );
         let mono = "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono";
-        if shared {
-            graph.push_str(&format!(";[{a}]{mono},asplit=2[la][aw];[la]{level}"));
-        } else {
-            graph.push_str(&format!(";[{a}]{mono},{level}"));
-        }
+        // The sound is also kept in segments, so an event's starts before it
+        // opened (and a webcam's snapshot or listen can read it).
+        graph.push_str(&format!(";[{a}]{mono},asplit=2[la][aw];[la]{level}"));
     }
     args.extend(strings(&["-filter_complex", &graph]));
     args.extend(strings(&["-map", "[mv]", "-f", "null", "-"]));
@@ -198,50 +198,34 @@ pub(crate) fn watch_args(input: &Input, audio: bool, scene: f64, dir: &Path) -> 
         let latest = dir.join(shared::LATEST);
         args.extend(strings(&["-map", "[jp]", "-q:v", "3", "-update", "1"]));
         args.extend(strings(&["-f", "image2", &latest.to_string_lossy()]));
-        if audio {
-            let segments = dir.join(shared::SEGMENT_PATTERN);
-            args.extend(strings(&[
-                "-map",
-                "[aw]",
-                "-c:a",
-                "pcm_s16le",
-                "-f",
-                "segment",
-                "-segment_time",
-                &shared::SEGMENT_SECS.to_string(),
-                "-segment_format",
-                "wav",
-                "-segment_wrap",
-                &shared::SEGMENT_WRAP.to_string(),
-                &segments.to_string_lossy(),
-            ]));
-        }
+    }
+    if audio {
+        let segments = dir.join(shared::SEGMENT_PATTERN);
+        args.extend(strings(&[
+            "-map",
+            "[aw]",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "segment",
+            "-segment_time",
+            &shared::SEGMENT_SECS.to_string(),
+            "-segment_format",
+            "wav",
+            "-segment_wrap",
+            &shared::SEGMENT_WRAP.to_string(),
+            &segments.to_string_lossy(),
+        ]));
     }
     args
 }
 
-/// The event recorder's ffmpeg options: up to [`RECORD_MAX_SECS`] of sound
-/// to `wav` and one full picture a second in to `jpg`.
-pub(crate) fn record_args(input: Vec<String>, audio: bool, wav: &Path, jpg: &Path) -> Vec<String> {
+/// The event picture's ffmpeg options: one full picture a second in, to
+/// `jpg`. The sound comes from the watcher's own segments.
+pub(crate) fn record_args(input: Vec<String>, jpg: &Path) -> Vec<String> {
     // No -nostdin: `q` on stdin is how it is stopped.
     let mut args = strings(&["-y"]);
     args.extend(input);
-    if audio {
-        args.extend(strings(&[
-            "-map",
-            "0:a:0",
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-c:a",
-            "pcm_s16le",
-            "-t",
-            &RECORD_MAX_SECS.to_string(),
-            &wav.to_string_lossy(),
-        ]));
-    }
     args.extend(strings(&[
         "-map",
         "0:v:0",
@@ -283,11 +267,12 @@ pub(crate) struct WatchSpec {
 /// What records an open event.
 enum Recorder {
     Idle,
-    /// A second ffmpeg on a network camera.
+    /// A second ffmpeg on a network camera, for the picture; the sound from
+    /// the watcher's segments, from `since`.
     Child {
         child: tokio::process::Child,
-        wav: PathBuf,
         jpg: PathBuf,
+        since: SystemTime,
     },
     /// A webcam's shared files, from `since`; the picture once taken.
     Shared {
@@ -323,21 +308,22 @@ fn spawn_ffmpeg(
 }
 
 impl Recorder {
-    async fn start(spec: &WatchSpec, ffmpeg: &str, audio: bool) -> Recorder {
+    async fn start(spec: &WatchSpec, ffmpeg: &str) -> Recorder {
+        // Segments last written since then hold the sound from a little
+        // before the event opened: what set it off began before it was heard.
+        let since = SystemTime::now() - PRE_ROLL;
         let Some(input) = spec.input.record_args() else {
             return Recorder::Shared {
-                // The segment holding the start began up to a segment earlier.
-                since: SystemTime::now() - Duration::from_secs(u64::from(shared::SEGMENT_SECS)),
+                since,
                 jpeg: None,
                 tried: false,
             };
         };
-        let (wav, jpg) = (spec.dir.join("event.wav"), spec.dir.join("event.jpg"));
-        let _ = tokio::fs::remove_file(&wav).await;
+        let jpg = spec.dir.join("event.jpg");
         let _ = tokio::fs::remove_file(&jpg).await;
-        let args = record_args(input, audio, &wav, &jpg);
+        let args = record_args(input, &jpg);
         match spawn_ffmpeg(ffmpeg, &args, true) {
-            Ok(child) => Recorder::Child { child, wav, jpg },
+            Ok(child) => Recorder::Child { child, jpg, since },
             Err(e) => {
                 log::warn!("camera {}: {}", spec.camera_id, spec.creds.redact(&e));
                 Recorder::Idle
@@ -365,8 +351,8 @@ impl Recorder {
             Recorder::Idle => (None, None),
             Recorder::Child {
                 mut child,
-                wav,
                 jpg,
+                since,
             } => {
                 if let Some(mut stdin) = child.stdin.take() {
                     use tokio::io::AsyncWriteExt;
@@ -379,25 +365,12 @@ impl Recorder {
                     let _ = child.start_kill();
                     let _ = child.wait().await;
                 }
-                let mut sound = tokio::fs::read(&wav).await.ok();
-                if let Some(bytes) = sound.as_mut() {
-                    if capture::fix_wav_sizes(bytes).is_err() {
-                        sound = None;
-                    }
-                }
                 let picture = tokio::fs::read(&jpg).await.ok().filter(|j| !j.is_empty());
-                let _ = tokio::fs::remove_file(&wav).await;
                 let _ = tokio::fs::remove_file(&jpg).await;
-                (sound, picture)
+                (sound_since(spec, since).await, picture)
             }
             Recorder::Shared { since, jpeg, .. } => {
-                let dir = spec.dir.clone();
-                let pcm = tokio::task::spawn_blocking(move || {
-                    shared::concat_pcm(&shared::segments_since(&dir, since))
-                })
-                .await
-                .unwrap_or_default();
-                let sound = (!pcm.is_empty()).then(|| shared::wav_from_pcm(&pcm));
+                let sound = sound_since(spec, since).await;
                 let picture = match jpeg {
                     Some(j) => Some(j),
                     None => shared::latest_jpeg(&spec.dir).await.ok(),
@@ -406,6 +379,17 @@ impl Recorder {
             }
         }
     }
+}
+
+/// The watcher's sound segments written since `since`, as one WAV.
+async fn sound_since(spec: &WatchSpec, since: SystemTime) -> Option<Vec<u8>> {
+    let dir = spec.dir.clone();
+    let pcm = tokio::task::spawn_blocking(move || {
+        shared::concat_pcm(&shared::segments_since(&dir, since))
+    })
+    .await
+    .unwrap_or_default();
+    (!pcm.is_empty()).then(|| shared::wav_from_pcm(&pcm))
 }
 
 /// How one ffmpeg run ended.
@@ -489,7 +473,7 @@ pub(crate) async fn run_once(
             _ = stop.changed() => break true,
         };
         match step {
-            Step::Opened(_) => recorder = Recorder::start(spec, ffmpeg, audio).await,
+            Step::Opened(_) => recorder = Recorder::start(spec, ffmpeg).await,
             Step::Closed(closed) => {
                 let done = std::mem::replace(&mut recorder, Recorder::Idle);
                 send(spec, closed, done, events).await;
@@ -1113,16 +1097,15 @@ mod tests {
         assert!(graph.starts_with("[0:v:0]fps=2,scale=320:-2,select='gt(scene,0.04)'"));
         assert!(graph.contains("[0:a:0]aresample=16000"));
         assert!(!args.iter().any(|a| a.contains("latest.jpg")));
+        // Its sound is kept in segments, so an event's starts before it opened.
+        assert!(args.iter().any(|a| a.ends_with("seg%03d.wav")));
         let quiet = watch_args(&input, false, 0.04, Path::new("/w"));
         assert!(!quiet.iter().any(|a| a.contains("astats")));
-        let rec = record_args(
-            input.record_args().unwrap(),
-            true,
-            Path::new("/w/e.wav"),
-            Path::new("/w/e.jpg"),
-        );
+        assert!(!quiet.iter().any(|a| a.ends_with("seg%03d.wav")));
+        let rec = record_args(input.record_args().unwrap(), Path::new("/w/e.jpg"));
         assert!(rec.contains(&"rtsp://root:pw@cam/ch0".to_string()));
         assert!(rec.windows(2).any(|w| w == ["-ss", "1"]));
+        assert!(!rec.iter().any(|a| a == "0:a:0"));
     }
 
     #[tokio::test]
