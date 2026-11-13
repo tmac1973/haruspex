@@ -208,8 +208,10 @@
 		kdenlive: 'Kdenlive'
 	};
 
+	/** "ffmpeg n8.1.3 (bundled)": the version line without its copyright. */
 	function describe(found: FoundBinary): string {
-		return `${found.version} (${WHERE[found.source]})`;
+		const version = found.version.replace(/\s+Copyright.*$/i, '').replace(/ version /, ' ');
+		return `${version} (${WHERE[found.source]})`;
 	}
 </script>
 

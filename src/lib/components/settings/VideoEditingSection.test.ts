@@ -88,9 +88,15 @@ describe('VideoEditingSection', () => {
 	});
 
 	it('says when ffmpeg is the copy that ships with Haruspex', async () => {
-		status = { ...status, ffmpeg: found('ffmpeg', 'bundled') };
+		status = {
+			...status,
+			ffmpeg: {
+				...found('ffmpeg', 'bundled'),
+				version: 'ffmpeg version n8.1.3 Copyright (c) 2000-2026 the FFmpeg developers'
+			}
+		};
 		render(VideoEditingSection);
-		await screen.findByText('ffmpeg 7.1 (bundled)');
+		await screen.findByText('ffmpeg n8.1.3 (bundled)');
 	});
 
 	it('turns the video tools on with its switch', async () => {
