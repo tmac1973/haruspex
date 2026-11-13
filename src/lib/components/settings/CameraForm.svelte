@@ -13,6 +13,8 @@
 	import { onDestroy } from 'svelte';
 	import { redactCameraError, splitUrlCredentials } from '#lib/camera/credentials.ts';
 	import { hostOf, onvifAddressFor, withHost } from '#lib/camera/onvif.ts';
+	import { describeRange } from '#lib/camera/calibration.ts';
+	import type { PtzCalibration } from '#lib/ipc/gen/PtzCalibration.ts';
 	import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 	import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
 	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
@@ -61,6 +63,9 @@
 	let caps = $state<CameraCaps | null>(start.caps);
 	let ptz = $state<PtzKind>(start.ptz);
 	let onvif = $state<OnvifEndpoint | null>(start.onvif);
+	let calibration = $state<PtzCalibration | undefined>(start.calibration);
+	let calibrating = $state(false);
+	let calibrateError = $state('');
 	let watchOn = $state(start.watcher.enabled);
 	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
 	let hoursEnd = $state(start.watcher.activeHours?.end ?? '');
@@ -198,7 +203,8 @@
 			},
 			ptz: savedPtz,
 			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
-			caps
+			caps,
+			calibration: savedPtz === 'onvif' ? $state.snapshot(calibration) : undefined
 		};
 	}
 
@@ -274,6 +280,8 @@
 			url = pickedAddress(got.mainUrl);
 			substreamUrl = got.subUrl === got.mainUrl ? '' : pickedAddress(got.subUrl);
 			onvif = { xaddr, profileToken: got.profileToken, presets: got.presets };
+			// Measured on whatever camera was here before.
+			calibration = undefined;
 			ptz = got.hasPtz ? 'onvif' : 'none';
 			found = null;
 			picked = null;
@@ -281,6 +289,24 @@
 			onvifError = redactCameraError(errMessage(e), typed);
 		} finally {
 			connecting = false;
+		}
+	}
+
+	/** Measure how far the camera's turns go; it is kept on Save. */
+	async function calibrate() {
+		calibrating = true;
+		calibrateError = '';
+		const typed = password;
+		try {
+			const config = await testCamera();
+			calibration = await invoke<PtzCalibration>('camera_calibrate', {
+				config,
+				overrides: videoOverrides()
+			});
+		} catch (e) {
+			calibrateError = redactCameraError(errMessage(e), typed);
+		} finally {
+			calibrating = false;
 		}
 	}
 
@@ -542,6 +568,19 @@
 				>
 					{refreshing ? 'Reading…' : 'Refresh presets'}
 				</button>
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={calibrate}
+					disabled={calibrating || refreshing}
+					title="Turns the camera from end to end, for about a minute, to measure how far its turns go. Then the assistant can say how far it turned and look around without gaps."
+				>
+					{calibrating ? 'Calibrating…' : calibration ? 'Calibrate again' : 'Calibrate'}
+				</button>
+				{#if calibration}
+					<p class="help">Turns {describeRange(calibration)}.</p>
+				{/if}
+				{#if calibrateError}<p class="error">{calibrateError}</p>{/if}
 			{/if}
 		</div>
 	{:else}

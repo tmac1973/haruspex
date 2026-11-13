@@ -42,6 +42,10 @@ vi.mock('@tauri-apps/api/core', async () =>
 					presets: [{ token: '0', name: 'Door' }]
 				};
 			},
+			camera_calibrate: (a) => {
+				state.calls.push({ cmd: 'camera_calibrate', args: a });
+				return { pulseMs: 400, viewsPerPulse: 0.556, rangePulses: 9, homePulses: 5 };
+			},
 			camera_onvif_presets: (a) => {
 				state.calls.push({ cmd: 'camera_onvif_presets', args: a });
 				return [
@@ -221,6 +225,39 @@ describe('finding an ONVIF camera', () => {
 			]
 		});
 		expect(JSON.stringify(getSettings())).not.toContain('"pw"');
+		expect(() => structuredClone(getSettings())).not.toThrow();
+	});
+});
+
+describe('calibrating pan/tilt', () => {
+	it('measures the camera and keeps the result on Save', async () => {
+		state.stored.set('camera:k1', 'pw');
+		setCameras([
+			kitchen({
+				source: {
+					kind: 'rtsp',
+					url: 'rtsp://192.168.1.184:554/ch0',
+					substreamUrl: null,
+					username: 'thingino',
+					passwordRef: 'camera:k1'
+				},
+				ptz: 'onvif',
+				onvif: {
+					xaddr: 'http://192.168.1.184/onvif/device_service',
+					profileToken: 'Profile_0',
+					presets: []
+				}
+			})
+		]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		await fireEvent.click(screen.getByText('Calibrate'));
+		await screen.findByText(
+			'Turns about 5 picture widths end to end; home is 2.8 from the left end.'
+		);
+		screen.getByText('Calibrate again');
+		await fireEvent.click(screen.getByText('Save'));
+		await waitFor(() => expect(getSettings().cameras[0].calibration?.rangePulses).toBe(9));
 		expect(() => structuredClone(getSettings())).not.toThrow();
 	});
 });

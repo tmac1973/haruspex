@@ -5,4 +5,4 @@ import type { AimDirection } from "./AimDirection";
 /**
  * Where to point the camera.
  */
-export type Aim = { direction: AimDirection, amount: AimAmount, } | { preset: string, };
+export type Aim = { direction: AimDirection, pulses: number, } | { direction: AimDirection, amount: AimAmount, } | { preset: string, };

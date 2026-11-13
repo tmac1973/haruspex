@@ -15,4 +15,8 @@ atLimit: boolean,
  * move, most likely because it was already as far as it goes that way.
  * Only checked on a network camera, and only when ffmpeg is at hand.
  */
-unmoved: boolean, };
+unmoved: boolean, 
+/**
+ * How far a calibrated network camera turned, in picture widths.
+ */
+turnedViews: number | null, };

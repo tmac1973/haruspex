@@ -30,9 +30,12 @@ pub struct CameraListenResult {
 pub async fn camera_snapshot(
     config: CameraConfig,
     overrides: BinaryOverrides,
+    max_width: Option<u32>,
 ) -> Result<String, String> {
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
-    let jpeg = capture::snapshot(&ffmpeg, &config, SNAPSHOT_MAX_WIDTH).await?;
+    // Smaller for a sweep's many pictures; never larger than a lone one.
+    let width = max_width.map_or(SNAPSHOT_MAX_WIDTH, |w| w.clamp(320, SNAPSHOT_MAX_WIDTH));
+    let jpeg = capture::snapshot(&ffmpeg, &config, width).await?;
     let encoded = base64::engine::general_purpose::STANDARD.encode(&jpeg);
     Ok(format!("data:image/jpeg;base64,{encoded}"))
 }
@@ -143,6 +146,17 @@ pub async fn camera_aim(
 ) -> Result<CameraAimResult, String> {
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await.ok();
     aim::aim(&config, &aim, ffmpeg.as_deref()).await
+}
+
+/// Measure how far a network camera's pan turns go (see `calibrate`). Takes
+/// about a minute, and leaves the camera at home.
+#[tauri::command]
+pub async fn camera_calibrate(
+    config: CameraConfig,
+    overrides: BinaryOverrides,
+) -> Result<super::PtzCalibration, String> {
+    let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
+    super::calibrate::calibrate(&config, &ffmpeg).await
 }
 
 /// Whether the USB webcam at `device` can pan or tilt over UVC. Always false

@@ -1073,6 +1073,7 @@ mod tests {
             onvif: None,
             watcher: Default::default(),
             caps: None,
+            calibration: None,
         }
     }
 

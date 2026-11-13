@@ -265,6 +265,16 @@ pub(crate) const FINGERPRINT_H: usize = 36;
 /// A tiny greyscale copy of a network camera's picture, from its substream
 /// when it has one: enough to tell whether the view changed, cheap to grab.
 pub(crate) async fn fingerprint(ffmpeg: &str, cfg: &CameraConfig) -> Result<Vec<u8>, String> {
+    gray_frame(ffmpeg, cfg, FINGERPRINT_W, FINGERPRINT_H).await
+}
+
+/// A network camera's picture as `w` × `h` greyscale bytes, row by row.
+pub(crate) async fn gray_frame(
+    ffmpeg: &str,
+    cfg: &CameraConfig,
+    w: usize,
+    h: usize,
+) -> Result<Vec<u8>, String> {
     let CameraSource::Rtsp {
         url, substream_url, ..
     } = &cfg.source
@@ -282,13 +292,13 @@ pub(crate) async fn fingerprint(ffmpeg: &str, cfg: &CameraConfig) -> Result<Vec<
         "-frames:v",
         "1",
         "-vf",
-        &format!("scale={FINGERPRINT_W}:{FINGERPRINT_H},format=gray"),
+        &format!("scale={w}:{h},format=gray"),
         "-f",
         "rawvideo",
         "-",
     ]));
     let raw = run(ffmpeg, &args, GRAB_TIMEOUT, &creds, "Taking a picture").await?;
-    if raw.len() != FINGERPRINT_W * FINGERPRINT_H {
+    if raw.len() != w * h {
         return Err("The picture came back the wrong size.".into());
     }
     Ok(raw)
@@ -320,6 +330,47 @@ pub(crate) fn same_view(a: &[u8], b: &[u8]) -> bool {
 }
 
 const SAME_VIEW: f64 = 0.95;
+
+/// How far the view moved sideways between two greyscale pictures `w` wide:
+/// the shift in pixels that lines them up best (positive when the scene moved
+/// left, that is the camera turned right) and how well they line up there
+/// (correlation, 1 is perfect). Only shifts that leave a quarter of the
+/// picture overlapping are tried.
+pub(crate) fn horizontal_shift(a: &[u8], b: &[u8], w: usize) -> (i32, f64) {
+    if w == 0 || a.len() != b.len() || !a.len().is_multiple_of(w) {
+        return (0, 0.0);
+    }
+    let h = a.len() / w;
+    let max = (w * 3 / 4) as i32;
+    let mut best = (0, f64::MIN);
+    for s in -max..=max {
+        let (mut n, mut sa, mut sb) = (0.0, 0.0, 0.0);
+        let (mut saa, mut sbb, mut sab) = (0.0, 0.0, 0.0);
+        for y in 0..h {
+            for x in 0..w {
+                let x2 = x as i32 - s;
+                if x2 < 0 || x2 >= w as i32 {
+                    continue;
+                }
+                let p = f64::from(a[y * w + x]);
+                let q = f64::from(b[y * w + x2 as usize]);
+                n += 1.0;
+                sa += p;
+                sb += q;
+                saa += p * p;
+                sbb += q * q;
+                sab += p * q;
+            }
+        }
+        let cov = sab - sa * sb / n;
+        let var = (saa - sa * sa / n) * (sbb - sb * sb / n);
+        let r = if var > 0.0 { cov / var.sqrt() } else { 0.0 };
+        if r > best.1 {
+            best = (s, r);
+        }
+    }
+    best
+}
 
 /// `seconds` (at most [`MAX_LISTEN_SECS`]) of the camera's sound, as 16 kHz
 /// mono WAV with its sizes filled in.
@@ -442,6 +493,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_turn_shows_as_the_scene_shifting_sideways() {
+        let (w, h) = (80, 20);
+        // A scene wider than the picture: the camera sees 80 of its 200 columns.
+        let wide: Vec<u8> = (0..200 * h)
+            .map(|i| (((i % 200) * 53 + (i / 200) * 17) % 251) as u8)
+            .collect();
+        let view = |left: usize| -> Vec<u8> {
+            (0..w * h)
+                .map(|i| wide[(i / w) * 200 + left + i % w])
+                .collect()
+        };
+        let (s, r) = horizontal_shift(&view(10), &view(40), w);
+        assert_eq!(s, 30);
+        assert!(r > 0.99);
+        assert_eq!(horizontal_shift(&view(40), &view(25), w).0, -15);
+    }
+
+    #[test]
     fn a_view_is_the_same_through_an_exposure_change_and_not_after_a_turn() {
         let n = FINGERPRINT_W * FINGERPRINT_H;
         let scene: Vec<u8> = (0..n).map(|i| ((i * 37) % 200) as u8).collect();
@@ -476,6 +545,7 @@ mod tests {
             onvif: None,
             watcher: WatcherConfig::default(),
             caps: None,
+            calibration: None,
         }
     }
 

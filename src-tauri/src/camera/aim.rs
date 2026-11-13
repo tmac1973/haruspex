@@ -17,6 +17,13 @@ use std::time::Duration;
 #[ts(export)]
 #[serde(untagged)]
 pub enum Aim {
+    /// Turn left or right by a number of pulses, the shortest turn a network
+    /// camera makes (see [`PtzCalibration`](super::PtzCalibration)). First, so
+    /// a `Move` without `pulses` never reads as one.
+    Pulses {
+        direction: AimDirection,
+        pulses: u32,
+    },
     /// Turn by an amount, or back to the middle (`home`).
     Move {
         direction: AimDirection,
@@ -49,7 +56,7 @@ pub enum AimAmount {
 }
 
 /// What `camera_aim` did.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct CameraAimResult {
@@ -61,6 +68,8 @@ pub struct CameraAimResult {
     /// move, most likely because it was already as far as it goes that way.
     /// Only checked on a network camera, and only when ffmpeg is at hand.
     pub unmoved: bool,
+    /// How far a calibrated network camera turned, in picture widths.
+    pub turned_views: Option<f32>,
 }
 
 /// The ONVIF speed for every move: half of the camera's fastest.
@@ -68,10 +77,20 @@ pub(crate) const ONVIF_SPEED: f32 = 0.5;
 /// How long a small, medium and large pan run at [`ONVIF_SPEED`], about 25°/s
 /// on a Cinnado D1. Tilts run for the same share of their smaller angle.
 const ONVIF_SMALL: Duration = Duration::from_millis(400);
+/// One pulse: the shortest turn, which Calibrate measures.
+pub(crate) const ONVIF_PULSE: Duration = ONVIF_SMALL;
+/// The pause between the pulses of one turn.
+const PULSE_GAP: Duration = Duration::from_millis(300);
+/// What each amount aims for on a calibrated camera, in picture widths.
+const VIEWS: [(AimAmount, f32); 3] = [
+    (AimAmount::Small, 0.25),
+    (AimAmount::Medium, 0.5),
+    (AimAmount::Large, 1.0),
+];
 const ONVIF_MEDIUM: Duration = Duration::from_millis(1200);
 const ONVIF_LARGE: Duration = Duration::from_millis(2400);
 /// The wait after an ONVIF camera stops, before a picture is taken.
-const ONVIF_SETTLE: Duration = Duration::from_millis(1500);
+pub(crate) const ONVIF_SETTLE: Duration = Duration::from_millis(1500);
 /// The wait after a preset or home move on a camera that can't say whether
 /// it is still moving: a Cinnado D1 on Thingino takes 4 to 5 s to get home.
 const ONVIF_GOTO_UNKNOWN: Duration = Duration::from_secs(5);
@@ -228,12 +247,13 @@ pub(crate) async fn aim(
     // picture changes until the move has settled.
     let now = crate::time_util::now_ms;
     super::detect::hold_motion(&config.id, now() + TURN_HOLD_MS);
-    let compare = match (ffmpeg, aim) {
-        (Some(f), Aim::Move { direction, .. })
-            if *direction != AimDirection::Home && matches!(route(config), Ok(Route::Onvif(_))) =>
-        {
-            Some(f)
-        }
+    let turns = match aim {
+        Aim::Move { direction, .. } => *direction != AimDirection::Home,
+        Aim::Pulses { .. } => true,
+        Aim::Preset { .. } => false,
+    };
+    let compare = match ffmpeg {
+        Some(f) if turns && matches!(route(config), Ok(Route::Onvif(_))) => Some(f),
         _ => None,
     };
     let before = match compare {
@@ -246,6 +266,7 @@ pub(crate) async fn aim(
             if super::capture::same_view(&before, &after) {
                 done.unmoved = true;
                 done.at_limit = true;
+                done.turned_views = None;
             }
         }
     }
@@ -261,20 +282,76 @@ async fn aim_routed(config: &CameraConfig, aim: &Aim) -> Result<CameraAimResult,
         Route::Onvif(endpoint) => {
             let creds = Credentials::for_source(&config.source).await?;
             let ptz = Ptz::open(endpoint, creds).await?;
-            aim_onvif(&ptz, &endpoint.presets, aim).await?;
-            Ok(CameraAimResult::default())
+            let turned_views =
+                aim_onvif(&ptz, &endpoint.presets, aim, config.calibration.as_ref()).await?;
+            Ok(CameraAimResult {
+                turned_views,
+                ..Default::default()
+            })
         }
         Route::Uvc(device) => aim_uvc(device, aim).await,
     }
 }
 
-async fn aim_onvif(ptz: &Ptz, saved: &[OnvifPreset], aim: &Aim) -> Result<(), String> {
+/// The pulses a calibrated camera turns for `amount`: as near its picture
+/// widths as whole pulses get, and at least one.
+pub(crate) fn pulses_for(amount: AimAmount, views_per_pulse: f32) -> u32 {
+    let target = VIEWS
+        .iter()
+        .find(|(a, _)| *a == amount)
+        .map_or(0.5, |(_, v)| *v);
+    if views_per_pulse <= 0.0 {
+        return 1;
+    }
+    ((target / views_per_pulse).round() as u32).max(1)
+}
+
+/// Turn left or right `pulses` times.
+async fn pulse(ptz: &Ptz, direction: AimDirection, pulses: u32) -> Result<(), String> {
+    let pan = match direction {
+        AimDirection::Left => -ONVIF_SPEED,
+        AimDirection::Right => ONVIF_SPEED,
+        _ => return Err("Steps only go left or right.".into()),
+    };
+    for i in 0..pulses {
+        if i > 0 {
+            tokio::time::sleep(PULSE_GAP).await;
+        }
+        ptz.move_by(pan, 0.0, ONVIF_PULSE).await?;
+    }
+    tokio::time::sleep(ONVIF_SETTLE).await;
+    Ok(())
+}
+
+/// Aim an ONVIF camera; how far it turned in picture widths when `calibration`
+/// says.
+async fn aim_onvif(
+    ptz: &Ptz,
+    saved: &[OnvifPreset],
+    aim: &Aim,
+    calibration: Option<&super::PtzCalibration>,
+) -> Result<Option<f32>, String> {
+    let views = |pulses: u32| calibration.map(|c| c.views_per_pulse * pulses as f32);
     match aim {
+        Aim::Pulses { direction, pulses } => {
+            let pulses = (*pulses).clamp(1, 20);
+            pulse(ptz, *direction, pulses).await?;
+            Ok(views(pulses))
+        }
+        Aim::Move { direction, amount }
+            if calibration.is_some()
+                && matches!(direction, AimDirection::Left | AimDirection::Right) =>
+        {
+            let cal = calibration.expect("checked above");
+            let pulses = pulses_for(*amount, cal.views_per_pulse);
+            pulse(ptz, *direction, pulses).await?;
+            Ok(views(pulses))
+        }
         Aim::Move { direction, amount } => match onvif_move(*direction, *amount) {
             Some((pan, tilt, time)) => {
                 ptz.move_by(pan, tilt, time).await?;
                 tokio::time::sleep(ONVIF_SETTLE).await;
-                Ok(())
+                Ok(None)
             }
             None => {
                 if let Err(e) = ptz.goto_home().await {
@@ -283,14 +360,14 @@ async fn aim_onvif(ptz: &Ptz, saved: &[OnvifPreset], aim: &Aim) -> Result<(), St
                     ptz.goto_preset(&token).await?;
                 }
                 settle_after_goto(ptz).await;
-                Ok(())
+                Ok(None)
             }
         },
         Aim::Preset { preset } => {
             let token = preset_token(ptz, saved, preset).await?;
             ptz.goto_preset(&token).await?;
             settle_after_goto(ptz).await;
-            Ok(())
+            Ok(None)
         }
     }
 }
@@ -322,7 +399,7 @@ async fn preset_token(ptz: &Ptz, saved: &[OnvifPreset], name: &str) -> Result<St
 
 /// Wait for a preset or home move to finish, as far as the camera says, then
 /// let it settle. A camera that doesn't report movement gets a fixed wait.
-async fn settle_after_goto(ptz: &Ptz) {
+pub(crate) async fn settle_after_goto(ptz: &Ptz) {
     let started = tokio::time::Instant::now();
     // A camera can still say idle just after the request.
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -345,6 +422,8 @@ async fn aim_uvc(device: &str, aim: &Aim) -> Result<CameraAimResult, String> {
     let (direction, amount) = match aim {
         Aim::Move { direction, amount } => (*direction, *amount),
         Aim::Preset { .. } => return Err("A USB webcam has no presets.".into()),
+        // A sweep only steps a calibrated network camera; a webcam knows its angles.
+        Aim::Pulses { direction, .. } => (*direction, AimAmount::Small),
     };
     let device = device.to_string();
     let result = tokio::task::spawn_blocking(move || {
@@ -364,6 +443,32 @@ async fn aim_uvc(_device: &str, _aim: &Aim) -> Result<CameraAimResult, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_calibrated_turn_is_whole_pulses_near_its_picture_widths() {
+        // A D1 pulse is about half a picture.
+        assert_eq!(pulses_for(AimAmount::Small, 0.54), 1);
+        assert_eq!(pulses_for(AimAmount::Medium, 0.54), 1);
+        assert_eq!(pulses_for(AimAmount::Large, 0.54), 2);
+        // A camera whose pulse is a tenth of a picture.
+        assert_eq!(pulses_for(AimAmount::Small, 0.1), 3);
+        assert_eq!(pulses_for(AimAmount::Large, 0.1), 10);
+        assert_eq!(pulses_for(AimAmount::Large, 0.0), 1);
+    }
+
+    #[test]
+    fn pulses_and_moves_read_apart() {
+        let pulses: Aim = serde_json::from_str(r#"{"direction":"right","pulses":2}"#).unwrap();
+        assert_eq!(
+            pulses,
+            Aim::Pulses {
+                direction: AimDirection::Right,
+                pulses: 2
+            }
+        );
+        let mv: Aim = serde_json::from_str(r#"{"direction":"left","amount":"large"}"#).unwrap();
+        assert!(matches!(mv, Aim::Move { .. }));
+    }
     use crate::camera::{CameraPermission, OnvifEndpoint, WatcherConfig};
 
     const ALL: [AimAmount; 3] = [AimAmount::Small, AimAmount::Medium, AimAmount::Large];
@@ -472,6 +577,7 @@ mod tests {
             onvif,
             watcher: WatcherConfig::default(),
             caps: None,
+            calibration: None,
         }
     }
 

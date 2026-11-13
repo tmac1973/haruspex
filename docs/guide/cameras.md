@@ -40,7 +40,7 @@ On Linux, a webcam that can pan and tilt (such as an OBSBOT Tiny) can set **Pan/
 
 Click **Test** in the camera's form. Haruspex shows one frame with its size and codec, then listens for 3 seconds and shows how loud it was ("Silent" when nothing was heard). If it fails, the reason from ffmpeg is shown, with the password taken out.
 
-A camera with pan/tilt also gets **Left**, **Right**, **Up**, **Down** and **Home** buttons: each turns it about 10° (Home recentres it) and shows a new frame.
+A camera with pan/tilt also gets **Left**, **Right**, **Up**, **Down** and **Home** buttons, and **Calibrate**: see the `camera-pan-tilt` page.
 
 Test uses the ffmpeg that Settings → Video editing uses.
 
@@ -70,8 +70,8 @@ In Chat, the assistant can use your cameras with these tools:
 | `camera_list` | Lists your cameras, whether each has sound or can be aimed (with its presets), and its permission. |
 | `camera_snapshot` | Takes one picture from a camera and looks at it. Needs a model that can see images. |
 | `camera_listen` | Records up to 30 seconds of sound, transcribes it on this computer and says how loud it was; the clip isn't kept. |
-| `camera_look` | Turns a pan/tilt camera left, right, up or down (about 10°, 30° or 60°), back home, or to a preset by name, then takes a picture. |
-| `camera_look_around` | Sweeps a pan/tilt camera from its far left to its far right, taking up to 6 pictures, then points it home. |
+| `camera_look` | Turns a pan/tilt camera, then takes a picture (see the `camera-pan-tilt` page). |
+| `camera_look_around` | Sweeps a pan/tilt camera end to end, a picture at each stop, then points it home. |
 | `camera_log` | Searches the ambient log (see the `camera-log` page). |
 
 Ask "what's on the kitchen counter?", "look around the kitchen" or "turn the kitchen camera left", and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.

@@ -414,6 +414,7 @@ pub fn run() {
             camera::commands::camera_onvif_connect,
             camera::commands::camera_onvif_presets,
             camera::commands::camera_aim,
+            camera::commands::camera_calibrate,
             camera::commands::camera_uvc_supported,
             camera::commands::camera_watch_set,
             camera::commands::camera_watch_status,

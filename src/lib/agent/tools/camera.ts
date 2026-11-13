@@ -9,7 +9,8 @@
  * `camera_look` aims a pan/tilt camera (ONVIF, or UVC on Linux) by a
  * direction or a saved preset, then takes a picture like `camera_snapshot`.
  *
- * `camera_log` (in `camera-log.ts`) reads the ambient log.
+ * `camera_log` (in `camera-log.ts`) reads the ambient log, and
+ * `camera_look_around` (in `camera-look-around.ts`) sweeps a camera end to end.
  *
  * Every call goes through `_cameraGate.ts` first: a model on this computer or
  * a trusted server, a camera by that name, and its Ask / Allow permission.
@@ -23,6 +24,7 @@ import type { Aim } from '#lib/ipc/gen/Aim.ts';
 import type { AimAmount } from '#lib/ipc/gen/AimAmount.ts';
 import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
+import { describeRange } from '#lib/camera/calibration.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
@@ -39,7 +41,7 @@ const DEFAULT_LISTEN_SECONDS = 10;
 /** Below this, an empty transcript is reported as silence. */
 const SILENCE_DB = -50;
 
-const CAMERA_PARAM = {
+export const CAMERA_PARAM = {
 	type: 'string',
 	description: 'The camera\'s name, as camera_list gives it (e.g. "Kitchen").'
 };
@@ -85,6 +87,7 @@ registerTool({
 			...(canAim(c) && c.ptz === 'onvif'
 				? { presets: (c.onvif?.presets ?? []).map((p) => p.name) }
 				: {}),
+			...(canAim(c) && c.calibration ? { pan_range: describeRange(c.calibration) } : {}),
 			permission: c.permission
 		}));
 		return toolResult(JSON.stringify(cameras));
@@ -216,17 +219,49 @@ export function parseAim(args: Record<string, unknown>): Aim | { error: string }
 	return { direction: direction as AimDirection, amount: rawAmount as AimAmount };
 }
 
-/** What the model is told the camera did: "Turned Kitchen left about 30°". */
-export function describeAim(name: string, aim: Aim, atLimit: boolean, unmoved = false): string {
+/** How far a calibrated turn went, in words: "half the picture width". */
+export function widths(views: number): string {
+	const q = Math.max(0.25, Math.round(views * 4) / 4);
+	if (q === 0.25) return 'a quarter of the picture width';
+	if (q === 0.5) return 'half the picture width';
+	if (q === 0.75) return 'three quarters of the picture width';
+	if (q === 1) return 'one picture width';
+	return `${q} picture widths`;
+}
+
+/** An uncalibrated network camera's turns, which can't be put in numbers. */
+const ROUGHLY: Record<AimAmount, string> = {
+	small: 'a little',
+	medium: 'some way',
+	large: 'a long way'
+};
+
+/**
+ * What the model is told the camera did: "Turned Kitchen left about half the
+ * picture width". Degrees only for a UVC webcam (`degrees`), which knows its
+ * angles; a calibrated network camera in picture widths; an uncalibrated one
+ * in words.
+ */
+export function describeAim(
+	name: string,
+	aim: Aim,
+	moved: Pick<CameraAimResult, 'atLimit' | 'unmoved' | 'turnedViews'>,
+	degrees: boolean
+): string {
 	if ('preset' in aim) return `Moved ${name} to the preset "${aim.preset}"`;
 	if (aim.direction === 'home') return `Moved ${name} back to its home position`;
-	if (unmoved) {
+	if (moved.unmoved) {
 		return `Tried to turn ${name} ${aim.direction}, but its picture didn't change: it is already as far as it goes that way`;
 	}
-	const [pan, tilt] = DEGREES[aim.amount];
-	const degrees = aim.direction === 'left' || aim.direction === 'right' ? pan : tilt;
-	const turned = `Turned ${name} ${aim.direction} about ${degrees}°`;
-	return atLimit ? `${turned}, as far as it goes that way` : turned;
+	let how: string;
+	if (moved.turnedViews != null) how = `about ${widths(moved.turnedViews)}`;
+	else if ('pulses' in aim) how = `${aim.pulses} step${aim.pulses === 1 ? '' : 's'}`;
+	else if (degrees) {
+		const [pan, tilt] = DEGREES[aim.amount];
+		how = `about ${aim.direction === 'left' || aim.direction === 'right' ? pan : tilt}°`;
+	} else how = ROUGHLY[aim.amount];
+	const turned = `Turned ${name} ${aim.direction} ${how}`;
+	return moved.atLimit ? `${turned}, as far as it goes that way` : turned;
 }
 
 registerTool({
@@ -250,7 +285,7 @@ registerTool({
 						type: 'string',
 						enum: [...AMOUNTS],
 						description:
-							'How far: small is about 10°, medium about 30° (20° up or down), large about 60° (40° up or down). Defaults to medium.'
+							'How far: small, medium or large. On a calibrated camera that is about a quarter, half or a whole picture width. Defaults to medium.'
 					},
 					preset: {
 						type: 'string',
@@ -288,7 +323,7 @@ registerTool({
 			return toolResult(toolError(`${camera.name}: ${errorText(e)}`));
 		}
 		const { dataUrl, shotError } = outcome;
-		const did = describeAim(camera.name, aim, outcome.moved.atLimit, outcome.moved.unmoved);
+		const did = describeAim(camera.name, aim, outcome.moved, camera.ptz === 'uvc');
 		if (ctx.visionSupported === false) {
 			return toolResult(`${did}. This model cannot see images, so no picture was taken.`);
 		}
@@ -308,7 +343,7 @@ registerTool({
 	}
 });
 
-function aimCamera(camera: CameraConfig, aim: Aim): Promise<CameraAimResult> {
+export function aimCamera(camera: CameraConfig, aim: Aim): Promise<CameraAimResult> {
 	return invoke<CameraAimResult>('camera_aim', {
 		config: camera,
 		aim,
@@ -316,118 +351,12 @@ function aimCamera(camera: CameraConfig, aim: Aim): Promise<CameraAimResult> {
 	});
 }
 
-function shoot(camera: CameraConfig): Promise<string> {
-	return invoke<string>('camera_snapshot', { config: camera, overrides: videoOverrides() });
-}
-
-/** The most turns a sweep makes to reach either end. */
-export const SWEEP_MAX_TURNS = 8;
-/** Medium, not large: a large turn on a Cinnado D1 leaves gaps between the pictures. */
-const SWEEP_STEP: Aim = { direction: 'right', amount: 'medium' };
-
-export interface Sweep {
-	/** Pictures, leftmost first. */
-	shots: string[];
-	/** Whether it found the end of the camera's travel on each side. */
-	leftEnd: boolean;
-	rightEnd: boolean;
-}
-
-/**
- * Turn the camera to its far left, then right a step at a time taking a
- * picture at each stop, until it goes no further or `room` pictures are taken;
- * then send it home. A turn that leaves the picture unchanged takes none.
- */
-export async function runSweep(
-	aim: (a: Aim) => Promise<CameraAimResult>,
-	take: () => Promise<string>,
-	room: number
-): Promise<Sweep> {
-	let leftEnd = false;
-	for (let i = 0; i < SWEEP_MAX_TURNS && !leftEnd; i++) {
-		leftEnd = (await aim({ direction: 'left', amount: 'large' })).atLimit;
-	}
-	const shots = [await take()];
-	let rightEnd = false;
-	for (let i = 0; i < SWEEP_MAX_TURNS && shots.length < room && !rightEnd; i++) {
-		const moved = await aim(SWEEP_STEP);
-		rightEnd = moved.atLimit;
-		if (!moved.unmoved) shots.push(await take());
-	}
-	await aim({ direction: 'home', amount: 'medium' });
-	return { shots, leftEnd, rightEnd };
-}
-
-registerTool({
-	category: 'camera',
-	requiresVision: true,
-	schema: {
-		type: 'function',
-		function: {
-			name: 'camera_look_around',
-			description:
-				"Sweep one of the user's pan/tilt cameras across its whole range, left to right, taking a picture at each stop, then point it back home. Use it when the user asks to look around, scan or survey the room. It keeps the camera's tilt: turn it up or down with camera_look first if needed. Takes a minute or two.",
-			parameters: {
-				type: 'object',
-				properties: { camera: CAMERA_PARAM },
-				required: ['camera']
-			}
-		}
-	},
-	displayLabel: (args) => `Look around with ${String(args.camera ?? 'camera')}`,
-	async execute(args, ctx) {
-		if (ctx.visionSupported === false) {
-			return toolResult(
-				toolError('This model cannot see images, so it cannot use a camera picture.')
-			);
-		}
-		const room = MAX_PENDING_IMAGES - ctx.pendingImages.length;
-		if (room < 2) {
-			return toolResult(
-				toolError(
-					`Too many images pending (${ctx.pendingImages.length}). Answer about the images you already have before looking around.`
-				)
-			);
-		}
-		const access = cameraAccessRefusal(ctx);
-		const named = access ? null : resolveCamera(args.camera);
-		if (named && !canAim(named)) return toolResult(toolError(CANT_MOVE));
-		const gate = await cameraGate(ctx, args.camera, 'move');
-		if (!gate.camera) return refused(gate);
-		const camera = gate.camera;
-		let sweep: Sweep;
-		try {
-			sweep = await withCameraActivity(camera.id, 'move', () =>
-				runSweep(
-					(aim) => aimCamera(camera, aim),
-					() => shoot(camera),
-					room
-				)
-			);
-		} catch (e) {
-			return toolResult(toolError(`${camera.name}: ${errorText(e)}`));
-		}
-		const when = stamp();
-		const n = sweep.shots.length;
-		sweep.shots.forEach((dataUrl, i) =>
-			ctx.pendingImages.push({
-				path: `camera:${camera.name} sweep ${i + 1} of ${n} ${when}`,
-				dataUrl
-			})
-		);
-		return {
-			result: describeSweep(camera.name, sweep, when),
-			thumbDataUrl: sweep.shots[0]
-		};
-	}
-});
-
-/** What the model is told a sweep did. */
-export function describeSweep(name: string, sweep: Sweep, when: string): string {
-	const n = sweep.shots.length;
-	const from = sweep.leftEnd ? 'its far left' : 'as far left as it went';
-	const to = sweep.rightEnd ? 'its far right' : 'as far right as the pictures allowed';
-	return `Swept ${name} from ${from} to ${to} and took ${n} picture${n === 1 ? '' : 's'} at ${when}, numbered 1 (leftmost) to ${n} (rightmost), evenly spaced. Neighbouring pictures may overlap, so don't count the same thing twice. It is back at its home position. You can now see them — describe the whole view in your next response.`;
+export function shoot(camera: CameraConfig, maxWidth?: number): Promise<string> {
+	return invoke<string>('camera_snapshot', {
+		config: camera,
+		overrides: videoOverrides(),
+		maxWidth: maxWidth ?? null
+	});
 }
 
 /** A refusal from the gate: the user's no as a plain answer, everything else as an error. */

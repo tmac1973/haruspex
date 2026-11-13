@@ -13,13 +13,17 @@ import {
 	DIRECTION_OR_PRESET,
 	describeAim,
 	describeHeard,
-	describeSweep,
 	listenSeconds,
-	parseAim,
-	runSweep,
-	SWEEP_MAX_TURNS
+	parseAim
 } from '#lib/agent/tools/camera.ts';
+import {
+	describeSweep,
+	runSweep,
+	sweepPlan,
+	SWEEP_MAX_TURNS
+} from '#lib/agent/tools/camera-look-around.ts';
 import type { Aim } from '#lib/ipc/gen/Aim.ts';
+import { describeRange } from '#lib/camera/calibration.ts';
 import { ASK_IN_JOB, NOT_LOCAL, NO_CAMERAS } from '#lib/agent/tools/_cameraGate.ts';
 import { executeTool, getToolSchemas, type ToolSchemaOpts } from '#lib/agent/tools/registry.ts';
 import { defaultWatcherConfig, updateSettings } from '#lib/stores/settings.ts';
@@ -348,7 +352,7 @@ describe('camera_look', () => {
 		});
 		expect(ctx.pendingImages).toHaveLength(1);
 		expect(out.thumbDataUrl).toBe(FRAME);
-		expect(out.result).toMatch(/^Turned Kitchen left about 30° and took a picture/);
+		expect(out.result).toMatch(/^Turned Kitchen left some way and took a picture/);
 	});
 
 	it('goes to a preset by name', async () => {
@@ -442,16 +446,55 @@ describe('camera_look', () => {
 		expect(parseAim({ direction: 'left', amount: 'huge' })).toHaveProperty('error');
 	});
 
-	it('says how far it turned', () => {
-		expect(describeAim('Desk', { direction: 'down', amount: 'small' }, false)).toBe(
+	it('says how far it turned in the units the camera allows', () => {
+		const plain = { atLimit: false, unmoved: false, turnedViews: null };
+		// A UVC webcam knows its angles.
+		expect(describeAim('Desk', { direction: 'down', amount: 'small' }, plain, true)).toBe(
 			'Turned Desk down about 10°'
 		);
-		expect(describeAim('Desk', { direction: 'up', amount: 'large' }, true)).toBe(
-			'Turned Desk up about 40°, as far as it goes that way'
+		expect(
+			describeAim('Desk', { direction: 'up', amount: 'large' }, { ...plain, atLimit: true }, true)
+		).toBe('Turned Desk up about 40°, as far as it goes that way');
+		// A calibrated network camera, in picture widths.
+		expect(
+			describeAim(
+				'Desk',
+				{ direction: 'left', amount: 'medium' },
+				{ ...plain, turnedViews: 0.55 },
+				false
+			)
+		).toBe('Turned Desk left about half the picture width');
+		expect(
+			describeAim(
+				'Desk',
+				{ direction: 'left', amount: 'large' },
+				{ ...plain, turnedViews: 1.1 },
+				false
+			)
+		).toBe('Turned Desk left about one picture width');
+		// An uncalibrated one, in words.
+		expect(describeAim('Desk', { direction: 'right', amount: 'large' }, plain, false)).toBe(
+			'Turned Desk right a long way'
 		);
-		expect(describeAim('Desk', { direction: 'right', amount: 'large' }, true, true)).toBe(
+		expect(
+			describeAim(
+				'Desk',
+				{ direction: 'right', amount: 'large' },
+				{ atLimit: true, unmoved: true, turnedViews: null },
+				false
+			)
+		).toBe(
 			"Tried to turn Desk right, but its picture didn't change: it is already as far as it goes that way"
 		);
+	});
+
+	it('gives a calibrated range in picture widths', () => {
+		expect(
+			describeRange({ pulseMs: 400, viewsPerPulse: 0.556, rangePulses: 9, homePulses: 5 })
+		).toBe('about 5 picture widths end to end; home is 2.8 from the left end');
+		expect(
+			describeRange({ pulseMs: 400, viewsPerPulse: 0.5, rangePulses: 4, homePulses: null })
+		).toBe('about 2 picture widths end to end');
 	});
 
 	it('counts a UVC webcam as aimable', async () => {
@@ -626,11 +669,12 @@ function fakeCamera(left: number, right: number) {
 		const dir = 'direction' in a ? a.direction : 'preset';
 		moves.push(dir);
 		if (dir === 'home') pos = 0;
-		const step = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+		const by = 'pulses' in a ? a.pulses : 1;
+		const step = dir === 'left' ? -by : dir === 'right' ? by : 0;
 		const next = Math.max(-left, Math.min(right, pos + step));
 		const unmoved = step !== 0 && next === pos;
 		pos = next;
-		return { atLimit: unmoved, unmoved };
+		return { atLimit: unmoved, unmoved, turnedViews: null };
 	};
 	const take = async () => `frame@${pos}`;
 	return { aim, take, moves };
@@ -639,7 +683,7 @@ function fakeCamera(left: number, right: number) {
 describe('looking around', () => {
 	it('goes to the far left, then steps right a picture at a time, then home', async () => {
 		const cam = fakeCamera(1, 2);
-		const sweep = await runSweep(cam.aim, cam.take, 6);
+		const sweep = await runSweep(cam.aim, cam.take, 6, sweepPlan(undefined, 6));
 		expect(sweep).toEqual({
 			shots: ['frame@-1', 'frame@0', 'frame@1', 'frame@2'],
 			leftEnd: true,
@@ -650,23 +694,65 @@ describe('looking around', () => {
 
 	it('stops at the pictures it has room for', async () => {
 		const cam = fakeCamera(0, 9);
-		const sweep = await runSweep(cam.aim, cam.take, 3);
+		const sweep = await runSweep(cam.aim, cam.take, 3, sweepPlan(undefined, 3));
 		expect(sweep.shots).toEqual(['frame@0', 'frame@1', 'frame@2']);
 		expect(sweep.rightEnd).toBe(false);
 	});
 
 	it('gives up finding an end after a set number of turns', async () => {
 		const cam = fakeCamera(99, 0);
-		const sweep = await runSweep(cam.aim, cam.take, 6);
+		const sweep = await runSweep(cam.aim, cam.take, 6, sweepPlan(undefined, 6));
 		expect(cam.moves.filter((m) => m === 'left')).toHaveLength(SWEEP_MAX_TURNS);
 		expect(sweep.leftEnd).toBe(false);
 	});
 
 	it('tells the model the pictures run left to right', () => {
 		expect(
-			describeSweep('Kitchen', { shots: ['a', 'b'], leftEnd: true, rightEnd: true }, '10:00')
+			describeSweep('Kitchen', { shots: ['a', 'b'], leftEnd: true, rightEnd: true }, '10:00', 0.55)
 		).toMatch(
 			/^Swept Kitchen from its far left to its far right and took 2 pictures .*1 \(leftmost\) to 2 \(rightmost\)/
 		);
+	});
+});
+
+describe('planning a sweep from a calibration', () => {
+	const d1 = { pulseMs: 400, viewsPerPulse: 0.556, rangePulses: 9, homePulses: 5 };
+
+	it('steps a little under a picture width so neighbours overlap', () => {
+		expect(sweepPlan(d1, 10)).toEqual({
+			toLeft: { direction: 'left', pulses: 10 },
+			repeatToLeft: false,
+			step: { direction: 'right', pulses: 1 },
+			stepViews: 0.556,
+			steps: 9
+		});
+		expect(sweepPlan({ ...d1, viewsPerPulse: 0.1, rangePulses: 30 }, 10).step).toEqual({
+			direction: 'right',
+			pulses: 8
+		});
+	});
+
+	it('widens the step when the range needs more pictures than there is room for', () => {
+		// 9 pulses in 5 pictures: 4 steps of 3 pulses.
+		expect(sweepPlan(d1, 5).step).toEqual({ direction: 'right', pulses: 3 });
+	});
+
+	it('covers a calibrated camera end to end in one go left', async () => {
+		const cam = fakeCamera(5, 4);
+		const sweep = await runSweep(cam.aim, cam.take, 10, sweepPlan(d1, 10));
+		expect(sweep.leftEnd).toBe(true);
+		expect(sweep.rightEnd).toBe(true);
+		expect(sweep.shots).toEqual([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4].map((p) => `frame@${p}`));
+		expect(cam.moves.filter((m) => m === 'left')).toHaveLength(1);
+	});
+
+	it('suggests calibrating when an uncalibrated sweep ran out of pictures', () => {
+		const text = describeSweep(
+			'Kitchen',
+			{ shots: ['a', 'b'], leftEnd: true, rightEnd: false },
+			'10:00',
+			null
+		);
+		expect(text).toContain('Settings → Cameras → Calibrate');
 	});
 });

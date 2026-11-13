@@ -3,6 +3,7 @@ import type { CameraCaps } from "./CameraCaps";
 import type { CameraPermission } from "./CameraPermission";
 import type { CameraSource } from "./CameraSource";
 import type { OnvifEndpoint } from "./OnvifEndpoint";
+import type { PtzCalibration } from "./PtzCalibration";
 import type { PtzKind } from "./PtzKind";
 import type { WatcherConfig } from "./WatcherConfig";
 
@@ -17,4 +18,9 @@ name: string, source: CameraSource, permission: CameraPermission, ptz: PtzKind, 
 /**
  * What the last successful probe found.
  */
-caps: CameraCaps | null, };
+caps: CameraCaps | null, 
+/**
+ * How far this camera's pan turns go, measured by Calibrate in
+ * Settings → Cameras. Only an ONVIF camera has one.
+ */
+calibration?: PtzCalibration, };

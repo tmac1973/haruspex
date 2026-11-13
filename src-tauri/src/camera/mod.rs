@@ -11,6 +11,7 @@
 //! See `plan/camera-integration/` for the design.
 
 pub mod aim;
+pub(crate) mod calibrate;
 pub mod capture;
 pub mod commands;
 pub(crate) mod detect;
@@ -41,6 +42,29 @@ pub struct CameraConfig {
     /// What the last successful probe found.
     #[serde(default)]
     pub caps: Option<CameraCaps>,
+    /// How far this camera's pan turns go, measured by Calibrate in
+    /// Settings → Cameras. Only an ONVIF camera has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub calibration: Option<PtzCalibration>,
+}
+
+/// A network camera's pan, measured in picture widths rather than degrees:
+/// what one picture shows is the unit both the model and a sweep need, and
+/// cameras on Thingino can't say what angle they're at.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct PtzCalibration {
+    /// How long one pulse (the shortest turn) runs, in ms.
+    pub pulse_ms: u32,
+    /// How far one pulse turns, in picture widths.
+    pub views_per_pulse: f32,
+    /// Pulses from the left end of its travel to the right end.
+    pub range_pulses: u32,
+    /// Pulses from the left end to its home position; `None` when home
+    /// matched no step.
+    pub home_pulses: Option<u32>,
 }
 
 /// Where the picture and sound come from.

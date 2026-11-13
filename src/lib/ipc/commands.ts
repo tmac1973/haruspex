@@ -29,6 +29,7 @@ export const IPC = {
 	audio_store_url: 'audio_store_url',
 	audio_sweep: 'audio_sweep',
 	camera_aim: 'camera_aim',
+	camera_calibrate: 'camera_calibrate',
 	camera_event_delete: 'camera_event_delete',
 	camera_event_set_caption: 'camera_event_set_caption',
 	camera_event_thumb: 'camera_event_thumb',

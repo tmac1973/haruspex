@@ -50,6 +50,7 @@ const PAGES = [
 	'textures',
 	'integrations',
 	'cameras',
+	'camera-pan-tilt',
 	'camera-log',
 	'search-and-network',
 	'guest-chat',
