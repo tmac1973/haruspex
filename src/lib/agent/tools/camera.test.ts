@@ -472,6 +472,14 @@ describe('camera_look', () => {
 				false
 			)
 		).toBe('Turned Desk left about one picture width');
+		expect(
+			describeAim(
+				'Desk',
+				{ direction: 'down', amount: 'small' },
+				{ ...plain, turnedViews: 0.3 },
+				false
+			)
+		).toBe('Turned Desk down about a quarter of the picture height');
 		// An uncalibrated one, in words.
 		expect(describeAim('Desk', { direction: 'right', amount: 'large' }, plain, false)).toBe(
 			'Turned Desk right a long way'
@@ -495,6 +503,17 @@ describe('camera_look', () => {
 		expect(
 			describeRange({ pulseMs: 400, viewsPerPulse: 0.5, rangePulses: 4, homePulses: null })
 		).toBe('about 2 picture widths end to end');
+		expect(
+			describeRange({
+				pulseMs: 400,
+				viewsPerPulse: 0.556,
+				rangePulses: 9,
+				homePulses: 5,
+				tilt: { viewsPerPulse: 0.4, rangePulses: 4, homePulses: 2 }
+			})
+		).toBe(
+			'about 5 picture widths end to end; home is 2.8 from the left end; tilts about 1.6 picture heights, home 0.8 from the bottom'
+		);
 	});
 
 	it('counts a UVC webcam as aimable', async () => {

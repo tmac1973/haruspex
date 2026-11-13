@@ -220,13 +220,17 @@ export function parseAim(args: Record<string, unknown>): Aim | { error: string }
 }
 
 /** How far a calibrated turn went, in words: "half the picture width". */
-export function widths(views: number): string {
+export function pictures(views: number, side: 'width' | 'height'): string {
 	const q = Math.max(0.25, Math.round(views * 4) / 4);
-	if (q === 0.25) return 'a quarter of the picture width';
-	if (q === 0.5) return 'half the picture width';
-	if (q === 0.75) return 'three quarters of the picture width';
-	if (q === 1) return 'one picture width';
-	return `${q} picture widths`;
+	if (q === 0.25) return `a quarter of the picture ${side}`;
+	if (q === 0.5) return `half the picture ${side}`;
+	if (q === 0.75) return `three quarters of the picture ${side}`;
+	if (q === 1) return `one picture ${side}`;
+	return `${q} picture ${side}s`;
+}
+
+export function widths(views: number): string {
+	return pictures(views, 'width');
 }
 
 /** An uncalibrated network camera's turns, which can't be put in numbers. */
@@ -254,7 +258,8 @@ export function describeAim(
 		return `Tried to turn ${name} ${aim.direction}, but its picture didn't change: it is already as far as it goes that way`;
 	}
 	let how: string;
-	if (moved.turnedViews != null) how = `about ${widths(moved.turnedViews)}`;
+	const side = aim.direction === 'up' || aim.direction === 'down' ? 'height' : 'width';
+	if (moved.turnedViews != null) how = `about ${pictures(moved.turnedViews, side)}`;
 	else if ('pulses' in aim) how = `${aim.pulses} step${aim.pulses === 1 ? '' : 's'}`;
 	else if (degrees) {
 		const [pan, tilt] = DEGREES[aim.amount];
@@ -285,7 +290,7 @@ registerTool({
 						type: 'string',
 						enum: [...AMOUNTS],
 						description:
-							'How far: small, medium or large. On a calibrated camera that is about a quarter, half or a whole picture width. Defaults to medium.'
+							'How far: small, medium or large. On a calibrated camera that is about a quarter, half or a whole picture width (height, tilting). Defaults to medium.'
 					},
 					preset: {
 						type: 'string',

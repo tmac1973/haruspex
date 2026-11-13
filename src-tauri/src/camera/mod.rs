@@ -65,6 +65,24 @@ pub struct PtzCalibration {
     /// Pulses from the left end to its home position; `None` when home
     /// matched no step.
     pub home_pulses: Option<u32>,
+    /// The same for tilting, in picture heights; `None` from a calibration
+    /// made before tilt was measured, or on a camera that doesn't tilt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tilt: Option<TiltCalibration>,
+}
+
+/// A network camera's tilt, measured in picture heights.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TiltCalibration {
+    /// How far one pulse tilts, in picture heights.
+    pub views_per_pulse: f32,
+    /// Pulses from the bottom of its travel to the top.
+    pub range_pulses: u32,
+    /// Pulses from the bottom to its home position.
+    pub home_pulses: u32,
 }
 
 /// Where the picture and sound come from.

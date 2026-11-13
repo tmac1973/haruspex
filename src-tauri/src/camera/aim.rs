@@ -68,7 +68,8 @@ pub struct CameraAimResult {
     /// move, most likely because it was already as far as it goes that way.
     /// Only checked on a network camera, and only when ffmpeg is at hand.
     pub unmoved: bool,
-    /// How far a calibrated network camera turned, in picture widths.
+    /// How far a calibrated network camera turned: picture widths for a pan,
+    /// picture heights for a tilt.
     pub turned_views: Option<f32>,
 }
 
@@ -249,7 +250,9 @@ pub(crate) async fn aim(
     super::detect::hold_motion(&config.id, now() + TURN_HOLD_MS);
     let turns = match aim {
         Aim::Move { direction, .. } => *direction != AimDirection::Home,
-        Aim::Pulses { .. } => true,
+        // A calibrated sweep knows how far its steps go and how many there
+        // are, so it skips two pictures a step (about 3 s on a D1).
+        Aim::Pulses { .. } => config.calibration.is_none(),
         Aim::Preset { .. } => false,
     };
     let compare = match ffmpeg {
@@ -308,22 +311,35 @@ pub(crate) fn pulses_for(amount: AimAmount, views_per_pulse: f32) -> u32 {
 
 /// Turn left or right `pulses` times.
 async fn pulse(ptz: &Ptz, direction: AimDirection, pulses: u32) -> Result<(), String> {
-    let pan = match direction {
-        AimDirection::Left => -ONVIF_SPEED,
-        AimDirection::Right => ONVIF_SPEED,
-        _ => return Err("Steps only go left or right.".into()),
+    let (pan, tilt) = match direction {
+        AimDirection::Left => (-ONVIF_SPEED, 0.0),
+        AimDirection::Right => (ONVIF_SPEED, 0.0),
+        AimDirection::Up => (0.0, ONVIF_SPEED),
+        AimDirection::Down => (0.0, -ONVIF_SPEED),
+        AimDirection::Home => return Err("Home is not a step.".into()),
     };
     for i in 0..pulses {
         if i > 0 {
             tokio::time::sleep(PULSE_GAP).await;
         }
-        ptz.move_by(pan, 0.0, ONVIF_PULSE).await?;
+        ptz.move_by(pan, tilt, ONVIF_PULSE).await?;
     }
     tokio::time::sleep(ONVIF_SETTLE).await;
     Ok(())
 }
 
-/// Aim an ONVIF camera; how far it turned in picture widths when `calibration`
+/// How far one pulse moves the picture in `direction` on a calibrated
+/// camera: picture widths for a pan, heights for a tilt.
+fn per_pulse(calibration: Option<&super::PtzCalibration>, direction: AimDirection) -> Option<f32> {
+    let cal = calibration?;
+    match direction {
+        AimDirection::Left | AimDirection::Right => Some(cal.views_per_pulse),
+        AimDirection::Up | AimDirection::Down => cal.tilt.as_ref().map(|t| t.views_per_pulse),
+        AimDirection::Home => None,
+    }
+}
+
+/// Aim an ONVIF camera; how far it turned, in pictures, when `calibration`
 /// says.
 async fn aim_onvif(
     ptz: &Ptz,
@@ -331,21 +347,17 @@ async fn aim_onvif(
     aim: &Aim,
     calibration: Option<&super::PtzCalibration>,
 ) -> Result<Option<f32>, String> {
-    let views = |pulses: u32| calibration.map(|c| c.views_per_pulse * pulses as f32);
     match aim {
         Aim::Pulses { direction, pulses } => {
             let pulses = (*pulses).clamp(1, 20);
             pulse(ptz, *direction, pulses).await?;
-            Ok(views(pulses))
+            Ok(per_pulse(calibration, *direction).map(|v| v * pulses as f32))
         }
-        Aim::Move { direction, amount }
-            if calibration.is_some()
-                && matches!(direction, AimDirection::Left | AimDirection::Right) =>
-        {
-            let cal = calibration.expect("checked above");
-            let pulses = pulses_for(*amount, cal.views_per_pulse);
+        Aim::Move { direction, amount } if per_pulse(calibration, *direction).is_some() => {
+            let views = per_pulse(calibration, *direction).expect("checked above");
+            let pulses = pulses_for(*amount, views);
             pulse(ptz, *direction, pulses).await?;
-            Ok(views(pulses))
+            Ok(Some(views * pulses as f32))
         }
         Aim::Move { direction, amount } => match onvif_move(*direction, *amount) {
             Some((pan, tilt, time)) => {

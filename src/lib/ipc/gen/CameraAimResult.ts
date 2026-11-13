@@ -17,6 +17,7 @@ atLimit: boolean,
  */
 unmoved: boolean, 
 /**
- * How far a calibrated network camera turned, in picture widths.
+ * How far a calibrated network camera turned: picture widths for a pan,
+ * picture heights for a tilt.
  */
 turnedViews: number | null, };

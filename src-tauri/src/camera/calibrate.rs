@@ -7,12 +7,13 @@
 //! time to the end of its travel, then right to the other end. Each step's
 //! picture is lined up with the one before to see how far the scene slid; a
 //! step that leaves it unchanged is an end. The left steps count where home
-//! is. Home also sets the tilt, so every picture is at the same tilt.
+//! is. Home also sets the tilt, so every picture is at the same tilt. Tilt
+//! is measured the same way afterwards, from home down and then up.
 
 use super::aim::{route, settle_after_goto, Route, ONVIF_PULSE, ONVIF_SETTLE, ONVIF_SPEED};
-use super::capture::{gray_frame, horizontal_shift, same_view};
+use super::capture::{gray_frame, horizontal_shift, same_view, vertical_shift};
 use super::onvif::ptz::Ptz;
-use super::{CameraConfig, Credentials, PtzCalibration};
+use super::{CameraConfig, Credentials, PtzCalibration, TiltCalibration};
 
 /// The pictures compared, small enough to grab quickly.
 const W: usize = 160;
@@ -47,37 +48,86 @@ async fn measure(cfg: &CameraConfig, ffmpeg: &str, ptz: &Ptz) -> Result<PtzCalib
     settle_after_goto(ptz).await;
     let mut shifts = Vec::new();
     let mut last = gray_frame(ffmpeg, cfg, W, H).await?;
-    let home_pulses = walk(cfg, ffmpeg, ptz, -ONVIF_SPEED, &mut last, &mut shifts).await?;
-    let range_pulses = walk(cfg, ffmpeg, ptz, ONVIF_SPEED, &mut last, &mut shifts).await?;
+    let home_pulses = walk(cfg, ffmpeg, ptz, Axis::Pan, -1.0, &mut last, &mut shifts).await?;
+    let range_pulses = walk(cfg, ffmpeg, ptz, Axis::Pan, 1.0, &mut last, &mut shifts).await?;
     if range_pulses == 0 {
         return Err(
             "The camera's picture didn't change when it was turned, so it couldn't be measured."
                 .into(),
         );
     }
-    Ok(summarize(&shifts, range_pulses, Some(home_pulses)))
+    let tilt = measure_tilt(cfg, ffmpeg, ptz).await.ok().flatten();
+    Ok(PtzCalibration {
+        pulse_ms: ONVIF_PULSE.as_millis() as u32,
+        views_per_pulse: per_pulse(&shifts, W),
+        range_pulses,
+        home_pulses: Some(home_pulses),
+        tilt,
+    })
 }
 
-/// Step one way (`pan` is the speed and its sign the direction) until the
-/// picture stops changing; the steps it took. Each step's shift is added to
-/// `shifts`, measured the same way round whichever way it turned.
+/// Tilt, measured the same way from home: down to the bottom, then up to the
+/// top. `None` for a camera whose picture doesn't move when tilted.
+async fn measure_tilt(
+    cfg: &CameraConfig,
+    ffmpeg: &str,
+    ptz: &Ptz,
+) -> Result<Option<TiltCalibration>, String> {
+    ptz.goto_home().await?;
+    settle_after_goto(ptz).await;
+    let mut shifts = Vec::new();
+    let mut last = gray_frame(ffmpeg, cfg, W, H).await?;
+    let home_pulses = walk(cfg, ffmpeg, ptz, Axis::Tilt, -1.0, &mut last, &mut shifts).await?;
+    let range_pulses = walk(cfg, ffmpeg, ptz, Axis::Tilt, 1.0, &mut last, &mut shifts).await?;
+    Ok((range_pulses > 0).then(|| TiltCalibration {
+        views_per_pulse: per_pulse(&shifts, H),
+        range_pulses,
+        home_pulses,
+    }))
+}
+
+#[derive(Clone, Copy)]
+enum Axis {
+    Pan,
+    Tilt,
+}
+
+/// Step along `axis` (`sign` 1 is right or up) until the picture stops
+/// changing; the steps it took. Each step's shift is added to `shifts`,
+/// positive in the direction of travel.
 async fn walk(
     cfg: &CameraConfig,
     ffmpeg: &str,
     ptz: &Ptz,
-    pan: f32,
+    axis: Axis,
+    sign: f32,
     last: &mut Vec<u8>,
     shifts: &mut Vec<(i32, f64)>,
 ) -> Result<u32, String> {
+    let speed = ONVIF_SPEED * sign;
     for step in 0..MAX_STEPS {
-        ptz.move_by(pan, 0.0, ONVIF_PULSE).await?;
+        match axis {
+            Axis::Pan => ptz.move_by(speed, 0.0, ONVIF_PULSE).await?,
+            Axis::Tilt => ptz.move_by(0.0, speed, ONVIF_PULSE).await?,
+        }
         tokio::time::sleep(ONVIF_SETTLE).await;
         let picture = gray_frame(ffmpeg, cfg, W, H).await?;
         if same_view(last, &picture) {
             return Ok(step);
         }
-        let (s, r) = horizontal_shift(last, &picture, W);
-        shifts.push((if pan < 0.0 { -s } else { s }, r));
+        // Turning right slides the scene left (a positive shift); tilting up
+        // slides it down (a negative one).
+        let (s, r) = match axis {
+            Axis::Pan => {
+                let (s, r) = horizontal_shift(last, &picture, W);
+                (s as f32 * sign, r)
+            }
+            Axis::Tilt => {
+                let (s, r) = vertical_shift(last, &picture, W);
+                (-(s as f32) * sign, r)
+            }
+        };
+        shifts.push((s as i32, r));
         *last = picture;
     }
     Err(format!(
@@ -85,29 +135,19 @@ async fn walk(
     ))
 }
 
-/// The calibration from the steps' measured shifts (pixels of a `W`-wide
-/// picture, and how well each lined up).
-pub(crate) fn summarize(
-    shifts: &[(i32, f64)],
-    range_pulses: u32,
-    home_pulses: Option<u32>,
-) -> PtzCalibration {
+/// How far one pulse moves the picture, in pictures `size` pixels across:
+/// the middle of the shifts that lined up well.
+pub(crate) fn per_pulse(shifts: &[(i32, f64)], size: usize) -> f32 {
     let mut good: Vec<f32> = shifts
         .iter()
         .filter(|(s, r)| *s > 0 && *r >= TRUSTED)
-        .map(|(s, _)| *s as f32 / W as f32)
+        .map(|(s, _)| *s as f32 / size as f32)
         .collect();
     good.sort_by(f32::total_cmp);
-    let views_per_pulse = if good.is_empty() {
+    if good.is_empty() {
         NO_OVERLAP_VIEWS
     } else {
         good[good.len() / 2]
-    };
-    PtzCalibration {
-        pulse_ms: ONVIF_PULSE.as_millis() as u32,
-        views_per_pulse,
-        range_pulses,
-        home_pulses,
     }
 }
 
@@ -126,18 +166,12 @@ mod tests {
             (86, 0.72),
             (54, 0.75),
         ];
-        let cal = summarize(&shifts, 9, Some(2));
-        assert!((cal.views_per_pulse - 86.0 / 160.0).abs() < 1e-6);
-        assert_eq!(cal.range_pulses, 9);
-        assert_eq!(cal.home_pulses, Some(2));
-        assert_eq!(cal.pulse_ms, ONVIF_PULSE.as_millis() as u32);
+        assert!((per_pulse(&shifts, W) - 86.0 / 160.0).abs() < 1e-6);
+        assert!((per_pulse(&[(45, 0.8)], H) - 0.5).abs() < 1e-6);
     }
 
     #[test]
     fn steps_too_big_to_line_up_count_as_a_whole_picture() {
-        assert_eq!(
-            summarize(&[(10, 0.2), (-30, 0.9)], 4, None).views_per_pulse,
-            1.0
-        );
+        assert_eq!(per_pulse(&[(10, 0.2), (-30, 0.9)], W), 1.0);
     }
 }

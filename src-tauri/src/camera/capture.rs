@@ -262,32 +262,27 @@ pub async fn snapshot(ffmpeg: &str, cfg: &CameraConfig, max_width: u32) -> Resul
 pub(crate) const FINGERPRINT_W: usize = 64;
 pub(crate) const FINGERPRINT_H: usize = 36;
 
-/// A tiny greyscale copy of a network camera's picture, from its substream
-/// when it has one: enough to tell whether the view changed, cheap to grab.
+/// A tiny greyscale copy of a network camera's picture: enough to tell
+/// whether the view changed.
 pub(crate) async fn fingerprint(ffmpeg: &str, cfg: &CameraConfig) -> Result<Vec<u8>, String> {
     gray_frame(ffmpeg, cfg, FINGERPRINT_W, FINGERPRINT_H).await
 }
 
-/// A network camera's picture as `w` × `h` greyscale bytes, row by row.
+/// A network camera's picture as `w` × `h` greyscale bytes, row by row. From
+/// the main stream: a D1's substream is slower to give its first frame
+/// (2.1 s against 1.35 s).
 pub(crate) async fn gray_frame(
     ffmpeg: &str,
     cfg: &CameraConfig,
     w: usize,
     h: usize,
 ) -> Result<Vec<u8>, String> {
-    let CameraSource::Rtsp {
-        url, substream_url, ..
-    } = &cfg.source
-    else {
+    let CameraSource::Rtsp { url, .. } = &cfg.source else {
         return Err("Only a network camera's picture is compared.".into());
     };
     let creds = Credentials::for_source(&cfg.source).await?;
-    let stream = substream_url
-        .as_deref()
-        .filter(|u| !u.is_empty())
-        .unwrap_or(url);
     let mut args = strings(&["-nostdin"]);
-    args.extend(rtsp_input(&creds.inject(stream)));
+    args.extend(rtsp_input(&creds.inject(url)));
     args.extend(strings(&[
         "-frames:v",
         "1",
@@ -330,6 +325,18 @@ pub(crate) fn same_view(a: &[u8], b: &[u8]) -> bool {
 }
 
 const SAME_VIEW: f64 = 0.95;
+
+/// How far the view moved up or down between two greyscale pictures `w`
+/// wide: [`horizontal_shift`] on the pictures turned on their side, so
+/// positive when the scene moved up, that is the camera tilted down.
+pub(crate) fn vertical_shift(a: &[u8], b: &[u8], w: usize) -> (i32, f64) {
+    if w == 0 || a.len() != b.len() || !a.len().is_multiple_of(w) {
+        return (0, 0.0);
+    }
+    let h = a.len() / w;
+    let turn = |p: &[u8]| -> Vec<u8> { (0..w * h).map(|i| p[(i % h) * w + i / h]).collect() };
+    horizontal_shift(&turn(a), &turn(b), h)
+}
 
 /// How far the view moved sideways between two greyscale pictures `w` wide:
 /// the shift in pixels that lines them up best (positive when the scene moved
@@ -491,6 +498,20 @@ pub(crate) fn level_db(wav: &[u8]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tilt_shows_as_the_scene_shifting_up_or_down() {
+        let (w, h) = (20, 40);
+        // A scene taller than the picture: the camera sees 40 of its 120 rows.
+        let tall: Vec<u8> = (0..w * 120)
+            .map(|i| (((i / w) * 53 + (i % w) * 17) % 251) as u8)
+            .collect();
+        let view = |top: usize| -> Vec<u8> { tall[top * w..(top + h) * w].to_vec() };
+        let (s, r) = vertical_shift(&view(10), &view(22), w);
+        assert_eq!(s, 12);
+        assert!(r > 0.99);
+        assert_eq!(vertical_shift(&view(30), &view(25), w).0, -5);
+    }
 
     #[test]
     fn a_turn_shows_as_the_scene_shifting_sideways() {
