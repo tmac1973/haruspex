@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 const state = vi.hoisted(() => ({
 	stored: new Map<string, string>(),
-	calls: [] as { cmd: string; args: Record<string, unknown> | undefined }[]
+	calls: [] as { cmd: string; args: Record<string, unknown> | undefined }[],
+	hostname: ''
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -23,11 +24,12 @@ vi.mock('@tauri-apps/api/core', async () =>
 			},
 			camera_snapshot: 'data:image/jpeg;base64,AAAA',
 			camera_listen: { transcript: null, levelDb: -32.4 },
-			camera_onvif_discover: [
+			camera_onvif_discover: () => [
 				{
 					xaddr: 'http://192.168.1.184/onvif/device_service',
 					name: 'Thingino',
-					hardware: 'Cinnado_D1'
+					hardware: 'Cinnado_D1',
+					hostname: state.hostname
 				}
 			],
 			camera_onvif_connect: (a) => {
@@ -98,6 +100,7 @@ function input(id: RegExp): HTMLInputElement {
 
 beforeEach(() => {
 	state.stored.clear();
+	state.hostname = '';
 	state.calls = [];
 	localStorage.clear();
 	setCameras([]);
@@ -182,7 +185,8 @@ describe('finding an ONVIF camera', () => {
 		render(CamerasSection);
 		await fireEvent.click(screen.getByText('Add camera'));
 		await fireEvent.click(screen.getByText('Find cameras'));
-		await fireEvent.click(await screen.findByText('Thingino · 192.168.1.184'));
+		// The first camera found is picked without a click.
+		await screen.findByText('Thingino · 192.168.1.184');
 		expect(input(/^Name$/).value).toBe('Thingino');
 
 		await fireEvent.input(input(/User name/), { target: { value: 'root' } });
@@ -218,6 +222,39 @@ describe('finding an ONVIF camera', () => {
 		});
 		expect(JSON.stringify(getSettings())).not.toContain('"pw"');
 		expect(() => structuredClone(getSettings())).not.toThrow();
+	});
+});
+
+describe('a found camera with a network name', () => {
+	it('connects on its name and keeps its streams there', async () => {
+		state.hostname = 'wifi-cam-1.home.internal';
+		render(CamerasSection);
+		await fireEvent.click(screen.getByText('Add camera'));
+		await fireEvent.click(screen.getByText('Find cameras'));
+		await screen.findByText('Thingino · wifi-cam-1.home.internal');
+		const useName = screen.getByLabelText(/Use its name, wifi-cam-1\.home\.internal/);
+		expect((useName as HTMLInputElement).checked).toBe(true);
+
+		await fireEvent.input(input(/User name/), { target: { value: 'root' } });
+		await fireEvent.input(input(/^Password$/), { target: { value: 'pw' } });
+		await fireEvent.click(screen.getByText('Connect'));
+
+		await waitFor(() =>
+			expect(input(/RTSP address/).value).toBe('rtsp://wifi-cam-1.home.internal:554/ch0')
+		);
+		expect(input(/Substream/).value).toBe('rtsp://wifi-cam-1.home.internal:554/ch1');
+		expect(state.calls[0].args!.xaddr).toBe('http://wifi-cam-1.home.internal/onvif/device_service');
+	});
+
+	it('keeps the address when the name is turned off', async () => {
+		state.hostname = 'wifi-cam-1.home.internal';
+		render(CamerasSection);
+		await fireEvent.click(screen.getByText('Add camera'));
+		await fireEvent.click(screen.getByText('Find cameras'));
+		await fireEvent.click(await screen.findByLabelText(/Use its name/));
+		await fireEvent.input(input(/^Password$/), { target: { value: 'pw' } });
+		await fireEvent.click(screen.getByText('Connect'));
+		await waitFor(() => expect(input(/RTSP address/).value).toBe('rtsp://192.168.1.184:554/ch0'));
 	});
 });
 

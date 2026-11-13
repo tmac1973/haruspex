@@ -21,7 +21,7 @@ Settings → Cameras lists the cameras Haruspex can use: network cameras that st
 Many network cameras speak ONVIF, which lets Haruspex find them and read their addresses for you.
 
 1. In a new camera's form, click **Find cameras**. Haruspex looks for 3 seconds and lists the cameras that answer.
-2. Click yours. A blank **Name** takes the name the camera gives itself.
+2. The first one is picked; click another to change it. A blank **Name** takes the name the camera gives itself. A camera with a name on your network is listed by it, and **Use its name** (on by default) keeps it working if the router changes its address.
 3. Fill in **User name** and **Password**, then click **Connect**.
 
 Haruspex signs in and fills in **RTSP address** (the camera's sharpest stream) and **Substream** (its smallest). If the camera can pan and tilt, **Pan/tilt** is set to **ONVIF** and its saved positions are listed as **Presets**; **Refresh presets** reads them again after you change them on the camera.

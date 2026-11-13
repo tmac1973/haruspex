@@ -12,7 +12,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { onDestroy } from 'svelte';
 	import { redactCameraError, splitUrlCredentials } from '#lib/camera/credentials.ts';
-	import { onvifAddressFor } from '#lib/camera/onvif.ts';
+	import { hostOf, onvifAddressFor, withHost } from '#lib/camera/onvif.ts';
 	import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 	import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
 	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
@@ -72,6 +72,8 @@
 	let found = $state<DiscoveredCamera[] | null>(null);
 	let finding = $state(false);
 	let picked = $state<DiscoveredCamera | null>(null);
+	/** Use the picked camera's network name rather than its address. */
+	let useName = $state(true);
 	let connecting = $state(false);
 	let onvifError = $state('');
 	let refreshing = $state(false);
@@ -211,7 +213,8 @@
 			// Shown as given.
 		}
 		const title = c.name || c.hardware;
-		return title ? `${title} · ${host}` : host;
+		const where = c.hostname || host;
+		return title ? `${title} · ${where}` : where;
 	}
 
 	async function findCameras() {
@@ -220,6 +223,8 @@
 		picked = null;
 		try {
 			found = await invoke<DiscoveredCamera[]>('camera_onvif_discover');
+			// Picked at once, so Connect shows without a click; another can be picked.
+			if (found.length) pickFound(found[0]);
 		} catch (e) {
 			onvifError = errMessage(e);
 		} finally {
@@ -229,6 +234,7 @@
 
 	function pickFound(c: DiscoveredCamera) {
 		picked = c;
+		useName = true;
 		onvifError = '';
 		if (!name.trim() && c.name) name = c.name;
 	}
@@ -237,7 +243,15 @@
 	 * The ONVIF service to sign in to: the camera picked from Find cameras, or
 	 * else the one at the RTSP address's host, for a camera that doesn't answer.
 	 */
-	const connectTo = $derived(picked?.xaddr ?? (kind === 'rtsp' ? onvifAddressFor(url) : null));
+	const connectTo = $derived(
+		picked ? pickedAddress(picked.xaddr) : kind === 'rtsp' ? onvifAddressFor(url) : null
+	);
+
+	/** `address` on the picked camera's network name, when it has one and it's wanted. */
+	function pickedAddress(address: string): string {
+		if (!picked?.hostname || !useName) return address;
+		return withHost(address, hostOf(picked.xaddr), picked.hostname);
+	}
 
 	/** Sign in over ONVIF and fill in the camera's streams and pan/tilt. */
 	async function connectFound() {
@@ -256,8 +270,9 @@
 				username: username.trim(),
 				password
 			});
-			url = got.mainUrl;
-			substreamUrl = got.subUrl === got.mainUrl ? '' : got.subUrl;
+			// The camera gives its streams on its address; keep them on its name.
+			url = pickedAddress(got.mainUrl);
+			substreamUrl = got.subUrl === got.mainUrl ? '' : pickedAddress(got.subUrl);
 			onvif = { xaddr, profileToken: got.profileToken, presets: got.presets };
 			ptz = got.hasPtz ? 'onvif' : 'none';
 			found = null;
@@ -440,6 +455,15 @@
 						</li>
 					{/each}
 				</ul>
+			{/if}
+			{#if picked?.hostname}
+				<label
+					class="toggle-row"
+					title="Its address can change when the router hands out a new one; the name follows it."
+				>
+					<input type="checkbox" bind:checked={useName} />
+					<span>Use its name, {picked.hostname}, not {hostOf(picked.xaddr)}</span>
+				</label>
 			{/if}
 			{#if picked}
 				<p class="help">Enter its user name and password below, then connect.</p>

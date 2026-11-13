@@ -10,6 +10,7 @@
 //! [`Credentials::redact`] before they leave.
 
 pub mod discovery;
+pub(crate) mod hostname;
 pub(crate) mod ptz;
 pub(crate) mod soap;
 

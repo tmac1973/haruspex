@@ -15,4 +15,9 @@ name: string,
 /**
  * Its model, when it says.
  */
-hardware: string, };
+hardware: string, 
+/**
+ * The name its address is known by on the network, which follows it
+ * when the router gives it a new address; empty when it has none.
+ */
+hostname: string, };

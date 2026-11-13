@@ -27,6 +27,9 @@ pub struct DiscoveredCamera {
     pub name: String,
     /// Its model, when it says.
     pub hardware: String,
+    /// The name its address is known by on the network, which follows it
+    /// when the router gives it a new address; empty when it has none.
+    pub hostname: String,
 }
 
 /// One `ProbeMatch`, as sent.
@@ -58,7 +61,28 @@ pub async fn discover(wait: Duration) -> Result<Vec<DiscoveredCamera>, String> {
             packets.append(&mut got);
         }
     }
-    Ok(cameras_from(&packets))
+    let mut cameras = cameras_from(&packets);
+    add_hostnames(&mut cameras).await;
+    Ok(cameras)
+}
+
+/// Fill in each camera's network name, looked up all at once.
+async fn add_hostnames(cameras: &mut [DiscoveredCamera]) {
+    let mut lookups = tokio::task::JoinSet::new();
+    for (i, camera) in cameras.iter().enumerate() {
+        let Some(ip) = url::Url::parse(&camera.xaddr)
+            .ok()
+            .and_then(|u| u.host_str().and_then(|h| h.parse::<IpAddr>().ok()))
+        else {
+            continue;
+        };
+        lookups.spawn(async move { (i, super::hostname::name_for(ip).await) });
+    }
+    while let Some(done) = lookups.join_next().await {
+        if let Ok((i, Some(name))) = done {
+            cameras[i].hostname = name;
+        }
+    }
 }
 
 /// A socket bound to each IPv4 interface that isn't loopback, its multicast
@@ -194,6 +218,7 @@ pub(crate) fn cameras_from(packets: &[(String, IpAddr)]) -> Vec<DiscoveredCamera
                 name: scope(&m.scopes, "name").unwrap_or_default(),
                 hardware: scope(&m.scopes, "hardware").unwrap_or_default(),
                 xaddr,
+                hostname: String::new(),
             });
         }
     }
@@ -272,6 +297,7 @@ mod tests {
                 xaddr: "http://192.168.1.184/onvif/device_service".into(),
                 name: "Thingino".into(),
                 hardware: "Cinnado_D1".into(),
+                hostname: String::new(),
             }
         );
         // An empty `location/` scope is no value.
@@ -288,6 +314,7 @@ mod tests {
                 xaddr: "http://192.168.1.64/onvif/device_service".into(),
                 name: "Front Door".into(),
                 hardware: "DS-2CD2043G2-I".into(),
+                hostname: String::new(),
             }]
         );
         // Heard from an address it doesn't list: the first IPv4 one.
