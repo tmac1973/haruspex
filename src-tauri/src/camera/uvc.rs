@@ -110,5 +110,6 @@ pub(crate) fn aim(path: &str, turn: Option<(f64, f64)>) -> Result<CameraAimResul
         at_limit,
         unmoved: false,
         turned_views: None,
+        rehomed: false,
     })
 }

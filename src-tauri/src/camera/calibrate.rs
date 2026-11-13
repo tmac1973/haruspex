@@ -66,23 +66,29 @@ async fn measure(cfg: &CameraConfig, ffmpeg: &str, ptz: &Ptz) -> Result<PtzCalib
     })
 }
 
-/// Tilt, measured the same way from home: down to the bottom, then up to the
-/// top. `None` for a camera whose picture doesn't move when tilted.
+/// Tilt, measured from home up to the top, then from home again down to the
+/// bottom. Never up after the bottom: a D1 on Thingino ignores every tilt up
+/// once it has hit its bottom stop, until it goes home. `None` for a camera
+/// whose picture doesn't move when tilted.
 async fn measure_tilt(
     cfg: &CameraConfig,
     ffmpeg: &str,
     ptz: &Ptz,
 ) -> Result<Option<TiltCalibration>, String> {
-    ptz.goto_home().await?;
-    settle_after_goto(ptz).await;
     let mut shifts = Vec::new();
-    let mut last = gray_frame(ffmpeg, cfg, W, H).await?;
-    let home_pulses = walk(cfg, ffmpeg, ptz, Axis::Tilt, -1.0, &mut last, &mut shifts).await?;
-    let range_pulses = walk(cfg, ffmpeg, ptz, Axis::Tilt, 1.0, &mut last, &mut shifts).await?;
+    let walk_from_home = async |sign: f32, shifts: &mut Vec<(i32, f64)>| {
+        ptz.goto_home().await?;
+        settle_after_goto(ptz).await;
+        let mut last = gray_frame(ffmpeg, cfg, W, H).await?;
+        walk(cfg, ffmpeg, ptz, Axis::Tilt, sign, &mut last, shifts).await
+    };
+    let up = walk_from_home(1.0, &mut shifts).await?;
+    let down = walk_from_home(-1.0, &mut shifts).await?;
+    let range_pulses = up + down;
     Ok((range_pulses > 0).then(|| TiltCalibration {
         views_per_pulse: per_pulse(&shifts, H),
         range_pulses,
-        home_pulses,
+        home_pulses: down,
     }))
 }
 

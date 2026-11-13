@@ -229,10 +229,6 @@ export function pictures(views: number, side: 'width' | 'height'): string {
 	return `${q} picture ${side}s`;
 }
 
-export function widths(views: number): string {
-	return pictures(views, 'width');
-}
-
 /** An uncalibrated network camera's turns, which can't be put in numbers. */
 const ROUGHLY: Record<AimAmount, string> = {
 	small: 'a little',
@@ -247,6 +243,17 @@ const ROUGHLY: Record<AimAmount, string> = {
  * in words.
  */
 export function describeAim(
+	name: string,
+	aim: Aim,
+	moved: Pick<CameraAimResult, 'atLimit' | 'unmoved' | 'turnedViews'> & { rehomed?: boolean },
+	degrees: boolean
+): string {
+	const did = describeTurn(name, aim, moved, degrees);
+	if (!moved.rehomed) return did;
+	return `The tilt was stuck, so ${name} went back to its home position first (its pan too). ${did}`;
+}
+
+function describeTurn(
 	name: string,
 	aim: Aim,
 	moved: Pick<CameraAimResult, 'atLimit' | 'unmoved' | 'turnedViews'>,

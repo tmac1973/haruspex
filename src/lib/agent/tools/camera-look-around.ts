@@ -20,9 +20,11 @@ import {
 	CANT_MOVE,
 	errorText,
 	refused,
-	shoot,
-	widths
+	pictures,
+	shoot
 } from '#lib/agent/tools/camera.ts';
+
+const widths = (views: number) => pictures(views, 'width');
 
 /** The most large turns a sweep makes looking for the left end. */
 export const SWEEP_MAX_TURNS = 8;

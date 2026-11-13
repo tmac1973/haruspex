@@ -31,7 +31,7 @@ Calibrate again after moving the camera or changing its home position. **Connect
 | Calibrated network camera | Picture widths (heights when tilting): about a quarter, half or a whole one |
 | Network camera, not calibrated | Words only: a little, some way, a long way |
 
-A turn that doesn't change the picture is reported as the end of its travel that way.
+A turn that doesn't change the picture is reported as the end of its travel that way. Some cameras (Thingino ones such as the D1) stop tilting up once they reach the bottom, until they go home; when a tilt doesn't move such a camera, Haruspex sends it home and tries once more, and the assistant is told its pan went home too.
 
 ## Look around the room
 

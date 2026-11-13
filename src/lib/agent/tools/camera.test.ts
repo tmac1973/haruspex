@@ -480,6 +480,16 @@ describe('camera_look', () => {
 				false
 			)
 		).toBe('Turned Desk down about a quarter of the picture height');
+		expect(
+			describeAim(
+				'Desk',
+				{ direction: 'up', amount: 'small' },
+				{ ...plain, turnedViews: 0.3, rehomed: true },
+				false
+			)
+		).toBe(
+			'The tilt was stuck, so Desk went back to its home position first (its pan too). Turned Desk up about a quarter of the picture height'
+		);
 		// An uncalibrated one, in words.
 		expect(describeAim('Desk', { direction: 'right', amount: 'large' }, plain, false)).toBe(
 			'Turned Desk right a long way'
@@ -693,7 +703,7 @@ function fakeCamera(left: number, right: number) {
 		const next = Math.max(-left, Math.min(right, pos + step));
 		const unmoved = step !== 0 && next === pos;
 		pos = next;
-		return { atLimit: unmoved, unmoved, turnedViews: null };
+		return { atLimit: unmoved, unmoved, turnedViews: null, rehomed: false };
 	};
 	const take = async () => `frame@${pos}`;
 	return { aim, take, moves };

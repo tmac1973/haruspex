@@ -71,6 +71,9 @@ pub struct CameraAimResult {
     /// How far a calibrated network camera turned: picture widths for a pan,
     /// picture heights for a tilt.
     pub turned_views: Option<f32>,
+    /// A tilt that didn't move was tried again from home, so the pan is back
+    /// at home too.
+    pub rehomed: bool,
 }
 
 /// The ONVIF speed for every move: half of the camera's fastest.
@@ -264,17 +267,67 @@ pub(crate) async fn aim(
         None => None,
     };
     let mut result = aim_routed(config, aim).await;
-    if let (Some(f), Some(before), Ok(done)) = (compare, before, result.as_mut()) {
-        if let Ok(after) = super::capture::fingerprint(f, config).await {
-            if super::capture::same_view(&before, &after) {
-                done.unmoved = true;
-                done.at_limit = true;
-                done.turned_views = None;
+    if let (Some(f), Some(before)) = (compare, before) {
+        if result.is_ok() && moved_nowhere(f, config, &before).await {
+            result = Ok(CameraAimResult {
+                unmoved: true,
+                at_limit: true,
+                ..Default::default()
+            });
+            // A D1 on Thingino ignores every tilt up once it has hit its
+            // bottom stop, until it goes home: try once more from home.
+            if is_tilt(aim) {
+                result = retilt_from_home(f, config, aim).await;
             }
         }
     }
     super::detect::hold_motion(&config.id, now() + super::detect::AFTER_TURN_MS);
     result
+}
+
+fn is_tilt(aim: &Aim) -> bool {
+    matches!(
+        aim,
+        Aim::Move {
+            direction: AimDirection::Up | AimDirection::Down,
+            ..
+        } | Aim::Pulses {
+            direction: AimDirection::Up | AimDirection::Down,
+            ..
+        }
+    )
+}
+
+/// Whether the camera's picture is still `before`.
+async fn moved_nowhere(ffmpeg: &str, config: &CameraConfig, before: &[u8]) -> bool {
+    match super::capture::fingerprint(ffmpeg, config).await {
+        Ok(after) => super::capture::same_view(before, &after),
+        Err(_) => false,
+    }
+}
+
+/// Send the camera home, then tilt again; `rehomed` either way.
+async fn retilt_from_home(
+    ffmpeg: &str,
+    config: &CameraConfig,
+    aim: &Aim,
+) -> Result<CameraAimResult, String> {
+    let home = Aim::Move {
+        direction: AimDirection::Home,
+        amount: AimAmount::Medium,
+    };
+    aim_routed(config, &home).await?;
+    let before = super::capture::fingerprint(ffmpeg, config).await.ok();
+    let mut done = aim_routed(config, aim).await?;
+    done.rehomed = true;
+    if let Some(before) = before {
+        if moved_nowhere(ffmpeg, config, &before).await {
+            done.unmoved = true;
+            done.at_limit = true;
+            done.turned_views = None;
+        }
+    }
+    Ok(done)
 }
 
 /// Longer than any move takes, in case one never returns.

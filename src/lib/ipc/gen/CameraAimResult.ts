@@ -20,4 +20,9 @@ unmoved: boolean,
  * How far a calibrated network camera turned: picture widths for a pan,
  * picture heights for a tilt.
  */
-turnedViews: number | null, };
+turnedViews: number | null, 
+/**
+ * A tilt that didn't move was tried again from home, so the pan is back
+ * at home too.
+ */
+rehomed: boolean, };
