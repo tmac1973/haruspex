@@ -267,22 +267,97 @@ pub(crate) async fn aim(
         None => None,
     };
     let mut result = aim_routed(config, aim).await;
-    if let (Some(f), Some(before)) = (compare, before) {
-        if result.is_ok() && moved_nowhere(f, config, &before).await {
-            result = Ok(CameraAimResult {
-                unmoved: true,
-                at_limit: true,
-                ..Default::default()
-            });
+    match (compare, before, direction_of(aim)) {
+        (Some(f), Some(before), Some(direction)) if result.is_ok() => {
+            let after = super::capture::fingerprint(f, config).await.ok();
+            let stuck = after
+                .as_ref()
+                .is_some_and(|a| super::capture::same_view(&before, a));
+            // A D1 at the top of its tilt flips back to the view before the
+            // last turn instead of stopping: that's the end of its travel too.
+            let bounced = !stuck
+                && after
+                    .as_ref()
+                    .is_some_and(|a| last_turn::lands_before(&config.id, direction, a));
+            last_turn::record(&config.id, direction, before);
+            if stuck || bounced {
+                result = Ok(CameraAimResult {
+                    unmoved: true,
+                    at_limit: true,
+                    ..Default::default()
+                });
+            }
             // A D1 on Thingino ignores every tilt up once it has hit its
             // bottom stop, until it goes home: try once more from home.
-            if is_tilt(aim) {
+            if stuck && is_tilt(aim) {
+                last_turn::forget(&config.id);
                 result = retilt_from_home(f, config, aim).await;
             }
         }
+        // Home, a preset or an unchecked turn: the last view no longer counts.
+        _ => last_turn::forget(&config.id),
     }
     super::detect::hold_motion(&config.id, now() + super::detect::AFTER_TURN_MS);
     result
+}
+
+fn direction_of(aim: &Aim) -> Option<AimDirection> {
+    match aim {
+        Aim::Move { direction, .. } | Aim::Pulses { direction, .. } => {
+            (*direction != AimDirection::Home).then_some(*direction)
+        }
+        Aim::Preset { .. } => None,
+    }
+}
+
+/// Each camera's last checked turn: its direction and the picture before it.
+mod last_turn {
+    use super::AimDirection;
+    use crate::camera::capture::same_view;
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+
+    /// By camera id: the direction and the picture before it.
+    type Turns = HashMap<String, (AimDirection, Vec<u8>)>;
+
+    static LAST: LazyLock<Mutex<Turns>> = LazyLock::new(Default::default);
+
+    fn last() -> std::sync::MutexGuard<'static, Turns> {
+        LAST.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub(super) fn record(camera_id: &str, direction: AimDirection, before: Vec<u8>) {
+        last().insert(camera_id.to_string(), (direction, before));
+    }
+
+    pub(super) fn forget(camera_id: &str) {
+        last().remove(camera_id);
+    }
+
+    /// Whether a turn `direction` ended on the view from before the last turn,
+    /// which went the same way.
+    pub(super) fn lands_before(camera_id: &str, direction: AimDirection, after: &[u8]) -> bool {
+        last()
+            .get(camera_id)
+            .is_some_and(|(d, before)| *d == direction && same_view(before, after))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_turn_back_to_the_last_view_the_same_way_is_a_bounce() {
+            let (a, b) = (vec![1, 2, 3, 4], vec![4, 1, 3, 2]);
+            record("bounce-cam", AimDirection::Up, a.clone());
+            assert!(lands_before("bounce-cam", AimDirection::Up, &a));
+            assert!(!lands_before("bounce-cam", AimDirection::Up, &b));
+            // Down and back up again is a real turn.
+            assert!(!lands_before("bounce-cam", AimDirection::Down, &a));
+            forget("bounce-cam");
+            assert!(!lands_before("bounce-cam", AimDirection::Up, &a));
+        }
+    }
 }
 
 fn is_tilt(aim: &Aim) -> bool {
