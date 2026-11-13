@@ -15,7 +15,7 @@ Once the camera is saved, its form in Settings → Cameras has **Left**, **Right
 
 Network cameras don't say how far a turn went, and many (including Thingino cameras such as the Cinnado D1) turn much further than asked. **Calibrate**, under **Pan/tilt** in the camera's form, measures it:
 
-1. Click **Calibrate**. The camera goes home, steps to one end of its travel and then the other, comparing pictures as it goes, then does the same up and down. It takes a minute or two.
+1. Click **Calibrate**. The camera goes home, steps to one end of its travel and then the other, comparing pictures as it goes, then does the same up and down. It takes about two minutes.
 2. The form shows the result, such as "Turns about 5 picture widths end to end; home is 2.8 from the left end; tilts about 1.6 picture heights, home 0.8 from the bottom".
 3. Click **Save**.
 

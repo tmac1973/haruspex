@@ -573,7 +573,7 @@
 					class="btn btn-small"
 					onclick={calibrate}
 					disabled={calibrating || refreshing}
-					title="Turns the camera end to end and up and down, for a minute or two, to measure how far its turns go. Then the assistant can say how far it turned and look around without gaps."
+					title="Turns the camera end to end and up and down, for about two minutes, to measure how far its turns go. Then the assistant can say how far it turned and look around without gaps."
 				>
 					{calibrating ? 'Calibrating…' : calibration ? 'Calibrate again' : 'Calibrate'}
 				</button>

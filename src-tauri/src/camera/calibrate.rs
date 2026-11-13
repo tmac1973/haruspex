@@ -98,9 +98,13 @@ enum Axis {
     Tilt,
 }
 
-/// Step along `axis` (`sign` 1 is right or up) until the picture stops
-/// changing; the steps it took. Each step's shift is added to `shifts`,
+/// Step along `axis` (`sign` 1 is right or up) until the picture shows
+/// nothing new; the steps it took. Each step's shift is added to `shifts`,
 /// positive in the direction of travel.
+///
+/// Nothing new means a picture already seen on this walk, not only the one
+/// before: at the top of its tilt a D1 flips between two views on every
+/// pulse rather than stopping.
 async fn walk(
     cfg: &CameraConfig,
     ffmpeg: &str,
@@ -111,6 +115,7 @@ async fn walk(
     shifts: &mut Vec<(i32, f64)>,
 ) -> Result<u32, String> {
     let speed = ONVIF_SPEED * sign;
+    let mut seen = vec![last.clone()];
     for step in 0..MAX_STEPS {
         match axis {
             Axis::Pan => ptz.move_by(speed, 0.0, ONVIF_PULSE).await?,
@@ -118,7 +123,7 @@ async fn walk(
         }
         tokio::time::sleep(ONVIF_SETTLE).await;
         let picture = gray_frame(ffmpeg, cfg, W, H).await?;
-        if same_view(last, &picture) {
+        if seen.iter().any(|p| same_view(p, &picture)) {
             return Ok(step);
         }
         // Turning right slides the scene left (a positive shift); tilting up
@@ -134,6 +139,7 @@ async fn walk(
             }
         };
         shifts.push((s as i32, r));
+        seen.push(picture.clone());
         *last = picture;
     }
     Err(format!(
