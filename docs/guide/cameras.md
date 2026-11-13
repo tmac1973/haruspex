@@ -42,7 +42,7 @@ Click **Test** in the camera's form. Haruspex shows one frame with its size and 
 
 A camera with pan/tilt also gets **Left**, **Right**, **Up**, **Down** and **Home** buttons: each turns it about 10° (Home recentres it) and shows a new frame.
 
-Test uses ffmpeg and ffprobe, the same ones Settings → Video editing finds or is set to.
+Test uses the ffmpeg that Settings → Video editing uses.
 
 ## Ask or Allow
 
@@ -69,13 +69,14 @@ In Chat, the assistant can use your cameras with these tools:
 |---|---|
 | `camera_list` | Lists your cameras, whether each has sound or can be aimed (with its presets), and its permission. |
 | `camera_snapshot` | Takes one picture from a camera and looks at it. Needs a model that can see images. |
-| `camera_listen` | Records up to 30 seconds of sound (10 by default), transcribes it on this computer, and says how loud it was. The clip isn't kept. |
-| `camera_look` | Turns a pan/tilt camera left, right, up or down (about 10°, 30° or 60°; less for up and down), back home, or to a preset by name, then takes a picture. |
+| `camera_listen` | Records up to 30 seconds of sound, transcribes it on this computer and says how loud it was; the clip isn't kept. |
+| `camera_look` | Turns a pan/tilt camera left, right, up or down (about 10°, 30° or 60°), back home, or to a preset by name, then takes a picture. |
+| `camera_look_around` | Sweeps a pan/tilt camera from its far left to its far right, taking up to 6 pictures, then points it home. |
 | `camera_log` | Searches the ambient log (see the `camera-log` page). |
 
-Ask "what's on the kitchen counter?", "what's being said in the kitchen?" or "turn the kitchen camera left and look at the door", and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.
+Ask "what's on the kitchen counter?", "look around the kitchen" or "turn the kitchen camera left", and name the camera. A camera set to Ask shows a prompt each time: **Allow** lets this one use go ahead, **Deny** takes nothing. Stopping the turn counts as Deny. A camera badge in the header names each camera while it's in use; click it to open Settings → Cameras.
 
-The tools only appear when you have a camera and the chat model is the local one or a trusted server (see below). With OpenRouter or any other server they aren't offered, and a call is refused. They don't appear in the Code or Shell tabs, or in lean mode.
+The tools only appear when you have a camera and the chat model is local or a trusted server (see below); otherwise they aren't offered, and a call is refused. They don't appear in the Code or Shell tabs, or in lean mode.
 
 Jobs never ask: a job can only use cameras set to Allow, and is refused an Ask camera. A Camera digest job summarises the log on a schedule (see the `camera-log` page).
 

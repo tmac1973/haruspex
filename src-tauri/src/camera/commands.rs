@@ -136,8 +136,13 @@ pub async fn camera_onvif_presets(config: CameraConfig) -> Result<Vec<OnvifPrese
 
 /// Turn the camera, or send it to a preset, and wait for it to settle.
 #[tauri::command]
-pub async fn camera_aim(config: CameraConfig, aim: Aim) -> Result<CameraAimResult, String> {
-    aim::aim(&config, &aim).await
+pub async fn camera_aim(
+    config: CameraConfig,
+    aim: Aim,
+    overrides: BinaryOverrides,
+) -> Result<CameraAimResult, String> {
+    let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await.ok();
+    aim::aim(&config, &aim, ffmpeg.as_deref()).await
 }
 
 /// Whether the USB webcam at `device` can pan or tilt over UVC. Always false

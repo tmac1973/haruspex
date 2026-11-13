@@ -13,9 +13,13 @@ import {
 	DIRECTION_OR_PRESET,
 	describeAim,
 	describeHeard,
+	describeSweep,
 	listenSeconds,
-	parseAim
+	parseAim,
+	runSweep,
+	SWEEP_MAX_TURNS
 } from '#lib/agent/tools/camera.ts';
+import type { Aim } from '#lib/ipc/gen/Aim.ts';
 import { ASK_IN_JOB, NOT_LOCAL, NO_CAMERAS } from '#lib/agent/tools/_cameraGate.ts';
 import { executeTool, getToolSchemas, type ToolSchemaOpts } from '#lib/agent/tools/registry.ts';
 import { defaultWatcherConfig, updateSettings } from '#lib/stores/settings.ts';
@@ -339,7 +343,8 @@ describe('camera_look', () => {
 		]);
 		expect(invoke).toHaveBeenCalledWith('camera_aim', {
 			config: expect.objectContaining({ id: 'cam-1' }),
-			aim: { direction: 'left', amount: 'medium' }
+			aim: { direction: 'left', amount: 'medium' },
+			overrides: expect.anything()
 		});
 		expect(ctx.pendingImages).toHaveLength(1);
 		expect(out.thumbDataUrl).toBe(FRAME);
@@ -350,7 +355,8 @@ describe('camera_look', () => {
 		await executeTool('camera_look', { camera: 'Kitchen', preset: 'Door' }, chat());
 		expect(invoke).toHaveBeenCalledWith('camera_aim', {
 			config: expect.anything(),
-			aim: { preset: 'Door' }
+			aim: { preset: 'Door' },
+			overrides: expect.anything()
 		});
 	});
 
@@ -442,6 +448,9 @@ describe('camera_look', () => {
 		);
 		expect(describeAim('Desk', { direction: 'up', amount: 'large' }, true)).toBe(
 			'Turned Desk up about 40°, as far as it goes that way'
+		);
+		expect(describeAim('Desk', { direction: 'right', amount: 'large' }, true, true)).toBe(
+			"Tried to turn Desk right, but its picture didn't change: it is already as far as it goes that way"
 		);
 	});
 
@@ -606,5 +615,58 @@ describe('camera_log', () => {
 		const out = await executeTool('camera_log', {}, chat({ backend: OPENROUTER }));
 		expect(error(out.result)).toBe(NOT_LOCAL);
 		expect(calls).toEqual([]);
+	});
+});
+
+/** A camera with `left` large turns to its left end and `right` to its right end from home. */
+function fakeCamera(left: number, right: number) {
+	let pos = 0;
+	const moves: string[] = [];
+	const aim = async (a: Aim) => {
+		const dir = 'direction' in a ? a.direction : 'preset';
+		moves.push(dir);
+		if (dir === 'home') pos = 0;
+		const step = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+		const next = Math.max(-left, Math.min(right, pos + step));
+		const unmoved = step !== 0 && next === pos;
+		pos = next;
+		return { atLimit: unmoved, unmoved };
+	};
+	const take = async () => `frame@${pos}`;
+	return { aim, take, moves };
+}
+
+describe('looking around', () => {
+	it('goes to the far left, then steps right a picture at a time, then home', async () => {
+		const cam = fakeCamera(1, 2);
+		const sweep = await runSweep(cam.aim, cam.take, 6);
+		expect(sweep).toEqual({
+			shots: ['frame@-1', 'frame@0', 'frame@1', 'frame@2'],
+			leftEnd: true,
+			rightEnd: true
+		});
+		expect(cam.moves.at(-1)).toBe('home');
+	});
+
+	it('stops at the pictures it has room for', async () => {
+		const cam = fakeCamera(0, 9);
+		const sweep = await runSweep(cam.aim, cam.take, 3);
+		expect(sweep.shots).toEqual(['frame@0', 'frame@1', 'frame@2']);
+		expect(sweep.rightEnd).toBe(false);
+	});
+
+	it('gives up finding an end after a set number of turns', async () => {
+		const cam = fakeCamera(99, 0);
+		const sweep = await runSweep(cam.aim, cam.take, 6);
+		expect(cam.moves.filter((m) => m === 'left')).toHaveLength(SWEEP_MAX_TURNS);
+		expect(sweep.leftEnd).toBe(false);
+	});
+
+	it('tells the model the pictures run left to right', () => {
+		expect(
+			describeSweep('Kitchen', { shots: ['a', 'b'], leftEnd: true, rightEnd: true }, '10:00')
+		).toMatch(
+			/^Swept Kitchen from its far left to its far right and took 2 pictures .*1 \(leftmost\) to 2 \(rightmost\)/
+		);
 	});
 });

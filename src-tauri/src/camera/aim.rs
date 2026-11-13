@@ -54,8 +54,13 @@ pub enum AimAmount {
 #[serde(rename_all = "camelCase")]
 pub struct CameraAimResult {
     /// The camera was already at, or reached, the end of its travel that way.
-    /// Only a UVC webcam says; an ONVIF camera always reports false.
+    /// A UVC webcam says so itself; a network camera's turn counts when its
+    /// picture didn't change ([`Self::unmoved`]).
     pub at_limit: bool,
+    /// The picture was the same before and after the turn: the camera didn't
+    /// move, most likely because it was already as far as it goes that way.
+    /// Only checked on a network camera, and only when ffmpeg is at hand.
+    pub unmoved: bool,
 }
 
 /// The ONVIF speed for every move: half of the camera's fastest.
@@ -67,6 +72,9 @@ const ONVIF_MEDIUM: Duration = Duration::from_millis(1200);
 const ONVIF_LARGE: Duration = Duration::from_millis(2400);
 /// The wait after an ONVIF camera stops, before a picture is taken.
 const ONVIF_SETTLE: Duration = Duration::from_millis(1500);
+/// The wait after a preset or home move on a camera that can't say whether
+/// it is still moving: a Cinnado D1 on Thingino takes 4 to 5 s to get home.
+const ONVIF_GOTO_UNKNOWN: Duration = Duration::from_secs(5);
 /// The longest a preset or home move is waited for.
 const ONVIF_GOTO_LIMIT: Duration = Duration::from_secs(8);
 /// The wait after a UVC webcam is set.
@@ -209,12 +217,38 @@ pub(crate) fn route(config: &CameraConfig) -> Result<Route<'_>, String> {
 }
 
 /// Aim the camera and wait for it to settle.
-pub(crate) async fn aim(config: &CameraConfig, aim: &Aim) -> Result<CameraAimResult, String> {
+/// `ffmpeg`, when given, is used to check that a network camera's turn moved
+/// its picture: a camera on Thingino can't say where it points.
+pub(crate) async fn aim(
+    config: &CameraConfig,
+    aim: &Aim,
+    ffmpeg: Option<&str>,
+) -> Result<CameraAimResult, String> {
     // The camera's own turning isn't motion in the room: its watcher ignores
     // picture changes until the move has settled.
     let now = crate::time_util::now_ms;
     super::detect::hold_motion(&config.id, now() + TURN_HOLD_MS);
-    let result = aim_routed(config, aim).await;
+    let compare = match (ffmpeg, aim) {
+        (Some(f), Aim::Move { direction, .. })
+            if *direction != AimDirection::Home && matches!(route(config), Ok(Route::Onvif(_))) =>
+        {
+            Some(f)
+        }
+        _ => None,
+    };
+    let before = match compare {
+        Some(f) => super::capture::fingerprint(f, config).await.ok(),
+        None => None,
+    };
+    let mut result = aim_routed(config, aim).await;
+    if let (Some(f), Some(before), Ok(done)) = (compare, before, result.as_mut()) {
+        if let Ok(after) = super::capture::fingerprint(f, config).await {
+            if super::capture::same_view(&before, &after) {
+                done.unmoved = true;
+                done.at_limit = true;
+            }
+        }
+    }
     super::detect::hold_motion(&config.id, now() + super::detect::AFTER_TURN_MS);
     result
 }
@@ -296,9 +330,9 @@ async fn settle_after_goto(ptz: &Ptz) {
         match ptz.status().await.map(|s| s.moving) {
             Ok(Some(true)) => tokio::time::sleep(Duration::from_millis(250)).await,
             Ok(Some(false)) => break,
-            // Unknown: wait as long as a large turn takes.
+            // Unknown: wait as long as the slowest move seen takes.
             _ => {
-                tokio::time::sleep(ONVIF_LARGE).await;
+                tokio::time::sleep(ONVIF_GOTO_UNKNOWN).await;
                 break;
             }
         }

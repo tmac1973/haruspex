@@ -106,5 +106,8 @@ pub(crate) fn aim(path: &str, turn: Option<(f64, f64)>) -> Result<CameraAimResul
     if let Ok(mut m) = LAST_SET.lock() {
         m.insert(path.to_string(), (pan_at, tilt_at));
     }
-    Ok(CameraAimResult { at_limit })
+    Ok(CameraAimResult {
+        at_limit,
+        unmoved: false,
+    })
 }

@@ -6,6 +6,13 @@
 export type CameraAimResult = { 
 /**
  * The camera was already at, or reached, the end of its travel that way.
- * Only a UVC webcam says; an ONVIF camera always reports false.
+ * A UVC webcam says so itself; a network camera's turn counts when its
+ * picture didn't change ([`Self::unmoved`]).
  */
-atLimit: boolean, };
+atLimit: boolean, 
+/**
+ * The picture was the same before and after the turn: the camera didn't
+ * move, most likely because it was already as far as it goes that way.
+ * Only checked on a network camera, and only when ffmpeg is at hand.
+ */
+unmoved: boolean, };

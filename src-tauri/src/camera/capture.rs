@@ -258,6 +258,69 @@ pub async fn snapshot(ffmpeg: &str, cfg: &CameraConfig, max_width: u32) -> Resul
     .await
 }
 
+/// Width and height of a [`fingerprint`].
+pub(crate) const FINGERPRINT_W: usize = 64;
+pub(crate) const FINGERPRINT_H: usize = 36;
+
+/// A tiny greyscale copy of a network camera's picture, from its substream
+/// when it has one: enough to tell whether the view changed, cheap to grab.
+pub(crate) async fn fingerprint(ffmpeg: &str, cfg: &CameraConfig) -> Result<Vec<u8>, String> {
+    let CameraSource::Rtsp {
+        url, substream_url, ..
+    } = &cfg.source
+    else {
+        return Err("Only a network camera's picture is compared.".into());
+    };
+    let creds = Credentials::for_source(&cfg.source).await?;
+    let stream = substream_url
+        .as_deref()
+        .filter(|u| !u.is_empty())
+        .unwrap_or(url);
+    let mut args = strings(&["-nostdin"]);
+    args.extend(rtsp_input(&creds.inject(stream)));
+    args.extend(strings(&[
+        "-frames:v",
+        "1",
+        "-vf",
+        &format!("scale={FINGERPRINT_W}:{FINGERPRINT_H},format=gray"),
+        "-f",
+        "rawvideo",
+        "-",
+    ]));
+    let raw = run(ffmpeg, &args, GRAB_TIMEOUT, &creds, "Taking a picture").await?;
+    if raw.len() != FINGERPRINT_W * FINGERPRINT_H {
+        return Err("The picture came back the wrong size.".into());
+    }
+    Ok(raw)
+}
+
+/// Whether two [`fingerprint`]s show the same view. Correlation rather than
+/// a plain difference, so the camera adjusting its exposure between them
+/// doesn't count as a change. On a Cinnado D1 a turn that hit the end of its
+/// travel scored 0.975 or more, every real turn 0.38 or less.
+pub(crate) fn same_view(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() || a.is_empty() {
+        return false;
+    }
+    let n = a.len() as f64;
+    let mean = |v: &[u8]| v.iter().map(|&x| f64::from(x)).sum::<f64>() / n;
+    let (ma, mb) = (mean(a), mean(b));
+    let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
+    for (&x, &y) in a.iter().zip(b) {
+        let (dx, dy) = (f64::from(x) - ma, f64::from(y) - mb);
+        cov += dx * dy;
+        va += dx * dx;
+        vb += dy * dy;
+    }
+    if va == 0.0 || vb == 0.0 {
+        // A flat picture (a lens cap, a blank wall): same only if equally bright.
+        return (ma - mb).abs() < 4.0;
+    }
+    cov / (va * vb).sqrt() >= SAME_VIEW
+}
+
+const SAME_VIEW: f64 = 0.95;
+
 /// `seconds` (at most [`MAX_LISTEN_SECS`]) of the camera's sound, as 16 kHz
 /// mono WAV with its sizes filled in.
 pub async fn record_audio(
@@ -377,6 +440,26 @@ pub(crate) fn level_db(wav: &[u8]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_is_the_same_through_an_exposure_change_and_not_after_a_turn() {
+        let n = FINGERPRINT_W * FINGERPRINT_H;
+        let scene: Vec<u8> = (0..n).map(|i| ((i * 37) % 200) as u8).collect();
+        // The same picture a little brighter: the camera adjusted its exposure.
+        let brighter: Vec<u8> = scene.iter().map(|&x| x.saturating_add(30)).collect();
+        assert!(same_view(&scene, &brighter));
+        // The picture shifted a quarter of the way across: the camera turned.
+        let turned: Vec<u8> = (0..n)
+            .map(|i| {
+                scene
+                    [(i / FINGERPRINT_W) * FINGERPRINT_W + (i % FINGERPRINT_W + 16) % FINGERPRINT_W]
+            })
+            .collect();
+        assert!(!same_view(&scene, &turned));
+        assert!(same_view(&[9; 4], &[10; 4]));
+        assert!(!same_view(&[9; 4], &[90; 4]));
+        assert!(!same_view(&scene, &scene[1..]));
+    }
     use crate::camera::{CameraPermission, PtzKind, WatcherConfig};
     use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
 

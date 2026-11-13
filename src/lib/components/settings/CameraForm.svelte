@@ -364,7 +364,8 @@
 			const config = await testCamera();
 			await invoke<CameraAimResult>('camera_aim', {
 				config,
-				aim: { direction, amount: 'small' }
+				aim: { direction, amount: 'small' },
+				overrides: videoOverrides()
 			});
 			frame = await invoke<string>('camera_snapshot', { config, overrides: videoOverrides() });
 		} catch (e) {
