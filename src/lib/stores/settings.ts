@@ -4,6 +4,7 @@
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { createSubscriber } from 'svelte/reactivity';
 import { clampInt } from '#lib/utils/clampInt.ts';
+import type { FfmpegChoice } from '#lib/ipc/gen/FfmpegChoice.ts';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
@@ -433,6 +434,20 @@ export function seedGenerationServers(s: Partial<AppSettings>): GenerationServer
 }
 
 /** An address as the saved list compares it: trimmed, without a trailing slash. */
+const FFMPEG_CHOICES: readonly FfmpegChoice[] = ['auto', 'bundled', 'system', 'custom'];
+
+/**
+ * The stored ffmpeg choice. Settings from before there was one keep the paths
+ * they set: those were tried first then, which is what Custom does now.
+ */
+function storedFfmpegChoice(rest: Record<string, unknown>): FfmpegChoice {
+	if (FFMPEG_CHOICES.includes(rest.videoFfmpegChoice as FfmpegChoice)) {
+		return rest.videoFfmpegChoice as FfmpegChoice;
+	}
+	const set = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+	return set(rest.videoFfmpegPath) || set(rest.videoFfprobePath) ? 'custom' : 'auto';
+}
+
 export function normalizeServerUrl(url: string): string {
 	return url.trim().replace(/\/+$/, '');
 }
@@ -972,8 +987,15 @@ export interface AppSettings {
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
-	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. Empty (the
-	 * default) means find it: PATH, then inside a Kdenlive install.
+	 * Which ffmpeg and ffprobe Settings → Video editing uses: automatic (the
+	 * bundled pair, then the system's, then Kdenlive's), only the bundled pair,
+	 * only the system's, or the two paths below.
+	 */
+	videoFfmpegChoice: FfmpegChoice;
+	/**
+	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. The
+	 * ffmpeg and ffprobe paths count only with `videoFfmpegChoice` custom. An
+	 * empty melt path means find it: PATH, then inside a Kdenlive install.
 	 */
 	videoFfmpegPath: string;
 	videoFfprobePath: string;
@@ -1298,6 +1320,7 @@ const defaults: AppSettings = {
 	codeHelpers: {},
 	codeHelperConfig: {},
 	videoEditingEnabled: false,
+	videoFfmpegChoice: 'auto',
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -1508,6 +1531,7 @@ function load(): AppSettings {
 				codeHelpers: booleanRecord(rest.codeHelpers),
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				cameras: storedCameras(rest.cameras),
+				videoFfmpegChoice: storedFfmpegChoice(rest),
 				cameraTrustedServers: Array.isArray(rest.cameraTrustedServers)
 					? rest.cameraTrustedServers.filter((u: unknown) => typeof u === 'string')
 					: [],

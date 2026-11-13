@@ -651,6 +651,16 @@ describe('load-time reasoning-effort default', () => {
 		expect(fresh.getSettings().reasoningEffort).toBe('medium');
 	});
 
+	it('keeps an ffmpeg path set before there was a choice of ffmpeg', async () => {
+		expect((await loadWith({})).videoFfmpegChoice).toBe('auto');
+		expect((await loadWith({ videoFfmpegPath: '/opt/ffmpeg' })).videoFfmpegChoice).toBe('custom');
+		expect(
+			(await loadWith({ videoFfmpegPath: '/opt/ffmpeg', videoFfmpegChoice: 'bundled' }))
+				.videoFfmpegChoice
+		).toBe('bundled');
+		expect((await loadWith({ videoFfmpegChoice: 'nonsense' })).videoFfmpegChoice).toBe('auto');
+	});
+
 	it('turns repo trust stored as true/false into records', async () => {
 		const s = await loadWith({
 			skills: {

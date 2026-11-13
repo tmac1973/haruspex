@@ -11,7 +11,7 @@ The assistant can look at the clips for a video in Chat or the Code tab. It uses
 
 Install Kdenlive for melt. On Linux, use your distribution's package: the Flatpak's melt can't be run from outside it. Fedora's `mlt-melt` and `melt-7` are found too.
 
-Open Settings → Video editing. **Programs** shows each one with its version and where it was found: **set here**, **bundled**, **PATH** or **Kdenlive**, tried in that order. If one says **Not found**, type its path or click **Browse…**, then **Check again**.
+Open Settings → Video editing. **Programs** shows each one with its version and where it was found. **Use** picks ffmpeg and ffprobe: **Automatic** (bundled, then PATH, then Kdenlive), **Bundled with Haruspex**, **System**, or **Custom paths**. If melt or a custom ffmpeg says **Not found**, type its path or click **Browse…**.
 
 Then turn on **Let the assistant edit videos** under **Video tools**.
 

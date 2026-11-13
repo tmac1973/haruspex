@@ -19,6 +19,7 @@ vi.mock('#lib/video/youtube.ts', () => ({
 
 const settings = vi.hoisted(() => ({
 	videoEditingEnabled: false,
+	videoFfmpegChoice: 'auto',
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -118,6 +119,22 @@ describe('VideoEditingSection', () => {
 		expect(
 			vi.mocked(invoke).mock.calls.filter(([c]) => c === 'video_binaries_status')
 		).toHaveLength(2);
+	});
+
+	it('picks which ffmpeg to use, with paths only for a custom one', async () => {
+		render(VideoEditingSection);
+		await screen.findByText('melt 7.1 (Kdenlive)');
+		expect(screen.queryByLabelText('ffmpeg:')).toBeNull();
+		screen.getByLabelText('melt:');
+		const use = screen.getByLabelText('Use:') as HTMLSelectElement;
+		await fireEvent.change(use, { target: { value: 'custom' } });
+		expect(updateSettings).toHaveBeenCalledWith({ videoFfmpegChoice: 'custom' });
+		screen.getByLabelText('ffmpeg:');
+		screen.getByLabelText('ffprobe:');
+		await fireEvent.change(use, { target: { value: 'bundled' } });
+		expect(updateSettings).toHaveBeenCalledWith({ videoFfmpegChoice: 'bundled' });
+		expect(screen.queryByLabelText('ffmpeg:')).toBeNull();
+		settings.videoFfmpegChoice = 'auto';
 	});
 
 	it('offers the encoders that passed their test and saves the choice', async () => {

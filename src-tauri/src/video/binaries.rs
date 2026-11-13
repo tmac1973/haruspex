@@ -57,7 +57,9 @@ impl Tool {
     }
 }
 
-/// The paths set in Settings → Video editing. Empty means "find it".
+/// The choices in Settings → Video editing: which ffmpeg (and ffprobe with
+/// it), and the paths set for Custom and for melt. An empty melt path means
+/// "find it".
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase", default)]
@@ -65,6 +67,23 @@ pub struct BinaryOverrides {
     pub ffmpeg: String,
     pub ffprobe: String,
     pub melt: String,
+    pub ffmpeg_choice: FfmpegChoice,
+}
+
+/// Which ffmpeg and ffprobe to use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum FfmpegChoice {
+    /// The bundled pair, then the system's (PATH), then Kdenlive's.
+    #[default]
+    Auto,
+    /// Only the pair that ships with Haruspex.
+    Bundled,
+    /// The system's (PATH), then Kdenlive's; never the bundled pair.
+    System,
+    /// The paths set in Settings → Video editing, and nothing else.
+    Custom,
 }
 
 impl BinaryOverrides {
@@ -257,13 +276,26 @@ fn candidates_with(
     overrides: &BinaryOverrides,
     bundled: Option<PathBuf>,
 ) -> Vec<(PathBuf, BinarySource)> {
+    // melt isn't bundled, so its path is the only choice it has.
+    let choice = match tool {
+        Tool::Melt => None,
+        Tool::Ffmpeg | Tool::Ffprobe => Some(overrides.ffmpeg_choice),
+    };
     let mut out = Vec::new();
     let set = overrides.get(tool).trim();
-    if !set.is_empty() {
+    if !set.is_empty() && matches!(choice, None | Some(FfmpegChoice::Custom)) {
         out.push((PathBuf::from(set), BinarySource::Override));
     }
-    if let Some(p) = bundled {
-        out.push((p, BinarySource::Bundled));
+    if choice == Some(FfmpegChoice::Custom) {
+        return out;
+    }
+    if matches!(choice, Some(FfmpegChoice::Auto | FfmpegChoice::Bundled)) {
+        if let Some(p) = bundled {
+            out.push((p, BinarySource::Bundled));
+        }
+    }
+    if choice == Some(FfmpegChoice::Bundled) {
+        return out;
     }
     if let Some(p) = which_any(&path_dirs(), tool.file_names()) {
         out.push((p, BinarySource::Path));
@@ -310,18 +342,17 @@ async fn first_that_runs(
     None
 }
 
-/// An ffmpeg to ask which hardware encoders melt can open: the first that
-/// runs, passing over the bundled one. Our LGPL build has no hardware
-/// encoders, so it would turn every one down; an ffmpeg from the system or
-/// Kdenlive is built like melt's own.
+/// An ffmpeg to ask which hardware encoders melt can open: the one chosen in
+/// Settings → Video editing. The bundled build has the hardware encoders melt
+/// is tried with (see `scripts/build-ffmpeg.sh`).
 pub async fn hardware_probe_ffmpeg(overrides: &BinaryOverrides) -> Option<String> {
-    let list = candidates(Tool::Ffmpeg, overrides)
-        .into_iter()
-        .filter(|(_, source)| *source != BinarySource::Bundled)
-        .collect();
-    first_that_runs(Tool::Ffmpeg, list, &mut Vec::new())
-        .await
-        .map(|found| found.path)
+    first_that_runs(
+        Tool::Ffmpeg,
+        candidates(Tool::Ffmpeg, overrides),
+        &mut Vec::new(),
+    )
+    .await
+    .map(|found| found.path)
 }
 
 /// One tool's path, found the same way as [`resolve`] without looking for the
@@ -452,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bundled_copy_comes_after_the_override_and_before_path() {
+    fn automatic_tries_the_bundled_copy_before_path_and_ignores_a_path_set() {
         let dir = temp_dir("bundled_order");
         let set = make_exe(&dir, "my-ffmpeg", "");
         let ours = make_exe(&dir, "haruspex-ffmpeg", "");
@@ -461,10 +492,9 @@ mod tests {
             ..Default::default()
         };
         let list = candidates_with(Tool::Ffmpeg, &overrides, Some(ours.clone()));
-        assert_eq!(list[0], (set, BinarySource::Override));
-        assert_eq!(list[1], (ours, BinarySource::Bundled));
+        assert_eq!(list[0], (ours, BinarySource::Bundled));
         let sources: Vec<_> = list.iter().map(|(_, s)| *s).collect();
-        let after: Vec<_> = sources[2..].to_vec();
+        let after: Vec<_> = sources[1..].to_vec();
         assert!(
             after
                 .iter()
@@ -520,6 +550,36 @@ mod tests {
         assert_eq!(version_of(&err).await.as_deref(), Some("melt 7.42.0"));
         let fails = make_exe(&dir, "broken", "#!/bin/sh\nexit 1\n");
         assert_eq!(version_of(&fails).await, None);
+    }
+
+    #[test]
+    fn each_ffmpeg_choice_keeps_to_its_own_copies() {
+        let dir = temp_dir("ffmpeg_choice");
+        let set = make_exe(&dir, "my-ffmpeg", "");
+        let ours = make_exe(&dir, "haruspex-ffmpeg", "");
+        let with = |choice| BinaryOverrides {
+            ffmpeg: set.to_string_lossy().into_owned(),
+            ffmpeg_choice: choice,
+            ..Default::default()
+        };
+        let sources = |choice| -> Vec<BinarySource> {
+            candidates_with(Tool::Ffmpeg, &with(choice), Some(ours.clone()))
+                .into_iter()
+                .map(|(_, s)| s)
+                .collect()
+        };
+        assert_eq!(sources(FfmpegChoice::Custom), vec![BinarySource::Override]);
+        assert_eq!(sources(FfmpegChoice::Bundled), vec![BinarySource::Bundled]);
+        assert!(sources(FfmpegChoice::System)
+            .iter()
+            .all(|s| matches!(s, BinarySource::Path | BinarySource::Kdenlive)));
+        // melt keeps its own path whatever ffmpeg is chosen.
+        let melt = BinaryOverrides {
+            melt: set.to_string_lossy().into_owned(),
+            ffmpeg_choice: FfmpegChoice::Bundled,
+            ..Default::default()
+        };
+        assert_eq!(candidates(Tool::Melt, &melt)[0].1, BinarySource::Override);
     }
 
     #[cfg(unix)]

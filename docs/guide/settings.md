@@ -177,7 +177,7 @@ See the `video-generation` page.
 
 ## Video editing
 
-- **Let the assistant edit videos**: off. **ffmpeg**, **ffprobe**, **melt**: found or set.
+- **Let the assistant edit videos**: off. **Use**: Automatic. **melt**: found or set.
 - **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
 
 See the `video-editing` and `video-render` pages.
