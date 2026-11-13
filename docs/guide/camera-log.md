@@ -11,7 +11,7 @@ A camera's ambient log writes an entry each time something moves or someone spea
 
 1. Go to Settings → Cameras and click **Edit** on the camera.
 2. Turn on **Log motion and speech**.
-3. Optionally set **Active hours**, such as 08:00 to 18:30. Leave both empty to log all day; an end before the start runs past midnight.
+3. **Active hours** is **All day**, or pick **Between** and set two times, such as 08:00 and 18:30. An end before the start runs past midnight.
 4. Set **Motion** (Low, Medium or High: how much of the picture must change) and **Sound** (how loud it must be, -35 dB by default; lower catches quieter speech, and more noise).
 5. Click **Save**. Watching starts within a few seconds.
 

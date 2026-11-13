@@ -5,9 +5,43 @@
 //! line for every [`LEVEL_FRAME_MS`] of sound. [`Detector`] turns those into
 //! events: open on the first trigger, extend while triggers continue, close
 //! after a quiet spell or at a maximum length, then ignore triggers for a
-//! cooldown.
+//! cooldown. While the camera is being turned ([`hold_motion`]) its picture
+//! changes are not motion: the room didn't move, the camera did.
+
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
 use super::MotionSensitivity;
+
+/// Picture changes are ignored for this long after the camera stops turning,
+/// while the scene filter catches up with the new view.
+pub(crate) const AFTER_TURN_MS: i64 = 4_000;
+
+/// Until when (epoch ms) each camera's picture changes are ignored, by id.
+static HELD: LazyLock<Mutex<HashMap<String, i64>>> = LazyLock::new(Default::default);
+
+fn held() -> std::sync::MutexGuard<'static, HashMap<String, i64>> {
+    HELD.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Ignore the camera's picture changes until `until` (epoch ms), replacing any
+/// earlier hold.
+pub(crate) fn hold_motion(camera_id: &str, until: i64) {
+    held().insert(camera_id.to_string(), until);
+}
+
+/// Whether the camera's picture changes are being ignored at `now`.
+pub(crate) fn motion_held(camera_id: &str, now: i64) -> bool {
+    let mut map = held();
+    match map.get(camera_id) {
+        Some(&until) if now < until => true,
+        Some(_) => {
+            map.remove(camera_id);
+            false
+        }
+        None => false,
+    }
+}
 
 /// How much sound each level line covers: the watcher resamples to 16 kHz and
 /// cuts it into frames of 1600 samples.
@@ -328,6 +362,14 @@ mod tests {
         let mut idle = detector();
         assert_eq!(idle.close(5), None);
         assert_eq!(idle.tick(5), Step::Nothing);
+    }
+
+    #[test]
+    fn a_hold_ignores_motion_until_it_ends() {
+        hold_motion("held-cam", 1_000);
+        assert!(motion_held("held-cam", 999));
+        assert!(!motion_held("held-cam", 1_000));
+        assert!(!motion_held("other-cam", 0));
     }
 
     #[test]

@@ -32,7 +32,7 @@ import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 export const CAPTION_PROMPT =
-	"Describe what is happening in this camera frame in one sentence. Mention people, animals and anything that changed. Don't guess identities.";
+	"Describe this camera frame in one sentence: who or what is in it and what they are doing. Mention people and animals; if there are none, say what the scene shows. Don't guess identities.";
 /** Room for one sentence. */
 export const CAPTION_TOKENS = 80;
 /** Events read per batch. */

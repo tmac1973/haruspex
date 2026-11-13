@@ -14,7 +14,7 @@
 //! past the retention window. Watchers run only while the app is open.
 
 use super::capture::{self, Platform};
-use super::detect::{self, Closed, Detector, Step, Timings, Trigger};
+use super::detect::{self, Closed, Detector, Reading, Step, Timings, Trigger};
 use super::{shared, ActiveHours, CameraConfig, CameraSource, Credentials};
 use crate::db::{Database, NewCameraEvent};
 use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
@@ -473,7 +473,13 @@ pub(crate) async fn run_once(
                             seen = true;
                             healthy();
                         }
-                        detector.reading(reading, now())
+                        let turning = matches!(reading, Reading::Scene(_))
+                            && detect::motion_held(&spec.camera_id, now());
+                        if turning {
+                            detector.tick(now())
+                        } else {
+                            detector.reading(reading, now())
+                        }
                     }
                     None => Step::Nothing,
                 },

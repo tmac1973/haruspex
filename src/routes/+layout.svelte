@@ -843,6 +843,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 16px;
 		padding: 9px 16px;
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-primary);
@@ -852,6 +853,8 @@
 		font-size: 1.1rem;
 		margin: 0;
 		font-weight: 600;
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	.version {

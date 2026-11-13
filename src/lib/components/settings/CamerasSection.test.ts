@@ -294,8 +294,13 @@ describe('the ambient log', () => {
 		expect(screen.queryByLabelText(/^Motion$/)).toBeNull();
 
 		await fireEvent.click(screen.getByLabelText('Log motion and speech'));
+		// All day until Between is picked: no time boxes, which WebKitGTK draws as a time.
+		expect(screen.queryByLabelText(/^From$/)).toBeNull();
+		const hours = input(/^Active hours$/) as unknown as HTMLSelectElement;
+		hours.selectedIndex = 1;
+		await fireEvent.change(hours);
 		await fireEvent.input(input(/^From$/), { target: { value: '08:00' } });
-		await screen.findByText('Set both times, or neither to log all day.');
+		await screen.findByText('Set both times.');
 		expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(true);
 		await fireEvent.input(input(/^To$/), { target: { value: '18:30' } });
 		await fireEvent.change(input(/^Motion$/), { target: { value: 'high' } });

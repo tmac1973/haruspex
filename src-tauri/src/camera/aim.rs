@@ -210,6 +210,19 @@ pub(crate) fn route(config: &CameraConfig) -> Result<Route<'_>, String> {
 
 /// Aim the camera and wait for it to settle.
 pub(crate) async fn aim(config: &CameraConfig, aim: &Aim) -> Result<CameraAimResult, String> {
+    // The camera's own turning isn't motion in the room: its watcher ignores
+    // picture changes until the move has settled.
+    let now = crate::time_util::now_ms;
+    super::detect::hold_motion(&config.id, now() + TURN_HOLD_MS);
+    let result = aim_routed(config, aim).await;
+    super::detect::hold_motion(&config.id, now() + super::detect::AFTER_TURN_MS);
+    result
+}
+
+/// Longer than any move takes, in case one never returns.
+const TURN_HOLD_MS: i64 = 60_000;
+
+async fn aim_routed(config: &CameraConfig, aim: &Aim) -> Result<CameraAimResult, String> {
     match route(config)? {
         Route::Onvif(endpoint) => {
             let creds = Credentials::for_source(&config.source).await?;

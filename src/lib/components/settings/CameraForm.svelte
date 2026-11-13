@@ -12,6 +12,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { onDestroy } from 'svelte';
 	import { redactCameraError, splitUrlCredentials } from '#lib/camera/credentials.ts';
+	import { onvifAddressFor } from '#lib/camera/onvif.ts';
 	import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 	import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
 	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
@@ -63,6 +64,8 @@
 	let watchOn = $state(start.watcher.enabled);
 	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
 	let hoursEnd = $state(start.watcher.activeHours?.end ?? '');
+	/** WebKitGTK draws an empty time box as a time, so the boxes show only for "Between". */
+	let hoursLimited = $state(!!start.watcher.activeHours);
 	let sensitivity = $state<MotionSensitivity>(start.watcher.motionSensitivity);
 	let soundDb = $state(start.watcher.soundThresholdDb);
 
@@ -101,7 +104,7 @@
 	});
 
 	const hoursError = $derived(
-		watchOn && !hoursStart !== !hoursEnd ? 'Set both times, or neither to log all day.' : ''
+		watchOn && hoursLimited && !(hoursStart && hoursEnd) ? 'Set both times.' : ''
 	);
 
 	$effect(() => {
@@ -186,7 +189,8 @@
 			permission,
 			watcher: {
 				enabled: watchOn,
-				activeHours: hoursStart && hoursEnd ? { start: hoursStart, end: hoursEnd } : null,
+				activeHours:
+					hoursLimited && hoursStart && hoursEnd ? { start: hoursStart, end: hoursEnd } : null,
 				motionSensitivity: sensitivity,
 				soundThresholdDb: soundDb
 			},
@@ -229,9 +233,16 @@
 		if (!name.trim() && c.name) name = c.name;
 	}
 
-	/** Sign in to the picked camera and fill in its streams and pan/tilt. */
+	/**
+	 * The ONVIF service to sign in to: the camera picked from Find cameras, or
+	 * else the one at the RTSP address's host, for a camera that doesn't answer.
+	 */
+	const connectTo = $derived(picked?.xaddr ?? (kind === 'rtsp' ? onvifAddressFor(url) : null));
+
+	/** Sign in over ONVIF and fill in the camera's streams and pan/tilt. */
 	async function connectFound() {
-		if (!picked) return;
+		const xaddr = connectTo;
+		if (!xaddr) return;
 		if (!password && passwordSaved) {
 			onvifError = 'Type the password again to connect.';
 			return;
@@ -241,13 +252,13 @@
 		const typed = password;
 		try {
 			const got = await invoke<OnvifConnection>('camera_onvif_connect', {
-				xaddr: picked.xaddr,
+				xaddr,
 				username: username.trim(),
 				password
 			});
 			url = got.mainUrl;
 			substreamUrl = got.subUrl === got.mainUrl ? '' : got.subUrl;
-			onvif = { xaddr: picked.xaddr, profileToken: got.profileToken, presets: got.presets };
+			onvif = { xaddr, profileToken: got.profileToken, presets: got.presets };
 			ptz = got.hasPtz ? 'onvif' : 'none';
 			found = null;
 			picked = null;
@@ -432,12 +443,16 @@
 			{/if}
 			{#if picked}
 				<p class="help">Enter its user name and password below, then connect.</p>
+			{/if}
+			{#if connectTo}
 				<button
 					type="button"
 					class="btn btn-small"
 					onclick={connectFound}
 					disabled={connecting}
-					title="Signs in over ONVIF and fills in the stream addresses and pan/tilt."
+					title={picked
+						? 'Signs in over ONVIF and fills in the stream addresses and pan/tilt.'
+						: 'Signs in over ONVIF at the RTSP address, for a camera Find cameras missed, and fills in pan/tilt.'}
 				>
 					{connecting ? 'Connecting…' : 'Connect'}
 				</button>
@@ -484,7 +499,7 @@
 			<select
 				id="cam-ptz-{start.id}"
 				bind:value={ptz}
-				title="ONVIF lets the assistant turn the camera. It needs the camera found with Find cameras."
+				title="ONVIF lets the assistant turn the camera. Click Connect above first."
 			>
 				<option value="none">None</option>
 				<option value="onvif" disabled={!onvif}>ONVIF</option>
@@ -577,15 +592,19 @@
 		<label for="cam-from-{start.id}">Active hours</label>
 		<div>
 			<div class="hours">
-				<input
+				<select
 					id="cam-from-{start.id}"
-					type="time"
-					bind:value={hoursStart}
-					aria-label="From"
-					title="Leave both empty to log all day. An end before the start runs past midnight."
-				/>
-				<span>to</span>
-				<input id="cam-to-{start.id}" type="time" bind:value={hoursEnd} aria-label="To" />
+					bind:value={hoursLimited}
+					title="An end before the start runs past midnight."
+				>
+					<option value={false}>All day</option>
+					<option value={true}>Between</option>
+				</select>
+				{#if hoursLimited}
+					<input type="time" bind:value={hoursStart} aria-label="From" />
+					<span>and</span>
+					<input type="time" bind:value={hoursEnd} aria-label="To" />
+				{/if}
 			</div>
 			{#if hoursError}<p class="error">{hoursError}</p>{/if}
 		</div>
@@ -711,7 +730,8 @@
 		gap: 8px;
 	}
 
-	.hours input {
+	.hours input,
+	.hours select {
 		width: auto;
 	}
 

@@ -233,7 +233,7 @@ registerTool({
 		function: {
 			name: 'camera_look',
 			description:
-				"Turn one of the user's pan/tilt cameras, then take a picture so you can see where it points. Give either a direction (with an amount) or the name of a preset saved on the camera, not both. Use it when the user asks to look somewhere the camera isn't pointing.",
+				"Turn (pan or tilt) one of the user's pan/tilt cameras, then take a picture so you can see where it points. It is the only tool that moves a camera. Give either a direction (with an amount) or the name of a preset saved on the camera, not both. Use it when the user asks to look somewhere the camera isn't pointing.",
 			parameters: {
 				type: 'object',
 				properties: {
