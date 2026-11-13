@@ -17,6 +17,7 @@ describe('isTrustableServer', () => {
 		'http://localhost:8080',
 		'http://gpubox.local:8080',
 		'https://llm.home.internal/',
+		'http://compute:3000',
 		' http://192.168.0.2:8080/ '
 	])('trusts %s', (url) => {
 		expect(isTrustableServer(url)).toBe(true);

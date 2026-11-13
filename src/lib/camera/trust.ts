@@ -2,8 +2,8 @@
  * Which models may receive camera frames and sound. The local model always
  * may, OpenRouter never may, and a remote server only when the user marked it
  * as their own in Settings → Cameras — which it can only be when its address
- * is on their own network (private, loopback or link-local, or a `.local` /
- * `.internal` name).
+ * is on their own network (private, loopback or link-local, a `.local` /
+ * `.internal` name, or a name with no dot).
  */
 import type { BackendDescriptor } from '#lib/inference/descriptor.ts';
 import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
@@ -45,8 +45,9 @@ function privateIpv6(host: string): boolean {
 
 /**
  * Whether a server at `url` can be marked as the user's own: its host is
- * private, loopback or link-local, or a `.local` / `.internal` name. A public
- * address or name never can, and OpenRouter never can.
+ * private, loopback or link-local, a `.local` / `.internal` name, or a name
+ * with no dot (`compute`), which only the local network's resolver can answer.
+ * A public address or name never can, and OpenRouter never can.
  */
 export function isTrustableServer(url: string): boolean {
 	let host: string;
@@ -63,7 +64,8 @@ export function isTrustableServer(url: string): boolean {
 		host === 'localhost' ||
 		host.endsWith('.localhost') ||
 		host.endsWith('.local') ||
-		host.endsWith('.internal')
+		host.endsWith('.internal') ||
+		!host.includes('.')
 	);
 }
 

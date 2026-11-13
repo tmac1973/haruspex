@@ -59,7 +59,7 @@ The list shows each camera's setting. Click **Edit** to change it, or **Remove**
 
 Frames and sound from your cameras go to the local model. A remote model only gets them from a server you mark in the **Trusted servers** card, which lists the servers saved in Settings → Inference.
 
-Only servers on your own network can be marked: private addresses (192.168.x.x, 10.x.x.x, 172.16–31.x.x), this computer, link-local addresses, and names ending `.local` or `.internal`. A public server, and OpenRouter, can never be trusted.
+Only servers on your own network can be marked: private addresses (192.168.x.x, 10.x.x.x, 172.16–31.x.x), this computer, link-local addresses, and names ending `.local` or `.internal`, and names with no dot (such as `compute`). A public server, and OpenRouter, can never be trusted.
 
 ## Let the assistant look and listen
 
