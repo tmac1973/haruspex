@@ -36,7 +36,7 @@ fi
 # as CI uses, unless real sidecars were fetched.
 target=$(rustc --print host-tuple)
 mkdir -p src-tauri/binaries/{node-modules,libs,sd-libs,espeak-ng-data/lang/placeholder}
-for name in haruspex-{llama-server,whisper-server,koko,ruff,node,uv,sd-server}; do
+for name in haruspex-{llama-server,whisper-server,koko,ruff,node,uv,sd-server,ffmpeg,ffprobe}; do
     bin="src-tauri/binaries/${name}-${target}"
     [[ -e "$bin" ]] || { echo '#!/bin/sh' >"$bin" && chmod +x "$bin"; }
 done
