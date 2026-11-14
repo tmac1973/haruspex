@@ -51,10 +51,27 @@ pub(crate) fn rtsp_input(url: &str) -> Vec<String> {
     ])
 }
 
-/// ffmpeg's input options for a webcam's picture.
-pub(crate) fn usb_video_input(platform: Platform, device: &str) -> Vec<String> {
+/// ffmpeg's input options for a webcam's picture, at `size` in MJPEG when
+/// given (Linux only; see `usb::snapshot_size`).
+pub(crate) fn usb_video_input(
+    platform: Platform,
+    device: &str,
+    size: Option<(u32, u32)>,
+) -> Vec<String> {
     match platform {
-        Platform::Linux => strings(&["-f", "v4l2", "-i", device]),
+        Platform::Linux => match size {
+            Some((w, h)) => strings(&[
+                "-f",
+                "v4l2",
+                "-input_format",
+                "mjpeg",
+                "-video_size",
+                &format!("{w}x{h}"),
+                "-i",
+                device,
+            ]),
+            None => strings(&["-f", "v4l2", "-i", device]),
+        },
         Platform::Mac => strings(&["-f", "avfoundation", "-i", &format!("{device}:none")]),
         Platform::Windows => strings(&["-f", "dshow", "-i", &format!("video={device}")]),
     }
@@ -129,7 +146,8 @@ pub(crate) async fn video_input(cfg: &CameraConfig) -> Result<Input, String> {
     let args = match &cfg.source {
         CameraSource::Rtsp { url, .. } => rtsp_input(&creds.inject(url)),
         CameraSource::Usb { video_device, .. } => {
-            usb_video_input(Platform::current(), video_device)
+            let size = super::usb::snapshot_size(video_device);
+            usb_video_input(Platform::current(), video_device, size)
         }
     };
     Ok(Input { args, creds })
@@ -262,37 +280,49 @@ pub async fn snapshot(ffmpeg: &str, cfg: &CameraConfig, max_width: u32) -> Resul
 pub(crate) const FINGERPRINT_W: usize = 64;
 pub(crate) const FINGERPRINT_H: usize = 36;
 
-/// A tiny greyscale copy of a network camera's picture: enough to tell
-/// whether the view changed.
+/// A tiny greyscale copy of a camera's picture: enough to tell whether the
+/// view changed.
 pub(crate) async fn fingerprint(ffmpeg: &str, cfg: &CameraConfig) -> Result<Vec<u8>, String> {
     gray_frame(ffmpeg, cfg, FINGERPRINT_W, FINGERPRINT_H).await
 }
 
-/// A network camera's picture as `w` × `h` greyscale bytes, row by row. From
-/// the main stream: a D1's substream is slower to give its first frame
-/// (2.1 s against 1.35 s).
+/// Frames a webcam just opened is skipped by: it sets its exposure over them,
+/// and the first ones are dark.
+const WEBCAM_WARMUP_FRAMES: u32 = 10;
+
+/// A camera's picture as `w` × `h` greyscale bytes, row by row. A network
+/// camera's from its main stream: a D1's substream is slower to give its
+/// first frame (2.1 s against 1.35 s).
 pub(crate) async fn gray_frame(
     ffmpeg: &str,
     cfg: &CameraConfig,
     w: usize,
     h: usize,
 ) -> Result<Vec<u8>, String> {
-    let CameraSource::Rtsp { url, .. } = &cfg.source else {
-        return Err("Only a network camera's picture is compared.".into());
+    let input = video_input(cfg).await?;
+    let skip = match cfg.source {
+        CameraSource::Usb { .. } => format!("select=gte(n\\,{WEBCAM_WARMUP_FRAMES}),"),
+        CameraSource::Rtsp { .. } => String::new(),
     };
-    let creds = Credentials::for_source(&cfg.source).await?;
     let mut args = strings(&["-nostdin"]);
-    args.extend(rtsp_input(&creds.inject(url)));
+    args.extend(input.args);
     args.extend(strings(&[
         "-frames:v",
         "1",
         "-vf",
-        &format!("scale={w}:{h},format=gray"),
+        &format!("{skip}scale={w}:{h},format=gray"),
         "-f",
         "rawvideo",
         "-",
     ]));
-    let raw = run(ffmpeg, &args, GRAB_TIMEOUT, &creds, "Taking a picture").await?;
+    let raw = run(
+        ffmpeg,
+        &args,
+        GRAB_TIMEOUT,
+        &input.creds,
+        "Taking a picture",
+    )
+    .await?;
     if raw.len() != w * h {
         return Err("The picture came back the wrong size.".into());
     }
@@ -574,15 +604,28 @@ mod tests {
     #[test]
     fn usb_inputs_per_platform() {
         assert_eq!(
-            usb_video_input(Platform::Linux, "/dev/video0"),
+            usb_video_input(Platform::Linux, "/dev/video0", None),
             ["-f", "v4l2", "-i", "/dev/video0"]
         );
         assert_eq!(
-            usb_video_input(Platform::Mac, "FaceTime HD Camera"),
+            usb_video_input(Platform::Linux, "/dev/video0", Some((1920, 1080))),
+            [
+                "-f",
+                "v4l2",
+                "-input_format",
+                "mjpeg",
+                "-video_size",
+                "1920x1080",
+                "-i",
+                "/dev/video0"
+            ]
+        );
+        assert_eq!(
+            usb_video_input(Platform::Mac, "FaceTime HD Camera", None),
             ["-f", "avfoundation", "-i", "FaceTime HD Camera:none"]
         );
         assert_eq!(
-            usb_video_input(Platform::Windows, "Integrated Camera"),
+            usb_video_input(Platform::Windows, "Integrated Camera", None),
             ["-f", "dshow", "-i", "video=Integrated Camera"]
         );
         assert_eq!(

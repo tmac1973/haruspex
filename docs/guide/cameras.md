@@ -34,7 +34,7 @@ The password goes in the system keychain, or Haruspex's encrypted secrets file w
 
 Click **Add camera**, set **Kind** to **USB**, and pick the **Webcam**. **Microphone** picks the webcam's own microphone when one matches its name; choose another, or **None**.
 
-On Linux, a webcam that can pan and tilt (such as an OBSBOT Tiny) can set **Pan/tilt** to **Pan/tilt (UVC)**. The option is greyed out for a webcam that can't, and on macOS and Windows.
+On Linux, a webcam that can pan and tilt (such as an OBSBOT Tiny) can set **Pan/tilt** to **Pan/tilt (UVC)**. The option is greyed out for a webcam that can't, and on macOS and Windows. Some webcams, such as a Logitech BRIO, offer pan and tilt but only move within a zoomed-in picture; **Left** or **Right** then says the picture didn't change, and **Pan/tilt** is best left at **None**.
 
 ## Test a camera
 

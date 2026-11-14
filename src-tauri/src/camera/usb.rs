@@ -133,6 +133,46 @@ fn v4l_capture_devices() -> Vec<(String, String)> {
     Vec::new()
 }
 
+/// The widest picture a snapshot asks a webcam for: enough for a vision
+/// model, and a 4K webcam's MJPEG at full size is slow to decode.
+#[cfg(target_os = "linux")]
+const SNAPSHOT_MAX_WIDTH: u32 = 1920;
+
+/// The MJPEG size a snapshot asks the webcam at `path` for: its widest up to
+/// 1920 across. `None` when it offers no MJPEG, so ffmpeg picks as before
+/// (640×480 raw on many webcams, a Logitech BRIO among them).
+#[cfg(target_os = "linux")]
+pub(crate) fn snapshot_size(path: &str) -> Option<(u32, u32)> {
+    use v4l::framesize::FrameSizeEnum;
+    use v4l::video::Capture;
+    let device = v4l::Device::with_path(path).ok()?;
+    let mjpeg = v4l::FourCC::new(b"MJPG");
+    let sizes: Vec<(u32, u32)> = device
+        .enum_framesizes(mjpeg)
+        .ok()?
+        .into_iter()
+        .map(|f| match f.size {
+            FrameSizeEnum::Discrete(d) => (d.width, d.height),
+            FrameSizeEnum::Stepwise(s) => {
+                let w = s.max_width.min(SNAPSHOT_MAX_WIDTH);
+                (w, s.max_height.min(w * s.max_height / s.max_width.max(1)))
+            }
+        })
+        .collect();
+    widest_up_to(&sizes, SNAPSHOT_MAX_WIDTH)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn snapshot_size(_path: &str) -> Option<(u32, u32)> {
+    None
+}
+
+/// The widest of `sizes` no wider than `max`, the taller on a tie.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn widest_up_to(sizes: &[(u32, u32)], max: u32) -> Option<(u32, u32)> {
+    sizes.iter().copied().filter(|(w, _)| *w <= max).max()
+}
+
 /// `ffmpeg -sources pulse`: one source per line as `id [description] (note)`,
 /// the default starred. Monitors of outputs are not microphones.
 pub(crate) fn parse_pulse_sources(text: &str) -> Vec<(String, String)> {
@@ -288,6 +328,20 @@ fn pair(video: Vec<(String, String)>, audio: Vec<(String, String)>) -> UsbDevice
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_snapshot_asks_for_the_widest_size_up_to_1920() {
+        let brio = [
+            (640, 480),
+            (1920, 1080),
+            (4096, 2160),
+            (1280, 720),
+            (1920, 1200),
+        ];
+        assert_eq!(widest_up_to(&brio, 1920), Some((1920, 1200)));
+        assert_eq!(widest_up_to(&[(3840, 2160)], 1920), None);
+        assert_eq!(widest_up_to(&[], 1920), None);
+    }
 
     #[test]
     fn pulse_sources_skip_monitors() {

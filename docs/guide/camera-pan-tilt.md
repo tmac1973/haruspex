@@ -66,3 +66,4 @@ Ask "look around the kitchen". `camera_look_around` turns the camera to its far 
 - No zoom.
 - No full 360° on cameras that stop short of one.
 - No pan/tilt for USB webcams on macOS or Windows.
+- No pan/tilt on webcams that only pan within a zoomed-in picture (a Logitech BRIO, for one): Haruspex doesn't zoom.

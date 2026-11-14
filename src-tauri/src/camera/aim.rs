@@ -264,8 +264,9 @@ pub(crate) async fn aim(
         Aim::Pulses { .. } => config.calibration.is_none(),
         Aim::Preset { .. } => false,
     };
+    let webcam = matches!(route(config), Ok(Route::Uvc(_)));
     let compare = match ffmpeg {
-        Some(f) if turns && matches!(route(config), Ok(Route::Onvif(_))) => Some(f),
+        Some(f) if turns => Some(f),
         _ => None,
     };
     let before = match compare {
@@ -274,6 +275,21 @@ pub(crate) async fn aim(
     };
     let mut result = aim_routed(config, aim).await;
     match (compare, before, direction_of(aim)) {
+        (Some(f), Some(before), Some(_)) if webcam && result.is_ok() => {
+            let after = super::capture::fingerprint(f, config).await.ok();
+            let stuck = after
+                .as_ref()
+                .is_some_and(|a| super::capture::same_view(&before, a));
+            if stuck {
+                result = match result {
+                    Ok(done) if done.at_limit => Ok(CameraAimResult {
+                        unmoved: true,
+                        ..done
+                    }),
+                    _ => Err(WEBCAM_DIDNT_TURN.into()),
+                };
+            }
+        }
         (Some(f), Some(before), Some(direction)) if result.is_ok() => {
             let after = super::capture::fingerprint(f, config).await.ok();
             let stuck = after
@@ -588,6 +604,11 @@ async fn retilt_from_home(
     }
     Ok(done)
 }
+
+/// A webcam that takes a pan or tilt but whose picture stays put. Some, a
+/// Logitech BRIO among them, only pan and tilt within a zoomed-in picture.
+const WEBCAM_DIDNT_TURN: &str = "The webcam took the turn, but its picture didn't change. \
+Some webcams only pan and tilt when zoomed in; set its Pan/tilt to None in Settings → Cameras.";
 
 /// Longer than any move takes, in case one never returns.
 const TURN_HOLD_MS: i64 = 60_000;

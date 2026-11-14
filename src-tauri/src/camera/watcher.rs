@@ -127,7 +127,8 @@ impl Input {
         match self {
             Input::Rtsp { watch, .. } => (capture::rtsp_input(watch), "0:v:0", "0:a:0"),
             Input::Usb { video, audio } => {
-                let mut args = capture::usb_video_input(Platform::current(), video);
+                // ffmpeg's own default size: the watcher only needs a small picture.
+                let mut args = capture::usb_video_input(Platform::current(), video, None);
                 if let Some(audio) = audio {
                     args.extend(capture::usb_audio_input(Platform::current(), audio));
                 }
@@ -270,7 +271,8 @@ enum Recorder {
     /// A second ffmpeg on a network camera, for the picture; the sound from
     /// the watcher's segments, from `since`.
     Child {
-        child: tokio::process::Child,
+        // Boxed: a Windows process handle is several hundred bytes.
+        child: Box<tokio::process::Child>,
         jpg: PathBuf,
         since: SystemTime,
     },
@@ -323,7 +325,11 @@ impl Recorder {
         let _ = tokio::fs::remove_file(&jpg).await;
         let args = record_args(input, &jpg);
         match spawn_ffmpeg(ffmpeg, &args, true) {
-            Ok(child) => Recorder::Child { child, jpg, since },
+            Ok(child) => Recorder::Child {
+                child: Box::new(child),
+                jpg,
+                since,
+            },
             Err(e) => {
                 log::warn!("camera {}: {}", spec.camera_id, spec.creds.redact(&e));
                 Recorder::Idle
