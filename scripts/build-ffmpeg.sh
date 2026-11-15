@@ -149,6 +149,9 @@ case "$TARGET" in
             --enable-nvenc
             --enable-amf
             --enable-libvpl
+            # MSYS2's libvpl is C++ and its vpl.pc doesn't say so; -static
+            # links libstdc++ in.
+            --extra-libs=-lstdc++
         )
         HW_ENCODERS="h264_nvenc,h264_amf,h264_qsv"
         EXTRA_LDFLAGS="$EXTRA_LDFLAGS -static"
