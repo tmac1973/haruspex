@@ -94,13 +94,14 @@ pub(crate) fn usb_audio_input(platform: Platform, device: &str) -> Vec<String> {
     }
 }
 
-/// The options that turn the first input's picture into one JPEG on stdout.
-pub(crate) fn snapshot_output(max_width: u32) -> Vec<String> {
+/// The options that turn the first input's picture into one JPEG on stdout,
+/// after skipping `skip` frames.
+pub(crate) fn snapshot_output(max_width: u32, skip: u32) -> Vec<String> {
     strings(&[
         "-frames:v",
         "1",
         "-vf",
-        &format!("scale='min({max_width},iw)':-2"),
+        &format!("{}scale='min({max_width},iw)':-2", skip_frames(skip)),
         "-f",
         "image2pipe",
         "-c:v",
@@ -263,9 +264,13 @@ pub async fn snapshot(ffmpeg: &str, cfg: &CameraConfig, max_width: u32) -> Resul
         return super::shared::snapshot(&dir, max_width).await;
     }
     let input = video_input(cfg).await?;
+    let skip = match cfg.source {
+        CameraSource::Usb { .. } => WEBCAM_SETTLE_FRAMES,
+        CameraSource::Rtsp { .. } => 0,
+    };
     let mut args = strings(&["-nostdin"]);
     args.extend(input.args);
-    args.extend(snapshot_output(max_width));
+    args.extend(snapshot_output(max_width, skip));
     run(
         ffmpeg,
         &args,
@@ -286,9 +291,22 @@ pub(crate) async fn fingerprint(ffmpeg: &str, cfg: &CameraConfig) -> Result<Vec<
     gray_frame(ffmpeg, cfg, FINGERPRINT_W, FINGERPRINT_H).await
 }
 
-/// Frames a webcam just opened is skipped by: it sets its exposure over them,
-/// and the first ones are dark.
+/// Frames a webcam just opened sets its exposure over; the first come out
+/// dark. A snapshot skips them all: a Logitech BRIO settles by frame 15, a
+/// Microsoft LifeCam Studio in a dim room by about 60 (2 s), its first frame
+/// a quarter as bright. A [`fingerprint`] only compares views, so it skips
+/// fewer and keeps a turn's check quick.
+const WEBCAM_SETTLE_FRAMES: u32 = 60;
 const WEBCAM_WARMUP_FRAMES: u32 = 10;
+
+/// The filter that drops the first `n` frames, or nothing.
+fn skip_frames(n: u32) -> String {
+    if n == 0 {
+        String::new()
+    } else {
+        format!("select=gte(n\\,{n}),")
+    }
+}
 
 /// A camera's picture as `w` × `h` greyscale bytes, row by row. A network
 /// camera's from its main stream: a D1's substream is slower to give its
@@ -301,7 +319,7 @@ pub(crate) async fn gray_frame(
 ) -> Result<Vec<u8>, String> {
     let input = video_input(cfg).await?;
     let skip = match cfg.source {
-        CameraSource::Usb { .. } => format!("select=gte(n\\,{WEBCAM_WARMUP_FRAMES}),"),
+        CameraSource::Usb { .. } => skip_frames(WEBCAM_WARMUP_FRAMES),
         CameraSource::Rtsp { .. } => String::new(),
     };
     let mut args = strings(&["-nostdin"]);
@@ -659,10 +677,13 @@ mod tests {
                 "rtsp://cam/ch0"
             ]
         );
-        let out = snapshot_output(1280);
+        let out = snapshot_output(1280, 0);
         assert!(out
             .windows(2)
             .any(|w| w == ["-vf", "scale='min(1280,iw)':-2"]));
+        assert!(snapshot_output(1280, 60)
+            .windows(2)
+            .any(|w| w == ["-vf", "select=gte(n\\,60),scale='min(1280,iw)':-2"]));
         assert_eq!(out.last().map(String::as_str), Some("-"));
         let audio = audio_output(12);
         assert!(audio.windows(2).any(|w| w == ["-t", "12"]));
@@ -812,7 +833,7 @@ mod tests {
         let jpeg = run_lavfi(
             &ffmpeg,
             &["testsrc=size=1920x1080:rate=5"],
-            snapshot_output(640),
+            snapshot_output(640, 0),
         )
         .await;
         let img = image::load_from_memory(&jpeg).unwrap();
