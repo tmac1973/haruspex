@@ -5,9 +5,6 @@ name: Build ffmpeg
 # when the ffmpeg tag changes, before the next app release.
 on:
   workflow_dispatch:
-  # Temporary: a workflow can't be dispatched until it is on main.
-  push:
-    branches: [claude/llm-camera-integration-796ed3]
 
 env:
   # Keep in step with FFMPEG_TAG in scripts/build-ffmpeg.sh and fetch-ffmpeg.sh.
