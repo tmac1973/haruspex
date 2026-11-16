@@ -80,7 +80,8 @@ pub async fn list_devices(ffmpeg: Option<&str>) -> Result<UsbDevices, String> {
 /// output is given), so the exit status is ignored.
 async fn ffmpeg_listing(ffmpeg: &str, args: &[&str]) -> String {
     let mut cmd = tokio::process::Command::new(ffmpeg);
-    cmd.args(["-nostdin", "-hide_banner"])
+    // No -nostdin, which ffprobe doesn't take: stdin is closed anyway.
+    cmd.arg("-hide_banner")
         .args(args)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
@@ -135,17 +136,34 @@ fn v4l_capture_devices() -> Vec<(String, String)> {
 
 /// The widest picture a snapshot asks a webcam for: enough for a vision
 /// model, and a 4K webcam's MJPEG at full size is slow to decode.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows, test))]
 const SNAPSHOT_MAX_WIDTH: u32 = 1920;
 
-/// The MJPEG size a snapshot asks the webcam at `path` for: its widest up to
-/// 1920 across. `None` when it offers no MJPEG, so ffmpeg picks as before
-/// (640×480 raw on many webcams, a Logitech BRIO among them).
+/// The slowest frame rate a snapshot accepts: a snapshot skips its first
+/// frames while the webcam sets its exposure, and below this that takes too
+/// long.
+#[cfg(any(windows, test))]
+const SNAPSHOT_MIN_FPS: f32 = 15.0;
+
+/// The picture a snapshot asks a webcam for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SnapshotMode {
+    pub width: u32,
+    pub height: u32,
+    /// MJPEG rather than the webcam's raw picture.
+    pub mjpeg: bool,
+}
+
+/// The picture a snapshot asks the webcam `device` for: its widest up to 1920
+/// across, in MJPEG when it offers that. `None` when it offers nothing that
+/// fits, so ffmpeg picks as before (640×480 raw on many webcams, a Logitech
+/// BRIO and a Microsoft LifeCam Studio among them). `tool` is ffmpeg or
+/// ffprobe, which lists a Windows webcam's options; Linux asks the device.
 #[cfg(target_os = "linux")]
-pub(crate) fn snapshot_size(path: &str) -> Option<(u32, u32)> {
+pub(crate) async fn snapshot_mode(_tool: &str, device: &str) -> Option<SnapshotMode> {
     use v4l::framesize::FrameSizeEnum;
     use v4l::video::Capture;
-    let device = v4l::Device::with_path(path).ok()?;
+    let device = v4l::Device::with_path(device).ok()?;
     let mjpeg = v4l::FourCC::new(b"MJPG");
     let sizes: Vec<(u32, u32)> = device
         .enum_framesizes(mjpeg)
@@ -159,16 +177,87 @@ pub(crate) fn snapshot_size(path: &str) -> Option<(u32, u32)> {
             }
         })
         .collect();
-    widest_up_to(&sizes, SNAPSHOT_MAX_WIDTH)
+    let (width, height) = widest_up_to(&sizes, SNAPSHOT_MAX_WIDTH)?;
+    Some(SnapshotMode {
+        width,
+        height,
+        mjpeg: true,
+    })
 }
 
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn snapshot_size(_path: &str) -> Option<(u32, u32)> {
+#[cfg(windows)]
+pub(crate) async fn snapshot_mode(tool: &str, device: &str) -> Option<SnapshotMode> {
+    let video = format!("video={device}");
+    let text = ffmpeg_listing(
+        tool,
+        &["-f", "dshow", "-list_options", "true", "-i", &video],
+    )
+    .await;
+    pick_dshow_mode(&parse_dshow_options(&text))
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+pub(crate) async fn snapshot_mode(_tool: &str, _device: &str) -> Option<SnapshotMode> {
     None
 }
 
+/// One line of `-list_options`: a size, its fastest frame rate, and whether
+/// it is MJPEG.
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DshowOption {
+    pub width: u32,
+    pub height: u32,
+    pub max_fps: f32,
+    pub mjpeg: bool,
+}
+
+/// `ffmpeg -f dshow -list_options true`: lines like
+/// `vcodec=mjpeg  min s=1920x1080 fps=5 max s=1920x1080 fps=30` or
+/// `pixel_format=yuyv422  min s=640x480 fps=7.5 max s=640x480 fps=30`.
+#[cfg(any(windows, test))]
+pub(crate) fn parse_dshow_options(text: &str) -> Vec<DshowOption> {
+    text.lines()
+        .filter_map(|line| {
+            let mjpeg = line.contains("vcodec=mjpeg");
+            if !mjpeg && !line.contains("pixel_format=") {
+                return None;
+            }
+            let max = &line[line.find("max s=")? + "max s=".len()..];
+            let (size, rest) = max.split_once(' ')?;
+            let (w, h) = size.split_once('x')?;
+            let fps = rest.trim().strip_prefix("fps=")?;
+            Some(DshowOption {
+                width: w.parse().ok()?,
+                height: h.parse().ok()?,
+                max_fps: fps.split_whitespace().next()?.parse().ok()?,
+                mjpeg,
+            })
+        })
+        .collect()
+}
+
+/// The widest MJPEG option up to 1920 across that runs at 15 fps or more,
+/// else the widest such raw one.
+#[cfg(any(windows, test))]
+pub(crate) fn pick_dshow_mode(options: &[DshowOption]) -> Option<SnapshotMode> {
+    let widest = |mjpeg: bool| {
+        let sizes: Vec<(u32, u32)> = options
+            .iter()
+            .filter(|o| o.mjpeg == mjpeg && o.max_fps >= SNAPSHOT_MIN_FPS)
+            .map(|o| (o.width, o.height))
+            .collect();
+        widest_up_to(&sizes, SNAPSHOT_MAX_WIDTH).map(|(width, height)| SnapshotMode {
+            width,
+            height,
+            mjpeg,
+        })
+    };
+    widest(true).or_else(|| widest(false))
+}
+
 /// The widest of `sizes` no wider than `max`, the taller on a tie.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn widest_up_to(sizes: &[(u32, u32)], max: u32) -> Option<(u32, u32)> {
     sizes.iter().copied().filter(|(w, _)| *w <= max).max()
 }
@@ -341,6 +430,54 @@ mod tests {
         assert_eq!(widest_up_to(&brio, 1920), Some((1920, 1200)));
         assert_eq!(widest_up_to(&[(3840, 2160)], 1920), None);
         assert_eq!(widest_up_to(&[], 1920), None);
+    }
+
+    #[test]
+    fn a_windows_snapshot_prefers_mjpeg_then_a_fast_enough_raw_size() {
+        let lifecam = "[dshow @ 01]  Pin \"Capture\" (alternative pin name \"Capture\")\n\
+            [dshow @ 01]   pixel_format=yuyv422  min s=640x480 fps=7.5 max s=640x480 fps=30\n\
+            [dshow @ 01]   pixel_format=yuyv422  min s=960x544 fps=7.5 max s=960x544 fps=20\n\
+            [dshow @ 01]   pixel_format=yuyv422  min s=1920x1080 fps=7.5 max s=1920x1080 fps=30\n\
+            [dshow @ 01]   pixel_format=yuyv422  min s=1280x720 fps=7.5 max s=1280x720 fps=30\n";
+        let options = parse_dshow_options(lifecam);
+        assert_eq!(options.len(), 4);
+        assert_eq!(
+            options[1],
+            DshowOption {
+                width: 960,
+                height: 544,
+                max_fps: 20.0,
+                mjpeg: false
+            }
+        );
+        let raw_1080 = SnapshotMode {
+            width: 1920,
+            height: 1080,
+            mjpeg: false,
+        };
+        assert_eq!(pick_dshow_mode(&options), Some(raw_1080));
+
+        // A Logitech's raw 1080p runs at 5 fps; its MJPEG at 30.
+        let logitech =
+            "[dshow @ 01]   pixel_format=yuyv422  min s=1920x1080 fps=5 max s=1920x1080 fps=5\n\
+            [dshow @ 01]   pixel_format=yuyv422  min s=640x480 fps=5 max s=640x480 fps=30\n\
+            [dshow @ 01]   vcodec=mjpeg  min s=1280x720 fps=5 max s=1280x720 fps=60.0002\n\
+            [dshow @ 01]   vcodec=mjpeg  min s=1920x1080 fps=5 max s=1920x1080 fps=30\n\
+            [dshow @ 01]   vcodec=mjpeg  min s=3840x2160 fps=5 max s=3840x2160 fps=30\n";
+        let mjpeg_1080 = SnapshotMode {
+            width: 1920,
+            height: 1080,
+            mjpeg: true,
+        };
+        assert_eq!(
+            pick_dshow_mode(&parse_dshow_options(logitech)),
+            Some(mjpeg_1080)
+        );
+
+        // Only slow sizes: ffmpeg's default.
+        let slow =
+            "[dshow @ 01]   pixel_format=yuyv422  min s=1920x1080 fps=5 max s=1920x1080 fps=5\n";
+        assert_eq!(pick_dshow_mode(&parse_dshow_options(slow)), None);
     }
 
     #[test]

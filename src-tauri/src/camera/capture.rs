@@ -2,6 +2,7 @@
 //! ffprobe. Every child is readied with `video::prepare_child` and killed if
 //! it runs past its time.
 
+use super::usb::SnapshotMode;
 use super::{CameraCaps, CameraConfig, CameraSource, Credentials};
 use std::time::Duration;
 
@@ -51,30 +52,38 @@ pub(crate) fn rtsp_input(url: &str) -> Vec<String> {
     ])
 }
 
-/// ffmpeg's input options for a webcam's picture, at `size` in MJPEG when
-/// given (Linux only; see `usb::snapshot_size`).
+/// ffmpeg's input options for a webcam's picture, in `mode` when given
+/// (Linux and Windows; see `usb::snapshot_mode`).
 pub(crate) fn usb_video_input(
     platform: Platform,
     device: &str,
-    size: Option<(u32, u32)>,
+    mode: Option<SnapshotMode>,
 ) -> Vec<String> {
-    match platform {
-        Platform::Linux => match size {
-            Some((w, h)) => strings(&[
-                "-f",
-                "v4l2",
-                "-input_format",
-                "mjpeg",
-                "-video_size",
-                &format!("{w}x{h}"),
-                "-i",
-                device,
-            ]),
-            None => strings(&["-f", "v4l2", "-i", device]),
-        },
-        Platform::Mac => strings(&["-f", "avfoundation", "-i", &format!("{device}:none")]),
-        Platform::Windows => strings(&["-f", "dshow", "-i", &format!("video={device}")]),
+    let (format, input) = match platform {
+        Platform::Linux => ("v4l2", device.to_string()),
+        Platform::Mac => {
+            return strings(&["-f", "avfoundation", "-i", &format!("{device}:none")]);
+        }
+        Platform::Windows => ("dshow", format!("video={device}")),
+    };
+    let mut args = strings(&["-f", format]);
+    if let Some(m) = mode {
+        if m.mjpeg {
+            // v4l2 and dshow name the option differently.
+            let codec = if platform == Platform::Linux {
+                "-input_format"
+            } else {
+                "-vcodec"
+            };
+            args.extend(strings(&[codec, "mjpeg"]));
+        }
+        args.extend(strings(&[
+            "-video_size",
+            &format!("{}x{}", m.width, m.height),
+        ]));
     }
+    args.extend(strings(&["-i", &input]));
+    args
 }
 
 /// ffmpeg's input options for a webcam's microphone. On Linux an ALSA device
@@ -141,23 +150,24 @@ pub(crate) struct Input {
     pub creds: Credentials,
 }
 
-/// The picture's input for `cfg`.
-pub(crate) async fn video_input(cfg: &CameraConfig) -> Result<Input, String> {
+/// The picture's input for `cfg`. `tool` is the ffmpeg or ffprobe that will
+/// read it, which lists a Windows webcam's sizes.
+pub(crate) async fn video_input(tool: &str, cfg: &CameraConfig) -> Result<Input, String> {
     let creds = Credentials::for_source(&cfg.source).await?;
     let args = match &cfg.source {
         CameraSource::Rtsp { url, .. } => rtsp_input(&creds.inject(url)),
         CameraSource::Usb { video_device, .. } => {
-            let size = super::usb::snapshot_size(video_device);
-            usb_video_input(Platform::current(), video_device, size)
+            let mode = super::usb::snapshot_mode(tool, video_device).await;
+            usb_video_input(Platform::current(), video_device, mode)
         }
     };
     Ok(Input { args, creds })
 }
 
 /// The sound's input for `cfg`, or the no-microphone error.
-pub(crate) async fn audio_input(cfg: &CameraConfig) -> Result<Input, String> {
+pub(crate) async fn audio_input(tool: &str, cfg: &CameraConfig) -> Result<Input, String> {
     match &cfg.source {
-        CameraSource::Rtsp { .. } => video_input(cfg).await,
+        CameraSource::Rtsp { .. } => video_input(tool, cfg).await,
         CameraSource::Usb { audio_device, .. } => {
             let device = audio_device
                 .as_deref()
@@ -263,7 +273,7 @@ pub async fn snapshot(ffmpeg: &str, cfg: &CameraConfig, max_width: u32) -> Resul
     if let Some(dir) = watched_usb(cfg) {
         return super::shared::snapshot(&dir, max_width).await;
     }
-    let input = video_input(cfg).await?;
+    let input = video_input(ffmpeg, cfg).await?;
     let skip = match cfg.source {
         CameraSource::Usb { .. } => WEBCAM_SETTLE_FRAMES,
         CameraSource::Rtsp { .. } => 0,
@@ -317,7 +327,7 @@ pub(crate) async fn gray_frame(
     w: usize,
     h: usize,
 ) -> Result<Vec<u8>, String> {
-    let input = video_input(cfg).await?;
+    let input = video_input(ffmpeg, cfg).await?;
     let skip = match cfg.source {
         CameraSource::Usb { .. } => skip_frames(WEBCAM_WARMUP_FRAMES),
         CameraSource::Rtsp { .. } => String::new(),
@@ -443,7 +453,7 @@ pub async fn record_audio(
         }
         return super::shared::record_audio(&dir, seconds).await;
     }
-    let input = audio_input(cfg).await?;
+    let input = audio_input(ffmpeg, cfg).await?;
     let mut args = strings(&["-nostdin"]);
     args.extend(input.args);
     args.extend(audio_output(seconds));
@@ -456,7 +466,7 @@ pub async fn record_audio(
 /// What the camera's stream holds. A USB camera has sound when it has a
 /// microphone set.
 pub async fn probe(ffprobe: &str, cfg: &CameraConfig) -> Result<CameraCaps, String> {
-    let input = video_input(cfg).await?;
+    let input = video_input(ffprobe, cfg).await?;
     let mut args = strings(&["-show_streams", "-of", "json"]);
     args.extend(input.args);
     let out = run(
@@ -619,6 +629,12 @@ mod tests {
         }
     }
 
+    const MJPEG_1080: SnapshotMode = SnapshotMode {
+        width: 1920,
+        height: 1080,
+        mjpeg: true,
+    };
+
     #[test]
     fn usb_inputs_per_platform() {
         assert_eq!(
@@ -626,7 +642,7 @@ mod tests {
             ["-f", "v4l2", "-i", "/dev/video0"]
         );
         assert_eq!(
-            usb_video_input(Platform::Linux, "/dev/video0", Some((1920, 1080))),
+            usb_video_input(Platform::Linux, "/dev/video0", Some(MJPEG_1080)),
             [
                 "-f",
                 "v4l2",
@@ -645,6 +661,34 @@ mod tests {
         assert_eq!(
             usb_video_input(Platform::Windows, "Integrated Camera", None),
             ["-f", "dshow", "-i", "video=Integrated Camera"]
+        );
+        assert_eq!(
+            usb_video_input(Platform::Windows, "Integrated Camera", Some(MJPEG_1080)),
+            [
+                "-f",
+                "dshow",
+                "-vcodec",
+                "mjpeg",
+                "-video_size",
+                "1920x1080",
+                "-i",
+                "video=Integrated Camera"
+            ]
+        );
+        let raw = SnapshotMode {
+            mjpeg: false,
+            ..MJPEG_1080
+        };
+        assert_eq!(
+            usb_video_input(Platform::Windows, "LifeCam", Some(raw)),
+            [
+                "-f",
+                "dshow",
+                "-video_size",
+                "1920x1080",
+                "-i",
+                "video=LifeCam"
+            ]
         );
         assert_eq!(
             usb_audio_input(Platform::Linux, "alsa_input.usb-OBSBOT.mono"),
@@ -692,9 +736,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_usb_camera_without_a_mic_says_so() {
-        let err = audio_input(&usb("/dev/video0", None)).await.err().unwrap();
+        let err = audio_input("ffmpeg", &usb("/dev/video0", None))
+            .await
+            .err()
+            .unwrap();
         assert_eq!(err, NO_MICROPHONE);
-        assert!(audio_input(&usb("/dev/video0", Some("hw:1,0")))
+        assert!(audio_input("ffmpeg", &usb("/dev/video0", Some("hw:1,0")))
             .await
             .is_ok());
     }
@@ -711,7 +758,7 @@ mod tests {
             },
             ..usb("", None)
         };
-        let input = video_input(&cfg).await.unwrap();
+        let input = video_input("ffmpeg", &cfg).await.unwrap();
         assert!(input
             .args
             .contains(&"rtsp://root:s3cret-pass@192.168.1.184:554/ch0".to_string()));
