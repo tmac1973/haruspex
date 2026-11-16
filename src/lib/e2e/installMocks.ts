@@ -174,6 +174,8 @@ const TABLE: Record<string, Handler> = {
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),
 	// No ffmpeg or melt in the e2e world: the video tools stay off.
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
+	// No cameras: none is watching.
+	camera_watch_status: () => ({ running: [], errors: {} }),
 	task_list: empty,
 	task_take_notices: empty,
 	whisper_video_model_path: none,
