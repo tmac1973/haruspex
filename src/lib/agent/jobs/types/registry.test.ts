@@ -69,6 +69,7 @@ describe('registration barrel', () => {
 			'research',
 			'email_digest',
 			'news_digest',
+			'camera_digest',
 			'audit',
 			'guided_planning',
 			'autonomous_coding',
@@ -81,7 +82,7 @@ describe('registration barrel', () => {
 	// defined when something imports it first, and the barrel throws.
 	it('loads every definition on its own, without an import cycle through the barrel', async () => {
 		const definitions = import.meta.glob('./*/definition.ts');
-		expect(Object.keys(definitions)).toHaveLength(8);
+		expect(Object.keys(definitions)).toHaveLength(9);
 		for (const [path, load] of Object.entries(definitions)) {
 			vi.resetModules();
 			await expect(load(), path).resolves.toBeTruthy();
@@ -317,8 +318,12 @@ describe('missingRequired', () => {
 				spec_path: ''
 			};
 			const missing = def.missingRequired?.({ ...blank, config }) ?? [];
+			// A type whose defaults save as they are (camera digest) has nothing to badge.
+			if (!def.validate?.({ ...blank, config })) {
+				expect(missing, def.id).toEqual([]);
+				continue;
+			}
 			expect(missing.length, def.id).toBeGreaterThan(0);
-			expect(def.validate?.({ ...blank, config }), def.id).toBeTruthy();
 		}
 	});
 

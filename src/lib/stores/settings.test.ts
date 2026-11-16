@@ -651,6 +651,16 @@ describe('load-time reasoning-effort default', () => {
 		expect(fresh.getSettings().reasoningEffort).toBe('medium');
 	});
 
+	it('keeps an ffmpeg path set before there was a choice of ffmpeg', async () => {
+		expect((await loadWith({})).videoFfmpegChoice).toBe('auto');
+		expect((await loadWith({ videoFfmpegPath: '/opt/ffmpeg' })).videoFfmpegChoice).toBe('custom');
+		expect(
+			(await loadWith({ videoFfmpegPath: '/opt/ffmpeg', videoFfmpegChoice: 'bundled' }))
+				.videoFfmpegChoice
+		).toBe('bundled');
+		expect((await loadWith({ videoFfmpegChoice: 'nonsense' })).videoFfmpegChoice).toBe('auto');
+	});
+
 	it('turns repo trust stored as true/false into records', async () => {
 		const s = await loadWith({
 			skills: {
@@ -1449,5 +1459,98 @@ describe('code helpers setting', () => {
 		expect(stored).toEqual({ a: 1, b: { url: 'http://box' } });
 		expect(stored.b).not.toBe(live);
 		expect(() => structuredClone(fresh.getSettings())).not.toThrow();
+	});
+});
+
+describe('camera settings', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) localStorage.removeItem(SETTINGS_KEY);
+		else localStorage.setItem(SETTINGS_KEY, priorRaw);
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown> | null) {
+		if (stored) localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		else localStorage.removeItem(SETTINGS_KEY);
+		vi.resetModules();
+		return import('#lib/stores/settings.ts');
+	}
+
+	const camera = {
+		id: 'k1',
+		name: 'Kitchen',
+		source: {
+			kind: 'rtsp',
+			url: 'rtsp://cam/ch0',
+			substreamUrl: null,
+			username: '',
+			passwordRef: null
+		}
+	};
+
+	it('start with no cameras, no trusted servers and a week of log', async () => {
+		const s = (await loadWith(null)).getSettings();
+		expect(s.cameras).toEqual([]);
+		expect(s.cameraTrustedServers).toEqual([]);
+		expect(s.cameraEventRetentionDays).toBe(7);
+	});
+
+	it('load a blob from before cameras existed with the defaults', async () => {
+		const s = (await loadWith({ theme: 'dark' })).getSettings();
+		expect(s.theme).toBe('dark');
+		expect(s.cameras).toEqual([]);
+		expect(s.cameraEventRetentionDays).toBe(7);
+	});
+
+	it('fill in fields a stored camera lacks, and drop what is not a camera', async () => {
+		const fresh = await loadWith({
+			cameras: [camera, 'junk', { name: 'no id' }],
+			cameraTrustedServers: ['http://lan:8080', 3],
+			cameraEventRetentionDays: 'x'
+		});
+		const s = fresh.getSettings();
+		expect(s.cameras).toEqual([
+			{
+				...camera,
+				permission: 'ask',
+				ptz: 'none',
+				onvif: null,
+				watcher: fresh.defaultWatcherConfig,
+				caps: null
+			}
+		]);
+		expect(s.cameraTrustedServers).toEqual(['http://lan:8080']);
+		expect(s.cameraEventRetentionDays).toBe(7);
+	});
+
+	it('store a plain copy, not the object handed in', async () => {
+		const fresh = await loadWith(null);
+		const list = [
+			{
+				...camera,
+				permission: 'allow' as const,
+				ptz: 'none' as const,
+				onvif: null,
+				watcher: { ...fresh.defaultWatcherConfig },
+				caps: null
+			}
+		] as Parameters<typeof fresh.setCameras>[0];
+		fresh.setCameras(list);
+		list[0].name = 'Changed';
+		expect(fresh.getSettings().cameras[0].name).toBe('Kitchen');
+		expect(fresh.getSettings().cameras[0]).not.toBe(list[0]);
+		fresh.setCameraTrustedServers(['http://lan:8080']);
+		expect(fresh.getSettings().cameraTrustedServers).toEqual(['http://lan:8080']);
+		fresh.setCameraEventRetentionDays(0);
+		expect(fresh.getSettings().cameraEventRetentionDays).toBe(1);
+		fresh.setCameraEventRetentionDays(Number.NaN);
+		expect(fresh.getSettings().cameraEventRetentionDays).toBe(1);
+		expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).cameras[0].permission).toBe('allow');
 	});
 });

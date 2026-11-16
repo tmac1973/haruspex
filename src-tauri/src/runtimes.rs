@@ -162,7 +162,10 @@ fn source_binaries_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")
 }
 
-fn resolve_binary(tool: &str) -> Result<PathBuf, String> {
+/// Absolute path to the bundled `haruspex-<tool>`: beside the executable, or in
+/// a debug build the fetched copy in `src-tauri/binaries/`. The video tools
+/// find their bundled ffmpeg and ffprobe through this too.
+pub(crate) fn resolve_binary(tool: &str) -> Result<PathBuf, String> {
     let stem = bundled_stem(tool);
     if let Some(dir) = staged_dir() {
         if let Some(found) = binary_in(&dir, &stem) {
@@ -421,7 +424,7 @@ mod tests {
     /// The deb and rpm bundlers install every `externalBin` into `/usr/bin`
     /// under its stem with the triple stripped, and rpm fails the whole
     /// transaction when two packages claim one path. `node`, `uv`, `ruff`,
-    /// `llama-server` and `koko` are all names Fedora ships packages for, so
+    /// `llama-server`, `koko`, `ffmpeg` and `ffprobe` are all names Fedora ships packages for, so
     /// an unprefixed entry here is an app that cannot be installed.
     #[test]
     fn every_bundled_binary_stays_out_of_the_distro_namespace() {
@@ -430,6 +433,12 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&conf).unwrap()).unwrap();
         let external = parsed["bundle"]["externalBin"].as_array().unwrap();
         assert!(!external.is_empty(), "externalBin should not be empty");
+        for wanted in ["binaries/haruspex-ffmpeg", "binaries/haruspex-ffprobe"] {
+            assert!(
+                external.iter().any(|e| e.as_str() == Some(wanted)),
+                "{wanted} should be bundled"
+            );
+        }
         for entry in external {
             let path = entry.as_str().unwrap();
             let stem = path.rsplit('/').next().unwrap();

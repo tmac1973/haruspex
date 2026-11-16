@@ -4,6 +4,7 @@
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { createSubscriber } from 'svelte/reactivity';
 import { clampInt } from '#lib/utils/clampInt.ts';
+import type { FfmpegChoice } from '#lib/ipc/gen/FfmpegChoice.ts';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
@@ -17,6 +18,8 @@ import { imageModelsFromFields } from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import type { WatcherConfig } from '#lib/ipc/gen/WatcherConfig.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
@@ -431,6 +434,20 @@ export function seedGenerationServers(s: Partial<AppSettings>): GenerationServer
 }
 
 /** An address as the saved list compares it: trimmed, without a trailing slash. */
+const FFMPEG_CHOICES: readonly FfmpegChoice[] = ['auto', 'bundled', 'system', 'custom'];
+
+/**
+ * The stored ffmpeg choice. Settings from before there was one keep the paths
+ * they set: those were tried first then, which is what Custom does now.
+ */
+function storedFfmpegChoice(rest: Record<string, unknown>): FfmpegChoice {
+	if (FFMPEG_CHOICES.includes(rest.videoFfmpegChoice as FfmpegChoice)) {
+		return rest.videoFfmpegChoice as FfmpegChoice;
+	}
+	const set = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+	return set(rest.videoFfmpegPath) || set(rest.videoFfprobePath) ? 'custom' : 'auto';
+}
+
 export function normalizeServerUrl(url: string): string {
 	return url.trim().replace(/\/+$/, '');
 }
@@ -970,8 +987,15 @@ export interface AppSettings {
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
-	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. Empty (the
-	 * default) means find it: PATH, then inside a Kdenlive install.
+	 * Which ffmpeg and ffprobe Settings → Video editing uses: automatic (the
+	 * bundled pair, then the system's, then Kdenlive's), only the bundled pair,
+	 * only the system's, or the two paths below.
+	 */
+	videoFfmpegChoice: FfmpegChoice;
+	/**
+	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. The
+	 * ffmpeg and ffprobe paths count only with `videoFfmpegChoice` custom. An
+	 * empty melt path means find it: PATH, then inside a Kdenlive install.
 	 */
 	videoFfmpegPath: string;
 	videoFfprobePath: string;
@@ -986,6 +1010,19 @@ export interface AppSettings {
 	videoOutroPath: string;
 	/** The H.264 encoder renders use: `libx264`, or a hardware one that passed its test. */
 	videoEncoder: string;
+	/**
+	 * The cameras in Settings → Cameras. A network camera's password is in the
+	 * secret store (`cameraSecrets.ts`); the config holds only its key.
+	 */
+	cameras: CameraConfig[];
+	/**
+	 * Remote inference servers (base URLs) the user has marked as their own,
+	 * so camera frames and sound may go to them. Every other remote model is
+	 * refused the camera tools.
+	 */
+	cameraTrustedServers: string[];
+	/** Days the ambient log keeps an entry. */
+	cameraEventRetentionDays: number;
 	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
@@ -1283,14 +1320,48 @@ const defaults: AppSettings = {
 	codeHelpers: {},
 	codeHelperConfig: {},
 	videoEditingEnabled: false,
+	videoFfmpegChoice: 'auto',
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
 	videoPreset: '1080p60',
 	videoIntroPath: '',
 	videoOutroPath: '',
-	videoEncoder: 'libx264'
+	videoEncoder: 'libx264',
+	cameras: [],
+	cameraTrustedServers: [],
+	cameraEventRetentionDays: 7
 };
+
+/** A new camera's watcher: off, all day, medium motion, -35 dBFS. Matches Rust's default. */
+export const defaultWatcherConfig: WatcherConfig = {
+	enabled: false,
+	activeHours: null,
+	motionSensitivity: 'medium',
+	soundThresholdDb: -35
+};
+
+/**
+ * Stored cameras, each with every field the current shape has: one saved
+ * before a field existed gets its default, and anything that isn't a camera
+ * is dropped.
+ */
+function storedCameras(value: unknown): CameraConfig[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.filter(
+			(c): c is CameraConfig =>
+				!!c && typeof c === 'object' && typeof c.id === 'string' && !!c.source
+		)
+		.map((c) => ({
+			...c,
+			permission: c.permission ?? 'ask',
+			ptz: c.ptz ?? 'none',
+			onvif: c.onvif ?? null,
+			watcher: { ...defaultWatcherConfig, ...(c.watcher ?? {}) },
+			caps: c.caps ?? null
+		}));
+}
 
 function load(): AppSettings {
 	try {
@@ -1459,6 +1530,15 @@ function load(): AppSettings {
 					: [],
 				codeHelpers: booleanRecord(rest.codeHelpers),
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
+				cameras: storedCameras(rest.cameras),
+				videoFfmpegChoice: storedFfmpegChoice(rest),
+				cameraTrustedServers: Array.isArray(rest.cameraTrustedServers)
+					? rest.cameraTrustedServers.filter((u: unknown) => typeof u === 'string')
+					: [],
+				cameraEventRetentionDays:
+					typeof rest.cameraEventRetentionDays === 'number' && rest.cameraEventRetentionDays >= 1
+						? rest.cameraEventRetentionDays
+						: defaults.cameraEventRetentionDays,
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),
@@ -1553,6 +1633,22 @@ export function setCodeHelper(id: string, on: boolean): void {
 /** Store one helper's own settings (Settings → Code → Helpers), whole. */
 export function setCodeHelperConfig(id: string, value: unknown): void {
 	commit({ ...settings, codeHelperConfig: { ...settings.codeHelperConfig, [id]: value } });
+}
+
+/** Replace the camera list (Settings → Cameras). The UI edits a working copy and saves it whole. */
+export function setCameras(cameras: CameraConfig[]): void {
+	commit({ ...settings, cameras });
+}
+
+/** Replace the servers marked as the user's own for camera use. */
+export function setCameraTrustedServers(urls: string[]): void {
+	commit({ ...settings, cameraTrustedServers: urls });
+}
+
+/** Days the ambient log keeps an entry, 1 to 365; anything not a number keeps the current value. */
+export function setCameraEventRetentionDays(days: number): void {
+	if (!Number.isFinite(days)) return;
+	commit({ ...settings, cameraEventRetentionDays: clampInt(days, 1, 365, Math.round) });
 }
 
 /** Replace the specialist list (Settings → Code → Specialists). */

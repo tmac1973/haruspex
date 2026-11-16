@@ -13,6 +13,7 @@
 	import { YOUTUBE_UPLOAD } from '#lib/video/youtube.ts';
 	import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 	import type { FoundBinary } from '#lib/ipc/gen/FoundBinary.ts';
+	import type { FfmpegChoice } from '#lib/ipc/gen/FfmpegChoice.ts';
 
 	type Tool = 'ffmpeg' | 'ffprobe' | 'melt';
 	const TOOLS: Tool[] = ['ffmpeg', 'ffprobe', 'melt'];
@@ -21,8 +22,19 @@
 		ffprobe: 'videoFfprobePath',
 		melt: 'videoMeltPath'
 	} as const;
-	const LOOKED =
+	const LOOKED: Record<FfmpegChoice, string> = {
+		auto: 'Looked for the ffmpeg and ffprobe that ship with Haruspex, then PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).',
+		bundled: 'Looked only for the ffmpeg and ffprobe that ship with Haruspex.',
+		system:
+			'Looked in PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).',
+		custom: 'Looked only at the paths set here.'
+	};
+	const MELT_LOOKED =
 		'Looked in the path set here, then PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).';
+	let choice = $state<FfmpegChoice>(getSettings().videoFfmpegChoice);
+	/** Path fields shown: ffmpeg and ffprobe only for a custom choice. */
+	const hasPath = (tool: Tool) => tool === 'melt' || choice === 'custom';
+	const looked = (tool: Tool) => (tool === 'melt' ? MELT_LOOKED : LOOKED[choice]);
 
 	let paths = $state<Record<Tool, string>>({
 		ffmpeg: getSettings().videoFfmpegPath,
@@ -149,6 +161,13 @@
 		updateSettings({ videoEditingEnabled: enabled });
 	}
 
+	function saveChoice() {
+		updateSettings({ videoFfmpegChoice: choice });
+		void check();
+		// The hardware encoders are tested with the chosen ffmpeg.
+		if (status?.melt) void loadEncoders(true);
+	}
+
 	function savePath(tool: Tool) {
 		updateSettings({ [SETTING[tool]]: paths[tool].trim() });
 		void check();
@@ -182,10 +201,17 @@
 		updateSettings({ videoIntroPath: intro.trim(), videoOutroPath: outro.trim() });
 	}
 
+	const WHERE: Record<FoundBinary['source'], string> = {
+		override: 'set here',
+		bundled: 'bundled',
+		path: 'PATH',
+		kdenlive: 'Kdenlive'
+	};
+
+	/** "ffmpeg n8.1.3 (bundled)": the version line without its copyright. */
 	function describe(found: FoundBinary): string {
-		const where =
-			found.source === 'override' ? 'set here' : found.source === 'kdenlive' ? 'Kdenlive' : 'PATH';
-		return `${found.version} (${where})`;
+		const version = found.version.replace(/\s+Copyright.*$/i, '').replace(/ version /, ' ');
+		return `${version} (${WHERE[found.source]})`;
 	}
 </script>
 
@@ -201,30 +227,48 @@
 <section class="settings-section">
 	<h2>Programs</h2>
 	<div class="fields">
+		<label for="video-ffmpeg-choice">Use:</label>
+		<div class="path-row">
+			<select
+				id="video-ffmpeg-choice"
+				bind:value={choice}
+				onchange={saveChoice}
+				title="Which ffmpeg and ffprobe to use. Automatic tries the ones bundled with Haruspex first, then the system's, then Kdenlive's."
+			>
+				<option value="auto">Automatic</option>
+				<option value="bundled">Bundled with Haruspex</option>
+				<option value="system">System (PATH or Kdenlive)</option>
+				<option value="custom">Custom paths</option>
+			</select>
+		</div>
 		{#each TOOLS as tool (tool)}
-			<label for="video-{tool}">{tool}:</label>
-			<div class="path-row">
-				<input
-					id="video-{tool}"
-					type="text"
-					placeholder="Find it"
-					bind:value={paths[tool]}
-					onblur={() => savePath(tool)}
-				/>
-				<button class="btn" type="button" onclick={() => void browse(tool)}>Browse…</button>
-			</div>
-			<span></span>
+			{#if hasPath(tool)}
+				<label for="video-{tool}">{tool}:</label>
+				<div class="path-row">
+					<input
+						id="video-{tool}"
+						type="text"
+						placeholder={tool === 'melt' ? 'Find it' : 'Path to ' + tool}
+						bind:value={paths[tool]}
+						onblur={() => savePath(tool)}
+					/>
+					<button class="btn" type="button" onclick={() => void browse(tool)}>Browse…</button>
+				</div>
+				<span></span>
+			{:else}
+				<span>{tool}:</span>
+			{/if}
 			{#if status?.[tool]}
 				<span class="detail" title={status[tool]?.path}>{describe(status[tool]!)}</span>
 			{:else if status}
-				<span class="detail bad" title={LOOKED}>Not found</span>
+				<span class="detail bad" title={looked(tool)}>Not found</span>
 			{:else}
 				<span class="detail">{checking ? 'Looking…' : ''}</span>
 			{/if}
 		{/each}
 	</div>
 	{#if missing.length > 0}
-		<p class="help" title={LOOKED}>Install Kdenlive, or set the paths above.</p>
+		<p class="help" title={LOOKED[choice]}>Install Kdenlive, or set the paths above.</p>
 	{/if}
 	{#each status?.hints.filter((h) => !h.startsWith('Not found')) ?? [] as hint (hint)}
 		<p class="help bad">{hint}</p>

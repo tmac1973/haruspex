@@ -5,11 +5,9 @@ description: What each Settings section holds, its defaults, and where to read m
 
 # Settings reference
 
-Each section lists its main options, defaults and a page with more.
-
 ## Open Settings
 
-Click the gear in the header; again, or **← Back**, closes.
+Click the gear in the header; **← Back** closes.
 
 ## General
 
@@ -32,7 +30,7 @@ Where the model runs, which model, and defaults.
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4), for chats, jobs and subtasks at once.
+- **Parallel streams**: 1 (also 2 or 4).
 - **Extra llama-server arguments**: empty; they override Haruspex's.
 - **Model defaults**: reasoning on, medium effort; replies to 8192 tokens, 65536 for a file.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
@@ -57,7 +55,7 @@ What the assistant remembers between chats.
 
 - **Carry facts and preferences from one conversation into the next**: on. Needs a 65 MB model.
 - **Ask before saving something you asked me to remember**: on.
-- **Find duplicates**: merges memories that say the same thing, if you approve.
+- **Find duplicates**: merges repeated memories, if you approve.
 - A list of everything remembered, to edit or delete.
 
 See the `memory` page.
@@ -121,90 +119,6 @@ See the `integrations` page.
 
 See the `integrations` page.
 
-## Shell
+## More sections
 
-The Shell tab's terminal and its assistant.
-
-- **Shell binary**: blank, for `$SHELL`.
-- **Recent shell commands attached to each chat message**: 3.
-- **Include your shell history file in prompts**: on.
-- **Max output bytes per captured command**: 8192.
-- **Max steps per turn**: 40, both modes.
-- **Start new shells with Full access**: off.
-- **Command execution** (Full access): Auto.
-- **Memory limit**: 50 % of RAM.
-
-See the `shell` page.
-
-## Code
-
-The coding agent in the Code tab and the Shell's Full access.
-
-- **run_command timeout**: 30 seconds.
-- **Max steps per task**: 40.
-- **Subtasks**: Read only, Read and write, or Off. See the `code-subtasks` page.
-- **Background log size**: 5 MB per process.
-- **Additional system prompt**: empty.
-- **Auto-approve commands**: off.
-- **Helpers**: all off (see `helpers`).
-
-See the `code` page.
-
-## Image
-
-Where pictures are generated, if anywhere.
-
-- **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest.
-
-See the `images` page.
-
-## Music
-
-Where songs are made, if anywhere.
-
-- **Backend**: None (default) or llama-toolchest.
-- **Default length**: 30 seconds.
-
-See the `music` page.
-
-## Video generation
-
-- **Backend**: None (default) or llama-toolchest.
-
-See the `video-generation` page.
-
-## Video editing
-
-- **Let the assistant edit videos**: off. **ffmpeg**, **ffprobe**, **melt**: found or set.
-- **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
-
-See the `video-editing` and `video-render` pages.
-
-## Guest chat
-
-- **Let people on your network chat with this Haruspex**: off. Uses HTTPS.
-- **Who can connect**: **People with the link**.
-- **Port**: 8787.
-- Once on: a link and QR code to share, and guests you can disconnect.
-
-See the `guest-chat` page.
-
-## Remote control
-
-Use your Code sessions from other computers. Off; port 8788.
-
-See the `remote-control` page.
-
-## Feedback
-
-Report a bug or ask for a feature.
-
-- **Open feedback issue…**: a filled-in GitHub issue, API keys removed; check it first.
-- **Save Full Diagnostics…**: saves logs to attach to the issue.
-- **Let the model report problems with Haruspex's tools**: off. See the `model-feedback` page.
-
-See the `troubleshooting` page.
-
-## Licences
-
-Every open-source package and program Haruspex ships, with its licence.
+Cameras, Shell, Code, Image, Music, Video generation, Video editing, Guest chat, Remote control, Feedback and Licences: see the `settings-tools` page.

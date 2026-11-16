@@ -13,7 +13,7 @@ Ask "render ep012". The render runs in the background, so you can keep chatting.
 
 Renders go in the episode's `renders` folder, named after the project and the time, such as `renders/ep012-20261025-1410.mp4`. They are MP4 (H.264 and AAC) at the project's size and frame rate, at the bitrates YouTube recommends. One render runs at a time. Quitting Haruspex stops a render, and nothing is saved; the next time Haruspex opens, the chat is told the render ended when the app closed.
 
-Settings → Video editing → **Encoder** is x264 by default. A hardware encoder (VA-API, NVENC, Quick Sync, AMF or VideoToolbox) is listed only when a test encode with it works on this computer; **Retest** tries again. Hardware encoding is faster; x264 gives the best picture for its size.
+Settings → Video editing → **Encoder** is x264 by default. A hardware encoder (VA-API, NVENC, Quick Sync, AMF or VideoToolbox) is listed only when a test encode with it works on this computer, tested with the ffmpeg chosen under **Use**; **Retest** tries again. Hardware encoding is faster; x264 gives the best picture for its size.
 
 The check reports loudness against YouTube's -14 LUFS, a render whose length differs from the project, and a render with no sound.
 

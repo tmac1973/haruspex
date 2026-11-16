@@ -52,6 +52,8 @@ export type InferenceConsumer =
 	 * consumer nobody asked for, so it always yields.
 	 */
 	| 'memory'
+	/** A caption for an ambient camera event (`camera/captioner.ts`). Background priority. */
+	| 'camera'
 	/**
 	 * A tool's own model call (research_url's page summary) running beside
 	 * others from the same turn. See `createSlotLender`.

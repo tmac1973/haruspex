@@ -392,7 +392,10 @@ export interface ToolRegistration {
 		 *  whose owner has started one. */
 		| 'tasks'
 		/** `ask_specialist`: the Code tab, when the session has a specialist on. */
-		| 'specialist';
+		| 'specialist'
+		/** Looks and listens through Settings → Cameras (`_cameraGate.ts`). Chat only,
+		 *  with a model on this computer or a trusted server. */
+		| 'camera';
 	requiresVision?: boolean;
 	/**
 	 * The schema as settings shape it for this turn, or null to leave the tool

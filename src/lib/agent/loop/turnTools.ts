@@ -83,6 +83,7 @@ export function resolveTurnTools(options: TurnToolsInput): TurnTools {
 		skillNames: options.skills?.catalog.map((s) => s.name),
 		skillFileNames: options.skills && readableSkills(options.skills, options.messages),
 		hasSkills: options.skills !== undefined,
+		backend: options.backend,
 		taskOwner: options.codeSessionId
 			? `code:${options.codeSessionId}`
 			: options.conversationId

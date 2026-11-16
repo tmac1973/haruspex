@@ -146,7 +146,7 @@ async function answerPrompts(log) {
 			await choose({ kind: 'mcp', choice: readOnly ? 'allow_once' : 'deny' });
 		} else if (['command', 'sandbox', 'memory'].includes(p.kind)) {
 			await choose({ kind: p.kind, choice: 'deny' });
-		} else if (p.kind === 'screen-capture') {
+		} else if (p.kind === 'screen-capture' || p.kind === 'camera') {
 			await choose({ kind: p.kind, choice: 'deny' });
 		} else if (p.kind === 'file-conflict') {
 			await choose({ kind: p.kind, choice: 'counter' });

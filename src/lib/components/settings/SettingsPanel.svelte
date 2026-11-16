@@ -13,6 +13,7 @@
 	import McpSection from '#lib/components/settings/McpSection.svelte';
 	import CalendarSection from '#lib/components/settings/CalendarSection.svelte';
 	import DesktopSection from '#lib/components/settings/DesktopSection.svelte';
+	import CamerasSection from '#lib/components/settings/CamerasSection.svelte';
 	import ShellSection from '#lib/components/settings/ShellSection.svelte';
 	import CodeSection from '#lib/components/settings/CodeSection.svelte';
 	import ImageSection from '#lib/components/settings/ImageSection.svelte';
@@ -122,6 +123,12 @@
 					label: 'Screen',
 					subtitle: 'Whether the assistant can see your screen.',
 					icon: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>'
+				},
+				{
+					id: 'cameras',
+					label: 'Cameras',
+					subtitle: 'Cameras the assistant can look and listen through.',
+					icon: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle>'
 				},
 				{
 					id: 'shell',
@@ -304,6 +311,8 @@
 				<McpSection />
 			{:else if activeCategory === 'screen'}
 				<DesktopSection />
+			{:else if activeCategory === 'cameras'}
+				<CamerasSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
 			{:else if activeCategory === 'code'}

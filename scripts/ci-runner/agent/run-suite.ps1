@@ -46,7 +46,7 @@ $target = (rustc --print host-tuple)
 foreach ($d in 'node-modules', 'libs', 'sd-libs', 'espeak-ng-data\lang\placeholder') {
     New-Item -ItemType Directory -Force -Path "src-tauri\binaries\$d" | Out-Null
 }
-foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff', 'node', 'uv', 'sd-server') {
+foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff', 'node', 'uv', 'sd-server', 'ffmpeg', 'ffprobe') {
     $name = "haruspex-$name"
     $bin = "src-tauri\binaries\$name-$target.exe"
     if (-not (Test-Path $bin)) { Set-Content -Path $bin -Value '@echo off' }

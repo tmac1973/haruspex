@@ -190,13 +190,18 @@ async fn works(melt: &str, encoder: &str, dir: &Path) -> bool {
     ok
 }
 
-/// libx264 and each hardware encoder that works here.
-pub async fn test_encoders(ffmpeg: &str, melt: &str, scratch: &Path) -> Vec<EncoderOption> {
+/// libx264 and each hardware encoder that works here. `ffmpeg` is one built
+/// like melt's own (see `binaries::hardware_probe_ffmpeg`); without one only
+/// libx264 is offered, since trying melt blind can crash it.
+pub async fn test_encoders(ffmpeg: Option<&str>, melt: &str, scratch: &Path) -> Vec<EncoderOption> {
     let _ = std::fs::create_dir_all(scratch);
     let mut found = vec![EncoderOption {
         id: SOFTWARE.into(),
         label: "x264 (software)".into(),
     }];
+    let Some(ffmpeg) = ffmpeg else {
+        return found;
+    };
     for (id, label) in hardware_candidates() {
         if ffmpeg_opens(ffmpeg, id).await && works(melt, id, scratch).await {
             found.push(EncoderOption {
@@ -217,7 +222,7 @@ mod tests {
     #[ignore = "needs melt"]
     async fn encoders_here() {
         let dir = crate::test_util::temp_dir("encoders");
-        let found = test_encoders("ffmpeg", "melt", &dir).await;
+        let found = test_encoders(Some("ffmpeg"), "melt", &dir).await;
         println!("{found:?}");
         assert_eq!(found[0].id, SOFTWARE);
     }

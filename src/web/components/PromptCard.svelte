@@ -5,6 +5,7 @@
 	 * says what is waiting.
 	 */
 	import type { Prompt, PromptAnswer } from '#lib/engine/types.ts';
+	import { cameraUseQuestion, type CameraAction } from '#lib/camera/useQuestion.ts';
 	import type { UserQuestionOption } from '#lib/stores/userQuestion.svelte.ts';
 
 	let {
@@ -250,6 +251,25 @@
 				title="Nothing is captured; the model is told you declined."
 				onclick={() => onanswer(prompt.promptId, { kind: 'screen-capture', choice: 'deny' })}
 				>Don't</button
+			>
+		</div>
+	{:else if prompt.kind === 'camera'}
+		<p class="title">
+			{cameraUseQuestion({
+				cameras: (d.cameras as string[]) ?? [],
+				action: d.action as CameraAction
+			})}
+		</p>
+		<div class="buttons">
+			<button
+				class="btn btn-small"
+				title="This once; it asks again next time."
+				onclick={() => onanswer(prompt.promptId, { kind: 'camera', choice: 'allow' })}>Allow</button
+			>
+			<button
+				class="btn btn-small btn-danger"
+				title="Nothing is taken; the model is told you declined."
+				onclick={() => onanswer(prompt.promptId, { kind: 'camera', choice: 'deny' })}>Deny</button
 			>
 		</div>
 	{:else if prompt.kind === 'file-conflict'}

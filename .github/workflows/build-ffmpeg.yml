@@ -1,0 +1,125 @@
+name: Build ffmpeg
+# Builds the LGPL ffmpeg and ffprobe the app bundles (scripts/build-ffmpeg.sh)
+# for every release target, and publishes them with a SHA256SUMS file to the
+# ffmpeg-<tag> release that scripts/fetch-ffmpeg.sh downloads. Run it by hand
+# when the ffmpeg tag changes, before the next app release.
+on:
+  workflow_dispatch:
+
+env:
+  # Keep in step with FFMPEG_TAG in scripts/build-ffmpeg.sh and fetch-ffmpeg.sh.
+  FFMPEG_TAG: n8.1.3
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            shell: bash
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            shell: bash
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            shell: bash
+          # Cross-compiled on the arm64 runner; its -buildconf can't be run there.
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            shell: bash
+          # Built natively in MSYS2's MINGW64, named with the msvc triple as
+          # the other sidecars are.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            shell: msys2 {0}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential nasm pkg-config zlib1g-dev \
+            libgnutls28-dev libasound2-dev libpulse-dev meson ninja-build cmake
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install nasm pkg-config
+
+      - name: Set up MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            git
+            make
+            diffutils
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-amf-headers
+            mingw-w64-x86_64-libvpl
+
+      - name: Build
+        run: |
+          ./scripts/build-ffmpeg.sh --target ${{ matrix.target }} --out dist
+
+      - name: Check the licence
+        if: runner.os != 'macOS' || matrix.target == 'aarch64-apple-darwin'
+        run: |
+          EXT=""
+          [ "${{ runner.os }}" = "Windows" ] && EXT=".exe"
+          CONF="$(./dist/haruspex-ffmpeg-${{ matrix.target }}$EXT -hide_banner -buildconf)"
+          echo "$CONF"
+          if echo "$CONF" | grep -q -- '--enable-gpl\|--enable-nonfree'; then
+            echo "::error::not an LGPL build"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: dist/haruspex-*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ffmpeg-*
+          path: dist
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum haruspex-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ffmpeg-${{ env.FFMPEG_TAG }}
+          name: ffmpeg ${{ env.FFMPEG_TAG }} (LGPL)
+          body: |
+            LGPL builds of ffmpeg and ffprobe ${{ env.FFMPEG_TAG }} bundled with Haruspex,
+            made by `scripts/build-ffmpeg.sh` and fetched by `scripts/fetch-ffmpeg.sh`.
+            Source: https://github.com/FFmpeg/FFmpeg/tree/${{ env.FFMPEG_TAG }}
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/haruspex-*
+            dist/SHA256SUMS

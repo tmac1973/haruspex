@@ -4,8 +4,9 @@
 //! The video tools run their own whisper-server (port 8768, `VideoWhisper`)
 //! with the best model there is: large-v3-turbo once Settings → Video editing has
 //! downloaded it, base.en until then. It starts on the first transcription and
-//! stops five minutes after the last, so it holds no memory between videos and
-//! voice input's instance is never touched.
+//! stops five minutes after the last lease on it is dropped (the cameras
+//! transcribe on it too), so it holds no memory between uses and voice input's
+//! instance is never touched.
 //!
 //! A clip's sound is extracted once to 16 kHz mono WAV, cut into pieces of
 //! about five minutes at the quietest nearby moment, and each piece sent on its
@@ -18,7 +19,7 @@ use crate::whisper::{Segment, VideoWhisper};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -224,33 +225,72 @@ impl Cancel {
 
 const CANCELLED: &str = "Transcription cancelled.";
 
-/// Uses of the video whisper-server, so an idle stop only fires after the last.
+/// Bumped by every lease taken and every idle stop scheduled, so a stop only
+/// fires when nothing has used the server since it was scheduled.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// Leases held now. The server is never stopped while one is out.
+static LEASES: AtomicUsize = AtomicUsize::new(0);
 static LOADED: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+/// One start at a time, so two callers don't both restart the server.
+static STARTING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Make sure the video whisper-server is up with `model`.
-pub async fn ensure_server(
-    app: &tauri::AppHandle,
-    whisper: &VideoWhisper,
-    model: &Path,
-) -> Result<(), String> {
-    GENERATION.fetch_add(1, Ordering::SeqCst);
-    let loaded = LOADED.lock().map(|l| l.clone()).unwrap_or(None);
-    if loaded.as_deref() != Some(model) || !whisper.0.is_running().await {
-        whisper.0.start(app, &model.to_string_lossy()).await?;
-        if let Ok(mut l) = LOADED.lock() {
-            *l = Some(model.to_path_buf());
+/// A hold on the video whisper-server (port 8768), shared by the video tools
+/// and the cameras. While any lease is held the server stays up; dropping the
+/// last one schedules the idle stop, so one user never stops it under another.
+pub struct WhisperLease {
+    app: tauri::AppHandle,
+}
+
+impl Drop for WhisperLease {
+    fn drop(&mut self) {
+        if LEASES.fetch_sub(1, Ordering::SeqCst) == 1 {
+            schedule_idle_stop(self.app.clone());
         }
     }
-    whisper.0.wait_ready(Duration::from_secs(120)).await
+}
+
+/// Start the video whisper-server with `model` if it isn't up, and hold it
+/// until the lease is dropped. A server already running for another lease
+/// keeps the model it has rather than restarting under that user.
+pub(crate) async fn lease_server(
+    app: &tauri::AppHandle,
+    model: &Path,
+) -> Result<WhisperLease, String> {
+    use tauri::Manager;
+    let others = LEASES.fetch_add(1, Ordering::SeqCst);
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+    let lease = WhisperLease { app: app.clone() };
+    let whisper = app.state::<VideoWhisper>();
+    {
+        let _one = STARTING.lock().await;
+        let loaded = LOADED.lock().map(|l| l.clone()).unwrap_or(None);
+        let running = whisper.0.is_running().await;
+        if !running || (others == 0 && loaded.as_deref() != Some(model)) {
+            whisper.0.start(app, &model.to_string_lossy()).await?;
+            if let Ok(mut l) = LOADED.lock() {
+                *l = Some(model.to_path_buf());
+            }
+        }
+    }
+    whisper.0.wait_ready(Duration::from_secs(120)).await?;
+    Ok(lease)
+}
+
+/// The language to ask whisper for: turbo detects it, base.en is English only.
+pub(crate) fn language_for(model: &Path) -> &'static str {
+    if is_turbo(model) {
+        "auto"
+    } else {
+        "en"
+    }
 }
 
 /// Stop the video whisper-server once it has been idle a while.
-pub fn schedule_idle_stop(app: tauri::AppHandle) {
+fn schedule_idle_stop(app: tauri::AppHandle) {
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(IDLE_STOP).await;
-        if GENERATION.load(Ordering::SeqCst) == generation {
+        if GENERATION.load(Ordering::SeqCst) == generation && LEASES.load(Ordering::SeqCst) == 0 {
             use tauri::Manager;
             let _ = app.state::<VideoWhisper>().0.stop().await;
             if let Ok(mut l) = LOADED.lock() {
@@ -270,7 +310,7 @@ pub fn needs_whisper(episode_dir: &Path, file: &Path, model: &Path, refresh: boo
 }
 
 /// Transcribe one clip, from the cache when it is current and `refresh` is off.
-/// The video whisper-server must be running (`ensure_server`) unless the
+/// The video whisper-server must be running (`lease_server`) unless the
 /// transcript is kept.
 #[allow(clippy::too_many_arguments)]
 pub async fn transcribe_clip(
@@ -311,7 +351,7 @@ pub async fn transcribe_clip(
         Vec::new()
     };
     let points = silence::chunk_points(duration, &silences, CHUNK_SECS, CHUNK_REACH);
-    let language = if is_turbo(model) { "auto" } else { "en" };
+    let language = language_for(model);
     let mut segments = Vec::new();
     let mut detected = None;
     for pair in points.windows(2) {

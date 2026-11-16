@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
+import type { BinarySource } from '#lib/ipc/gen/BinarySource.ts';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
@@ -18,6 +19,7 @@ vi.mock('#lib/video/youtube.ts', () => ({
 
 const settings = vi.hoisted(() => ({
 	videoEditingEnabled: false,
+	videoFfmpegChoice: 'auto',
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -36,7 +38,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 import VideoEditingSection from './VideoEditingSection.svelte';
 import { updateSettings } from '#lib/stores/settings.ts';
 
-const found = (name: string, source: 'path' | 'kdenlive' | 'override' = 'path') => ({
+const found = (name: string, source: BinarySource = 'path') => ({
 	path: `/usr/bin/${name}`,
 	version: `${name} 7.1`,
 	source
@@ -85,6 +87,18 @@ describe('VideoEditingSection', () => {
 		screen.getByText('ffmpeg 7.1 (PATH)');
 	});
 
+	it('says when ffmpeg is the copy that ships with Haruspex', async () => {
+		status = {
+			...status,
+			ffmpeg: {
+				...found('ffmpeg', 'bundled'),
+				version: 'ffmpeg version n8.1.3 Copyright (c) 2000-2026 the FFmpeg developers'
+			}
+		};
+		render(VideoEditingSection);
+		await screen.findByText('ffmpeg n8.1.3 (bundled)');
+	});
+
 	it('turns the video tools on with its switch', async () => {
 		render(VideoEditingSection);
 		const box = screen.getByLabelText(/edit videos/) as HTMLInputElement;
@@ -111,6 +125,22 @@ describe('VideoEditingSection', () => {
 		expect(
 			vi.mocked(invoke).mock.calls.filter(([c]) => c === 'video_binaries_status')
 		).toHaveLength(2);
+	});
+
+	it('picks which ffmpeg to use, with paths only for a custom one', async () => {
+		render(VideoEditingSection);
+		await screen.findByText('melt 7.1 (Kdenlive)');
+		expect(screen.queryByLabelText('ffmpeg:')).toBeNull();
+		screen.getByLabelText('melt:');
+		const use = screen.getByLabelText('Use:') as HTMLSelectElement;
+		await fireEvent.change(use, { target: { value: 'custom' } });
+		expect(updateSettings).toHaveBeenCalledWith({ videoFfmpegChoice: 'custom' });
+		screen.getByLabelText('ffmpeg:');
+		screen.getByLabelText('ffprobe:');
+		await fireEvent.change(use, { target: { value: 'bundled' } });
+		expect(updateSettings).toHaveBeenCalledWith({ videoFfmpegChoice: 'bundled' });
+		expect(screen.queryByLabelText('ffmpeg:')).toBeNull();
+		settings.videoFfmpegChoice = 'auto';
 	});
 
 	it('offers the encoders that passed their test and saves the choice', async () => {

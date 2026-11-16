@@ -269,5 +269,7 @@ describe('fs tools in a WSL Shell session', () => {
 		} finally {
 			updateSettings({ shellSelection: null });
 		}
-	});
+		// Each tool's module is imported on its first call; three in a row went
+		// past 5 s on the macOS runner.
+	}, 20_000);
 });

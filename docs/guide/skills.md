@@ -64,10 +64,10 @@ In the Code tab or with Full access, `/init` reads the repo's manifests, CI, REA
 
 ## Audit or plan a project
 
-In the Code tab or with Full access, `/code-audit` (optionally followed by a folder) reviews consistency, duplication, logging, secrets, tests and dependencies, rechecks each finding, and reports by severity with a fix order. It changes nothing. For an audit run several times with each finding checked, use an Audit job; see the `jobs` page.
+In the Code tab or with Full access, `/code-audit` (optionally followed by a folder) reviews consistency, duplication, logging, secrets, tests and dependencies, rechecks each finding, and reports by severity with a fix order. It changes nothing. For an audit run several times with each finding checked, use an Audit job; see the `job-types` page.
 
 `/guided-planning` followed by your idea asks one multiple-choice question at a time, then writes `overview.md` and numbered phase files to `plan/<name>/` (in Chat it asks where), with your review after each stage. It writes no code. The folder works as an Autonomous coding job's Plan directory.
 
 ## Planning skills
 
-A guided planning job can use a planning skill (2D game, 3D game, web app, CLI tool, API service): its questions join the interview, and the plan is checked against it. See the `jobs` page.
+A guided planning job can use a planning skill (2D game, 3D game, web app, CLI tool, API service): its questions join the interview, and the plan is checked against it. See the `job-types` page.

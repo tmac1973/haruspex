@@ -596,6 +596,7 @@ const NAMESPACES: &[&str] = &[
     "comfy:",
     "lemonade:",
     "remote:",
+    "camera:",
 ];
 
 /// The namespaces the webview may read back, because it is what uses them:
@@ -875,13 +876,21 @@ mod tests {
             "comfy:key",
             "lemonade:key",
             "remote:token",
+            "camera:c1",
         ] {
             assert!(check_key(ok).is_ok(), "{ok}");
         }
         for bad in ["haruspex:probe", "email:", "dav:", "other:x", "emailx:a"] {
             assert!(check_key(bad).is_err(), "{bad}");
         }
-        for unreadable in ["email:a", "dav:a", "mcp:s:t", "proxy:network", "brave:key"] {
+        for unreadable in [
+            "email:a",
+            "dav:a",
+            "mcp:s:t",
+            "proxy:network",
+            "brave:key",
+            "camera:c1",
+        ] {
             let r = tauri::async_runtime::block_on(secret_get(unreadable.into()));
             assert!(r.is_err(), "{unreadable} was readable");
         }

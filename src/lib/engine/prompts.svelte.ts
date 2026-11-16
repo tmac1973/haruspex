@@ -26,6 +26,7 @@ import {
 	getPendingScreenCapture,
 	resolveScreenCapture
 } from '#lib/stores/screenCaptureApproval.svelte.ts';
+import { getPendingCameraUse, resolveCameraUse } from '#lib/stores/cameraApproval.svelte.ts';
 import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import type { Prompt, PromptAnswer, PromptEvent } from '#lib/engine/types.ts';
@@ -166,6 +167,18 @@ export function currentPrompts(label: string): Prompt[] {
 			detail: { target: screen.target }
 		});
 	}
+	const camera = getPendingCameraUse();
+	if (camera) {
+		out.push({
+			promptId: idFor(label, camera),
+			kind: 'camera',
+			sessionId: camera.sessionId ?? null,
+			chatId: camera.chatId ?? null,
+			answerable: true,
+			requester: null,
+			detail: { cameras: camera.cameras, action: camera.action }
+		});
+	}
 	const conflict = getPendingConflict();
 	if (conflict) {
 		out.push({
@@ -212,6 +225,8 @@ export async function answerPrompt(
 			return resolveRepoTrust(answer.trust);
 		case 'screen-capture':
 			return resolveScreenCapture(answer.choice);
+		case 'camera':
+			return resolveCameraUse(answer.choice);
 		case 'file-conflict':
 			// Anything but these three would fall through to "keep both" and write.
 			if (!['overwrite', 'counter', 'cancel'].includes(answer.choice)) {

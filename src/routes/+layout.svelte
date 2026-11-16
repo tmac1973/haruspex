@@ -16,6 +16,8 @@
 	import RepoTrustModal from '#lib/components/RepoTrustModal.svelte';
 	import SkillApprovalModal from '#lib/components/SkillApprovalModal.svelte';
 	import ScreenCaptureApprovalModal from '#lib/components/ScreenCaptureApprovalModal.svelte';
+	import CameraApprovalModal from '#lib/components/CameraApprovalModal.svelte';
+	import CameraIndicator from '#lib/components/CameraIndicator.svelte';
 	import YoutubeUploadDialog from '#lib/components/video/YoutubeUploadDialog.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
@@ -65,6 +67,7 @@
 		applyTheme,
 		applyUiScale,
 		getActiveLocalModelFilename,
+		getLiveSettings,
 		getSettings,
 		resetUiScale,
 		setActiveLocalModel,
@@ -82,6 +85,9 @@
 	import '#lib/styles/app.css';
 	import { startEngine } from '#lib/engine/index.ts';
 	import { syncOwnerApi } from '#lib/owner/service.ts';
+	import { startCaptioner } from '#lib/camera/captioner.ts';
+	import { syncCameraWatchers } from '#lib/camera/watchSync.ts';
+	import { watchCameraWatchers } from '#lib/stores/cameraActivity.svelte.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
 	import { installMarkdownActions } from '#lib/markdownActions.ts';
 	import {
@@ -322,6 +328,14 @@
 		void maybeFlushPendingRestart();
 	});
 
+	// Settings → Cameras' ambient log: the main window keeps Rust's watchers
+	// in step with the cameras and the retention window (only a change is
+	// pushed), on load and after every settings change.
+	$effect(() => {
+		const settings = getLiveSettings();
+		if (!detached) syncCameraWatchers(settings);
+	});
+
 	onMount(async () => {
 		applyTheme();
 		applyAccent();
@@ -387,6 +401,11 @@
 		// Settings → Remote control, if it is on. Main window only, like
 		// remote chat: one server for the app.
 		void syncOwnerApi();
+		// The ambient log: the header shows running watchers, and each logged
+		// event is captioned once no chat turn needs the model. Main window
+		// only, like the watchers themselves.
+		void watchCameraWatchers().catch((e: unknown) => console.warn('Camera watchers:', e));
+		void startCaptioner().catch((e: unknown) => console.warn('Camera captions:', e));
 
 		try {
 			version = await getVersion();
@@ -649,6 +668,7 @@
 	<RepoTrustModal />
 	<SkillApprovalModal />
 	<ScreenCaptureApprovalModal />
+	<CameraApprovalModal />
 	<YoutubeUploadDialog />
 	<UserQuestionModal />
 {/snippet}
@@ -676,6 +696,7 @@
 		</h1>
 		<div class="header-right">
 			<LeanModeBadge />
+			<CameraIndicator />
 			<ServerStatusBadge onOpenLogs={openLogViewer} />
 			<ContextIndicator jobsActive={getActiveTab() === 'jobs'} />
 			<button
@@ -822,6 +843,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 16px;
 		padding: 9px 16px;
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-primary);
@@ -831,6 +853,8 @@
 		font-size: 1.1rem;
 		margin: 0;
 		font-weight: 600;
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	.version {

@@ -44,7 +44,9 @@
       "binaries/haruspex-ruff",
       "binaries/haruspex-node",
       "binaries/haruspex-uv",
-      "binaries/haruspex-sd-server"
+      "binaries/haruspex-sd-server",
+      "binaries/haruspex-ffmpeg",
+      "binaries/haruspex-ffprobe"
     ],
     "resources": [
       "binaries/libs/*",

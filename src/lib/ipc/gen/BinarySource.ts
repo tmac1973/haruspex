@@ -3,4 +3,4 @@
 /**
  * Where a binary was found.
  */
-export type BinarySource = "override" | "path" | "kdenlive";
+export type BinarySource = "override" | "bundled" | "path" | "kdenlive";

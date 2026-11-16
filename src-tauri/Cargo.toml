@@ -117,6 +117,11 @@ rmcp = { version = "3.5.1", features = ["client", "transport-child-process", "tr
 tar = "0.4.46"
 flate2 = "1.1.10"
 quick-xml = "0.42.0"
+# ONVIF cameras: WS-Security's password digest is SHA-1, and discovery sends
+# its multicast probe out of each network interface in turn.
+sha1 = "0.11.0"
+if-addrs = "0.15.0"
+socket2 = "0.6.5"
 ical = "0.11.0"
 rrule = "0.14.0"
 chrono = "0.4.45"
@@ -150,6 +155,10 @@ xcb = "1.7"
 # Already in the tree through wry; named here for WebViewExt::set_cors_allowlist
 # (image_cache::protocol::webview_plugin).
 webkit2gtk = { version = "2.0", features = ["v2_34"] }
+# Lists USB webcams for Settings → Cameras (`camera::usb`): VIDIOC_QUERYCAP
+# tells a capture node from a webcam's metadata node; its controls aim a UVC
+# pan/tilt webcam (`camera::uvc`).
+v4l = "0.14"
 
 # macOS (CoreGraphics/objc2) and Windows (Win32 GDI) capture goes through xcap
 # rather than hand-written unsafe blocks for each. Deliberately not used on

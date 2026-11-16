@@ -768,7 +768,53 @@ impl Database {
                 last_result TEXT NULL,
                 updated_at INTEGER NULL,
                 created_at INTEGER NOT NULL
-            );",
+            );
+
+            -- The camera watcher's log (camera_events::): one row per stretch
+            -- of motion or sound, with what was said and, once the model has
+            -- looked, a caption. The thumbnail is a file under
+            -- camera_events/<camera_id>/; thumb_path is '' until it is written.
+            CREATE TABLE IF NOT EXISTS camera_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                camera_id TEXT NOT NULL,
+                started_at INTEGER NOT NULL,
+                ended_at INTEGER NOT NULL,
+                \"trigger\" TEXT NOT NULL,
+                level_db REAL NOT NULL,
+                transcript TEXT NOT NULL DEFAULT '',
+                caption TEXT NULL,
+                caption_status TEXT NOT NULL DEFAULT 'pending',
+                thumb_path TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_camera_events_camera
+                ON camera_events(camera_id, started_at);
+
+            -- Full-text search over what was said and seen, kept in step with
+            -- camera_events by the triggers below.
+            CREATE VIRTUAL TABLE IF NOT EXISTS camera_events_fts USING fts5(
+                transcript, caption, content='camera_events', content_rowid='id'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS camera_events_fts_insert
+            AFTER INSERT ON camera_events BEGIN
+                INSERT INTO camera_events_fts(rowid, transcript, caption)
+                VALUES (new.id, new.transcript, coalesce(new.caption, ''));
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS camera_events_fts_delete
+            AFTER DELETE ON camera_events BEGIN
+                INSERT INTO camera_events_fts(camera_events_fts, rowid, transcript, caption)
+                VALUES ('delete', old.id, old.transcript, coalesce(old.caption, ''));
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS camera_events_fts_update
+            AFTER UPDATE OF transcript, caption ON camera_events BEGIN
+                INSERT INTO camera_events_fts(camera_events_fts, rowid, transcript, caption)
+                VALUES ('delete', old.id, old.transcript, coalesce(old.caption, ''));
+                INSERT INTO camera_events_fts(rowid, transcript, caption)
+                VALUES (new.id, new.transcript, coalesce(new.caption, ''));
+            END;",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -955,6 +1001,7 @@ fn chrono_now() -> i64 {
 }
 
 mod audio;
+mod camera_events;
 mod code_notices;
 mod code_sessions;
 mod commands;
@@ -970,6 +1017,7 @@ mod stats;
 mod tasks;
 
 pub use audio::AudioRow;
+pub use camera_events::{CameraEvent, CameraEventFilter, NewCameraEvent};
 pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;

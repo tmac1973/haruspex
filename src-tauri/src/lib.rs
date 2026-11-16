@@ -6,6 +6,7 @@ mod artifact_frame;
 mod audio;
 mod audio_cache;
 mod blob_cache;
+mod camera;
 mod clipboard;
 mod code_tools;
 mod comfy;
@@ -329,6 +330,7 @@ pub fn run() {
         .manage(AudioRecorder::new())
         .manage(WhisperServer::new())
         .manage(WhisperServer::video())
+        .manage(camera::watcher::WatcherRegistry::default())
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
         .manage(code_tools::claims::CodeSessionClaims::default())
@@ -404,6 +406,25 @@ pub fn run() {
             audio_cache::commands::audio_rehydrate,
             audio_cache::commands::audio_cache_size,
             audio_cache::commands::audio_cache_clear,
+            camera::commands::camera_snapshot,
+            camera::commands::camera_listen,
+            camera::commands::camera_probe,
+            camera::commands::camera_usb_devices,
+            camera::commands::camera_onvif_discover,
+            camera::commands::camera_onvif_connect,
+            camera::commands::camera_onvif_presets,
+            camera::commands::camera_aim,
+            camera::commands::camera_calibrate,
+            camera::commands::camera_uvc_supported,
+            camera::commands::camera_watch_set,
+            camera::commands::camera_watch_status,
+            camera::commands::camera_events_list,
+            camera::commands::camera_events_search,
+            camera::commands::camera_event_thumb,
+            camera::commands::camera_event_set_caption,
+            camera::commands::camera_events_pending,
+            camera::commands::camera_event_delete,
+            camera::commands::camera_events_clear,
             video::commands::video_binaries_status,
             video::commands::video_probe_folder,
             video::commands::video_probe_file,
@@ -828,6 +849,11 @@ pub fn run() {
                     mcp.stop_all().await;
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
+                    // Before the video whisper-server: an event being logged
+                    // holds a lease on it.
+                    app.state::<camera::watcher::WatcherRegistry>()
+                        .stop_all()
+                        .await;
                     let _ = app.state::<whisper::VideoWhisper>().0.stop().await;
                     let _ = tts.stop().await;
                     // ~7 GB of VRAM for Ming: left behind, it outlived the app.

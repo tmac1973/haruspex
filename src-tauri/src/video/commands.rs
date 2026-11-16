@@ -119,14 +119,14 @@ pub async fn video_encoders_test(
 ) -> Result<Vec<super::encode::EncoderOption>, String> {
     use tauri::Manager;
     let found = binaries::resolve(&overrides).await;
-    let ffmpeg = found.require(Tool::Ffmpeg)?;
     let melt = found.require(Tool::Melt)?;
+    let ffmpeg = binaries::hardware_probe_ffmpeg(&overrides).await;
     let scratch = app
         .path()
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("haruspex"))
         .join("video-encoder-test");
-    Ok(super::encode::test_encoders(ffmpeg, melt, &scratch).await)
+    Ok(super::encode::test_encoders(ffmpeg.as_deref(), melt, &scratch).await)
 }
 
 /// Running transcriptions, by the id the frontend gave, for cancelling.
@@ -178,14 +178,20 @@ pub async fn video_transcribe(
     let needed = list
         .iter()
         .any(|(file, _)| transcribe::needs_whisper(&episode_dir, file, &model, refresh));
-    if needed {
-        if let Err(e) = transcribe::ensure_server(&app, &whisper, &model).await {
-            if let Ok(mut m) = TRANSCRIBING.lock() {
-                m.remove(&job);
+    // Held to the end of the command; dropping it schedules the idle stop.
+    let _lease = if needed {
+        match transcribe::lease_server(&app, &model).await {
+            Ok(lease) => Some(lease),
+            Err(e) => {
+                if let Ok(mut m) = TRANSCRIBING.lock() {
+                    m.remove(&job);
+                }
+                return Err(e);
             }
-            return Err(e);
         }
-    }
+    } else {
+        None
+    };
     for (i, (file, info)) in list.iter().enumerate() {
         let channel = on_progress.clone();
         let (clip, total) = (info.path.clone(), info.duration_secs);
@@ -222,7 +228,6 @@ pub async fn video_transcribe(
     if let Ok(mut m) = TRANSCRIBING.lock() {
         m.remove(&job);
     }
-    transcribe::schedule_idle_stop(app.clone());
     result.map(|()| out)
 }
 
