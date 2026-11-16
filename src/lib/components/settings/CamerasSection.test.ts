@@ -310,6 +310,20 @@ describe('a found camera with a network name', () => {
 		expect(state.calls[0].args!.xaddr).toBe('http://wifi-cam-1.home.internal/onvif/device_service');
 	});
 
+	it('keeps a name typed in the RTSP address for a camera Find missed', async () => {
+		render(CamerasSection);
+		await fireEvent.click(screen.getByText('Add camera'));
+		await fireEvent.input(input(/RTSP address/), {
+			target: { value: 'rtsp://wifi-cam-2.local:554/ch0' }
+		});
+		await fireEvent.input(input(/^Password$/), { target: { value: 'pw' } });
+		await fireEvent.click(screen.getByText('Connect'));
+
+		await waitFor(() => expect(input(/Substream/).value).toBe('rtsp://wifi-cam-2.local:554/ch1'));
+		expect(input(/RTSP address/).value).toBe('rtsp://wifi-cam-2.local:554/ch0');
+		expect(state.calls[0].args!.xaddr).toBe('http://wifi-cam-2.local/onvif/device_service');
+	});
+
 	it('keeps the address when the name is turned off', async () => {
 		state.hostname = 'wifi-cam-1.home.internal';
 		render(CamerasSection);

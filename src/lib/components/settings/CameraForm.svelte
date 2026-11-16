@@ -265,6 +265,16 @@
 		return withHost(address, hostOf(picked.xaddr), picked.hostname);
 	}
 
+	/**
+	 * A stream address the camera gave, on the host Connect reached it at: the
+	 * picked camera's name, or the host typed in the RTSP address, so a typed
+	 * name isn't swapped for an address the router may change.
+	 */
+	function connectedAddress(address: string, typedHost: string): string {
+		if (picked || !typedHost) return pickedAddress(address);
+		return withHost(address, hostOf(address), typedHost);
+	}
+
 	/** Sign in over ONVIF and fill in the camera's streams and pan/tilt. */
 	async function connectFound() {
 		const xaddr = connectTo;
@@ -276,6 +286,7 @@
 		connecting = true;
 		onvifError = '';
 		const typed = password;
+		const typedHost = hostOf(url.trim());
 		try {
 			const got = await invoke<OnvifConnection>('camera_onvif_connect', {
 				xaddr,
@@ -283,8 +294,8 @@
 				password
 			});
 			// The camera gives its streams on its address; keep them on its name.
-			url = pickedAddress(got.mainUrl);
-			substreamUrl = got.subUrl === got.mainUrl ? '' : pickedAddress(got.subUrl);
+			url = connectedAddress(got.mainUrl, typedHost);
+			substreamUrl = got.subUrl === got.mainUrl ? '' : connectedAddress(got.subUrl, typedHost);
 			onvif = { xaddr, profileToken: got.profileToken, presets: got.presets };
 			// Measured on whatever camera was here before.
 			calibration = undefined;
