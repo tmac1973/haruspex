@@ -3,19 +3,18 @@
  * cookie set by pairing, plus `X-Haruspex: 1`, which the server requires of
  * every cookie-authenticated request (`src-tauri/src/owner/server.rs`).
  */
-import type { EngineEvent, EngineOp } from '#lib/engine/types.ts';
+import {
+	ApiError,
+	type Connection,
+	type StreamEvent,
+	type Transport
+} from '#lib/engine/transport.ts';
+import type { EngineOp } from '#lib/engine/types.ts';
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
-const HEADERS = { 'Content-Type': 'application/json', 'X-Haruspex': '1' };
+export { ApiError, type Connection, type StreamEvent, type Transport };
 
-export class ApiError extends Error {
-	constructor(
-		readonly status: number,
-		message: string
-	) {
-		super(message);
-	}
-}
+const HEADERS = { 'Content-Type': 'application/json', 'X-Haruspex': '1' };
 
 async function post<T>(path: string, body: unknown): Promise<T> {
 	const r = await fetch(path, {
@@ -67,11 +66,6 @@ export async function pair(code: string): Promise<void> {
 export async function logout(): Promise<void> {
 	await post('/api/v1/logout', {});
 }
-
-/** `ready` (connected), or an engine event; `resync-all` after falling behind. */
-export type StreamEvent = EngineEvent | { type: 'ready' } | { type: 'resync-all' };
-
-export type Connection = 'connecting' | 'open' | 'offline' | 'unauthorised';
 
 /**
  * Split an SSE stream into `data:` payloads, framed by spec: a blank line

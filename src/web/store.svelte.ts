@@ -1,44 +1,26 @@
 /**
- * What the web client knows: the session list, the sessions it follows (each
- * a phase-2 `Mirror`, rebuilt from events), and the prompts waiting on a
- * person. The desktop is the source of truth; nothing here is ever patched
- * by guesswork, only by events, and a gap is a `session.resync`.
+ * The web page's state: what it shows (the tab, the selected session or
+ * chat, the file viewer) over an `EngineClient`, which keeps the desktop's
+ * lists, followed sessions and chats, and prompts from its events.
  */
-import {
-	emptyMirror,
-	reduce,
-	reduceChat,
-	type ChatMirror,
-	type Mirror
-} from '#lib/engine/reduce.ts';
-import {
-	isChatEvent,
-	isHomeEvent,
-	isJobEvent,
-	isTaskEvent,
-	isSessionEvent,
-	type ChatListItem,
-	type ChatState,
-	type FileContent,
-	type HomeCardView,
-	type Prompt,
-	type PromptAnswer,
-	type SessionListItem,
-	type SessionState
+import { EngineClient, LIST_REFRESH_MS } from '#lib/engine/client.svelte.ts';
+import type { ChatMirror, Mirror } from '#lib/engine/reduce.ts';
+import type { Connection, Transport } from '#lib/engine/transport.ts';
+import type {
+	ChatListItem,
+	ChatState,
+	FileContent,
+	HomeCardView,
+	Prompt,
+	PromptAnswer,
+	SessionListItem,
+	SessionState
 } from '#lib/engine/types.ts';
-import { ApiError, events, op, upload, type Connection, type StreamEvent } from './api.ts';
+import { events, op, upload } from './api.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
-/** How long to gather list-changing events before reading the list again. */
-const LIST_REFRESH_MS = 800;
-
-/** The client's operations, as a seam for tests. */
-export interface Transport {
-	op: typeof op;
-	events: typeof events;
-	upload: typeof upload;
-}
+export type { Transport };
 
 /** What a send answers when its `/name` was a built-in, not a message. */
 interface Handled {
@@ -48,24 +30,14 @@ interface Handled {
 }
 
 export class WebStore {
-	connection = $state<Connection>('connecting');
+	/** The desktop, as its events have built it. */
+	readonly client: EngineClient;
 	/** What the page shows: Home, or the Code or Chat list. */
 	tab = $state<'home' | 'code' | 'chat'>('home');
-	/** The desktop's lean mode is on: Chat only, as there (`app.mode`). */
-	lean = $state(false);
-	/** The desktop's Settings → General → Home tab is off: no Home here either. */
-	homeOff = $state(false);
 	/** Home's cards, read-only; null until first read. */
 	homeCards = $state<HomeCardView[] | null>(null);
-	chats = $state<ChatListItem[]>([]);
-	chatMirrors = $state<Record<string, ChatMirror>>({});
 	selectedChat = $state<string | null>(null);
-	sessions = $state<SessionListItem[]>([]);
-	/** Followed sessions by id. A mirror without state is waiting for its snapshot. */
-	mirrors = $state<Record<string, Mirror>>({});
-	prompts = $state<Record<string, Prompt>>({});
 	selected = $state<string | null>(null);
-	error = $state<string | null>(null);
 	/** What the last `/skills` or the like said, until the next send. */
 	note = $state<string | null>(null);
 	/** The file the viewer shows, if one is open. */
@@ -73,14 +45,64 @@ export class WebStore {
 		null
 	);
 
-	private stopStream: (() => void) | null = null;
-	private listTimer: ReturnType<typeof setTimeout> | null = null;
-	/** Sessions with a resync asked for and not yet answered by a snapshot. */
-	// Bookkeeping, never rendered: not a SvelteSet.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	private resyncing = new Set<string>();
+	private homeTimer: ReturnType<typeof setTimeout> | null = null;
 
-	constructor(private transport: Transport = { op, events, upload }) {}
+	constructor(transport: Transport = { op, events, upload }) {
+		this.client = new EngineClient(transport);
+		this.client.onReady(() => {
+			if (this.tab === 'home') void this.refreshHome();
+		});
+		this.client.onHomeChanged(() => this.refreshHomeSoon());
+		this.client.onMode(() => {
+			if (this.client.lean) this.tab = 'chat';
+			else if (this.client.homeOff && this.tab === 'home') this.tab = 'code';
+		});
+	}
+
+	// The client's mirrors, as the page's components read them.
+	get connection(): Connection {
+		return this.client.connection;
+	}
+	get lean(): boolean {
+		return this.client.lean;
+	}
+	get homeOff(): boolean {
+		return this.client.homeOff;
+	}
+	get chats(): ChatListItem[] {
+		return this.client.chats;
+	}
+	set chats(v: ChatListItem[]) {
+		this.client.chats = v;
+	}
+	get chatMirrors(): Record<string, ChatMirror> {
+		return this.client.chatMirrors;
+	}
+	get sessions(): SessionListItem[] {
+		return this.client.sessions;
+	}
+	set sessions(v: SessionListItem[]) {
+		this.client.sessions = v;
+	}
+	get mirrors(): Record<string, Mirror> {
+		return this.client.mirrors;
+	}
+	get prompts(): Record<string, Prompt> {
+		return this.client.prompts;
+	}
+	set prompts(v: Record<string, Prompt>) {
+		this.client.prompts = v;
+	}
+	get error(): string | null {
+		return this.client.error;
+	}
+	set error(v: string | null) {
+		this.client.error = v;
+	}
+
+	private run<T>(fn: () => Promise<T>): Promise<T | undefined> {
+		return this.client.run(fn);
+	}
 
 	/** Pictures (data URLs) up to the desktop, as the hashes a send carries. Null when one failed. */
 	private async uploadAll(pictures: string[]): Promise<string[] | null> {
@@ -92,7 +114,7 @@ export class WebStore {
 				this.error = "That picture couldn't be read.";
 				return null;
 			}
-			const up = await this.run(() => this.transport.upload(new Blob([bytes.slice()], { type })));
+			const up = await this.run(() => this.client.upload(new Blob([bytes.slice()], { type })));
 			if (!up) return null;
 			hashes.push(up.hash);
 		}
@@ -121,18 +143,11 @@ export class WebStore {
 	}
 
 	start(): void {
-		this.stopStream = this.transport.events(
-			(e) => this.onEvent(e),
-			(c) => {
-				this.connection = c;
-			}
-		);
+		this.client.start();
 	}
 
 	stop(): void {
-		this.stopStream?.();
-		if (this.listTimer) clearTimeout(this.listTimer);
-		if (this.chatTimer) clearTimeout(this.chatTimer);
+		this.client.stop();
 		if (this.homeTimer) clearTimeout(this.homeTimer);
 	}
 
@@ -143,11 +158,10 @@ export class WebStore {
 	}
 
 	async refreshHome(): Promise<void> {
-		const cards = await this.run(() => this.transport.op<HomeCardView[]>({ type: 'home.cards' }));
+		const cards = await this.run(() => this.client.op<HomeCardView[]>({ type: 'home.cards' }));
 		if (cards) this.homeCards = cards;
 	}
 
-	private homeTimer: ReturnType<typeof setTimeout> | null = null;
 	/** Read Home again soon, once for a burst of changes; only while it shows. */
 	private refreshHomeSoon(): void {
 		if (this.tab !== 'home') return;
@@ -181,48 +195,27 @@ export class WebStore {
 		return this.selectedChat ? (this.chatMirrors[this.selectedChat]?.state ?? null) : null;
 	}
 
-	/**
-	 * Ask the desktop whether lean mode is on, and whether it shows Home.
-	 * Quietly: a desktop from before `app.mode` answers that it doesn't know
-	 * the operation, which means not lean, with Home.
-	 */
-	async refreshMode(): Promise<void> {
-		try {
-			const mode = await this.transport.op<{ lean: boolean; home?: boolean }>({
-				type: 'app.mode'
-			});
-			this.lean = mode.lean === true;
-			this.homeOff = mode.home === false;
-		} catch {
-			this.lean = false;
-			this.homeOff = false;
-		}
-		if (this.lean) this.tab = 'chat';
-		else if (this.homeOff && this.tab === 'home') this.tab = 'code';
+	/** Whether the desktop is in lean mode or hides Home; the tab follows. */
+	refreshMode(): Promise<void> {
+		return this.client.refreshMode();
 	}
 
-	async refreshChats(): Promise<void> {
-		void this.refreshMode();
-		const list = await this.run(() => this.transport.op<ChatListItem[]>({ type: 'chats.list' }));
-		if (list) this.chats = list;
+	refreshChats(): Promise<void> {
+		return this.client.refreshChats();
 	}
 
-	/**
-	 * Show a chat. One the desktop follows (open there, or with a turn
-	 * running) is brought up to date by a snapshot; any other is read once,
-	 * and follows its events from the snapshot a turn there starts with.
-	 */
+	refreshList(): Promise<void> {
+		return this.client.refreshList();
+	}
+
+	/** Show a chat, and follow it. */
 	async selectChat(id: string): Promise<void> {
 		this.selectedChat = id;
-		const state = await this.run(() => this.transport.op<ChatState>({ type: 'chat.get', id }));
-		if (!state) return;
-		const live = state.open || state.busy;
-		this.chatMirrors[id] = { state, seq: 0, resync: live };
-		if (live) void this.run(() => this.transport.op({ type: 'chat.resync', id }));
+		await this.client.followChat(id);
 	}
 
 	async newChat(): Promise<void> {
-		const made = await this.run(() => this.transport.op<{ id: string }>({ type: 'chat.new' }));
+		const made = await this.run(() => this.client.op<{ id: string }>({ type: 'chat.new' }));
 		if (!made) return;
 		await this.refreshChats();
 		await this.selectChat(made.id);
@@ -231,92 +224,24 @@ export class WebStore {
 	async sendChat(id: string, text: string, files: string[] = []): Promise<boolean> {
 		const sent = await this.sendOp(
 			files,
-			(images) =>
-				this.run(() => this.transport.op<Handled>({ type: 'chat.send', id, text, images })),
+			(images) => this.run(() => this.client.op<Handled>({ type: 'chat.send', id, text, images })),
 			async (made) => {
 				await this.refreshChats();
 				await this.selectChat(made);
 			}
 		);
-		if (sent) this.refreshChatsSoon();
+		if (sent) this.client.refreshChatsSoon();
 		return sent;
 	}
 
 	async chatAction(id: string, type: 'chat.stop' | 'chat.continue' | 'chat.retry'): Promise<void> {
-		await this.run(() => this.transport.op({ type, id }));
-	}
-
-	private chatTimer: ReturnType<typeof setTimeout> | null = null;
-	private refreshChatsSoon(): void {
-		this.chatTimer ??= setTimeout(() => {
-			this.chatTimer = null;
-			void this.refreshChats();
-		}, LIST_REFRESH_MS);
-	}
-
-	private async run<T>(fn: () => Promise<T>): Promise<T | undefined> {
-		try {
-			this.error = null;
-			return await fn();
-		} catch (e) {
-			if (e instanceof ApiError && e.status === 401) this.connection = 'unauthorised';
-			this.error = errMessage(e);
-			// Lean mode went on at the desktop since we last asked.
-			if (this.error.startsWith('Lean mode is on')) void this.refreshMode();
-			return undefined;
-		}
-	}
-
-	async refreshList(): Promise<void> {
-		void this.refreshMode();
-		const list = await this.run(() =>
-			this.transport.op<SessionListItem[]>({ type: 'sessions.list' })
-		);
-		if (!list) return;
-		// Open ones first, then the rest as the desktop lists them.
-		this.sessions = [...list.filter((s) => s.status), ...list.filter((s) => !s.status)];
-	}
-
-	private async refreshPrompts(): Promise<void> {
-		const list = await this.run(() => this.transport.op<Prompt[]>({ type: 'prompts.list' }));
-		if (list) this.prompts = Object.fromEntries(list.map((p) => [p.promptId, p]));
-	}
-
-	private refreshListSoon(): void {
-		this.listTimer ??= setTimeout(() => {
-			this.listTimer = null;
-			void this.refreshList();
-		}, LIST_REFRESH_MS);
-	}
-
-	/** Ask the owning window for a fresh snapshot event. */
-	private resync(id: string): void {
-		if (this.resyncing.has(id)) return;
-		this.resyncing.add(id);
-		void this.run(() => this.transport.op({ type: 'session.resync', id })).finally(() => {
-			// A snapshot arriving clears it sooner; this keeps a lost one from
-			// blocking the next ask for ever.
-			setTimeout(() => this.resyncing.delete(id), 3000);
-		});
+		await this.run(() => this.client.op({ type, id }));
 	}
 
 	/** Open a session on the desktop (if it isn't), show it, and follow it. */
 	async select(id: string): Promise<void> {
 		this.selected = id;
-		const listed = this.sessions.find((s) => s.id === id);
-		if (!listed?.status || this.mirrors[id]?.closed) {
-			const opened = await this.run(() => this.transport.op({ type: 'session.open', id }));
-			if (opened === undefined) return;
-			this.refreshListSoon();
-		}
-		const state = await this.run(() =>
-			this.transport.op<SessionState>({ type: 'session.get', id })
-		);
-		if (state && (!this.mirrors[id]?.state || this.mirrors[id]?.closed)) {
-			// Shown at once; events take over from the snapshot the resync sends.
-			this.mirrors[id] = { ...emptyMirror(), state, resync: true };
-		}
-		this.resync(id);
+		await this.client.follow(id);
 	}
 
 	/**
@@ -325,7 +250,7 @@ export class WebStore {
 	 */
 	async distros(): Promise<string[]> {
 		try {
-			return (await this.transport.op<string[]>({ type: 'wsl.distros' })) ?? [];
+			return (await this.client.op<string[]>({ type: 'wsl.distros' })) ?? [];
 		} catch {
 			return [];
 		}
@@ -337,7 +262,7 @@ export class WebStore {
 	 */
 	async newSession(root: string, wslDistro: string | null = null, worktree = false): Promise<void> {
 		const made = await this.run(() =>
-			this.transport.op<{ id: string }>({
+			this.client.op<{ id: string }>({
 				type: 'session.new',
 				root: root.trim(),
 				wslDistro,
@@ -357,7 +282,7 @@ export class WebStore {
 		return this.sendOp(
 			files,
 			(images) =>
-				this.run(() => this.transport.op<Handled>({ type: 'session.send', id, text, images })),
+				this.run(() => this.client.op<Handled>({ type: 'session.send', id, text, images })),
 			async () => {
 				// `/new`: the computer opened it beside this one; the list shows it.
 				await this.refreshList();
@@ -368,7 +293,7 @@ export class WebStore {
 	/** `/compact`: summarise the session's older turns now. */
 	async compact(id: string, instructions = ''): Promise<boolean> {
 		const out = await this.run(() =>
-			this.transport.op<{ started: boolean }>({ type: 'session.compact', id, instructions })
+			this.client.op<{ started: boolean }>({ type: 'session.compact', id, instructions })
 		);
 		if (out && !out.started)
 			this.error = 'Nothing to summarise yet: the conversation is still short.';
@@ -376,18 +301,18 @@ export class WebStore {
 	}
 
 	async stopTurn(id: string): Promise<void> {
-		await this.run(() => this.transport.op({ type: 'session.stop', id }));
+		await this.run(() => this.client.op({ type: 'session.stop', id }));
 	}
 
 	async cancelShellWait(id: string): Promise<void> {
-		await this.run(() => this.transport.op({ type: 'session.cancelShellWait', id }));
+		await this.run(() => this.client.op({ type: 'session.cancelShellWait', id }));
 	}
 
 	/** Show a file from the session's folder in the viewer. */
 	async openFile(id: string, path: string, line: number | null = null): Promise<void> {
 		this.viewer = { file: null, error: null, line };
 		try {
-			const file = await this.transport.op<FileContent>({ type: 'session.readFile', id, path });
+			const file = await this.client.op<FileContent>({ type: 'session.readFile', id, path });
 			if (this.viewer) this.viewer = { ...this.viewer, file };
 		} catch (e) {
 			if (this.viewer) this.viewer = { ...this.viewer, error: errMessage(e) };
@@ -395,67 +320,6 @@ export class WebStore {
 	}
 
 	async answer(promptId: string, answer: PromptAnswer): Promise<void> {
-		await this.run(() => this.transport.op({ type: 'prompts.answer', promptId, answer }));
-	}
-
-	onEvent(e: StreamEvent): void {
-		if (e.type === 'ready') {
-			void this.refreshList();
-			void this.refreshChats();
-			void this.refreshPrompts();
-			if (this.tab === 'home') void this.refreshHome();
-			if (this.selectedChat) void this.selectChat(this.selectedChat);
-			for (const id of Object.keys(this.mirrors)) this.resync(id);
-			return;
-		}
-		if (e.type === 'resync-all') {
-			for (const id of Object.keys(this.mirrors)) this.resync(id);
-			void this.refreshPrompts();
-			this.refreshHomeSoon();
-			return;
-		}
-		if (isHomeEvent(e)) {
-			this.refreshHomeSoon();
-			return;
-		}
-		if (isChatEvent(e)) {
-			this.refreshChatsSoon();
-			const mirror = this.chatMirrors[e.chatId];
-			if (!mirror) return;
-			if (mirror.resync && e.type !== 'chat-snapshot') return;
-			const next = reduceChat(mirror, e);
-			this.chatMirrors[e.chatId] = next;
-			if (next.resync)
-				void this.run(() => this.transport.op({ type: 'chat.resync', id: e.chatId }));
-			return;
-		}
-		// The page has no Jobs or task views; scripts follow them. A run
-		// starting or ending, or the queue changing, can change a Home card.
-		if (isJobEvent(e)) {
-			if (e.type !== 'job-run-live') this.refreshHomeSoon();
-			return;
-		}
-		if (isTaskEvent(e)) return;
-		if (!isSessionEvent(e)) {
-			if (e.type === 'prompt') this.prompts[e.prompt.promptId] = e.prompt;
-			else delete this.prompts[e.promptId];
-			return;
-		}
-		if (e.type === 'status' || e.type === 'closed' || e.type === 'snapshot') this.refreshListSoon();
-		const mirror = this.mirrors[e.sessionId];
-		if (!mirror) return;
-		if (e.type === 'snapshot') this.resyncing.delete(e.sessionId);
-		// Waiting for a snapshot: everything else is noise until it comes.
-		if (mirror.resync && e.type !== 'snapshot') return;
-		const next = reduce(mirror, e);
-		if (next.closed) {
-			// Closed in its window. If it moved to another window, that one's
-			// first snapshot reopens it here; if it was closed, the page says
-			// so and offers to open it again. Its last state stays on screen.
-			this.mirrors[e.sessionId] = { ...mirror, closed: true };
-			return;
-		}
-		this.mirrors[e.sessionId] = next;
-		if (next.resync) this.resync(e.sessionId);
+		await this.run(() => this.client.op({ type: 'prompts.answer', promptId, answer }));
 	}
 }

@@ -25,7 +25,7 @@ client behaves exactly as before.
   `error`, `homeCards`) and page actions.
 - `src/web/components/*.svelte` — read mirrors through `store.client.*`
   where they read them directly today.
-- `src/lib/engine/client.svelte.test.ts` — moved/derived from
+- `src/lib/engine/client.test.ts` (no runes in the test, so not `.svelte.test.ts`) — moved/derived from
   `src/web/web.test.ts` cases that test mirror keeping.
 - `src/web/web.test.ts` — keeps page-level cases.
 
@@ -63,7 +63,7 @@ client behaves exactly as before.
 
 - All existing `src/web/*.test.ts` pass unchanged in intent (assertions may
   move to the new file).
-- New `client.svelte.test.ts` with a fake `Transport`: snapshot then patches
+- New `client.test.ts` with a fake `Transport`: snapshot then patches
   rebuild a session; a seq gap triggers `session.resync`; `ready` resyncs
   followed sessions; list events debounce into one `sessions.list`.
 - Hand: `npm run drive -- start --api`, open `web-url`, follow a session and
