@@ -85,6 +85,7 @@
 	import '#lib/styles/app.css';
 	import { startEngine } from '#lib/engine/index.ts';
 	import { syncOwnerApi } from '#lib/owner/service.ts';
+	import { syncPeers } from '#lib/peers/service.ts';
 	import { startCaptioner } from '#lib/camera/captioner.ts';
 	import { syncCameraWatchers } from '#lib/camera/watchSync.ts';
 	import { watchCameraWatchers } from '#lib/stores/cameraActivity.svelte.ts';
@@ -401,6 +402,9 @@
 		// Settings → Remote control, if it is on. Main window only, like
 		// remote chat: one server for the app.
 		void syncOwnerApi();
+		// Settings → Remote control → Other computers: Rust follows each
+		// trusted one. Main window only: one stream per computer for the app.
+		void syncPeers();
 		// The ambient log: the header shows running watchers, and each logged
 		// event is captioned once no chat turn needs the model. Main window
 		// only, like the watchers themselves.

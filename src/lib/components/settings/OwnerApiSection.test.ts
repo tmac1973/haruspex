@@ -80,11 +80,20 @@ vi.mock('@tauri-apps/api/core', async () =>
 	)
 );
 
+// Other computers is hidden here, as in a release build; OtherComputers.test.ts covers it.
+vi.mock('#lib/peers/flag.ts', () => ({ PEERS_READY: false }));
+
 import OwnerApiSection from './OwnerApiSection.svelte';
 
 beforeEach(() => backend.reset());
 
 describe('Settings → Remote control', () => {
+	it('leaves Other computers out until the feature is ready', async () => {
+		render(OwnerApiSection);
+		await screen.findByRole('button', { name: 'Add a device…' });
+		expect(screen.queryByText('Other computers')).toBeNull();
+	});
+
 	it('adds a device and leads with its one-time link', async () => {
 		render(OwnerApiSection);
 		await fireEvent.click(await screen.findByRole('button', { name: 'Add a device…' }));
