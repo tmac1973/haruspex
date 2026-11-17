@@ -821,13 +821,17 @@ mod tests {
         let dir = temp_dir("burst");
         let file = dir.join("c.txt");
         std::fs::write(&file, "0").unwrap();
-        let (w, rx) = recorder(Duration::from_millis(200));
+        // The writes are one burst only while each gap stays under the
+        // debounce. A loaded CI runner once stalled a 20 ms gap past 200 ms,
+        // so the debounce here is far longer than any gap should take.
+        let debounce = Duration::from_secs(1);
+        let (w, rx) = recorder(debounce);
         w.watch("editor-1", &file, disk_hash(&file));
         for i in 1..=5 {
             std::fs::write(&file, i.to_string()).unwrap();
             std::thread::sleep(Duration::from_millis(20));
         }
-        let got = drain(&rx, SETTLE);
+        let got = drain(&rx, debounce + SETTLE);
         assert_eq!(got.len(), 1, "{got:?}");
         assert_eq!(got[0].1.hash, Some(content_hash(b"5")));
     }
