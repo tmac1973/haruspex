@@ -906,26 +906,34 @@ mod tests {
 
     /// Needs an ffmpeg on PATH; skipped where there is none.
     #[tokio::test]
-    async fn a_dropped_m4a_becomes_flac_or_mp3_when_that_is_too_large() {
+    async fn a_dropped_aac_becomes_flac_or_mp3_when_that_is_too_large() {
         let Some(ffmpeg) = binaries::resolve(&BinaryOverrides::default()).await.ffmpeg else {
             return;
         };
         let (_db, dir) = setup("audio-convert");
         let src = temp_dir("audio-convert-src");
-        let m4a = src.join("tone.m4a");
+        // ADTS, not M4A: the bundled ffmpeg has no MP4 muxer.
+        let aac = src.join("tone.aac");
         let made = tokio::process::Command::new(&ffmpeg.path)
             .args(["-nostdin", "-loglevel", "error", "-f", "lavfi", "-i"])
-            .args(["sine=frequency=440:duration=1", "-c:a", "aac", "-y"])
-            .arg(&m4a)
+            .args([
+                "sine=frequency=440:duration=1",
+                "-c:a",
+                "aac",
+                "-f",
+                "adts",
+                "-y",
+            ])
+            .arg(&aac)
             .status()
             .await
             .unwrap();
         assert!(made.success());
-        let (flac, mime) = convert_dropped(&ffmpeg.path, &m4a, &dir, MAX_AUDIO_BYTES)
+        let (flac, mime) = convert_dropped(&ffmpeg.path, &aac, &dir, MAX_AUDIO_BYTES)
             .await
             .unwrap();
         assert_eq!((&flac[..4], mime), (&b"fLaC"[..], "audio/flac"));
-        let (mp3, mime) = convert_dropped(&ffmpeg.path, &m4a, &dir, 1000)
+        let (mp3, mime) = convert_dropped(&ffmpeg.path, &aac, &dir, 1000)
             .await
             .unwrap();
         assert_eq!(mime, "audio/mpeg");
