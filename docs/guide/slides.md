@@ -1,11 +1,11 @@
 ---
 title: Slide decks
-description: Making a PowerPoint or LibreOffice deck in Chat: orientation, themes, layouts, charts and tables, pictures, notes, crowded slides, the LibreOffice check, and .odp limits.
+description: Making a PowerPoint or LibreOffice deck in Chat or the Code tab: orientation, themes, layouts, charts and tables, pictures, notes, crowded slides, the LibreOffice check, and .odp limits.
 ---
 
 # Slide decks
 
-Ask for a presentation and the assistant writes a PowerPoint `.pptx` file into the working folder. Ask for an `.odp` file if you want LibreOffice Impress's own format instead, though LibreOffice opens `.pptx` too. Chat needs a working folder for this; see the `chat` page.
+Ask for a presentation and the assistant writes a PowerPoint `.pptx` file into the working folder. Ask for an `.odp` file if you want LibreOffice Impress's own format instead, though LibreOffice opens `.pptx` too. Chat needs a working folder for this; see the `chat` page. In the Code tab it goes into the project folder.
 
 The assistant writes the whole deck in one go. It can't open and change a deck that already exists: ask again and it writes a new one.
 

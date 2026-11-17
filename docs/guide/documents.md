@@ -1,11 +1,11 @@
 ---
 title: Documents
-description: Making a PDF, Word or LibreOffice document in Chat: what it shows, wide tables, page size and look, how the assistant checks a PDF, pictures, and missing characters.
+description: Making a PDF, Word or LibreOffice document in Chat or the Code tab: what it shows, wide tables, page size and look, how the assistant checks a PDF, pictures, and missing characters.
 ---
 
 # Documents
 
-Ask for a report, a letter or notes as a file and the assistant writes it into the working folder. The extension picks the format: `.pdf`, Word `.docx`, or LibreOffice `.odt` if you ask for it. Chat needs a working folder for this; see the `chat` page.
+Ask for a report, a letter or notes as a file and the assistant writes it into the working folder. The extension picks the format: `.pdf`, Word `.docx`, or LibreOffice `.odt` if you ask for it. Chat needs a working folder for this; see the `chat` page. In the Code tab it goes into the project folder.
 
 The assistant writes the whole document in one go. It can revise a document it made in the same answer, but it can't open and change one that already exists: ask again and it writes a new one.
 

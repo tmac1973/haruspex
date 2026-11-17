@@ -204,6 +204,12 @@ const CODE_TOOLS = new Set([
 	'research_url'
 ]);
 
+const CODE_DOCUMENT_TOOLS = new Set([
+	'fs_write_document',
+	'fs_write_spreadsheet',
+	'fs_write_slides'
+]);
+
 // `fs`-category tools that should only ever appear in Code mode — keeps the
 // Chat schema lean (it otherwise exposes every fs tool when a workdir is set).
 const CODE_ONLY_FS = new Set(['code_grep', 'code_glob']);
@@ -277,6 +283,10 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
 	// Tidying up files the session made. Shell has a terminal with rm and mv.
 	if (name === 'fs_delete' || name === 'fs_move') return isCodeTab(opts);
+	// A PDF, Word file, spreadsheet or deck for the project. The documents
+	// family is deferred, so it costs the turn one menu line; without it the
+	// model wrote markdown into report.pdf with fs_write_text.
+	if (CODE_DOCUMENT_TOOLS.has(name)) return isCodeTab(opts);
 	// Editing the videos in the project folder. The Code tab only: Shell has
 	// no folder that stays put.
 	if (reg.category === 'video') return opts.videoTools && isCodeTab(opts);

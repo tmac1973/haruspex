@@ -879,6 +879,35 @@ function draftOptions(
 	return rewrite ? rewriting(opts, path) : { ...opts, repeatHint: hint };
 }
 
+/** The writer for each format fs_write_text would only fill with text. */
+const BINARY_WRITERS: Record<string, string> = {
+	...Object.fromEntries(Object.keys(DOCUMENT_FORMATS).map((e) => [e, 'fs_write_document'])),
+	...Object.fromEntries(Object.keys(SPREADSHEET_FORMATS).map((e) => [e, 'fs_write_spreadsheet'])),
+	...Object.fromEntries(Object.keys(SLIDE_FORMATS).map((e) => [e, 'fs_write_slides']))
+};
+
+/**
+ * Why fs_write_text won't write a PDF, office or OpenDocument file: it would
+ * write the markdown as it is, under a name no viewer can open, and report
+ * success. Points at the tool that builds the format, and at `load_tools`
+ * when this turn defers it.
+ */
+export function binaryFormatError(rawPath: unknown, ctx: ToolContext): string | null {
+	if (typeof rawPath !== 'string') return null;
+	const ext = rawPath.trim().toLowerCase().split('.').pop() ?? '';
+	const writer = rawPath.includes('.') ? BINARY_WRITERS[ext] : undefined;
+	if (!writer) return null;
+	const said = `fs_write_text writes plain text, so a .${ext} file from it would hold your text, not a real .${ext}.`;
+	if (ctx.shellMode) return `${said} Build it with a program instead.`;
+	const deferred = ctx.deferredTools?.find((f) =>
+		f.schemas.some((t) => t.function.name === writer)
+	);
+	if (deferred) {
+		return `${said} Call load_tools with family "${deferred.id}", then call ${writer} through use_tool.`;
+	}
+	return `${said} Call ${writer} instead.`;
+}
+
 /**
  * Shell-mode dispatch for fs_write_text. When the agent is running in
  * the Shell tab in Code mode, route to fs_write_text_absolute (no workdir,
@@ -893,6 +922,8 @@ function shellAwareWriteText() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
 		const rootErr = writeRootError(args.path, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
+		const binary = binaryFormatError(args.path, ctx);
+		if (binary) return toolResult(toolError(binary));
 		// Shell-CWD (absolute) dispatch only in Code mode (which allows edits).
 		if (!(ctx.shellMode && ctx.codeMode)) return chat(args, ctx);
 		const err = validateTextContent(args, 'fs_write_text');
