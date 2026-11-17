@@ -174,9 +174,9 @@ describe('dispatch: sessions', () => {
 	it('lists open sessions first, then saved ones open nowhere, from the main window', async () => {
 		mocks.open = [session('a') as unknown as Record<string, unknown>];
 		mocks.saved = [
-			{ id: 'a', title: 'stale a', root: '/proj/a' },
-			{ id: 'b', title: 'saved b', root: '/home/b', wsl_distro: 'Ubuntu' },
-			{ id: 'c', title: 'saved c', root: '/c' }
+			{ id: 'a', title: 'stale a', root: '/proj/a', updated_at: 300 },
+			{ id: 'b', title: 'saved b', root: '/home/b', wsl_distro: 'Ubuntu', updated_at: 200 },
+			{ id: 'c', title: 'saved c', root: '/c', updated_at: 100 }
 		];
 		expect(await dispatch(op({ type: 'sessions.list' }), MAIN_WINDOW)).toEqual([
 			{
@@ -185,7 +185,8 @@ describe('dispatch: sessions', () => {
 				root: '/proj/a',
 				wslDistro: null,
 				status: 'idle',
-				window: 'main'
+				window: 'main',
+				updatedAt: 300
 			},
 			{
 				id: 'b',
@@ -193,9 +194,18 @@ describe('dispatch: sessions', () => {
 				root: '/home/b',
 				wslDistro: 'Ubuntu',
 				status: null,
-				window: null
+				window: null,
+				updatedAt: 200
 			},
-			{ id: 'c', title: 'saved c', root: '/c', wslDistro: null, status: null, window: null }
+			{
+				id: 'c',
+				title: 'saved c',
+				root: '/c',
+				wslDistro: null,
+				status: null,
+				window: null,
+				updatedAt: 100
+			}
 		]);
 	});
 
@@ -205,8 +215,10 @@ describe('dispatch: sessions', () => {
 		const list = (await dispatch(op({ type: 'sessions.list' }), 'code-2')) as Array<{
 			id: string;
 			window: string;
+			updatedAt: number | null;
 		}>;
-		expect(list.map((s) => [s.id, s.window])).toEqual([['x', 'code-2']]);
+		// Its time comes from the main window's saved entry, merged in Rust.
+		expect(list.map((s) => [s.id, s.window, s.updatedAt])).toEqual([['x', 'code-2', null]]);
 	});
 
 	it('refuses an operation on a session not open in this window', async () => {

@@ -653,6 +653,7 @@ pub fn run() {
             engine::engine_events,
             owner::commands::owner_api_apply,
             owner::commands::owner_api_status,
+            owner::commands::instance_identity,
             owner::commands::owner_clients_list,
             owner::commands::owner_client_create,
             owner::commands::owner_client_revoke,

@@ -291,6 +291,11 @@ export interface SessionListItem {
 	status: CodeSessionStatus | null;
 	/** The window that has it open, or null. */
 	window: string | null;
+	/**
+	 * When it was last saved (ms), or null for one never saved or listed by
+	 * a detached window. Missing from a Haruspex older than plan/instance-sync.
+	 */
+	updatedAt?: number | null;
 }
 
 export type PromptKind =

@@ -665,8 +665,24 @@ describe('operations', () => {
 		await closeSession(b.id);
 		const list = await dispatch({ type: 'sessions.list' }, 'main');
 		expect(list).toEqual([
-			{ id: a.id, title: '', root: '/a', wslDistro: null, status: 'idle', window: 'main' },
-			{ id: b.id, title: '', root: '/b', wslDistro: null, status: null, window: null }
+			{
+				id: a.id,
+				title: '',
+				root: '/a',
+				wslDistro: null,
+				status: 'idle',
+				window: 'main',
+				updatedAt: expect.any(Number)
+			},
+			{
+				id: b.id,
+				title: '',
+				root: '/b',
+				wslDistro: null,
+				status: null,
+				window: null,
+				updatedAt: expect.any(Number)
+			}
 		]);
 	});
 

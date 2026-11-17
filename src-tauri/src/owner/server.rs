@@ -39,6 +39,7 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, watch};
 
 use super::clients::{required_scope, Clients, OwnerClient, Scope};
+use super::identity::InstanceIdentity;
 use super::pairing::PairingCodes;
 use super::tls_listen::PeerAddr;
 use super::trust::{host_is_ours, Trust};
@@ -123,6 +124,8 @@ pub struct Services {
     pub web_root: Option<PathBuf>,
     /// Who may connect without a token (`trust.rs`).
     pub trust: Arc<Trust>,
+    /// Which Haruspex this is, answered by health (`identity.rs`).
+    pub identity: Arc<InstanceIdentity>,
 }
 
 #[derive(Clone)]
@@ -137,6 +140,7 @@ struct AppState {
     trust: Arc<Trust>,
     /// This computer's hostname, for the `Host` check on token-less requests.
     own_name: Option<Arc<str>>,
+    identity: Arc<InstanceIdentity>,
     /// Turns true on shutdown, which ends every event stream.
     stopping: watch::Receiver<bool>,
 }
@@ -193,6 +197,7 @@ pub async fn start(
             throttle: Arc::new(Throttle::default()),
             trust: services.trust,
             own_name: super::trust::system_hostname().map(Arc::from),
+            identity: services.identity,
         };
         Router::new()
             .route("/", get(to_app))
@@ -522,8 +527,14 @@ fn content_type(file: &FsPath) -> &'static str {
     }
 }
 
-async fn health() -> impl IntoResponse {
-    Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") }))
+/// Open, with no token: another Haruspex reads it before trusting this one.
+async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    Json(json!({
+        "ok": true,
+        "version": env!("CARGO_PKG_VERSION"),
+        "instanceId": state.identity.id,
+        "name": state.identity.name,
+    }))
 }
 
 /// Why the engine refused, as a status: a window that never answered, the
@@ -1021,6 +1032,7 @@ mod tests {
         clients: Arc<Clients>,
         pairing: Arc<PairingCodes>,
         trust: Arc<Trust>,
+        identity: Arc<InstanceIdentity>,
         running: Running,
         http: reqwest::Client,
         _web: crate::test_util::TestDir,
@@ -1036,6 +1048,10 @@ mod tests {
         let clients = Arc::new(Clients::in_memory());
         let pairing = Arc::new(PairingCodes::default());
         let trust = Arc::new(Trust::default());
+        let identity = Arc::new(InstanceIdentity {
+            id: "6f9619ff-8b86-4011-b42d-00c04fc964ff".into(),
+            name: "desk-pc".into(),
+        });
         let web = crate::test_util::temp_dir("owner_web");
         std::fs::create_dir_all(web.join("assets")).unwrap();
         std::fs::write(web.join("index.html"), "<!doctype html><title>web</title>").unwrap();
@@ -1048,6 +1064,7 @@ mod tests {
             pairing: pairing.clone(),
             web_root: Some(web.to_path_buf()),
             trust: trust.clone(),
+            identity: identity.clone(),
         };
         let running = start(services, 0, false, test_tls()).await.unwrap();
         Harness {
@@ -1056,6 +1073,7 @@ mod tests {
             clients,
             pairing,
             trust,
+            identity,
             running,
             // Our own certificate: the owner's browser accepts it once.
             http: reqwest::Client::builder()
@@ -1296,6 +1314,9 @@ mod tests {
             .unwrap();
         assert_eq!(r.status(), 200);
         assert_eq!(r.headers()["referrer-policy"], "no-referrer");
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body["instanceId"], h.identity.id);
+        assert_eq!(body["name"], h.identity.name);
         let r = h.op("", json!({ "type": "sessions.list" })).await;
         assert_eq!(r.status(), 401);
         // A refusal carries it too: every response does.
@@ -1776,6 +1797,7 @@ mod tests {
             pairing: h.pairing.clone(),
             web_root: None,
             trust: h.trust.clone(),
+            identity: h.identity.clone(),
         };
         let again = start(services, port, false, test_tls()).await;
         assert!(again.is_ok(), "{:?}", again.err());

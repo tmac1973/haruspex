@@ -87,18 +87,20 @@ function openHere(id: string): CodeSession {
 }
 
 async function listSessions(label: string): Promise<SessionListItem[]> {
+	// The saved list once, from the main window; Rust keeps the open entry
+	// for a session that is open somewhere, and its saved time with it.
+	const saved = label === MAIN_WINDOW ? await listCodeSessions() : [];
+	const savedAt = new Map(saved.map((s) => [s.id, s.updated_at]));
 	const open: SessionListItem[] = getOpenSessions().map((s) => ({
 		id: s.id,
 		title: s.title,
 		root: s.root,
 		wslDistro: s.wslDistro,
 		status: s.status,
-		window: label
+		window: label,
+		updatedAt: savedAt.get(s.id) ?? null
 	}));
-	// The saved list once, from the main window; Rust keeps the open entry
-	// for a session that is open somewhere.
 	if (label !== MAIN_WINDOW) return open;
-	const saved = await listCodeSessions();
 	const openIds = new Set(open.map((s) => s.id));
 	return [
 		...open,
@@ -110,7 +112,8 @@ async function listSessions(label: string): Promise<SessionListItem[]> {
 				root: s.root,
 				wslDistro: s.wsl_distro ?? null,
 				status: null,
-				window: null
+				window: null,
+				updatedAt: s.updated_at
 			}))
 	];
 }

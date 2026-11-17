@@ -4,6 +4,7 @@
 
 pub mod clients;
 pub mod commands;
+pub mod identity;
 pub mod pairing;
 pub mod server;
 pub mod tls;
@@ -21,6 +22,7 @@ use crate::db::{Database, ImageRow};
 use crate::engine::EngineHub;
 use crate::image_cache::protocol;
 use clients::Clients;
+use identity::InstanceIdentity;
 use pairing::PairingCodes;
 use server::{Audio, BoxFuture, Dispatch, Images, Running, StoredImage};
 use trust::Trust;
@@ -38,11 +40,16 @@ pub struct OwnerApi {
     tls_path: Option<PathBuf>,
     /// The running server's certificate: its fingerprint and PEM.
     served: Mutex<Option<(String, String)>>,
+    /// Which Haruspex this is, for `/api/v1/health` (`identity.rs`).
+    identity: Arc<InstanceIdentity>,
 }
 
 impl OwnerApi {
     pub fn load(dir: Option<PathBuf>) -> Self {
         let tls_path = dir.as_ref().map(|d| d.join("owner-tls.json"));
+        let identity = Arc::new(InstanceIdentity::load(
+            dir.as_ref().map(|d| d.join("instance-id")).as_deref(),
+        ));
         let clients = match dir {
             Some(dir) => Clients::load(dir.join("owner-clients.json")).map(Arc::new),
             None => Err("no app data folder for the device list".into()),
@@ -57,7 +64,12 @@ impl OwnerApi {
             trust: Arc::new(Trust::default()),
             tls_path,
             served: Mutex::new(None),
+            identity,
         }
+    }
+
+    pub fn identity(&self) -> Arc<InstanceIdentity> {
+        self.identity.clone()
     }
 
     /// Remote control's link address, which guest chat's certificate covers too.

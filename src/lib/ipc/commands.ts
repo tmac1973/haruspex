@@ -290,6 +290,7 @@ export const IPC = {
 	inference_queue_snapshot: 'inference_queue_snapshot',
 	inference_release: 'inference_release',
 	inference_release_window: 'inference_release_window',
+	instance_identity: 'instance_identity',
 	lemonade_catalogue: 'lemonade_catalogue',
 	lemonade_json: 'lemonade_json',
 	lemonade_sdcpp_args: 'lemonade_sdcpp_args',

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::clients::{OwnerClient, Scope};
+use super::identity::InstanceIdentity;
 use super::server;
 use super::trust::{OwnerAccess, TrustedHost};
 use super::{AppAudio, AppDispatch, AppImages, OwnerApi};
@@ -162,6 +163,7 @@ pub async fn owner_api_apply(
         pairing: api.pairing.clone(),
         web_root: super::web_root(&app),
         trust: api.trust.clone(),
+        identity: api.identity(),
     };
     let running = server::start(services, config.port, config.bind_all, tls).await?;
     *api.running.lock_or_recover() = Some(running);
@@ -173,6 +175,12 @@ pub async fn owner_api_apply(
 #[tauri::command]
 pub fn owner_api_status(api: tauri::State<'_, OwnerApi>) -> OwnerApiStatus {
     status(&api)
+}
+
+/// Which Haruspex this is: its install id and the computer's name.
+#[tauri::command]
+pub fn instance_identity(api: tauri::State<'_, OwnerApi>) -> InstanceIdentity {
+    (*api.identity()).clone()
 }
 
 #[tauri::command]
@@ -325,6 +333,7 @@ mod tests {
             pairing: api.pairing.clone(),
             web_root: None,
             trust: api.trust.clone(),
+            identity: api.identity(),
         };
         let tls = crate::owner::tls::server_config(&identity).unwrap();
         let running = server::start(services, 0, false, tls).await.unwrap();

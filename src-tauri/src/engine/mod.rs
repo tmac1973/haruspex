@@ -110,6 +110,15 @@ pub fn merge(answers: Vec<Value>) -> Value {
         match by_id.get(&id) {
             Some(&i) => {
                 if has_status(&item) && !has_status(&out[i]) {
+                    // A detached window's open entry has no saved time; the
+                    // main window's saved entry it replaces does.
+                    let saved_at = out[i].get("updatedAt").filter(|v| !v.is_null()).cloned();
+                    let mut item = item;
+                    if let (Some(at), Some(obj)) = (saved_at, item.as_object_mut()) {
+                        if obj.get("updatedAt").is_none_or(Value::is_null) {
+                            obj.insert("updatedAt".into(), at);
+                        }
+                    }
                     out[i] = item;
                 }
             }
@@ -372,6 +381,17 @@ mod tests {
         assert_eq!(
             merged,
             json!([{ "id": "a", "status": "idle" }, { "id": "b", "status": "running" }])
+        );
+    }
+
+    #[test]
+    fn merging_keeps_the_saved_time_of_a_session_open_elsewhere() {
+        let main = json!([{ "id": "b", "status": null, "updatedAt": 42 }]);
+        let detached = json!([{ "id": "b", "status": "running", "updatedAt": null }]);
+        let merged = merge(vec![main, detached]);
+        assert_eq!(
+            merged,
+            json!([{ "id": "b", "status": "running", "updatedAt": 42 }])
         );
     }
 
