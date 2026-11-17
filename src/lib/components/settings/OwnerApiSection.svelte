@@ -32,6 +32,8 @@
 	} from '#lib/owner/service.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import WhoCanConnect from '#lib/components/settings/WhoCanConnect.svelte';
+	import OtherComputers from '#lib/components/settings/OtherComputers.svelte';
+	import { PEERS_READY } from '#lib/peers/flag.ts';
 
 	const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
 		read: {
@@ -399,6 +401,12 @@
 			>
 		{/if}
 	</div>
+
+	{#if PEERS_READY}
+		<div class="block">
+			<OtherComputers />
+		</div>
+	{/if}
 
 	<details class="block">
 		<summary>Advanced</summary>

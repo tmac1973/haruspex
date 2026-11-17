@@ -19,6 +19,7 @@ import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import type { PeerConfig } from '#lib/ipc/gen/PeerConfig.ts';
 import type { WatcherConfig } from '#lib/ipc/gen/WatcherConfig.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
@@ -541,6 +542,20 @@ export interface AppSettings {
 	 * permission, but settings need a device whose token has them.
 	 */
 	ownerApiTrustedSettings: boolean;
+	/**
+	 * Settings → Remote control → Other computers (plan/instance-sync/): show
+	 * the owner's other computers' sessions and chats here, through their
+	 * Remote control. Off by default, and only offered while `PEERS_READY`.
+	 */
+	peersEnabled: boolean;
+	/**
+	 * The computers trusted, each pinned to its certificate's fingerprint. A
+	 * token, when `auth` is `token`, is in the secret store under
+	 * `peer:<instanceId>`, never here.
+	 */
+	peers: PeerConfig[];
+	/** Instance ids the owner chose not to trust: never offered as found again. */
+	refusedPeers: string[];
 	contextSize: number;
 	/**
 	 * "Let models use system RAM". On: `start_server` omits `--n-gpu-layers`,
@@ -1210,6 +1225,9 @@ const defaults: AppSettings = {
 	ownerApiAccess: 'tokens',
 	ownerApiTrustedHosts: [],
 	ownerApiTrustedSettings: false,
+	peersEnabled: false,
+	peers: [],
+	refusedPeers: [],
 	braveApiKey: '',
 	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,
@@ -1535,6 +1553,10 @@ function load(): AppSettings {
 				cameraTrustedServers: Array.isArray(rest.cameraTrustedServers)
 					? rest.cameraTrustedServers.filter((u: unknown) => typeof u === 'string')
 					: [],
+				peers: storedPeers(rest.peers),
+				refusedPeers: Array.isArray(rest.refusedPeers)
+					? rest.refusedPeers.filter((id: unknown) => typeof id === 'string')
+					: [],
 				cameraEventRetentionDays:
 					typeof rest.cameraEventRetentionDays === 'number' && rest.cameraEventRetentionDays >= 1
 						? rest.cameraEventRetentionDays
@@ -1550,6 +1572,22 @@ function load(): AppSettings {
 		// ignore
 	}
 	return { ...defaults };
+}
+
+/** The trusted computers as stored, dropping any entry missing a field Rust needs. */
+function storedPeers(value: unknown): PeerConfig[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter(
+		(p): p is PeerConfig =>
+			typeof p === 'object' &&
+			p !== null &&
+			typeof p.instanceId === 'string' &&
+			typeof p.name === 'string' &&
+			typeof p.address === 'string' &&
+			typeof p.port === 'number' &&
+			typeof p.fingerprint === 'string' &&
+			(p.auth === 'trusted' || p.auth === 'token')
+	);
 }
 
 function save(settings: AppSettings): void {
