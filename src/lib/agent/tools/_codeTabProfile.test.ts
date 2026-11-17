@@ -44,9 +44,19 @@ function runCommand(codeMode: boolean, shellMode: boolean) {
 describe('tool profiles over (codeMode, shellMode)', () => {
 	it('(code, no shell) — the Code tab: code tools plus its own, no terminal tools', () => {
 		// save_generated too: the Code tab saves pictures and songs into the project;
-		// fs_delete and fs_move tidy up the files the session made.
+		// fs_delete and fs_move tidy up the files the session made; the
+		// document writers make PDFs, office files and decks for it.
 		expect(names(true, false)).toEqual(
-			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'save_generated', 'fs_delete', 'fs_move'].sort()
+			[
+				...CODE_TOOLS,
+				...ALWAYS_TAB_ONLY,
+				'save_generated',
+				'fs_delete',
+				'fs_move',
+				'fs_write_document',
+				'fs_write_spreadsheet',
+				'fs_write_slides'
+			].sort()
 		);
 	});
 

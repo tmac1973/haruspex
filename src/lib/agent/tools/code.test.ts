@@ -761,7 +761,10 @@ describe('Code-mode tool filtering', () => {
 				'delegate',
 				'save_generated',
 				'fs_delete',
-				'fs_move'
+				'fs_move',
+				'fs_write_document',
+				'fs_write_spreadsheet',
+				'fs_write_slides'
 			].sort()
 		);
 	});
