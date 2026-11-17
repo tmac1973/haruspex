@@ -770,6 +770,16 @@ impl Database {
                 created_at INTEGER NOT NULL
             );
 
+            -- Each trusted computer's last-known session and chat lists
+            -- (peer_lists::), JSON arrays the frontend writes, for drawing its
+            -- section while it's offline. Keyed by its instance id.
+            CREATE TABLE IF NOT EXISTS peer_lists (
+                peer_id TEXT PRIMARY KEY,
+                sessions TEXT NOT NULL,
+                chats TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
             -- The camera watcher's log (camera_events::): one row per stretch
             -- of motion or sound, with what was said and, once the model has
             -- looked, a caption. The thumbnail is a file under
@@ -1011,6 +1021,7 @@ mod images;
 mod jobs;
 mod memories;
 mod memory_commands;
+mod peer_lists;
 mod prompts;
 mod runs;
 mod stats;
@@ -1024,6 +1035,7 @@ pub use commands::*;
 pub use home_cards::{HomeCard, RecentRun};
 pub use images::ImageRow;
 pub use memory_commands::*;
+pub use peer_lists::PeerLists;
 
 #[cfg(test)]
 mod tests;

@@ -111,6 +111,10 @@ impl PeerClient {
         })
     }
 
+    pub fn instance_id(&self) -> &str {
+        &self.config.instance_id
+    }
+
     /// A request to `path`, credentials and all.
     async fn request(
         &self,
@@ -208,6 +212,41 @@ impl PeerClient {
         let bytes = self.send(request).await?.bytes().await;
         bytes.map(|b| b.to_vec()).map_err(|e| e.to_string())
     }
+
+    /// Open the event stream. No timeout: it lasts until either side ends it.
+    pub async fn events(&self) -> Result<reqwest::Response, String> {
+        let request = self.request(reqwest::Method::GET, "/api/v1/events").await?;
+        self.send(request).await
+    }
+}
+
+/// Splits an SSE byte stream into its events' `data`, framed as the spec
+/// says: a blank line ends an event, its `data:` lines join with newlines,
+/// and comment lines (the server's keep-alives) carry none. Works on bytes,
+/// so a character split across chunks is whole again by the frame's end.
+#[derive(Default)]
+pub struct SseFrames {
+    buf: Vec<u8>,
+}
+
+impl SseFrames {
+    pub fn feed(&mut self, chunk: &[u8]) -> Vec<String> {
+        self.buf.extend(chunk.iter().filter(|&&b| b != b'\r'));
+        let mut out = Vec::new();
+        while let Some(i) = self.buf.windows(2).position(|w| w == b"\n\n") {
+            let frame: Vec<u8> = self.buf.drain(..i + 2).collect();
+            let text = String::from_utf8_lossy(&frame);
+            let data: Vec<&str> = text
+                .lines()
+                .filter_map(|l| l.strip_prefix("data:"))
+                .map(|d| d.strip_prefix(' ').unwrap_or(d))
+                .collect();
+            if !data.is_empty() {
+                out.push(data.join("\n"));
+            }
+        }
+        out
+    }
 }
 
 /// The trusted computers' clients, by instance id.
@@ -241,119 +280,28 @@ impl PeerClients {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use serde_json::json;
-    use tokio::sync::broadcast;
 
     use super::*;
-    use crate::owner::clients::{Clients, Scope};
-    use crate::owner::identity::InstanceIdentity;
-    use crate::owner::pairing::PairingCodes;
-    use crate::owner::server::{
-        start, Audio, BoxFuture, Dispatch, Images, Running, Services, StoredImage,
-    };
-    use crate::owner::trust::{AccessMode, OwnerAccess, Trust};
+    use crate::owner::clients::Scope;
+    use crate::owner::trust::AccessMode;
+    use crate::peers::test_support::{Other, ID};
 
-    const ID: &str = "6f9619ff-8b86-4011-b42d-00c04fc964ff";
-
-    /// What the other computer's engine answers, and what it was asked.
-    #[derive(Default)]
-    struct Stub {
-        seen: Mutex<Vec<Value>>,
-    }
-
-    impl Dispatch for Stub {
-        fn op(&self, op: Value) -> BoxFuture<Result<Value, String>> {
-            self.seen.lock_or_recover().push(op);
-            Box::pin(async { Ok(json!([{ "id": "s1" }])) })
-        }
-        fn subscribe(&self) -> broadcast::Receiver<Value> {
-            broadcast::channel(1).1
-        }
-    }
-
-    impl Images for Stub {
-        fn lookup(&self, _urls: &[String]) -> Vec<(String, crate::db::ImageRow)> {
-            Vec::new()
-        }
-        fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)> {
-            (hash == "a".repeat(64)).then(|| ("image/png".into(), vec![1, 2, 3]))
-        }
-        fn store(&self, bytes: Vec<u8>) -> Result<StoredImage, String> {
-            Ok(StoredImage {
-                hash: format!("{:064x}", bytes.len()),
-                mime: "image/png".into(),
-                width: 1,
-                height: 1,
-            })
-        }
-    }
-
-    impl Audio for Stub {
-        fn file(&self, _hash: &str) -> Option<(String, PathBuf)> {
-            None
-        }
-    }
-
-    /// The other computer: its owner API on a free port, its fingerprint.
-    struct Other {
-        running: Running,
-        fingerprint: String,
-        stub: Arc<Stub>,
-        clients: Arc<Clients>,
-    }
-
-    async fn other(mode: AccessMode) -> Other {
-        let names = crate::owner::tls::names_for(Some("desk-pc"), &[]);
-        let ips = ["127.0.0.1".parse().unwrap()];
-        let identity =
-            crate::owner::tls::generate(&names, &ips, time::OffsetDateTime::now_utc()).unwrap();
-        let tls = crate::owner::tls::server_config(&identity).unwrap();
-        let stub = Arc::new(Stub::default());
-        let clients = Arc::new(Clients::in_memory());
-        let trust = Arc::new(Trust::default());
-        trust.set(OwnerAccess {
-            mode,
-            ..OwnerAccess::default()
-        });
-        let services = Services {
-            dispatch: stub.clone(),
-            images: stub.clone(),
-            audio: stub.clone(),
-            clients: clients.clone(),
-            pairing: Arc::new(PairingCodes::default()),
-            web_root: None,
-            trust,
-            identity: Arc::new(InstanceIdentity {
-                id: ID.into(),
-                name: "desk-pc".into(),
-            }),
-        };
-        let running = start(services, 0, false, tls).await.unwrap();
-        Other {
-            running,
-            fingerprint: identity.fingerprint,
-            stub,
-            clients,
-        }
-    }
-
-    fn config(o: &Other, address: &str, auth: PeerAuthKind) -> PeerConfig {
-        PeerConfig {
-            instance_id: ID.into(),
-            name: "desk-pc".into(),
-            address: address.into(),
-            port: o.running.port,
-            fingerprint: o.fingerprint.clone(),
-            auth,
-        }
+    #[test]
+    fn sse_frames_join_data_lines_and_skip_comments() {
+        let mut f = SseFrames::default();
+        assert!(f.feed(b"data: {\"a\":").is_empty());
+        assert_eq!(f.feed(b"1}\n\n: keep-alive\n\n"), vec!["{\"a\":1}"]);
+        assert_eq!(f.feed(b"data: one\r\ndata: two\r\n\r\n"), vec!["one\ntwo"]);
+        // \u{e9} split between chunks.
+        assert!(f.feed(b"data: caf\xc3").is_empty());
+        assert_eq!(f.feed(b"\xa9\n\n"), vec!["caf\u{e9}"]);
     }
 
     #[tokio::test]
     async fn a_probe_reads_the_fingerprint_and_identity() {
-        let o = other(AccessMode::Tokens).await;
-        let p = probe("127.0.0.1", o.running.port).await.unwrap();
+        let o = Other::new(AccessMode::Tokens).await;
+        let p = probe("127.0.0.1", o.port).await.unwrap();
         assert_eq!(p.fingerprint, o.fingerprint);
         assert_eq!(p.instance_id, ID);
         assert_eq!(p.name, "desk-pc");
@@ -373,9 +321,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_trusted_computer_runs_an_op_by_name() {
-        let o = other(AccessMode::Lan).await;
+        let o = Other::new(AccessMode::Lan).await;
         // `localhost` is looked up and reached by its address.
-        let c = PeerClient::new(config(&o, "localhost", PeerAuthKind::Trusted)).unwrap();
+        let c = PeerClient::new(o.config("localhost", PeerAuthKind::Trusted)).unwrap();
         let value = c.op(&json!({ "type": "sessions.list" })).await.unwrap();
         assert_eq!(value, json!([{ "id": "s1" }]));
         assert_eq!(
@@ -386,8 +334,8 @@ mod tests {
 
     #[tokio::test]
     async fn another_certificate_is_refused_and_says_so() {
-        let o = other(AccessMode::Lan).await;
-        let mut cfg = config(&o, "127.0.0.1", PeerAuthKind::Trusted);
+        let o = Other::new(AccessMode::Lan).await;
+        let mut cfg = o.config("127.0.0.1", PeerAuthKind::Trusted);
         cfg.fingerprint = "00:".repeat(31) + "00";
         let c = PeerClient::new(cfg).unwrap();
         let err = c.op(&json!({ "type": "sessions.list" })).await.unwrap_err();
@@ -397,21 +345,21 @@ mod tests {
 
     #[tokio::test]
     async fn a_computer_that_wants_a_token_needs_one() {
-        let o = other(AccessMode::Tokens).await;
-        let c = PeerClient::new(config(&o, "127.0.0.1", PeerAuthKind::Trusted)).unwrap();
+        let o = Other::new(AccessMode::Tokens).await;
+        let c = PeerClient::new(o.config("127.0.0.1", PeerAuthKind::Trusted)).unwrap();
         let err = c.op(&json!({ "type": "sessions.list" })).await.unwrap_err();
         assert_eq!(err, NOT_LET_IN);
 
         let (_, token) = o.clients.create("laptop", &[Scope::Read]).unwrap();
         crate::secrets::seed_for_test(&token_key(ID), &token);
-        let c = PeerClient::new(config(&o, "127.0.0.1", PeerAuthKind::Token)).unwrap();
+        let c = PeerClient::new(o.config("127.0.0.1", PeerAuthKind::Token)).unwrap();
         assert!(c.op(&json!({ "type": "sessions.list" })).await.is_ok());
     }
 
     #[tokio::test]
     async fn pictures_go_up_and_come_back() {
-        let o = other(AccessMode::Lan).await;
-        let c = PeerClient::new(config(&o, "127.0.0.1", PeerAuthKind::Trusted)).unwrap();
+        let o = Other::new(AccessMode::Lan).await;
+        let c = PeerClient::new(o.config("127.0.0.1", PeerAuthKind::Trusted)).unwrap();
         let png = b"\x89PNG\r\n\x1a\n".to_vec();
         let stored = c.upload(png, "image/png").await.unwrap();
         assert_eq!(stored["hash"], format!("{:064x}", 8));
@@ -422,9 +370,9 @@ mod tests {
 
     #[tokio::test]
     async fn the_registry_keeps_an_unchanged_client() {
-        let o = other(AccessMode::Lan).await;
+        let o = Other::new(AccessMode::Lan).await;
         let clients = PeerClients::default();
-        let cfg = config(&o, "127.0.0.1", PeerAuthKind::Trusted);
+        let cfg = o.config("127.0.0.1", PeerAuthKind::Trusted);
         clients.set(vec![cfg.clone()]).unwrap();
         let first = clients.get(ID).unwrap();
         clients.set(vec![cfg.clone()]).unwrap();

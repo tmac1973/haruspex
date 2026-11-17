@@ -3285,3 +3285,46 @@ fn a_fetched_card_keeps_its_result_and_when_it_was_fetched() {
     assert_eq!(card.last_result.as_deref(), Some(r#"{"now":{}}"#));
     assert_eq!(card.updated_at, Some(1234));
 }
+
+#[test]
+fn peer_lists_round_trip_and_replace() {
+    let db = test_db();
+    assert_eq!(db.get_peer_lists("p").unwrap(), None);
+    let sessions = serde_json::json!([{ "id": "s", "title": "T", "root": "/r", "updatedAt": 1 }]);
+    let chats = serde_json::json!([{ "id": "c", "title": "C", "updatedAt": 2 }]);
+    db.save_peer_lists("p", &sessions, &chats, 10).unwrap();
+    let got = db.get_peer_lists("p").unwrap().unwrap();
+    assert_eq!(
+        (got.sessions, got.chats, got.updated_at),
+        (sessions, chats.clone(), 10)
+    );
+    db.save_peer_lists("p", &serde_json::json!([]), &chats, 20)
+        .unwrap();
+    let got = db.get_peer_lists("p").unwrap().unwrap();
+    assert_eq!((got.sessions, got.updated_at), (serde_json::json!([]), 20));
+}
+
+#[test]
+fn peer_lists_refuse_what_is_not_a_short_array() {
+    let db = test_db();
+    let empty = serde_json::json!([]);
+    assert!(db
+        .save_peer_lists("p", &serde_json::json!({}), &empty, 1)
+        .is_err());
+    let many = serde_json::Value::Array(vec![serde_json::json!(1); 2_001]);
+    assert!(db.save_peer_lists("p", &many, &empty, 1).is_err());
+    let big = serde_json::json!(["x".repeat(1024 * 1024)]);
+    assert!(db.save_peer_lists("p", &big, &empty, 1).is_err());
+    assert_eq!(db.get_peer_lists("p").unwrap(), None);
+}
+
+#[test]
+fn peer_lists_of_removed_peers_go() {
+    let db = test_db();
+    let empty = serde_json::json!([]);
+    db.save_peer_lists("keep", &empty, &empty, 1).unwrap();
+    db.save_peer_lists("gone", &empty, &empty, 1).unwrap();
+    db.retain_peer_lists(&["keep".to_string()]).unwrap();
+    assert!(db.get_peer_lists("keep").unwrap().is_some());
+    assert_eq!(db.get_peer_lists("gone").unwrap(), None);
+}

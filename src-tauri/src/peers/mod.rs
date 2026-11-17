@@ -8,6 +8,9 @@
 
 pub mod client;
 pub mod commands;
+pub mod manager;
+#[cfg(test)]
+mod test_support;
 pub mod tls;
 
 use serde::{Deserialize, Serialize};
