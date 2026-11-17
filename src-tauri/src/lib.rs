@@ -36,6 +36,7 @@ mod models;
 mod net_util;
 mod orphans;
 mod owner;
+mod peers;
 mod power;
 mod process_util;
 mod proxy;
@@ -153,6 +154,7 @@ pub fn run() {
             let e2e = app.config().identifier.ends_with(".e2e");
             app.manage(engine::EngineHub::new(e2e));
             app.manage(owner::OwnerApi::load(app.path().app_data_dir().ok()));
+            app.manage(peers::client::PeerClients::default());
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
             app.manage(fs_tools::created::CreatedFiles::new(
@@ -654,6 +656,12 @@ pub fn run() {
             owner::commands::owner_api_apply,
             owner::commands::owner_api_status,
             owner::commands::instance_identity,
+            peers::commands::peer_probe,
+            peers::commands::peers_set_config,
+            peers::commands::peer_op,
+            peers::commands::peer_upload,
+            peers::commands::peer_images_lookup,
+            peers::commands::peer_image,
             owner::commands::owner_clients_list,
             owner::commands::owner_client_create,
             owner::commands::owner_client_revoke,

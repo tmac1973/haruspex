@@ -133,7 +133,7 @@ pub fn generate(names: &[String], ips: &[IpAddr], now: OffsetDateTime) -> Result
 }
 
 /// `AB:CD:…`, upper case, as Chrome and Firefox show a certificate's SHA-256.
-fn fingerprint(der: &[u8]) -> String {
+pub(crate) fn fingerprint(der: &[u8]) -> String {
     Sha256::digest(der)
         .iter()
         .map(|b| format!("{b:02X}"))

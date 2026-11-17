@@ -19,11 +19,13 @@ and run ops, uploads and image fetches against a trusted one, with either
   (accepts any cert, records the leaf's SHA-256) and `Pinned(fingerprint)`.
 - `src-tauri/src/peers/client.rs` — `PeerClient`: address resolution, reqwest
   client built with the pinned verifier, `probe`, `op`, `upload`, `image`,
-  `images_lookup`, `events` (returns a byte stream; used by phase 03).
+  `images_lookup`. The event stream is phase 03's, which adds it here.
 - `src-tauri/src/peers/commands.rs` — Tauri commands `peer_probe`, `peer_op`,
-  `peer_upload`, `peer_image`, `peer_images_lookup`, `peer_token_set`,
-  `peer_token_clear`.
-- `src-tauri/src/secrets.rs` — entry names `peer-token:<instanceId>`.
+  `peer_upload`, `peer_image`, `peer_images_lookup`, and the temporary
+  `peers_set_config`.
+- `src-tauri/src/secrets.rs` — a `peer:` namespace, not readable from the
+  webview; a token is saved with the existing `secret_set` /
+  `secret_delete` under `peer:<instanceId>`, as other secrets are.
 - `src-tauri/src/owner/tls.rs` — make the private `fn fingerprint(der)`
   `pub(crate)`, so both sides print the same `AA:BB:…` string.
 - `src-tauri/src/lib.rs` — `mod peers;`, manage a `PeerClients` registry,
@@ -38,7 +40,7 @@ and run ops, uploads and image fetches against a trusted one, with either
      PeerAuthKind }` where `address` is what the owner typed or mDNS found
      (name or IP), `fingerprint` the pinned `AA:BB:…` string.
    - `enum PeerAuthKind { Trusted, Token }`. A token's value lives only in the
-     keyring under `peer-token:<instance_id>`; Rust reads it per client build.
+     keyring under `peer:<instance_id>`; Rust reads it per client build.
    - `PeerProbe { instance_id, name, version, fingerprint, address, port }`.
 2. Address resolution: every connect resolves `address` with
    `tokio::net::lookup_host((address, port))`, preferring IPv4, and connects to
@@ -70,10 +72,9 @@ and run ops, uploads and image fetches against a trusted one, with either
    `"not let in"`; a connect failure as `"offline"`.
 7. Commands (all async, domain-first names): `peer_probe(address, port)`,
    `peer_op(peer_id, operation: serde_json::Value)` → the `value` the API
-   answers, `peer_upload(peer_id, bytes: Vec<u8>, content_type)` → `{hash}`,
-   `peer_image(peer_id, hash)` → `{bytes, contentType}`,
-   `peer_images_lookup(peer_id, urls)`, `peer_token_set(peer_id, token)`,
-   `peer_token_clear(peer_id)`. They look the peer up in `PeerClients`, which
+   answers, `peer_upload` (raw body, `x-peer-id` and `content-type`
+   headers) → `{hash, mime, width, height}`, `peer_image(peer_id, hash)` →
+   raw bytes, `peer_images_lookup(peer_id, urls)`. They look the peer up in `PeerClients`, which
    phase 03 fills from `peers_apply`; until then `PeerClients::set` is called
    from a temporary `peers_set_config` command so tests and phase 05 can use it.
    Phase 03 replaces `peers_set_config` with `peers_apply`.

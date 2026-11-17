@@ -597,6 +597,7 @@ const NAMESPACES: &[&str] = &[
     "lemonade:",
     "remote:",
     "camera:",
+    "peer:",
 ];
 
 /// The namespaces the webview may read back, because it is what uses them:
