@@ -452,6 +452,13 @@ else
     # which cannot find the Visual Studio on current windows-latest images.
     rm -f Cargo.lock
 
+    # ort-sys rc.11 puts its DLLs (DirectML.dll on Windows) in OUT_DIR's third
+    # ancestor and that folder's examples/ and deps/. Since Rust 1.100, cargo's
+    # build layout is one level deeper, so that ancestor is target/release/build,
+    # which has neither folder, and the copy panics. Making them lets the build
+    # run; koko doesn't need the copies (Windows ships DirectML.dll).
+    mkdir -p target/release/build/examples target/release/build/deps
+
     cargo build --release --bin koko 2>&1
 
     # Restore original Cargo.toml
