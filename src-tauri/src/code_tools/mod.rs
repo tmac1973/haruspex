@@ -147,19 +147,30 @@ if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
 $global:LASTEXITCODE = 0";
 
 /// Run after it: the exit code a bash user expects. PowerShell's own is 1
-/// for any failure, a native program's code lost; this keeps it.
+/// for any failure, a native program's code lost; this keeps it. `$?` is
+/// taken inside the block, after the command, where it means what it would
+/// at the top level.
 const POWERSHELL_EXIT: &str =
-    "if (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }; exit 0";
+    "if (-not $global:__hx_ok) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }; exit 0";
 
 /// One command in PowerShell (`exe`: pwsh or Windows PowerShell): no
-/// profile and no prompts, scripts allowed (5.1 refuses `.uild.ps1` by
+/// profile and no prompts, scripts allowed (5.1 refuses `.\build.ps1` by
 /// default), and the script passed encoded so no quote in it is mangled on
 /// its way through the Windows command line.
+///
+/// The command's output goes through `Out-Default` before the exit line.
+/// Left to the implicit one, objects (`Select-Object`, `Get-Process`) are
+/// lost: the table formatter holds the first few back to size its columns,
+/// and `exit` ends the process before it prints them.
 fn powershell_command(exe: &str, command: &str) -> tokio::process::Command {
     use base64::Engine as _;
     let script = format!(
         "{POWERSHELL_PRELUDE}
+$global:__hx_ok = $true
+& {{
 {command}
+$global:__hx_ok = $?
+}} | Out-Default
 {POWERSHELL_EXIT}"
     );
     let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
@@ -852,6 +863,30 @@ Linux
             assert_eq!(res.exit_code, Some(1), "{res:?}");
             let res = run("cmd /c exit 4; Write-Output fine", 30, "p-later", None).await;
             assert_eq!(res.exit_code, Some(0), "{res:?}");
+        }
+
+        #[tokio::test]
+        async fn objects_are_printed_before_the_exit() {
+            let res = run(
+                r"Get-ChildItem -File $env:windir | Select-Object -First 2 Name, Length",
+                30,
+                "p-objects",
+                None,
+            )
+            .await;
+            assert!(res.stdout.contains("Length"), "{res:?}");
+            assert_eq!(res.exit_code, Some(0));
+        }
+
+        #[tokio::test]
+        async fn a_thrown_error_fails_the_command() {
+            let res = run("throw 'stop here'; Write-Output never", 30, "p-throw", None).await;
+            assert_eq!(res.exit_code, Some(1), "{res:?}");
+            assert!(!res.stdout.contains("never"), "{res:?}");
+            let stop = r"$ErrorActionPreference = 'Stop'; Get-Item C:\no\such; Write-Output never";
+            let res = run(stop, 30, "p-stop", None).await;
+            assert_eq!(res.exit_code, Some(1), "{res:?}");
+            assert!(!res.stdout.contains("never"), "{res:?}");
         }
 
         #[tokio::test]
