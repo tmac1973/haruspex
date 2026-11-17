@@ -16,6 +16,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { openAppWindow } from '#lib/appWindow.ts';
 
 import type { Prefill } from '#lib/code/fork.ts';
+import type { CodeSessionView } from '#lib/code/sessionView.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 import { sessionLabel } from '#lib/code/sessionList.ts';
 import { openShellForCommand } from '#lib/code/shellBridge.ts';
@@ -57,7 +58,7 @@ export function codeWindowTitle(session: { title: string; root: string }): strin
 }
 
 /** Why a session can't move windows right now, or null when it can. */
-export function moveBlockedReason(session: Pick<CodeSession, 'status'>): string | null {
+export function moveBlockedReason(session: Pick<CodeSessionView, 'status'>): string | null {
 	switch (session.status) {
 		case 'idle':
 			return null;
@@ -102,7 +103,7 @@ export function _resetForTests(): void {
  * the session comes back as a sub-tab.
  */
 export async function detachSession(
-	session: CodeSession,
+	session: Pick<CodeSessionView, 'id' | 'title' | 'root' | 'status'>,
 	api: CodeWindowApi = tauriApi
 ): Promise<boolean> {
 	if (moveBlockedReason(session)) return false;
@@ -138,11 +139,13 @@ export async function reattachToMain(
  * ever shows its own session.
  */
 export async function forkFromMessage(
-	session: CodeSession,
+	session: Pick<CodeSessionView, 'id' | 'fork'>,
 	index: number,
 	mode: CodeForkMode,
 	api: CodeWindowApi = tauriApi
 ): Promise<void> {
+	// Another computer's session forks there.
+	if (session.fork) return session.fork(index, mode);
 	if (!inDetachedCodeWindow()) {
 		await forkAndOpen(session.id, index, mode);
 		return;
@@ -160,9 +163,11 @@ export async function forkFromMessage(
  * detached window that is the main window's tab strip too.
  */
 export async function newSessionBeside(
-	session: Pick<CodeSession, 'root' | 'wslDistro'>,
+	session: Pick<CodeSessionView, 'root' | 'wslDistro' | 'newBeside'>,
 	api: CodeWindowApi = tauriApi
 ): Promise<void> {
+	// Another computer's session: the new one is made there.
+	if (session.newBeside) return session.newBeside();
 	// In the same folder, so in the same WSL distro too.
 	const wslDistro = session.wslDistro ?? null;
 	if (!inDetachedCodeWindow()) {

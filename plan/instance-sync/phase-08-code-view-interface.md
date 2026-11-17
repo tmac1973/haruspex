@@ -62,7 +62,13 @@ The local Code tab behaves exactly as before.
 4. `forkFromMessage` and `newSessionBeside` take the view and call
    `view.fork?.(index, mode)` / `view.newBeside?.()` when present; local
    behaviour stays in `CodeSession`.
-5. No behaviour change; the existing Code component and store tests stay
+5. Two writes components made on the session become methods, so a view
+   needn't expose writable state: `removeSteering(index)` (required) and
+   `ignoreProject()` (optional). `closeView(id)` closes a tab of either
+   kind; a remote view's own `close?()` runs after it leaves the strip.
+   Editor links and Open in Shell in `CodeSteps` follow `openInEditor` and
+   `openInShell` through its `linkFiles` and new `openInShell` props.
+6. No behaviour change; the existing Code component and store tests stay
    green.
 
 ## Build gate

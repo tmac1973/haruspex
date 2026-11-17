@@ -8,7 +8,8 @@
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { locationLabel } from '#lib/code/sessionList.ts';
-	import { deleteSession, type CodeSession } from '#lib/stores/code.svelte.ts';
+	import { deleteSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { wslShare } from '#lib/code/paths.ts';
@@ -17,7 +18,7 @@
 		session,
 		ondeleted
 	}: {
-		session: CodeSession;
+		session: CodeSessionView;
 		/** After the session is deleted (a detached window closes itself). */
 		ondeleted?: () => void;
 	} = $props();
@@ -46,7 +47,7 @@
 		picked = null;
 		if (!dir) return;
 		try {
-			await session.moveTo(dir);
+			await session.moveTo?.(dir);
 		} catch (e) {
 			showToast(`Couldn't use that folder: ${errMessage(e)}`, { kind: 'error' });
 		}
@@ -69,15 +70,17 @@
 		></span
 	>
 	<span class="actions">
-		<button
-			class="btn"
-			disabled={session.busy}
-			title="Point this session at another folder; its conversation stays"
-			onclick={() => void choose()}>Choose folder…</button
-		>
-		<button class="btn danger" disabled={session.busy} onclick={() => (deleting = true)}
-			>Delete session</button
-		>
+		{#if session.capabilities.localFiles && session.moveTo}
+			<button
+				class="btn"
+				disabled={session.busy}
+				title="Point this session at another folder; its conversation stays"
+				onclick={() => void choose()}>Choose folder…</button
+			>
+			<button class="btn danger" disabled={session.busy} onclick={() => (deleting = true)}
+				>Delete session</button
+			>
+		{/if}
 	</span>
 </div>
 

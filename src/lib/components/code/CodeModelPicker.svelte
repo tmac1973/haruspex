@@ -13,12 +13,12 @@
 		sessionModelLabel
 	} from '#lib/code/backends.ts';
 	import { emptyModelForm, type JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
-	let { session }: { session: CodeSession } = $props();
+	let { session }: { session: CodeSessionView } = $props();
 
 	const label = $derived(sessionModelLabel(session.backend, getLiveSettings()));
 

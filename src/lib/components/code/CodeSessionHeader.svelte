@@ -16,13 +16,13 @@
 	import SessionUsageChip from '#lib/components/code/SessionUsageChip.svelte';
 	import { folderName } from '#lib/code/sessionList.ts';
 	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { setRepoTrusted } from '#lib/skills/project.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
-	let { session }: { session: CodeSession } = $props();
+	let { session }: { session: CodeSessionView } = $props();
 
 	// Read live so a session following Settings re-resolves when Settings
 	// changes model; the descriptor itself reads settings untracked.
@@ -48,6 +48,7 @@
 	}
 
 	function openFolder() {
+		if (!session.capabilities.localFiles) return;
 		void invoke('folder_open', { path: ioRoot(session.root, session.wslDistro) }).catch(
 			(e: unknown) => showToast(`Couldn't open the folder: ${errMessage(e)}`, { kind: 'error' })
 		);
@@ -56,8 +57,7 @@
 	function ignoreProject() {
 		if (!session.projectRoot) return;
 		setRepoTrusted(session.projectRoot, false);
-		session.projectRoot = null;
-		session.agentsMd = null;
+		session.ignoreProject?.();
 	}
 </script>
 
@@ -79,7 +79,9 @@
 		<span>{folderName(session.root)}</span>
 	</button>
 
-	<CodeBranchControl {session} />
+	{#if session.capabilities.git}
+		<CodeBranchControl {session} />
+	{/if}
 
 	{#if session.readOnly}
 		<span
@@ -108,7 +110,9 @@
 		{/each}
 	</select>
 
-	<ExtrasMenu {session} />
+	{#if session.capabilities.helpers || session.capabilities.specialists}
+		<ExtrasMenu {session} />
+	{/if}
 
 	<span class="spacer"></span>
 

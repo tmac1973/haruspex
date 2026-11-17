@@ -39,6 +39,7 @@
 		wslDistro = null,
 		openFile,
 		compact = false,
+		openInShell = true,
 		onStopSubtask
 	}: {
 		steps: SearchStep[];
@@ -51,6 +52,8 @@
 		openFile?: (rel: string) => void;
 		/** The web client: subtask cards without their steps or stop button. */
 		compact?: boolean;
+		/** Commands offer Open in Shell (with `root`): off for another computer's session. */
+		openInShell?: boolean;
 		/** Stop a running subtask, by its id; absent once the turn is over. */
 		onStopSubtask?: (id: string) => void;
 	} = $props();
@@ -118,7 +121,7 @@
 				{@html renderMarkdown(block.text, undefined, codePaths)}
 			</div>
 		{:else if block.kind === 'command'}
-			<CommandCard step={block.step} {root} />
+			<CommandCard step={block.step} root={openInShell ? root : undefined} />
 		{:else if block.kind === 'diff'}
 			<DiffCard diff={block.diff} onOpen={opener(block.diff)} />
 		{:else if block.kind === 'subtask'}

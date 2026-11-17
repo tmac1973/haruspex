@@ -8,9 +8,9 @@
 	import CodeTabStrip from '#lib/components/code/CodeTabStrip.svelte';
 	import CodePane from '#lib/components/code/CodePane.svelte';
 	import NewSessionDialog from '#lib/components/code/NewSessionDialog.svelte';
-	import { getActiveSessionId, getOpenSessions } from '#lib/stores/code.svelte.ts';
+	import { getActiveSessionId, getOpenViews } from '#lib/stores/code.svelte.ts';
 
-	const sessions = $derived(getOpenSessions());
+	const sessions = $derived(getOpenViews());
 	const activeId = $derived(getActiveSessionId());
 
 	let dialogOpen = $state(false);

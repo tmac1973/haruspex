@@ -28,7 +28,7 @@
 	import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import type { SteeringMessage } from '#lib/agent/loop.ts';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
@@ -37,7 +37,7 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import { trackFollow } from '#lib/utils/followBottom.ts';
 
-	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
+	let { session, notes = [] }: { session: CodeSessionView; notes?: TranscriptNote[] } = $props();
 
 	let turnsShown = $state(TURNS_PER_PAGE);
 	const messages = $derived(session.messages);
@@ -146,7 +146,9 @@
 	});
 
 	/** `path:line` in answers links to the editor, for files in the folder. */
-	const codePaths = $derived(makeCodePathLinker(session.root));
+	const codePaths = $derived(
+		session.capabilities.openInEditor ? makeCodePathLinker(session.root) : undefined
+	);
 
 	/**
 	 * Rendered markdown can't carry handlers, so its path links are buttons
@@ -154,7 +156,8 @@
 	 */
 	function onThreadClick(event: MouseEvent) {
 		const target = codePathFromClick(event);
-		if (target) openFileFromClick(session.root, target.path, session.wslDistro);
+		if (target && session.capabilities.openInEditor)
+			openFileFromClick(session.root, target.path, session.wslDistro);
 	}
 
 	/** Forks once the turn is over: the saved thread is then the one shown. */
@@ -172,7 +175,7 @@
 	function fork(index: number) {
 		forkAt = index;
 		// The dialog offers a worktree only in a repository: look again.
-		void session.refreshGit();
+		void session.refreshGit?.();
 	}
 
 	async function forkTo(mode: CodeForkMode) {
@@ -188,7 +191,7 @@
 	}
 
 	function removePending(index: number) {
-		session.steering = session.steering.filter((_, k) => k !== index);
+		session.removeSteering(index);
 	}
 </script>
 
@@ -246,6 +249,8 @@
 						steps={session.messageSteps[i]}
 						root={session.root}
 						wslDistro={session.wslDistro}
+						linkFiles={session.capabilities.openInEditor}
+						openInShell={session.capabilities.openInShell}
 					/>
 				{/if}
 				<ChatMessage
@@ -270,6 +275,8 @@
 				steps={session.messageSteps[i]}
 				root={session.root}
 				wslDistro={session.wslDistro}
+				linkFiles={session.capabilities.openInEditor}
+				openInShell={session.capabilities.openInShell}
 			/>
 		{/if}
 	{/each}
@@ -292,6 +299,8 @@
 				steps={segment.steps}
 				root={session.root}
 				wslDistro={session.wslDistro}
+				linkFiles={session.capabilities.openInEditor}
+				openInShell={session.capabilities.openInShell}
 				onStopSubtask={session.stopSubtask}
 			/>
 		{/if}
@@ -334,11 +343,13 @@
 	{#if session.status === 'waiting-shell' && session.shellWait}
 		<div class="shell-wait" data-testid="shell-wait">
 			<span>Waiting for you in {session.shellWait.shellName} — press Enter there.</span>
-			<button
-				class="link"
-				onclick={session.goToShell}
-				title="Show {session.shellWait.shellName} in the Shell tab">Go to shell</button
-			>
+			{#if session.capabilities.openInShell && session.goToShell}
+				<button
+					class="link"
+					onclick={session.goToShell}
+					title="Show {session.shellWait.shellName} in the Shell tab">Go to shell</button
+				>
+			{/if}
 			<button
 				class="link"
 				onclick={session.cancelShellWait}
@@ -383,7 +394,7 @@
 
 <ForkDialog
 	open={forkAt !== null}
-	git={session.git}
+	git={session.git ?? null}
 	onfork={forkTo}
 	oncancel={() => (forkAt = null)}
 />

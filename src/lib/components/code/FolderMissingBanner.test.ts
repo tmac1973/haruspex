@@ -12,6 +12,7 @@ vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 
 import FolderMissingBanner from './FolderMissingBanner.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
+import { ALL_CAPABILITIES } from '#lib/code/sessionView.ts';
 
 function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
 	return {
@@ -19,6 +20,7 @@ function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
 		root: '/gone/app',
 		busy: false,
 		folderMissing: true,
+		capabilities: ALL_CAPABILITIES,
 		moveTo: vi.fn(async () => {}),
 		...over
 	} as unknown as CodeSession;

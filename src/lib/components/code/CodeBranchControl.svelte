@@ -20,11 +20,12 @@
 	} from '#lib/code/git.ts';
 	import { openSessionsSharing } from '#lib/code/folders.ts';
 	import { sessionLabel } from '#lib/code/sessionList.ts';
-	import { getOpenSessions, type CodeSession } from '#lib/stores/code.svelte.ts';
+	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
-	let { session }: { session: CodeSession } = $props();
+	let { session }: { session: CodeSessionView } = $props();
 
 	const git = $derived(session.git);
 	const blocked = $derived(git ? switchBlockedReason(git, session.busy) : null);
@@ -45,8 +46,8 @@
 	let root = $state<HTMLDivElement | null>(null);
 
 	onMount(() => {
-		void session.refreshGit();
-		const onFocus = () => void session.refreshGit();
+		void session.refreshGit?.();
+		const onFocus = () => void session.refreshGit?.();
 		window.addEventListener('focus', onFocus);
 		return () => window.removeEventListener('focus', onFocus);
 	});
@@ -68,7 +69,7 @@
 		open = true;
 		creating = false;
 		newName = '';
-		await session.refreshGit();
+		await session.refreshGit?.();
 		const folder = session.git?.repo_root ?? session.root;
 		const [names, others] = await Promise.all([
 			gitBranches(session.root, session.wslDistro).catch(() => [] as string[]),
@@ -98,7 +99,7 @@
 			showToast(`${failure}: ${errMessage(e)}`, { kind: 'error' });
 		} finally {
 			working = false;
-			await session.refreshGit();
+			await session.refreshGit?.();
 		}
 	}
 
