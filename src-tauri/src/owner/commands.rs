@@ -108,12 +108,27 @@ fn set_engine(app: &AppHandle, on: bool) {
     }
 }
 
-/// Start, restart or stop the API to match `config`.
+/// Start, restart or stop the API to match `config`, and say over mDNS that
+/// it's here while it listens on every network (`peers/mdns.rs`).
 #[tauri::command]
 pub async fn owner_api_apply(
     app: AppHandle,
     config: OwnerApiConfig,
 ) -> Result<OwnerApiStatus, String> {
+    let result = apply(&app, config).await;
+    let mdns = app.state::<crate::peers::mdns::Mdns>();
+    match result
+        .as_ref()
+        .ok()
+        .and_then(|s| s.port.filter(|_| s.bind_all))
+    {
+        Some(port) => mdns.advertise(&app.state::<OwnerApi>().identity(), port),
+        None => mdns.unadvertise(),
+    }
+    result
+}
+
+async fn apply(app: &AppHandle, config: OwnerApiConfig) -> Result<OwnerApiStatus, String> {
     let api = app.state::<OwnerApi>();
     // Who may connect changes in place: no restart, nobody dropped.
     api.trust.set(config.access.clone());
@@ -151,7 +166,7 @@ pub async fn owner_api_apply(
         if let Ok(clients) = api.clients() {
             clients.flush();
         }
-        set_engine(&app, false);
+        set_engine(app, false);
         return Ok(status(&api));
     };
     let tls = super::tls::server_config(&identity)?;
@@ -161,14 +176,14 @@ pub async fn owner_api_apply(
         audio: Arc::new(AppAudio(app.clone())),
         clients: api.clients()?,
         pairing: api.pairing.clone(),
-        web_root: super::web_root(&app),
+        web_root: super::web_root(app),
         trust: api.trust.clone(),
         identity: api.identity(),
     };
     let running = server::start(services, config.port, config.bind_all, tls).await?;
     *api.running.lock_or_recover() = Some(running);
     *api.served.lock_or_recover() = Some((identity.fingerprint, identity.cert_pem));
-    set_engine(&app, true);
+    set_engine(app, true);
     Ok(status(&api))
 }
 

@@ -155,6 +155,7 @@ pub fn run() {
             app.manage(engine::EngineHub::new(e2e));
             app.manage(owner::OwnerApi::load(app.path().app_data_dir().ok()));
             app.manage(peers::manager::PeerManager::default());
+            app.manage(peers::mdns::Mdns::default());
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
             app.manage(fs_tools::created::CreatedFiles::new(
@@ -659,6 +660,7 @@ pub fn run() {
             peers::commands::peer_probe,
             peers::commands::peers_apply,
             peers::commands::peers_status,
+            peers::commands::peers_found,
             peers::commands::peer_lists_get,
             peers::commands::peer_lists_save,
             peers::commands::peer_op,
@@ -849,6 +851,10 @@ pub fn run() {
                 app.state::<tasks::BackgroundTasks>().cancel_all();
                 shell_mgr.shutdown_all();
                 app.state::<fs_tools::editor::EditorWatches>().stop_all();
+                // A goodbye over mDNS, so other computers drop this one now
+                // rather than when its record times out.
+                app.state::<peers::mdns::Mdns>().unadvertise();
+                app.state::<peers::mdns::Mdns>().browse_stop();
                 // MCP children are the ones most likely to outlive us: there
                 // can be several, and they are third-party programs that need
                 // not honour a closed stdin.

@@ -1,5 +1,5 @@
-//! The webview's door to other computers: probe one, follow the trusted
-//! ones (`manager.rs`), and run operations, uploads and image reads through
+//! The webview's door to other computers: find them (`mdns.rs`), probe one,
+//! follow the trusted ones (`manager.rs`), and run operations, uploads and image reads through
 //! their pinned clients. A token is saved with `secret_set` under
 //! `peer:<instanceId>`.
 
@@ -7,10 +7,11 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use tauri::ipc::{InvokeBody, Request, Response};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::client::probe;
 use super::manager::{AppEmit, PeerManager, PeerStatus, PeersConfig};
+use super::mdns::{FoundPeer, Mdns};
 use super::PeerProbe;
 use crate::db::{Database, PeerLists};
 
@@ -21,9 +22,10 @@ pub async fn peer_probe(address: String, port: u16) -> Result<PeerProbe, String>
     probe(address.trim(), port).await
 }
 
-/// Match Settings: follow each trusted computer while the feature is on, and
-/// drop the saved lists of any the owner removed. Idempotent, so a settings
-/// write about something else drops no stream.
+/// Match Settings: while the feature is on, look for computers on the LAN
+/// and follow each trusted one; drop the saved lists of any the owner
+/// removed. Idempotent, so a settings write about something else drops no
+/// stream.
 #[tauri::command]
 pub async fn peers_apply(
     app: AppHandle,
@@ -32,6 +34,19 @@ pub async fn peers_apply(
     config: PeersConfig,
 ) -> Result<(), String> {
     let ids: Vec<String> = config.peers.iter().map(|p| p.instance_id.clone()).collect();
+    let mdns = app.state::<Mdns>();
+    if config.enabled {
+        let own_id = app.state::<crate::owner::OwnerApi>().identity().id.clone();
+        let emitter = app.clone();
+        mdns.browse_start(
+            &own_id,
+            Arc::new(move |found: &[FoundPeer]| {
+                let _ = emitter.emit("peer://found", found);
+            }),
+        );
+    } else {
+        mdns.browse_stop();
+    }
     manager.apply(config, Arc::new(AppEmit(app)))?;
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || db.retain_peer_lists(&ids))
@@ -44,6 +59,13 @@ pub async fn peers_apply(
 #[tauri::command]
 pub fn peers_status(manager: State<'_, PeerManager>) -> Vec<PeerStatus> {
     manager.statuses()
+}
+
+/// The computers mDNS has found so far, for a window opened after the
+/// `peer://found` events went out. Empty while the feature is off.
+#[tauri::command]
+pub fn peers_found(mdns: State<'_, Mdns>) -> Vec<FoundPeer> {
+    mdns.found()
 }
 
 /// A computer's last-known session and chat lists, if any were kept.
