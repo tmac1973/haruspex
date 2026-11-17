@@ -25,7 +25,8 @@ feature.
   `setPeerToken`, listeners for `peer://found` and `peer://status`.
 - `src/lib/components/settings/OwnerApiSection.svelte` (Settings → Remote
   control; `RemoteSection.svelte` is Guest chat) — add the "Other
-  computers" subsection when `PEERS_READY`.
+  computers" subsection when `PEERS_READY`. The subsection itself is
+  `OtherComputers.svelte`, since OwnerApiSection is already ~580 lines.
 - `src/lib/components/settings/PeerTrustDialog.svelte` — new: fingerprint
   confirmation (first contact and changed certificate).
 - `src/lib/components/settings/PeerTokenDialog.svelte` — new: paste a token.
@@ -62,7 +63,8 @@ feature.
    Advanced → Certificate on <name>." Buttons **Trust** and **Don't trust**.
    Trust adds `{instanceId, name, address, port, fingerprint, auth:
    'trusted'}` to `peers` and removes the id from `refusedPeers`. Don't trust
-   adds the id to `refusedPeers` (never offered again in Found; adding it by
+   adds the id to `refusedPeers` (Esc or a click outside only closes the
+   dialog, deciding nothing; never offered again in Found; adding it by
    hand probes and asks again, which is "re-added" in the overview).
 5. Changed certificate: **Check again…** probes; the dialog shows the pinned
    and the new fingerprint, both labelled. Trust replaces the pin. Don't
