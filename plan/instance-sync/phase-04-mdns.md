@@ -26,13 +26,16 @@ instance id. Uses `mdns-sd`, so no Avahi or Bonjour is needed.
 1. One lazily created `ServiceDaemon` shared by advertise and browse, shut
    down when neither is active.
 2. Advertise: instance name = identity name (phase 01), deduplicated by
-   mdns-sd if two share it; host = `<name>.local.`; port = owner API port;
-   addresses from `mdns-sd`'s interface enumeration with loopback excluded;
+   mdns-sd if two share it; host = `haruspex-<first 8 of id>.local.`, not
+   `<name>.local.`, which Avahi or Bonjour may already answer for; port =
+   owner API port; addresses from `mdns-sd`'s interface enumeration;
    TXT: `id=<instanceId>`, `v=<CARGO_PKG_VERSION>`, `api=1`. The fingerprint
    is **not** advertised: mDNS is unauthenticated and the owner confirms the
    fingerprint by eye (overview decision).
 3. Browse: on `ServiceResolved`, build `FoundPeer { instance_id, name,
-   addresses: Vec<String>, port, version }`, skip it if `instance_id` is ours,
+   addresses: Vec<String>, port, version }` (loopback and IPv6 link-local
+   dropped; a record left with none is ignored, since on one machine it can
+   arrive over loopback first), skip it if `instance_id` is ours,
    keep a map by `instance_id` (latest wins), emit `peer://found` with the
    whole list. On `ServiceRemoved`, drop it and emit. A record without `id`
    is ignored.

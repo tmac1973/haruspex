@@ -359,6 +359,7 @@ export const IPC = {
 	peer_probe: 'peer_probe',
 	peer_upload: 'peer_upload',
 	peers_apply: 'peers_apply',
+	peers_found: 'peers_found',
 	peers_status: 'peers_status',
 	power_inhibit_acquire: 'power_inhibit_acquire',
 	power_inhibit_release: 'power_inhibit_release',

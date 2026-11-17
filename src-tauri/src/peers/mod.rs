@@ -9,6 +9,7 @@
 pub mod client;
 pub mod commands;
 pub mod manager;
+pub mod mdns;
 #[cfg(test)]
 mod test_support;
 pub mod tls;
