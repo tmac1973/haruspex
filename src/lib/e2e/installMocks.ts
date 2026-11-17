@@ -106,6 +106,11 @@ const TABLE: Record<string, Handler> = {
 	}),
 	owner_clients_list: empty,
 	owner_trusted_hosts: empty,
+	// Settings → Remote control → Other computers: none trusted, none found.
+	peers_apply: none,
+	peers_found: empty,
+	peers_status: empty,
+	instance_identity: () => ({ id: 'e2e', name: 'e2e' }),
 	remote_stop: () => ({
 		running: false,
 		port: null,
