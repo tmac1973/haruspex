@@ -36,8 +36,10 @@ One stream per peer, however many windows are open.
      (blank-line framed, `data:` lines joined with `\n`, the same rule as
      `sseParser` in `src/web/api.ts`), and emits
      `app.emit("peer://event", {peerId, event})` with the parsed JSON as is.
-   - on connect emits `peer://event` with `{type:"ready"}`, as the web stream
-     does, so the frontend resyncs.
+   - the server's own first event on each connect is `{type:"ready"}`, which
+     the manager forwards like any other, so the frontend resyncs.
+   - 45 s without a byte (the server keeps alive every 15 s) counts as a
+     dropped connection.
    - on end or error: status `offline` (or `certificateChanged` / `notLetIn`
      from phase 02's errors, which stop the task until the next apply instead
      of retrying), then retries after 1 s doubling to 30 s; success resets.
@@ -51,8 +53,8 @@ One stream per peer, however many windows are open.
    are JSON arrays the frontend writes (phase 07) holding only `{id, title,
    root, updatedAt}` for sessions (`updatedAt` null from an older peer) and
    `{id, title, updatedAt}` for chats; Rust doesn't interpret them. `peer_lists_save`
-   rejects arrays over 2,000 entries or 1 MB. Deleting a peer from config in
-   `peers_apply` deletes its row.
+   rejects arrays over 2,000 entries or 1 MB. `peers_apply` keeps only the rows of
+   peers still in Settings, so turning the feature off keeps them.
 5. The manager never runs ops itself; it only streams. Ops go through phase
    02's commands, which now look peers up in the manager's config.
 

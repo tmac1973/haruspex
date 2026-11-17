@@ -154,7 +154,7 @@ pub fn run() {
             let e2e = app.config().identifier.ends_with(".e2e");
             app.manage(engine::EngineHub::new(e2e));
             app.manage(owner::OwnerApi::load(app.path().app_data_dir().ok()));
-            app.manage(peers::client::PeerClients::default());
+            app.manage(peers::manager::PeerManager::default());
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
             app.manage(fs_tools::created::CreatedFiles::new(
@@ -657,7 +657,10 @@ pub fn run() {
             owner::commands::owner_api_status,
             owner::commands::instance_identity,
             peers::commands::peer_probe,
-            peers::commands::peers_set_config,
+            peers::commands::peers_apply,
+            peers::commands::peers_status,
+            peers::commands::peer_lists_get,
+            peers::commands::peer_lists_save,
             peers::commands::peer_op,
             peers::commands::peer_upload,
             peers::commands::peer_images_lookup,
