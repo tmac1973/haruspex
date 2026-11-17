@@ -70,8 +70,8 @@ feature.
    changed", never contacted).
 6. `PeerTokenDialog`: one field, "Paste a script token from <name>'s
    Settings → Remote control → Add a device… → Token for a script."; saves
-   with `peer_token_set` and switches `auth` to `'token'`. Remove clears the
-   token with `peer_token_clear`.
+   with `secret_set('peer:<instanceId>', token)` and switches `auth` to
+   `'token'`. Remove clears it with `secret_delete`.
 7. PRs for phases 05–12 change nothing a release build shows (the flag is
    off there), so they take the `no-docs` label; phase 13 writes the guide.
 
