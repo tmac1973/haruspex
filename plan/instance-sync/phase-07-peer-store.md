@@ -29,10 +29,16 @@ computer's state from.
      `peerId`, and `listen('peer://status')` mapped to `Connection`
      (`open`→`open`, `connecting`→`connecting`, `offline`→`offline`,
      `notLetIn`/`certificateChanged`→`unauthorised`). Returns an unlisten.
-   - `upload(blob)` → `invoke('peer_upload', { peerId, bytes, contentType })`.
+   - `upload(blob)` → `invoke('peer_upload', bytes, { headers: { 'x-peer-id',
+     'content-type' } })`, the raw body phase 02's command takes.
+   - On subscribing it reads `peers_status`; a stream that was already open
+     gets a `ready` passed on, since the real one went by before this window
+     listened.
 2. `PeerView { config, status, client: EngineClient, lastKnown: {sessions,
    chats, updatedAt} | null }`. The registry follows `settings.peers` and
-   `peersEnabled`: adds, rebuilds on config change, disposes on removal.
+   `peersEnabled`: adds, rebuilds on config change, disposes on removal. It
+   starts on the first `startPeerStore()`, which phase 09 calls when the
+   sidebars first show other computers; until then nothing listens.
 3. While `connection === 'open'`, when `client.sessions` or `client.chats`
    change, debounce 2 s and `invoke('peer_lists_save', …)` with only `{id,
    title, root, updatedAt}` / `{id, title, updatedAt}`. On creation, load
@@ -56,7 +62,7 @@ computer's state from.
 
 - `transport.test.ts` with mocked `invoke`/`listen`: events for another peer
   are ignored; status maps correctly; errors map to statuses.
-- `store.svelte.test.ts`: adding a peer to settings creates a view; removing
+- `store.test.ts` (no runes in the test itself): adding a peer to settings creates a view; removing
   disposes it and unlistens; lists are saved debounced and trimmed to the
   four fields; offline returns `lastKnown` flagged offline; a lean peer
   lists no sessions.
