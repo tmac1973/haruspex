@@ -36,13 +36,18 @@ vi.mock('#lib/code/db.ts', () => ({
 	deleteCodeSession: vi.fn(),
 	updateCodeSessionMeta: vi.fn()
 }));
-const store = vi.hoisted(() => ({
-	openSession: vi.fn(async () => ({})),
-	closeSession: vi.fn(),
-	getActiveSessionId: vi.fn(() => 'a2'),
-	getOpenSessions: vi.fn(() => []),
-	deleteSession: vi.fn(async (): Promise<unknown> => ({ worktree: { kind: 'removed' } }))
-}));
+const store = vi.hoisted(() => {
+	const getOpenSessions = vi.fn(() => []);
+	return {
+		openSession: vi.fn(async () => ({})),
+		closeSession: vi.fn(),
+		getActiveSessionId: vi.fn(() => 'a2'),
+		getOpenSessions,
+		// No other computer's sessions here: the open views are the local ones.
+		getOpenViews: vi.fn(() => getOpenSessions()),
+		deleteSession: vi.fn(async (): Promise<unknown> => ({ worktree: { kind: 'removed' } }))
+	};
+});
 const toasts = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 vi.mock('#lib/stores/code.svelte.ts', () => store);

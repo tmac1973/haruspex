@@ -81,6 +81,7 @@ import { isUnsetTitle, sessionLabel } from '#lib/code/sessionList.ts';
 import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
 import { forkPoint, type Prefill } from '#lib/code/fork.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
+import { ALL_CAPABILITIES, type CodeSessionView } from '#lib/code/sessionView.ts';
 import {
 	branchNotice,
 	branchSeen,
@@ -149,8 +150,10 @@ export async function waitAtMost(
 	}
 }
 
-export class CodeSession {
+export class CodeSession implements CodeSessionView {
 	readonly id: string;
+	/** Every control applies to a session running here. */
+	readonly capabilities = ALL_CAPABILITIES;
 	/**
 	 * The project folder. Fixed for the session's life, except that a session
 	 * whose folder is gone can be pointed at another (`moveTo`).
@@ -364,6 +367,16 @@ export class CodeSession {
 	}
 
 	/** Show the Shell tab the turn waits on. */
+	removeSteering = (index: number): void => {
+		this.steering = this.steering.filter((_, k) => k !== index);
+	};
+
+	/** Forget the project and its AGENTS.md, once the owner untrusted it. */
+	ignoreProject = (): void => {
+		this.projectRoot = null;
+		this.agentsMd = null;
+	};
+
 	goToShell = (): void => {
 		this.shellWait?.focus();
 	};
@@ -1335,11 +1348,52 @@ export function getActiveSession(): CodeSession | null {
 	return sessions.find((s) => s.id === activeId) ?? null;
 }
 
+/**
+ * Sessions running on other computers, open as sub-tabs here beside the
+ * local ones (plan/instance-sync/). Kept apart from `sessions`: everything
+ * that runs or reports this computer's sessions (the engine, Home, the
+ * tasks chip, lean mode) reads `getOpenSessions`, and must not see them.
+ */
+const remoteViews = $state<CodeSessionView[]>([]);
+
+/** Every open sub-tab, local first, then other computers' sessions. */
+export function getOpenViews(): CodeSessionView[] {
+	return [...sessions, ...remoteViews];
+}
+
+export function getActiveView(): CodeSessionView | null {
+	return getOpenViews().find((s) => s.id === activeId) ?? null;
+}
+
+/** Open another computer's session as a sub-tab (or keep the one open), and show it. */
+export function registerOpenView(view: CodeSessionView): void {
+	if (!remoteViews.some((v) => v.id === view.id)) remoteViews.push(view);
+	activeId = view.id;
+}
+
+/** Drop another computer's session from the sub-tabs. */
+export function unregisterOpenView(id: string): void {
+	const idx = remoteViews.findIndex((v) => v.id === id);
+	if (idx < 0) return;
+	const all = getOpenViews();
+	const at = all.findIndex((v) => v.id === id);
+	remoteViews.splice(idx, 1);
+	if (activeId === id) activeId = (all[at + 1] ?? all[at - 1] ?? null)?.id ?? null;
+}
+
+/** Close a sub-tab of either kind. */
+export async function closeView(id: string): Promise<void> {
+	const remote = remoteViews.find((v) => v.id === id);
+	if (!remote) return closeSession(id);
+	unregisterOpenView(id);
+	await remote.close?.();
+}
+
 export function setActiveSession(id: string): void {
-	const session = sessions.find((s) => s.id === id);
-	if (!session) return;
+	const view = getOpenViews().find((s) => s.id === id);
+	if (!view) return;
 	activeId = id;
-	void session.checkFolder();
+	void view.checkFolder();
 }
 
 /**

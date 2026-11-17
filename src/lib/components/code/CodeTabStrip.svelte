@@ -9,13 +9,13 @@
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {
-		closeSession,
+		closeView,
 		getActiveSessionId,
-		getOpenSessions,
+		getOpenViews,
 		setActiveSession,
-		type CodeSession,
 		type CodeSessionStatus
 	} from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { sessionLabel } from '#lib/code/sessionList.ts';
 	import { detachSession, moveBlockedReason } from '#lib/code/windows.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -23,7 +23,7 @@
 
 	let { onNew }: { onNew: () => void } = $props();
 
-	const sessions = $derived(getOpenSessions());
+	const sessions = $derived(getOpenViews());
 	const activeId = $derived(getActiveSessionId());
 
 	/** Tooltip for a status dot; idle has no dot. */
@@ -34,7 +34,7 @@
 		return '';
 	}
 
-	let confirming = $state<CodeSession | null>(null);
+	let confirming = $state<CodeSessionView | null>(null);
 	let scroller = $state<HTMLDivElement>();
 
 	// Keep the active tab in view when it changes or a session opens.
@@ -76,7 +76,7 @@
 		tabs[to]?.focus();
 	}
 
-	function detach(event: MouseEvent, session: CodeSession) {
+	function detach(event: MouseEvent, session: CodeSessionView) {
 		event.stopPropagation();
 		if (moveBlockedReason(session)) return;
 		void detachSession(session).catch((e: unknown) =>
@@ -84,10 +84,10 @@
 		);
 	}
 
-	function close(event: MouseEvent, session: CodeSession) {
+	function close(event: MouseEvent, session: CodeSessionView) {
 		event.stopPropagation();
 		if (session.background.some((p) => p.running)) confirming = session;
-		else void closeSession(session.id);
+		else void closeView(session.id);
 	}
 </script>
 
@@ -122,14 +122,16 @@
 					></span>
 				{/if}
 				<span class="label">{sessionLabel(session)}</span>
-				<button
-					class="detach"
-					class:blocked={!!blocked}
-					aria-disabled={!!blocked}
-					title={blocked ?? 'Detach to its own window'}
-					aria-label="Detach {sessionLabel(session)}"
-					onclick={(e) => detach(e, session)}>⤢</button
-				>
+				{#if session.capabilities.detachWindow}
+					<button
+						class="detach"
+						class:blocked={!!blocked}
+						aria-disabled={!!blocked}
+						title={blocked ?? 'Detach to its own window'}
+						aria-label="Detach {sessionLabel(session)}"
+						onclick={(e) => detach(e, session)}>⤢</button
+					>
+				{/if}
 				<button
 					class="close"
 					title="Close session (it stays in the list)"
@@ -151,7 +153,7 @@
 	onconfirm={() => {
 		const s = confirming;
 		confirming = null;
-		if (s) void closeSession(s.id);
+		if (s) void closeView(s.id);
 	}}
 	oncancel={() => (confirming = null)}
 />

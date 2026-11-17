@@ -27,6 +27,7 @@
 		deleteSession,
 		getActiveSessionId,
 		getOpenSessions,
+		getOpenViews,
 		openSession
 	} from '#lib/stores/code.svelte.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
@@ -41,7 +42,7 @@
 	let loadError = $state<string | null>(null);
 	const entries = $derived(sidebarEntries(list));
 	const activeId = $derived(getActiveSessionId());
-	const openIds = $derived(new Set(getOpenSessions().map((s) => s.id)));
+	const openIds = $derived(new Set(getOpenViews().map((s) => s.id)));
 	/** Sessions some window has open, this one included (Rust's claims). */
 	let claimedIds = $state<string[]>([]);
 	/** Open in another window: claimed, but not a sub-tab here. */

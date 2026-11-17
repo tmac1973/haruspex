@@ -19,7 +19,7 @@
 	const isNotification = (text: string) => isWatchNotification(text) || isSubtaskNotification(text);
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { typedText } from '#lib/skills/content.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
@@ -29,7 +29,7 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import { autosizeTextarea } from '#lib/utils/autosize.ts';
 
-	let { session, slashHost }: { session: CodeSession; slashHost: SlashHost } = $props();
+	let { session, slashHost }: { session: CodeSessionView; slashHost: SlashHost } = $props();
 
 	let text = $state('');
 	let el = $state<HTMLTextAreaElement | null>(null);

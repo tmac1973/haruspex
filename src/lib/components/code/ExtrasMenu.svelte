@@ -11,12 +11,12 @@
 	import { specialistKind } from '#lib/specialists/kinds.ts';
 	import '#lib/specialists/kinds/index.ts';
 	import { sessionSpecialists } from '#lib/specialists/session.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
-	let { session }: { session: CodeSession } = $props();
+	let { session }: { session: CodeSessionView } = $props();
 
 	// Read live so the menu follows Settings → Code.
 	const settings = $derived(getLiveSettings());
@@ -26,23 +26,25 @@
 	});
 	const onIds = $derived.by(() => {
 		void settings;
-		return new Set(sessionSpecialists(session.specialists).map((e) => e.id));
+		return new Set(sessionSpecialists(session.specialists ?? null).map((e) => e.id));
 	});
 	const helperList = helpers();
 	const helpersOn = $derived.by(() => {
 		void settings;
-		return new Set(sessionHelpers(session.helpers).map((h) => h.id));
+		return new Set(sessionHelpers(session.helpers ?? null).map((h) => h.id));
 	});
 	const count = $derived(onIds.size + helpersOn.size);
-	const custom = $derived(session.specialists !== null || session.helpers !== null);
+	const custom = $derived(
+		(session.specialists ?? null) !== null || (session.helpers ?? null) !== null
+	);
 
 	let open = $state(false);
 	let wrap = $state<HTMLElement>();
 
 	async function store(kind: 'specialists' | 'helpers', ids: string[] | null) {
 		try {
-			if (kind === 'specialists') await session.setSessionSpecialists(ids);
-			else await session.setSessionHelpers(ids);
+			if (kind === 'specialists') await session.setSessionSpecialists?.(ids);
+			else await session.setSessionHelpers?.(ids);
 		} catch (e) {
 			showToast(`Couldn't change the ${kind}: ${errMessage(e)}`, { kind: 'error' });
 		}

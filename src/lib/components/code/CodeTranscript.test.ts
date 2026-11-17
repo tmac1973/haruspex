@@ -15,11 +15,13 @@ vi.mock('#lib/code/windows.ts', () => ({ forkFromMessage }));
 
 import CodeTranscript from './CodeTranscript.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
+import { ALL_CAPABILITIES } from '#lib/code/sessionView.ts';
 
 /** The fields the transcript reads, on a plain object. */
 function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
-	return {
+	const session = {
 		id: 's1',
+		capabilities: ALL_CAPABILITIES,
 		root: '/p/app',
 		messages: [],
 		messageSteps: {},
@@ -40,8 +42,12 @@ function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
 		folderMissing: false,
 		continueTurn: vi.fn(),
 		refreshGit: vi.fn(async () => {}),
+		removeSteering: (index: number) => {
+			session.steering = session.steering.filter((_: unknown, k: number) => k !== index);
+		},
 		...over
-	} as unknown as CodeSession;
+	} as Record<string, unknown> & { steering: unknown[] };
+	return session as unknown as CodeSession;
 }
 
 function thread(turns: number): ChatMessage[] {

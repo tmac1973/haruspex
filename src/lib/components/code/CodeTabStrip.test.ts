@@ -6,19 +6,42 @@ vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
 const store = vi.hoisted(() => ({
-	closeSession: vi.fn(),
+	// Each tab a session running here: every control applies.
+	closeView: vi.fn(),
 	setActiveSession: vi.fn(),
 	getActiveSessionId: vi.fn(() => 's1'),
-	getOpenSessions: vi.fn(() => [
-		{ id: 's1', title: 'Idle one', root: '/p', status: 'idle', background: [] },
-		{ id: 's2', title: 'Busy one', root: '/p', status: 'running', background: [] },
-		{ id: 's3', title: 'Waiting one', root: '/p', status: 'queued', background: [] },
+	getOpenViews: vi.fn(() => [
+		{
+			id: 's1',
+			title: 'Idle one',
+			root: '/p',
+			status: 'idle',
+			background: [],
+			capabilities: { detachWindow: true }
+		},
+		{
+			id: 's2',
+			title: 'Busy one',
+			root: '/p',
+			status: 'running',
+			background: [],
+			capabilities: { detachWindow: true }
+		},
+		{
+			id: 's3',
+			title: 'Waiting one',
+			root: '/p',
+			status: 'queued',
+			background: [],
+			capabilities: { detachWindow: true }
+		},
 		{
 			id: 's4',
 			title: 'Shell one',
 			root: '/p',
 			status: 'waiting-shell',
-			background: [{ id: 'bg', running: true }]
+			background: [{ id: 'bg', running: true }],
+			capabilities: { detachWindow: true }
 		}
 	])
 }));
@@ -53,9 +76,9 @@ describe('CodeTabStrip', () => {
 		render(CodeTabStrip, { onNew: vi.fn() });
 		screen.getByRole('button', { name: 'Close Shell one' }).click();
 		await screen.findByText('Close session?');
-		expect(store.closeSession).not.toHaveBeenCalled();
+		expect(store.closeView).not.toHaveBeenCalled();
 		screen.getByRole('button', { name: 'Close Idle one' }).click();
-		expect(store.closeSession).toHaveBeenCalledWith('s1');
+		expect(store.closeView).toHaveBeenCalledWith('s1');
 	});
 
 	it('keeps the active tab of many in view, and walks them with the arrow keys', async () => {
@@ -64,9 +87,10 @@ describe('CodeTabStrip', () => {
 			title: `Session ${i}`,
 			root: '/p',
 			status: 'idle',
-			background: []
+			background: [],
+			capabilities: { detachWindow: true }
 		}));
-		store.getOpenSessions.mockReturnValue(many);
+		store.getOpenViews.mockReturnValue(many);
 		store.getActiveSessionId.mockReturnValue('m39');
 		const scrolled: string[] = [];
 		Element.prototype.scrollIntoView = vi.fn(function (this: Element) {

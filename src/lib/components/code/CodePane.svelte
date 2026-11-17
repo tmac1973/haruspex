@@ -12,7 +12,7 @@
 	import type { SlashHost } from '#lib/slash/slash.ts';
 	import type { TranscriptNote } from '#lib/components/code/CodeTranscript.svelte';
 	import { shellProject } from '#lib/skills/project.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { newSessionBeside } from '#lib/code/windows.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -21,7 +21,7 @@
 		session,
 		ondeleted
 	}: {
-		session: CodeSession;
+		session: CodeSessionView;
 		/** After the banner deletes the session. */
 		ondeleted?: () => void;
 	} = $props();

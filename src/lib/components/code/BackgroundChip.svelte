@@ -6,12 +6,12 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import Modal from '#lib/components/Modal.svelte';
 	import { stripAnsi } from '#lib/code/commandResult.ts';
-	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
-	let { session }: { session: CodeSession } = $props();
+	let { session }: { session: CodeSessionView } = $props();
 
 	/** How much of a log the Output window reads. */
 	const TAIL_BYTES = 64 * 1024;
