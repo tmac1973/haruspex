@@ -52,10 +52,40 @@ const toasts = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 vi.mock('#lib/stores/code.svelte.ts', () => store);
 
+const peers = vi.hoisted(() => ({ list: [] as unknown[] }));
+vi.mock('#lib/peers/store.svelte.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/peers/store.svelte.ts')>()),
+	peerViews: () => peers.list
+}));
+
 import CodeSidebar from './CodeSidebar.svelte';
+
+/** Another computer as the sidebar reads it: live lists, or kept ones while offline. */
+function peerView(
+	name: string,
+	{ online = true, lean = false }: { online?: boolean; lean?: boolean } = {}
+) {
+	return {
+		id: name,
+		config: { name },
+		online,
+		client: {
+			lean,
+			sessions: [
+				{ id: `${name}-1`, title: `Work on ${name}`, root: '/srv/app', status: null, updatedAt: 1 }
+			]
+		},
+		lastKnown: {
+			sessions: [{ id: `${name}-old`, title: `Kept on ${name}`, root: '/srv/app', updatedAt: 1 }],
+			chats: [],
+			updatedAt: 1
+		}
+	};
+}
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	peers.list = [];
 	store.getOpenSessions.mockReturnValue([]);
 	ipc.openIds = [];
 	ipc.claimsChanged = null;
@@ -198,5 +228,22 @@ describe('deleting a session', () => {
 		const post = await waitFor(() => screen.getByRole('button', { name: 'New post' }));
 		await new Promise((r) => setTimeout(r, 0));
 		expect(post.querySelector('[data-testid="window-mark"]')).toBeNull();
+	});
+
+	it("lists each other computer's sessions under its name, greyed while it's offline", async () => {
+		peers.list = [
+			peerView('desk-pc'),
+			peerView('nas', { online: false }),
+			peerView('tablet', { lean: true })
+		];
+		render(CodeSidebar, { onNew: vi.fn() });
+		const desk = await screen.findByRole('region', { name: 'On desk-pc' });
+		within(desk).getByRole('button', { name: 'Work on desk-pc' });
+		const nas = screen.getByRole('region', { name: 'On nas' });
+		expect(nas.textContent).toContain('· offline');
+		const kept = within(nas).getByRole('button', { name: 'Kept on nas' });
+		expect(kept.classList.contains('offline')).toBe(true);
+		// In lean mode a computer has no Code sessions to show.
+		expect(screen.queryByRole('region', { name: 'On tablet' })).toBeNull();
 	});
 });

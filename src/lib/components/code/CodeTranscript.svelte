@@ -30,9 +30,10 @@
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import type { SteeringMessage } from '#lib/agent/loop.ts';
-	import { makeCodePathLinker } from '#lib/code/paths.ts';
+	import { makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
 	import { forkFromMessage } from '#lib/code/windows.ts';
+	import { openRemoteFile } from '#lib/peers/remoteCodeSession.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { trackFollow } from '#lib/utils/followBottom.ts';
@@ -146,9 +147,12 @@
 	});
 
 	/** `path:line` in answers links to the editor, for files in the folder. */
-	const codePaths = $derived(
-		session.capabilities.openInEditor ? makeCodePathLinker(session.root) : undefined
+	/** Another computer's files open read-only, through it. */
+	const openRemote = $derived(
+		session.readFile ? (rel: string) => openRemoteFile(session, rel) : undefined
 	);
+	const linkFiles = $derived(session.capabilities.openInEditor || !!session.readFile);
+	const codePaths = $derived(linkFiles ? makeCodePathLinker(session.root) : undefined);
 
 	/**
 	 * Rendered markdown can't carry handlers, so its path links are buttons
@@ -156,7 +160,10 @@
 	 */
 	function onThreadClick(event: MouseEvent) {
 		const target = codePathFromClick(event);
-		if (target && session.capabilities.openInEditor)
+		if (!target) return;
+		if (session.readFile)
+			openRemoteFile(session, relativeToRoot(session.root, target.path) ?? target.path);
+		else if (session.capabilities.openInEditor)
 			openFileFromClick(session.root, target.path, session.wslDistro);
 	}
 
@@ -249,7 +256,8 @@
 						steps={session.messageSteps[i]}
 						root={session.root}
 						wslDistro={session.wslDistro}
-						linkFiles={session.capabilities.openInEditor}
+						{linkFiles}
+						openFile={openRemote}
 						openInShell={session.capabilities.openInShell}
 					/>
 				{/if}
@@ -275,7 +283,8 @@
 				steps={session.messageSteps[i]}
 				root={session.root}
 				wslDistro={session.wslDistro}
-				linkFiles={session.capabilities.openInEditor}
+				{linkFiles}
+				openFile={openRemote}
 				openInShell={session.capabilities.openInShell}
 			/>
 		{/if}
@@ -299,7 +308,8 @@
 				steps={segment.steps}
 				root={session.root}
 				wslDistro={session.wslDistro}
-				linkFiles={session.capabilities.openInEditor}
+				{linkFiles}
+				openFile={openRemote}
 				openInShell={session.capabilities.openInShell}
 				onStopSubtask={session.stopSubtask}
 			/>

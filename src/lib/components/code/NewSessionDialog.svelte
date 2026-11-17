@@ -19,6 +19,8 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import { wslShare } from '#lib/code/paths.ts';
 	import { gitStatus } from '#lib/code/git.ts';
+	import { startRemoteSession } from '#lib/peers/remoteCodeSession.svelte.ts';
+	import { peerViews, recentRoots } from '#lib/peers/store.svelte.ts';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -33,6 +35,54 @@
 	let worktree = $state(false);
 	/** `root` is in a git repository, so it can have a worktree. */
 	let inRepo = $state(false);
+
+	/** Other computers a session can start on: connected, and not in lean mode. */
+	const peers = $derived(peerViews().filter((p) => p.online && !p.client.lean));
+	/** Where it runs: '' for this computer, else another's instance id. */
+	let where = $state('');
+	const peer = $derived(peers.find((p) => p.id === where) ?? null);
+	let peerRoot = $state('');
+	let peerWorktree = $state(false);
+	/** That computer's WSL distros (Windows); '' is its own folders. */
+	let peerDistros = $state<string[]>([]);
+	let peerDistro = $state('');
+
+	// A computer picked: its last folder to start from, and its distros.
+	$effect(() => {
+		const p = peer;
+		peerDistros = [];
+		peerDistro = '';
+		if (!p) return;
+		peerRoot = recentRoots(p)[0] ?? '';
+		let current = true;
+		void p.client
+			.op<string[]>({ type: 'wsl.distros' })
+			.then((list) => {
+				if (current) peerDistros = list ?? [];
+			})
+			.catch(() => {});
+		return () => {
+			current = false;
+		};
+	});
+
+	async function startThere(p: NonNullable<typeof peer>): Promise<void> {
+		if (!peerRoot.trim() || starting) return;
+		starting = true;
+		error = null;
+		try {
+			await startRemoteSession(p, {
+				root: peerRoot,
+				worktree: peerWorktree,
+				wslDistro: peerDistro || null
+			});
+			onclose();
+		} catch (e) {
+			error = errMessage(e);
+		} finally {
+			starting = false;
+		}
+	}
 
 	// Each time it opens, start from the last folder used.
 	$effect(() => {
@@ -96,6 +146,7 @@
 	}
 
 	async function start() {
+		if (peer) return startThere(peer);
 		if (!root || starting) return;
 		starting = true;
 		error = null;
@@ -121,7 +172,59 @@
 </script>
 
 <Modal {open} maxWidth={460} title="New session" dismissable {onclose}>
-	{#if onWindows}
+	{#if peers.length > 0}
+		<label
+			class="where"
+			title="Another computer runs the session in its own folders, with its own models."
+		>
+			<span>Where</span>
+			<select bind:value={where} aria-label="Where">
+				<option value="">This computer</option>
+				{#each peers as p (p.id)}
+					<option value={p.id}>{p.config.name}</option>
+				{/each}
+			</select>
+		</label>
+	{/if}
+	{#if peer}
+		<div class="folder-row">
+			{#if peerDistros.length > 0}
+				<select
+					aria-label="Location"
+					title="Where the folder is on {peer.config.name}"
+					bind:value={peerDistro}
+				>
+					<option value="">Its own folders</option>
+					{#each peerDistros as d (d)}
+						<option value={d}>{d}</option>
+					{/each}
+				</select>
+			{/if}
+			<input
+				class="path-input"
+				aria-label="Folder on {peer.config.name}"
+				placeholder="A folder on {peer.config.name}"
+				spellcheck="false"
+				list="peer-recent-roots"
+				bind:value={peerRoot}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') void start();
+				}}
+			/>
+			<datalist id="peer-recent-roots">
+				{#each recentRoots(peer) as r (r)}
+					<option value={r}></option>
+				{/each}
+			</datalist>
+		</div>
+		<label
+			class="worktree"
+			title="In a git repository there: a new folder beside the project on a new branch from the last commit."
+		>
+			<input type="checkbox" bind:checked={peerWorktree} />
+			<span>Work in a new worktree</span>
+		</label>
+	{:else if onWindows}
 		<p class="help">
 			Pick a project folder on this PC or in WSL. The session works in it and can't leave it.
 		</p>
@@ -162,7 +265,7 @@
 			{/if}
 		</div>
 	{/if}
-	{#if inRepo}
+	{#if inRepo && !peer}
 		<label
 			class="worktree"
 			title="A new folder beside the project, <project>-worktrees/<branch>, on a new branch from the last commit. Uncommitted changes and ignored files are not in it."
@@ -176,9 +279,12 @@
 	{/if}
 	<div class="actions">
 		<button class="btn" onclick={onclose}>Cancel</button>
-		<button class="btn btn-primary" disabled={!root || starting} onclick={start}
+		<button
+			class="btn btn-primary"
+			disabled={(peer ? !peerRoot.trim() : !root) || starting}
+			onclick={start}
 			>{starting
-				? inRepo && worktree
+				? (peer ? peerWorktree : inRepo && worktree)
 					? 'Creating the worktree…'
 					: 'Starting…'
 				: 'Start session'}</button
@@ -187,6 +293,14 @@
 </Modal>
 
 <style>
+	.where {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0 0 12px;
+		font-size: 0.85rem;
+	}
+
 	.help {
 		margin: 0 0 12px;
 		font-size: 0.85rem;

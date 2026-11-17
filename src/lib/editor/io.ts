@@ -42,3 +42,18 @@ export const watchedIO: EditorIO = {
 		void invoke('editor_unwatch_file', { path }).catch(() => {});
 	}
 };
+
+/**
+ * Read-only, through `read`: another computer's files (plan/instance-sync/),
+ * which this one never writes.
+ */
+export function readOnlyIO(read: (relPath: string) => Promise<string>): EditorIO {
+	return {
+		async read(_workdir, relPath) {
+			return { path: null, content: await read(relPath), hash: null };
+		},
+		async write() {
+			throw new Error('This file is on another computer: it opens read-only.');
+		}
+	};
+}

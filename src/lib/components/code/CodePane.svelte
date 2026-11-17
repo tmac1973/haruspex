@@ -61,7 +61,7 @@
 	{#if session.folderMissing}
 		<FolderMissingBanner {session} {ondeleted} />
 	{/if}
-	<CodeTranscript {session} {notes} />
+	<CodeTranscript {session} notes={[...notes, ...(session.notes ?? [])]} />
 	<CodeComposer {session} {slashHost} />
 </div>
 

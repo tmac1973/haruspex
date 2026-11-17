@@ -86,6 +86,8 @@
 	import { startEngine } from '#lib/engine/index.ts';
 	import { syncOwnerApi } from '#lib/owner/service.ts';
 	import { syncPeers } from '#lib/peers/service.ts';
+	import { PEERS_READY } from '#lib/peers/flag.ts';
+	import { startPeerStore } from '#lib/peers/store.svelte.ts';
 	import { startCaptioner } from '#lib/camera/captioner.ts';
 	import { syncCameraWatchers } from '#lib/camera/watchSync.ts';
 	import { watchCameraWatchers } from '#lib/stores/cameraActivity.svelte.ts';
@@ -405,6 +407,8 @@
 		// Settings → Remote control → Other computers: Rust follows each
 		// trusted one. Main window only: one stream per computer for the app.
 		void syncPeers();
+		// Their sessions and chats, for the sidebars; follows Settings.
+		if (PEERS_READY) startPeerStore();
 		// The ambient log: the header shows running watchers, and each logged
 		// event is captioned once no chat turn needs the model. Main window
 		// only, like the watchers themselves.
