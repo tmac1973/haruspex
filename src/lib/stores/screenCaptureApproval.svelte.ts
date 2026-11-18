@@ -12,7 +12,7 @@
  * page (Settings → Remote control) answers it too, through `engine/prompts`.
  */
 
-import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 import type { CaptureTarget } from '#lib/ipc/gen/CaptureTarget.ts';
 
 export interface ScreenCaptureRequest {
@@ -20,6 +20,8 @@ export interface ScreenCaptureRequest {
 	/** The chat or Code session whose turn asks, so the remote page shows it there. */
 	chatId: string | null;
 	sessionId: string | null;
+	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	origin?: PromptOrigin;
 }
 
 export type ScreenCaptureChoice = 'allow' | 'deny';

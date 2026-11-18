@@ -17,4 +17,20 @@ describe('repo trust prompt', () => {
 		expect(await b).toBe(false);
 		expect(getPendingRepoTrust()).toBeNull();
 	});
+
+	it("keeps another computer's ask apart from this one's, and drops it when withdrawn", async () => {
+		const here = askRepoTrust({ root: '/a', skills: 1, agentsMd: false });
+		const ctrl = new AbortController();
+		const there = askRepoTrust(
+			{ root: '/a', skills: 1, agentsMd: false, origin: { peerId: 'desk', name: 'desk-pc' } },
+			ctrl.signal
+		);
+		expect(there).not.toBe(here);
+		ctrl.abort();
+		expect(await there).toBe(false);
+		expect(getPendingRepoTrust()?.origin).toBeUndefined();
+		resolveRepoTrust(true);
+		expect(await here).toBe(true);
+		expect(getPendingRepoTrust()).toBeNull();
+	});
 });

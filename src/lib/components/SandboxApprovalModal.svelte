@@ -13,6 +13,7 @@
 	 * FileConflictModal: silent dismiss of "is it OK to run code?" is a
 	 * footgun.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
@@ -22,6 +23,7 @@
 
 <Modal open={pending != null} maxWidth={640} labelledBy="sandbox-approval-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		<h2 id="sandbox-approval-title">Allow code execution?</h2>
 		<p>The model wants to run Python in this chat:</p>
 		<pre class="code-preview"><code>{pending.code}</code></pre>

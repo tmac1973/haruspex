@@ -8,21 +8,23 @@
  * the Promise.
  *
  *   1. A tool (or the runner) calls `askUserQuestion(req)` and awaits it.
- *   2. `pending` is set to a `{ ...req, resolve }` record, which the modal
- *      notices via `getPendingQuestion()` and opens.
+ *   2. It joins the queue (`approvalQueue.svelte.ts`); the modal shows the
+ *      oldest through `getPendingQuestion()`.
  *   3. The modal collects the answer — one or more selected option labels,
  *      or a free-text string — and calls `resolveUserQuestion(answer)`,
- *      clearing `pending` and unblocking the awaiting caller.
+ *      unblocking the awaiting caller; the next question takes its place.
  *
- * Only one question can be pending at a time. The agent loop serializes
- * tool calls, so there's no contention in practice; a second overlapping
- * ask is a caller bug and rejects immediately rather than queueing.
+ * Questions wait their turn: several turns, or another computer's question
+ * (plan/instance-sync/), can ask at once. Cancelling or aborting one rejects
+ * its caller with an `AbortError`.
  *
  * Note: this primitive always assumes an interactive surface is mounted
  * (true for chat and any foreground run). The "no interactive user → park
  * the run" behavior is a run-context concern handled by the job runner,
  * not here.
  */
+
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export interface UserQuestionOption {
 	label: string;
@@ -58,6 +60,8 @@ export interface UserQuestionRequest {
 	sessionId?: string;
 	/** The job run asking, likewise. */
 	runId?: number;
+	/** Another computer's question, asked here. */
+	origin?: PromptOrigin;
 }
 
 /**
@@ -68,104 +72,28 @@ export type UserAnswer =
 	/** `note`: text the user added alongside a multi-select answer. */
 	{ kind: 'selected'; labels: string[]; note?: string } | { kind: 'freeText'; text: string };
 
-interface PendingQuestion extends UserQuestionRequest {
-	resolve: (answer: UserAnswer) => void;
-	/**
-	 * Break out: reject the awaiting caller with an AbortError. Wired to the
-	 * modal's cancel control so the user can always escape a question they can't
-	 * (or don't want to) answer — the AbortError unwinds the caller's loop the
-	 * same way a job-cancel does, rather than feeding the model another answer it
-	 * can tunnel-vision on. Shares the abort path with the optional AbortSignal.
-	 */
-	cancel: () => void;
-}
+/** null: cancelled at the modal, or aborted. */
+const queue = createApprovalQueue<UserQuestionRequest, UserAnswer | null>();
 
-let pending = $state<PendingQuestion | null>(null);
-
-/**
- * Ask the user a multiple-choice question. Returns a Promise that resolves
- * to their answer when they submit the modal. Rejects synchronously if a
- * question is already pending (a caller bug — asks are serialized).
- *
- * Pass an `AbortSignal` to make the pending question cancellable: when the
- * signal aborts (e.g. the user cancels a running job while it's parked at a
- * checkpoint), the modal closes and the Promise rejects with an AbortError so
- * the caller's loop unwinds instead of blocking forever on the modal.
- */
 export function askUserQuestion(
 	req: UserQuestionRequest,
 	signal?: AbortSignal
 ): Promise<UserAnswer> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error(
-				'A user question is already pending; a second overlapping request is a bug in the caller.'
-			)
-		);
-	}
-	if (signal?.aborted) {
-		return Promise.reject(new DOMException('Aborted', 'AbortError'));
-	}
-	return new Promise<UserAnswer>((resolve, reject) => {
-		function cleanup() {
-			signal?.removeEventListener('abort', onAbort);
-		}
-		const entry: PendingQuestion = {
-			...req,
-			resolve: (answer) => {
-				cleanup();
-				resolve(answer);
-			},
-			cancel: () => {
-				// The user broke out via the modal. `cancelUserQuestion` has already
-				// cleared `pending`; just drop the abort listener and reject so the
-				// caller unwinds. Same AbortError the signal path uses.
-				cleanup();
-				reject(new DOMException('Aborted', 'AbortError'));
-			}
-		};
-		function onAbort() {
-			// Only fires while this question is still pending (resolve/cancel both
-			// remove the listener), and asks are serialized — so clearing is safe.
-			pending = null;
-			reject(new DOMException('Aborted', 'AbortError'));
-		}
-		signal?.addEventListener('abort', onAbort, { once: true });
-		pending = entry;
+	return queue.ask(req, { signal, abortResult: null }).then((answer) => {
+		if (answer === null) throw new DOMException('Aborted', 'AbortError');
+		return answer;
 	});
 }
 
-/**
- * Returns the currently-pending question or null. Read by the modal to
- * decide whether to render itself.
- */
-export function getPendingQuestion(): PendingQuestion | null {
-	return pending;
+export function getPendingQuestion(): UserQuestionRequest | null {
+	return queue.current();
 }
 
-/**
- * Called by the modal on submit. Clears the pending state and resolves the
- * Promise from `askUserQuestion`, unblocking the awaiting caller.
- */
 export function resolveUserQuestion(answer: UserAnswer): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(answer);
+	queue.resolve(answer);
 }
 
-/**
- * Called by the modal's cancel control (the "×"/Esc escape hatch). Clears the
- * pending question and rejects the awaiting caller with an AbortError, so a user
- * who can't answer — or who is stuck in a checkpoint loop — can always break out
- * instead of being trapped. The caller treats it like a job-cancel: a runner
- * checkpoint finalizes the run as cancelled; an `ask_user_question` tool call
- * unwinds the agent turn (the AbortError propagates rather than becoming a
- * tool-result the model loops on). No-op when nothing is pending.
- */
+/** Cancel the question on screen: its caller's ask rejects with an `AbortError`. */
 export function cancelUserQuestion(): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.cancel();
+	queue.resolve(null);
 }

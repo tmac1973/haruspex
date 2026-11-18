@@ -186,7 +186,12 @@ export class EngineClient {
 
 	private async refreshPrompts(): Promise<void> {
 		const list = await this.run(() => this.transport.op<Prompt[]>({ type: 'prompts.list' }));
-		if (list) this.prompts = Object.fromEntries(list.map((p) => [p.promptId, p]));
+		if (!list) return;
+		const before = this.prompts;
+		this.prompts = Object.fromEntries(list.map((p) => [p.promptId, p]));
+		// Read whole after a (re)connect: say what came and went meanwhile.
+		for (const id of Object.keys(before)) if (!(id in this.prompts)) this.promptGoneHook.call(id);
+		for (const p of list) if (!(p.promptId in before)) this.promptHook.call(p);
 	}
 
 	/** Read the session list again soon, once for a burst of changes. */

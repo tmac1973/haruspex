@@ -7,6 +7,7 @@
 	 * Backdrop and Esc don't dismiss, matching the other approval modals:
 	 * silently dropping the question would leave the tool waiting forever.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import {
@@ -19,6 +20,7 @@
 
 <Modal open={pending != null} maxWidth={520} labelledBy="screen-capture-approval-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		<h2 id="screen-capture-approval-title">
 			{pending.target === 'window' ? 'Take a screenshot of your window?' : 'Take a screenshot?'}
 		</h2>

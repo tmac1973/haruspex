@@ -25,16 +25,26 @@ describe('MCP approval prompts', () => {
 		vi.resetModules();
 	});
 
-	it('rejects a second overlapping ask and leaves the first pending', async () => {
+	it('queues a second overlapping ask behind the first', async () => {
 		const { askMcpApproval, getPendingMcpApproval, resolveMcpApproval } = await freshStore();
 
 		const first = askMcpApproval(request('create_issue'));
-		await expect(askMcpApproval(request('delete_repository'))).rejects.toThrow(/already pending/);
-
-		// First prompt is untouched by the rejected second ask.
+		const second = askMcpApproval(request('delete_repository'));
 		expect(getPendingMcpApproval()!.toolName).toBe('create_issue');
 		resolveMcpApproval('allow_once');
 		await expect(first).resolves.toBe('allow_once');
+		expect(getPendingMcpApproval()!.toolName).toBe('delete_repository');
+		resolveMcpApproval('deny');
+		await expect(second).resolves.toBe('deny');
+		expect(getPendingMcpApproval()).toBeNull();
+	});
+
+	it('takes an aborted ask out of the queue as a deny', async () => {
+		const { askMcpApproval, getPendingMcpApproval } = await freshStore();
+		const ctrl = new AbortController();
+		const ask = askMcpApproval(request('create_issue'), ctrl.signal);
+		ctrl.abort();
+		await expect(ask).resolves.toBe('deny');
 		expect(getPendingMcpApproval()).toBeNull();
 	});
 

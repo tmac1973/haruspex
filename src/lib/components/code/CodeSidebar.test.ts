@@ -71,6 +71,7 @@ function peerView(
 		online,
 		client: {
 			lean,
+			prompts: {},
 			sessions: [
 				{ id: `${name}-1`, title: `Work on ${name}`, root: '/srv/app', status: null, updatedAt: 1 }
 			]

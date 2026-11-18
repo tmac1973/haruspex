@@ -9,6 +9,7 @@
 	 * Backdrop and Esc don't dismiss — silently dropping "is it OK to run this
 	 * on my machine?" is a footgun (same restriction as the sandbox modal).
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import {
@@ -24,6 +25,7 @@
 
 <Modal open={pending != null} maxWidth={640} labelledBy="command-approval-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		<h2 id="command-approval-title">Run this command?</h2>
 		{#if pending.requester || waiting > 0}
 			<p class="requester" data-testid="command-approval-requester">

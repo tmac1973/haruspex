@@ -12,6 +12,7 @@
 	 * Backdrop and Esc don't dismiss, matching the command and sandbox modals:
 	 * silently dropping the question would leave the tool waiting forever.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import {
@@ -24,6 +25,7 @@
 
 <Modal open={pending != null} maxWidth={640} labelledBy="memory-approval-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		<h2 id="memory-approval-title">Remember this?</h2>
 		<p>
 			This will be saved and <strong>brought into future conversations</strong>, as a

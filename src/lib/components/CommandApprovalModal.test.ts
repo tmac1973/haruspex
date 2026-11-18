@@ -22,4 +22,23 @@ describe('CommandApprovalModal', () => {
 		await fireEvent.click(screen.getByText('Deny'));
 		expect(await second).toBe('deny');
 	});
+
+	it('says which computer asked, only for another computer', async () => {
+		render(CommandApprovalModal);
+		const here = askCommandApproval({ command: 'make', reasons: [] });
+		await screen.findByText('make');
+		expect(screen.queryByTestId('prompt-origin')).toBeNull();
+		await fireEvent.click(screen.getByText('Deny'));
+		await here;
+
+		const there = askCommandApproval({
+			command: 'make test',
+			reasons: [],
+			origin: { peerId: 'desk', name: 'desk-pc' }
+		});
+		await screen.findByText('make test');
+		expect(screen.getByTestId('prompt-origin').textContent?.trim()).toBe('On desk-pc');
+		await fireEvent.click(screen.getByText('Deny'));
+		await there;
+	});
 });

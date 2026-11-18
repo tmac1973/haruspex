@@ -20,64 +20,39 @@
  * The remote page (Settings → Remote control) answers it too, through
  * `engine/prompts`, as a `file-conflict` prompt.
  *
- * Only one pending conflict can exist at a time. In practice the agent
- * loop runs tool calls sequentially, so there's no contention — if a
- * second conflict arrives before the first resolves, that's a bug we
- * want to catch, so the second caller throws immediately rather than
- * queueing silently.
+ * Asks wait their turn (`approvalQueue.svelte.ts`): several turns, or
+ * another computer's prompt (plan/instance-sync/), can ask at once.
  */
+
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type FileConflictChoice = 'overwrite' | 'counter' | 'cancel';
 
-interface PendingConflict {
+export interface FileConflictRequest {
 	path: string;
-	/** The chat whose turn asks, so the remote page shows it there. */
 	chatId: string | null;
-	resolve: (choice: FileConflictChoice) => void;
+	/** Another computer's write, asked about here. */
+	origin?: PromptOrigin;
 }
 
-let pending = $state<PendingConflict | null>(null);
+const queue = createApprovalQueue<FileConflictRequest, FileConflictChoice>();
 
-/**
- * Ask the user how to handle an existing-file conflict. Returns a
- * Promise that resolves to their choice when they click one of the
- * modal buttons. Throws synchronously if another conflict is already
- * pending (shouldn't happen in practice — the agent loop serializes
- * tool calls).
- */
+/** Ask what to do about `path`. An aborted ask leaves the queue as a cancel. */
 export function askFileConflict(
 	path: string,
-	chatId: string | null = null
+	chatId: string | null = null,
+	opts: { signal?: AbortSignal; origin?: PromptOrigin } = {}
 ): Promise<FileConflictChoice> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error(
-				`File conflict prompt is already pending for ${pending.path}; ` +
-					'a second overlapping request is a bug in the caller.'
-			)
-		);
-	}
-	return new Promise<FileConflictChoice>((resolve) => {
-		pending = { path, chatId, resolve };
-	});
+	return queue.ask(
+		{ path, chatId, ...(opts.origin ? { origin: opts.origin } : {}) },
+		{ signal: opts.signal, abortResult: 'cancel' }
+	);
 }
 
-/**
- * Returns the currently-pending conflict or null. Read by the modal
- * component to decide whether to render itself.
- */
-export function getPendingConflict(): PendingConflict | null {
-	return pending;
+export function getPendingConflict(): FileConflictRequest | null {
+	return queue.current();
 }
 
-/**
- * Called by the modal's button handlers. Clears the pending state
- * and resolves the Promise from `askFileConflict`, unblocking the
- * awaiting caller.
- */
 export function resolveConflict(choice: FileConflictChoice): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(choice);
+	queue.resolve(choice);
 }

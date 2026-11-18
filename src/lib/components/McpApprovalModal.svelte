@@ -13,6 +13,7 @@
 	 * tool says it does, and the arguments the model actually chose. Approving a
 	 * bare tool name is approving nothing in particular.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingMcpApproval, resolveMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
@@ -47,6 +48,7 @@
 
 <Modal open={pending != null} maxWidth={640} labelledBy="mcp-approval-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		<h2 id="mcp-approval-title">Allow {pending.serverLabel} to run this?</h2>
 		<p>
 			The assistant wants to run <strong>{pending.toolName}</strong> on

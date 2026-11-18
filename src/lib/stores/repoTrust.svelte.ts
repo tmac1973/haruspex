@@ -13,6 +13,8 @@
  * resolves it. Asks about the same repo share one prompt.
  */
 
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
+
 /** Why a repo the user already answered about is being asked about again. */
 export type RepoTrustChange =
 	/** A different repo now sits at that path. */
@@ -26,32 +28,33 @@ export interface RepoTrustAsk {
 	agentsMd: boolean;
 	/** Set when asking again; absent the first time. */
 	change?: RepoTrustChange;
+	/** Another computer's repo, asked about here; the answer is kept there. */
+	origin?: PromptOrigin;
 }
 
-interface Pending extends RepoTrustAsk {
-	answer: Promise<boolean>;
-	resolve: (trusted: boolean) => void;
-}
+const queue = createApprovalQueue<RepoTrustAsk, boolean>();
+/** This computer's asks still showing, by repo: asks about the same repo share one. */
+const sharing: Record<string, Promise<boolean>> = {};
 
-let queue = $state<Pending[]>([]);
-
-export function askRepoTrust(ask: RepoTrustAsk): Promise<boolean> {
-	const existing = queue.find((p) => p.root === ask.root);
-	if (existing) return existing.answer;
-	let resolve!: (trusted: boolean) => void;
-	const answer = new Promise<boolean>((r) => (resolve = r));
-	queue = [...queue, { ...ask, answer, resolve }];
+/**
+ * Ask whether a repo's instructions may reach turns. An aborted ask (another
+ * computer's, answered there) leaves the queue as a no.
+ */
+export function askRepoTrust(ask: RepoTrustAsk, signal?: AbortSignal): Promise<boolean> {
+	if (ask.origin || signal) return queue.ask(ask, { signal, abortResult: false });
+	const shared = sharing[ask.root];
+	if (shared) return shared;
+	const answer = queue.ask(ask, { abortResult: false });
+	sharing[ask.root] = answer;
+	void answer.finally(() => delete sharing[ask.root]);
 	return answer;
 }
 
 /** The ask on screen, oldest first. */
 export function getPendingRepoTrust(): RepoTrustAsk | null {
-	return queue[0] ?? null;
+	return queue.current();
 }
 
 export function resolveRepoTrust(trusted: boolean): void {
-	const [current, ...rest] = queue;
-	if (!current) return;
-	queue = rest;
-	current.resolve(trusted);
+	queue.resolve(trusted);
 }

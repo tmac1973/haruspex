@@ -15,6 +15,7 @@
 	 * could leak into data loss if "cancel" is treated loosely by the
 	 * agent loop's error handling.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingConflict, resolveConflict } from '#lib/stores/fileConflict.svelte.ts';
@@ -24,6 +25,7 @@
 
 <Modal open={pending != null} maxWidth={520} labelledBy="file-conflict-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		<h2 id="file-conflict-title">File already exists</h2>
 		<p>
 			The model tried to write <code>{pending.path}</code>, but that file already exists in your

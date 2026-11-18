@@ -25,7 +25,7 @@
  */
 
 import type { MemoryCategory } from '#lib/agent/tools/memory.ts';
-import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type MemoryApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 
@@ -34,6 +34,8 @@ export interface MemoryApprovalRequest {
 	category: MemoryCategory;
 	/** The chat whose turn asks. */
 	chatId: string | null;
+	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	origin?: PromptOrigin;
 }
 
 const queue = createApprovalQueue<MemoryApprovalRequest, MemoryApprovalChoice>();

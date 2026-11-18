@@ -17,6 +17,15 @@
  * detached Code or Shell window never waits behind the main window's prompts.
  */
 
+/**
+ * Another computer a prompt came from (plan/instance-sync/): its modal says
+ * where, and this computer never answers it with its own grants.
+ */
+export interface PromptOrigin {
+	peerId: string;
+	name: string;
+}
+
 interface Entry<Req, Res> {
 	request: Req;
 	resolve: (result: Res) => void;
