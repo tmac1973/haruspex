@@ -118,8 +118,11 @@ export interface BuildCodePromptOpts {
 	projectInstructions?: string;
 	/** The session may read, not write (a fork sharing its source's folder). */
 	readOnly?: boolean;
-	/** The folder is a fresh git worktree made for this session (a fork). */
-	worktree?: { branch: string | null };
+	/**
+	 * The folder is a fresh git worktree made for this session; `source` is
+	 * the folder of the session it was forked from, when it was one.
+	 */
+	worktree?: { branch: string | null; source?: string | null };
 	/** Running on macOS (bash 3.2). Defaults to the user agent's platform. */
 	macOS?: boolean;
 	/** The WSL distro the folder is in (Windows); commands run there, not on the host. */
@@ -186,9 +189,18 @@ function sessionNotes(opts: BuildCodePromptOpts): string {
 		);
 	}
 	if (opts.worktree) {
-		const on = opts.worktree.branch ? ` on branch ${opts.worktree.branch}` : '';
+		const { branch, source } = opts.worktree;
+		const on = branch ? ` on branch ${branch}` : '';
+		const from = source ? ` from ${source}` : '';
+		const origin = source ?? 'the checkout it was made from';
+		// A new branch sits on its source's commit, so a look at the wrong
+		// folder (a path from before the fork) shows main at the same hash.
 		notes.push(
-			`This folder is a fresh git worktree${on}, made for this session. Ignored files are not in it — no node_modules, .env or build output — so set up dependencies (install packages, copy any needed config) before building or testing.`
+			`This folder is a fresh git worktree${on}, made for this session${from}. It starts at the same commit as ${origin}, so git log looks the same in both; that is expected.` +
+				(source
+					? ` Earlier messages name paths in ${source}: that is the original checkout, not this one. Run commands, edit and commit here, using paths under this folder only.`
+					: '') +
+				' Ignored files are not in it — no node_modules, .env or build output — so set up dependencies (install packages, copy any needed config) before building or testing.'
 		);
 	}
 	return notes.map((n) => `\n${n}`).join('');

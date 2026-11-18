@@ -1347,6 +1347,7 @@ describe('sharing a folder', () => {
 		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
 		expect(o.workingDir).toBe('/wt/s2');
 		expect(systemText(o)).toContain('fresh git worktree on branch first-fork');
+		expect(systemText(o)).toContain('Earlier messages name paths in /proj');
 	});
 
 	it('tells the model when the branch changed between its turns', async () => {

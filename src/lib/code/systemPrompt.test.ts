@@ -33,6 +33,16 @@ describe('Code tab prompt', () => {
 		expect(text).toContain('set up dependencies');
 	});
 
+	it('tells a worktree fork its source folder is the original checkout', () => {
+		const text = tab({ worktree: { branch: 'fix-login-fork', source: '/home/tim/p' } });
+		expect(text).toContain('made for this session from /home/tim/p');
+		expect(text).toContain('same commit as /home/tim/p');
+		expect(text).toContain('Earlier messages name paths in /home/tim/p');
+		const bare = tab({ worktree: { branch: 'x' } });
+		expect(bare).toContain('same commit as the checkout it was made from');
+		expect(bare).not.toContain('Earlier messages');
+	});
+
 	it('tells a WSL session it is Linux in its distro, never the macOS note', () => {
 		const text = tab({ root: '/home/tim/p', wslDistro: 'Ubuntu', macOS: true });
 		expect(text).toContain('inside the WSL distro Ubuntu');

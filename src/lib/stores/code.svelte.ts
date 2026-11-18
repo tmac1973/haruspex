@@ -176,6 +176,10 @@ export class CodeSession implements CodeSessionView {
 	private remote = false;
 	/** The git worktree Haruspex made for this session (a worktree fork). */
 	worktree = $state<string | null>(null);
+	/** The session this one was forked from, if any. */
+	private readonly forkedFrom: string | null;
+	/** That session's folder, once looked up (`worktreeSource`). */
+	private forkSource: string | null | undefined;
 	/**
 	 * The folder is gone (deleted, a worktree removed, a drive unmounted).
 	 * The session can be read but runs no turns until it is pointed at
@@ -306,6 +310,7 @@ export class CodeSession implements CodeSessionView {
 		this.wslDistro = record.wsl_distro ?? null;
 		this.readOnly = record.read_only ?? false;
 		this.worktree = record.worktree ?? null;
+		this.forkedFrom = record.forked_from ?? null;
 		// What the agent was told by the last saved turn, so a restart
 		// neither repeats it nor misses what came since. Before that was
 		// kept, the last saved turn stands in.
@@ -900,6 +905,21 @@ export class CodeSession implements CodeSessionView {
 		return done;
 	}
 
+	/**
+	 * The folder of the session this worktree fork came from, so the prompt
+	 * can tell the agent that paths in the inherited thread are not its own.
+	 * Null for a session that is not a fork, or whose source is gone.
+	 */
+	private async worktreeSource(): Promise<string | null> {
+		if (!this.forkedFrom) return null;
+		if (this.forkSource === undefined) {
+			this.forkSource = await loadCodeSession(this.forkedFrom)
+				.then((r) => (r.root === this.root ? null : r.root))
+				.catch(() => null);
+		}
+		return this.forkSource;
+	}
+
 	private async turn(opening: ChatMessage, typed: boolean): Promise<boolean> {
 		this.lastError = null;
 		this.contextNotice = null;
@@ -959,7 +979,9 @@ export class CodeSession implements CodeSessionView {
 				remote: this.remote,
 				wslDistro: this.wslDistro,
 				writeGuard: guard,
-				worktree: this.worktree ? { branch: this.git?.branch ?? null } : undefined,
+				worktree: this.worktree
+					? { branch: this.git?.branch ?? null, source: await this.worktreeSource() }
+					: undefined,
 				notice,
 				signal: abort.signal,
 				takeSteering: () => {
