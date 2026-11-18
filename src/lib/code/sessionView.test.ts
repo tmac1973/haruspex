@@ -141,10 +141,9 @@ describe('a Code session without every capability', () => {
 		);
 		render(CodeTabStrip, { onNew: () => {} });
 		const tab = screen.getByRole('tab', { name: /Fix the build/ });
-		// Marked in its computer's colour, and named in its tooltip.
-		expect(tab.classList.contains('remote')).toBe(true);
-		expect(tab.getAttribute('style')).toContain('--peer-color: hsl(');
+		// Named in its tooltip; no colour, which would read as the active tab.
 		expect(tab.getAttribute('title')).toContain('on desk-pc');
+		expect(tab.getAttribute('style')).toBeNull();
 		expect(screen.queryByRole('button', { name: /^Detach / })).toBeNull();
 		screen.getByRole('button', { name: 'Close Fix the build' });
 		unregisterOpenView('desk:s1');

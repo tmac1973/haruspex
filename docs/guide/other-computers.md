@@ -45,7 +45,7 @@ A computer that doesn't let this one in shows **Not letting this computer in**. 
 - **Chat**: its chats are listed under **On <name>** in Chat, marked Writing, Waiting or New. Open one to carry it on: send (or steer while it answers), stop, continue, retry, rename, delete, and turn incognito on or off. Pictures, screen captures and speech are taken here and sent.
 - **Prompts**: when one of its turns waits for you (Run this command?, a question, an MCP tool, a skill write, a repo's instructions, Run this Python?, Remember this?, Take a screenshot?, File already exists), the usual dialog opens here marked **On <name>**, with a desktop notification when Haruspex isn't in front. Answer it here or there: whichever is first counts. What you allow applies on that computer.
 - Both tabs say **Runs on <name>** on what you opened.
-- Each computer has its own colour: a bar on its section in each list, along the top of its tabs in the Code tab, and around its **Runs on** badge. This computer's rows have none.
+- Each computer has its own colour: a bar on its section in each list, and around its **Runs on** badge. Its tabs in the Code tab name it when you point at them. This computer's rows have none.
 
 ## When it's offline
 
