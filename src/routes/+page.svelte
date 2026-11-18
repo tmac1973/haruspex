@@ -2,6 +2,7 @@
 	import TabBar from '#lib/components/TabBar.svelte';
 	import HomeTab from '#lib/components/home/HomeTab.svelte';
 	import ChatView from '#lib/components/ChatView.svelte';
+	import { getActiveChatSource } from '#lib/stores/activeChatSource.svelte.ts';
 	import JobsTab from '#lib/components/jobs/JobsTab.svelte';
 	import ShellWorkspace from '#lib/components/shell/ShellWorkspace.svelte';
 	import CodeWorkspace from '#lib/components/code/CodeWorkspace.svelte';
@@ -30,7 +31,7 @@
 	{#if activeTab === 'home'}
 		<HomeTab />
 	{:else if activeTab === 'chat'}
-		<ChatView />
+		<ChatView source={getActiveChatSource()} />
 	{:else if activeTab === 'jobs'}
 		<JobsTab />
 	{/if}
