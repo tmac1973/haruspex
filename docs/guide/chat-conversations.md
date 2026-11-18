@@ -1,6 +1,6 @@
 ---
 title: Chat conversations
-description: Several Chat conversations at once, adding to an answer as it is written, the busy and unread marks, results that arrive while you are elsewhere, and the Tasks list.
+description: Several Chat conversations at once, adding to an answer as it is written, the busy and unread marks, searching and deleting many, results that arrive while you are elsewhere, and the Tasks list.
 ---
 
 # Chat conversations
@@ -26,6 +26,13 @@ The conversation list shows a dot by each conversation that's doing something:
 - **Solid dot**, title in bold: it finished an answer while you were in another conversation. Opening it clears the mark. It stays after a restart.
 
 Hover over a dot to see what it means. The Remote control page (see the `remote-control` page) marks its chat list the same way, and can send and steer in any chat without changing which one this computer shows.
+
+## Find, tidy and delete conversations
+
+- **Search chats**, above the list, keeps the conversations whose title has every word you type, and the ones where those words were said (yours or an answer; not tool results). It searches your other computers' chats too (see `other-computers`). `Esc` clears it.
+- **Select** puts a checkbox on each row. Click rows to pick them, shift-click to pick a range, or **Select all shown** for everything the search keeps, then **Delete N**. It asks first, saying how many go on each computer. An offline computer's chats can't be picked.
+- **Clear all on this computer** deletes every conversation here. Your other computers' chats stay.
+- Drag the list's right edge to make it wider; the width is remembered.
 
 ## Results that arrive while you're elsewhere
 

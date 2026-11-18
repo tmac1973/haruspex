@@ -1086,6 +1086,8 @@ export interface AppSettings {
 	codeNewWorktree: boolean;
 	/** Code tab: the session sidebar's width in px. */
 	codeSidebarWidth: number;
+	/** The Chat tab's conversation list, in px; dragged at its right edge. */
+	chatSidebarWidth: number;
 	/** Code tab: whether the session sidebar is shown. */
 	codeSidebarOpen: boolean;
 	/** Jobs tab: the job list's width in px. */
@@ -1297,6 +1299,7 @@ const defaults: AppSettings = {
 	codeLastWslDistro: '',
 	codeNewWorktree: false,
 	codeSidebarWidth: 240,
+	chatSidebarWidth: 260,
 	codeSidebarOpen: true,
 	jobsSidebarWidth: 260,
 	jobsOneAtATime: false,

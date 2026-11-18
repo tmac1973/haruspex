@@ -136,9 +136,15 @@ describe('a Code session without every capability', () => {
 	});
 
 	it('has no Detach on its tab, and joins the tabs beside local sessions', () => {
-		registerOpenView(bareView({ status: 'idle', busy: false }));
+		registerOpenView(
+			bareView({ status: 'idle', busy: false, peer: { id: 'desk', name: 'desk-pc' } })
+		);
 		render(CodeTabStrip, { onNew: () => {} });
-		screen.getByRole('tab', { name: /Fix the build/ });
+		const tab = screen.getByRole('tab', { name: /Fix the build/ });
+		// Marked in its computer's colour, and named in its tooltip.
+		expect(tab.classList.contains('remote')).toBe(true);
+		expect(tab.getAttribute('style')).toContain('--peer-color: hsl(');
+		expect(tab.getAttribute('title')).toContain('on desk-pc');
 		expect(screen.queryByRole('button', { name: /^Detach / })).toBeNull();
 		screen.getByRole('button', { name: 'Close Fix the build' });
 		unregisterOpenView('desk:s1');

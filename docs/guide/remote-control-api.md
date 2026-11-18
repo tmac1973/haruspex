@@ -5,11 +5,11 @@ description: Drive Code sessions, chats, jobs and settings from a script through
 
 # Remote control from a script
 
-Remote control (see the `remote-control` page) also takes requests from a script, through the web page's API. Turns run on this computer.
+Remote control (see `remote-control`) also takes requests from a script, through the web page's API. Turns run on this computer.
 
 ## Connect
 
-Send the token as `Authorization: Bearer <token>`, and trust the certificate: save it with **Copy certificate** in Settings → Remote control → Advanced and pass it, for example `curl --cacert haruspex.pem`. From a trusted computer, send `X-Haruspex: 1` instead of a token.
+Send the token as `Authorization: Bearer <token>`, and trust the certificate: save it with **Copy certificate** in Settings → Remote control → Advanced and pass it, e.g. `curl --cacert haruspex.pem`. From a trusted computer, send `X-Haruspex: 1` instead of a token.
 
 - `POST /api/v1/op` with an operation as JSON. The answer is `{"value": …}`, or an error message.
 - `GET /api/v1/events` streams the events named below.
@@ -19,9 +19,9 @@ Send the token as `Authorization: Bearer <token>`, and trust the certificate: sa
 
 ## Code sessions and chats
 
-`{"type":"sessions.list"}`, `session.new` (`root`, and on Windows a `wslDistro` with a Linux `root`; `wsl.distros` lists them), `session.send` (`id`, `text`), `session.get`, `session.stop`, `session.compact`. Chats: `chats.list`, `chat.new`, `chat.send`, `chat.get`, `chat.stop`, `chat.continue`, `chat.retry`. Prompts waiting on you: `prompts.list` and `prompts.answer`.
+`{"type":"sessions.list"}`, `session.new` (`root`, and on Windows a `wslDistro` with a Linux `root`; `wsl.distros` lists them), `session.send` (`id`, `text`), `session.get`, `session.stop`, `session.compact`. Chats: `chats.list`, `chats.search` (`query`), `chat.new`, `chat.send`, `chat.get`, `chat.stop`, `chat.continue`, `chat.retry`. Prompts waiting on you: `prompts.list` and `prompts.answer`.
 
-A session's controls: `session.close` (stops its turn and background processes; it stays saved), `session.delete` (a worktree it works in stays), `session.fork` (`index` of a message; `mode` `worktree` for a worktree of its own), `session.rename`, `session.effort` (`low` to `xhigh`, or null for Settings), `session.model` (`{baseUrl, modelId, apiKeyId}`, or null for Settings) and `session.stopBackground` (`processId`). A chat's: `chat.delete`, `chat.rename`, `chat.memory` (`enabled`), and `chat.folder` (`path` or null; `id`, else the open chat), a chat's working folder.
+A session's controls: `session.close` (stops its turn and background processes; it stays saved), `session.delete` (a worktree it works in stays), `session.fork` (`index` of a message; `mode` `worktree` for its own worktree), `session.rename`, `session.effort` (`low` to `xhigh`, or null for Settings), `session.model` (`{baseUrl, modelId, apiKeyId}`, or null for Settings) and `session.stopBackground` (`processId`). A chat's: `chat.delete`, `chat.rename`, `chat.memory` (`enabled`), and `chat.folder` (its working folder: `path` or null; `id`, else the open chat).
 
 Models: `models.list` names Settings → Inference's model, the saved remote options and the API keys; `models.probe` (`baseUrl`, `apiKeyId`) lists a server's models. Keys go by id, never by value.
 

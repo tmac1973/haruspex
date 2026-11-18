@@ -48,6 +48,8 @@ export type EngineOp =
 	/** A file in the session's folder, read-only: what the web client's viewer shows. */
 	| { type: 'session.readFile'; id: string; path: string }
 	| { type: 'chats.list' }
+	/** The chats whose messages match every word of `query` (as prefixes): their ids. */
+	| { type: 'chats.search'; query: string }
 	| { type: 'chat.get'; id: string }
 	| { type: 'chat.new' }
 	/** As `session.send`. */

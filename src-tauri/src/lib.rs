@@ -542,6 +542,7 @@ pub fn run() {
             tts::get_tts_logs,
             tts::clear_tts_logs,
             db::db_list_conversations,
+            db::db_search_conversations,
             db::db_get_conversation,
             db::db_create_conversation,
             db::db_save_message,

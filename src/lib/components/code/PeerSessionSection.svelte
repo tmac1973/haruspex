@@ -15,16 +15,30 @@
 		type PeerView
 	} from '#lib/peers/store.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { titleMatches } from '#lib/chat/search.ts';
+	import { peerColor } from '#lib/peers/color.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let {
 		peer,
 		activeId,
 		openIds,
-		now
-	}: { peer: PeerView; activeId: string | null; openIds: Set<string>; now: number } = $props();
+		now,
+		filter = ''
+	}: {
+		peer: PeerView;
+		activeId: string | null;
+		openIds: Set<string>;
+		now: number;
+		/** The sidebar's search: titles and folders with every word. */
+		filter?: string;
+	} = $props();
 
-	const sessions = $derived(sortListedSessions(listedSessions(peer)));
+	const sessions = $derived(
+		sortListedSessions(listedSessions(peer)).filter(
+			(s) => !filter.trim() || titleMatches(`${label(s)} ${s.root}`, filter)
+		)
+	);
 	const offline = $derived(!peer.online);
 
 	function label(s: ListedSession): string {
@@ -44,7 +58,7 @@
 	}
 </script>
 
-<section class="peer" aria-label="On {peer.config.name}">
+<section class="peer" aria-label="On {peer.config.name}" style="--peer-color: {peerColor(peer.id)}">
 	<h4
 		class="heading"
 		title={offline
@@ -91,6 +105,8 @@
 
 	.heading {
 		margin: 0;
+		/* The computer's colour, as on its rows and tabs. */
+		border-left: 3px solid var(--peer-color);
 		padding: 6px 6px 4px;
 		color: var(--text-secondary);
 		font-size: 0.72rem;
@@ -153,9 +169,13 @@
 		color: var(--text-primary);
 	}
 
+	.session {
+		border-left-color: color-mix(in srgb, var(--peer-color) 60%, transparent);
+	}
+
 	.session.active {
 		background: var(--accent-soft);
-		border-left-color: var(--accent);
+		border-left-color: var(--peer-color);
 		color: var(--text-primary);
 	}
 

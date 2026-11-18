@@ -140,6 +140,63 @@ fn clear_all() {
 }
 
 #[test]
+fn chat_search_finds_what_was_said_not_tool_results() {
+    let db = test_db();
+    db.create_conversation("soup", "Dinner").unwrap();
+    db.create_conversation("bike", "Repairs").unwrap();
+    db.save_message("soup", "user", "Ideas for a lentil soup?", None, None, None)
+        .unwrap();
+    db.save_message(
+        "soup",
+        "assistant",
+        "Try red lentils with cumin.",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    db.save_message("bike", "user", "My chain skips", None, None, None)
+        .unwrap();
+    db.save_message(
+        "bike",
+        "tool",
+        "lentil soup recipe page",
+        None,
+        Some("t1"),
+        None,
+    )
+    .unwrap();
+
+    // A prefix of each word; every word must match.
+    assert_eq!(db.search_conversations("lent").unwrap(), ["soup"]);
+    assert_eq!(db.search_conversations("red cumin").unwrap(), ["soup"]);
+    assert!(db.search_conversations("red chain").unwrap().is_empty());
+    // Quotes and stars are only separators, never FTS syntax.
+    assert_eq!(db.search_conversations("\"chain*\"").unwrap(), ["bike"]);
+    assert!(db.search_conversations("  ").unwrap().is_empty());
+
+    db.delete_conversation("soup").unwrap();
+    assert!(db.search_conversations("lentil").unwrap().is_empty());
+    db.clear_all_conversations().unwrap();
+    assert!(db.search_conversations("chain").unwrap().is_empty());
+}
+
+#[test]
+fn chat_search_indexes_chats_saved_before_it_existed() {
+    let db = test_db();
+    db.create_conversation("old", "Old chat").unwrap();
+    db.save_message("old", "user", "kayak routes", None, None, None)
+        .unwrap();
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute("DELETE FROM messages_fts", []).unwrap();
+    }
+    assert!(db.search_conversations("kayak").unwrap().is_empty());
+    db.migrate().unwrap();
+    assert_eq!(db.search_conversations("kayak").unwrap(), ["old"]);
+}
+
+#[test]
 fn stats_upsert_creates_row_then_accumulates() {
     let db = test_db();
     let now = 1_700_000_000_000_i64;

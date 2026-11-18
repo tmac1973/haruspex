@@ -16,6 +16,7 @@
 	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
 	import { localChatSource } from '#lib/stores/chat.svelte.ts';
 	import type { ChatSource } from '#lib/chat/source.ts';
+	import { peerColor } from '#lib/peers/color.ts';
 	import type { SteeringMessage } from '#lib/agent/loop.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
@@ -449,6 +450,7 @@
 		{#if source.peer}
 			<div class="runs-on" data-testid="runs-on-badge">
 				<span
+					style="border-color: {peerColor(source.peer.id)}"
 					title="Its turns, model and memory are on {source.peer
 						.name}. Settings → Remote control → Other computers.">Runs on {source.peer.name}</span
 				>

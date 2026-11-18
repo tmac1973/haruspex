@@ -64,6 +64,19 @@ function peerView(name: string, online = true) {
 	};
 }
 
+// This computer's full-text search, and deleting another computer's chats.
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		db_search_conversations: (args) =>
+			(args as { query: string }).query.startsWith('lentil') ? ['c2'] : []
+	})
+);
+const remote = vi.hoisted(() => ({ deleteRemoteChat: vi.fn(async () => {}) }));
+vi.mock('#lib/peers/remoteChat.svelte.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/peers/remoteChat.svelte.ts')>()),
+	deleteRemoteChat: remote.deleteRemoteChat
+}));
+
 // The sidebar only reads id + title off each conversation.
 const conversations = [
 	{ id: 'c1', title: 'First chat' },
@@ -116,15 +129,18 @@ describe('ConversationSidebar delete confirmation', () => {
 		expect(screen.queryByText('Delete conversation?')).toBeNull();
 	});
 
-	it('clear-all goes through its own confirmation', async () => {
+	it("clear-all goes through its own confirmation, for this computer's chats only", async () => {
+		peers.list = [peerView('demogorgon')];
 		render(ConversationSidebar);
-		await fireEvent.click(screen.getByText('Clear all'));
-		screen.getByText('Delete all conversations?');
+		await fireEvent.click(screen.getByText('Clear all on this computer'));
+		screen.getByText('Delete all conversations on this computer?');
+		screen.getByText(/Your other computers' chats stay/);
 		expect(clearAllConversations).not.toHaveBeenCalled();
 
 		await fireEvent.click(screen.getByText('Delete all'));
 		expect(clearAllConversations).toHaveBeenCalledTimes(1);
-		expect(screen.queryByText('Delete all conversations?')).toBeNull();
+		expect(remote.deleteRemoteChat).not.toHaveBeenCalled();
+		expect(screen.queryByText('Delete all conversations on this computer?')).toBeNull();
 	});
 });
 
@@ -189,5 +205,72 @@ describe("ConversationSidebar: other computers' chats", () => {
 		const kept = [...nas.querySelectorAll('.conversation-item')];
 		expect(kept.map((r) => r.textContent?.trim())).toEqual(['Kept on nas']);
 		expect(kept[0].classList.contains('offline')).toBe(true);
+	});
+});
+
+describe('ConversationSidebar search', () => {
+	it('keeps chats by title as you type, and by what was said once typing settles', async () => {
+		peers.list = [peerView('demogorgon')];
+		render(ConversationSidebar);
+		const box = screen.getByRole('searchbox', { name: 'Search chats' });
+
+		await fireEvent.input(box, { target: { value: 'first' } });
+		expect(screen.queryByText('First chat')).not.toBeNull();
+		expect(screen.queryByText('Second chat')).toBeNull();
+		// No match there: its section goes.
+		expect(screen.queryByRole('region', { name: 'On demogorgon' })).toBeNull();
+
+		await fireEvent.input(box, { target: { value: 'plans' } });
+		screen.getByRole('region', { name: 'On demogorgon' });
+
+		// Not in a title: the message search finds it.
+		await fireEvent.input(box, { target: { value: 'lentil' } });
+		await screen.findByText('Second chat');
+		expect(screen.queryByText('First chat')).toBeNull();
+
+		await fireEvent.input(box, { target: { value: 'nothing like it' } });
+		await screen.findByText('No chats match.');
+	});
+});
+
+describe('ConversationSidebar select', () => {
+	it('picks a range with shift, and deletes them on each computer after asking', async () => {
+		peers.list = [peerView('demogorgon')];
+		render(ConversationSidebar);
+		await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+		// Rows have checkboxes now, and no per-row delete.
+		expect(screen.queryAllByTitle('Delete conversation')).toHaveLength(0);
+
+		await fireEvent.click(screen.getByLabelText('Select First chat'));
+		await fireEvent.click(screen.getByLabelText('Select Plans on demogorgon'), { shiftKey: true });
+		expect((screen.getByLabelText('Select Second chat') as HTMLInputElement).checked).toBe(true);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete 3' }));
+		screen.getByText('Delete 3 conversations?');
+		screen.getByText('2 on this computer, 1 on demogorgon: permanently deleted.');
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+		await vi.waitFor(() => expect(remote.deleteRemoteChat).toHaveBeenCalledTimes(1));
+		expect(vi.mocked(deleteConversation).mock.calls.map((c) => c[0])).toEqual(['c1', 'c2']);
+		expect((remote.deleteRemoteChat.mock.calls[0] as unknown[])[1]).toBe('demogorgon-1');
+		// Back to the list.
+		screen.getByText('Clear all on this computer');
+	});
+
+	it("can't select an offline computer's chats, and selects only what's shown", async () => {
+		peers.list = [peerView('nas', false)];
+		render(ConversationSidebar);
+		await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+		expect((screen.getByLabelText('Select Kept on nas') as HTMLInputElement).disabled).toBe(true);
+		await fireEvent.click(screen.getByRole('button', { name: 'Select all shown' }));
+		// This computer's two; the offline one's kept chat isn't among them.
+		screen.getByRole('button', { name: 'Delete 2' });
+
+		await fireEvent.input(screen.getByRole('searchbox', { name: 'Search chats' }), {
+			target: { value: 'first' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Select all shown' }));
+		screen.getByRole('button', { name: 'Delete 1' });
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(screen.queryByLabelText('Select First chat')).toBeNull();
 	});
 });

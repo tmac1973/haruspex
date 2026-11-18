@@ -23,6 +23,7 @@
 	import BranchGlyph from '#lib/components/code/BranchGlyph.svelte';
 	import PeerSessionSection from '#lib/components/code/PeerSessionSection.svelte';
 	import { peerViews, showsCodeSection } from '#lib/peers/store.svelte.ts';
+	import { titleMatches } from '#lib/chat/search.ts';
 	import { onClaimsChanged, openSessionIds } from '#lib/code/claims.ts';
 	import { worktreeOffer, worktreeOutcome } from '#lib/code/folders.ts';
 	import {
@@ -42,7 +43,15 @@
 
 	let list = $state<CodeSessionSummary[]>([]);
 	let loadError = $state<string | null>(null);
-	const entries = $derived(sidebarEntries(list));
+	/** Titles and folders with every word typed; empty shows them all. */
+	let filter = $state('');
+	const entries = $derived(
+		sidebarEntries(
+			filter.trim()
+				? list.filter((s) => titleMatches(`${sessionLabel(s)} ${locationLabel(s)}`, filter))
+				: list
+		)
+	);
 	const activeId = $derived(getActiveSessionId());
 	const openIds = $derived(new Set(getOpenViews().map((s) => s.id)));
 	/** Sessions some window has open, this one included (Rust's claims). */
@@ -75,7 +84,7 @@
 
 	let open = $state(getSettings().codeSidebarOpen);
 	const MIN_WIDTH = 180;
-	const MAX_WIDTH = 480;
+	const MAX_WIDTH = 640;
 	let width = $state(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, getSettings().codeSidebarWidth)));
 
 	export async function refresh(): Promise<void> {
@@ -279,11 +288,24 @@
 				>‹</button
 			>
 		</header>
+		<div class="filter-row">
+			<input
+				class="filter"
+				type="search"
+				placeholder="Search sessions"
+				aria-label="Search sessions"
+				title="Sessions whose title or folder has every word you type, on each computer"
+				bind:value={filter}
+				onkeydown={(e) => {
+					if (e.key === 'Escape') filter = '';
+				}}
+			/>
+		</div>
 		<div class="list">
 			{#if loadError}
 				<p class="empty">Couldn't load sessions: {loadError}</p>
 			{:else if entries.length === 0}
-				<p class="empty">No sessions yet.</p>
+				<p class="empty">{filter.trim() ? 'No sessions match.' : 'No sessions yet.'}</p>
 			{/if}
 			<ul>
 				{#each entries as entry (entry.kind === 'folder' ? `dir:${entry.key}` : entry.session.id)}
@@ -313,7 +335,7 @@
 				{/each}
 			</ul>
 			{#each peerViews().filter(showsCodeSection) as peer (peer.id)}
-				<PeerSessionSection {peer} {activeId} {openIds} {now} />
+				<PeerSessionSection {peer} {activeId} {openIds} {now} {filter} />
 			{/each}
 		</div>
 		<button
@@ -438,6 +460,17 @@
 
 	.collapse:hover {
 		color: var(--text-primary);
+	}
+
+	.filter-row {
+		padding: 6px 8px 2px;
+	}
+
+	.filter {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 5px 8px;
+		font-size: 0.8rem;
 	}
 
 	.list {

@@ -824,6 +824,25 @@ impl Database {
                 VALUES ('delete', old.id, old.transcript, coalesce(old.caption, ''));
                 INSERT INTO camera_events_fts(rowid, transcript, caption)
                 VALUES (new.id, new.transcript, coalesce(new.caption, ''));
+            END;
+
+            -- Full-text search over what was said in chats: the user's
+            -- messages and the answers, not tool results. Its own copy (not
+            -- external content), so tool rows never reach it; kept in step
+            -- by the triggers below, and filled once for older databases.
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                content, conversation_id UNINDEXED
+            );
+
+            CREATE TRIGGER IF NOT EXISTS messages_fts_insert
+            AFTER INSERT ON messages WHEN new.role IN ('user', 'assistant') BEGIN
+                INSERT INTO messages_fts(rowid, content, conversation_id)
+                VALUES (new.id, new.content, new.conversation_id);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS messages_fts_delete
+            AFTER DELETE ON messages BEGIN
+                DELETE FROM messages_fts WHERE rowid = old.id;
             END;",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
@@ -947,6 +966,7 @@ impl Database {
         }
 
         Self::migrate_type_config(&conn)?;
+        Self::fill_messages_fts(&conn)?;
 
         info!("Database migration complete");
         Ok(())
@@ -958,6 +978,25 @@ impl Database {
     /// match what the frontend job-type modules' `configFromJob` parsers
     /// expect. The legacy columns are dead afterwards — never read or
     /// written again (dropping them isn't worth the risk on user DBs).
+    /// Index the chats saved before `messages_fts` existed, once: an empty
+    /// index beside saved messages means it was just made.
+    fn fill_messages_fts(conn: &Connection) -> Result<(), String> {
+        let indexed: i64 = conn
+            .query_row("SELECT count(*) FROM messages_fts", [], |r| r.get(0))
+            .map_err(|e| format!("Migration (chat search) failed: {e}"))?;
+        if indexed > 0 {
+            return Ok(());
+        }
+        conn.execute(
+            "INSERT INTO messages_fts(rowid, content, conversation_id)
+             SELECT id, content, conversation_id FROM messages
+             WHERE role IN ('user', 'assistant')",
+            [],
+        )
+        .map_err(|e| format!("Migration (chat search) failed: {e}"))?;
+        Ok(())
+    }
+
     fn migrate_type_config(conn: &Connection) -> Result<(), String> {
         let mut stmt = conn
             .prepare(
