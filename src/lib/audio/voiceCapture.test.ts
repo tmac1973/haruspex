@@ -35,6 +35,9 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: async () => {} }));
 import {
 	ensureWhisperReady,
 	getPendingPhrases,
+	installMediaHold,
+	registerDictationTarget,
+	toggleListeningFor,
 	getVoiceCaptureStatus,
 	isListeningOwner,
 	startListening,
@@ -213,5 +216,92 @@ describe('constant listening', () => {
 		await startListening(token, fakeTarget());
 		expect(called('voice_listen_start')).toHaveLength(0);
 		expect(getVoiceCaptureStatus()).toBe('idle');
+	});
+});
+
+describe('Shift+F2 and in-page audio', () => {
+	beforeEach(async () => {
+		await stopListening();
+	});
+
+	it('starts into the active session’s composer, and stops on the second press', async () => {
+		const a = fakeTarget();
+		const b = fakeTarget();
+		const offA = registerDictationTarget(Symbol('a'), {
+			surface: 'code',
+			key: () => 's1',
+			target: a
+		});
+		const tokenB = Symbol('b');
+		const offB = registerDictationTarget(tokenB, { surface: 'code', key: () => 's2', target: b });
+		await toggleListeningFor('code', 's2');
+		expect(isListeningOwner(tokenB)).toBe(true);
+		await fire({ type: 'Phrase', seq: 1, text: 'For s2.' });
+		expect(b.text).toBe('For s2.');
+		expect(a.text).toBe('');
+		const stops = called('voice_listen_stop').length;
+		await toggleListeningFor('code', 's2');
+		expect(called('voice_listen_stop')).toHaveLength(stops + 1);
+		expect(getVoiceCaptureStatus()).toBe('idle');
+		offA();
+		offB();
+	});
+
+	it('says so when the tab has no composer', async () => {
+		await toggleListeningFor('shell', 'nope');
+		expect(called('voice_listen_start')).toHaveLength(0);
+		expect(h.toasts).toContain('No composer to dictate into here');
+	});
+
+	it('a composer that unregistered is no longer offered', async () => {
+		const off = registerDictationTarget(Symbol('c'), {
+			surface: 'chat',
+			key: () => undefined,
+			target: fakeTarget()
+		});
+		off();
+		await toggleListeningFor('chat');
+		expect(called('voice_listen_start')).toHaveLength(0);
+	});
+
+	it('holds listening while page audio plays, and lets go when it ends', async () => {
+		const remove = installMediaHold(document);
+		await startListening(Symbol('m'), fakeTarget());
+		const el = document.createElement('audio');
+		document.body.append(el);
+		// jsdom players never really play; say this one is.
+		let paused = false;
+		Object.defineProperty(el, 'paused', { configurable: true, get: () => paused });
+		el.dispatchEvent(new Event('play'));
+		expect(called('voice_listen_hold').map((c) => c.args)).toEqual([{ hold: true }]);
+		paused = true;
+		el.dispatchEvent(new Event('ended'));
+		expect(called('voice_listen_hold').map((c) => c.args)).toEqual([
+			{ hold: true },
+			{ hold: false }
+		]);
+		remove();
+		el.remove();
+	});
+
+	it('does not hold for muted audio, or when not listening', async () => {
+		const remove = installMediaHold(document);
+		const el = document.createElement('audio');
+		document.body.append(el);
+		let paused = false;
+		Object.defineProperty(el, 'paused', { configurable: true, get: () => paused });
+		// Not listening: nothing to hold.
+		el.dispatchEvent(new Event('play'));
+		paused = true;
+		el.dispatchEvent(new Event('pause'));
+		expect(called('voice_listen_hold')).toHaveLength(0);
+		// Listening, but the player is muted.
+		await startListening(Symbol('m'), fakeTarget());
+		el.muted = true;
+		paused = false;
+		el.dispatchEvent(new Event('play'));
+		expect(called('voice_listen_hold')).toHaveLength(0);
+		remove();
+		el.remove();
 	});
 });

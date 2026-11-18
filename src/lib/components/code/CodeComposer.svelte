@@ -215,7 +215,12 @@
 				: 'Ask for a change… (Enter to send, / for commands)'}></textarea>
 	{#if !blocked}
 		<ScreenCaptureButton onCapture={(url) => images.addUrls([url])} />
-		<MicButton onTranscription={(t) => send(t)} {dictation} contextKey={session.id} />
+		<MicButton
+			onTranscription={(t) => send(t)}
+			{dictation}
+			contextKey={session.id}
+			surface="code"
+		/>
 	{/if}
 	{#if busy}
 		<button class="stop" onclick={session.stop} title="Stop (Esc)">Stop</button>

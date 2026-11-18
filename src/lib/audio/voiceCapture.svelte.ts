@@ -110,6 +110,7 @@ export async function startListening(
 		lastSuffix = null;
 		pendingPhrases = 0;
 		status = 'listening';
+		if (playingMedia.size > 0) sendHold(true);
 	} catch (e) {
 		toastError(`Mic error: ${errMessage(e)}`);
 		resetListening();
@@ -125,6 +126,85 @@ export async function stopListening(): Promise<void> {
 	} catch (e) {
 		console.warn('Stopping constant listening failed:', e);
 	}
+}
+
+/** Which composer constant listening started from Shift+F2 dictates into. */
+export type DictationSurface = 'chat' | 'shell' | 'code';
+
+interface RegisteredTarget {
+	surface: DictationSurface;
+	/** The conversation or session the composer is for, read when Shift+F2 picks one. */
+	key: () => string | undefined;
+	target: DictationTarget;
+}
+
+// Every mounted composer, by its MicButton's token. Code and Shell keep a
+// pane mounted per session, so several can share a surface.
+// Not reactive on purpose: only Shift+F2 reads it.
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
+const targets = new Map<symbol, RegisteredTarget>();
+
+/** Offer a mounted composer to Shift+F2; the returned function takes it back. */
+export function registerDictationTarget(token: symbol, entry: RegisteredTarget): () => void {
+	targets.set(token, entry);
+	return () => {
+		targets.delete(token);
+	};
+}
+
+/**
+ * Shift+F2: stop listening, or start it into the composer for `surface`,
+ * and for session `key` when the tab has several (Code, Shell).
+ */
+export async function toggleListeningFor(surface: DictationSurface, key?: string): Promise<void> {
+	if (status === 'listening' || status === 'paused') {
+		await stopListening();
+		return;
+	}
+	let found: [symbol, RegisteredTarget] | undefined;
+	for (const pair of targets) {
+		if (pair[1].surface === surface && (key === undefined || pair[1].key() === key)) found = pair;
+	}
+	if (!found) {
+		showToast('No composer to dictate into here');
+		return;
+	}
+	await startListening(found[0], found[1].target);
+}
+
+// Audio or video playing in the page (generated speech, songs, previews):
+// listening holds while any of it is audible, as it does for read-aloud.
+// Not reactive on purpose: only the hold logic reads it.
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
+const playingMedia = new Set<HTMLMediaElement>();
+
+function sendHold(hold: boolean): void {
+	if (session === null) return;
+	void invoke('voice_listen_hold', { hold }).catch((e: unknown) => {
+		console.warn('Holding constant listening failed:', e);
+	});
+}
+
+function onMediaEvent(e: Event): void {
+	const el = e.target;
+	if (!(el instanceof HTMLMediaElement)) return;
+	const wasPlaying = playingMedia.size > 0;
+	if (!el.paused && !el.ended && !el.muted && el.volume > 0) playingMedia.add(el);
+	else playingMedia.delete(el);
+	const isPlaying = playingMedia.size > 0;
+	if (isPlaying !== wasPlaying) sendHold(isPlaying);
+}
+
+const MEDIA_EVENTS = ['play', 'playing', 'pause', 'ended', 'emptied', 'volumechange'];
+
+/** Hold constant listening while the page plays sound; returns the remover. */
+export function installMediaHold(doc: Document): () => void {
+	// Media events don't bubble, so listen in the capture phase.
+	for (const name of MEDIA_EVENTS) doc.addEventListener(name, onMediaEvent, true);
+	return () => {
+		for (const name of MEDIA_EVENTS) doc.removeEventListener(name, onMediaEvent, true);
+		playingMedia.clear();
+	};
 }
 
 async function onPhrase(text: string): Promise<void> {

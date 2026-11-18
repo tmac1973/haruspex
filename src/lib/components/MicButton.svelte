@@ -1,14 +1,16 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import {
 		cancelVoiceCapture,
 		getPendingPhrases,
 		getVoiceCaptureStatus,
 		isListeningOwner,
+		registerDictationTarget,
 		startListening,
 		startVoiceCapture,
 		stopAndTranscribe,
 		stopListening,
+		type DictationSurface,
 		type DictationTarget
 	} from '#lib/audio/voiceCapture.svelte.ts';
 
@@ -19,9 +21,11 @@
 		dictation?: DictationTarget;
 		/** The conversation or session the composer is for; listening stops when it changes. */
 		contextKey?: string;
+		/** Which tab's composer this is, so Shift+F2 can start listening into it. */
+		surface?: DictationSurface;
 	}
 
-	let { onTranscription, disabled = false, dictation, contextKey }: Props = $props();
+	let { onTranscription, disabled = false, dictation, contextKey, surface }: Props = $props();
 
 	const ownerToken = Symbol('mic-button');
 
@@ -107,7 +111,19 @@
 		lastKey = key;
 	});
 
+	let unregister: (() => void) | null = null;
+	onMount(() => {
+		if (surface && dictation) {
+			unregister = registerDictationTarget(ownerToken, {
+				surface,
+				key: () => contextKey,
+				target: dictation
+			});
+		}
+	});
+
 	onDestroy(() => {
+		unregister?.();
 		if (isListeningOwner(ownerToken)) void stopListening();
 	});
 

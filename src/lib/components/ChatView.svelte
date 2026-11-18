@@ -851,6 +851,7 @@
 							}}
 							{dictation}
 							contextKey={activeConversation?.id}
+							surface="chat"
 						/>
 					{/if}
 				</div>

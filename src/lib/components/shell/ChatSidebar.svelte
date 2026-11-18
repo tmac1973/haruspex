@@ -629,6 +629,7 @@
 				disabled={submitting}
 				{dictation}
 				contextKey={session.id}
+				surface="shell"
 			/>
 			{#if submitting}
 				<button class="cancel" onclick={session.cancelTurn} title="Cancel (Esc)">Stop</button>

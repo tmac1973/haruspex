@@ -80,7 +80,7 @@
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { syncRemoteServer } from '#lib/remote/service.ts';
 	import '#lib/styles/app.css';
 	import { startEngine } from '#lib/engine/index.ts';
@@ -94,9 +94,12 @@
 	import { messageText, type ChatMessage } from '#lib/api.ts';
 	import { installMarkdownActions } from '#lib/markdownActions.ts';
 	import {
+		installMediaHold,
 		isVoiceCaptureActive,
 		startVoiceCapture,
-		stopAndTranscribe
+		stopAndTranscribe,
+		stopListening,
+		toggleListeningFor
 	} from '#lib/audio/voiceCapture.svelte.ts';
 	import { stopTts, toggleTts } from '#lib/audio/ttsControl.svelte.ts';
 	import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
@@ -157,6 +160,8 @@
 
 	// One generated-audio player at a time, and none over read-aloud.
 	onMount(() => installAudioExclusivity(document, () => void stopTts()));
+	// Constant listening holds while the page plays audio or video.
+	onMount(() => installMediaHold(document));
 	// A player for each song an answer names: see audio/mountPlayers.ts.
 	onMount(() => installAudioPlayers(document));
 	// No dragging images out: a drop target that stalls freezes GTK 3.
@@ -546,6 +551,45 @@
 		if (!isVoiceCaptureActive()) void startVoiceCapture();
 	}
 
+	/** The session a Code or Shell hotkey acts on; Chat has one composer. */
+	function hotkeySessionId(tab: string): string | undefined {
+		if (tab === 'code') return getActiveCodeSession()?.id;
+		if (tab === 'shell') return getActiveShellSession()?.id;
+		return undefined;
+	}
+
+	function isShiftF2(event: KeyboardEvent): boolean {
+		const others = event.ctrlKey || event.altKey || event.metaKey;
+		return event.key === 'F2' && event.shiftKey && !others;
+	}
+
+	// Shift+F2: constant listening into the current tab's composer (toggle).
+	async function handleListenToggleKey(event: KeyboardEvent) {
+		event.preventDefault();
+		if (event.repeat) return;
+		const tab = hotkeyTab();
+		if (tab !== 'chat' && tab !== 'shell' && tab !== 'code') {
+			showToast('No composer to dictate into here');
+			return;
+		}
+		if (tab === 'shell') {
+			getActiveShellSession()?.setSidebarOpen(true);
+			await tick();
+		}
+		await toggleListeningFor(tab, hotkeySessionId(tab));
+	}
+
+	// Switching tab, or Code / Shell session, stops constant listening so
+	// dictated text never lands in a composer you can't see. (Each pane stays
+	// mounted, so its MicButton can't tell by itself.)
+	let lastHotkeyTarget: string | null = null;
+	$effect(() => {
+		const tab = hotkeyTab();
+		const now = `${tab}:${hotkeySessionId(tab) ?? ''}`;
+		if (lastHotkeyTarget !== null && now !== lastHotkeyTarget) void stopListening();
+		lastHotkeyTarget = now;
+	});
+
 	// F3: read the last assistant message aloud.
 	function handleReadAloudKey(event: KeyboardEvent) {
 		event.preventDefault();
@@ -624,6 +668,10 @@
 		// Settings opens as an overlay on the main route, so isMainPage() is
 		// still true while it's up — suppress push-to-talk / read-aloud there.
 		if (!isMainPage() || showSettings) return;
+		if (isShiftF2(event)) {
+			void handleListenToggleKey(event);
+			return;
+		}
 		if (!hasNoModifiers(event)) return;
 		if (event.key === 'F2') handleVoiceCaptureKey(event);
 		else if (event.key === 'F3') handleReadAloudKey(event);
@@ -634,6 +682,7 @@
 		if (!isMainPage() || showSettings) return;
 		if (event.key === 'F2') {
 			event.preventDefault();
+			if (event.shiftKey) return;
 			const text = await stopAndTranscribe();
 			if (text) pickTranscriptionTarget(text);
 		}
