@@ -53,7 +53,7 @@ Drop or paste an image into the chat box to ask about it. The camera button atta
 
 ## Talk to it and hear answers
 
-- **Speak:** hold the microphone button, or hold `F2`, and release to send. The first time, a speech model is downloaded.
+- **Speak:** hold the microphone button or `F2` and release to send, or right-click it to dictate. See the `voice` page.
 - **Listen:** click the speaker icon on an answer, or press `F3`, to have it read aloud.
 
 Pick voice, microphone and speaker in Settings → Audio. Speech is processed on your computer.

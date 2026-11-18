@@ -10,6 +10,7 @@
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
 	import MicButton from '#lib/components/MicButton.svelte';
+	import type { DictationTarget } from '#lib/audio/voiceCapture.svelte.ts';
 	import SearchStepComponent from '#lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import {
@@ -293,6 +294,20 @@
 	function autosize() {
 		if (composerEl) autosizeTextarea(composerEl);
 	}
+
+	/** Constant listening dictates here; it waits for a running turn to finish. */
+	const dictation: DictationTarget = {
+		getText: () => composerText,
+		setText: (t) => {
+			composerText = t;
+			autosize();
+		},
+		send: async () => {
+			if (submitting) return false;
+			await doSend(composerText);
+			return true;
+		}
+	};
 
 	function onComposerInput() {
 		autosize();
@@ -609,7 +624,12 @@
 				title="Send a screenshot to the assistant. With text in the box, that is sent with it."
 				label="Send a screenshot"
 			/>
-			<MicButton onTranscription={(text) => doSend(text)} disabled={submitting} />
+			<MicButton
+				onTranscription={(text) => doSend(text)}
+				disabled={submitting}
+				{dictation}
+				contextKey={session.id}
+			/>
 			{#if submitting}
 				<button class="cancel" onclick={session.cancelTurn} title="Cancel (Esc)">Stop</button>
 			{:else}

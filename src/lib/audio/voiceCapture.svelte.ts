@@ -1,23 +1,46 @@
 /**
- * Shared push-to-talk capture state.
+ * Shared voice capture state: push-to-talk and constant listening.
  *
- * Both the on-screen MicButton (hold the button to record) and the
- * global F2 push-to-talk hotkey go through this module so the Rust
- * side's recording singleton never gets double-started. State is
- * reactive so any subscriber (button, status indicator) re-renders
+ * Both the on-screen MicButton (hold the button to record, or right-click
+ * for constant listening) and the global F2 push-to-talk hotkey go through
+ * this module so the Rust side's microphone never gets double-started.
+ * State is reactive so any subscriber (button, status indicator) re-renders
  * when capture starts / stops.
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { sleep } from '#lib/utils/async.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
+import type { ListenEvent } from '#lib/ipc/gen/ListenEvent.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { appendPhrase, parseDictation, removeAppended } from '#lib/audio/dictation.ts';
 
-export type VoiceCaptureStatus = 'idle' | 'recording' | 'processing' | 'downloading';
+export type VoiceCaptureStatus =
+	'idle' | 'recording' | 'processing' | 'downloading' | 'listening' | 'paused';
 
 let status = $state<VoiceCaptureStatus>('idle');
+/** Phrases heard but not yet transcribed, while constant listening. */
+let pendingPhrases = $state(0);
+
+/** The composer constant listening dictates into. */
+export interface DictationTarget {
+	getText(): string;
+	setText(text: string): void;
+	/** Send the composer; false when it can't right now. */
+	send(): Promise<boolean>;
+}
+
+// The constant listening session this window started, if any.
+let session: number | null = null;
+let owner: symbol | null = null;
+let target: DictationTarget | null = null;
+/** Exactly what the last phrase added, for "scratch that". */
+let lastSuffix: string | null = null;
+let listening: Promise<unknown> | null = null;
+let queue: Promise<void> = Promise.resolve();
 
 /**
  * Every capture/transcription failure surfaces as an error toast — the old
@@ -34,6 +57,125 @@ export function getVoiceCaptureStatus(): VoiceCaptureStatus {
 
 export function isVoiceCaptureActive(): boolean {
 	return status === 'recording';
+}
+
+export function getPendingPhrases(): number {
+	return pendingPhrases;
+}
+
+/** Whether the MicButton holding `token` started the current constant listening. */
+export function isListeningOwner(token: symbol): boolean {
+	return session !== null && owner === token;
+}
+
+function resetListening(): void {
+	session = null;
+	owner = null;
+	target = null;
+	lastSuffix = null;
+	pendingPhrases = 0;
+	status = 'idle';
+}
+
+/**
+ * Start constant listening into `dictationTarget`, owned by the MicButton
+ * holding `ownerToken`. Gets whisper ready (downloading the model the first
+ * time) before opening the mic.
+ */
+export async function startListening(
+	ownerToken: symbol,
+	dictationTarget: DictationTarget
+): Promise<void> {
+	if (status !== 'idle') return;
+	status = 'processing';
+	// One event at a time, so a slow send can't race the next phrase.
+	listening ??= listen<ListenEvent>('voice://listen', (e) => {
+		queue = queue
+			.then(() => onListenEvent(e.payload))
+			.catch((err: unknown) => {
+				console.warn('Constant listening event failed:', err);
+			});
+	});
+	await listening;
+	if (!(await ensureWhisperReady())) {
+		toastError('Speech recognition not available.');
+		status = 'idle';
+		return;
+	}
+	try {
+		const deviceName = getSettings().audioInputDevice || undefined;
+		session = await invoke<number>('voice_listen_start', { deviceName });
+		owner = ownerToken;
+		target = dictationTarget;
+		lastSuffix = null;
+		pendingPhrases = 0;
+		status = 'listening';
+	} catch (e) {
+		toastError(`Mic error: ${errMessage(e)}`);
+		resetListening();
+	}
+}
+
+/** Stop constant listening. Does nothing when this window isn't listening. */
+export async function stopListening(): Promise<void> {
+	if (session === null) return;
+	resetListening();
+	try {
+		await invoke('voice_listen_stop');
+	} catch (e) {
+		console.warn('Stopping constant listening failed:', e);
+	}
+}
+
+async function onPhrase(text: string): Promise<void> {
+	const t = target;
+	if (!t) return;
+	const d = parseDictation(text);
+	if (d.kind === 'none') return;
+	if (d.kind === 'scratch') {
+		const back = lastSuffix ? removeAppended(t.getText(), lastSuffix) : null;
+		if (back === null) {
+			showToast('Nothing to scratch');
+			return;
+		}
+		t.setText(back);
+		lastSuffix = null;
+		return;
+	}
+	if (d.text) {
+		const next = appendPhrase(t.getText(), d.text);
+		t.setText(next.text);
+		lastSuffix = next.suffix;
+	}
+	if (d.kind === 'send') {
+		if (await t.send()) lastSuffix = null;
+		else showToast('Couldn’t send yet — say “send it” again');
+	}
+}
+
+async function onListenEvent(e: ListenEvent): Promise<void> {
+	if (session === null || e.session !== session) return;
+	switch (e.type) {
+		case 'Paused':
+			status = e.paused ? 'paused' : 'listening';
+			break;
+		case 'PhraseQueued':
+			pendingPhrases++;
+			break;
+		case 'Phrase':
+			pendingPhrases = Math.max(0, pendingPhrases - 1);
+			await onPhrase(e.text);
+			break;
+		case 'Error':
+			toastError(`Transcription failed: ${e.message}`);
+			break;
+		case 'Stopped':
+			resetListening();
+			if (e.reason === 'Idle') showToast('Constant listening stopped after 5 minutes of silence');
+			else if (e.reason === 'Device')
+				toastError('Microphone disconnected — constant listening stopped');
+			break;
+	}
 }
 
 export async function startVoiceCapture(): Promise<void> {
@@ -104,11 +246,12 @@ async function speechModelPath(): Promise<string> {
 		turbo ? 'whisper_video_model_path' : 'get_whisper_model_path'
 	);
 	if (existing) return existing;
+	const before = status;
 	status = 'downloading';
 	try {
 		return await invoke<string>(turbo ? 'whisper_video_model_download' : 'download_whisper_model');
 	} finally {
-		status = 'processing';
+		status = before;
 	}
 }
 
@@ -120,11 +263,12 @@ async function vadModelPath(): Promise<string | null> {
 	try {
 		const existing = await invoke<string | null>('whisper_vad_model_path');
 		if (existing) return existing;
+		const before = status;
 		status = 'downloading';
 		try {
 			return await invoke<string>('whisper_vad_model_download');
 		} finally {
-			status = 'processing';
+			status = before;
 		}
 	} catch (e) {
 		console.warn('Speech detector unavailable, transcribing without it:', e);
