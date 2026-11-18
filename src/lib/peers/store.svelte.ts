@@ -46,6 +46,8 @@ export type ListedSession = KeptSession & {
 
 export type ListedChat = KeptChat & {
 	busy: boolean;
+	/** Waiting for the model, or for another turn there. */
+	waiting: boolean;
 	unread: boolean;
 	offline: boolean;
 };
@@ -169,6 +171,7 @@ export function listedChats(peer: PeerView): ListedChat[] {
 		return peer.client.chats.map((c) => ({
 			...keepChat(c),
 			busy: c.busy,
+			waiting: c.waiting,
 			unread: c.unread,
 			offline: false
 		}));
@@ -176,6 +179,7 @@ export function listedChats(peer: PeerView): ListedChat[] {
 	return (peer.lastKnown?.chats ?? []).map((c) => ({
 		...c,
 		busy: false,
+		waiting: false,
 		unread: false,
 		offline: true
 	}));

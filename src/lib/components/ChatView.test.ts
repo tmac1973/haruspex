@@ -362,6 +362,14 @@ describe('ChatView with another source', () => {
 		expect(vi.mocked(sendMessage)).not.toHaveBeenCalled();
 	});
 
+	it('names the computer a chat runs on, and leaves its skills to it', () => {
+		const source = Object.assign(remoteSource(), { peer: { id: 'desk', name: 'desk-pc' } });
+		const { container } = render(ChatView, { source });
+		screen.getByText('Runs on desk-pc');
+		expect(container.querySelector('.workingdir-btn')).toBeNull();
+		expect(container.querySelector('.research-toggle')).toBeNull();
+	});
+
 	it('shows them for this computer', () => {
 		const { container } = render(ChatView);
 		for (const sel of ['.workingdir-btn', '.capture-btn', '.open-shell-btn', '.research-toggle'])

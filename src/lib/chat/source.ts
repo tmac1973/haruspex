@@ -72,4 +72,7 @@ export interface ChatSource {
 	dropSteering: typeof Store.dropSteering;
 	hasDraft: typeof Store.hasConversationDraft;
 	takeDraft: typeof Store.takeConversationDraft;
+
+	/** The computer it runs on; absent for this computer's own chats. */
+	readonly peer?: { id: string; name: string };
 }

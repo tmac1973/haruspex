@@ -24,8 +24,44 @@ vi.mock('#lib/stores/chat.svelte.ts', () => ({
 		compacting: false
 	})),
 	renameConversation: vi.fn(),
-	setActiveConversation: vi.fn()
+	setActiveConversation: vi.fn(),
+	// The Chat view's source while this computer's chats show.
+	localChatSource: { capabilities: {} }
 }));
+
+// Other computers, as the sidebar reads them: live lists, or kept ones while offline.
+const peers = vi.hoisted(() => ({ list: [] as unknown[] }));
+vi.mock('#lib/peers/store.svelte.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/peers/store.svelte.ts')>()),
+	peerViews: () => peers.list
+}));
+
+function peerView(name: string, online = true) {
+	return {
+		id: name,
+		config: { name },
+		online,
+		client: {
+			lean: false,
+			chats: [
+				{
+					id: `${name}-1`,
+					title: `Plans on ${name}`,
+					updatedAt: 1,
+					open: false,
+					busy: true,
+					waiting: false,
+					unread: false
+				}
+			]
+		},
+		lastKnown: {
+			sessions: [],
+			chats: [{ id: `${name}-old`, title: `Kept on ${name}`, updatedAt: 1 }],
+			updatedAt: 1
+		}
+	};
+}
 
 // The sidebar only reads id + title off each conversation.
 const conversations = [
@@ -35,6 +71,7 @@ const conversations = [
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	peers.list = [];
 	vi.mocked(getConversations).mockReturnValue(
 		conversations as unknown as ReturnType<typeof getConversations>
 	);
@@ -136,5 +173,20 @@ describe('ConversationSidebar marks', () => {
 		);
 		expect(marks).toEqual(['running', 'queued', 'unread']);
 		screen.getByLabelText('Finished while you were elsewhere');
+	});
+});
+
+describe("ConversationSidebar: other computers' chats", () => {
+	it('lists each under its name, marked as the web page marks them, greyed while offline', () => {
+		peers.list = [peerView('desk-pc'), peerView('nas', false)];
+		render(ConversationSidebar);
+		const desk = screen.getByRole('region', { name: 'On desk-pc' });
+		expect(desk.textContent).toContain('Plans on desk-pc');
+		expect(desk.querySelector('[data-mark="running"]')).not.toBeNull();
+		const nas = screen.getByRole('region', { name: 'On nas' });
+		expect(nas.textContent).toContain('· offline');
+		const kept = [...nas.querySelectorAll('.conversation-item')];
+		expect(kept.map((r) => r.textContent?.trim())).toEqual(['Kept on nas']);
+		expect(kept[0].classList.contains('offline')).toBe(true);
 	});
 });

@@ -74,3 +74,14 @@ titles greyed.
 ## Rollback
 
 Revert; the active source falls back to local.
+
+## As built
+
+- A `/name` in another computer's chat is sent as typed (`ChatView` skips
+  `runSlash` and this computer's skill menu for a source with `peer`), and
+  a built-in's note shows after its messages, as in phase 09.
+- While that computer is offline, the view's error says "<name> is offline."
+- The source shown leaves the Chat view (back to this computer's) when its
+  chat is deleted there, or the computer is removed, rebuilt or the feature
+  turned off (`onPeerGone`).
+- `ListedChat` gained `waiting`, so a row marks Waiting as the web page does.

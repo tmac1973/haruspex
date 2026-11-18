@@ -172,7 +172,15 @@ describe('the other computers', () => {
 			}
 		]);
 		expect(listedChats(view)).toEqual([
-			{ id: 'c1', title: 'Recipes', updatedAt: 7, busy: false, unread: false, offline: true }
+			{
+				id: 'c1',
+				title: 'Recipes',
+				updatedAt: 7,
+				busy: false,
+				waiting: false,
+				unread: false,
+				offline: true
+			}
 		]);
 	});
 

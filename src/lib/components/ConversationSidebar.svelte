@@ -22,6 +22,11 @@
 		type Conversation
 	} from '#lib/stores/chat.svelte.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import PeerChatSection from '#lib/components/PeerChatSection.svelte';
+	import { listedChats, peerViews } from '#lib/peers/store.svelte.ts';
+	import { closeRemoteChat } from '#lib/peers/remoteChat.svelte.ts';
+	import { getActiveChatSource } from '#lib/stores/activeChatSource.svelte.ts';
+	import { localChatSource } from '#lib/stores/chat.svelte.ts';
 
 	let collapsed = $state(false);
 	let renamingId = $state<string | null>(null);
@@ -56,7 +61,18 @@
 	}
 
 	const conversations = $derived(getConversations());
-	const activeId = $derived(getActiveConversationId());
+	/** The row on screen: none of this computer's while another's chat shows. */
+	const activeId = $derived(
+		getActiveChatSource() === localChatSource ? getActiveConversationId() : null
+	);
+	/** Other computers with chats to list, or connected. */
+	const peers = $derived(peerViews().filter((p) => p.online || listedChats(p).length > 0));
+
+	/** Show one of this computer's chats, leaving another's. */
+	function openLocal(id: string) {
+		closeRemoteChat();
+		void setActiveConversation(id);
+	}
 
 	/** What a row's dot shows: a turn working, one waiting, or an answer not yet seen. */
 	function markOf(conv: Conversation): { kind: string; title: string } | null {
@@ -93,7 +109,13 @@
 <aside class="sidebar" class:collapsed>
 	<div class="sidebar-header">
 		{#if !collapsed}
-			<button class="new-chat-btn" onclick={() => createConversation()}>+ New Chat</button>
+			<button
+				class="new-chat-btn"
+				onclick={() => {
+					closeRemoteChat();
+					createConversation();
+				}}>+ New Chat</button
+			>
 		{/if}
 		<button
 			class="collapse-btn"
@@ -111,7 +133,7 @@
 				<div
 					class="conversation-item"
 					class:active={conv.id === activeId}
-					onclick={() => setActiveConversation(conv.id)}
+					onclick={() => openLocal(conv.id)}
 					ondblclick={(e) => {
 						e.stopPropagation();
 						startRename(conv.id, conv.title);
@@ -162,6 +184,9 @@
 						&times;
 					</button>
 				</div>
+			{/each}
+			{#each peers as peer (peer.id)}
+				<PeerChatSection {peer} />
 			{/each}
 		</div>
 		{#if conversations.length > 0}

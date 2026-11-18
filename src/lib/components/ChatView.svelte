@@ -76,7 +76,8 @@
 		if (!text.trim() && images.length === 0 && audio.length === 0) return;
 		let slash;
 		try {
-			slash = await runSlash(text, slashHost);
+			// Another computer runs a `/name` itself, as typed.
+			slash = source.peer ? ({ kind: 'send' } as const) : await runSlash(text, slashHost);
 		} catch (e) {
 			showToast(`Couldn't run that skill: ${errMessage(e)}`, { kind: 'error' });
 			return;
@@ -445,6 +446,14 @@
 	<ConversationSidebar />
 
 	<div class="chat-main">
+		{#if source.peer}
+			<div class="runs-on" data-testid="runs-on-badge">
+				<span
+					title="Its turns, model and memory are on {source.peer
+						.name}. Settings → Remote control → Other computers.">Runs on {source.peer.name}</span
+				>
+			</div>
+		{/if}
 		{#if showCpuFallbackBanner}
 			<div class="cpu-fallback-banner" role="alert">
 				<div class="cpu-fallback-text">
@@ -702,12 +711,15 @@
 				</div>
 			{/if}
 			<div class="input-row">
-				<SlashMenu
-					bind:this={slashMenu}
-					text={inputText}
-					projectRoot={slashHost.projectRoot}
-					onPick={(t) => (inputText = t)}
-				/>
+				<!-- This computer's skills: another computer's chat runs its own. -->
+				{#if !source.peer}
+					<SlashMenu
+						bind:this={slashMenu}
+						text={inputText}
+						projectRoot={slashHost.projectRoot}
+						onPick={(t) => (inputText = t)}
+					/>
+				{/if}
 				<textarea
 					bind:this={inputEl}
 					bind:value={inputText}
@@ -1371,6 +1383,21 @@
 	.incognito-toggle:disabled {
 		opacity: 0.5;
 		cursor: default;
+	}
+
+	.runs-on {
+		display: flex;
+		justify-content: center;
+		padding: 6px 12px 0;
+	}
+
+	.runs-on span {
+		padding: 2px 8px;
+		font-size: 0.72rem;
+		font-weight: 600;
+		border: 1px solid var(--border-strong);
+		border-radius: 999px;
+		color: var(--text-secondary);
 	}
 
 	/* A privacy mode you cannot see is a privacy mode you cannot trust, so
