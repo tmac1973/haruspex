@@ -307,6 +307,35 @@ describe('approval flow', () => {
 		expect(out.result).toBe('ok');
 	});
 
+	it('opens a page on this computer without asking, and asks for any other', async () => {
+		const navigate = tool('browser_navigate', {
+			inputSchema: { type: 'object', properties: { url: { type: 'string' } } },
+			annotations: {
+				title: null,
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: null,
+				openWorldHint: true
+			}
+		});
+		registerMcpTools(SERVER, 'Browser', [navigate], ['browser_navigate']);
+		vi.mocked(invoke).mockResolvedValue(complete('ok'));
+		const local = await executeTool(
+			'mcp__srv-1__browser_navigate',
+			{ url: 'http://localhost:8123/index.html' },
+			ctx()
+		);
+		expect(local.result).toBe('ok');
+
+		const running = executeTool(
+			'mcp__srv-1__browser_navigate',
+			{ url: 'https://example.com/' },
+			ctx()
+		);
+		await answerApproval('deny');
+		expect((await running).result).toContain('declined');
+	});
+
 	it('runs the call once allowed', async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
 		vi.mocked(invoke).mockResolvedValue(complete('created'));

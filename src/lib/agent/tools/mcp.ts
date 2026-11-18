@@ -51,6 +51,7 @@ import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { capWithSpill } from '#lib/agent/tools/_ptyExec.ts';
 import { saveScreenshot, takeScreenshotName } from '#lib/agent/tools/_playwrightShot.ts';
+import { isLocalNavigation } from '#lib/agent/tools/_playwrightNavigate.ts';
 import {
 	OVERSIZED_MESSAGE_MAX_TOKENS,
 	TOKEN_BYTES_RATIO,
@@ -270,6 +271,8 @@ async function resolveApproval(
 	const { serverId, serverLabel, descriptor } = entry;
 	if (!requiresApproval(descriptor.annotations)) return true;
 	if (isAlwaysAllowed(serverId, descriptor.name)) return true;
+	// Opening a page on this computer (`_playwrightNavigate.ts`).
+	if (isLocalNavigation(descriptor, args)) return true;
 
 	const choice = await waitOnUser(ctx, () =>
 		askMcpApproval({

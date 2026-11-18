@@ -41,9 +41,9 @@ MCP servers give the assistant tools from other software. Haruspex runs them wit
 - **Add a server on this computer** runs an MCP program you already have.
 - **Add a server on your network** connects over HTTP, with an optional token. Browser sign-in is not supported yet.
 
-Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need; each uses context. Pictures a tool returns reach models that read images.
+Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others all off. Tools marked "asks first" ask before they run. Turn off tools you don't need; each uses context. Pictures a tool returns reach models that read images.
 
-**Edit** changes a local server's program, arguments and secrets; a blank secret keeps its value. Home's GitHub card uses the GitHub server and its token's access (`home` page).
+**Edit** changes a local server's program, arguments and secrets; a blank secret is kept. Home's GitHub card uses the GitHub server and its token's access (`home` page).
 
 **Blender and Godot** need the app running with its MCP addon. The card says when it is "not connected"; **Check again** retries.
 
@@ -55,12 +55,12 @@ When a release brings a newer version of a catalog server, its card shows **Upda
 
 **Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, use them, and read their console and network requests. It reaches `localhost`, so the Code tab can test the app or game it is building; 3D pages draw on your GPU. A screenshot it names is saved in the working folder. The browser closes after 5 idle minutes. Setup downloads its own Chromium (400 MB). It never uses your own browser or logins.
 
-Its tools are on by default. Reading the page, its console and requests and taking screenshots run without asking; the rest ask first, and **Always allow** stops asking for that tool.
+Its tools are on by default. Reading a page, its console and requests, screenshots, and opening a page on `localhost` run without asking; the rest ask first, and **Always allow** stops asking for that tool.
 
 ## Let the assistant see your screen
 
 The camera button in the chat box attaches a screenshot of the screen, one window, or a region you drag out. To let the assistant take one when you ask, turn on Settings → Screen → **Let the assistant take a screenshot when you ask it to**. It captures once per request, never watches your screen, and needs a model that reads images.
 
-Haruspex asks first (**Ask before each screenshot**, beside it) and hides while it captures. Asked for a window, the assistant gets the one you were using; on Linux outside KDE Plasma, the whole screen.
+Haruspex asks first (**Ask before each screenshot**) and hides while it captures. Asked for a window, the assistant gets the one you were using; on Linux outside KDE Plasma, the whole screen.
 
 On Linux your desktop asks once whether Haruspex may take screenshots. On KDE Plasma, **Window…** turns the cursor into a crosshair: click the window, or press Escape. Elsewhere on Linux, and in the AppImage, **Window…** works like **Region…**. On macOS and Windows, **Window…** lists your windows. On macOS, grant Screen Recording in System Settings first.
