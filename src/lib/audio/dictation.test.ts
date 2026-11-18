@@ -14,9 +14,40 @@ describe('parseDictation', () => {
 		expect(parseDictation(' ... ')).toEqual({ kind: 'none' });
 	});
 
-	it('hears scratch that, however it is punctuated', () => {
-		expect(parseDictation('Scratch that.')).toEqual({ kind: 'scratch' });
-		expect(parseDictation('scratch that!')).toEqual({ kind: 'scratch' });
+	it('hears delete that, strike that and scratch that, however punctuated', () => {
+		for (const said of ['Delete that.', 'delete that!', 'Strike that.', 'Scratch that.']) {
+			expect(parseDictation(said), said).toEqual({ kind: 'delete' });
+		}
+	});
+
+	it('keeps sentences that only mention deleting as text', () => {
+		expect(parseDictation('Delete that file.').kind).toBe('append');
+		expect(parseDictation('Please delete that.').kind).toBe('append');
+	});
+
+	it('hears scratch that through whisper’s usual mishearings', () => {
+		for (const heard of [
+			'Stretch that.',
+			'Catch that.',
+			'Sketch that.',
+			'Scratched that.',
+			'Scrap that.',
+			'Scotch that.'
+		]) {
+			expect(parseDictation(heard), heard).toEqual({ kind: 'delete' });
+		}
+	});
+
+	it('keeps other two-word phrases and longer sentences as text', () => {
+		for (const said of [
+			'Watch that.',
+			'Match that.',
+			'Stretch this.',
+			'Stretch that muscle.',
+			'Catch that train.'
+		]) {
+			expect(parseDictation(said).kind, said).toBe('append');
+		}
 	});
 
 	it('sends when a phrase ends in send it, without the trigger', () => {

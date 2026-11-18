@@ -156,16 +156,16 @@ describe('constant listening', () => {
 		expect(getPendingPhrases()).toBe(0);
 	});
 
-	it('scratch that takes back exactly the last phrase', async () => {
+	it('delete that takes back exactly the last phrase', async () => {
 		const t = fakeTarget('Typed.');
 		await startListening(token, t);
 		await fire({ type: 'Phrase', seq: 1, text: 'Keep this.' });
 		await fire({ type: 'Phrase', seq: 2, text: 'Not this.' });
-		await fire({ type: 'Phrase', seq: 3, text: 'Scratch that.' });
+		await fire({ type: 'Phrase', seq: 3, text: 'Delete that.' });
 		expect(t.text).toBe('Typed. Keep this.');
 		await fire({ type: 'Phrase', seq: 4, text: 'Scratch that.' });
 		expect(t.text).toBe('Typed. Keep this.');
-		expect(h.toasts).toContain('Nothing to scratch');
+		expect(h.toasts).toContain('Nothing to delete');
 	});
 
 	it('send it sends the composer without the trigger, and keeps listening', async () => {

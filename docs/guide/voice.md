@@ -1,6 +1,6 @@
 ---
 title: Voice input
-description: Talking to the assistant instead of typing, push-to-talk, dictating with constant listening, the "send it" and "scratch that" commands, and picking the speech model.
+description: Talking to the assistant instead of typing, push-to-talk, dictating with constant listening, the "send it" and "delete that" commands, and picking the speech model.
 ---
 
 # Voice input
@@ -18,7 +18,7 @@ Hold the microphone button, or hold `F2`, and speak. Let go and what you said is
 For brainstorming or a long message, right-click the microphone button and choose **Constant listening**, or press `Shift + F2`. The microphone stays on, and each phrase you say is added to the end of the chat box when you pause. Nothing is sent until you say so, and you can type or edit in the box while it listens.
 
 - Say **"send it"** at the end of a phrase to send the box. The words "send it" are left out, and listening carries on for the next message.
-- Say **"scratch that"** to remove the last phrase it added. This works once, and only while the box still ends with that phrase.
+- Say **"delete that"** to remove the last phrase it added. This works once, and only while the box still ends with that phrase. "Strike that" and "scratch that" work too, said on their own.
 - Click the microphone button, or press `Shift + F2` again, to stop.
 
 While it listens the button has a glowing ring, and a small spinner shows while a phrase is being turned into text. In the Shell tab's sidebar, "send it" waits until the assistant has finished answering. Say it again then.
