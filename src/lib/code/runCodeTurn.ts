@@ -106,9 +106,10 @@ export interface CodeTurnOptions {
 	writeGuard?: CodeWriteGuard;
 	/**
 	 * The folder is a fresh worktree made for this session, on this branch
-	 * (null when unknown); the prompt says to set up dependencies.
+	 * (null when unknown), forked from the session in `source` (when it was);
+	 * the prompt says to work here and set up dependencies.
 	 */
-	worktree?: { branch: string | null };
+	worktree?: { branch: string | null; source?: string | null };
 	/**
 	 * A note for the model ahead of this turn's opening message (other
 	 * sessions' changes to the folder). Sent, not saved in the thread.
