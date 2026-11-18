@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.2.19](https://github.com/tmac1973/haruspex/compare/v0.2.18...v0.2.19) (2026-11-18)
+
+
+### Features
+
+* **chat:** search, select and delete conversations, and colour other computers' sessions ([#1114](https://github.com/tmac1973/haruspex/issues/1114)) ([2d259ac](https://github.com/tmac1973/haruspex/commit/2d259ac91ade3fcc90e222a23cebde77f39e2ec9))
+* **mcp:** open a localhost page in the Playwright browser without asking ([#1110](https://github.com/tmac1973/haruspex/issues/1110)) ([e632940](https://github.com/tmac1973/haruspex/commit/e6329406089f65fa2e433119b3e583d42c651fc8))
+* **owner:** give each install an instance id and name, and time each listed session ([#1094](https://github.com/tmac1973/haruspex/issues/1094)) ([2aefe9b](https://github.com/tmac1973/haruspex/commit/2aefe9b4b72f15b99a73ec0aeb1dfb6ff0c746b3))
+* **peers:** add a pinned-certificate client for another Haruspex's owner API ([#1095](https://github.com/tmac1973/haruspex/issues/1095)) ([a5b9f27](https://github.com/tmac1973/haruspex/commit/a5b9f27a517e6652335764f7c2892a8c417347e6))
+* **peers:** add Other computers to Settings → Remote control, behind a build flag ([#1098](https://github.com/tmac1973/haruspex/issues/1098)) ([369faf1](https://github.com/tmac1973/haruspex/commit/369faf1d5f940622722d138906152686945b9f1b))
+* **peers:** advertise and find other Haruspex computers over mDNS ([#1097](https://github.com/tmac1973/haruspex/issues/1097)) ([1389fef](https://github.com/tmac1973/haruspex/commit/1389fefb51c630719dec31fdb9a210e3f178bc96))
+* **peers:** answer another computer's prompts in this app's dialogs ([#1105](https://github.com/tmac1973/haruspex/issues/1105)) ([5b89bb7](https://github.com/tmac1973/haruspex/commit/5b89bb7d4ec2819ff423089aebedf0d9c6c2a63d))
+* **peers:** keep an event stream per trusted peer and its last-known lists ([#1096](https://github.com/tmac1973/haruspex/issues/1096)) ([5b492f0](https://github.com/tmac1973/haruspex/commit/5b492f0bf7323a6452f6b0def303e56564c3aada))
+* **peers:** mirror each trusted computer's sessions and chats in the frontend ([#1100](https://github.com/tmac1973/haruspex/issues/1100)) ([edf25c1](https://github.com/tmac1973/haruspex/commit/edf25c1cc9592735979cb9ebc90232de08f5b81c))
+* **peers:** show and carry on another computer's chats in Chat ([#1104](https://github.com/tmac1973/haruspex/issues/1104)) ([8d07365](https://github.com/tmac1973/haruspex/commit/8d07365cce9e299a1f02b7ae3dfbdf785363ea2a))
+* **peers:** show and drive another computer's Code sessions in the Code tab ([#1102](https://github.com/tmac1973/haruspex/issues/1102)) ([717628b](https://github.com/tmac1973/haruspex/commit/717628b3dc14888f9b082070c332bdbfca5461e4))
+* **peers:** use your other computers' sessions and chats from this one ([#1081](https://github.com/tmac1973/haruspex/issues/1081)) ([#1107](https://github.com/tmac1973/haruspex/issues/1107)) ([ed5363a](https://github.com/tmac1973/haruspex/commit/ed5363a170bedb23d69520807a17db32fd86737d))
+* **voice:** constant listening for dictation from the mic button ([#1118](https://github.com/tmac1973/haruspex/issues/1118)) ([dc2756c](https://github.com/tmac1973/haruspex/commit/dc2756c7b0022756b95ef1b7a7f5c77af36b5a6f))
+
+
+### Bug Fixes
+
+* **code:** drop the computer's colour from Code tabs, where it read as the active tab ([#1115](https://github.com/tmac1973/haruspex/issues/1115)) ([16cbe07](https://github.com/tmac1973/haruspex/commit/16cbe076c53999ecfbdd1af0d3402fb31d531113))
+* **code:** let the agent see images and Playwright screenshots, and keep 3D pages off the CPU ([#1109](https://github.com/tmac1973/haruspex/issues/1109)) ([4346600](https://github.com/tmac1973/haruspex/commit/43466000f78fc3ee161e5ec1df1f1e8092eda689))
+* **code:** tell a worktree fork its source folder, so inherited paths don't pull it back ([#1120](https://github.com/tmac1973/haruspex/issues/1120)) ([740fd0a](https://github.com/tmac1973/haruspex/commit/740fd0a5244923141cae7624caccac8683a995c8))
+* **deps:** hold webdriverio and [@wdio](https://github.com/wdio) at 10.1 so npm ci works on Fedora's node ([#1112](https://github.com/tmac1973/haruspex/issues/1112)) ([4f5375e](https://github.com/tmac1973/haruspex/commit/4f5375efb4ddd6b751ed8cfbae944e1159e04040))
+* **dev:** fetch the ffmpeg sidecars in make dev ([#1113](https://github.com/tmac1973/haruspex/issues/1113)) ([ee8e41a](https://github.com/tmac1973/haruspex/commit/ee8e41a0a9ac9b47dfb185cf07e48d941a7e7596))
+* **tools:** act on four model reports on file edits, repeat writes, outside paths and compaction ([#1117](https://github.com/tmac1973/haruspex/issues/1117)) ([d563e2e](https://github.com/tmac1973/haruspex/commit/d563e2ed2c31fcb49b0cd0f5f3258524fdbd418f)), closes [#1116](https://github.com/tmac1973/haruspex/issues/1116)
+* **ui:** stop images being dragged out of the window ([#1111](https://github.com/tmac1973/haruspex/issues/1111)) ([1ee8834](https://github.com/tmac1973/haruspex/commit/1ee8834e5ce8e97cf522ab4ba3955dde435aacc0))
+* **voice:** make "delete that" the undo phrase for constant listening ([#1121](https://github.com/tmac1973/haruspex/issues/1121)) ([511327f](https://github.com/tmac1973/haruspex/commit/511327f593868d7d3c6b1bf61c8ebbaab23e8931))
+
+
+### Code Refactoring
+
+* **chat:** read the Chat view through a ChatSource interface ([#1103](https://github.com/tmac1973/haruspex/issues/1103)) ([9cc35bf](https://github.com/tmac1973/haruspex/commit/9cc35bfea35a66729a17164db455a508cd39bb86))
+* **code:** type the Code pane against a CodeSessionView interface ([#1101](https://github.com/tmac1973/haruspex/issues/1101)) ([a0e4bfd](https://github.com/tmac1973/haruspex/commit/a0e4bfd1046e5334453112b4563f0adfe27c9838))
+* **web:** move the event-mirror core into #lib/engine/client.svelte.ts ([#1099](https://github.com/tmac1973/haruspex/issues/1099)) ([fbf0d4b](https://github.com/tmac1973/haruspex/commit/fbf0d4bb03c1358f5d37f1dc2875ff61debf7781))
+
 ## [0.2.18](https://github.com/tmac1973/haruspex/compare/v0.2.17...v0.2.18) (2026-11-17)
 
 
