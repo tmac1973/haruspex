@@ -43,11 +43,21 @@ function idFor(label: string, request: object): string {
 	return id;
 }
 
+/**
+ * Not another computer's prompt, shown here to answer (plan/instance-sync/):
+ * that one is its own computer's to publish. Publishing it again would hand
+ * it on to this computer's clients, and back to its own computer as this
+ * one's, for ever.
+ */
+function mine(request: { origin?: unknown }): boolean {
+	return !request.origin;
+}
+
 /** Every prompt showing in this window, oldest kind first. */
 export function currentPrompts(label: string): Prompt[] {
 	const out: Prompt[] = [];
 	const command = getPendingCommandApproval();
-	if (command) {
+	if (command && mine(command)) {
 		out.push({
 			promptId: idFor(label, command),
 			kind: 'command',
@@ -62,7 +72,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const question = getPendingQuestion();
-	if (question) {
+	if (question && mine(question)) {
 		out.push({
 			promptId: idFor(label, question),
 			kind: 'question',
@@ -80,7 +90,7 @@ export function currentPrompts(label: string): Prompt[] {
 	}
 	// The sandbox and memory ask on behalf of the chat whose turn runs.
 	const sandbox = getPendingApproval();
-	if (sandbox) {
+	if (sandbox && mine(sandbox)) {
 		out.push({
 			promptId: idFor(label, sandbox),
 			kind: 'sandbox',
@@ -92,7 +102,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const memory = getPendingMemoryApproval();
-	if (memory) {
+	if (memory && mine(memory)) {
 		out.push({
 			promptId: idFor(label, memory),
 			kind: 'memory',
@@ -104,7 +114,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const mcp = getPendingMcpApproval();
-	if (mcp) {
+	if (mcp && mine(mcp)) {
 		out.push({
 			promptId: idFor(label, mcp),
 			kind: 'mcp',
@@ -121,7 +131,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const skill = getPendingSkillApproval();
-	if (skill) {
+	if (skill && mine(skill)) {
 		out.push({
 			promptId: idFor(label, skill),
 			kind: 'skill',
@@ -140,7 +150,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const trust = getPendingRepoTrust();
-	if (trust) {
+	if (trust && mine(trust)) {
 		out.push({
 			promptId: idFor(label, trust),
 			kind: 'repo-trust',
@@ -156,7 +166,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const screen = getPendingScreenCapture();
-	if (screen) {
+	if (screen && mine(screen)) {
 		out.push({
 			promptId: idFor(label, screen),
 			kind: 'screen-capture',
@@ -180,7 +190,7 @@ export function currentPrompts(label: string): Prompt[] {
 		});
 	}
 	const conflict = getPendingConflict();
-	if (conflict) {
+	if (conflict && mine(conflict)) {
 		out.push({
 			promptId: idFor(label, conflict),
 			kind: 'file-conflict',

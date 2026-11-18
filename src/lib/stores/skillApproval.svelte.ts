@@ -13,7 +13,7 @@
  * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time.
  */
 
-import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export interface SkillApprovalRequest {
 	/** A skill, or the repo's AGENTS.md (`write_agents_md`). */
@@ -29,6 +29,8 @@ export interface SkillApprovalRequest {
 	current: string | null;
 	/** Write the approved text; rejects with what is wrong with it. */
 	save: (text: string) => Promise<void>;
+	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	origin?: PromptOrigin;
 }
 
 export type SkillApprovalResult =

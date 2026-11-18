@@ -29,16 +29,16 @@ describe('userQuestion store', () => {
 		expect(getPendingQuestion()).toBeNull();
 	});
 
-	it('rejects a second overlapping question while one is pending', async () => {
+	it('queues a second overlapping question behind the first', async () => {
 		const first = askUserQuestion({ question: 'one', options: [{ label: 'A' }] });
+		const second = askUserQuestion({ question: 'two', options: [{ label: 'B' }] });
+		expect(getPendingQuestion()?.question).toBe('one');
 
-		await expect(askUserQuestion({ question: 'two', options: [{ label: 'B' }] })).rejects.toThrow(
-			/already pending/
-		);
-
-		// The first question is still pending and resolvable.
 		resolveUserQuestion({ kind: 'selected', labels: ['A'] });
 		await expect(first).resolves.toEqual({ kind: 'selected', labels: ['A'] });
+		expect(getPendingQuestion()?.question).toBe('two');
+		resolveUserQuestion({ kind: 'freeText', text: 'B it is' });
+		await expect(second).resolves.toEqual({ kind: 'freeText', text: 'B it is' });
 	});
 
 	it('resolveUserQuestion is a no-op when nothing is pending', () => {

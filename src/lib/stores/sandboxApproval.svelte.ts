@@ -18,7 +18,7 @@
  */
 
 import { SvelteSet } from 'svelte/reactivity';
-import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type SandboxApprovalMode = 'once-per-chat' | 'every-run';
 export type SandboxApprovalChoice = 'allow_once' | 'allow_chat' | 'deny';
@@ -28,6 +28,8 @@ export interface SandboxApprovalRequest {
 	mode: SandboxApprovalMode;
 	/** The chat whose turn asks. */
 	chatId: string | null;
+	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	origin?: PromptOrigin;
 }
 
 const queue = createApprovalQueue<SandboxApprovalRequest, SandboxApprovalChoice>();

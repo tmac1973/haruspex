@@ -12,8 +12,8 @@
  *   - deny:         don't run; the tool returns a denial the model can act on,
  *                   rather than throwing
  *
- * Only one prompt can be pending at a time (the agent loop serializes tool
- * calls). A second overlapping ask rejects.
+ * Asks wait their turn (`approvalQueue.svelte.ts`): several turns, or
+ * another computer's prompt (plan/instance-sync/), can ask at once.
  *
  * # Why "always" is per tool, per server
  *
@@ -25,6 +25,7 @@
 
 import type { McpToolAnnotations } from '#lib/ipc/gen/McpToolAnnotations.ts';
 import { persistItem } from '#lib/persist.ts';
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type McpApprovalChoice = 'allow_once' | 'allow_always' | 'deny';
 
@@ -39,47 +40,31 @@ export interface McpApprovalRequest {
 	annotations: McpToolAnnotations | null;
 	/** The arguments the model actually passed, shown verbatim. */
 	args: Record<string, unknown>;
+	/** Another computer's tool, asked about here; its grant is kept there. */
+	origin?: PromptOrigin;
 }
 
-interface PendingMcpApproval extends McpApprovalRequest {
-	resolve: (choice: McpApprovalChoice) => void;
+const queue = createApprovalQueue<McpApprovalRequest, McpApprovalChoice>();
+
+/**
+ * Ask whether a tool may run. Asks wait their turn; one aborted (its turn
+ * stopped, or answered on its own computer) leaves the queue as a deny.
+ */
+export function askMcpApproval(
+	request: McpApprovalRequest,
+	signal?: AbortSignal
+): Promise<McpApprovalChoice> {
+	return queue.ask(request, { signal, abortResult: 'deny' });
 }
 
-let pending = $state<PendingMcpApproval | null>(null);
-
-export function askMcpApproval(request: McpApprovalRequest): Promise<McpApprovalChoice> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error(
-				'An MCP approval prompt is already pending; ' +
-					'a second overlapping request is a bug in the caller.'
-			)
-		);
-	}
-	return new Promise<McpApprovalChoice>((resolve) => {
-		pending = { ...request, resolve };
-	});
-}
-
-export function getPendingMcpApproval(): PendingMcpApproval | null {
-	return pending;
+export function getPendingMcpApproval(): McpApprovalRequest | null {
+	return queue.current();
 }
 
 export function resolveMcpApproval(choice: McpApprovalChoice): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(choice);
+	queue.resolve(choice);
 }
 
-/**
- * Remembered `allow_always` decisions, keyed `<serverId>NUL<toolName>`.
- *
- * A NUL separator rather than a colon, a space or a slash: a server id is a
- * UUID, but a tool name is whatever the server chose to call it, and a
- * separator that can occur inside either half lets two different pairs collide
- * onto one key. Approving one tool must never silently approve another.
- */
 const ALWAYS_KEY = 'haruspex.mcp.alwaysAllow';
 
 /**

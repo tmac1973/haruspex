@@ -9,6 +9,7 @@
 	import { openRemoteSession, remoteViewId } from '#lib/peers/remoteCodeSession.svelte.ts';
 	import {
 		listedSessions,
+		sessionWaiting,
 		sortListedSessions,
 		type ListedSession,
 		type PeerView
@@ -65,7 +66,13 @@
 					title="{label(s)} — {s.root} on {peer.config.name}"
 					onclick={() => void open(s)}
 				>
-					<span class="name">{label(s)}</span>
+					<span class="name"
+						>{label(s)}{#if !s.offline && sessionWaiting(peer, s.id)}<span
+								class="waiting"
+								data-testid="peer-waiting"
+								title="Waiting for you: answer it here or on {peer.config.name}">●</span
+							>{/if}</span
+					>
 					<span class="meta"
 						>{folderName(s.root)}{s.updatedAt != null
 							? ` · ${lastActive(s.updatedAt, now)}`
@@ -150,6 +157,12 @@
 		background: var(--accent-soft);
 		border-left-color: var(--accent);
 		color: var(--text-primary);
+	}
+
+	.waiting {
+		margin-left: 5px;
+		font-size: 0.6rem;
+		color: var(--warning);
 	}
 
 	.session.offline {

@@ -12,7 +12,12 @@
 		RemoteChatSource,
 		renameRemoteChat
 	} from '#lib/peers/remoteChat.svelte.ts';
-	import { listedChats, type ListedChat, type PeerView } from '#lib/peers/store.svelte.ts';
+	import {
+		chatWaiting,
+		listedChats,
+		type ListedChat,
+		type PeerView
+	} from '#lib/peers/store.svelte.ts';
 	import { getActiveChatSource } from '#lib/stores/activeChatSource.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -32,6 +37,8 @@
 
 	/** What a row's dot shows, as the web page marks it. */
 	function markOf(c: ListedChat): { kind: string; title: string } | null {
+		if (!c.offline && chatWaiting(peer, c.id))
+			return { kind: 'asking', title: `Waiting for you: answer it here or on ${peer.config.name}` };
 		if (c.waiting) return { kind: 'queued', title: 'Waiting' };
 		if (c.busy) return { kind: 'running', title: 'Writing' };
 		if (c.unread) return { kind: 'unread', title: 'New' };
@@ -204,6 +211,10 @@
 	.mark.queued {
 		border: 1.5px solid var(--warning);
 		box-sizing: border-box;
+	}
+
+	.mark.asking {
+		background: var(--warning);
 	}
 
 	.mark.unread {

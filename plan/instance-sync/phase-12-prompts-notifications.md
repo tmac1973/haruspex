@@ -95,3 +95,23 @@ waiting, and fires a desktop notification once. Answering it sends
 
 Revert; prompts on a peer are then answered on the peer or its web page, as
 before.
+
+## As built
+
+- `userQuestion.svelte.ts` moved onto `createApprovalQueue` too: it rejected
+  an overlapping ask, so a question from another computer would have failed
+  while one of this computer's was showing. Cancelling still rejects its
+  caller with an `AbortError`; for another computer's question it sends
+  nothing (the question stays there).
+- `engine/prompts.svelte.ts` skips any pending request with an `origin`:
+  this computer never publishes another's prompt as its own, which would
+  hand it to its own clients and, with two computers following each other,
+  back again for ever.
+- `EngineClient.refreshPrompts` (phase 06) fires `onPrompt`/`onPromptGone`
+  for what changed in the whole list it reads on `ready`, so prompts already
+  waiting when a computer connects open here too.
+- A skill write is saved through the modal's own `save`: it sends
+  `prompts.answer` there, so a failure shows in the modal and it stays open.
+- Camera prompts aren't bridged: they're answered on their own computer.
+- Repo-trust asks share one prompt per repo only among this computer's own
+  asks; another computer's ask about the same path is its own prompt.

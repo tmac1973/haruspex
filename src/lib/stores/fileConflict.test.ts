@@ -39,14 +39,26 @@ describe('fileConflict store', () => {
 		}
 	});
 
-	it('rejects overlapping requests', async () => {
+	it('queues an overlapping request behind the first', async () => {
 		const first = askFileConflict('a.pdf');
-		// Second call while first is still pending should reject, not
-		// queue — overlap is a caller bug we want to surface loudly.
-		await expect(askFileConflict('b.pdf')).rejects.toThrow(/already pending/);
-		// First request is still intact and resolvable.
+		const second = askFileConflict('b.pdf');
+		expect(getPendingConflict()?.path).toBe('a.pdf');
 		resolveConflict('cancel');
 		await expect(first).resolves.toBe('cancel');
+		expect(getPendingConflict()?.path).toBe('b.pdf');
+		resolveConflict('overwrite');
+		await expect(second).resolves.toBe('overwrite');
+	});
+
+	it('takes an aborted request out of the queue as a cancel', async () => {
+		const first = askFileConflict('a.pdf');
+		const ctrl = new AbortController();
+		const second = askFileConflict('b.pdf', null, { signal: ctrl.signal });
+		ctrl.abort();
+		await expect(second).resolves.toBe('cancel');
+		resolveConflict('counter');
+		await expect(first).resolves.toBe('counter');
+		expect(getPendingConflict()).toBeNull();
 	});
 
 	it('resolveConflict is a no-op when nothing is pending', () => {

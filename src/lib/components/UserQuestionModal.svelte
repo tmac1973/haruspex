@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import { renderMarkdown } from '#lib/markdown.ts';
 	/**
 	 * Modal for the reusable ask_user_question primitive. Mounted once in the
@@ -37,7 +38,7 @@
 	let textareaEl = $state<HTMLTextAreaElement | undefined>();
 	// Identity of the question the local form state belongs to; used to reset the
 	// form when a different question becomes pending (the modal instance is reused).
-	let formFor = $state<unknown>(null);
+	let formFor = $state.raw<unknown>(null);
 
 	$effect(() => {
 		if (pending !== formFor) {
@@ -131,6 +132,7 @@
 					     already been asked to decide without it. -->
 					<img class="subject" src={pending.imageUrl} alt="" />
 				{/if}
+				<PromptOriginLabel origin={pending.origin} />
 				<h2 id="user-question-title">{pending.question}</h2>
 				{#if pending.body}
 					<!-- Sanitised by renderMarkdown, as chat answers are. -->

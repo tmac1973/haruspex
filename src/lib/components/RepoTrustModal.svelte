@@ -6,6 +6,7 @@
 	 *
 	 * Backdrop and Esc don't dismiss: the turn is waiting on the answer.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingRepoTrust, resolveRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
@@ -26,6 +27,7 @@
 
 <Modal open={pending != null} maxWidth={560} labelledBy="repo-trust-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		{#if pending.change?.kind === 'origin'}
 			<h2 id="repo-trust-title">A different repo is in this folder</h2>
 			<p>

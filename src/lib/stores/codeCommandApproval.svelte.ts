@@ -17,7 +17,7 @@
 
 import { SvelteSet } from 'svelte/reactivity';
 import type { RiskMatch } from '#lib/shell/riskyCommands.ts';
-import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
+import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type CommandApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 
@@ -28,6 +28,8 @@ export interface CommandApprovalRequest {
 	requester: string | null;
 	/** The Code session asking, so a client elsewhere knows whose prompt it is. */
 	sessionId: string | null;
+	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	origin?: PromptOrigin;
 }
 
 const queue = createApprovalQueue<CommandApprovalRequest, CommandApprovalChoice>();
@@ -42,13 +44,15 @@ export function askCommandApproval(args: {
 	requester?: string | null;
 	sessionId?: string | null;
 	signal?: AbortSignal;
+	origin?: PromptOrigin;
 }): Promise<CommandApprovalChoice> {
 	return queue.ask(
 		{
 			command: args.command,
 			reasons: args.reasons,
 			requester: args.requester ?? null,
-			sessionId: args.sessionId ?? null
+			sessionId: args.sessionId ?? null,
+			...(args.origin ? { origin: args.origin } : {})
 		},
 		{ signal: args.signal, abortResult: 'deny' }
 	);

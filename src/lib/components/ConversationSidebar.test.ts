@@ -43,6 +43,7 @@ function peerView(name: string, online = true) {
 		online,
 		client: {
 			lean: false,
+			prompts: {},
 			chats: [
 				{
 					id: `${name}-1`,

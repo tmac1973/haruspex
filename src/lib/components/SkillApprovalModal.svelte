@@ -10,6 +10,7 @@
 	 *
 	 * Backdrop and Esc don't dismiss: the turn is waiting on the answer.
 	 */
+	import PromptOriginLabel from '#lib/components/PromptOriginLabel.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
@@ -59,6 +60,7 @@
 
 <Modal open={pending != null} maxWidth={760} labelledBy="skill-approval-title">
 	{#if pending}
+		<PromptOriginLabel origin={pending.origin} />
 		{#if agentsMd}
 			<h2 id="skill-approval-title">
 				{pending.update ? "Change this repo's AGENTS.md?" : 'Add an AGENTS.md to this repo?'}

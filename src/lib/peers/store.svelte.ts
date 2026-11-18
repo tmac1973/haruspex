@@ -160,6 +160,16 @@ export function recentRoots(peer: PeerView, max = 10): string[] {
 	return roots.filter((r, i) => r && roots.indexOf(r) === i).slice(0, max);
 }
 
+/** Whether one of its sessions waits on the owner (a prompt there). */
+export function sessionWaiting(peer: PeerView, sessionId: string): boolean {
+	return Object.values(peer.client.prompts).some((p) => p.sessionId === sessionId);
+}
+
+/** Whether one of its chats waits on the owner. */
+export function chatWaiting(peer: PeerView, chatId: string): boolean {
+	return Object.values(peer.client.prompts).some((p) => p.chatId === chatId);
+}
+
 /** Whether the Code list shows a section for it: a lean computer has no Code sessions. */
 export function showsCodeSection(peer: PeerView): boolean {
 	return listedSessions(peer).length > 0 || (peer.online && !peer.client.lean);
