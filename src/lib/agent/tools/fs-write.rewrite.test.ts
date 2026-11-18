@@ -108,12 +108,28 @@ describe('writing a file twice in one Chat turn', () => {
 		expect(mocks.disk.get('app.py')).toBe('// walk cycle\nconst a = 2;\n');
 	});
 
+	it('lets a revision that changes the first line through, when it keeps most lines', async () => {
+		// #1116: a job adding a name to the import at the top of a module.
+		const ctx = turn(undefined);
+		const body = 'export function play(p: Pattern) {\n\treturn schedule(p.steps);\n}\n';
+		await write(ctx, "import type { Song } from './types';\n" + body);
+		const again = await write(ctx, "import type { Pattern, Song } from './types';\n" + body);
+		expect(again.result).toContain('Wrote: app.py');
+	});
+
+	it('still refuses a second part that shares little with the first', async () => {
+		const ctx = turn(undefined);
+		await write(ctx, "import { a } from './a';\nexport const first = a(1);\n");
+		const piece = await write(ctx, 'export const second = a(2);\nexport const third = a(3);\n');
+		expect(piece.result).toContain('already written in this turn');
+	});
+
 	it('says how to revise, and that the refused write did not land', async () => {
 		const ctx = turn(undefined);
 		await write(ctx, '// walk cycle\n');
 		const piece = await write(ctx, 'const rest = 1;\n');
 		expect(piece.result).toContain('the file is unchanged');
-		expect(piece.result).toContain('starting with the same first line');
+		expect(piece.result).toContain('keeping its first line or most of its lines');
 		expect(piece.result).toContain('as it is on disk now');
 	});
 });

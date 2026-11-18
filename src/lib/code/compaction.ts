@@ -18,6 +18,7 @@ import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/contextB
 import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
+import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
 import type { CodeCompaction } from '#lib/code/session.ts';
 
 export { summaryMaxTokens } from '#lib/agent/summarize.ts';
@@ -44,10 +45,99 @@ Task: what the user wants, and how that changed.
 Instructions: what the user told the assistant to do or not do, and preferences they stated.
 Decisions: what was decided, and why.
 Files: files created, changed or deleted, by path, and what changed.
-Commands: commands run and what came of them (builds, test results, errors).
+Commands: commands run and what came of them (builds, test results, errors), and every commit, stash, checkout, reset or other change to git state.
 Tried and failed: approaches that did not work, and why.
 State: where the work stands and what is left to do.
 Keep paths, names, commands and error messages exact. File contents are not kept, so name the files that matter rather than describing what is in them. Output only the summary.`;
+
+/**
+ * Heads the list of what the summarised turns changed, kept below the
+ * model's summary. Written here from the tool calls, not by the model, so it
+ * can't be summarised away: a session that lost a stash and a commit in a
+ * compaction told the user another agent was changing their repository
+ * (#1116), when the changes were its own.
+ */
+const ACTIONS_HEADER =
+	'Changes you made in those turns, from your own tool calls (oldest first). Anything on disk these explain is your own work:';
+/** Changes the list keeps, newest; older ones are counted. */
+const MAX_ACTIONS = 80;
+/** A command or path in the list. */
+const ACTION_CLIP_CHARS = 200;
+
+/** Tools that change files without a command. */
+const WRITING_TOOL = /^fs_(write|edit|delete|move|download)/;
+
+/** A tool result that is an error (`toolError`'s envelope). */
+function failed(result: string | undefined): boolean {
+	return result?.trimStart().startsWith('{"error"') ?? false;
+}
+
+/**
+ * One line per call in `messages` that may have changed something on disk:
+ * a file tool that writes, or a command that isn't read-only.
+ */
+export function actionLines(messages: ChatMessage[]): string[] {
+	const results = new Map<string, string>();
+	for (const m of messages) {
+		if (m.role === 'tool' && m.tool_call_id) results.set(m.tool_call_id, messageText(m.content));
+	}
+	const out: string[] = [];
+	for (const m of messages) {
+		if (m.role !== 'assistant') continue;
+		for (const c of m.tool_calls ?? []) {
+			const name = c.function.name;
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(c.function.arguments) as Record<string, unknown>;
+			} catch {
+				// Unparseable arguments: the call did nothing.
+				continue;
+			}
+			let what: string | null = null;
+			if (name === 'run_command' && typeof args.command === 'string') {
+				if (!isReadOnlyCommand(args.command)) what = args.command;
+			} else if (WRITING_TOOL.test(name)) {
+				const target = ['path', 'from', 'url'].find((k) => typeof args[k] === 'string');
+				what = target ? String(args[target]) : '';
+				if (typeof args.to === 'string') what += ` → ${args.to}`;
+			}
+			if (what === null) continue;
+			const clipped = what.replace(/\s+/g, ' ').slice(0, ACTION_CLIP_CHARS);
+			out.push(`- ${name}: ${clipped}${failed(results.get(c.id)) ? ' (failed)' : ''}`);
+		}
+	}
+	return out;
+}
+
+/** A summary split into the model's prose and the list of changes below it. */
+function splitSummary(summary: string): { prose: string; actions: string[] } {
+	const at = summary.indexOf(ACTIONS_HEADER);
+	if (at < 0) return { prose: summary, actions: [] };
+	const actions = summary
+		.slice(at + ACTIONS_HEADER.length)
+		.split('\n')
+		.filter((l) => l.startsWith('- ') || l.startsWith('('));
+	return { prose: summary.slice(0, at).trimEnd(), actions };
+}
+
+/** The model's summary with the list of changes, the newest MAX_ACTIONS of them. */
+function withActions(prose: string, earlier: string[], now: string[]): string {
+	// A count of those dropped before, carried forward.
+	let dropped = 0;
+	const lines: string[] = [];
+	for (const l of [...earlier, ...now]) {
+		const m = /^\((\d+) earlier/.exec(l);
+		if (m) dropped += Number(m[1]);
+		else lines.push(l);
+	}
+	if (lines.length > MAX_ACTIONS) {
+		dropped += lines.length - MAX_ACTIONS;
+		lines.splice(0, lines.length - MAX_ACTIONS);
+	}
+	if (lines.length === 0) return prose;
+	const head = dropped ? [`(${dropped} earlier changes not listed)`] : [];
+	return `${prose}\n\n${ACTIONS_HEADER}\n${[...head, ...lines].join('\n')}`;
+}
 
 /**
  * What the model is sent: the summary note, then the messages after it.
@@ -237,14 +327,17 @@ export async function compactCodeThread(opts: {
 		resolveBackendDescriptor(opts.backend ?? undefined).calibrationKey
 	);
 	if (at === null) return null;
-	const summary = await summarizeTurns({
-		previous: opts.compaction?.summary ?? null,
-		turns: renderForSummary(opts.messages.slice(from, at)),
+	const previous = opts.compaction ? splitSummary(opts.compaction.summary) : null;
+	const span = opts.messages.slice(from, at);
+	const prose = await summarizeTurns({
+		previous: previous?.prose ?? null,
+		turns: renderForSummary(span),
 		backend: opts.backend,
 		contextSize: opts.contextSize,
 		signal: opts.signal,
 		instructions: opts.instructions,
 		prompt: opts.prompt
 	});
+	const summary = withActions(prose, previous?.actions ?? [], actionLines(span));
 	return { at, summary, summarizedAt: Date.now() };
 }

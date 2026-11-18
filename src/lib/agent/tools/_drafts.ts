@@ -60,10 +60,39 @@ export function firstLine(content: string): string {
 	return normText(line.replace(/^\s*#+\s*/, ''));
 }
 
-/** A document is revised when it starts with the same line. */
-export const DOCUMENT: DraftKind = {
-	keeps: (before, now) => before[0] !== '' && before[0] === now[0],
-	how: 'write it whole again starting with the same first line'
+/** Lines shorter than this, once trimmed, say little about which file they are in. */
+const TEXT_LINE_MIN = 8;
+/** The share of the earlier write's lines a revision keeps. */
+const TEXT_KEEPS = 0.5;
+
+/**
+ * A text file's signature: its first line, then its distinct lines of some
+ * length. A short `}` or `return x` is in every part of a long file.
+ */
+export function textSignature(content: string): string[] {
+	const lines = new Set<string>();
+	for (const line of content.split('\n')) {
+		const t = line.trim();
+		if (t.length >= TEXT_LINE_MIN) lines.add(t);
+	}
+	return [firstLine(content), ...lines];
+}
+
+/**
+ * A text file is revised when it starts with the same line, or keeps at
+ * least half the earlier write's lines. The first line alone refused most
+ * revisions of source code, whose first edit is often to its imports
+ * (#1116); a second part of a long file shares few lines with the first.
+ */
+export const TEXT: DraftKind = {
+	keeps: (before, now) => {
+		if (before[0] !== '' && before[0] === now[0]) return true;
+		const lines = before.slice(1);
+		if (lines.length === 0) return false;
+		const kept = new Set(now.slice(1));
+		return lines.filter((l) => kept.has(l)).length >= lines.length * TEXT_KEEPS;
+	},
+	how: 'write it whole again, keeping its first line or most of its lines'
 };
 
 /**

@@ -20,6 +20,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 }));
 
 import {
+	actionLines,
 	chooseCut,
 	compactCodeThread,
 	modelThread,
@@ -271,5 +272,59 @@ describe('compactCodeThread', () => {
 		});
 		expect(out).toBeNull();
 		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+	});
+});
+
+describe('the changes a compaction keeps (#1116)', () => {
+	it('lists writing tools and commands that may write, marking failures', () => {
+		const lines = actionLines([
+			call('a', 'fs_read_text', '{"path":"src/a.ts"}'),
+			result('a'),
+			call('b', 'fs_write_text', '{"path":"src/b.ts","content":"x"}'),
+			result('b', 'Wrote: src/b.ts'),
+			call('c', 'run_command', '{"command":"git status"}'),
+			result('c'),
+			call('d', 'run_command', '{"command":"git stash && git stash pop"}'),
+			result('d'),
+			call('e', 'fs_edit_text', '{"path":"README.md","old_str":"a","new_str":"b"}'),
+			result('e', '{"error":"fs_edit_text failed: old_str not found"}'),
+			call('f', 'fs_move', '{"from":"a.md","to":"b.md"}'),
+			result('f')
+		]);
+		expect(lines).toEqual([
+			'- fs_write_text: src/b.ts',
+			'- run_command: git stash && git stash pop',
+			'- fs_edit_text: README.md (failed)',
+			'- fs_move: a.md → b.md'
+		]);
+	});
+
+	it('goes below the summary, outside what the model rewrites, and carries forward', async () => {
+		mocks.chatCompletion.mockResolvedValue({ content: 'First summary.' });
+		const messages = thread(30);
+		messages.splice(1, 0, call('w', 'run_command', '{"command":"git commit -am docs"}'));
+		messages.splice(2, 0, result('w'));
+		const first = await compactCodeThread({
+			messages,
+			compaction: null,
+			backend: null,
+			contextSize: 32768
+		});
+		expect(first!.summary).toMatch(/^First summary\.\n\nChanges you made/);
+		expect(first!.summary).toContain('- run_command: git commit -am docs');
+
+		mocks.chatCompletion.mockReset().mockResolvedValue({ content: 'Second summary.' });
+		const more = [...messages, ...thread(30)];
+		const second = await compactCodeThread({
+			messages: more,
+			compaction: first,
+			backend: null,
+			contextSize: 32768
+		});
+		const sent = String(mocks.chatCompletion.mock.calls[0][0].messages[1].content);
+		expect(sent).toContain('First summary.');
+		expect(sent).not.toContain('git commit');
+		expect(second!.summary).toMatch(/^Second summary\./);
+		expect(second!.summary).toContain('- run_command: git commit -am docs');
 	});
 });
