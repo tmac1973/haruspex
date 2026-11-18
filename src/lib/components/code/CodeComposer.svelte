@@ -8,6 +8,7 @@
 	 */
 	import { onMount, tick, untrack } from 'svelte';
 	import MicButton from '#lib/components/MicButton.svelte';
+	import type { DictationTarget } from '#lib/audio/voiceCapture.svelte.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import { messageText } from '#lib/api.ts';
@@ -79,6 +80,20 @@
 	function autosize() {
 		if (el) autosizeTextarea(el);
 	}
+
+	/** Constant listening dictates here; a running turn takes the send as steering. */
+	const dictation: DictationTarget = {
+		getText: () => text,
+		setText: (t) => {
+			text = t;
+			autosize();
+		},
+		send: async () => {
+			if (blocked) return false;
+			await send(text);
+			return true;
+		}
+	};
 
 	async function send(raw: string) {
 		if (blocked) return;
@@ -200,7 +215,12 @@
 				: 'Ask for a change… (Enter to send, / for commands)'}></textarea>
 	{#if !blocked}
 		<ScreenCaptureButton onCapture={(url) => images.addUrls([url])} />
-		<MicButton onTranscription={(t) => send(t)} />
+		<MicButton
+			onTranscription={(t) => send(t)}
+			{dictation}
+			contextKey={session.id}
+			surface="code"
+		/>
 	{/if}
 	{#if busy}
 		<button class="stop" onclick={session.stop} title="Stop (Esc)">Stop</button>

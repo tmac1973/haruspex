@@ -64,6 +64,8 @@ rusqlite = { version = "0.41.1", features = ["bundled"] }
 cpal = "0.18.2"
 rodio = "0.23.0"
 hound = "3.5.1"
+# Voice activity detection for constant listening: pure Rust, no model file.
+earshot = "1.2.2"
 pdf-extract = "0.12"
 # The pdfium_<build> feature must match PDFIUM_VERSION in scripts/fetch-pdfium.sh:
 # the default (pdfium_latest) binds functions an older libpdfium lacks, the bind

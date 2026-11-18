@@ -13,6 +13,7 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 |---|---|
 | F1 | Show the keyboard shortcuts |
 | F2 (hold) | Push-to-talk voice input; release to send |
+| Shift + F2 | Constant listening: dictate into the chat box (press again to stop) |
 | F3 | Read the last reply aloud (press again to stop) |
 | Ctrl / ⌘ + N | New conversation (Chat tab) |
 | Ctrl / ⌘ + 1–5 | Switch to the Home, Chat, Jobs, Shell or Code tab (Chat and Jobs only in lean mode) |

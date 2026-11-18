@@ -7,6 +7,7 @@
 	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import SourceChip from '#lib/components/SourceChip.svelte';
 	import MicButton from '#lib/components/MicButton.svelte';
+	import type { DictationTarget } from '#lib/audio/voiceCapture.svelte.ts';
 	import WorkingDirButton from '#lib/components/WorkingDirButton.svelte';
 	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
@@ -224,6 +225,18 @@
 	async function handleSend() {
 		await doSend(inputText);
 	}
+
+	/** Constant listening dictates here; a running turn queues the send as steering. */
+	const dictation: DictationTarget = {
+		getText: () => inputText,
+		setText: (t) => {
+			inputText = t;
+		},
+		send: async () => {
+			await doSend(inputText);
+			return true;
+		}
+	};
 
 	let inputEl = $state<HTMLTextAreaElement>();
 
@@ -836,6 +849,9 @@
 							onTranscription={async (text) => {
 								await doSend(text);
 							}}
+							{dictation}
+							contextKey={activeConversation?.id}
+							surface="chat"
 						/>
 					{/if}
 				</div>

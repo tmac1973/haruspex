@@ -61,6 +61,7 @@ mod time_util;
 mod toolchest;
 mod tts;
 mod video;
+mod voice_listen;
 mod webview_store;
 mod whisper;
 
@@ -331,6 +332,8 @@ pub fn run() {
         .manage(proxy::browser_session())
         .manage(SearchStats::new())
         .manage(AudioRecorder::new())
+        .manage(audio::MicLock::default())
+        .manage(voice_listen::VoiceListener::new())
         .manage(WhisperServer::new())
         .manage(WhisperServer::video())
         .manage(camera::watcher::WatcherRegistry::default())
@@ -370,6 +373,8 @@ pub fn run() {
             models::download_whisper_model,
             models::whisper_video_model_path,
             models::whisper_video_model_download,
+            models::whisper_vad_model_path,
+            models::whisper_vad_model_download,
             models::whisper_video_model_delete,
             proxy::proxy_search,
             proxy::proxy_fetch,
@@ -491,6 +496,9 @@ pub fn run() {
             inference_queue::inference_heartbeat,
             inference_queue::inference_queue_snapshot,
             audio::start_recording,
+            voice_listen::voice_listen_start,
+            voice_listen::voice_listen_stop,
+            voice_listen::voice_listen_hold,
             audio::stop_recording,
             audio::list_audio_input_devices,
             audio::list_audio_output_devices,

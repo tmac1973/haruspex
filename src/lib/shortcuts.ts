@@ -20,6 +20,10 @@ export const SHORTCUTS: ShortcutSection[] = [
 		items: [
 			{ keys: 'F1', action: 'Show this shortcuts help' },
 			{ keys: 'F2 (hold)', action: 'Push-to-talk — voice input, release to send' },
+			{
+				keys: 'Shift + F2',
+				action: 'Constant listening — dictate into the chat box (toggle)'
+			},
 			{ keys: 'F3', action: 'Read the last reply aloud (toggle)' },
 			{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' },
 			{

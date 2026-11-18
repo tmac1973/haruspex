@@ -40,6 +40,7 @@ const ORDER = [
 	'images',
 	'image-editing',
 	'music',
+	'voice',
 	'speech',
 	'video-generation',
 	'video-editing',

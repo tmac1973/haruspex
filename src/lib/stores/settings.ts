@@ -611,6 +611,9 @@ export interface AppSettings {
 	searchRecency: 'any' | 'day' | 'week' | 'month' | 'year';
 	audioOutputDevice: string;
 	audioInputDevice: string;
+	/** The whisper model voice input uses: base.en (fast, English) or
+	 *  large-v3-turbo (multilingual, the file the video tools download). */
+	speechModel: 'base.en' | 'large-v3-turbo';
 	dismissedStartupNotice: boolean;
 	keepRecentToolResults: boolean;
 	/**
@@ -1244,6 +1247,7 @@ const defaults: AppSettings = {
 	searchRecency: 'any' as const,
 	audioOutputDevice: '',
 	audioInputDevice: '',
+	speechModel: 'base.en' as const,
 	dismissedStartupNotice: false,
 	keepRecentToolResults: true,
 	activeLocalModelFilename: '',

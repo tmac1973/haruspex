@@ -1,24 +1,49 @@
 <script lang="ts">
+	import { onDestroy, onMount } from 'svelte';
 	import {
 		cancelVoiceCapture,
+		getPendingPhrases,
 		getVoiceCaptureStatus,
+		isListeningOwner,
+		registerDictationTarget,
+		startListening,
 		startVoiceCapture,
-		stopAndTranscribe
+		stopAndTranscribe,
+		stopListening,
+		type DictationSurface,
+		type DictationTarget
 	} from '#lib/audio/voiceCapture.svelte.ts';
 
 	interface Props {
 		onTranscription: (text: string) => void;
 		disabled?: boolean;
+		/** The composer constant listening dictates into; without it there is no right-click menu. */
+		dictation?: DictationTarget;
+		/** The conversation or session the composer is for; listening stops when it changes. */
+		contextKey?: string;
+		/** Which tab's composer this is, so Shift+F2 can start listening into it. */
+		surface?: DictationSurface;
 	}
 
-	let { onTranscription, disabled = false }: Props = $props();
+	let { onTranscription, disabled = false, dictation, contextKey, surface }: Props = $props();
+
+	const ownerToken = Symbol('mic-button');
 
 	const status = $derived(getVoiceCaptureStatus());
 	const recording = $derived(status === 'recording');
 	const processing = $derived(status === 'processing');
 	const downloading = $derived(status === 'downloading');
+	// This button's constant listening, as opposed to another composer's.
+	const mine = $derived(
+		(status === 'listening' || status === 'paused') && isListeningOwner(ownerToken)
+	);
+	const pending = $derived(mine && getPendingPhrases() > 0);
 
 	async function start() {
+		if (mine) {
+			void stopListening();
+			return;
+		}
 		if (disabled || status !== 'idle') return;
 		await startVoiceCapture();
 	}
@@ -54,28 +79,94 @@
 			void stop();
 		}
 	}
+
+	// Right-click menu: constant listening, in place of the webview's own.
+	let menu = $state<{ x: number; y: number } | null>(null);
+
+	function openMenu(e: MouseEvent) {
+		if (!dictation) return;
+		e.preventDefault();
+		menu = { x: e.clientX, y: e.clientY };
+	}
+
+	function closeMenu() {
+		menu = null;
+	}
+
+	function toggleListening() {
+		closeMenu();
+		if (mine) void stopListening();
+		else if (dictation && status === 'idle') void startListening(ownerToken, dictation);
+	}
+
+	// Switching conversation or session stops listening, so dictated text
+	// never lands in the wrong composer.
+	const UNSEEN = Symbol('unseen');
+	let lastKey: string | undefined | typeof UNSEEN = UNSEEN;
+	$effect(() => {
+		const key = contextKey;
+		if (lastKey !== UNSEEN && key !== lastKey && isListeningOwner(ownerToken)) {
+			void stopListening();
+		}
+		lastKey = key;
+	});
+
+	let unregister: (() => void) | null = null;
+	onMount(() => {
+		if (surface && dictation) {
+			unregister = registerDictationTarget(ownerToken, {
+				surface,
+				key: () => contextKey,
+				target: dictation
+			});
+		}
+	});
+
+	onDestroy(() => {
+		unregister?.();
+		if (isListeningOwner(ownerToken)) void stopListening();
+	});
+
+	const title = $derived(
+		downloading
+			? 'Downloading speech model...'
+			: mine && status === 'paused'
+				? 'Paused while audio plays'
+				: mine
+					? 'Listening — click to stop. Say “send it” to send, “scratch that” to undo.'
+					: recording
+						? 'Release to send'
+						: processing
+							? 'Transcribing...'
+							: dictation
+								? 'Hold to talk (or hold F2) · right-click for constant listening'
+								: 'Hold to talk (or hold F2)'
+	);
 </script>
+
+<svelte:window
+	onclick={closeMenu}
+	onkeydown={(e) => e.key === 'Escape' && closeMenu()}
+	onblur={closeMenu}
+/>
 
 <div class="mic-container">
 	<button
 		class="mic-btn"
 		class:recording
+		class:listening={mine && status === 'listening'}
+		class:paused={mine && status === 'paused'}
 		class:processing={processing || downloading}
-		disabled={disabled || downloading}
-		aria-pressed={recording}
-		onmousedown={start}
-		onmouseup={stop}
+		disabled={(disabled && !mine) || downloading}
+		aria-pressed={recording || mine}
+		onmousedown={(e) => e.button === 0 && void start()}
+		onmouseup={(e) => e.button === 0 && void stop()}
 		onmouseleave={cancel}
 		onkeydown={onKeydown}
 		onkeyup={onKeyup}
 		onblur={cancel}
-		title={downloading
-			? 'Downloading speech model...'
-			: recording
-				? 'Release to send'
-				: processing
-					? 'Transcribing...'
-					: 'Hold to talk (or hold F2)'}
+		oncontextmenu={openMenu}
+		{title}
 	>
 		{#if processing || downloading}
 			<span class="spinner"></span>
@@ -94,7 +185,23 @@
 				<line x1="8" y1="23" x2="16" y2="23"></line>
 			</svg>
 		{/if}
+		{#if pending}
+			<span class="pending-dot" aria-label="Transcribing"></span>
+		{/if}
 	</button>
+	{#if menu}
+		<div class="context-menu" style="left: {menu.x}px; top: {menu.y}px" role="menu">
+			<button
+				role="menuitemcheckbox"
+				aria-checked={mine}
+				onclick={toggleListening}
+				disabled={!mine && status !== 'idle'}
+				title="Dictate into this box until you click the mic again. Say “send it” to send, “scratch that” to undo the last phrase."
+			>
+				<span class="check">{mine ? '✓' : ''}</span>Constant listening
+			</button>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -130,6 +237,89 @@
 		border-color: var(--error-text);
 		color: white;
 		animation: pulse-record 1s ease-in-out infinite;
+	}
+
+	/* Always-on listening: a steady accent ring that breathes, unlike the red
+	   recording pulse. */
+	.mic-btn.listening {
+		position: relative;
+		border-color: var(--accent);
+		color: var(--accent);
+		box-shadow: 0 0 0 2px var(--accent);
+		animation: breathe-listen 2s ease-in-out infinite;
+	}
+
+	.mic-btn.paused {
+		position: relative;
+		border-color: var(--accent);
+		color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+		opacity: 0.6;
+	}
+
+	.pending-dot {
+		position: absolute;
+		top: -2px;
+		right: -2px;
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		border: 2px solid var(--accent);
+		border-top-color: transparent;
+		animation: spin-dot 0.8s linear infinite;
+	}
+
+	.context-menu {
+		position: fixed;
+		background: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+		z-index: 100;
+		min-width: 170px;
+		padding: 4px 0;
+	}
+
+	.context-menu button {
+		appearance: none;
+		background: none;
+		border: 0;
+		color: var(--text-primary);
+		padding: 6px 14px;
+		font-size: 0.8rem;
+		width: 100%;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.context-menu button:hover:not(:disabled) {
+		background: var(--bg-secondary);
+	}
+
+	.context-menu button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.check {
+		display: inline-block;
+		width: 1.2em;
+	}
+
+	@keyframes breathe-listen {
+		0%,
+		100% {
+			box-shadow: 0 0 0 2px var(--accent);
+		}
+		50% {
+			box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+		}
+	}
+
+	@keyframes spin-dot {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.mic-btn.processing {
