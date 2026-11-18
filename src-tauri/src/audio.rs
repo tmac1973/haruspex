@@ -8,7 +8,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-const WHISPER_SAMPLE_RATE: u32 = 16000;
+pub(crate) const WHISPER_SAMPLE_RATE: u32 = 16000;
 
 /// USB-switch / hot-plug hint appended to errors so the user knows the
 /// likely cause. The deeper libasound `dlopen` crash that can land here
@@ -102,11 +102,141 @@ fn find_input_device_by_name(name: &str) -> Result<cpal::Device, String> {
     host_default_input_device()
 }
 
+/// Who has the microphone. Push-to-talk and constant listening both open
+/// it, and only one may at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MicUser {
+    PushToTalk,
+    Listening,
+}
+
+impl MicUser {
+    fn busy_message(self) -> &'static str {
+        match self {
+            MicUser::PushToTalk => "The microphone is in use by push-to-talk",
+            MicUser::Listening => "The microphone is in use by constant listening",
+        }
+    }
+}
+
+/// The process-wide microphone lock, managed as Tauri state.
+#[derive(Default)]
+pub struct MicLock(Arc<Mutex<Option<MicUser>>>);
+
+/// Holds the microphone until dropped.
+pub struct MicGuard(Arc<Mutex<Option<MicUser>>>);
+
+impl MicLock {
+    pub fn try_take(&self, user: MicUser) -> Result<MicGuard, String> {
+        let mut holder = self.0.lock_or_recover();
+        if let Some(other) = *holder {
+            return Err(other.busy_message().to_string());
+        }
+        *holder = Some(user);
+        Ok(MicGuard(self.0.clone()))
+    }
+}
+
+impl Drop for MicGuard {
+    fn drop(&mut self) {
+        *self.0.lock_or_recover() = None;
+    }
+}
+
+/// Open the named input device (empty for the system default) at its native
+/// config and start it. `on_mono` gets each callback's audio downmixed to
+/// mono f32 at the returned native rate; `on_error` gets stream errors.
+pub(crate) fn open_input_stream(
+    device_name_opt: Option<&str>,
+    mut on_mono: impl FnMut(&[f32]) + Send + 'static,
+    mut on_error: impl FnMut(&cpal::Error) + Send + 'static,
+) -> Result<(cpal::Stream, u32), String> {
+    // Always go through fresh enumeration — bypasses cpal's cached
+    // default-device handle which is the most likely thing to be
+    // stale after a USB hot-swap.
+    let device = find_input_device_by_name(device_name_opt.unwrap_or(""))?;
+
+    info!("Recording from: {}", device_name(&device));
+
+    // Use the device's native config — Windows WASAPI rejects forced 16kHz mono.
+    // Wrapped in catch_unwind because cpal/alsa-rs can panic when ALSA
+    // is in a half-broken state post-hot-swap.
+    let supported = safe_cpal("default_input_config", || {
+        device
+            .default_input_config()
+            .map_err(|e| format!("No supported input config: {}", e))
+    })?;
+    let sample_format = supported.sample_format();
+    let native_rate = supported.sample_rate();
+    let channels = supported.channels() as usize;
+    let config: cpal::StreamConfig = supported.into();
+
+    info!(
+        "Input config: {} Hz, {} ch, {:?}",
+        native_rate, channels, sample_format
+    );
+
+    let err_fn = move |err: cpal::Error| {
+        error!("Audio input error: {}", err);
+        on_error(&err);
+    };
+    let mut mono: Vec<f32> = Vec::new();
+
+    macro_rules! build_stream {
+        ($t:ty) => {{
+            device.build_input_stream(
+                config,
+                move |data: &[$t], _: &cpal::InputCallbackInfo| {
+                    mono.clear();
+                    if channels <= 1 {
+                        mono.extend(data.iter().map(|s| s.to_sample::<f32>()));
+                    } else {
+                        for frame in data.chunks_exact(channels) {
+                            let sum: f32 = frame.iter().map(|s| s.to_sample::<f32>()).sum();
+                            mono.push(sum / channels as f32);
+                        }
+                    }
+                    on_mono(&mono);
+                },
+                err_fn,
+                None,
+            )
+        }};
+    }
+
+    let stream = safe_cpal("build_input_stream", || {
+        let r = match sample_format {
+            // cpal 0.18 ranks I32 and I24 above I16 when picking the
+            // default config, so every integer width has to be handled.
+            CpalSampleFormat::F32 => build_stream!(f32),
+            CpalSampleFormat::F64 => build_stream!(f64),
+            CpalSampleFormat::I8 => build_stream!(i8),
+            CpalSampleFormat::I16 => build_stream!(i16),
+            CpalSampleFormat::I24 => build_stream!(cpal::I24),
+            CpalSampleFormat::I32 => build_stream!(i32),
+            CpalSampleFormat::U8 => build_stream!(u8),
+            CpalSampleFormat::U16 => build_stream!(u16),
+            CpalSampleFormat::U32 => build_stream!(u32),
+            other => return Err(format!("Unsupported sample format: {:?}", other)),
+        };
+        r.map_err(|e| format!("Failed to build audio stream: {}{}", e, HOT_SWAP_HINT))
+    })?;
+
+    safe_cpal("stream.play", || {
+        stream
+            .play()
+            .map_err(|e| format!("Failed to start audio stream: {}{}", e, HOT_SWAP_HINT))
+    })?;
+
+    Ok((stream, native_rate))
+}
+
 pub struct AudioRecorder {
     is_recording: Arc<AtomicBool>,
     samples: Arc<Mutex<Vec<f32>>>,
     stream: Mutex<Option<cpal::Stream>>,
     native_rate: Mutex<u32>,
+    guard: Mutex<Option<MicGuard>>,
 }
 
 impl AudioRecorder {
@@ -116,101 +246,40 @@ impl AudioRecorder {
             samples: Arc::new(Mutex::new(Vec::new())),
             stream: Mutex::new(None),
             native_rate: Mutex::new(WHISPER_SAMPLE_RATE),
+            guard: Mutex::new(None),
         }
     }
 
-    pub fn start_recording(&self, device_name_opt: Option<&str>) -> Result<(), String> {
+    pub fn start_recording(
+        &self,
+        mic: &MicLock,
+        device_name_opt: Option<&str>,
+    ) -> Result<(), String> {
         if self.is_recording.load(Ordering::SeqCst) {
             return Err("Already recording".to_string());
         }
-
-        // Always go through fresh enumeration — bypasses cpal's cached
-        // default-device handle which is the most likely thing to be
-        // stale after a USB hot-swap.
-        let device = find_input_device_by_name(device_name_opt.unwrap_or(""))?;
-
-        info!("Recording from: {}", device_name(&device));
-
-        // Use the device's native config — Windows WASAPI rejects forced 16kHz mono.
-        // We downmix to mono in the callback and resample to 16kHz at stop_recording.
-        // Wrapped in catch_unwind because cpal/alsa-rs can panic when ALSA
-        // is in a half-broken state post-hot-swap.
-        let supported = safe_cpal("default_input_config", || {
-            device
-                .default_input_config()
-                .map_err(|e| format!("No supported input config: {}", e))
-        })?;
-        let sample_format = supported.sample_format();
-        let native_rate = supported.sample_rate();
-        let channels = supported.channels() as usize;
-        let config: cpal::StreamConfig = supported.into();
-
-        info!(
-            "Input config: {} Hz, {} ch, {:?}",
-            native_rate, channels, sample_format
-        );
+        let guard = mic.try_take(MicUser::PushToTalk)?;
 
         // Clear previous samples
-        {
-            let mut samples = self.samples.lock_or_recover();
-            samples.clear();
-        }
+        self.samples.lock_or_recover().clear();
+
+        let samples = self.samples.clone();
+        let is_recording = self.is_recording.clone();
+        // We downmix to mono in the callback and resample to 16kHz at stop_recording.
+        let (stream, native_rate) = open_input_stream(
+            device_name_opt,
+            move |mono| {
+                if is_recording.load(Ordering::SeqCst) {
+                    samples.lock_or_recover().extend_from_slice(mono);
+                }
+            },
+            |_| {},
+        )?;
         *self.native_rate.lock_or_recover() = native_rate;
-
-        let err_fn = |err: cpal::Error| error!("Audio input error: {}", err);
-
-        macro_rules! build_stream {
-            ($t:ty) => {{
-                let samples = self.samples.clone();
-                let is_recording = self.is_recording.clone();
-                device.build_input_stream(
-                    config,
-                    move |data: &[$t], _: &cpal::InputCallbackInfo| {
-                        if !is_recording.load(Ordering::SeqCst) {
-                            return;
-                        }
-                        let mut buf = samples.lock_or_recover();
-                        if channels <= 1 {
-                            buf.extend(data.iter().map(|s| s.to_sample::<f32>()));
-                        } else {
-                            for frame in data.chunks_exact(channels) {
-                                let sum: f32 = frame.iter().map(|s| s.to_sample::<f32>()).sum();
-                                buf.push(sum / channels as f32);
-                            }
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-            }};
-        }
-
-        let stream = safe_cpal("build_input_stream", || {
-            let r = match sample_format {
-                // cpal 0.18 ranks I32 and I24 above I16 when picking the
-                // default config, so every integer width has to be handled.
-                CpalSampleFormat::F32 => build_stream!(f32),
-                CpalSampleFormat::F64 => build_stream!(f64),
-                CpalSampleFormat::I8 => build_stream!(i8),
-                CpalSampleFormat::I16 => build_stream!(i16),
-                CpalSampleFormat::I24 => build_stream!(cpal::I24),
-                CpalSampleFormat::I32 => build_stream!(i32),
-                CpalSampleFormat::U8 => build_stream!(u8),
-                CpalSampleFormat::U16 => build_stream!(u16),
-                CpalSampleFormat::U32 => build_stream!(u32),
-                other => return Err(format!("Unsupported sample format: {:?}", other)),
-            };
-            r.map_err(|e| format!("Failed to build audio stream: {}{}", e, HOT_SWAP_HINT))
-        })?;
-
-        safe_cpal("stream.play", || {
-            stream
-                .play()
-                .map_err(|e| format!("Failed to start audio stream: {}{}", e, HOT_SWAP_HINT))
-        })?;
 
         self.is_recording.store(true, Ordering::SeqCst);
         *self.stream.lock_or_recover() = Some(stream);
+        *self.guard.lock_or_recover() = Some(guard);
 
         info!("Recording started");
         Ok(())
@@ -223,8 +292,9 @@ impl AudioRecorder {
 
         self.is_recording.store(false, Ordering::SeqCst);
 
-        // Drop the stream to stop recording
+        // Drop the stream to stop recording, then let the mic go.
         *self.stream.lock_or_recover() = None;
+        *self.guard.lock_or_recover() = None;
 
         let samples = {
             let mut buf = self.samples.lock_or_recover();
@@ -248,7 +318,7 @@ impl AudioRecorder {
     }
 }
 
-fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+pub(crate) fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     if from_rate == to_rate || input.len() < 2 {
         return input.to_vec();
     }
@@ -270,7 +340,7 @@ fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     out
 }
 
-fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
+pub(crate) fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
     let spec = WavSpec {
         channels: 1,
         sample_rate,
@@ -303,9 +373,10 @@ fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
 #[tauri::command]
 pub fn start_recording(
     state: tauri::State<'_, AudioRecorder>,
+    mic: tauri::State<'_, MicLock>,
     device_name: Option<String>,
 ) -> Result<(), String> {
-    state.start_recording(device_name.as_deref())
+    state.start_recording(&mic, device_name.as_deref())
 }
 
 #[tauri::command]
@@ -341,6 +412,24 @@ pub fn list_audio_output_devices() -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mic_lock_names_who_holds_it() {
+        let lock = MicLock::default();
+        let ptt = lock.try_take(MicUser::PushToTalk).unwrap();
+        assert_eq!(
+            lock.try_take(MicUser::Listening).err().as_deref(),
+            Some("The microphone is in use by push-to-talk")
+        );
+        drop(ptt);
+        let listening = lock.try_take(MicUser::Listening).unwrap();
+        assert_eq!(
+            lock.try_take(MicUser::PushToTalk).err().as_deref(),
+            Some("The microphone is in use by constant listening")
+        );
+        drop(listening);
+        assert!(lock.try_take(MicUser::PushToTalk).is_ok());
+    }
 
     #[test]
     fn encode_wav_produces_valid_output() {

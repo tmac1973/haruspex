@@ -185,6 +185,10 @@ const TABLE: Record<string, Handler> = {
 	task_take_notices: empty,
 	whisper_video_model_path: none,
 	whisper_vad_model_path: none,
+	// Constant listening: a session that never hears anything.
+	voice_listen_start: () => 1,
+	voice_listen_stop: none,
+	voice_listen_hold: none,
 	youtube_account: none,
 	download_status: none,
 	remote_status: () => ({
