@@ -1,0 +1,15 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "preview",
+	"description": "Code preview windows (preview-*): a toolbar over an iframe of the session's folder served on 127.0.0.1. The page itself is another origin and gets nothing; the toolbar may set the title, raise and close its window, and open the page in the user's browser.",
+	"windows": [
+		"preview-*"
+	],
+	"permissions": [
+		"core:default",
+		"core:window:allow-close",
+		"core:window:allow-set-title",
+		"core:window:allow-set-focus",
+		"core:window:allow-unminimize"
+	]
+}
