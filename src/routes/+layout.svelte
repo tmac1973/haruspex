@@ -97,6 +97,7 @@
 	} from '#lib/audio/voiceCapture.svelte.ts';
 	import { stopTts, toggleTts } from '#lib/audio/ttsControl.svelte.ts';
 	import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
+	import { installImageDragBlock } from '#lib/imageDrag.ts';
 	import { installAudioPlayers } from '#lib/audio/mountPlayers.ts';
 	import {
 		getActiveTab,
@@ -155,6 +156,8 @@
 	onMount(() => installAudioExclusivity(document, () => void stopTts()));
 	// A player for each song an answer names: see audio/mountPlayers.ts.
 	onMount(() => installAudioPlayers(document));
+	// No dragging images out: a drop target that stalls freezes GTK 3.
+	onMount(() => installImageDragBlock(document));
 
 	// Windows: hand Rust Settings → Code's PowerShell choice before any command
 	// runs (a Code turn hands it again as it starts).

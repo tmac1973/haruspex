@@ -39,6 +39,7 @@ When the window's folder holds more than one file of a kind, a tree of them sits
 - It's fitted to the window, never enlarged. **1:1** shows it at its real size; when it's larger, drag it around or use the scroll bars. **Fit** goes back.
 - A checkerboard shows through transparent parts.
 - The bar gives its size in pixels and on disk.
+- Images here and in answers can't be dragged into another app (on Linux an app that stalls the drop froze Haruspex). Attach the file instead; a picture in an answer opens with **Save as…**.
 
 ## Listen to a sound
 
