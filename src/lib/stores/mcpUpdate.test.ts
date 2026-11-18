@@ -62,7 +62,7 @@ function entry(over: Partial<CatalogEntry> = {}): CatalogEntry {
 		description: 'd',
 		homepage: 'h',
 		acquisition: { kind: 'npm', package: '@playwright/mcp', version: '0.0.90', bin: 'cli.js' },
-		command: { args: [], env: {} },
+		command: { args: [], env: {}, files: {}, passDisplay: false },
 		defaultTools: [],
 		setup: [BROWSER_STEP, SIGN_IN_STEP],
 		companion: null,

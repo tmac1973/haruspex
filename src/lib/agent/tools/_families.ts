@@ -155,6 +155,7 @@ export const CHAT_CORE: ReadonlySet<string> = new Set([
 /** Always sent in the Code tab (overview → Decisions). */
 export const CODE_CORE: ReadonlySet<string> = new Set([
 	'fs_read_text',
+	'fs_read_image',
 	'fs_list_dir',
 	'fs_edit_text',
 	'fs_write_text',

@@ -12,4 +12,18 @@ args: Array<string>,
  * Environment for the child. Values of the form `$secret.<key>` are
  * replaced with the secret collected by the setup step with that key.
  */
-env: { [key in string]: string }, };
+env: { [key in string]: string }, 
+/**
+ * Files written into the server's directory before every start, by plain
+ * file name: a config a server takes only by path, such as the browser
+ * flags Playwright reads from `--config`. Rewritten each time, so they
+ * belong to the installed entry and are never the user's to edit.
+ */
+files: { [key in string]: string }, 
+/**
+ * Pass the desktop's display variables through the cleared environment
+ * (`install::DISPLAY_VARS`). On Linux a headless Chromium finds the GPU
+ * only through a display connection; without one it draws WebGL on the
+ * CPU. Nothing else of the session comes with them.
+ */
+passDisplay: boolean, };

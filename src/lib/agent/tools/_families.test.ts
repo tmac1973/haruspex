@@ -144,6 +144,7 @@ describe('tool families', () => {
 		expect(chatAll.some((s) => s.function.name === 'video_cut')).toBe(true);
 		expect(codeAll.some((s) => s.function.name === 'make_asset')).toBe(true);
 		expect(size(chatAll, false)).toBeLessThan(18 * 1024);
-		expect(size(codeAll, true)).toBeLessThan(14.5 * 1024);
+		// 14.75: fs_read_image joined the Code tab's core (about 320 bytes).
+		expect(size(codeAll, true)).toBeLessThan(14.75 * 1024);
 	});
 });

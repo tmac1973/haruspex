@@ -759,6 +759,7 @@ describe('Code-mode tool filtering', () => {
 				'open_in_shell',
 				'open_in_editor',
 				'delegate',
+				'fs_read_image',
 				'save_generated',
 				'fs_delete',
 				'fs_move',

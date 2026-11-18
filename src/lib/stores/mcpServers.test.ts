@@ -53,7 +53,7 @@ function entry(over: Partial<CatalogEntry> = {}): CatalogEntry {
 		description: 'd',
 		homepage: 'h',
 		acquisition: { kind: 'npm', package: 'p', version: '1.0.0', bin: 'p/i.js' },
-		command: { args: [], env: {} },
+		command: { args: [], env: {}, files: {}, passDisplay: false },
 		defaultTools: ['search'],
 		setup: [],
 		companion: null,

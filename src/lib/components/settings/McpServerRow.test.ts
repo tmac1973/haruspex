@@ -37,7 +37,7 @@ const ENTRY: CatalogEntry = {
 	description: 'd',
 	homepage: 'h',
 	acquisition: { kind: 'pypi', package: 'godot-editor-mcp', version: '2026.10.1', entrypoint: 'g' },
-	command: { args: [], env: {} },
+	command: { args: [], env: {}, files: {}, passDisplay: false },
 	defaultTools: [],
 	setup: [
 		{

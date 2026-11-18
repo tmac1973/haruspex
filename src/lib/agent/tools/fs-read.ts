@@ -344,13 +344,13 @@ registerTool({
 		function: {
 			name: 'fs_read_image',
 			description:
-				'Load an image file (png, jpg, webp, etc.) from the working directory so you can see it with your vision capability. After calling this, the image is added to the conversation and you can describe it or answer questions about it in your next response. Use this for any image file the user asks you to analyze.',
+				'Look at an image file (png, jpg, webp, gif) in the working directory. You see it in your next response.',
 			parameters: {
 				type: 'object',
 				properties: {
 					path: {
 						type: 'string',
-						description: 'Relative path to the image file within the working directory.'
+						description: 'Path relative to the working directory.'
 					}
 				},
 				required: ['path']

@@ -50,6 +50,7 @@ import {
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { capWithSpill } from '#lib/agent/tools/_ptyExec.ts';
+import { saveScreenshot, takeScreenshotName } from '#lib/agent/tools/_playwrightShot.ts';
 import {
 	OVERSIZED_MESSAGE_MAX_TOKENS,
 	TOKEN_BYTES_RATIO,
@@ -220,6 +221,8 @@ async function executeMcpTool(
 
 	let inputResponses: Record<string, unknown> | null = null;
 	let requestState: string | null = null;
+	// A named Playwright screenshot: sent unnamed, saved here (`_playwrightShot.ts`).
+	const shot = takeScreenshotName(descriptor, args);
 
 	for (let round = 0; round < MAX_MRTR_ROUNDS; round++) {
 		let outcome: McpCallOutcome;
@@ -227,7 +230,7 @@ async function executeMcpTool(
 			outcome = await invoke<McpCallOutcome>('mcp_call_tool', {
 				id: serverId,
 				name: descriptor.name,
-				arguments: args,
+				arguments: shot?.args ?? args,
 				inputResponses,
 				requestState
 			});
@@ -236,7 +239,12 @@ async function executeMcpTool(
 			return toolResult(toolError(`${descriptor.name} failed: ${String(e)}`));
 		}
 
-		if (outcome.type === 'complete') return withImages(outcome, descriptor.name, ctx);
+		if (outcome.type === 'complete') {
+			const output = await withImages(outcome, descriptor.name, ctx);
+			if (!shot || outcome.isError) return output;
+			const saved = await saveScreenshot(shot.filename, outcome.content, ctx);
+			return { ...output, result: `${output.result}\n${saved}` };
+		}
 
 		// The server asked something. Answering needs a person.
 		const answers = await answerInputRequests(outcome.requests, entry, ctx);
