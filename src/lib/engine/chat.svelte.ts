@@ -183,10 +183,16 @@ export async function dispatchChat(op: {
 	title?: string;
 	enabled?: boolean;
 	path?: string | null;
+	query?: string;
 }) {
 	switch (op.type) {
 		case 'chats.list':
 			return listChats();
+		case 'chats.search': {
+			const query = (op.query ?? '').trim();
+			if (!query) return [];
+			return invoke<string[]>('db_search_conversations', { query });
+		}
 		case 'chat.get':
 			find(op.id!);
 			// Opened on the page: seen, as opening it on the desktop would be.

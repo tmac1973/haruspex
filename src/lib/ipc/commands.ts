@@ -157,6 +157,7 @@ export const IPC = {
 	db_replace_job_steps: 'db_replace_job_steps',
 	db_replace_messages: 'db_replace_messages',
 	db_save_message: 'db_save_message',
+	db_search_conversations: 'db_search_conversations',
 	db_set_job_api_key_ref: 'db_set_job_api_key_ref',
 	db_set_job_next_due_at: 'db_set_job_next_due_at',
 	db_set_run_environment: 'db_set_run_environment',

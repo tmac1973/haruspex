@@ -207,6 +207,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			if (!resync?.(op.id)) throw new Error(`session ${op.id} is not being watched`);
 			return { resynced: op.id };
 		case 'chats.list':
+		case 'chats.search':
 		case 'chat.get':
 		case 'chat.new':
 		case 'chat.send':

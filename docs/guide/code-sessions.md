@@ -9,7 +9,7 @@ How to find, fork and move sessions in the Code tab. For what a session does, se
 
 ## Find and reopen sessions
 
-The list on the left holds every saved session, newest first, with its folder and last activity. Sessions sharing a folder sit under a folder row; click it to fold them. Click a session to open it as a tab. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not files (but see worktrees below). Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list. Tabs that don't fit scroll sideways, also by mouse wheel; **←** **→** move between them.
+The list on the left holds every saved session, newest first, with its folder and last activity; **Search sessions** keeps those whose title or folder has every word, and dragging its edge widens it. Sessions sharing a folder sit under a folder row; click it to fold. Click a session to open it as a tab. Right-click a session to **Rename** or **Delete** it; deleting keeps your files (but see worktrees below). Closing its tab (**×**) keeps it listed. The **‹** button hides the list. Extra tabs scroll sideways (mouse wheel too); **←** **→** move between them.
 
 Long sessions show their last 20 turns; **Show earlier** loads more.
 
@@ -37,7 +37,7 @@ What the fork keeps:
 
 Background processes are not copied. You can't fork while the agent is working. In the list, a fork has a branch icon; point at it to see what it was forked from. Deleting the original leaves the fork.
 
-Merging a branch back is ordinary git; there is no merge button.
+Merging back is ordinary git; there is no merge button.
 
 ## Read-only sessions
 
@@ -47,11 +47,11 @@ A **Read-only** badge in the header marks a fork that shares its folder. Its age
 
 Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn writes files or runs commands that may change them, another's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
 
-When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, from the branch menu, the Shell or a terminal. Both notes survive a restart: changes not yet told, and a branch switched while Haruspex was closed, are told on the next turn.
+When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, wherever it was switched. Both notes survive a restart: changes not yet told, and a branch switched while Haruspex was closed, are told on the next turn.
 
 ## When a session's folder is gone
 
-If a session's folder was deleted, moved, or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes to the front; if the folder goes mid-turn, the banner shows when the turn ends.
+If a session's folder was deleted, moved, or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes forward; a folder gone mid-turn shows when the turn ends.
 
 - **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
 - **Delete session** deletes it.

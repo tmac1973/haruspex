@@ -47,10 +47,10 @@ impl Scope {
 pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
         "sessions.list" | "session.get" | "session.resync" | "session.readFile" | "chats.list"
-        | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros" | "jobs.types"
-        | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current" | "runs.resync"
-        | "debug.tail" | "inference.queue" | "tasks.list" | "models.list" | "app.mode"
-        | "home.cards" => Scope::Read,
+        | "chats.search" | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros"
+        | "jobs.types" | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current"
+        | "runs.resync" | "debug.tail" | "inference.queue" | "tasks.list" | "models.list"
+        | "app.mode" | "home.cards" => Scope::Read,
         "session.open"
         | "session.new"
         | "session.send"

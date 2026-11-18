@@ -17,6 +17,7 @@
 	} from '#lib/stores/code.svelte.ts';
 	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { sessionLabel } from '#lib/code/sessionList.ts';
+	import { peerColor } from '#lib/peers/color.ts';
 	import { detachSession, moveBlockedReason } from '#lib/code/windows.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -99,10 +100,14 @@
 				class="tab"
 				data-session-id={session.id}
 				class:active={session.id === activeId}
+				class:remote={!!session.peer}
+				style={session.peer ? `--peer-color: ${peerColor(session.peer.id)}` : undefined}
 				role="tab"
 				aria-selected={session.id === activeId}
 				tabindex="0"
-				title="{sessionLabel(session)} — {session.root}"
+				title="{sessionLabel(session)} — {session.root}{session.peer
+					? ` on ${session.peer.name}`
+					: ''}"
 				onclick={() => setActiveSession(session.id)}
 				onkeydown={(e) => {
 					if (e.key === 'Enter' || e.key === ' ') {
@@ -184,6 +189,11 @@
 	/* Thinner than thin-scroll, since it sits under the tabs. */
 	.tabs::-webkit-scrollbar {
 		height: 6px;
+	}
+
+	/* Another computer's session: a bar in its colour along the top. */
+	.tab.remote {
+		box-shadow: inset 0 2px 0 var(--peer-color);
 	}
 
 	.tab {

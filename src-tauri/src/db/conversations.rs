@@ -187,6 +187,28 @@ impl Database {
         Ok(())
     }
 
+    /// The chats whose messages (the user's, or an answer) match every word
+    /// of `query`, as prefixes; most matches first. Empty for a query with no
+    /// words.
+    pub fn search_conversations(&self, query: &str) -> Result<Vec<String>, String> {
+        let Some(fts) = super::camera_events::fts_query(query) else {
+            return Ok(Vec::new());
+        };
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT conversation_id FROM messages_fts WHERE messages_fts MATCH ?1
+                 GROUP BY conversation_id ORDER BY count(*) DESC LIMIT 500",
+            )
+            .map_err(|e| format!("Search failed: {e}"))?;
+        let ids = stmt
+            .query_map(params![fts], |r| r.get::<_, String>(0))
+            .map_err(|e| format!("Search failed: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Search failed: {e}"))?;
+        Ok(ids)
+    }
+
     pub fn clear_all_conversations(&self) -> Result<(), String> {
         let conn = self.conn();
         conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;")

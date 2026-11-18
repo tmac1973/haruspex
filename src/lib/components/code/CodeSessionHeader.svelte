@@ -13,6 +13,7 @@
 	import CodeModelPicker from '#lib/components/code/CodeModelPicker.svelte';
 	import RemoteModelPicker from '#lib/components/code/RemoteModelPicker.svelte';
 	import { RemoteCodeSession } from '#lib/peers/remoteCodeSession.svelte.ts';
+	import { peerColor } from '#lib/peers/color.ts';
 	import CodeBranchControl from '#lib/components/code/CodeBranchControl.svelte';
 	import ExtrasMenu from '#lib/components/code/ExtrasMenu.svelte';
 	import SessionUsageChip from '#lib/components/code/SessionUsageChip.svelte';
@@ -92,6 +93,7 @@
 		<span
 			class="runs-on"
 			data-testid="runs-on-badge"
+			style="border-color: {peerColor(session.peer.id)}"
 			title="Its turns, files and models are on {session.peer
 				.name}. Settings → Remote control → Other computers.">Runs on {session.peer.name}</span
 		>

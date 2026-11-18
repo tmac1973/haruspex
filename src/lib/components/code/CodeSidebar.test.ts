@@ -138,6 +138,29 @@ describe('CodeSidebar', () => {
 		const plain = screen.getByRole('button', { name: 'Fix lint' });
 		expect(plain.querySelector('[data-testid="fork-glyph"]')).toBeNull();
 	});
+
+	it('keeps the sessions whose title or folder has every word typed, here and on other computers', async () => {
+		peers.list = [peerView('demogorgon')];
+		render(CodeSidebar, { onNew: vi.fn() });
+		await waitFor(() => screen.getByText('Fix lint'));
+		const box = screen.getByRole('searchbox', { name: 'Search sessions' });
+
+		await fireEvent.input(box, { target: { value: 'blog' } });
+		expect(screen.queryByText('Fix lint')).toBeNull();
+		screen.getByText('New post');
+		expect(screen.queryByRole('region', { name: 'On demogorgon' })?.textContent).not.toContain(
+			'Work on demogorgon'
+		);
+
+		await fireEvent.input(box, { target: { value: 'work demogorgon' } });
+		within(screen.getByRole('region', { name: 'On demogorgon' })).getByRole('button', {
+			name: 'Work on demogorgon'
+		});
+		expect(screen.queryByText('New post')).toBeNull();
+
+		await fireEvent.input(box, { target: { value: 'zzz' } });
+		screen.getByText('No sessions match.');
+	});
 });
 
 describe('deleting a session', () => {

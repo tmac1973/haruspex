@@ -25,6 +25,16 @@ pub async fn db_list_conversations(
     on_pool(db, move |db| db.list_conversations()).await
 }
 
+/// The chats whose messages match `query`; see `Database::search_conversations`.
+#[tauri::command]
+pub async fn db_search_conversations(
+    state: tauri::State<'_, Database>,
+    query: String,
+) -> Result<Vec<String>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.search_conversations(&query)).await
+}
+
 #[tauri::command]
 pub async fn db_get_conversation(
     state: tauri::State<'_, Database>,
