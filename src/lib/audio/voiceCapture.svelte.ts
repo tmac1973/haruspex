@@ -37,7 +37,7 @@ export interface DictationTarget {
 let session: number | null = null;
 let owner: symbol | null = null;
 let target: DictationTarget | null = null;
-/** Exactly what the last phrase added, for "scratch that". */
+/** Exactly what the last phrase added, for "delete that". */
 let lastSuffix: string | null = null;
 let listening: Promise<unknown> | null = null;
 let queue: Promise<void> = Promise.resolve();
@@ -212,10 +212,10 @@ async function onPhrase(text: string): Promise<void> {
 	if (!t) return;
 	const d = parseDictation(text);
 	if (d.kind === 'none') return;
-	if (d.kind === 'scratch') {
+	if (d.kind === 'delete') {
 		const back = lastSuffix ? removeAppended(t.getText(), lastSuffix) : null;
 		if (back === null) {
-			showToast('Nothing to scratch');
+			showToast('Nothing to delete');
 			return;
 		}
 		t.setText(back);

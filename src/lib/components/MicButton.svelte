@@ -133,7 +133,7 @@
 			: mine && status === 'paused'
 				? 'Paused while audio plays'
 				: mine
-					? 'Listening — click to stop. Say “send it” to send, “scratch that” to undo.'
+					? 'Listening — click to stop. Say “send it” to send, “delete that” to undo.'
 					: recording
 						? 'Release to send'
 						: processing
@@ -196,7 +196,7 @@
 				aria-checked={mine}
 				onclick={toggleListening}
 				disabled={!mine && status !== 'idle'}
-				title="Dictate into this box until you click the mic again. Say “send it” to send, “scratch that” to undo the last phrase."
+				title="Dictate into this box until you click the mic again. Say “send it” to send, “delete that” to remove the last phrase."
 			>
 				<span class="check">{mine ? '✓' : ''}</span>Constant listening
 			</button>
