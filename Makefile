@@ -45,6 +45,21 @@ ensure-uv: ## Download the uv sidecar (runs PyPI-packaged MCP servers) when miss
 ensure-sdcpp: ## Download the sd-server image sidecar when missing or its pin changed
 	@./scripts/fetch-sdcpp.sh --target $(TARGET)
 
+.PHONY: ensure-ffmpeg
+ensure-ffmpeg: ## Download the ffmpeg + ffprobe sidecars when missing or their pin changed
+	@./scripts/fetch-ffmpeg.sh --target $(TARGET)
+	@# tauri-build wants every externalBin on disk. When the fetch was skipped,
+	@# an empty script stands in; it answers nothing to -version, so the app
+	@# uses the ffmpeg on PATH. Same placeholder as dev-setup.sh.
+	@ext=""; case "$(TARGET)" in *windows*) ext=".exe" ;; esac; \
+	for name in haruspex-ffmpeg haruspex-ffprobe; do \
+		stub="src-tauri/binaries/$$name-$(TARGET)$$ext"; \
+		if [ ! -e "$$stub" ]; then \
+			printf '#!/bin/sh\n' > "$$stub"; chmod +x "$$stub"; \
+			echo ">> Placeholder: $$stub (ffmpeg comes from PATH)"; \
+		fi; \
+	done
+
 .PHONY: ensure-pdfium
 ensure-pdfium: ## Download the PDFium shared library when missing
 	@./scripts/fetch-pdfium.sh --target $(TARGET)
@@ -122,7 +137,7 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 	fi
 
 .PHONY: dev
-dev: ensure-sidecars ensure-sdcpp ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-web-client ensure-libs-linked ## Run the app in dev mode
+dev: ensure-sidecars ensure-sdcpp ensure-ffmpeg ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-web-client ensure-libs-linked ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 # The two check-*.mjs guards mirror the frontend CI job. They used to run ONLY
