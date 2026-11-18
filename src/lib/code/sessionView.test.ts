@@ -118,6 +118,23 @@ describe('a Code session without every capability', () => {
 		screen.getByTitle(/Specialists and helpers/);
 	});
 
+	it('names the computer it runs on, and says when that computer is offline', () => {
+		render(CodePane, {
+			session: bareView({
+				peer: { id: 'desk', name: 'desk-pc' },
+				blockedReason: 'desk-pc is offline.',
+				busy: false,
+				status: 'idle',
+				folderMissing: false,
+				shellWait: null
+			})
+		});
+		screen.getByText('Runs on desk-pc');
+		const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+		expect(box.disabled).toBe(true);
+		expect(box.placeholder).toBe('desk-pc is offline.');
+	});
+
 	it('has no Detach on its tab, and joins the tabs beside local sessions', () => {
 		registerOpenView(bareView({ status: 'idle', busy: false }));
 		render(CodeTabStrip, { onNew: () => {} });

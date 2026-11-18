@@ -98,3 +98,19 @@ started on a peer from its recent folders or a typed path.
 ## Rollback
 
 Revert; with `PEERS_READY` false in release builds no user sees it anyway.
+
+## As built
+
+- Closing a remote session's tab unfollows it and leaves it open on its
+  computer (step 3); `session.close` would stop a turn someone there may be
+  watching, so it isn't sent.
+- The model picker for a remote session is `RemoteModelPicker.svelte`: its
+  Settings model and its saved remote options from `models.list`, sent as
+  `session.model`.
+- `FileEditorModal` takes an optional `io` and `readOnly` through its store
+  request (`fileEditor.svelte.ts`); `readOnlyIO` is in `editor/io.ts`.
+- `startPeerStore()` runs in the main window's layout, beside `syncPeers()`.
+- A peer's message pictures (`image_url` parts) are read through
+  `peerImageUrl`; pictures written as markdown in an answer's text are not
+  yet (follow-up).
+

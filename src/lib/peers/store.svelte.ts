@@ -136,6 +136,33 @@ export function listedSessions(peer: PeerView): ListedSession[] {
 	return (peer.lastKnown?.sessions ?? []).map((s) => ({ ...s, status: null, offline: true }));
 }
 
+/** As the local Code list: open ones first, then newest; list order where a time is missing. */
+export function sortListedSessions(list: ListedSession[]): ListedSession[] {
+	return list
+		.map((s, i) => ({ s, i }))
+		.sort((a, b) => {
+			const open = Number(!!b.s.status) - Number(!!a.s.status);
+			if (open) return open;
+			if (a.s.updatedAt == null || b.s.updatedAt == null) return a.i - b.i;
+			return b.s.updatedAt - a.s.updatedAt || a.i - b.i;
+		})
+		.map(({ s }) => s);
+}
+
+/** The folders its sessions work in, most recent first: a new session's suggestions. */
+export function recentRoots(peer: PeerView, max = 10): string[] {
+	const ordered = peer.client.sessions
+		.map((s, i) => ({ root: s.root, at: s.updatedAt ?? null, i }))
+		.sort((a, b) => (a.at == null || b.at == null ? a.i - b.i : b.at - a.at || a.i - b.i));
+	const roots = ordered.map((s) => s.root);
+	return roots.filter((r, i) => r && roots.indexOf(r) === i).slice(0, max);
+}
+
+/** Whether the Code list shows a section for it: a lean computer has no Code sessions. */
+export function showsCodeSection(peer: PeerView): boolean {
+	return listedSessions(peer).length > 0 || (peer.online && !peer.client.lean);
+}
+
 /** Its chats: live while it's connected, else as last seen. */
 export function listedChats(peer: PeerView): ListedChat[] {
 	if (peer.online) {
@@ -155,6 +182,12 @@ export function listedChats(peer: PeerView): ListedChat[] {
 }
 
 const views = $state<Record<string, PeerView>>({});
+const goneHooks: ((peerId: string) => void)[] = [];
+
+/** Hear when a computer's view goes (removed, rebuilt, or the feature off), to close its tabs. */
+export function onPeerGone(cb: (peerId: string) => void): void {
+	goneHooks.push(cb);
+}
 let stop: (() => void) | null = null;
 
 /** The trusted computers' views, in Settings' order. */
@@ -173,6 +206,7 @@ export function reconcilePeerViews(peers: PeerConfig[]): void {
 		if (!config || JSON.stringify(config) !== JSON.stringify(view.config)) {
 			view.dispose();
 			delete views[id];
+			for (const cb of goneHooks) cb(id);
 		}
 	}
 	for (const config of peers) {

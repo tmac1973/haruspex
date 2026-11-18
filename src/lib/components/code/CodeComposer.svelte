@@ -40,7 +40,9 @@
 
 	const busy = $derived(session.busy);
 	/** Why nothing can be sent, or null. */
-	const blocked = $derived(session.folderMissing ? `Folder not found: ${session.root}` : null);
+	const blocked = $derived(
+		session.blockedReason ?? (session.folderMissing ? `Folder not found: ${session.root}` : null)
+	);
 
 	// Unsent input moves with the session to another window.
 	onMount(() => session.setDraftReader(() => ({ text, images: images.urls })));
@@ -91,6 +93,16 @@
 			images.clear();
 			audio.clear();
 			await session.send(withAttachedAudio(raw, songs), { images: urls });
+			return;
+		}
+		if (session.peer) {
+			// Its own computer runs a `/name`, as typed.
+			text = '';
+			autosize();
+			history.reset();
+			images.clear();
+			audio.clear();
+			await session.send(raw, { images: urls });
 			return;
 		}
 		let slash;
@@ -158,7 +170,7 @@
 			{/each}
 		</div>
 	{/if}
-	{#if !busy && !blocked}
+	{#if !busy && !blocked && !session.peer}
 		<SlashMenu
 			bind:this={slashMenu}
 			{text}

@@ -115,4 +115,14 @@ export interface CodeSessionView {
 	newBeside?: () => Promise<void>;
 	/** Close its tab here. A local session closes through `closeSession`. */
 	close?: () => Promise<void>;
+
+	// Another computer's session (plan/instance-sync/).
+	/** The computer it runs on; absent for a session running here. */
+	readonly peer?: { id: string; name: string };
+	/** Why nothing can be sent now (that computer is offline), or null. */
+	readonly blockedReason?: string | null;
+	/** Notes its `/name` commands answered with, as the pane's own are kept. */
+	readonly notes?: { text: string; at: number }[];
+	/** Read a file in its folder, for the read-only viewer. */
+	readFile?: (path: string) => Promise<{ content: string; truncated: boolean } | undefined>;
 }

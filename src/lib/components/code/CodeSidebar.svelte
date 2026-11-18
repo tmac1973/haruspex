@@ -21,6 +21,8 @@
 		sidebarEntries
 	} from '#lib/code/sessionList.ts';
 	import BranchGlyph from '#lib/components/code/BranchGlyph.svelte';
+	import PeerSessionSection from '#lib/components/code/PeerSessionSection.svelte';
+	import { peerViews, showsCodeSection } from '#lib/peers/store.svelte.ts';
 	import { onClaimsChanged, openSessionIds } from '#lib/code/claims.ts';
 	import { worktreeOffer, worktreeOutcome } from '#lib/code/folders.ts';
 	import {
@@ -310,6 +312,9 @@
 					{/if}
 				{/each}
 			</ul>
+			{#each peerViews().filter(showsCodeSection) as peer (peer.id)}
+				<PeerSessionSection {peer} {activeId} {openIds} {now} />
+			{/each}
 		</div>
 		<button
 			class="resize-handle"

@@ -9,7 +9,7 @@
 	import Modal from '#lib/components/Modal.svelte';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import { getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
-	import { EditorDocument } from '#lib/editor/document.svelte.ts';
+	import { EditorDocument, type EditorIO } from '#lib/editor/document.svelte.ts';
 	import { plainIO } from '#lib/editor/io.ts';
 
 	const pending = $derived(getPendingEdit());
@@ -31,15 +31,15 @@
 	$effect(() => {
 		if (pending && loadedFor !== pending) {
 			loadedFor = pending;
-			void load(pending.workdir, pending.files);
+			void load(pending.workdir, pending.files, pending.io ?? plainIO);
 		}
 	});
 
-	async function load(workdir: string, files: string[]): Promise<void> {
+	async function load(workdir: string, files: string[], io: EditorIO): Promise<void> {
 		saved = [];
 		confirmingClose = false;
 		current = files[0] ?? '';
-		const next = files.map((f) => new EditorDocument(workdir, f, plainIO));
+		const next = files.map((f) => new EditorDocument(workdir, f, io));
 		docs = next;
 		await Promise.all(next.map((d) => d.load()));
 	}
@@ -109,6 +109,7 @@
 							value={currentDoc.draft}
 							label={current}
 							path={current}
+							readonly={pending.readOnly}
 							onchange={(v) => currentDoc.edit(v)}
 							onsave={() => save()}
 						/>
@@ -128,9 +129,11 @@
 				<button type="button" onclick={discardAndClose}>Discard</button>
 				<button type="button" onclick={() => (confirmingClose = false)}>Keep editing</button>
 			{:else}
-				<button type="button" disabled={!dirty(current)} onclick={() => save()} title="Ctrl+S"
-					>Save</button
-				>
+				{#if !pending.readOnly}
+					<button type="button" disabled={!dirty(current)} onclick={() => save()} title="Ctrl+S"
+						>Save</button
+					>
+				{/if}
 				<button type="button" class="primary" onclick={close}>Done</button>
 			{/if}
 		</div>

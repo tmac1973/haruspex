@@ -8,6 +8,8 @@
  * checkpoints, where the plan under review is files on disk.
  */
 
+import type { EditorIO } from '#lib/editor/document.svelte.ts';
+
 export interface FileEditRequest {
 	/** The working directory the paths are relative to. */
 	workdir: string;
@@ -15,6 +17,10 @@ export interface FileEditRequest {
 	files: string[];
 	/** The modal's heading. */
 	title: string;
+	/** How the files are read and written: this computer's disk unless given. */
+	io?: EditorIO;
+	/** Shown, never saved: another computer's files. */
+	readOnly?: boolean;
 }
 
 export interface FileEditResult {

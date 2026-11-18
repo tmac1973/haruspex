@@ -11,6 +11,8 @@
 	import ContextGauge from '#lib/components/ContextGauge.svelte';
 	import BackgroundChip from '#lib/components/code/BackgroundChip.svelte';
 	import CodeModelPicker from '#lib/components/code/CodeModelPicker.svelte';
+	import RemoteModelPicker from '#lib/components/code/RemoteModelPicker.svelte';
+	import { RemoteCodeSession } from '#lib/peers/remoteCodeSession.svelte.ts';
 	import CodeBranchControl from '#lib/components/code/CodeBranchControl.svelte';
 	import ExtrasMenu from '#lib/components/code/ExtrasMenu.svelte';
 	import SessionUsageChip from '#lib/components/code/SessionUsageChip.svelte';
@@ -23,6 +25,9 @@
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let { session }: { session: CodeSessionView } = $props();
+
+	/** Another computer's session: its own models, not this computer's. */
+	const remote = $derived(session instanceof RemoteCodeSession ? session : null);
 
 	// Read live so a session following Settings re-resolves when Settings
 	// changes model; the descriptor itself reads settings untracked.
@@ -83,6 +88,15 @@
 		<CodeBranchControl {session} />
 	{/if}
 
+	{#if session.peer}
+		<span
+			class="runs-on"
+			data-testid="runs-on-badge"
+			title="Its turns, files and models are on {session.peer
+				.name}. Settings → Remote control → Other computers.">Runs on {session.peer.name}</span
+		>
+	{/if}
+
 	{#if session.readOnly}
 		<span
 			class="read-only"
@@ -92,7 +106,11 @@
 		>
 	{/if}
 
-	<CodeModelPicker {session} />
+	{#if remote}
+		<RemoteModelPicker session={remote} />
+	{:else}
+		<CodeModelPicker {session} />
+	{/if}
 
 	<select
 		class="pick"
@@ -171,6 +189,7 @@
 		color: var(--accent);
 	}
 
+	.runs-on,
 	.read-only {
 		padding: 2px 7px;
 		font-size: 0.7rem;
