@@ -11,7 +11,7 @@ Email, calendars and contacts, MCP servers, and screen capture. All are off unti
 
 Go to Settings → Integrations → Email and click **Add email account**. Pick a provider, enter your address and an **app password**, then click **Save password**. Switch the account on with **Enabled**.
 
-An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
+An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported: Microsoft turned off app passwords. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
 
 With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read. Home's Important emails card watches unread mail and drafts replies (`home` page).
 
@@ -41,7 +41,7 @@ MCP servers give the assistant tools from other software. Haruspex runs them wit
 - **Add a server on this computer** runs an MCP program you already have.
 - **Add a server on your network** connects over HTTP, with an optional token. Browser sign-in is not supported yet.
 
-Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need; each takes room in the model's context. Pictures a tool returns reach models that read images.
+Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need; each uses context. Pictures a tool returns reach models that read images.
 
 **Edit** changes a local server's program, arguments and secrets; a blank secret keeps its value. Home's GitHub card uses the GitHub server and its token's access (`home` page).
 
@@ -53,7 +53,7 @@ When a release brings a newer version of a catalog server, its card shows **Upda
 
 ## Test a web app in a browser
 
-**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium: about 200 MB, 400 MB once unpacked. It never uses your own browser or logins; each start is a fresh profile.
+**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, use them, and read their console and network requests. It reaches `localhost`, so the Code tab can test the app or game it is building; 3D pages draw on your GPU. A screenshot it names is saved in the working folder. The browser closes after 5 idle minutes. Setup downloads its own Chromium (400 MB). It never uses your own browser or logins.
 
 Its tools are on by default. Reading the page, its console and requests and taking screenshots run without asking; the rest ask first, and **Always allow** stops asking for that tool.
 

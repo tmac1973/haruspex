@@ -26,7 +26,7 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 - Searches and reads show as steps.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step is above it in grey.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
-- **File names** inside the folder (`src/app.ts:42`), anywhere in the session, open the file in an editor window, at its top.
+- **File names** inside the folder (`src/app.ts:42`), anywhere in the session, open the file in an editor window.
 
 ## Commands that need a terminal
 
@@ -36,7 +36,7 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **Open** above the sessions opens any file or folder. **⤢** on a tab moves the file to its own window. Keys: see the `shortcuts` page. The agent can open files but not see your edits. Models, images and sounds open in viewers (see the `viewers` page).
+Files open in an editor window, one per folder, a tab per file. **Open** above the sessions opens any file or folder. **⤢** on a tab moves the file to its own window. Keys: see the `shortcuts` page. The agent can open files and see the project's images, but can't see your edits. Models, images and sounds open in viewers (see the `viewers` page).
 
 An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable**: outside changes won't show.
 
@@ -62,7 +62,7 @@ Model, effort and extras apply from the next message.
 
 ## Background processes
 
-Servers, watchers and long builds run in the background. **Running: N** in the header lists them: **Output** shows what each printed, **Stop** ends it. Closing the tab (it asks first) or quitting stops them.
+Servers, watchers and long builds run in the background. **Running: N** in the header lists them: **Output** shows what each printed, **Stop** ends it. Closing the tab or quitting stops them.
 
 ## Command approval and limits
 

@@ -45,11 +45,13 @@ describe('tool profiles over (codeMode, shellMode)', () => {
 	it('(code, no shell) — the Code tab: code tools plus its own, no terminal tools', () => {
 		// save_generated too: the Code tab saves pictures and songs into the project;
 		// fs_delete and fs_move tidy up the files the session made; the
-		// document writers make PDFs, office files and decks for it.
+		// document writers make PDFs, office files and decks for it;
+		// fs_read_image lets it look at a picture in the project.
 		expect(names(true, false)).toEqual(
 			[
 				...CODE_TOOLS,
 				...ALWAYS_TAB_ONLY,
+				'fs_read_image',
 				'save_generated',
 				'fs_delete',
 				'fs_move',
@@ -143,7 +145,7 @@ describe('a read-only Code session', () => {
 			.map((s) => s.function.name)
 			.sort();
 		expect(n).toEqual(
-			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY].filter((t) => !isCodeWriteTool(t)).sort()
+			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'fs_read_image'].filter((t) => !isCodeWriteTool(t)).sort()
 		);
 		expect(n).toContain('run_command');
 		expect(n).not.toContain('fs_write_text');

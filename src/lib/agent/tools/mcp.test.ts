@@ -660,3 +660,44 @@ describe('failure handling', () => {
 		expect(out.result).toContain('Unknown tool');
 	});
 });
+
+describe('a named Playwright screenshot', () => {
+	const screenshot = tool('browser_take_screenshot', {
+		inputSchema: {
+			type: 'object',
+			properties: { type: { type: 'string' }, filename: { type: 'string' } }
+		}
+	});
+	const shot: McpCallOutcome = {
+		type: 'complete',
+		content: [
+			{ type: 'text', text: '### Result\n- [Screenshot of viewport](.playwright-mcp/page.png)' },
+			{ type: 'image', data: btoa('png bytes'), mimeType: 'image/png' }
+		],
+		structuredContent: null,
+		isError: false
+	};
+
+	it('goes out without the name, so the picture comes back to the model', async () => {
+		registerMcpTools(SERVER, 'Browser', [screenshot], ['browser_take_screenshot']);
+		vi.mocked(invoke).mockResolvedValue(shot);
+		const c = ctx();
+		const out = await executeTool(
+			'mcp__srv-1__browser_take_screenshot',
+			{ type: 'png', filename: 'shots/day.png' },
+			c
+		);
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ arguments: { type: 'png' } });
+		expect(c.pendingImages).toHaveLength(1);
+		// Chat with no folder has nowhere to save it.
+		expect(out.result).toContain('Not saved as shots/day.png: There is no folder to save into.');
+	});
+
+	it('leaves an unnamed one and other tools alone', async () => {
+		registerMcpTools(SERVER, 'Browser', [screenshot], ['browser_take_screenshot']);
+		vi.mocked(invoke).mockResolvedValue(shot);
+		const out = await executeTool('mcp__srv-1__browser_take_screenshot', { type: 'png' }, ctx());
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ arguments: { type: 'png' } });
+		expect(out.result).not.toContain('saved');
+	});
+});

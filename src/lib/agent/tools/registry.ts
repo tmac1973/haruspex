@@ -279,6 +279,10 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (SONG_TOOLS.has(name)) return opts.musicGeneration && isCodeTab(opts);
 	if (reg.category === 'speech') return opts.interactive && isCodeTab(opts);
 	if (reg.category === 'video-gen') return videoGenOffered(opts) && isCodeTab(opts);
+	// Looking at a picture in the project. Without it a model opens the file
+	// in an image viewer and captures the screen. Shell Code mode has no
+	// folder for its relative path to resolve against.
+	if (name === 'fs_read_image') return isCodeTab(opts);
 	// Saving a picture or song made earlier into the project.
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
 	// Tidying up files the session made. Shell has a terminal with rm and mv.

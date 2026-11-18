@@ -91,6 +91,18 @@ pub struct CommandSpec {
     /// replaced with the secret collected by the setup step with that key.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Files written into the server's directory before every start, by plain
+    /// file name: a config a server takes only by path, such as the browser
+    /// flags Playwright reads from `--config`. Rewritten each time, so they
+    /// belong to the installed entry and are never the user's to edit.
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
+    /// Pass the desktop's display variables through the cleared environment
+    /// (`install::DISPLAY_VARS`). On Linux a headless Chromium finds the GPU
+    /// only through a display connection; without one it draws WebGL on the
+    /// CPU. Nothing else of the session comes with them.
+    #[serde(default)]
+    pub pass_display: bool,
 }
 
 /// How a server's companion application is probed.
@@ -376,6 +388,16 @@ fn validate(catalog: &Catalog) -> Result<(), String> {
                         entry.id
                     ));
                 }
+            }
+        }
+        // Written into the server directory on every start: one that named a
+        // path, or the manifest, would write over something that isn't its.
+        for name in entry.command.files.keys() {
+            if !is_plain_filename(name) || name == super::manifest::MANIFEST_FILE {
+                return Err(format!(
+                    "entry {}: command file '{name}' must be a plain file name",
+                    entry.id
+                ));
             }
         }
         // An addon step writes into a directory the user picks, so the things
@@ -789,6 +811,48 @@ mod tests {
     }
 
     #[test]
+    fn playwright_draws_on_the_gpu_and_closes_an_idle_browser() {
+        // Headless Chromium draws WebGL on the CPU (SwiftShader) unless told
+        // to use the GPU: a 3D page left open ran at 15 fps on 8 cores. The
+        // flag reaches the browser only through a config file, and on Linux
+        // the GPU only through a display connection.
+        let command = &companion_entry("playwright").command;
+        assert!(command.pass_display);
+        let flag = |name: &str| {
+            let i = command.args.iter().position(|a| a == name);
+            i.and_then(|i| command.args.get(i + 1)).cloned()
+        };
+        let config = flag("--config").expect("a --config");
+        let parsed: serde_json::Value = serde_json::from_str(&command.files[&config]).unwrap();
+        let launch_args = &parsed["browser"]["launchOptions"]["args"];
+        assert!(launch_args
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "--enable-gpu"));
+        // An open page keeps drawing; the default waits an hour to close it.
+        let idle: u64 = flag("--idle-timeout").unwrap().parse().unwrap();
+        assert!(idle <= 10 * 60 * 1000, "{idle}");
+        // Every screenshot lands in its output folder; this keeps it bounded.
+        assert!(flag("--output-max-size").is_some());
+    }
+
+    #[test]
+    fn a_command_file_must_be_a_plain_name() {
+        for name in ["../x.json", "sub/x.json", ".haruspex-install.json"] {
+            let text = format!(
+                r#"{{"entries":[{{
+                "id":"x","name":"X","description":"d","homepage":"h",
+                "acquisition":{{"kind":"npm","package":"p","version":"1.0.0","bin":"p/i.js"}},
+                "command":{{"files":{{"{name}":"{{}}"}}}}
+            }}]}}"#
+            );
+            let err = parse(&text).expect_err(name);
+            assert!(err.contains("plain file name"), "{name}: {err}");
+        }
+    }
+
+    #[test]
     fn playwrights_server_side_tools_are_not_enabled_by_default() {
         // browser_run_code_unsafe runs JavaScript in the server's own node, and
         // browser_file_upload hands the page a file from this machine.
@@ -1062,6 +1126,8 @@ mod tests {
             command: CommandSpec {
                 args: Vec::new(),
                 env,
+                files: BTreeMap::new(),
+                pass_display: false,
             },
             default_tools: Vec::new(),
             setup,

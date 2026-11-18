@@ -145,7 +145,7 @@
       "acquisition": {
         "kind": "npm",
         "package": "@playwright/mcp",
-        "version": "0.0.83",
+        "version": "0.0.85",
         "bin": "@playwright/mcp/cli.js"
       },
       "command": {
@@ -153,11 +153,21 @@
           "--headless",
           "--isolated",
           "--browser",
-          "chromium"
+          "chromium",
+          "--config",
+          "haruspex-playwright.json",
+          "--idle-timeout",
+          "300000",
+          "--output-max-size",
+          "52428800"
         ],
         "env": {
           "PLAYWRIGHT_BROWSERS_PATH": "$serverDir"
-        }
+        },
+        "files": {
+          "haruspex-playwright.json": "{\"browser\":{\"launchOptions\":{\"args\":[\"--enable-gpu\"]}}}"
+        },
+        "passDisplay": true
       },
       "defaultTools": [
         "browser_navigate",

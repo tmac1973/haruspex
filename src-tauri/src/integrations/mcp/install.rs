@@ -657,8 +657,23 @@ const DESKTOP_SESSION_VARS: &[&str] = &[
     "LOCALAPPDATA",
 ];
 
+/// What a catalog entry with `passDisplay` gets: X11's display and its
+/// cookie, Wayland's socket and the folder it lives in. Enough for a headless
+/// Chromium to open the GPU; the rest of the session stays out.
+const DISPLAY_VARS: &[&str] = &[
+    "DISPLAY",
+    "XAUTHORITY",
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+];
+
 fn add_desktop_session_env(env: &mut Vec<(String, String)>, get: impl Fn(&str) -> Option<String>) {
-    for var in DESKTOP_SESSION_VARS {
+    add_vars(env, DESKTOP_SESSION_VARS, get);
+}
+
+/// Copy `vars` that are set and not empty, never over a value already there.
+fn add_vars(env: &mut Vec<(String, String)>, vars: &[&str], get: impl Fn(&str) -> Option<String>) {
+    for var in vars {
         if env.iter().any(|(k, _)| k == var) {
             continue;
         }
@@ -767,8 +782,12 @@ fn build_spawn_config(
             let current = catalog.entry(entry_id);
             let manifest = manifest::load_or_backfill(dir, entry_id, current)?;
             refuse_blocked(current, &manifest)?;
+            write_command_files(dir, &manifest.entry)?;
             let mut spawn =
                 catalog_spawn_config(dir, &manifest.entry, &config.id, &config.secrets)?;
+            if manifest.entry.command.pass_display {
+                add_vars(&mut spawn.env, DISPLAY_VARS, |var| std::env::var(var).ok());
+            }
             // Appended after the entry's own environment so a catalog entry
             // that deliberately sets one of these keeps its value.
             for (key, value) in proxy_vars {
@@ -779,6 +798,21 @@ fn build_spawn_config(
             Ok(spawn)
         }
     }
+}
+
+/// Write the entry's `command.files` into the server directory, over whatever
+/// is there: they are the entry's, rewritten on every start.
+fn write_command_files(dir: &Path, entry: &CatalogEntry) -> Result<(), String> {
+    for (name, contents) in &entry.command.files {
+        // The catalog is checked on load, but a manifest is read off disk.
+        if !is_plain_filename(name) || name == manifest::MANIFEST_FILE {
+            return Err(format!("{}: refusing to write '{name}'", entry.id));
+        }
+        let path = dir.join(name);
+        std::fs::write(&path, contents)
+            .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+    }
+    Ok(())
 }
 
 /// Build the spawn configuration for an installed catalog server.
@@ -1332,6 +1366,46 @@ mod tests {
                 catalog_command_args(dir.path(), &config),
                 ["--old-flag".to_string()]
             );
+        }
+    }
+
+    #[test]
+    fn a_start_writes_the_installed_entrys_files_over_old_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut entry = super::super::catalog::load()
+            .unwrap()
+            .entry("playwright")
+            .unwrap()
+            .clone();
+        entry.command.files = BTreeMap::from([("cfg.json".into(), "{\"a\":1}".into())]);
+        InstallManifest::for_install(dir.path(), &entry)
+            .unwrap()
+            .write(dir.path())
+            .unwrap();
+        std::fs::write(dir.path().join("cfg.json"), "edited").unwrap();
+
+        let mut config = custom_server(ProxyUse::Never);
+        config.source = McpServerSource::Catalog {
+            entry_id: "playwright".into(),
+        };
+        build_spawn_config(dir.path(), &config, None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("cfg.json")).unwrap(),
+            "{\"a\":1}"
+        );
+    }
+
+    #[test]
+    fn a_command_file_never_leaves_the_server_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut entry = super::super::catalog::load()
+            .unwrap()
+            .entry("playwright")
+            .unwrap()
+            .clone();
+        for name in ["../x.json", manifest::MANIFEST_FILE] {
+            entry.command.files = BTreeMap::from([(name.to_string(), "x".into())]);
+            assert!(write_command_files(dir.path(), &entry).is_err(), "{name}");
         }
     }
 
