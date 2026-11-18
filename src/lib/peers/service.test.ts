@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const flag = vi.hoisted(() => ({ ready: true }));
-vi.mock('#lib/peers/flag.ts', () => ({
-	get PEERS_READY() {
-		return flag.ready;
-	}
-}));
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
@@ -56,7 +50,6 @@ function route(answers: Record<string, PeerProbe>) {
 }
 
 beforeEach(() => {
-	flag.ready = true;
 	vi.mocked(invoke).mockReset();
 	route({});
 	resetPeersForTest();
@@ -64,12 +57,12 @@ beforeEach(() => {
 });
 
 describe('peers service', () => {
-	it('tells Rust the feature is off while the build flag is', async () => {
+	it('tells Rust whether the feature is on, and the computers trusted', async () => {
 		await applyPeers();
 		expect(invokeArgs(vi.mocked(invoke), 'peers_apply', -1)).toEqual({
 			config: { enabled: true, peers: [] }
 		});
-		flag.ready = false;
+		updateSettings({ peersEnabled: false });
 		await applyPeers();
 		expect(invokeArgs(vi.mocked(invoke), 'peers_apply', -1)).toEqual({
 			config: { enabled: false, peers: [] }

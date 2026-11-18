@@ -86,7 +86,6 @@
 	import { startEngine } from '#lib/engine/index.ts';
 	import { syncOwnerApi } from '#lib/owner/service.ts';
 	import { syncPeers } from '#lib/peers/service.ts';
-	import { PEERS_READY } from '#lib/peers/flag.ts';
 	import { startPeerStore } from '#lib/peers/store.svelte.ts';
 	import { startPromptBridge } from '#lib/peers/promptBridge.svelte.ts';
 	import { startCaptioner } from '#lib/camera/captioner.ts';
@@ -409,11 +408,9 @@
 		// trusted one. Main window only: one stream per computer for the app.
 		void syncPeers();
 		// Their sessions and chats, for the sidebars; follows Settings.
-		if (PEERS_READY) {
-			startPeerStore();
-			// Their prompts open here, once: main window only.
-			startPromptBridge();
-		}
+		startPeerStore();
+		// Their prompts open here, once: main window only.
+		startPromptBridge();
 		// The ambient log: the header shows running watchers, and each logged
 		// event is captioned once no chat turn needs the model. Main window
 		// only, like the watchers themselves.

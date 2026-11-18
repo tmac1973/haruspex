@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { ROOT } from '../e2e/app/paths.mjs';
 import { App, cleanup, killTestBuild } from './drive/app.mjs';
+import { peersCheck } from './drive/peers-check.mjs';
 import { clearInfo, controlPaths, readInfo, request, serve, writeInfo } from './drive/control.mjs';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -67,6 +68,11 @@ A long-lived app, driven step by step:
   requests                  what the fake model was asked (--fake or --record)
   stop                      save outputs and stop everything
 
+Two apps:
+  peers-check               two instances side by side, one following the other as one of
+                            its other computers (Settings → Remote control → Other
+                            computers); Linux, with its own fake model
+
 Options for run and start:
   --base-url URL       the OpenAI-compatible server (env DRIVE_BASE_URL)
   --model ID           the model; default: the first one /v1/models lists (env DRIVE_MODEL)
@@ -84,6 +90,8 @@ Options for run and start:
                        operation over its HTTP API (--via engine, approve, state…)
   --idle-timeout MIN   start: stop after this long with no commands and no turn running
                        (default 60; 0 never)
+  --instance NAME      start and every command: a second app beside the first, with its
+                       own data, control socket and driver (Linux)
 Options for send, steer, cancel and approve:
   --via engine         use the engine operation (as the owner API will), not the UI;
                        the only way to reach a session in a detached window
@@ -114,6 +122,7 @@ const OPTIONS = {
 	'auto-approve': { type: 'boolean' },
 	'no-auto-approve': { type: 'boolean' },
 	'verbose-payloads': { type: 'boolean', default: false },
+	instance: { type: 'string' },
 	help: { type: 'boolean', short: 'h', default: false }
 };
 
@@ -155,7 +164,8 @@ function appOptions(values, defaultAutoApprove) {
 		show: values.show,
 		autoApprove: values['no-auto-approve'] ? false : (values['auto-approve'] ?? defaultAutoApprove),
 		verbosePayloads: values['verbose-payloads'],
-		api: values.api
+		api: values.api,
+		instance: values.instance ?? null
 	};
 }
 
@@ -229,7 +239,7 @@ async function run(values) {
 // --- start and the background process -------------------------------------------
 
 async function start(values) {
-	const paths = controlPaths();
+	const paths = controlPaths(process.env, process.platform, values.instance ?? null);
 	const running = readInfo(paths);
 	if (running) {
 		fail(
@@ -270,7 +280,7 @@ async function start(values) {
 }
 
 async function daemon(opts) {
-	const paths = controlPaths();
+	const paths = controlPaths(process.env, process.platform, opts.instance ?? null);
 	const app = new App(opts, log);
 	let server = null;
 	let stopping = false;
@@ -393,7 +403,7 @@ async function daemon(opts) {
 // --- the short-lived commands ------------------------------------------------------
 
 async function client(cmd, values, positionals) {
-	const paths = controlPaths();
+	const paths = controlPaths(process.env, process.platform, values.instance ?? null);
 	const timeoutS = Number(values.timeout);
 	const need = (n, what) => {
 		if (positionals.length < n) fail(`${cmd} needs ${what}`);
@@ -588,8 +598,26 @@ async function main() {
 		return run(values);
 	}
 	if (cmd === 'start') return start(values);
+	if (cmd === 'peers-check') return peersCheckCommand(values);
 	if (CLIENT_COMMANDS.has(cmd)) return client(cmd, values, positionals);
 	fail(`unknown command ${cmd}\n\n${USAGE}`);
+}
+
+/** Two apps, one following the other; prints each step and how long it took. */
+async function peersCheckCommand(values) {
+	for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+		process.on(sig, () => {
+			cleanup();
+			process.exit(130);
+		});
+	}
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const outDir = values.out
+		? resolve(values.out)
+		: join(ROOT, 'e2e', 'drive-output', `peers-${stamp}`);
+	const result = await peersCheck({ outDir, show: values.show, log });
+	for (const s of result.steps) log(`ok  ${s.name} (${(s.ms / 1000).toFixed(1)}s)`);
+	log('peers-check passed');
 }
 
 main().catch((e) => {

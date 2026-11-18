@@ -545,7 +545,7 @@ export interface AppSettings {
 	/**
 	 * Settings → Remote control → Other computers (plan/instance-sync/): show
 	 * the owner's other computers' sessions and chats here, through their
-	 * Remote control. Off by default, and only offered while `PEERS_READY`.
+	 * Remote control. Off by default.
 	 */
 	peersEnabled: boolean;
 	/**

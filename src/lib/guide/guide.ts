@@ -55,6 +55,7 @@ const ORDER = [
 	'guest-chat',
 	'remote-control',
 	'remote-control-api',
+	'other-computers',
 	'settings',
 	'settings-tools',
 	'shortcuts',
