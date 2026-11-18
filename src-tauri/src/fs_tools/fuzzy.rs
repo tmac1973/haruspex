@@ -178,11 +178,12 @@ fn fuzzy_apply(
 
     let win = old_norm.len();
     let not_found = || {
-        format!(
-            "old_str not found in {}. The text doesn't match the file even allowing for whitespace/quote differences. {}",
-            path,
-            closest_hint(&content_lines, &content_norm, &old_norm)
-        )
+        match closest_hint(&content_lines, &content_norm, &old_norm) {
+        Hint::Indentation(text) => format!("old_str not found in {path}: {text}"),
+        Hint::Other(text) => format!(
+            "old_str not found in {path}. The text doesn't match the file even allowing for trailing-whitespace/quote differences. {text}"
+        ),
+    }
     };
     if win == 0 || win > content_norm.len() {
         return Err(not_found());
@@ -195,7 +196,10 @@ fn fuzzy_apply(
         }
     }
     match starts.len() {
-        0 => return Err(not_found()),
+        0 => {
+            return reindent_apply(&content_lines, &content_norm, &old_norm, new, path)
+                .unwrap_or_else(|| Err(not_found()))
+        }
         1 => {}
         n => {
             return Err(format!(
@@ -221,6 +225,119 @@ fn fuzzy_apply(
     Ok((out_lines.join("\n"), result))
 }
 
+/// A line's leading spaces and tabs.
+fn indent_of(line: &str) -> &str {
+    &line[..line.len() - line.trim_start_matches([' ', '\t']).len()]
+}
+
+/// The edit, when `old_str` is in the file but indented differently, and by
+/// one consistent shift: every line of it is the file's line with one prefix
+/// swapped for another (`old_str` written at the left margin, say, for code
+/// that sits two levels in). `new_str` gets the same shift, so the model's
+/// indentation inside the block is kept. None when no window matches that
+/// way, so the caller says why; `Some(Err)` when several do.
+///
+/// A model told the text matched "except for indentation" had to read the
+/// file again just to copy the leading whitespace it was being told about
+/// (#1116), when this side knows the file's.
+fn reindent_apply(
+    content_lines: &[&str],
+    content_norm: &[String],
+    old_norm: &[String],
+    new: &str,
+    path: &str,
+) -> Option<Result<(String, EditResult), String>> {
+    let win = old_norm.len();
+    // A window of only blank lines says nothing about where it belongs.
+    if win > content_norm.len() || old_norm.iter().all(|l| l.trim().is_empty()) {
+        return None;
+    }
+    let mut hits: Vec<(usize, String, String)> = Vec::new();
+    for start in 0..=(content_norm.len() - win) {
+        let window = &content_norm[start..start + win];
+        if let Some((from, to)) = indent_shift(window, old_norm) {
+            hits.push((start, from, to));
+        }
+    }
+    let (i, from, to) = match hits.len() {
+        0 => return None,
+        1 => hits.pop().expect("one hit"),
+        n => {
+            return Some(Err(format!(
+                "old_str matches {n} places in {path} once indentation is ignored. It must be unique — include more surrounding context."
+            )))
+        }
+    };
+    let mut new_lines: Vec<String> = Vec::new();
+    for line in new.split('\n') {
+        if line.trim().is_empty() {
+            new_lines.push(line.to_string());
+        } else {
+            // new_str reaching left of old_str's margin has no shift: None.
+            let rest = line.strip_prefix(from.as_str())?;
+            new_lines.push(format!("{to}{rest}"));
+        }
+    }
+    let mut out: Vec<String> = Vec::with_capacity(content_lines.len());
+    out.extend(content_lines[..i].iter().map(|l| l.to_string()));
+    let line_after = new_lines.first().cloned().unwrap_or_default();
+    out.extend(new_lines);
+    out.extend(content_lines[i + win..].iter().map(|l| l.to_string()));
+    let result = EditResult {
+        first_changed_line: i + 1,
+        line_before: content_lines[i].to_string(),
+        line_after,
+        used_fuzzy: true,
+    };
+    Some(Ok((out.join("\n"), result)))
+}
+
+/// `(old_prefix, file_prefix)` when each non-blank line of `old` is the
+/// matching line of `window` with `file_prefix` of its indentation written
+/// as `old_prefix`. Blank lines match blank lines. The shift is read off
+/// `old`'s least indented line, which every other line must start with.
+fn indent_shift(window: &[String], old: &[String]) -> Option<(String, String)> {
+    let mut base: Option<usize> = None;
+    for (k, (f, o)) in window.iter().zip(old).enumerate() {
+        let (f_blank, o_blank) = (f.trim().is_empty(), o.trim().is_empty());
+        if f_blank != o_blank {
+            return None;
+        }
+        if o_blank {
+            continue;
+        }
+        if f.trim_start() != o.trim_start() {
+            return None;
+        }
+        if base.is_none_or(|b| indent_of(o).len() < indent_of(&old[b]).len()) {
+            base = Some(k);
+        }
+    }
+    let b = base?;
+    let from = indent_of(&old[b]).to_string();
+    let to = indent_of(&window[b]).to_string();
+    if from == to {
+        return None;
+    }
+    for (f, o) in window.iter().zip(old) {
+        if o.trim().is_empty() {
+            continue;
+        }
+        let rest = o.strip_prefix(from.as_str())?;
+        if *f != format!("{to}{rest}") {
+            return None;
+        }
+    }
+    Some((from, to))
+}
+
+/// What a not-found error says about where `old_str` comes closest: only its
+/// indentation differs, or something else does.
+enum Hint {
+    Indentation(String),
+    Other(String),
+}
+
 /// Lines a not-found hint quotes are cut to this many characters.
 const HINT_LINE_CHARS: usize = 120;
 
@@ -238,7 +355,7 @@ fn quoted(line: &str) -> String {
 /// file it had just read, when its `old_str` came from a version that was
 /// never written (#1032). Lines compare trimmed, so indentation drift still
 /// finds the place.
-fn closest_hint(content_lines: &[&str], content_norm: &[String], old_norm: &[String]) -> String {
+fn closest_hint(content_lines: &[&str], content_norm: &[String], old_norm: &[String]) -> Hint {
     let trim = |s: &String| s.trim().to_string();
     let file: Vec<String> = content_norm.iter().map(trim).collect();
     let old: Vec<String> = old_norm.iter().map(trim).collect();
@@ -264,24 +381,20 @@ fn closest_hint(content_lines: &[&str], content_norm: &[String], old_norm: &[Str
     }
     if let Some((start, n)) = best {
         if n == old.len() {
-            return format!(
-                "It matches lines {}-{} of the file except for indentation: copy them with the file's leading spaces or tabs.",
-                start + 1,
-                start + n
-            );
+            return Hint::Indentation(indentation_hint(content_lines, start, n));
         }
         let at = start + n;
         let file_has = content_lines
             .get(at)
             .map_or("the end of the file".to_string(), |l| quoted(l));
-        return format!(
+        return Hint::Other(format!(
             "Its first {n} line{} match line {} of the file, then line {} differs: the file has {file_has}, old_str has {}. {}",
             if n == 1 { "" } else { "s" },
             start + 1,
             at + 1,
             quoted(&old_norm[n]),
             reread(start + 1)
-        );
+        ));
     }
 
     // No opening line matches: is any of its other lines there?
@@ -290,17 +403,45 @@ fn closest_hint(content_lines: &[&str], content_norm: &[String], old_norm: &[Str
             continue;
         }
         if let Some(i) = file.iter().position(|l| l == line) {
-            return format!(
+            return Hint::Other(format!(
                 "Its line {} ({}) is at line {} of the file, but the lines around it differ. {}",
                 k + 1,
                 quoted(line),
                 i + 1,
                 reread(i + 1)
-            );
+            ));
         }
     }
-    format!(
+    Hint::Other(format!(
         "None of its lines are in the file ({total} lines now): it may come from a version that was never written, or that has changed since. Read the file again and copy old_str from what is there now."
+    ))
+}
+
+/// Lines an indentation hint shows verbatim, at most.
+const HINT_MAX_LINES: usize = 20;
+
+/// For `old_str` whose lines are all in the file but indented in a way no
+/// single shift explains (tabs against spaces, say): the file's lines as they
+/// are, leading whitespace and all, so old_str can be fixed without a read.
+fn indentation_hint(content_lines: &[&str], start: usize, n: usize) -> String {
+    let shown = n.min(HINT_MAX_LINES);
+    let lines: Vec<String> = content_lines[start..start + shown]
+        .iter()
+        .map(|l| match l.char_indices().nth(HINT_LINE_CHARS) {
+            Some((i, _)) => format!("{}…", &l[..i]),
+            None => l.to_string(),
+        })
+        .collect();
+    let more = if n > shown {
+        format!(" (the first {shown} of them)")
+    } else {
+        String::new()
+    };
+    format!(
+        "only the indentation differs from lines {}-{} of the file, and not by one consistent shift. The file has them as{more}:\n{}\nCopy old_str with exactly that leading whitespace.",
+        start + 1,
+        start + n,
+        lines.join("\n")
     )
 }
 
@@ -445,12 +586,65 @@ mod tests {
     }
 
     #[test]
-    fn not_found_says_when_only_the_indentation_differs() {
+    fn not_found_shows_the_files_lines_when_only_the_indentation_differs() {
         let err = apply_edit("if a {\n    b();\n}\n", "if a {\nb();", "q", "f").unwrap_err();
         assert!(
-            err.contains("matches lines 1-2 of the file except for indentation"),
+            err.contains("only the indentation differs from lines 1-2 of the file"),
             "got: {err}"
         );
+        assert!(
+            err.contains("The file has them as:\nif a {\n    b();\n"),
+            "got: {err}"
+        );
+        assert!(!err.contains("even allowing"), "got: {err}");
+    }
+
+    #[test]
+    fn a_block_indented_differently_is_edited_at_the_files_indentation() {
+        // The SaveBar case (#1116): old_str two spaces in, the file four.
+        let file = "<main>\n    <div class=\"bar\">\n      {#if saving}\n    </div>\n</main>\n";
+        let out = apply_edit(
+            file,
+            "  <div class=\"bar\">\n    {#if saving}",
+            "  <div class=\"bar\">\n    {#if booting}\n      <span>Loading</span>\n    {:else if saving}",
+            "f",
+        )
+        .unwrap();
+        assert_eq!(
+            out.new_content,
+            "<main>\n    <div class=\"bar\">\n      {#if booting}\n        <span>Loading</span>\n      {:else if saving}\n    </div>\n</main>\n"
+        );
+        assert!(out.result.used_fuzzy);
+        assert_eq!(out.result.first_changed_line, 2);
+    }
+
+    #[test]
+    fn old_str_at_the_margin_matches_nested_code() {
+        let file = "fn f() {\n\tif a {\n\t\tb();\n\t}\n}\n";
+        let out = apply_edit(file, "if a {\n\tb();\n}", "if a {\n\tc();\n}", "f").unwrap();
+        assert_eq!(out.new_content, "fn f() {\n\tif a {\n\t\tc();\n\t}\n}\n");
+    }
+
+    #[test]
+    fn a_reindented_match_must_be_unique() {
+        let file = "  x();\n  y();\n    x();\n    y();\n";
+        let err = apply_edit(file, "x();\ny();", "z();", "f").unwrap_err();
+        assert!(err.contains("matches 2 places"), "got: {err}");
+    }
+
+    #[test]
+    fn new_str_left_of_old_strs_margin_is_not_guessed() {
+        // old_str is indented two, the file four; new_str has a line at zero.
+        let file = "    a();\n    b();\n";
+        let err = apply_edit(file, "  a();\n  b();", "  a();\nc();", "f").unwrap_err();
+        assert!(err.contains("only the indentation differs"), "got: {err}");
+    }
+
+    #[test]
+    fn tabs_against_spaces_are_not_a_shift() {
+        let file = "\tif a {\n\t\tb();\n\t}\n";
+        let err = apply_edit(file, "  if a {\n    b();", "q", "f").unwrap_err();
+        assert!(err.contains("not by one consistent shift"), "got: {err}");
     }
 
     #[test]

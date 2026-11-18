@@ -41,14 +41,14 @@ import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
 import {
 	BUILT_DOCUMENT,
-	DOCUMENT,
 	SPREADSHEET,
+	TEXT,
 	documentSignature,
 	draftRewriteHint,
-	firstLine,
 	mayRewriteDraft,
 	normText,
 	noteDraft,
+	textSignature,
 	type DraftKind
 } from '#lib/agent/tools/_drafts.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
@@ -744,8 +744,9 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 /**
  * Write a document, or a text file outside a Code session (which has its own
  * rule: a rewrite after a command). One this turn created may be written
- * again with the same first line, to revise it (`_drafts.ts`): a job that
- * checked a module and is fixing it writes it whole again.
+ * again with the same first line or most of its lines, to revise it
+ * (`_drafts.ts`): a job that checked a module and is fixing it writes it
+ * whole again.
  */
 async function titledWrite(
 	tool: string,
@@ -760,7 +761,7 @@ async function titledWrite(
 	}
 	const write: RawWrite = (relPath, overwrite) =>
 		invoke(choice.command, { workdir, relPath, content, overwrite });
-	return draftWrite(tool, DOCUMENT, [firstLine(content)], choice.path, write, ctx);
+	return draftWrite(tool, TEXT, textSignature(content), choice.path, write, ctx);
 }
 
 const OFFICE_FORMATS: Record<string, 'docx' | 'odt'> = {

@@ -103,5 +103,7 @@ describe('toolInvokeError', () => {
 		);
 		expect(msg).toContain('copy the file into the working directory');
 		expect(msg).toContain('the folder icon in the chat box');
+		// #1116: a job's own scratch files have somewhere to go.
+		expect(msg).toContain('goes under the working directory instead');
 	});
 });

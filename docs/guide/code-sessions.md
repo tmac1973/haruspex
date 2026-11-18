@@ -17,7 +17,7 @@ If Haruspex closes mid-turn, the session keeps your message and each finished st
 
 ## When a session gets long
 
-Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one. `/compact` does it now. The conversation you see stays whole; **Earlier turns summarised** marks the cut and opens the summary. File contents aren't kept, so the agent reads files again.
+Once a session fills about three quarters of the model's context, Haruspex summarises older turns; `/compact` does it now. The conversation you see stays whole: **Earlier turns summarised** marks the cut and opens the summary, which lists the agent's changes. File contents aren't kept; it reads files again.
 
 ## Start a session in its own worktree
 
@@ -51,7 +51,7 @@ When a session's turn changes files, the other sessions in that folder are told 
 
 ## When a session's folder is gone
 
-If a session's folder was deleted, moved, or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes forward; a folder gone mid-turn shows when the turn ends.
+If a session's folder was deleted, moved or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes forward; a folder gone mid-turn shows when the turn ends.
 
 - **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
 - **Delete session** deletes it.
