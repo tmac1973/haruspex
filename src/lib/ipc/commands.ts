@@ -364,6 +364,8 @@ export const IPC = {
 	peers_status: 'peers_status',
 	power_inhibit_acquire: 'power_inhibit_acquire',
 	power_inhibit_release: 'power_inhibit_release',
+	preview_serve: 'preview_serve',
+	preview_stop: 'preview_stop',
 	probe_inference_server: 'probe_inference_server',
 	proxy_fetch: 'proxy_fetch',
 	proxy_fetch_url_images: 'proxy_fetch_url_images',

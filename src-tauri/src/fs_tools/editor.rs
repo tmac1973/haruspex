@@ -99,7 +99,7 @@ pub fn content_hash(bytes: &[u8]) -> String {
 }
 
 /// The file's hash on disk now, `None` if it isn't there or isn't readable.
-fn disk_hash(path: &Path) -> Known {
+pub(crate) fn disk_hash(path: &Path) -> Known {
     std::fs::read(path).ok().map(|b| content_hash(&b))
 }
 
@@ -134,7 +134,7 @@ impl EditorWatches {
         Self::with_debounce(emit, DEBOUNCE)
     }
 
-    fn with_debounce(
+    pub(crate) fn with_debounce(
         emit: impl Fn(&str, EditorFileChanged) + Send + Sync + 'static,
         debounce: Duration,
     ) -> Self {
