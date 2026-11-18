@@ -63,3 +63,8 @@ exactly as before.
 ## Rollback
 
 Revert; the default prop is the local source, so nothing else changes.
+
+## As built
+
+- `+page.svelte` is unchanged: `ChatView`'s default `source` is the local one, and phase 11 passes another.
+- With `localServer` off, the view treats the model as ready: another computer's chat runs on its own model, so this computer's server neither gates the input box nor shows its CPU-fallback banner.

@@ -14,36 +14,8 @@
 	import { hasStreamingAnswer } from '#lib/agent/thinkStream.ts';
 	import { messageText } from '#lib/api.ts';
 	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
-	import {
-		getActiveConversation,
-		getIsGenerating,
-		getIsWaitingForSlot,
-		getIsCompacting,
-		getContextNotice,
-		getStreamingContent,
-		getErrorMessage,
-		getErrorTurnId,
-		getSearchSteps,
-		getSourceUrls,
-		getExhaustiveResearch,
-		getLastTurnFailed,
-		getQueuedForStartup,
-		renderStreamingHtml,
-		setExhaustiveResearch,
-		createConversation,
-		sendMessage,
-		continueTurn,
-		cancelGeneration,
-		retryLastTurn,
-		isActiveConversationRemembered,
-		isActiveConversationRemote,
-		setConversationMemoryEnabled,
-		addLocalNote,
-		getActiveRun,
-		dropSteering,
-		hasConversationDraft,
-		takeConversationDraft
-	} from '#lib/stores/chat.svelte.ts';
+	import { localChatSource } from '#lib/stores/chat.svelte.ts';
+	import type { ChatSource } from '#lib/chat/source.ts';
 	import type { SteeringMessage } from '#lib/agent/loop.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
@@ -72,6 +44,10 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
+	/** The conversation shown: this computer's, unless another's is passed. */
+	let { source = localChatSource }: { source?: ChatSource } = $props();
+	const can = $derived(source.capabilities);
+
 	let inputText = $state('');
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let autoScroll = $state(true);
@@ -87,8 +63,8 @@
 	/** Chat has no project, so only Settings' skills run here. */
 	const slashHost: SlashHost = {
 		projectRoot: async () => null,
-		newConversation: () => createConversation(),
-		addNote: addLocalNote
+		newConversation: () => source.createConversation(),
+		addNote: (text) => source.addLocalNote(text)
 	};
 
 	/** Single send path for the button, Enter, and voice — folds in any
@@ -118,7 +94,7 @@
 		pendingImages.clear();
 		pendingAudio.clear();
 		autoScroll = true;
-		const accepted = await sendMessage(withAttachedAudio(text, audio), images, slash.skill);
+		const accepted = await source.sendMessage(withAttachedAudio(text, audio), images, slash.skill);
 		if (!accepted) {
 			inputText = text;
 			pendingImages.set(images);
@@ -137,30 +113,30 @@
 		});
 	}
 
-	const activeConversation = $derived(getActiveConversation());
+	const activeConversation = $derived(source.conversation);
 	// The control only exists while memory does — no point offering to exclude
 	// a chat from something that is switched off globally.
 	const memoryEnabledGlobally = $derived(getSettings().memoryEnabled);
-	const chatRemembered = $derived(isActiveConversationRemembered());
-	const chatIsRemote = $derived(isActiveConversationRemote());
+	const chatRemembered = $derived(source.remembered);
+	const chatIsRemote = $derived(source.isRemote);
 
 	async function toggleIncognito() {
 		const id = activeConversation?.id;
 		if (!id) return;
-		await setConversationMemoryEnabled(id, !chatRemembered);
+		await source.setMemoryEnabled(id, !chatRemembered);
 	}
-	const isGenerating = $derived(getIsGenerating());
-	const isWaitingForSlot = $derived(getIsWaitingForSlot());
-	const isCompacting = $derived(getIsCompacting());
-	const contextNotice = $derived(getContextNotice());
-	const streamingContent = $derived(getStreamingContent());
-	const errorMessage = $derived(getErrorMessage());
-	const errorTurnId = $derived(getErrorTurnId());
-	const searchSteps = $derived(getSearchSteps());
-	const sourceUrls = $derived(getSourceUrls());
-	const lastTurnFailed = $derived(getLastTurnFailed());
-	const queuedForStartup = $derived(getQueuedForStartup());
-	const run = $derived(getActiveRun());
+	const isGenerating = $derived(source.isGenerating);
+	const isWaitingForSlot = $derived(source.isWaitingForSlot);
+	const isCompacting = $derived(source.isCompacting);
+	const contextNotice = $derived(source.contextNotice);
+	const streamingContent = $derived(source.streamingContent);
+	const errorMessage = $derived(source.errorMessage);
+	const errorTurnId = $derived(source.errorTurnId);
+	const searchSteps = $derived(source.searchSteps);
+	const sourceUrls = $derived(source.sourceUrls);
+	const lastTurnFailed = $derived(source.lastTurnFailed);
+	const queuedForStartup = $derived(source.queuedForStartup);
+	const run = $derived(source.activeRun);
 	/** Messages sent while the turn runs, waiting for its next step. */
 	const steering = $derived<SteeringMessage[]>(run.steering);
 
@@ -168,9 +144,9 @@
 	// box, unsent and focused.
 	$effect(() => {
 		const id = activeConversation?.id;
-		if (!hasConversationDraft(id)) return;
+		if (!source.hasDraft(id)) return;
 		untrack(() => {
-			const text = takeConversationDraft(id!);
+			const text = source.takeDraft(id!);
 			if (text === null) return;
 			inputText = text;
 			void tick().then(() => inputEl?.focus());
@@ -193,8 +169,11 @@
 	// means either the local sidecar reached the 'ready' state or the
 	// user is in remote-inference mode (which assumes the remote server
 	// is up — we don't health-check on every keystroke).
-	const serverReady = $derived(serverState.status === 'ready' || serverState.status === 'remote');
-	const exhaustiveResearch = $derived(getExhaustiveResearch());
+	// Another computer's chat runs on its model, not this one's.
+	const serverReady = $derived(
+		!can.localServer || serverState.status === 'ready' || serverState.status === 'remote'
+	);
+	const exhaustiveResearch = $derived(source.exhaustiveResearch);
 
 	// Slow-mode notice fires when deep research is on, the user is using
 	// auto-rotation across free public engines, and they don't have a Brave
@@ -273,14 +252,14 @@
 			void handleSend();
 		}
 		if (e.key === 'Escape' && (isGenerating || queuedForStartup)) {
-			cancelGeneration();
+			source.cancelGeneration();
 		}
 	}
 
 	function handleGlobalKeydown(e: KeyboardEvent) {
 		if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
 			e.preventDefault();
-			createConversation();
+			source.createConversation();
 		}
 	}
 
@@ -352,7 +331,7 @@
 			} else if (streamRenderTimer === null) {
 				// Subsequent chunks: coalesce into one render per window.
 				streamRenderTimer = setTimeout(() => {
-					const flushed = getStreamingContent();
+					const flushed = source.streamingContent;
 					throttledStreamingContent = flushed;
 					latchStreamingAnswer(flushed);
 					streamRenderTimer = null;
@@ -368,7 +347,7 @@
 		}
 	});
 
-	const renderedStreamingContent = $derived(renderStreamingHtml(throttledStreamingContent));
+	const renderedStreamingContent = $derived(source.renderStreamingHtml(throttledStreamingContent));
 
 	// Single-source diversity warning: when the just-completed assistant
 	// message has several inline [N] citations but they all collapse to
@@ -411,7 +390,8 @@
 		}
 	});
 	const showCpuFallbackBanner = $derived(
-		serverState.status !== 'remote' &&
+		can.localServer &&
+			serverState.status !== 'remote' &&
 			!!serverState.cpuFallback &&
 			serverState.cpuFallback.reason !== dismissedReason
 	);
@@ -524,7 +504,7 @@
 							<StopIndicator
 								reason={activeConversation.messageStops[i]}
 								disabled={isGenerating || isCompacting}
-								onContinue={() => continueTurn()}
+								onContinue={() => source.continueTurn()}
 							/>
 						{/if}
 					{/if}
@@ -593,7 +573,7 @@
 							{#if lastTurnFailed}
 								<button
 									class="retry-btn"
-									onclick={() => retryLastTurn()}
+									onclick={() => source.retryLastTurn()}
 									disabled={isGenerating}
 									title="Run the failed turn again"
 								>
@@ -652,7 +632,7 @@
 				onDragChange: (over) => (dragOver = over)
 			}}
 		>
-			{#if memoryEnabledGlobally && !chatRemembered}
+			{#if memoryEnabledGlobally && can.incognito && !chatRemembered}
 				<!-- Stated in the conversation, not just on the button: a privacy
 				     mode the user cannot see is one they cannot trust. -->
 				<div class="incognito-banner">
@@ -677,7 +657,7 @@
 				</div>
 			{/if}
 			{#if isGenerating || queuedForStartup}
-				<button class="stop-btn" onclick={() => cancelGeneration()}>
+				<button class="stop-btn" onclick={() => source.cancelGeneration()}>
 					{queuedForStartup ? 'Cancel queued message' : 'Stop generating'}
 				</button>
 			{/if}
@@ -696,7 +676,7 @@
 							</span>
 							<button
 								class="drop"
-								onclick={() => dropSteering(k)}
+								onclick={() => source.dropSteering(k)}
 								title="Don't send this"
 								aria-label="Remove queued message">×</button
 							>
@@ -740,11 +720,15 @@
 							: 'Waiting for model to load...'}
 					disabled={!serverReady && serverState.status !== 'starting' && !activeConversation}
 					rows="1"></textarea>
-				<WorkingDirButton />
+				{#if can.workingFolder}
+					<WorkingDirButton />
+				{/if}
 				<div class="tool-grid">
-					<ScreenCaptureButton onCapture={(url) => pendingImages.addUrls([url])} />
+					{#if can.screenCapture}
+						<ScreenCaptureButton onCapture={(url) => pendingImages.addUrls([url])} />
+					{/if}
 					<!-- Lean mode has no Shell tab to open it in. -->
-					{#if !getLiveSettings().leanMode}
+					{#if !getLiveSettings().leanMode && can.openInShell}
 						<button
 							class="open-shell-btn"
 							onclick={handleOpenInShell}
@@ -767,33 +751,35 @@
 							</svg>
 						</button>
 					{/if}
-					<button
-						class="research-toggle"
-						class:active={exhaustiveResearch}
-						onclick={() => setExhaustiveResearch(!exhaustiveResearch)}
-						title={exhaustiveResearch
-							? 'Deep research ON — will search more sources'
-							: 'Deep research OFF — normal search'}
-					>
-						<svg
-							width="18"
-							height="18"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
+					{#if can.deepResearch}
+						<button
+							class="research-toggle"
+							class:active={exhaustiveResearch}
+							onclick={() => source.setExhaustiveResearch(!exhaustiveResearch)}
+							title={exhaustiveResearch
+								? 'Deep research ON — will search more sources'
+								: 'Deep research OFF — normal search'}
 						>
-							<circle cx="11" cy="11" r="8"></circle>
-							<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-							{#if exhaustiveResearch}
-								<line x1="11" y1="8" x2="11" y2="14"></line>
-								<line x1="8" y1="11" x2="14" y2="11"></line>
-							{/if}
-						</svg>
-					</button>
-					{#if memoryEnabledGlobally}
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<circle cx="11" cy="11" r="8"></circle>
+								<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+								{#if exhaustiveResearch}
+									<line x1="11" y1="8" x2="11" y2="14"></line>
+									<line x1="8" y1="11" x2="14" y2="11"></line>
+								{/if}
+							</svg>
+						</button>
+					{/if}
+					{#if memoryEnabledGlobally && can.incognito}
 						<button
 							class="research-toggle incognito-toggle"
 							class:active={!chatRemembered}
@@ -831,11 +817,13 @@
 							</svg>
 						</button>
 					{/if}
-					<MicButton
-						onTranscription={async (text) => {
-							await doSend(text);
-						}}
-					/>
+					{#if can.mic}
+						<MicButton
+							onTranscription={async (text) => {
+								await doSend(text);
+							}}
+						/>
+					{/if}
 				</div>
 				<button
 					class="send-btn"

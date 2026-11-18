@@ -123,6 +123,7 @@ import {
 	type DbConversationSummary
 } from '#lib/stores/db.ts';
 import { setSandboxRunControls } from '#lib/sandbox/runControls.ts';
+import { ALL_CHAT_CAPABILITIES, type ChatSource } from '#lib/chat/source.ts';
 
 export interface Conversation {
 	id: string;
@@ -1806,3 +1807,72 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		}
 	}
 }
+
+/**
+ * The Chat view's source for this computer's conversations: the functions
+ * above, as one object. Getters, so a template or `$derived` reading them
+ * tracks the state behind them.
+ */
+export const localChatSource: ChatSource = {
+	capabilities: ALL_CHAT_CAPABILITIES,
+	get conversation() {
+		return getActiveConversation();
+	},
+	get isGenerating() {
+		return getIsGenerating();
+	},
+	get isWaitingForSlot() {
+		return getIsWaitingForSlot();
+	},
+	get isCompacting() {
+		return getIsCompacting();
+	},
+	get contextNotice() {
+		return getContextNotice();
+	},
+	get streamingContent() {
+		return getStreamingContent();
+	},
+	get errorMessage() {
+		return getErrorMessage();
+	},
+	get errorTurnId() {
+		return getErrorTurnId();
+	},
+	get searchSteps() {
+		return getSearchSteps();
+	},
+	get sourceUrls() {
+		return getSourceUrls();
+	},
+	get exhaustiveResearch() {
+		return getExhaustiveResearch();
+	},
+	get lastTurnFailed() {
+		return getLastTurnFailed();
+	},
+	get queuedForStartup() {
+		return getQueuedForStartup();
+	},
+	get activeRun() {
+		return getActiveRun();
+	},
+	get remembered() {
+		return isActiveConversationRemembered();
+	},
+	get isRemote() {
+		return isActiveConversationRemote();
+	},
+	renderStreamingHtml,
+	setExhaustiveResearch,
+	createConversation: () => void createConversation(),
+	sendMessage,
+	continueTurn: () => continueTurn(),
+	cancelGeneration: () => cancelGeneration(),
+	retryLastTurn: () => retryLastTurn(),
+	setMemoryEnabled: setConversationMemoryEnabled,
+	addLocalNote,
+	dropSteering,
+	hasDraft: hasConversationDraft,
+	takeDraft: takeConversationDraft
+};
