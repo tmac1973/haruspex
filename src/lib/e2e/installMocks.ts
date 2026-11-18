@@ -184,6 +184,7 @@ const TABLE: Record<string, Handler> = {
 	task_list: empty,
 	task_take_notices: empty,
 	whisper_video_model_path: none,
+	whisper_vad_model_path: none,
 	youtube_account: none,
 	download_status: none,
 	remote_status: () => ({

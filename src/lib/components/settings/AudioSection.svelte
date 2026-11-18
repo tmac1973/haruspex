@@ -12,6 +12,7 @@
 	let inputDevices = $state<string[]>(['System Default']);
 	let audioOutputDevice = $state(getSettings().audioOutputDevice || 'System Default');
 	let audioInputDevice = $state(getSettings().audioInputDevice || 'System Default');
+	let speechModel = $state(getSettings().speechModel);
 
 	function setTtsVoice(voice: string) {
 		ttsVoice = voice;
@@ -47,6 +48,11 @@
 	function setInputDevice(device: string) {
 		audioInputDevice = device;
 		updateSettings({ audioInputDevice: device === 'System Default' ? '' : device });
+	}
+
+	function setSpeechModel(model: string) {
+		speechModel = model === 'large-v3-turbo' ? 'large-v3-turbo' : 'base.en';
+		updateSettings({ speechModel });
 	}
 
 	onMount(() => {
@@ -109,6 +115,23 @@
 				{/each}
 			</select>
 			<button class="btn btn-small" onclick={refreshInputDevices}>Refresh</button>
+		</div>
+	</div>
+	<div class="device-select">
+		<label
+			for="speech-model"
+			title="Fast is base.en: about 140 MB, English only. Accurate is large-v3-turbo: about 1.6 GB, many languages, shared with the video tools. Used from the next voice input."
+			>Speech model:</label
+		>
+		<div class="device-row">
+			<select
+				id="speech-model"
+				value={speechModel}
+				onchange={(e) => setSpeechModel((e.target as HTMLSelectElement).value)}
+			>
+				<option value="base.en">Fast (base.en, English)</option>
+				<option value="large-v3-turbo">Accurate (large-v3-turbo, multilingual)</option>
+			</select>
 		</div>
 	</div>
 	<p class="hint">Select audio devices or use "System Default" to follow OS settings.</p>

@@ -93,31 +93,66 @@ export async function stopAndTranscribe(): Promise<string | null> {
 	}
 }
 
-async function ensureWhisperReady(): Promise<boolean> {
+/**
+ * The whisper model voice input uses, per Settings → Audio → Speech model,
+ * downloading it the first time. large-v3-turbo is the file the video tools
+ * use, so it is fetched once for both.
+ */
+async function speechModelPath(): Promise<string> {
+	const turbo = getSettings().speechModel === 'large-v3-turbo';
+	const existing = await invoke<string | null>(
+		turbo ? 'whisper_video_model_path' : 'get_whisper_model_path'
+	);
+	if (existing) return existing;
+	status = 'downloading';
 	try {
-		const s = await invoke<SidecarStatus>('get_whisper_status');
-		if (s.type === 'Ready') return true;
+		return await invoke<string>(turbo ? 'whisper_video_model_download' : 'download_whisper_model');
+	} finally {
+		status = 'processing';
+	}
+}
 
-		let modelPath = await invoke<string | null>('get_whisper_model_path');
-		if (!modelPath) {
-			status = 'downloading';
-			try {
-				modelPath = await invoke<string>('download_whisper_model');
-			} catch (e) {
-				toastError(`Whisper model download failed: ${e}`);
-				return false;
-			} finally {
-				status = 'processing';
-			}
+/**
+ * Silero VAD for whisper-server, so silence transcribes as nothing instead of
+ * made-up words. Optional: voice input works without it.
+ */
+async function vadModelPath(): Promise<string | null> {
+	try {
+		const existing = await invoke<string | null>('whisper_vad_model_path');
+		if (existing) return existing;
+		status = 'downloading';
+		try {
+			return await invoke<string>('whisper_vad_model_download');
+		} finally {
+			status = 'processing';
 		}
+	} catch (e) {
+		console.warn('Speech detector unavailable, transcribing without it:', e);
+		return null;
+	}
+}
 
-		await invoke('start_whisper', { modelPath });
-
+/**
+ * Get whisper-server running on the chosen model. `start_whisper` leaves a
+ * server that is already Ready on the same model alone, and restarts it when
+ * the setting changed.
+ */
+export async function ensureWhisperReady(): Promise<boolean> {
+	let modelPath: string;
+	try {
+		modelPath = await speechModelPath();
+	} catch (e) {
+		toastError(`Whisper model download failed: ${e}`);
+		return false;
+	}
+	try {
+		const vadPath = await vadModelPath();
+		await invoke('start_whisper', { modelPath, vadModelPath: vadPath });
 		for (let i = 0; i < 30; i++) {
-			await sleep(500);
 			const next = await invoke<SidecarStatus>('get_whisper_status');
 			if (next.type === 'Ready') return true;
 			if (next.type === 'Error') return false;
+			await sleep(500);
 		}
 		return false;
 	} catch (e) {

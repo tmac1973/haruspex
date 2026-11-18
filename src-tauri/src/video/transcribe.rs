@@ -266,7 +266,7 @@ pub(crate) async fn lease_server(
         let loaded = LOADED.lock().map(|l| l.clone()).unwrap_or(None);
         let running = whisper.0.is_running().await;
         if !running || (others == 0 && loaded.as_deref() != Some(model)) {
-            whisper.0.start(app, &model.to_string_lossy()).await?;
+            whisper.0.start(app, &model.to_string_lossy(), None).await?;
             if let Ok(mut l) = LOADED.lock() {
                 *l = Some(model.to_path_buf());
             }

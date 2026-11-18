@@ -77,6 +77,7 @@ Voice input and spoken replies.
 
 - **Text-to-speech voice**: Heart (Female). **Read tables by subject**: on.
 - **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device.
+- **Speech model**: Fast (base.en, English only). Accurate (large-v3-turbo) understands more languages and long dictation better; it is a 1.6 GB download shared with the video tools.
 
 See the `chat` page.
 

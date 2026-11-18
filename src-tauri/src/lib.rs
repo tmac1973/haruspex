@@ -370,6 +370,8 @@ pub fn run() {
             models::download_whisper_model,
             models::whisper_video_model_path,
             models::whisper_video_model_download,
+            models::whisper_vad_model_path,
+            models::whisper_vad_model_download,
             models::whisper_video_model_delete,
             proxy::proxy_search,
             proxy::proxy_fetch,

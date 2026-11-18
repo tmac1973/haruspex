@@ -1838,6 +1838,58 @@ pub async fn whisper_video_model_download(
     Ok(final_path.to_string_lossy().to_string())
 }
 
+/// Silero voice activity detection for whisper-server (`--vad`): it skips
+/// the parts of a clip with no speech, so silence comes back empty instead
+/// of as made-up words. Smoke-tested against whisper.cpp v1.9.2 (2026-11-18).
+pub const WHISPER_VAD_MODEL: &str = "ggml-silero-v6.2.0.bin";
+const WHISPER_VAD_SIZE: u64 = 885_098;
+/// Its LFS oid, from the Hugging Face API (2026-11-18).
+const WHISPER_VAD_SHA256: &str = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987";
+
+/// The Silero VAD model's path, when it has been downloaded.
+#[tauri::command]
+pub async fn whisper_vad_model_path(
+    state: tauri::State<'_, ModelManager>,
+) -> Result<Option<String>, ()> {
+    let path = state.models_dir().join("whisper").join(WHISPER_VAD_MODEL);
+    Ok(path.exists().then(|| path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn whisper_vad_model_download(
+    app: AppHandle,
+    state: tauri::State<'_, ModelManager>,
+) -> Result<String, String> {
+    let whisper_dir = state.models_dir().join("whisper");
+    fs::create_dir_all(&whisper_dir)
+        .await
+        .map_err(|e| format!("Failed to create whisper dir: {}", e))?;
+    let final_path = whisper_dir.join(WHISPER_VAD_MODEL);
+    if final_path.exists() {
+        return Ok(final_path.to_string_lossy().to_string());
+    }
+    let partial_path = whisper_dir.join(format!("{WHISPER_VAD_MODEL}.partial"));
+    let url =
+        format!("https://huggingface.co/ggml-org/whisper-vad/resolve/main/{WHISPER_VAD_MODEL}");
+    {
+        let mut cancel = state.cancel_flag.lock().await;
+        *cancel = false;
+    }
+    state
+        .download_to_partial(
+            &app,
+            &url,
+            &partial_path,
+            &final_path,
+            WHISPER_VAD_SIZE,
+            "Downloading the speech detector",
+            Some((WHISPER_VAD_SHA256, "Verifying the speech detector")),
+        )
+        .await?;
+    info!("Whisper VAD model downloaded");
+    Ok(final_path.to_string_lossy().to_string())
+}
+
 /// Delete large-v3-turbo, stopping the video whisper-server first.
 #[tauri::command]
 pub async fn whisper_video_model_delete(

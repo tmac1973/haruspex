@@ -22,6 +22,30 @@ pub struct WhisperServer {
     log_buffer: LogBuffer,
     port: u16,
     id: &'static str,
+    /// The model and VAD paths the running server was started with, so a
+    /// second start with the same ones leaves it alone.
+    started_with: Mutex<Option<(String, Option<String>)>>,
+}
+
+/// whisper-server's arguments. With a VAD model it skips the parts of a
+/// clip without speech, so silence comes back empty instead of invented.
+fn server_args(port: u16, model_path: &str, vad_model_path: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "--model".to_string(),
+        model_path.to_string(),
+        "--host".to_string(),
+        LOOPBACK.to_string(),
+        "--port".to_string(),
+        port.to_string(),
+    ];
+    if let Some(vad) = vad_model_path {
+        args.extend([
+            "--vad".to_string(),
+            "--vad-model".to_string(),
+            vad.to_string(),
+        ]);
+    }
+    args
 }
 
 /// The whisper-server the video tools transcribe footage with: its own port
@@ -84,21 +108,34 @@ impl WhisperServer {
             log_buffer: new_log_buffer(),
             port,
             id,
+            started_with: Mutex::new(None),
         }
     }
 
-    pub async fn start(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
+    /// Start whisper-server on `model_path`, with Silero VAD when
+    /// `vad_model_path` is given. Does nothing when it is already Ready
+    /// with the same two paths.
+    pub async fn start(
+        &self,
+        app: &AppHandle,
+        model_path: &str,
+        vad_model_path: Option<&str>,
+    ) -> Result<(), String> {
+        let wanted = (model_path.to_string(), vad_model_path.map(str::to_string));
+        if self.started_with.lock().await.as_ref() == Some(&wanted)
+            && matches!(self.get_status().await, WhisperStatus::Ready)
+        {
+            return Ok(());
+        }
         self.stop().await?;
-        info!("Starting whisper-server with model: {}", model_path);
+        info!(
+            "Starting whisper-server with model: {} (VAD: {})",
+            model_path,
+            vad_model_path.unwrap_or("off")
+        );
+        *self.started_with.lock().await = Some(wanted);
 
-        let args = vec![
-            "--model".to_string(),
-            model_path.to_string(),
-            "--host".to_string(),
-            LOOPBACK.to_string(),
-            "--port".to_string(),
-            self.port.to_string(),
-        ];
+        let args = server_args(self.port, model_path, vad_model_path);
         let spec = SidecarStart {
             name: "whisper-server",
             id: self.id,
@@ -258,6 +295,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn server_args_add_vad_only_when_given() {
+        let with = server_args(8766, "/m/base.bin", Some("/m/silero.bin"));
+        let at = with.iter().position(|a| a == "--vad-model").unwrap();
+        assert!(with.contains(&"--vad".to_string()));
+        assert_eq!(with[at + 1], "/m/silero.bin");
+        assert_eq!(
+            with[with.iter().position(|a| a == "--model").unwrap() + 1],
+            "/m/base.bin"
+        );
+
+        let without = server_args(8766, "/m/base.bin", None);
+        assert!(!without.iter().any(|a| a.starts_with("--vad")));
+        assert!(without.contains(&"8766".to_string()));
+    }
+
+    #[test]
     fn verbose_segments_parse_and_trim() {
         let body = r#"{"task":"transcribe","language":"english","duration":12.0,"text":"x",
             "segments":[{"id":0,"text":" Hello there.","start":0.0,"end":2.5,"words":[]},
@@ -285,8 +338,11 @@ pub async fn start_whisper(
     app: AppHandle,
     state: tauri::State<'_, WhisperServer>,
     model_path: String,
+    vad_model_path: Option<String>,
 ) -> Result<(), String> {
-    state.start(&app, &model_path).await
+    state
+        .start(&app, &model_path, vad_model_path.as_deref())
+        .await
 }
 
 #[tauri::command]
