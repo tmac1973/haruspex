@@ -15,7 +15,6 @@ import type { ChatListItem, SessionListItem } from '#lib/engine/types.ts';
 import type { PeerConfig } from '#lib/ipc/gen/PeerConfig.ts';
 import type { PeerLists } from '#lib/ipc/gen/PeerLists.ts';
 import type { PeerStatus } from '#lib/ipc/gen/PeerStatus.ts';
-import { PEERS_READY } from '#lib/peers/flag.ts';
 import { releasePeerImages } from '#lib/peers/images.ts';
 import { peerTransport } from '#lib/peers/transport.ts';
 import { getLiveSettings } from '#lib/stores/settings.ts';
@@ -234,7 +233,7 @@ export function startPeerStore(): () => void {
 	const stopRoot = $effect.root(() => {
 		$effect(() => {
 			const s = getLiveSettings();
-			const peers = s.peersEnabled && PEERS_READY ? s.peers : [];
+			const peers = s.peersEnabled ? s.peers : [];
 			untrack(() => reconcilePeerViews(peers));
 		});
 	});

@@ -93,3 +93,21 @@ computers here** appears in release builds.
 Restore `flag.ts` with `PEERS_READY = false` to hide the feature again; the
 guide page goes with it. Data written (settings keys, `peer_lists`, keyring
 tokens) is inert while hidden.
+
+## As built
+
+- `peers-check` runs both apps in one process (`App` with `instance: 'a'|'b'`)
+  rather than two `drive start` daemons: one cleanup for both, and B can read
+  A's fingerprint from A's own certificate (`X509Certificate.fingerprint256`,
+  the same `AA:BB:…` as `owner/tls.rs`) instead of `owner-tls.json`.
+  `App.close()` stops one instance; `start({ keep: true })` restarts it on its
+  data, at the same owner API port.
+- B acts through drive hooks (`setPeers`, `peerStartSession`, `peerSend`,
+  `peerOpenChat`, `peerChatSend`, `peerStatus`…) that call what the UI calls,
+  and the check reads B's window for the **On <A>** section, the dialog's
+  origin label and the offline marker; it clicks **Allow once** itself.
+- The certificate step checks B reports `certificateChanged`; that nothing is
+  then sent follows from phase 03's manager, which stops the stream.
+- `getting-started.md` is at its 6 KB limit, so it isn't given a line for the
+  new page; `remote-control.md`'s opening sentence points at it.
+- Hand tests and the markdown-pictures follow-up: #1106.

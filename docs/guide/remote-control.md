@@ -5,7 +5,7 @@ description: Use your Code sessions and chats from your other computers' browser
 
 # Remote control
 
-Remote control lets your other computers use the Code sessions and chats on this one, from a browser or a script. Turns still run here, with this computer's files and models. It is off by default, and Haruspex has to be open for it to work.
+Remote control lets your other computers use the Code sessions and chats on this one, from a browser, from their own Haruspex (see `other-computers`), or from a script (see `remote-control-api`). Turns still run here, with this computer's files and models. It is off by default, and Haruspex has to be open for it to work.
 
 It is not the same as Guest chat (see the `guest-chat` page), which lets other people chat with your Haruspex. Remote control is for you.
 
@@ -49,10 +49,6 @@ In lean mode (see `lean-mode`) the page shows Chat only, with a **Lean mode** la
 - **Listen on all networks**: on, so other computers can reach it; choosing **These computers** or **My whole network** turns it on. Off, only this computer (or a proxy running on it) can connect.
 - **Link address**: the address other computers use to reach this one, if it isn't the one shown, for example a name your router gives it. Links use it, and the page accepts it as this computer's name.
 - **Certificate**: its fingerprint, and **Copy certificate** for a script.
-
-## Use it from a script
-
-Scripts use the same API, for Code sessions, chats, jobs and settings: see the `remote-control-api` page.
 
 ## What it doesn't do yet
 

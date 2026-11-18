@@ -26,7 +26,13 @@ import {
 } from '#lib/engine/types.ts';
 import { applyOwnerApi, createOwnerClient, ALL_SCOPES } from '#lib/owner/service.ts';
 import { pickProbedModel, probedModelCaps, type ProbeResult } from '#lib/inferenceProbe.ts';
-import { getOpenSessions, setActiveSession } from '#lib/stores/code.svelte.ts';
+import { getOpenSessions, getOpenViews, setActiveSession } from '#lib/stores/code.svelte.ts';
+import type { PeerConfig } from '#lib/ipc/gen/PeerConfig.ts';
+import { applyPeers } from '#lib/peers/service.ts';
+import { peerView } from '#lib/peers/store.svelte.ts';
+import { startRemoteSession } from '#lib/peers/remoteCodeSession.svelte.ts';
+import { openRemoteChat } from '#lib/peers/remoteChat.svelte.ts';
+import { getActiveChatSource } from '#lib/stores/activeChatSource.svelte.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import { mcpState, startMcpServer, statusLabel } from '#lib/stores/mcpServers.svelte.ts';
 import {
@@ -86,6 +92,27 @@ export interface DriveHooks {
 		apiKey: string,
 		modelId: string | null
 	) => Promise<Partial<InferenceBackendConfig>>;
+	/** Trust these computers and follow them, as Settings → Remote control → Other computers. */
+	setPeers: (peers: PeerConfig[]) => Promise<void>;
+	/** Start a session on another computer in `root` and open it here; its id here. */
+	peerStartSession: (peerId: string, root: string) => Promise<string>;
+	/** Send in another computer's session open here, as its input box does. */
+	peerSend: (viewId: string, text: string) => Promise<void>;
+	/** Another computer's session as this window shows it. */
+	peerSession: (viewId: string) => {
+		status: string;
+		busy: boolean;
+		messages: number;
+		lastAssistant: string | null;
+	} | null;
+	/** Open a chat on another computer (`new` starts one) in the Chat view; its id there. */
+	peerOpenChat: (peerId: string, chatId: string) => Promise<string>;
+	/** Send in the chat the Chat view shows. */
+	peerChatSend: (text: string) => Promise<boolean>;
+	/** Rust's last word on a computer's connection, or null before one. */
+	peerStatus: (peerId: string) => string | null;
+	/** The chat the Chat view shows, if it's another computer's. */
+	peerChat: () => { busy: boolean; messages: number; lastAssistant: string | null } | null;
 }
 
 declare global {
@@ -146,8 +173,59 @@ function logEvents(events: EngineEvent[]): void {
 	}
 }
 
+/** The text of the last answer in `messages`, if any. */
+function lastAnswer(messages: { role: string; content: unknown }[]): string | null {
+	const m = [...messages].reverse().find((x) => x.role === 'assistant');
+	return m ? String(typeof m.content === 'string' ? m.content : JSON.stringify(m.content)) : null;
+}
+
+function mustPeer(peerId: string) {
+	const view = peerView(peerId);
+	if (!view) throw new Error(`no computer ${peerId} in Settings`);
+	return view;
+}
+
 export function installDriveHooks(): void {
 	window.__haruspexDrive = {
+		setPeers: async (peers) => {
+			updateSettings({ peersEnabled: true, peers });
+			await applyPeers();
+		},
+		peerStartSession: async (peerId, root) =>
+			(await startRemoteSession(mustPeer(peerId), { root, worktree: false, wslDistro: null })).id,
+		peerSend: async (viewId, text) => {
+			const view = getOpenViews().find((v) => v.id === viewId);
+			if (!view) throw new Error(`no open session ${viewId}`);
+			await view.send(text);
+		},
+		peerSession: (viewId) => {
+			const view = getOpenViews().find((v) => v.id === viewId);
+			if (!view) return null;
+			return {
+				status: view.status,
+				busy: view.busy,
+				messages: view.messages.length,
+				lastAssistant: lastAnswer(view.messages)
+			};
+		},
+		peerOpenChat: async (peerId, chatId) => {
+			const view = mustPeer(peerId);
+			const id =
+				chatId === 'new' ? (await view.client.op<{ id: string }>({ type: 'chat.new' })).id : chatId;
+			await openRemoteChat(view, id);
+			return id;
+		},
+		peerStatus: (peerId) => peerView(peerId)?.status?.connection ?? null,
+		peerChatSend: (text) => getActiveChatSource().sendMessage(text),
+		peerChat: () => {
+			const source = getActiveChatSource();
+			if (!source.peer || !source.conversation) return null;
+			return {
+				busy: source.isGenerating,
+				messages: source.conversation.messages.length,
+				lastAssistant: lastAnswer(source.conversation.messages)
+			};
+		},
 		debugLogs: getDebugLogs,
 		setVerbosePayloads,
 		codeSessions: () => getOpenSessions().map(sessionState),

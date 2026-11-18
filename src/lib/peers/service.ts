@@ -18,7 +18,6 @@ import type { PeerConfig } from '#lib/ipc/gen/PeerConfig.ts';
 import type { PeerProbe } from '#lib/ipc/gen/PeerProbe.ts';
 import type { PeerStatus } from '#lib/ipc/gen/PeerStatus.ts';
 import type { PeersConfig } from '#lib/ipc/gen/PeersConfig.ts';
-import { PEERS_READY } from '#lib/peers/flag.ts';
 import { deleteSecret, setSecret } from '#lib/stores/secrets.ts';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -36,7 +35,7 @@ export function peerTokenKey(instanceId: string): string {
 /** What Rust is told: the trusted computers, and whether to use them at all. */
 export function peersConfig(): PeersConfig {
 	const s = getSettings();
-	return { enabled: s.peersEnabled && PEERS_READY, peers: s.peers };
+	return { enabled: s.peersEnabled, peers: s.peers };
 }
 
 /** Bring Rust in line with Settings. Throws what went wrong. */

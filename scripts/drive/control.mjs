@@ -14,11 +14,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** Where the socket and the running driver's details live. */
-export function controlPaths(env = process.env, platform = process.platform) {
+export function controlPaths(env = process.env, platform = process.platform, instance = null) {
 	const dir = env.XDG_RUNTIME_DIR || tmpdir();
+	// A named instance (`--instance`) has its own, so two drivers run side by side.
+	const name = instance ? `haruspex-drive-${instance}` : 'haruspex-drive';
 	return {
-		socket: platform === 'win32' ? '\\\\.\\pipe\\haruspex-drive' : join(dir, 'haruspex-drive.sock'),
-		info: join(dir, 'haruspex-drive.json')
+		socket: platform === 'win32' ? `\\\\.\\pipe\\${name}` : join(dir, `${name}.sock`),
+		info: join(dir, `${name}.json`)
 	};
 }
 

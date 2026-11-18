@@ -15,7 +15,7 @@ import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { remote } from 'webdriverio';
-import { appBinary, BIN_DIR, ROOT, STUB_PIDS } from '../../e2e/app/paths.mjs';
+import { appBinary, BIN_DIR, E2E_ID, ROOT, STUB_PIDS } from '../../e2e/app/paths.mjs';
 import { seedSavedItems } from '../../e2e/app/storage.mjs';
 import { e2eDataDirs } from '../../e2e/app/wdio.conf.mjs';
 import { createFakeLlm, MODEL_ID } from '../../e2e/fake-llm/server.mjs';
@@ -191,10 +191,31 @@ export function fixtureCopy() {
  * (scenario name, with `baseUrl` as the upstream), `folder`, `show`,
  * `autoApprove`, `verbosePayloads`, `outDir`.
  */
+/**
+ * A named instance's own XDG directories (Linux): a second app beside the
+ * first, with its own data, config and cache, since the identifier is fixed
+ * at build time. Kept in the system temp dir for the instance's life, so a
+ * restart finds its data. No instance: the usual directories.
+ */
+function instanceDirs(instance) {
+	if (!instance) return null;
+	if (process.platform !== 'linux') throw new Error('--instance is Linux only');
+	const base = join(tmpdir(), `haruspex-drive-${instance}`);
+	return {
+		XDG_DATA_HOME: join(base, 'data'),
+		XDG_CONFIG_HOME: join(base, 'config'),
+		XDG_CACHE_HOME: join(base, 'cache')
+	};
+}
+
 export class App {
 	constructor(opts, log = () => {}) {
 		this.opts = opts;
 		this.log = log;
+		/** This instance's XDG directories, or null for the usual ones. */
+		this.dirs = instanceDirs(opts.instance ?? null);
+		/** What this instance started: its display and tauri-driver. */
+		this.own = [];
 		this.browser = null;
 		this.fake = null;
 		this.driverOut = [];
@@ -239,8 +260,18 @@ export class App {
 		);
 	}
 
-	/** Start the model server (if fake), the display, tauri-driver and the app. */
-	async start() {
+	/** The app's data directory (Tauri's app_data_dir) for this instance. */
+	appDataDir() {
+		const home = this.dirs?.XDG_DATA_HOME ?? process.env.XDG_DATA_HOME;
+		return join(home ?? join(process.env.HOME ?? '', '.local', 'share'), E2E_ID);
+	}
+
+	/**
+	 * Start the model server (if fake), the display, tauri-driver and the app.
+	 * `keep`: start again on the data the last run left (a restart), not a
+	 * fresh profile.
+	 */
+	async start({ keep = false } = {}) {
 		const o = this.opts;
 		if (!existsSync(appBinary())) {
 			throw new Error(`no test build at ${appBinary()}: run npm run e2e:app:build`);
@@ -278,13 +309,19 @@ export class App {
 		this.meta = { model: o.record ? `${model} (recording)` : model, baseUrl: appBase };
 
 		// A fresh profile: the e2e identifier's data, never the user's.
-		for (const dir of e2eDataDirs()) rmSync(dir, { recursive: true, force: true });
-		rmSync(STUB_PIDS, { recursive: true, force: true });
-		mkdirSync(STUB_PIDS, { recursive: true });
+		const dataDirs = this.dirs
+			? Object.values(this.dirs).map((d) => join(d, E2E_ID))
+			: e2eDataDirs();
+		if (!keep) for (const dir of dataDirs) rmSync(dir, { recursive: true, force: true });
+		if (!this.dirs) {
+			rmSync(STUB_PIDS, { recursive: true, force: true });
+			mkdirSync(STUB_PIDS, { recursive: true });
+		}
 
-		const env = { ...process.env, E2E_STUB_PIDS: STUB_PIDS };
+		const env = { ...process.env, ...(this.dirs ?? {}), E2E_STUB_PIDS: STUB_PIDS };
 		if (!o.show) {
 			env.DISPLAY = await startDisplay();
+			this.own.push(children.at(-1));
 			delete env.WAYLAND_DISPLAY;
 			env.GDK_BACKEND = 'x11';
 			// No GPU on a virtual X server.
@@ -305,6 +342,7 @@ export class App {
 			{ env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] }
 		);
 		children.push(driver);
+		this.own.push(driver);
 		driver.stdout.on('data', (d) => this.driverOut.push(d));
 		driver.stderr.on('data', (d) => this.driverOut.push(d));
 
@@ -342,7 +380,9 @@ export class App {
 		await this.waitForHooks();
 		if (o.verbosePayloads) await this.call('setVerbosePayloads', true);
 		if (o.api) {
-			this.api = await this.call('ownerApi', await freePort());
+			// A restart keeps its port, so a computer following it finds it again.
+			this.apiPort ??= await freePort();
+			this.api = await this.call('ownerApi', this.apiPort);
 			// Its own certificate: trusted here, and saved for other scripts.
 			this.apiFetch = pinnedFetch(this.api.certificate);
 			this.api.ca = join(o.outDir, 'owner-api.pem');
@@ -906,6 +946,25 @@ export class App {
 		}
 		save('tauri-driver.log', Buffer.concat(this.driverOut));
 		return errors.length ? { dir, files: written, errors } : { dir, files: written };
+	}
+
+	/**
+	 * Close this instance only, as a computer that went away: the app, its
+	 * tauri-driver and display, and its fake model. Another instance runs on.
+	 */
+	async close() {
+		if (this.browser) await this.browser.deleteSession().catch(() => {});
+		this.browser = null;
+		await this.fake?.close();
+		this.fake = null;
+		for (const child of this.own.splice(0).reverse()) {
+			if (!child || child.exitCode !== null || child.pid === undefined) continue;
+			try {
+				process.kill(-child.pid, child.signal ?? 'SIGKILL');
+			} catch {
+				// gone
+			}
+		}
 	}
 
 	async stop() {

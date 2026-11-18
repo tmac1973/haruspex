@@ -259,6 +259,18 @@ connecting as another computer on the network would. The self-test covers
 all of these; the web page's own cards can be clicked in Playwright's
 Chromium with `ignoreHTTPSErrors`.
 
+**Two apps (Linux):** `--instance NAME` on `start` and every command runs a
+second app beside the first, with its own XDG data, config and cache
+directories (under the system temp dir), control socket and driver; without
+it, the usual single app. `npm run drive -- peers-check` uses two in one
+process (`scripts/drive/peers-check.mjs`, the `peers` scenario): A with
+Remote control on, and B following it as one of its other computers
+(plan/instance-sync/). B starts a session on A, answers its command prompt in
+B's own dialog (marked **On <A>**), carries on a chat there, sees A go
+offline and come back, and stops trusting A when A's certificate changes.
+It checks nothing listens on the sidecar ports, so the two never collide.
+mDNS isn't part of it: loopback multicast varies between machines.
+
 `consistent` must hold for an idle session. While a turn streams, the replay
 trails by a few tens of milliseconds, so `differs` listing only
 `streamingContent` or `roundText` then is lag, not a bug.
