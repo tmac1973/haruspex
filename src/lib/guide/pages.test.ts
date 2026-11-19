@@ -32,6 +32,7 @@ const PAGES = [
 	'specialists',
 	'helpers',
 	'3d-helper',
+	'web-preview',
 	'viewers',
 	'skills',
 	'write-skills',

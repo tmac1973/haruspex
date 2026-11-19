@@ -86,7 +86,9 @@ describe('the Extras menu', () => {
 
 	it('shows the defaults for a session that never chose', async () => {
 		await open(session());
-		screen.getByRole('button', { name: /Extras: 1/ });
+		// Regex, and the Web preview helper, which is on by default.
+		screen.getByRole('button', { name: /Extras: 2/ });
+		expect(box('Web preview').checked).toBe(true);
 		expect(box('Regex').checked).toBe(true);
 		expect(box('SQL').checked).toBe(false);
 		expect((screen.getByText('Use defaults') as HTMLButtonElement).disabled).toBe(true);
@@ -111,10 +113,10 @@ describe('the Extras menu', () => {
 		settings.codeHelpers = { '3d': true };
 		const s = session();
 		await open(s);
-		screen.getByRole('button', { name: /Extras: 2/ });
+		screen.getByRole('button', { name: /Extras: 3/ });
 		expect(box('3D').checked).toBe(true);
 		await fireEvent.click(box('3D'));
-		expect(s.setSessionHelpers).toHaveBeenCalledWith([]);
+		expect(s.setSessionHelpers).toHaveBeenCalledWith(['preview']);
 		expect(s.setSessionSpecialists).not.toHaveBeenCalled();
 	});
 

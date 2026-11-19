@@ -4,3 +4,4 @@
  */
 import '#lib/helpers/three/helper.ts';
 import '#lib/helpers/search/helper.ts';
+import '#lib/helpers/preview/helper.ts';

@@ -38,6 +38,7 @@ mod orphans;
 mod owner;
 mod peers;
 mod power;
+mod preview;
 mod process_util;
 mod proxy;
 mod remote;
@@ -159,6 +160,12 @@ pub fn run() {
             app.manage(peers::mdns::Mdns::default());
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
+            // Files preview windows have loaded, watched for live reload.
+            let preview_watches = preview::watch::PreviewWatches::new(app.handle());
+            let hook = preview_watches.clone();
+            app.state::<preview::PreviewServer>()
+                .on_served(move |session, file| hook.watch(session, file));
+            app.manage(preview_watches);
             app.manage(fs_tools::created::CreatedFiles::new(
                 app.path()
                     .app_data_dir()
@@ -288,6 +295,10 @@ pub fn run() {
                     claims.release_window(window.label());
                     code_tools::claims::emit_changed(window.app_handle());
                 }
+                // A preview window's folder stops being served with it.
+                if let Some(session) = preview::session_for_label(window.label()) {
+                    preview::stop_session(window.app_handle(), session);
+                }
                 // And any folder it was writing in.
                 if let Some(folders) = window.try_state::<code_tools::folders::CodeFolders>() {
                     folders.release_window(window.label());
@@ -319,6 +330,7 @@ pub fn run() {
         .manage(LlamaServer::new())
         .manage(sandbox_fetch::SandboxNet::default())
         .manage(artifact_frame::ArtifactFrames::default())
+        .manage(preview::PreviewServer::default())
         // Nothing starts here: the image engine spawns on demand only.
         .manage(image_engine::ImageEngine::new())
         .manage(McpInstaller::new())
@@ -742,6 +754,8 @@ pub fn run() {
             sandbox_fetch::sandbox_fetch,
             sandbox_fetch::sandbox_set_network,
             artifact_frame::artifact_register,
+            preview::preview_serve,
+            preview::preview_stop,
             sandbox_save::sandbox_save,
             sandbox_save::sandbox_delete_in_workdir,
             sandbox_sync::sandbox_sync_workdir,
@@ -860,6 +874,9 @@ pub fn run() {
                 app.state::<tasks::BackgroundTasks>().cancel_all();
                 shell_mgr.shutdown_all();
                 app.state::<fs_tools::editor::EditorWatches>().stop_all();
+                if let Some(w) = app.try_state::<preview::watch::PreviewWatches>() {
+                    w.stop_all();
+                }
                 // A goodbye over mDNS, so other computers drop this one now
                 // rather than when its record times out.
                 app.state::<peers::mdns::Mdns>().unadvertise();

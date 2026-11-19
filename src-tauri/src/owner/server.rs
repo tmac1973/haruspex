@@ -512,16 +512,34 @@ fn safe_relative(path: &str) -> Option<PathBuf> {
     Some(out)
 }
 
-fn content_type(file: &FsPath) -> &'static str {
-    match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
-        "html" => "text/html; charset=utf-8",
+/// A file's `Content-Type` by its extension. The Code tab's preview server
+/// (`crate::preview`) serves with it too.
+pub(crate) fn content_type(file: &FsPath) -> &'static str {
+    let ext = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "html" | "htm" => "text/html; charset=utf-8",
         "js" | "mjs" => "text/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
         "json" | "webmanifest" => "application/json",
         "svg" => "image/svg+xml",
         "png" => "image/png",
         "ico" => "image/x-icon",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "woff" => "font/woff",
         "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "txt" => "text/plain; charset=utf-8",
         "wasm" => "application/wasm",
         _ => "application/octet-stream",
     }

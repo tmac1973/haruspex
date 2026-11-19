@@ -22,7 +22,7 @@
 	import type { SubtaskState } from '#lib/code/subtask.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
-	import { makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';
+	import { isPreviewable, makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
 	import type { PathLinks } from '#lib/components/SearchStep.svelte';
 
@@ -40,6 +40,7 @@
 		openFile,
 		compact = false,
 		openInShell = true,
+		onPreview,
 		onStopSubtask
 	}: {
 		steps: SearchStep[];
@@ -56,6 +57,8 @@
 		openInShell?: boolean;
 		/** Stop a running subtask, by its id; absent once the turn is over. */
 		onStopSubtask?: (id: string) => void;
+		/** Show a page (relative to `root`) in the preview window; absent when the session can't. */
+		onPreview?: (rel: string) => void;
 	} = $props();
 
 	/** Tools that hand a command over: shown as command cards. */
@@ -69,7 +72,16 @@
 			open: (rel) => (openFile ? openFile(rel) : openFileFromClick(dir, rel, wslDistro))
 		};
 	});
-	const codePaths = $derived(root && linkFiles ? makeCodePathLinker(root) : undefined);
+	const codePaths = $derived(
+		root && linkFiles ? makeCodePathLinker(root, { preview: !!onPreview }) : undefined
+	);
+
+	/** Show a diff's file in the preview window, when it is a page inside the folder. */
+	function previewer(diff: FileDiff): (() => void) | undefined {
+		if (!root || !onPreview || !isPreviewable(diff.path)) return undefined;
+		const rel = relativeToRoot(root, diff.path);
+		return rel ? () => onPreview(rel) : undefined;
+	}
 
 	/** Open a diff's file, when it is inside the folder. */
 	function opener(diff: FileDiff): (() => void) | undefined {
@@ -123,11 +135,11 @@
 		{:else if block.kind === 'command'}
 			<CommandCard step={block.step} root={openInShell ? root : undefined} />
 		{:else if block.kind === 'diff'}
-			<DiffCard diff={block.diff} onOpen={opener(block.diff)} />
+			<DiffCard diff={block.diff} onOpen={opener(block.diff)} onPreview={previewer(block.diff)} />
 		{:else if block.kind === 'subtask'}
 			<SubtaskCard subtask={block.subtask} {compact} onStop={onStopSubtask}>
 				{#snippet steps(s: SubtaskState)}
-					<CodeSteps steps={s.steps} {root} {linkFiles} {wslDistro} {openFile} />
+					<CodeSteps steps={s.steps} {root} {linkFiles} {wslDistro} {openFile} {onPreview} />
 				{/snippet}
 			</SubtaskCard>
 		{:else}

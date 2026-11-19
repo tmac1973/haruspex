@@ -202,9 +202,14 @@
 	// the model never saw them; not awaited, so the window is not held closed
 	// while several child processes negotiate.
 	onMount(() => {
-		// An editor window has no agent, so no use for the servers, and a Code
-		// session's tools don't include them.
-		if (page.route.id === '/editor' || page.route.id === '/code/[id]') return;
+		// An editor or preview window has no agent, so no use for the servers,
+		// and a Code session's tools don't include them.
+		if (
+			page.route.id === '/editor' ||
+			page.route.id === '/preview' ||
+			page.route.id === '/code/[id]'
+		)
+			return;
 		// Interrupted updates are put right before anything starts.
 		void startMcpAtLaunch();
 		// A running server can change what it publishes — Godot reveals a whole

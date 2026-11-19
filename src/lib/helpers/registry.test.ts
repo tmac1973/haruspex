@@ -40,6 +40,16 @@ const withSettings: HelperDef = {
 	}
 };
 
+const startsOn: HelperDef = {
+	id: 'zz-default-on',
+	label: 'Default on',
+	summary: 'A helper that starts on.',
+	tooltip: 'Only in tests.',
+	tools: [],
+	writes: false,
+	defaultOn: true
+};
+
 beforeAll(() => {
 	registerTool({
 		category: 'fs',
@@ -52,6 +62,7 @@ beforeAll(() => {
 	});
 	registerHelper(def);
 	registerHelper(withSettings);
+	registerHelper(startsOn);
 });
 
 afterEach(() => setCodeHelper(def.id, false));
@@ -76,6 +87,16 @@ describe('the helper registry', () => {
 		expect(helperOn('unknown')).toBe(false);
 		setCodeHelper(def.id, true);
 		expect(helperOn(def.id)).toBe(true);
+	});
+
+	it('starts a defaultOn helper on until the user switches it off', () => {
+		expect(helperOn(startsOn.id)).toBe(true);
+		expect(sessionHelpers(undefined)).toContain(startsOn);
+		setCodeHelper(startsOn.id, false);
+		expect(helperOn(startsOn.id)).toBe(false);
+		expect(sessionHelpers(undefined)).not.toContain(startsOn);
+		setCodeHelper(startsOn.id, true);
+		expect(helperOn(startsOn.id)).toBe(true);
 	});
 
 	it('gives a session its stored ids, or the switched-on ones when it has none', () => {

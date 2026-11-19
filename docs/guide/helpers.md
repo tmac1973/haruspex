@@ -1,6 +1,6 @@
 ---
 title: Helpers
-description: Helpers in the Code tab — tools the coding agent runs without a model. The Search helper finds code from a plain-words question; the 3D helper builds and checks a 3D model.
+description: Helpers in the Code tab — tools the coding agent runs without a model. Search finds code from a plain-words question, 3D builds and checks a 3D model, Web preview shows a page in a window.
 ---
 
 # Helpers
@@ -9,9 +9,9 @@ A helper is a tool the Code tab's agent runs with no model behind it. It does on
 
 ## Turn a helper on
 
-Settings → Code → Helpers has a switch for each helper, all off. A session follows these switches until you change its own: **Extras: N** in the session's header lists the helpers (and specialists) with a checkbox each, and **Use defaults** goes back to the switches. A change applies from the next message. Hover a helper for what it does.
+Settings → Code → Helpers has a switch for each helper, all off but Web preview. A session follows these switches until you change its own: **Extras: N** in the session's header lists the helpers (and specialists) with a checkbox each, and **Use defaults** goes back to the switches. A change applies from the next message. Hover a helper for what it does.
 
-Helpers work in the Code tab only. The 3D helper needs a session that can write; the Search helper also works in a read-only session.
+Helpers work in the Code tab only. The 3D helper needs a session that can write; Search and Web preview also work read-only.
 
 ## The Search helper
 
@@ -51,6 +51,10 @@ The agent can also check a `.glb` made another way, for example with a Blender s
 For every argument, check and output, see the `3d-helper` page.
 
 Three.js comes with the app, so the 3D helper needs no network. The agent sees the render sheet only if its model can read images; the text report comes either way.
+
+## The Web preview helper
+
+Its `show_preview` tool opens an HTML page from the session's folder in a preview window that reloads as the page's files change. See the `web-preview` page.
 
 ## What it doesn't do
 

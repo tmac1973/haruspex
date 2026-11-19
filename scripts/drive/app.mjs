@@ -864,6 +864,70 @@ export class App {
 		return { lines: lines.slice(since), next: lines.length };
 	}
 
+	/** Every app window: its WebDriver handle, Tauri label and address. */
+	async windows() {
+		return this.exclusive((browser) => this.#windows(browser));
+	}
+
+	async #windows(browser) {
+		const main = await browser.getWindowHandle();
+		const out = [];
+		try {
+			for (const handle of await browser.getWindowHandles()) {
+				await browser.switchToWindow(handle);
+				const label = await browser.execute(
+					() => window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label ?? null
+				);
+				out.push({ handle, label, url: await browser.getUrl() });
+			}
+		} finally {
+			await browser.switchToWindow(main);
+		}
+		return out;
+	}
+
+	/**
+	 * Run `fn(browser)` in the window labelled `label` (inside the iframe
+	 * `frame` finds there, when given), then go back to the main window.
+	 */
+	async #inWindow(label, frame, fn) {
+		return this.exclusive(async (browser) => {
+			const win = (await this.#windows(browser)).find((w) => w.label === label);
+			if (!win) throw new Error(`no window labelled ${label}`);
+			const main = await browser.getWindowHandle();
+			try {
+				await browser.switchToWindow(win.handle);
+				if (frame) await browser.switchToFrame(await browser.$(frame));
+				return await fn(browser);
+			} finally {
+				if (frame) await browser.switchToParentFrame().catch(() => {});
+				await browser.switchToWindow(main);
+			}
+		});
+	}
+
+	/**
+	 * Evaluate `js` (an expression; a promise is awaited) in another window,
+	 * or in an iframe in it, and return its value as JSON allows.
+	 */
+	async windowExec(label, js, frame) {
+		// A string script runs as WebDriver's own, so the window's CSP (no
+		// eval in the app's windows) doesn't apply to it.
+		const script = `return (async () => {
+			try { return { ok: await (${js}) }; }
+			catch (e) { return { error: String(e?.message ?? e) }; }
+		})();`;
+		return this.#inWindow(label, frame, async (browser) => ({
+			value: await browser.execute(script)
+		}));
+	}
+
+	/** A screenshot of another window. */
+	async windowShot(label, path) {
+		await this.#inWindow(label, null, (browser) => browser.saveScreenshot(path));
+		return { path };
+	}
+
 	async screenshot(path) {
 		await this.exclusive((browser) => browser.saveScreenshot(path));
 		return { path };

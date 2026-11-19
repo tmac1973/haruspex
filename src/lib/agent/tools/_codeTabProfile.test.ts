@@ -57,7 +57,9 @@ describe('tool profiles over (codeMode, shellMode)', () => {
 				'fs_move',
 				'fs_write_document',
 				'fs_write_spreadsheet',
-				'fs_write_slides'
+				'fs_write_slides',
+				// The Web preview helper's, on by default.
+				'show_preview'
 			].sort()
 		);
 	});
@@ -145,7 +147,9 @@ describe('a read-only Code session', () => {
 			.map((s) => s.function.name)
 			.sort();
 		expect(n).toEqual(
-			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'fs_read_image'].filter((t) => !isCodeWriteTool(t)).sort()
+			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'fs_read_image', 'show_preview']
+				.filter((t) => !isCodeWriteTool(t))
+				.sort()
 		);
 		expect(n).toContain('run_command');
 		expect(n).not.toContain('fs_write_text');

@@ -8,7 +8,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export interface AppWindowSpec {
-	/** `editor-…`, `code-…` or `shell-…`. */
+	/** `editor-…`, `code-…`, `shell-…` or `preview-…`. */
 	label: string;
 	/** An app route, such as `/editor?root=…`. */
 	url: string;

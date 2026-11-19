@@ -5,8 +5,12 @@
 	 */
 	import type { DiffRow, FileDiff } from '#lib/code/diff.ts';
 
-	/** `onOpen`: the file is inside the session folder; open it in the editor. */
-	let { diff, onOpen }: { diff: FileDiff; onOpen?: () => void } = $props();
+	/**
+	 * `onOpen`: the file is inside the session folder; open it in the editor.
+	 * `onPreview`: it is a page the preview window can show.
+	 */
+	let { diff, onOpen, onPreview }: { diff: FileDiff; onOpen?: () => void; onPreview?: () => void } =
+		$props();
 
 	/** Rows shown before "Show all". */
 	const PREVIEW_ROWS = 40;
@@ -29,6 +33,10 @@
 			>
 		{:else}
 			<code class="path" title={diff.path}>{diff.path}</code>
+		{/if}
+		{#if onPreview}
+			<button class="preview" title="Open in the preview window" onclick={onPreview}>Preview</button
+			>
 		{/if}
 		<span class="add">+{diff.added}</span>
 		<span class="del">−{diff.removed}</span>
@@ -91,6 +99,22 @@
 		white-space: nowrap;
 		background: none;
 		color: inherit;
+	}
+
+	.preview {
+		appearance: none;
+		background: none;
+		border: 1px solid currentColor;
+		border-radius: 4px;
+		padding: 0 6px;
+		font: inherit;
+		font-size: 0.85em;
+		color: #4fb0a5;
+		cursor: pointer;
+	}
+
+	.preview:hover {
+		background: rgba(79, 176, 165, 0.12);
 	}
 
 	.path.open {

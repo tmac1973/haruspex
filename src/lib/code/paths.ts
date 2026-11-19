@@ -63,6 +63,13 @@ export interface PathRef {
 	path: string;
 	/** 1-based, when the text gave one. */
 	line: number | null;
+	/** An `.html` page the transcript offers to show in the preview window. */
+	preview?: boolean;
+}
+
+/** Whether `path` is a page the preview window can show. */
+export function isPreviewable(path: string): boolean {
+	return /\.html?$/i.test(path);
 }
 
 /** A path, optionally with `:line` or `:line:column`. */
@@ -94,13 +101,19 @@ export function parsePathRef(text: string): PathRef | null {
 /** Turns text into a link target in one session's folder, or null. */
 export type CodePathLinker = (text: string) => PathRef | null;
 
-/** References inside `root`, with the path made relative to it. */
-export function makeCodePathLinker(root: string): CodePathLinker {
+/**
+ * References inside `root`, with the path made relative to it. With
+ * `preview`, an `.html` reference (no line) is marked for a Preview button.
+ */
+export function makeCodePathLinker(root: string, opts: { preview?: boolean } = {}): CodePathLinker {
 	return (text) => {
 		const ref = parsePathRef(text);
 		if (!ref) return null;
 		const rel = relativeToRoot(root, ref.path);
-		return rel ? { path: rel, line: ref.line } : null;
+		if (!rel) return null;
+		const out: PathRef = { path: rel, line: ref.line };
+		if (opts.preview && ref.line === null && isPreviewable(rel)) out.preview = true;
+		return out;
 	};
 }
 

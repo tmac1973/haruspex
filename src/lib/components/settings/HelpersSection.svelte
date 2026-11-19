@@ -1,16 +1,21 @@
 <script lang="ts">
 	/**
-	 * Settings → Code → Helpers: one switch per helper (`#lib/helpers/`), each
-	 * off by default. The switches are what a Code session offers its agent
+	 * Settings → Code → Helpers: one switch per helper (`#lib/helpers/`), off
+	 * unless the helper is `defaultOn`. The switches are what a Code session offers its agent
 	 * until it chooses its own in the header's Extras menu. A helper with its
 	 * own settings shows their editor under the switch while it is on.
 	 */
-	import { helpers } from '#lib/helpers/registry.ts';
+	import { helpers, type HelperDef } from '#lib/helpers/registry.ts';
 	import '#lib/helpers/index.ts';
 	import { getSettings, setCodeHelper } from '#lib/stores/settings.ts';
 
 	const list = helpers();
 	let on = $state<Record<string, boolean>>({ ...getSettings().codeHelpers });
+
+	/** The switch's state: the stored choice, else the helper's default. */
+	function checked(h: HelperDef): boolean {
+		return on[h.id] ?? h.defaultOn === true;
+	}
 
 	function toggle(id: string, value: boolean) {
 		setCodeHelper(id, value);
@@ -24,12 +29,12 @@
 		<label class="toggle-row" title={h.tooltip}>
 			<input
 				type="checkbox"
-				checked={on[h.id] === true}
+				checked={checked(h)}
 				onchange={(e) => toggle(h.id, e.currentTarget.checked)}
 			/>
 			<span><strong>{h.label}</strong> — {h.summary}</span>
 		</label>
-		{#if h.settings && on[h.id] === true}
+		{#if h.settings && checked(h)}
 			<div class="helper-settings">
 				{#await h.settings.component() then { default: Editor }}
 					<Editor helperId={h.id} />

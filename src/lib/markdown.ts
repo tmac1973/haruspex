@@ -109,7 +109,23 @@ function linkedRef(raw: string, linker: CodePathLinker): { raw: string; ref: Pat
 function pathButton(ref: PathRef, inner: string): string {
 	const line = ref.line ? ` data-line="${ref.line}"` : '';
 	const title = `Open ${ref.path}`;
-	return `<button type="button" class="code-path" data-action="code-path" data-path="${escapeHtml(ref.path)}"${line} title="${escapeHtml(title)}">${inner}</button>`;
+	const open = `<button type="button" class="code-path" data-action="code-path" data-path="${escapeHtml(ref.path)}"${line} title="${escapeHtml(title)}">${inner}</button>`;
+	if (!ref.preview) return open;
+	return `${open} <button type="button" class="code-preview" data-action="code-preview" data-path="${escapeHtml(ref.path)}" title="Open in the preview window">Preview</button>`;
+}
+
+/**
+ * The page a click on a Preview button beside a path names; null for a
+ * click anywhere else. Takes the click when it was on one.
+ */
+export function codePreviewFromClick(event: MouseEvent): string | null {
+	const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+		'button[data-action="code-preview"]'
+	);
+	const path = btn?.dataset.path;
+	if (!path) return null;
+	event.preventDefault();
+	return path;
 }
 
 /**

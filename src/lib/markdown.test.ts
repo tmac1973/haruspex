@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeCodePathLinker } from '#lib/code/paths.ts';
 import {
 	codePathFromClick,
+	codePreviewFromClick,
 	finalizeStreamText,
 	processCitations,
 	renderMarkdown,
@@ -860,5 +861,28 @@ describe('codePathFromClick', () => {
 		const off = clickOn('<p>text</p>', 'p');
 		expect(off.result).toBeNull();
 		expect(off.event.defaultPrevented).toBe(false);
+	});
+});
+
+describe('Preview buttons beside page links', () => {
+	it('adds one after an .html link when the linker marks it', () => {
+		const link = makeCodePathLinker('/proj', { preview: true });
+		const html = renderMarkdown('Open site/index.html or src/app.ts.', undefined, link);
+		expect(html.match(/data-action="code-preview"/g)?.length).toBe(1);
+		expect(html).toContain('data-action="code-preview" data-path="site/index.html"');
+	});
+
+	it('names the page a click on one is for', () => {
+		const btn = document.createElement('button');
+		btn.dataset.action = 'code-preview';
+		btn.dataset.path = 'site/index.html';
+		const inner = document.createElement('span');
+		btn.appendChild(inner);
+		document.body.appendChild(btn);
+		let got: string | null = null;
+		btn.addEventListener('click', (e) => (got = codePreviewFromClick(e)));
+		inner.click();
+		expect(got).toBe('site/index.html');
+		btn.remove();
 	});
 });

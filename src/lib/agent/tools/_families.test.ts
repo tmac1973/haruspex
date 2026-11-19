@@ -145,6 +145,7 @@ describe('tool families', () => {
 		expect(codeAll.some((s) => s.function.name === 'make_asset')).toBe(true);
 		expect(size(chatAll, false)).toBeLessThan(18 * 1024);
 		// 14.75: fs_read_image joined the Code tab's core (about 320 bytes).
-		expect(size(codeAll, true)).toBeLessThan(14.75 * 1024);
+		// 15.25: show_preview, the Web preview helper's tool, is on by default.
+		expect(size(codeAll, true)).toBeLessThan(15.25 * 1024);
 	});
 });
