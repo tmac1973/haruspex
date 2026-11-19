@@ -11,13 +11,13 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder.
 
-Type what you want and press `Enter`. After the first reply the model names the session, never replacing a name you gave it. Sessions save as they go.
+Type what you want and press `Enter`. After the first reply the model names the session, unless you named it. Sessions save as they go.
 
 The camera button attaches the screen, a window or a region to your next message.
 
 ## Look things up on the web
 
-The agent can search the web and read pages, with Chat's search and proxy setup; see the `search-and-network` page. To test your web app in a browser, see the `integrations` page.
+The agent can search the web and read pages, with Chat's search and proxy; see the `search-and-network` page. To test your web app in a browser, see the `integrations` page.
 
 ## Read what the agent did
 
@@ -25,12 +25,12 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 - **Commands** show as a card: command, exit code, time and output (the last 20 lines until **Show all**). **Open in Shell** types it in a new Shell tab, not run.
 - Searches and reads show as steps.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step is above it in grey.
-- A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
-- **File names** inside the folder (`src/app.ts:42`), anywhere in the session, open the file in an editor window.
+- A call being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
+- **File names** in the folder (`src/app.ts:42`) open in an editor window; **Preview** beside an `.html` file shows it (see the `web-preview` page).
 
 ## Commands that need a terminal
 
-Commands that need a password (`sudo`) or a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in, not run. Check it, then press `Enter`.
+Commands that need a password (`sudo`) or a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in. Check it, then press `Enter`.
 
 The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. The agent then gets the exit code and output. **Cancel** stops the wait (the agent carries on); **Stop** ends the turn; either way the Shell tab stays. If the shell doesn't report finished commands (old fish), the agent asks you.
 
