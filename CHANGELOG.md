@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.20](https://github.com/tmac1973/haruspex/compare/v0.2.19...v0.2.20) (2026-11-19)
+
+
+### Features
+
+* **code:** web preview window for mockups the agent writes ([#1124](https://github.com/tmac1973/haruspex/issues/1124)) ([b4de9b6](https://github.com/tmac1973/haruspex/commit/b4de9b6cfa060cee16d1d40f4933dfcb74e9d05a))
+
+
+### Bug Fixes
+
+* **build:** stop llama.cpp fetching its web UI, which broke every release build ([#1126](https://github.com/tmac1973/haruspex/issues/1126)) ([4edeb8e](https://github.com/tmac1973/haruspex/commit/4edeb8ef44f4d569477da88e796d0c4656a9fa8d))
+
 ## [0.2.19](https://github.com/tmac1973/haruspex/compare/v0.2.18...v0.2.19) (2026-11-18)
 
 
