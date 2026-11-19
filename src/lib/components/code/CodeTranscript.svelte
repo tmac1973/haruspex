@@ -16,7 +16,7 @@
 	 */
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { appLog, debugLog, worthReporting } from '#lib/reportLogs.ts';
-	import { codePathFromClick } from '#lib/markdown.ts';
+	import { codePathFromClick, codePreviewFromClick } from '#lib/markdown.ts';
 	import { onDestroy, untrack } from 'svelte';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import { isSubtaskNotification } from '#lib/code/backgroundSubtasks.ts';
@@ -36,6 +36,8 @@
 	import { openRemoteFile } from '#lib/peers/remoteCodeSession.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { sessionHelpers } from '#lib/helpers/registry.ts';
+	import { openPreview } from '#lib/preview/open.ts';
 	import { trackFollow } from '#lib/utils/followBottom.ts';
 
 	let { session, notes = [] }: { session: CodeSessionView; notes?: TranscriptNote[] } = $props();
@@ -152,13 +154,33 @@
 		session.readFile ? (rel: string) => openRemoteFile(session, rel) : undefined
 	);
 	const linkFiles = $derived(session.capabilities.openInEditor || !!session.readFile);
-	const codePaths = $derived(linkFiles ? makeCodePathLinker(session.root) : undefined);
+	/** Pages open in the preview window while the session offers Web preview. */
+	const canPreview = $derived(
+		session.capabilities.previewWindow &&
+			!session.wslDistro &&
+			sessionHelpers(session.helpers).some((h) => h.id === 'preview')
+	);
+	const codePaths = $derived(
+		linkFiles ? makeCodePathLinker(session.root, { preview: canPreview }) : undefined
+	);
+
+	function preview(rel: string) {
+		void openPreview(session.id, session.root, rel).catch((e: unknown) =>
+			showToast(`Couldn't open the preview: ${errMessage(e)}`, { kind: 'error' })
+		);
+	}
+	const onPreview = $derived(canPreview ? preview : undefined);
 
 	/**
 	 * Rendered markdown can't carry handlers, so its path links are buttons
 	 * with `data-action="code-path"`, opened here.
 	 */
 	function onThreadClick(event: MouseEvent) {
+		const page = codePreviewFromClick(event);
+		if (page) {
+			if (canPreview) preview(relativeToRoot(session.root, page) ?? page);
+			return;
+		}
 		const target = codePathFromClick(event);
 		if (!target) return;
 		if (session.readFile)
@@ -259,6 +281,7 @@
 						{linkFiles}
 						openFile={openRemote}
 						openInShell={session.capabilities.openInShell}
+						{onPreview}
 					/>
 				{/if}
 				<ChatMessage
@@ -286,6 +309,7 @@
 				{linkFiles}
 				openFile={openRemote}
 				openInShell={session.capabilities.openInShell}
+				{onPreview}
 			/>
 		{/if}
 	{/each}
@@ -311,6 +335,7 @@
 				{linkFiles}
 				openFile={openRemote}
 				openInShell={session.capabilities.openInShell}
+				{onPreview}
 				onStopSubtask={session.stopSubtask}
 			/>
 		{/if}
@@ -601,6 +626,22 @@
 
 	.thread :global(.code-path:hover) {
 		text-decoration-style: solid;
+	}
+
+	.thread :global(.code-preview) {
+		appearance: none;
+		background: none;
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		padding: 0 5px;
+		font: inherit;
+		font-size: 0.8em;
+		color: var(--accent);
+		cursor: pointer;
+	}
+
+	.thread :global(.code-preview:hover) {
+		background: var(--bg-secondary);
 	}
 
 	.error {

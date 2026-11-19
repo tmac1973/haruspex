@@ -81,6 +81,19 @@ describe('makeCodePathLinker', () => {
 		expect(link('/etc/hosts.conf')).toBeNull();
 		expect(link('../x/a.ts')).toBeNull();
 	});
+
+	it('marks pages for a Preview button only when asked', () => {
+		const withPreview = makeCodePathLinker('/proj', { preview: true });
+		expect(link('site/index.html')).toEqual({ path: 'site/index.html', line: null });
+		expect(withPreview('site/index.html')).toEqual({
+			path: 'site/index.html',
+			line: null,
+			preview: true
+		});
+		expect(withPreview('site/old.HTM')?.preview).toBe(true);
+		expect(withPreview('site/index.html:3')?.preview).toBeUndefined();
+		expect(withPreview('docs/notes.md')?.preview).toBeUndefined();
+	});
 });
 
 describe('splitGrepLine', () => {

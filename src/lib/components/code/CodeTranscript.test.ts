@@ -13,6 +13,20 @@ vi.mock('#lib/editor/windows.ts', () => ({
 const forkFromMessage = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('#lib/code/windows.ts', () => ({ forkFromMessage }));
 
+const openPreview = vi.hoisted(() => vi.fn().mockResolvedValue('http://127.0.0.1:1/t/a.html'));
+vi.mock('#lib/preview/open.ts', () => ({ openPreview }));
+const previewOn = vi.hoisted(() => ({ value: false }));
+vi.mock('#lib/helpers/registry.ts', async (importOriginal) => {
+	const real = await importOriginal<typeof import('#lib/helpers/registry.ts')>();
+	return {
+		...real,
+		sessionHelpers: (stored: string[] | null | undefined) => [
+			...real.sessionHelpers(stored).filter((h) => h.id !== 'preview'),
+			...(previewOn.value ? [{ id: 'preview' } as never] : [])
+		]
+	};
+});
+
 import CodeTranscript from './CodeTranscript.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
 import { ALL_CAPABILITIES } from '#lib/code/sessionView.ts';
@@ -305,6 +319,43 @@ describe('CodeTranscript and the shell', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 		expect(goToShell).toHaveBeenCalledOnce();
 		expect(cancelShellWait).toHaveBeenCalledOnce();
+	});
+});
+
+describe('CodeTranscript previews', () => {
+	const page = (over: Partial<Record<string, unknown>> = {}) =>
+		fakeSession({
+			messages: [
+				{ role: 'user', content: 'make a page' },
+				{ role: 'assistant', content: 'Wrote site/index.html.' }
+			],
+			...over
+		});
+
+	it('opens a page in the preview window while the session offers Web preview', async () => {
+		previewOn.value = true;
+		openPreview.mockClear();
+		const { container } = render(CodeTranscript, { session: page() });
+		const btn = container.querySelector<HTMLButtonElement>('button.code-preview')!;
+		expect(btn.dataset.path).toBe('site/index.html');
+		await fireEvent.click(btn);
+		expect(openPreview).toHaveBeenCalledWith('s1', '/p/app', 'site/index.html');
+		previewOn.value = false;
+	});
+
+	it('shows no Preview button with the helper off, for another computer or in WSL', () => {
+		const cases: [boolean, Partial<Record<string, unknown>>][] = [
+			[false, {}],
+			[true, { capabilities: { ...ALL_CAPABILITIES, previewWindow: false } }],
+			[true, { wslDistro: 'Ubuntu' }]
+		];
+		for (const [on, over] of cases) {
+			previewOn.value = on;
+			const { container, unmount } = render(CodeTranscript, { session: page(over) });
+			expect(container.querySelector('button.code-preview')).toBeNull();
+			unmount();
+		}
+		previewOn.value = false;
 	});
 });
 
