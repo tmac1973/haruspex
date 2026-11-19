@@ -144,8 +144,14 @@ fn binary_in_source_tree(binaries_dir: &Path, stem: &str) -> Option<PathBuf> {
 }
 
 /// `npm/bin/npm-cli.js` beneath a candidate `node-modules` parent, if present.
+///
+/// Without Windows' verbatim prefix: Tauri's `resource_dir()` is `\\?\C:\…`
+/// there, and Node cannot start a script named that way — it lstats `C:` and
+/// dies with EISDIR before npm runs at all.
 fn npm_cli_under(node_modules_dir: &Path) -> Option<PathBuf> {
-    let candidate = node_modules_dir.join("npm").join("bin").join("npm-cli.js");
+    let candidate = crate::fs_tools::path::strip_verbatim(
+        &node_modules_dir.join("npm").join("bin").join("npm-cli.js"),
+    );
     candidate.is_file().then_some(candidate)
 }
 
@@ -366,6 +372,18 @@ mod tests {
             "the staged layout drops the target triple"
         );
         assert_eq!(binary_in(&dir, &bundled_stem("uv")), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn npm_cli_is_never_a_verbatim_path() {
+        // resource_dir() is `\\?\C:\…` on Windows; node handed that as its
+        // script fails with EISDIR on `C:` and every npm install fails.
+        let dir = temp_dir("npm_verbatim");
+        let cli = dir.join("npm").join("bin").join("npm-cli.js");
+        touch(&cli);
+        let verbatim = PathBuf::from(format!(r"\\?\{}", dir.display()));
+        assert_eq!(npm_cli_under(&verbatim), Some(cli));
     }
 
     #[test]
