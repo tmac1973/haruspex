@@ -63,6 +63,12 @@ A long-lived app, driven step by step:
                             e.g. answer mcp '{"choice":"allow_once"}'
   logs [--since N]          agent debug log lines from N on
   screenshot [PATH]
+  windows                   every app window: its label and address
+  window-exec <label> <js>  evaluate JS in another window (a promise is awaited);
+                            --frame CSS runs it inside that iframe there
+                            (a script that closes its own window never returns;
+                            close windows from the main one)
+  window-shot <label> [PATH] a screenshot of another window
   minimise | restore        the app window
   scenario <name>           switch the fake model's scenario (--fake only)
   requests                  what the fake model was asked (--fake or --record)
@@ -119,6 +125,7 @@ const OPTIONS = {
 	seconds: { type: 'string', default: '3' },
 	since: { type: 'string', default: '0' },
 	nth: { type: 'string' },
+	frame: { type: 'string' },
 	'auto-approve': { type: 'boolean' },
 	'no-auto-approve': { type: 'boolean' },
 	'verbose-payloads': { type: 'boolean', default: false },
@@ -357,6 +364,10 @@ async function daemon(opts) {
 		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
+		windows: () => app.windows(),
+		'window-exec': (a) => app.windowExec(a.label, a.js, a.frame),
+		'window-shot': (a) =>
+			app.windowShot(a.label, a.path ?? join(opts.outDir, `${a.label}-${Date.now()}.png`)),
 		screenshot: (a) => app.screenshot(a.path ?? join(opts.outDir, `screenshot-${Date.now()}.png`)),
 		minimise: () => app.minimise(),
 		restore: () => app.restore(),
@@ -514,6 +525,14 @@ async function client(cmd, values, positionals) {
 		case 'screenshot':
 			args = { path: positionals[0] ? resolve(positionals[0]) : undefined };
 			break;
+		case 'window-exec':
+			need(2, 'a window label and the JS');
+			args = { label: positionals[0], js: positionals.slice(1).join(' '), frame: values.frame };
+			break;
+		case 'window-shot':
+			need(1, 'a window label');
+			args = { label: positionals[0], path: positionals[1] ? resolve(positionals[1]) : undefined };
+			break;
 		case 'scenario':
 			need(1, 'a scenario name');
 			args = { name: positionals[0] };
@@ -551,6 +570,9 @@ const CLIENT_COMMANDS = new Set([
 	'state',
 	'logs',
 	'screenshot',
+	'windows',
+	'window-exec',
+	'window-shot',
 	'minimise',
 	'restore',
 	'scenario',
