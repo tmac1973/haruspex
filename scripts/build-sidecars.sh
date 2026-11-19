@@ -265,13 +265,17 @@ else
     # LLAMA_OPENSSL=OFF: llama-server only needs TLS to download models itself
     # (-hf, --model-url) or to serve HTTPS, and Haruspex does neither. Left on,
     # cmake links whatever OpenSSL the runner has, which we then don't ship.
+    # LLAMA_USE_PREBUILT_UI=OFF: llama-server's own web UI is never shown, and
+    # fetching it breaks the build. A shallow clone asks the Hugging Face bucket
+    # for "b1", falls back to "latest", and "latest" no longer matches what this
+    # pinned llama.cpp checks for. Without it the server embeds no UI.
     echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
-    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DGGML_NATIVE=OFF $CMAKE_GPU_FLAGS 2>&1; then
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DGGML_NATIVE=OFF $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
-        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DGGML_NATIVE=OFF 2>&1
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DGGML_NATIVE=OFF 2>&1
     fi
 
     echo "   Building..."
