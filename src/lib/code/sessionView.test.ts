@@ -21,6 +21,7 @@ const NONE: CodeSessionCapabilities = {
 	detachWindow: false,
 	openInShell: false,
 	openInEditor: false,
+	previewWindow: false,
 	localFiles: false
 };
 

@@ -26,6 +26,8 @@ export interface CodeSessionCapabilities {
 	openInShell: boolean;
 	/** Opening its files in this computer's editor. */
 	openInEditor: boolean;
+	/** Showing its web pages in a preview window on this computer. */
+	previewWindow: boolean;
 	/** Its folder is on this computer: folder pickers, file actions, dropped paths. */
 	localFiles: boolean;
 }
@@ -38,6 +40,7 @@ export const ALL_CAPABILITIES: Readonly<CodeSessionCapabilities> = Object.freeze
 	detachWindow: true,
 	openInShell: true,
 	openInEditor: true,
+	previewWindow: true,
 	localFiles: true
 });
 

@@ -31,6 +31,7 @@ const REMOTE: Readonly<CodeSessionCapabilities> = Object.freeze({
 	detachWindow: false,
 	openInShell: false,
 	openInEditor: false,
+	previewWindow: false,
 	localFiles: false
 });
 

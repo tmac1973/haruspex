@@ -765,7 +765,9 @@ describe('Code-mode tool filtering', () => {
 				'fs_move',
 				'fs_write_document',
 				'fs_write_spreadsheet',
-				'fs_write_slides'
+				'fs_write_slides',
+				// The Web preview helper's, on by default.
+				'show_preview'
 			].sort()
 		);
 	});

@@ -55,6 +55,16 @@ describe('HelpersSection', () => {
 		expect(box.checked).toBe(true);
 	});
 
+	it('shows a defaultOn helper on until it is switched off', async () => {
+		state.helpers = [{ ...threeD, id: 'preview', defaultOn: true }];
+		render(HelpersSection);
+		const box = screen.getByRole('checkbox') as HTMLInputElement;
+		expect(box.checked).toBe(true);
+		await fireEvent.click(box);
+		expect(setCodeHelper).toHaveBeenCalledWith('preview', false);
+		expect(box.checked).toBe(false);
+	});
+
 	it('shows a helper’s settings only while its switch is on', async () => {
 		state.helpers = [
 			{

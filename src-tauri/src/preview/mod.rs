@@ -111,6 +111,11 @@ impl PreviewServer {
             return Err(format!("Not a folder: {}", root.display()));
         }
         let rel = rel.replace('\\', "/");
+        // Relative to the folder only: `/etc/x.html` would otherwise be read
+        // as the folder's own `etc/x.html`.
+        if rel.starts_with('/') {
+            return Err(paths::Refusal::Outside.message(&rel));
+        }
         let segs = paths::segments(&rel).map_err(|r| r.message(&rel))?;
         let lower = rel.to_ascii_lowercase();
         if !(lower.ends_with(".html") || lower.ends_with(".htm")) {
@@ -279,6 +284,10 @@ mod tests {
 
         let err = |e: Result<String, String>| e.unwrap_err();
         assert!(err(server.serve("s1", &root(&dir), "../x.html").await).starts_with("Not inside"));
+        assert!(
+            err(server.serve("s1", &root(&dir), "/mockup/index.html").await)
+                .starts_with("Not inside")
+        );
         assert!(err(server.serve("s1", &root(&dir), "notes.md").await).starts_with("Only .html"));
         assert!(err(server.serve("s1", &root(&dir), "gone.html").await).starts_with("Not found"));
         assert!(err(server.serve("s1", "/no/such/folder", "a.html").await).contains("missing"));

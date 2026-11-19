@@ -1,7 +1,8 @@
 /**
  * Helpers: tools the Code tab's agent runs with no model behind them, such
  * as building and rendering a 3D model to check it. Each helper owns some
- * tools and has a switch in Settings → Code → Helpers, off by default, and a
+ * tools and has a switch in Settings → Code → Helpers, off unless it says
+ * `defaultOn`, and a
  * Code session can turn each on or off for itself (`sessionHelpers`); the
  * tool filter offers a helper's tools only while the session has it on.
  *
@@ -39,6 +40,8 @@ export interface HelperDef {
 	prompt?: string | (() => string);
 	/** Its own settings, if it has any. A lazy component, so this file pulls in no Svelte. */
 	settings?: HelperSettings<unknown>;
+	/** On until the user switches it off (most helpers start off). */
+	defaultOn?: boolean;
 }
 
 const registered = new Map<string, HelperDef>();
@@ -64,9 +67,11 @@ export function helperForTool(tool: string): HelperDef | undefined {
 	return byTool.get(tool);
 }
 
-/** Whether the user has switched `id` on. */
+/** Whether `id` is switched on: the user's choice, else the helper's default. */
 export function helperOn(id: string): boolean {
-	return getSettings().codeHelpers?.[id] === true;
+	const stored = getSettings().codeHelpers?.[id];
+	if (typeof stored === 'boolean') return stored;
+	return registered.get(id)?.defaultOn === true;
 }
 
 /**
