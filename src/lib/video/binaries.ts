@@ -14,14 +14,15 @@ import type { EncoderOption } from '#lib/ipc/gen/EncoderOption.ts';
 
 let status: VideoBinariesStatus | null = null;
 
-/** Settings → Video editing's ffmpeg choice and paths, as the Rust commands take them. */
+/** Settings → Video editing's choices and paths, as the Rust commands take them. */
 export function videoOverrides(): BinaryOverrides {
 	const s = getSettings();
 	return {
 		ffmpeg: s.videoFfmpegPath,
 		ffprobe: s.videoFfprobePath,
 		melt: s.videoMeltPath,
-		ffmpegChoice: s.videoFfmpegChoice
+		ffmpegChoice: s.videoFfmpegChoice,
+		meltChoice: s.videoMeltChoice
 	};
 }
 

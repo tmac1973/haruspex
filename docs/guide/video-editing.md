@@ -5,13 +5,11 @@ description: Setting up video editing, picking a series or episode folder, setti
 
 # Video editing
 
-The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg and ffprobe, which ship with Haruspex, and melt, which comes with Shotcut and Kdenlive. The tools are off until you turn them on and all three are found.
+The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg, ffprobe and melt, which all ship with Haruspex, so you don't need to install anything. The tools are off until you turn them on.
 
 ## Set up video editing
 
-Install Shotcut or Kdenlive for melt. On Linux, use your distribution's package or Shotcut's tarball in `/opt/shotcut`: a Flatpak's melt can't be run from outside it. Fedora's `mlt-melt` and `melt-7` are found too.
-
-Open Settings → Video editing. **Programs** shows each one with its version and where it was found. **Use** picks ffmpeg and ffprobe: **Automatic** (bundled, then PATH, then an editor's), **Bundled with Haruspex**, **System**, or **Custom paths**. If melt or a custom ffmpeg says **Not found**, type its path or click **Browse…**.
+Open Settings → Video editing. **Programs** shows each one with its version and where it was found. **ffmpeg and ffprobe** and **melt** each pick **Automatic** (bundled, then PATH, then a Shotcut or Kdenlive install), **Bundled with Haruspex**, **System**, or **Custom path**, where you type the path or click **Browse…**. A Flatpak editor's melt can't be used from outside it.
 
 Then turn on **Let the assistant edit videos** under **Video tools**.
 

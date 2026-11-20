@@ -13,7 +13,7 @@
 	import { YOUTUBE_UPLOAD } from '#lib/video/youtube.ts';
 	import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 	import type { FoundBinary } from '#lib/ipc/gen/FoundBinary.ts';
-	import type { FfmpegChoice } from '#lib/ipc/gen/FfmpegChoice.ts';
+	import type { ToolChoice } from '#lib/ipc/gen/ToolChoice.ts';
 	import type { Format } from '#lib/ipc/gen/Format.ts';
 
 	type Tool = 'ffmpeg' | 'ffprobe' | 'melt';
@@ -23,19 +23,20 @@
 		ffprobe: 'videoFfprobePath',
 		melt: 'videoMeltPath'
 	} as const;
-	const LOOKED: Record<FfmpegChoice, string> = {
-		auto: 'Looked for the ffmpeg and ffprobe that ship with Haruspex, then PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).',
-		bundled: 'Looked only for the ffmpeg and ffprobe that ship with Haruspex.',
-		system:
-			'Looked in PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).',
-		custom: 'Looked only at the paths set here.'
+	const EDITORS =
+		'a Shotcut or Kdenlive install (their install folders on Windows, the apps on macOS, /usr/bin or /opt/shotcut on Linux)';
+	const LOOKED: Record<ToolChoice, string> = {
+		auto: `Looked for the one that ships with Haruspex, then PATH, then inside ${EDITORS}.`,
+		bundled: 'Looked only for the one that ships with Haruspex.',
+		system: `Looked in PATH, then inside ${EDITORS}.`,
+		custom: 'Looked only at the path set here.'
 	};
-	const MELT_LOOKED =
-		'Looked in the path set here, then PATH, then inside a Kdenlive install (Kdenlive’s bin folder on Windows, kdenlive.app on macOS).';
-	let choice = $state<FfmpegChoice>(getSettings().videoFfmpegChoice);
-	/** Path fields shown: ffmpeg and ffprobe only for a custom choice. */
-	const hasPath = (tool: Tool) => tool === 'melt' || choice === 'custom';
-	const looked = (tool: Tool) => (tool === 'melt' ? MELT_LOOKED : LOOKED[choice]);
+	let choice = $state<ToolChoice>(getSettings().videoFfmpegChoice);
+	let meltChoice = $state<ToolChoice>(getSettings().videoMeltChoice);
+	const choiceOf = (tool: Tool) => (tool === 'melt' ? meltChoice : choice);
+	/** Path fields show only for a custom choice. */
+	const hasPath = (tool: Tool) => choiceOf(tool) === 'custom';
+	const looked = (tool: Tool) => LOOKED[choiceOf(tool)];
 
 	let paths = $state<Record<Tool, string>>({
 		ffmpeg: getSettings().videoFfmpegPath,
@@ -170,6 +171,13 @@
 		if (status?.melt) void loadEncoders(true);
 	}
 
+	function saveMeltChoice() {
+		updateSettings({ videoMeltChoice: meltChoice });
+		void check();
+		// And rendered with the chosen melt.
+		void loadEncoders(true);
+	}
+
 	function savePath(tool: Tool) {
 		updateSettings({ [SETTING[tool]]: paths[tool].trim() });
 		void check();
@@ -212,7 +220,7 @@
 		override: 'set here',
 		bundled: 'bundled',
 		path: 'PATH',
-		kdenlive: 'Kdenlive'
+		editor: 'Shotcut or Kdenlive'
 	};
 
 	/** "ffmpeg n8.1.3 (bundled)": the version line without its copyright. */
@@ -234,28 +242,42 @@
 <section class="settings-section">
 	<h2>Programs</h2>
 	<div class="fields">
-		<label for="video-ffmpeg-choice">Use:</label>
+		<label for="video-ffmpeg-choice">ffmpeg and ffprobe:</label>
 		<div class="path-row">
 			<select
 				id="video-ffmpeg-choice"
 				bind:value={choice}
 				onchange={saveChoice}
-				title="Which ffmpeg and ffprobe to use. Automatic tries the ones bundled with Haruspex first, then the system's, then Kdenlive's."
+				title="Automatic tries the ones bundled with Haruspex first, then the system's, then an editor's."
 			>
 				<option value="auto">Automatic</option>
 				<option value="bundled">Bundled with Haruspex</option>
-				<option value="system">System (PATH or Kdenlive)</option>
+				<option value="system">System (PATH or an editor's)</option>
 				<option value="custom">Custom paths</option>
+			</select>
+		</div>
+		<label for="video-melt-choice">melt:</label>
+		<div class="path-row">
+			<select
+				id="video-melt-choice"
+				bind:value={meltChoice}
+				onchange={saveMeltChoice}
+				title="Automatic tries the one bundled with Haruspex first, then the system's, then Shotcut's or Kdenlive's."
+			>
+				<option value="auto">Automatic</option>
+				<option value="bundled">Bundled with Haruspex</option>
+				<option value="system">System (PATH, Shotcut or Kdenlive)</option>
+				<option value="custom">Custom path</option>
 			</select>
 		</div>
 		{#each TOOLS as tool (tool)}
 			{#if hasPath(tool)}
-				<label for="video-{tool}">{tool}:</label>
+				<label for="video-{tool}">{tool} path:</label>
 				<div class="path-row">
 					<input
 						id="video-{tool}"
 						type="text"
-						placeholder={tool === 'melt' ? 'Find it' : 'Path to ' + tool}
+						placeholder={'Path to ' + tool}
 						bind:value={paths[tool]}
 						onblur={() => savePath(tool)}
 					/>
@@ -275,7 +297,7 @@
 		{/each}
 	</div>
 	{#if missing.length > 0}
-		<p class="help" title={LOOKED[choice]}>Install Kdenlive, or set the paths above.</p>
+		<p class="help" title={looked(missing[0])}>Choose Automatic, or set the paths above.</p>
 	{/if}
 	{#each status?.hints.filter((h) => !h.startsWith('Not found')) ?? [] as hint (hint)}
 		<p class="help bad">{hint}</p>

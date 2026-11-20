@@ -65,10 +65,10 @@ See the `video-generation` page.
 
 ## Video editing
 
-- **Let the assistant edit videos**: off. **Use**: Automatic. **melt**: found or set.
-- **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
+- **Let the assistant edit videos**: off. **ffmpeg and ffprobe**, **melt**: Automatic (the bundled ones).
+- **Editor**: Shotcut. **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
 
-See the `video-editing` and `video-render` pages.
+See the `video-editing`, `video-cut` and `video-render` pages.
 
 ## Guest chat
 

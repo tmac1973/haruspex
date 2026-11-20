@@ -4,7 +4,7 @@
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { createSubscriber } from 'svelte/reactivity';
 import { clampInt } from '#lib/utils/clampInt.ts';
-import type { FfmpegChoice } from '#lib/ipc/gen/FfmpegChoice.ts';
+import type { ToolChoice } from '#lib/ipc/gen/ToolChoice.ts';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
@@ -436,18 +436,31 @@ export function seedGenerationServers(s: Partial<AppSettings>): GenerationServer
 }
 
 /** An address as the saved list compares it: trimmed, without a trailing slash. */
-const FFMPEG_CHOICES: readonly FfmpegChoice[] = ['auto', 'bundled', 'system', 'custom'];
+const TOOL_CHOICES: readonly ToolChoice[] = ['auto', 'bundled', 'system', 'custom'];
 
 /**
  * The stored ffmpeg choice. Settings from before there was one keep the paths
  * they set: those were tried first then, which is what Custom does now.
  */
-function storedFfmpegChoice(rest: Record<string, unknown>): FfmpegChoice {
-	if (FFMPEG_CHOICES.includes(rest.videoFfmpegChoice as FfmpegChoice)) {
-		return rest.videoFfmpegChoice as FfmpegChoice;
+function storedFfmpegChoice(rest: Record<string, unknown>): ToolChoice {
+	if (TOOL_CHOICES.includes(rest.videoFfmpegChoice as ToolChoice)) {
+		return rest.videoFfmpegChoice as ToolChoice;
 	}
 	const set = (v: unknown) => typeof v === 'string' && v.trim() !== '';
 	return set(rest.videoFfmpegPath) || set(rest.videoFfprobePath) ? 'custom' : 'auto';
+}
+
+/**
+ * The stored melt choice. A melt path set before there was one was tried
+ * first then, which is what Custom does now.
+ */
+function storedMeltChoice(rest: Record<string, unknown>): ToolChoice {
+	if (TOOL_CHOICES.includes(rest.videoMeltChoice as ToolChoice)) {
+		return rest.videoMeltChoice as ToolChoice;
+	}
+	return typeof rest.videoMeltPath === 'string' && rest.videoMeltPath.trim() !== ''
+		? 'custom'
+		: 'auto';
 }
 
 export function normalizeServerUrl(url: string): string {
@@ -1007,14 +1020,15 @@ export interface AppSettings {
 	videoEditingEnabled: boolean;
 	/**
 	 * Which ffmpeg and ffprobe Settings → Video editing uses: automatic (the
-	 * bundled pair, then the system's, then Kdenlive's), only the bundled pair,
-	 * only the system's, or the two paths below.
+	 * bundled pair, then the system's, then an editor's), only the bundled
+	 * pair, only the system's, or the two paths below.
 	 */
-	videoFfmpegChoice: FfmpegChoice;
+	videoFfmpegChoice: ToolChoice;
+	/** The same choice for melt. */
+	videoMeltChoice: ToolChoice;
 	/**
-	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. The
-	 * ffmpeg and ffprobe paths count only with `videoFfmpegChoice` custom. An
-	 * empty melt path means find it: PATH, then inside a Kdenlive install.
+	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. They
+	 * count only with their choice custom.
 	 */
 	videoFfmpegPath: string;
 	videoFfprobePath: string;
@@ -1349,6 +1363,7 @@ const defaults: AppSettings = {
 	codeHelperConfig: {},
 	videoEditingEnabled: false,
 	videoFfmpegChoice: 'auto',
+	videoMeltChoice: 'auto',
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -1561,6 +1576,7 @@ function load(): AppSettings {
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				cameras: storedCameras(rest.cameras),
 				videoFfmpegChoice: storedFfmpegChoice(rest),
+				videoMeltChoice: storedMeltChoice(rest),
 				videoEditor: rest.videoEditor === 'kdenlive' ? 'kdenlive' : 'shotcut',
 				cameraTrustedServers: Array.isArray(rest.cameraTrustedServers)
 					? rest.cameraTrustedServers.filter((u: unknown) => typeof u === 'string')

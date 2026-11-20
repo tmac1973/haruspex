@@ -5,7 +5,7 @@ description: Rendering a Shotcut or Kdenlive project to an MP4 for YouTube in th
 
 # Rendering videos
 
-The assistant renders the episode's Shotcut or Kdenlive project with melt, the program both editors render with. Setting up the video tools is on the `video-editing` page, and making the project on the `video-cut` page.
+The assistant renders the episode's Shotcut or Kdenlive project with melt, the program both editors render with, which ships with Haruspex. Setting up the video tools is on the `video-editing` page, and making the project on the `video-cut` page.
 
 ## Render a video
 

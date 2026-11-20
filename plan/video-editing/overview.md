@@ -40,8 +40,8 @@ rates and codecs. Both need to work.
 
 - Driving a running Kdenlive window live (D-Bus). Stock Kdenlive doesn't expose
   an editing API, and patched forks are out.
-- Bundling ffmpeg or melt with Haruspex. They come from the user's Kdenlive
-  install or PATH.
+- ~~Bundling ffmpeg or melt with Haruspex.~~ Both ship with Haruspex now: see
+  `plan/melt-and-shotcut/`.
 - An ffmpeg-only render path for users without melt.
 - A dedicated Video tab, clip-list UI or preview player. The work happens in
   Chat (and Code); Kdenlive is the visual editor.

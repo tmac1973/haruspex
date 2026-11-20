@@ -659,6 +659,13 @@ describe('load-time reasoning-effort default', () => {
 				.videoFfmpegChoice
 		).toBe('bundled');
 		expect((await loadWith({ videoFfmpegChoice: 'nonsense' })).videoFfmpegChoice).toBe('auto');
+		expect((await loadWith({})).videoMeltChoice).toBe('auto');
+		expect((await loadWith({ videoMeltPath: '/opt/melt' })).videoMeltChoice).toBe('custom');
+		expect(
+			(await loadWith({ videoMeltPath: '/opt/melt', videoMeltChoice: 'auto' })).videoMeltChoice
+		).toBe('auto');
+		expect((await loadWith({})).videoEditor).toBe('shotcut');
+		expect((await loadWith({ videoEditor: 'kdenlive' })).videoEditor).toBe('kdenlive');
 	});
 
 	it('turns repo trust stored as true/false into records', async () => {
