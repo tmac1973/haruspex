@@ -459,6 +459,9 @@ impl McpSupervisor {
         // user's machine as on ours, and the ambient environment is where that
         // guarantee goes to die. The catalog supplies what a server needs.
         cmd.env_clear();
+        for (key, value) in os_essential_env(|var| std::env::var(var).ok()) {
+            cmd.env(key, value);
+        }
         for (key, value) in &config.env {
             cmd.env(key, value);
         }
@@ -751,6 +754,31 @@ fn spawn_stderr_reader(
     });
 }
 
+/// What a process needs from Windows itself, kept through `env_clear`.
+///
+/// Without `SystemRoot`, Windows can't load the system's random number
+/// generator: Node aborts on its first line (`Assertion failed:
+/// ncrypto::CSPRNG`), and so did every npm-packaged server. `TEMP` and `TMP`
+/// keep a server's scratch files out of `C:\Windows`. These describe the OS,
+/// not the user's shell, so they don't undo what clearing is for; a value the
+/// server's own environment sets still wins, being applied after.
+const WINDOWS_ESSENTIAL_VARS: &[&str] = &["SystemRoot", "windir", "TEMP", "TMP"];
+
+/// [`WINDOWS_ESSENTIAL_VARS`] that are set, on Windows; nothing elsewhere.
+fn os_essential_env(get: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    WINDOWS_ESSENTIAL_VARS
+        .iter()
+        .filter_map(|var| {
+            get(var)
+                .filter(|v| !v.is_empty())
+                .map(|v| (var.to_string(), v))
+        })
+        .collect()
+}
+
 /// The last few log lines, formatted for appending to an error message.
 /// The values in a server's environment that are credentials: what a
 /// variable named like one holds (`GITHUB_TOKEN`, `API_KEY`, a resolved
@@ -802,6 +830,22 @@ async fn log_tail(log: &LogBuffer, secrets: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cleared_environment_keeps_what_windows_itself_needs() {
+        let env = os_essential_env(|var| match var {
+            "SystemRoot" => Some(r"C:\Windows".into()),
+            "TEMP" => Some(String::new()),
+            "PATH" => Some(r"C:\bin".into()),
+            _ => None,
+        });
+        if cfg!(windows) {
+            // Without SystemRoot, node aborts before running a line.
+            assert_eq!(env, vec![("SystemRoot".into(), r"C:\Windows".into())]);
+        } else {
+            assert!(env.is_empty(), "{env:?}");
+        }
+    }
 
     #[test]
     fn debug_names_env_variables_but_never_prints_their_values() {
@@ -874,6 +918,7 @@ mod tests {
         let mut cmd = tokio::process::Command::new(&config.program);
         cmd.args(&config.args);
         cmd.env_clear();
+        cmd.envs(os_essential_env(|var| std::env::var(var).ok()));
         TokioChildProcess::builder(cmd)
             .stderr(Stdio::piped())
             .spawn()
