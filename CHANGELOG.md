@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.23](https://github.com/tmac1973/haruspex/compare/v0.2.22...v0.2.23) (2026-11-20)
+
+
+### Bug Fixes
+
+* **code:** preview window clipped under app zoom; reopen button on show_preview steps ([#1137](https://github.com/tmac1973/haruspex/issues/1137)) ([48f565c](https://github.com/tmac1973/haruspex/commit/48f565c454f4852d6072c1a2d292df7076c00b28))
+* **music:** give a song the model wrote as a plain link a player ([#1138](https://github.com/tmac1973/haruspex/issues/1138)) ([faa18ef](https://github.com/tmac1973/haruspex/commit/faa18efc8a6933983c5b494413865fe8b847b823))
+
 ## [0.2.22](https://github.com/tmac1973/haruspex/compare/v0.2.21...v0.2.22) (2026-11-20)
 
 
