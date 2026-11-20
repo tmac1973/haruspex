@@ -504,6 +504,13 @@ function sanitizeForRender(text: string, resolved?: ResolvedImages): string {
 		const figure = resolved?.figureFor(trimmed, String(alt));
 		return figure ?? '';
 	});
+	// The model is told to write a song as an image, but sometimes writes it
+	// as a plain link (`[Listen to Rain](haruspex-audio://…)`). The webview
+	// can't follow that scheme, so the link would do nothing: give it the
+	// player instead. Other links are left alone.
+	out = out.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (match, text, href) => {
+		return audioFigureHtml(String(href), String(text)) ?? match;
+	});
 	return out;
 }
 

@@ -327,6 +327,22 @@ describe('renderMarkdown generated audio', () => {
 		expect(html).toContain(`data-audio-hash="${hash}"`);
 	});
 
+	it('turns a plain link to cached audio into a player too', () => {
+		// What the model wrote for "Chicago Cold": a link, not an image.
+		const html = renderMarkdown(`🎵 [Listen to Chicago Cold](haruspex-audio://localhost/${hash})`);
+		const host = new DOMParser().parseFromString(html, 'text/html').querySelector('.chat-audio');
+		expect((host as HTMLElement | null)?.dataset.audioHash).toBe(hash);
+		expect((host as HTMLElement | null)?.dataset.audioTitle).toBe('Listen to Chicago Cold');
+		expect(html).not.toContain('<a');
+		expect(html).not.toContain('haruspex-audio://');
+	});
+
+	it('leaves other links as links', () => {
+		const html = renderMarkdown('[docs](https://example.com/song.mp3)');
+		expect(html).toContain('<a');
+		expect(html).not.toContain('chat-audio');
+	});
+
 	it('drops audio from anywhere else', () => {
 		for (const src of [
 			'https://example.com/song.mp3',
