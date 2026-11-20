@@ -463,6 +463,25 @@ else
     # run; koko doesn't need the copies (Windows ships DirectML.dll).
     mkdir -p target/release/build/examples target/release/build/deps
 
+    # espeak-ng's compat headers guard `#if __has_include_next(<x>)` with
+    # `#ifndef __has_include_next`, which defines a fallback for MSVC. MSVC
+    # 19.52 (windows-latest from 2026-11) reports the name as defined but
+    # can't evaluate it in C, so every source that includes them fails with
+    # C7780. MSVC has no include_next anyway: make those tests a plain 0 in
+    # the crate's source before its build script copies it out.
+    if [[ "$TARGET" == *-windows-msvc ]]; then
+        cargo fetch 2>&1
+        cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+        if command -v cygpath >/dev/null 2>&1; then cargo_home=$(cygpath -u "$cargo_home"); fi
+        patched=0
+        while IFS= read -r header; do
+            sed -E -i '/^#[[:space:]]*(el)?if/ s/__has_include_next[[:space:]]*\([^)]*\)/0/g' "$header"
+            patched=$((patched + 1))
+        done < <(grep -rlE '^#[[:space:]]*(el)?if.*__has_include_next' \
+            "$cargo_home"/registry/src/*/espeak-rs-sys-*/ 2>/dev/null)
+        echo "   Patched __has_include_next out of $patched espeak-ng header(s)."
+    fi
+
     cargo build --release --bin koko 2>&1
 
     # Restore original Cargo.toml
