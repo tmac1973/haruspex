@@ -343,6 +343,39 @@ describe('CodeTranscript previews', () => {
 		previewOn.value = false;
 	});
 
+	it('opens a page show_preview opened again, after its window is closed', async () => {
+		previewOn.value = true;
+		openPreview.mockClear();
+		const step = (id: string, result: string) => ({
+			id,
+			toolName: 'show_preview',
+			query: 'site/a.html',
+			status: 'done',
+			args: { path: 'site/a.html' },
+			result
+		});
+		const messageSteps = {
+			1: [
+				step('p1', 'Opened site/a.html in the preview window on this computer.'),
+				step('p2', '{"error":"Not found"}')
+			]
+		};
+		render(CodeTranscript, {
+			session: page({
+				messages: [
+					{ role: 'user', content: 'go' },
+					{ role: 'assistant', content: 'Done.' }
+				],
+				messageSteps
+			})
+		});
+		const rows = screen.getAllByTestId('previewed');
+		expect(rows).toHaveLength(1);
+		await fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+		expect(openPreview).toHaveBeenCalledWith('s1', '/p/app', 'site/a.html');
+		previewOn.value = false;
+	});
+
 	it('shows no Preview button with the helper off, for another computer or in WSL', () => {
 		const cases: [boolean, Partial<Record<string, unknown>>][] = [
 			[false, {}],

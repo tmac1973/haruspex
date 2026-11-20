@@ -94,6 +94,7 @@
 		| { kind: 'lead'; text: string }
 		| { kind: 'command'; step: SearchStep }
 		| { kind: 'diff'; step: SearchStep; diff: FileDiff }
+		| { kind: 'preview'; path: string }
 		| { kind: 'subtask'; subtask: SubtaskState }
 		| { kind: 'steps'; steps: SearchStep[] };
 
@@ -104,16 +105,29 @@
 		return null;
 	}
 
+	/**
+	 * The page a `show_preview` step opened, so its row can open it again
+	 * once the window is closed; null when it failed or the session can't.
+	 */
+	function previewedOf(step: SearchStep): string | null {
+		if (!onPreview || step.toolName !== 'show_preview' || step.status !== 'done') return null;
+		if (!step.result?.startsWith('Opened ')) return null;
+		const path = step.args?.path;
+		return typeof path === 'string' && path.trim() ? path.trim() : null;
+	}
+
 	const blocks = $derived.by(() => {
 		const out: Block[] = [];
 		for (const step of steps) {
 			if (step.reasoning?.trim()) out.push({ kind: 'reasoning', text: step.reasoning.trim() });
 			if (step.lead?.trim()) out.push({ kind: 'lead', text: step.lead.trim() });
 			const diff = diffOf(step);
+			const previewed = previewedOf(step);
 			if (step.toolName === 'delegate' && step.subtask) {
 				out.push({ kind: 'subtask', subtask: step.subtask });
 			} else if (COMMAND_TOOLS.has(step.toolName)) out.push({ kind: 'command', step });
 			else if (diff) out.push({ kind: 'diff', step, diff });
+			else if (previewed) out.push({ kind: 'preview', path: previewed });
 			else {
 				const last = out[out.length - 1];
 				if (last?.kind === 'steps') last.steps.push(step);
@@ -136,6 +150,15 @@
 			<CommandCard step={block.step} root={openInShell ? root : undefined} />
 		{:else if block.kind === 'diff'}
 			<DiffCard diff={block.diff} onOpen={opener(block.diff)} onPreview={previewer(block.diff)} />
+		{:else if block.kind === 'preview'}
+			{@const rel = root ? (relativeToRoot(root, block.path) ?? block.path) : block.path}
+			<div class="previewed" data-testid="previewed">
+				<span class="icon">🌐</span>
+				<span class="label">Previewed <code>{rel}</code></span>
+				<button class="preview" title="Open in the preview window" onclick={() => onPreview?.(rel)}
+					>Preview</button
+				>
+			</div>
 		{:else if block.kind === 'subtask'}
 			<SubtaskCard subtask={block.subtask} {compact} onStop={onStopSubtask}>
 				{#snippet steps(s: SubtaskState)}
@@ -239,6 +262,50 @@
 		width: 12px;
 		height: 12px;
 		flex-shrink: 0;
+	}
+
+	/* A show_preview step: the shared step row, with a button that opens
+	   the page again (the window may have been closed since). */
+	.previewed {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 0;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.previewed .icon {
+		font-size: 0.9rem;
+		flex-shrink: 0;
+	}
+
+	.previewed .label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.previewed code {
+		font-size: 0.8rem;
+	}
+
+	.previewed .preview {
+		appearance: none;
+		background: none;
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		padding: 0 6px;
+		font: inherit;
+		font-size: 0.85em;
+		color: var(--accent);
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.previewed .preview:hover {
+		background: var(--bg-secondary);
 	}
 
 	/* The command card's head, before the card exists. */
