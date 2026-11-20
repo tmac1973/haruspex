@@ -15,7 +15,12 @@ use super::context::SessionContext;
 /// Uses the standard `/mnt/<drive>` automount (the default), which avoids a
 /// `wsl.exe wslpath` round-trip at spawn. A non-default `automount.root` in
 /// wsl.conf would need `wslpath` instead — a documented edge case.
+///
+/// Takes the verbatim spelling (`\\?\C:\…`) too: Tauri's `resource_dir()`
+/// returns one on Windows, and refusing it left every WSL tab without its
+/// hook ("no integration").
 pub fn win_to_wsl_path(win: &str) -> Option<String> {
+    let win = win.strip_prefix(r"\\?\").unwrap_or(win);
     let bytes = win.as_bytes();
     if bytes.len() < 2 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' {
         return None;
@@ -119,6 +124,16 @@ mod tests {
             Some("/mnt/c/Users/tim/proj")
         );
         assert_eq!(win_to_wsl_path("d:\\a/b").as_deref(), Some("/mnt/d/a/b"));
+    }
+
+    #[test]
+    fn translates_verbatim_drive_paths() {
+        // What resource_dir() returns on Windows: the hook lives under it.
+        assert_eq!(
+            win_to_wsl_path(r"\\?\C:\Users\tim\AppData\Local\Haruspex\resources").as_deref(),
+            Some("/mnt/c/Users/tim/AppData/Local/Haruspex/resources")
+        );
+        assert_eq!(win_to_wsl_path(r"\\?\UNC\server\share"), None);
     }
 
     #[test]
