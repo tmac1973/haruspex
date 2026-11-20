@@ -15,6 +15,13 @@
 //! pid alone is not proof of identity — sweeping on pid alone would eventually
 //! kill an unrelated process belonging to the user. See [`command_matches`].
 //!
+//! Each entry also names the app process that spawned it, because the
+//! registry is shared by every copy of the app that uses this data folder: an
+//! installed build next to `tauri dev`, or a second launch of an AppImage. A
+//! sweep leaves an entry alone while the app that owns it is still running.
+//! Without that, the second launch killed the first one's live servers, and
+//! every call the first made after that failed with "Transport closed".
+//!
 //! The sidecars need it as much as MCP does. A `tauri dev` rebuild orphans
 //! them too, and an orphaned image engine held 9 GB of VRAM for six hours
 //! because it only gets cleared when the next image is asked for. On Linux and
@@ -43,6 +50,54 @@ pub struct RunningServer {
     /// Absolute path to the program that was spawned. This is the identity
     /// check on the next launch; see [`command_matches`].
     pub program: String,
+    /// The app process that spawned it. Filled in by [`register`]; absent in
+    /// entries written before it existed, which sweep as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<Owner>,
+}
+
+/// One running app process, told apart from a later process that reuses its
+/// pid by its start time.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Owner {
+    pub pid: u32,
+    /// Seconds since the epoch, as sysinfo reports it.
+    pub started: u64,
+}
+
+/// This app process, or `None` where sysinfo can't read its start time.
+pub fn this_app() -> Option<Owner> {
+    static THIS: std::sync::OnceLock<Option<Owner>> = std::sync::OnceLock::new();
+    *THIS.get_or_init(|| {
+        let pid = std::process::id();
+        process_started(pid).map(|started| Owner { pid, started })
+    })
+}
+
+/// When the process at this pid started, or `None` when there is none.
+fn process_started(pid: u32) -> Option<u64> {
+    let mut sys = sysinfo::System::new().ok()?;
+    let target = sysinfo::Pid::from_u32(pid);
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&[target]),
+        true,
+        sysinfo::ProcessRefreshKind::nothing(),
+    );
+    sys.process(target).map(|p| p.start_time())
+}
+
+/// Is the app that spawned this entry still running? Then its processes are
+/// not orphans, whatever the registry says.
+pub fn owner_alive(owner: &Owner) -> bool {
+    process_started(owner.pid) == Some(owner.started)
+}
+
+/// Whether a sweep should leave this entry for a live app. Never true for
+/// this process's own entries: there are none yet when it sweeps.
+pub fn owned_by_another_live_app(entry: &RunningServer) -> bool {
+    entry
+        .owner
+        .is_some_and(|o| Some(o) != this_app() && owner_alive(&o))
 }
 
 /// `<app_data>/<kind>/running.json`.
@@ -77,26 +132,36 @@ pub fn save(path: &std::path::Path, entries: &[RunningServer]) -> Result<(), Str
     std::fs::write(path, text).map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
-/// Record a spawn. Replaces any existing entry for the same server id — a
-/// restart reuses the id and the old pid is no longer ours to kill.
+/// Record a spawn, owned by this app. Replaces this app's existing entry for
+/// the same server id — a restart reuses the id and the old pid is no longer
+/// ours to kill — but not another app's.
 ///
 /// A `None` path means there is nowhere to record to (no app data directory);
 /// that degrades reaping, so it must never fail a spawn.
-pub fn register(path: Option<&std::path::Path>, entry: RunningServer) {
+pub fn register(path: Option<&std::path::Path>, mut entry: RunningServer) {
     let Some(path) = path else {
         return;
     };
+    entry.owner = this_app();
     let mut entries = load(path);
-    entries.retain(|e| e.id != entry.id);
+    entries.retain(|e| !same_slot(e, &entry.id, entry.owner));
     entries.push(entry);
     if let Err(e) = save(path, &entries) {
         warn!("could not record running process in {path:?}: {e}");
     }
 }
 
-/// Drop a server from the registry once we have stopped it ourselves.
+/// Drop a server from the registry once we have stopped it ourselves. Another
+/// app's entry under the same id stays.
 pub fn deregister(path: Option<&std::path::Path>, id: &str) {
-    deregister_where(path, |e| e.id == id);
+    let me = this_app();
+    deregister_where(path, |e| same_slot(e, id, me));
+}
+
+/// This id, written by this owner. An entry with no owner predates owners,
+/// so it can only be ours or a dead app's.
+fn same_slot(e: &RunningServer, id: &str, owner: Option<Owner>) -> bool {
+    e.id == id && (e.owner.is_none() || e.owner == owner)
 }
 
 /// Drop an entry only if it is still this exact process. A child that exits
@@ -204,34 +269,47 @@ pub fn sweep(app: &AppHandle, kind: &str) -> Vec<String> {
     if entries.is_empty() {
         return Vec::new();
     }
-    let killed = sweep_entries(&entries, pid_command, kill_pid);
+    let (killed, kept) = sweep_entries(&entries, owned_by_another_live_app, pid_command, kill_pid);
     for id in &killed {
         info!("{kind}: reaped orphaned {id} from a previous run");
     }
-    // Cleared whether or not anything was killed: entries that are gone are
-    // not worth carrying, and a pid we could not kill will not become killable
-    // later.
-    if let Err(e) = save(&path, &[]) {
+    if !kept.is_empty() {
+        info!(
+            "{kind}: left {} process(es) of another running Haruspex alone",
+            kept.len()
+        );
+    }
+    // Everything else is dropped whether or not it was killed: entries that
+    // are gone are not worth carrying, and a pid we could not kill will not
+    // become killable later.
+    if let Err(e) = save(&path, &kept) {
         warn!("{kind}: could not clear orphan registry: {e}");
     }
     killed
 }
 
 /// The sweep's decision logic, with the platform probes injected so it can be
-/// tested without spawning anything.
+/// tested without spawning anything. Returns the ids killed and the entries
+/// left alone because a live app owns them.
 fn sweep_entries(
     entries: &[RunningServer],
+    mut owned_elsewhere: impl FnMut(&RunningServer) -> bool,
     mut command_of: impl FnMut(u32) -> Option<String>,
     mut kill: impl FnMut(u32) -> bool,
-) -> Vec<String> {
+) -> (Vec<String>, Vec<RunningServer>) {
     let mut killed = Vec::new();
+    let mut kept = Vec::new();
     for entry in entries {
+        if owned_elsewhere(entry) {
+            kept.push(entry.clone());
+            continue;
+        }
         let actual = command_of(entry.pid);
         if command_matches(&entry.program, actual.as_deref()) && kill(entry.pid) {
             killed.push(entry.id.clone());
         }
     }
-    killed
+    (killed, kept)
 }
 
 #[cfg(test)]
@@ -246,7 +324,17 @@ mod tests {
             pid,
             started_at: 1_700_000_000,
             program: program.to_string(),
+            owner: None,
         }
+    }
+
+    /// [`sweep_entries`] with no other app running, as the old tests assume.
+    fn sweep_alone(
+        entries: &[RunningServer],
+        command_of: impl FnMut(u32) -> Option<String>,
+        kill: impl FnMut(u32) -> bool,
+    ) -> Vec<String> {
+        sweep_entries(entries, |_| false, command_of, kill).0
     }
 
     /// The record file inside a fresh temp folder, which goes when the
@@ -261,7 +349,7 @@ mod tests {
     fn a_recycled_pid_running_something_else_is_left_alone() {
         let entries = vec![entry("blender", 4242, "/opt/haruspex/node")];
         let mut killed_pids = Vec::new();
-        let killed = sweep_entries(
+        let killed = sweep_alone(
             &entries,
             |_| Some("/usr/bin/firefox --new-window".to_string()),
             |pid| {
@@ -279,7 +367,7 @@ mod tests {
     #[test]
     fn a_matching_stale_pid_is_killed() {
         let entries = vec![entry("github", 4242, "/opt/haruspex/node")];
-        let killed = sweep_entries(
+        let killed = sweep_alone(
             &entries,
             |_| Some("/opt/haruspex/node /srv/mcp/github/index.js stdio".to_string()),
             |_| true,
@@ -290,14 +378,14 @@ mod tests {
     #[test]
     fn a_pid_that_is_gone_is_not_reported_as_killed() {
         let entries = vec![entry("gone", 4242, "/opt/haruspex/node")];
-        let killed = sweep_entries(&entries, |_| None, |_| true);
+        let killed = sweep_alone(&entries, |_| None, |_| true);
         assert!(killed.is_empty());
     }
 
     #[test]
     fn a_kill_that_fails_is_not_reported_as_killed() {
         let entries = vec![entry("stubborn", 4242, "/opt/haruspex/node")];
-        let killed = sweep_entries(
+        let killed = sweep_alone(
             &entries,
             |_| Some("/opt/haruspex/node server.js".to_string()),
             |_| false,
@@ -315,7 +403,7 @@ mod tests {
             entry("b", 2, "/opt/haruspex/uv"),
             entry("c", 3, "/opt/haruspex/node"),
         ];
-        let killed: HashSet<String> = sweep_entries(
+        let killed: HashSet<String> = sweep_alone(
             &entries,
             |pid| match pid {
                 2 => Some("/usr/bin/something-else".to_string()),
@@ -402,5 +490,89 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].pid, 2);
+    }
+
+    #[test]
+    fn a_live_app_s_processes_are_left_for_it() {
+        // A second launch sweeps at startup. The first launch's servers are
+        // running and match their programs, but they are not orphans.
+        let mut live = entry("github", 4242, "/opt/haruspex/github-mcp-server");
+        live.owner = Some(Owner {
+            pid: 10,
+            started: 1,
+        });
+        let dead = entry("old", 4343, "/opt/haruspex/github-mcp-server");
+        let mut killed_pids = Vec::new();
+        let (killed, kept) = sweep_entries(
+            &[live.clone(), dead],
+            |e| e.owner.is_some(),
+            |_| Some("/opt/haruspex/github-mcp-server stdio".to_string()),
+            |pid| {
+                killed_pids.push(pid);
+                true
+            },
+        );
+        assert_eq!(killed, vec!["old"]);
+        assert_eq!(
+            killed_pids,
+            vec![4343],
+            "the live app's server must not be touched"
+        );
+        assert_eq!(kept, vec![live], "kept for the sweep after that app exits");
+    }
+
+    #[test]
+    fn this_process_is_alive_and_a_different_start_time_is_not() {
+        let me = this_app().expect("sysinfo reads this process");
+        assert!(owner_alive(&me));
+        assert!(
+            !owner_alive(&Owner {
+                started: me.started.wrapping_sub(1),
+                ..me
+            }),
+            "a reused pid is a different app"
+        );
+        let mine = RunningServer {
+            owner: Some(me),
+            ..entry("x", 1, "/x")
+        };
+        assert!(
+            !owned_by_another_live_app(&mine),
+            "this app's own entries are not someone else's"
+        );
+    }
+
+    #[test]
+    fn registering_and_deregistering_leave_another_app_s_entry_alone() {
+        let (_dir, path) = temp_path("two_apps");
+        let other = RunningServer {
+            owner: Some(Owner {
+                pid: 10,
+                started: 1,
+            }),
+            ..entry("github", 1, "/x/node")
+        };
+        save(&path, std::slice::from_ref(&other)).unwrap();
+
+        register(Some(&path), entry("github", 2, "/x/node"));
+        let loaded = load(&path);
+        assert_eq!(loaded.len(), 2, "both apps run a server under this id");
+        assert_eq!(loaded[1].owner, this_app());
+
+        deregister(Some(&path), "github");
+        assert_eq!(load(&path), vec![other]);
+    }
+
+    #[test]
+    fn an_entry_written_before_owners_still_loads_and_sweeps() {
+        let (_dir, path) = temp_path("pre_owner");
+        std::fs::write(
+            &path,
+            r#"[{"id":"a","pid":1,"started_at":1700000000,"program":"/x/node"}]"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded, vec![entry("a", 1, "/x/node")]);
+        assert!(!owned_by_another_live_app(&loaded[0]));
     }
 }

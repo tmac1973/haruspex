@@ -334,11 +334,18 @@ impl McpSupervisor {
     /// Clone the session handle out from under the lock, so a slow call cannot
     /// freeze status queries for every other server.
     async fn session(&self, id: &str) -> Result<Arc<McpSession>, String> {
-        self.servers
-            .lock()
-            .await
+        let servers = self.servers.lock().await;
+        let handle = servers
             .get(id)
-            .and_then(|handle| handle.session.clone())
+            .ok_or_else(|| format!("server {id} is not connected"))?;
+        // A server that died keeps its session, whose every call then fails
+        // with rmcp's bare "Transport closed". Its exit reason says more.
+        if let SidecarStatus::Error(reason) = &*handle.status.lock().await {
+            return Err(format!("server is not running: {reason}"));
+        }
+        handle
+            .session
+            .clone()
             .ok_or_else(|| format!("server {id} is not connected"))
     }
 
@@ -488,6 +495,7 @@ impl McpSupervisor {
                     pid,
                     started_at: crate::time_util::now_secs_u64(),
                     program: config.program.to_string_lossy().to_string(),
+                    owner: None,
                 },
             );
         }
@@ -1473,6 +1481,40 @@ mod tests {
             "an externally killed server must not stay Ready, got {observed:?}"
         );
         drop(process);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_call_to_a_server_that_died_says_it_exited_not_transport_closed() {
+        // What the Home GitHub card showed after a second launch's orphan
+        // sweep killed the first launch's server: "Transport closed", once per
+        // call, with nothing about why.
+        let Some(config) = era_config("died", "modern") else {
+            return;
+        };
+        let sup = supervisor();
+        sup.start(config).await.expect("modern server should start");
+        let pid = sup
+            .pid_for("died")
+            .await
+            .expect("a running server has a pid");
+        assert!(std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .status()
+            .expect("kill should run")
+            .success());
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if matches!(sup.status("died").await, SidecarStatus::Error(_)) {
+                break;
+            }
+        }
+        let err = sup
+            .call_tool("died", "echo", None, None, None)
+            .await
+            .expect_err("a dead server cannot answer");
+        assert!(err.contains("exited unexpectedly"), "{err}");
+        sup.stop("died").await.unwrap();
     }
 
     #[tokio::test]
