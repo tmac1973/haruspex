@@ -595,6 +595,7 @@ mod tests {
             pid,
             started_at: 0,
             program: program.into(),
+            owner: None,
         }
     }
 

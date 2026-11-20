@@ -130,6 +130,7 @@ fn spawn_prepared(
             pid,
             started_at: crate::time_util::now_secs_u64(),
             program,
+            owner: None,
         },
     );
 

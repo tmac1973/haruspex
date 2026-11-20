@@ -231,6 +231,7 @@ impl CodeBgManager {
                     pid,
                     started_at: started_at / 1000,
                     program: marker(&id),
+                    owner: None,
                 },
             );
         }
@@ -252,6 +253,7 @@ impl CodeBgManager {
                         pid: 0,
                         started_at: started_at / 1000,
                         program: wsl_orphan_program(distro, &id),
+                        owner: None,
                     };
                     tokio::spawn(pump_wsl_stderr(
                         err,
@@ -434,6 +436,7 @@ pub fn sweep_orphans(log_dir: &Path, registry: Option<&Path>) {
     sweep_orphans_with(
         log_dir,
         registry,
+        orphans::owned_by_another_live_app,
         orphans::pid_command,
         |pid| signal_group(pid, Signal::Kill),
         |by_distro| {
@@ -453,12 +456,19 @@ pub fn sweep_orphans(log_dir: &Path, registry: Option<&Path>) {
 fn sweep_orphans_with(
     log_dir: &Path,
     registry: Option<&Path>,
+    owned_elsewhere: impl Fn(&orphans::RunningServer) -> bool,
     pid_command: impl Fn(u32) -> Option<String>,
     mut kill: impl FnMut(u32),
     sweep_wsl: impl FnOnce(HashMap<String, Vec<(u32, String)>>),
 ) {
+    // Another running Haruspex shares this folder; its processes and their
+    // logs are not orphans. See `orphans` on why.
+    let mut kept = Vec::new();
     if let Some(registry) = registry {
-        let entries = orphans::load(registry);
+        let (theirs, entries): (Vec<_>, Vec<_>) = orphans::load(registry)
+            .into_iter()
+            .partition(|e| owned_elsewhere(e));
+        kept = theirs;
         let mut by_distro: HashMap<String, Vec<(u32, String)>> = HashMap::new();
         for e in &entries {
             if let Some((distro, mark)) = parse_wsl_orphan_program(&e.program) {
@@ -484,12 +494,14 @@ fn sweep_orphans_with(
             }
         }
         if !entries.is_empty() {
-            if let Err(e) = orphans::save(registry, &[]) {
+            if let Err(e) = orphans::save(registry, &kept) {
                 log::warn!("{ORPHAN_KIND}: could not clear orphan registry: {e}");
             }
         }
     }
-    let _ = std::fs::remove_dir_all(log_dir);
+    if kept.is_empty() {
+        let _ = std::fs::remove_dir_all(log_dir);
+    }
 }
 
 /// The script the shell runs. The trailing `exit $?` keeps the shell from
@@ -1130,6 +1142,7 @@ mod sweep_tests {
             pid,
             started_at: 0,
             program: program.into(),
+            owner: None,
         }
     }
 
@@ -1182,6 +1195,7 @@ mod sweep_tests {
         sweep_orphans_with(
             &logs,
             Some(&registry),
+            |_| false,
             |pid| match pid {
                 100 => Some(ours.clone()),
                 200 => Some("/usr/bin/vim notes.txt".into()),
@@ -1212,6 +1226,7 @@ mod sweep_tests {
         sweep_orphans_with(
             &logs,
             Some(&dir.join("absent.json")),
+            |_| false,
             |_| Some("anything".into()),
             |pid| killed.push(pid),
             |_| wsl_called = true,
@@ -1223,8 +1238,48 @@ mod sweep_tests {
         assert!(!dir.join("absent.json").exists());
 
         std::fs::create_dir_all(&logs).unwrap();
-        sweep_orphans_with(&logs, None, |_| None, |pid| killed.push(pid), |_| ());
+        sweep_orphans_with(
+            &logs,
+            None,
+            |_| false,
+            |_| None,
+            |pid| killed.push(pid),
+            |_| (),
+        );
         assert!(killed.is_empty());
         assert!(!logs.exists());
+    }
+
+    #[test]
+    fn another_running_app_keeps_its_processes_entries_and_logs() {
+        let dir = temp_dir("bg_sweep_live_owner");
+        let logs = dir.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        let registry = dir.join("running.json");
+        let mut theirs = entry("bg-1", 100, &marker("bg-1"));
+        theirs.owner = Some(orphans::Owner {
+            pid: 10,
+            started: 1,
+        });
+        orphans::save(
+            &registry,
+            &[theirs.clone(), entry("bg-2", 200, &marker("bg-2"))],
+        )
+        .unwrap();
+        let mut killed = Vec::new();
+        sweep_orphans_with(
+            &logs,
+            Some(&registry),
+            |e| e.owner.is_some(),
+            |pid| Some(format!("sh -c x {}", marker(&format!("bg-{}", pid / 100)))),
+            |pid| killed.push(pid),
+            |_| (),
+        );
+        assert_eq!(killed, vec![200]);
+        assert_eq!(orphans::load(&registry), vec![theirs]);
+        assert!(
+            logs.exists(),
+            "the other app is still writing its logs here"
+        );
     }
 }

@@ -266,6 +266,7 @@ pub async fn start_render(
             pid,
             started_at: crate::time_util::now_secs_u64(),
             program: part.to_string_lossy().into_owned(),
+            owner: None,
         },
     );
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
