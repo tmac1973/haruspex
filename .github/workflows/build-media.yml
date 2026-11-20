@@ -1,0 +1,159 @@
+name: Build media tools
+# Builds the media bundle the app ships (scripts/build-media.sh): ffmpeg and
+# ffprobe as shared libraries, melt with the MLT modules Kdenlive and Shotcut
+# projects need, and the cut-down Qt 6 melt's qtblend runs on. Publishes one
+# archive per release target with a SHA256SUMS file to the media-<tag> release
+# that scripts/fetch-media.sh downloads. Run it by hand when a version in
+# scripts/media-versions.sh changes, before the next app release.
+on:
+  workflow_dispatch:
+  # While the bundle is being built on its branch: build on every push that
+  # touches it, and publish when the commit message says [publish media].
+  push:
+    branches: ['claude/melt-bundling-*']
+    paths:
+      - scripts/build-media.sh
+      - scripts/media-versions.sh
+      - scripts/fixtures/qtblend-smoke.mlt
+      - .github/workflows/build-media.yml
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            shell: bash
+            smoke: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            shell: bash
+            smoke: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            shell: bash
+            smoke: true
+          # Cross-compiled on the arm64 runner; its binaries can't run there.
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            shell: bash
+            smoke: false
+          # Built natively in MSYS2's MINGW64, named with the msvc triple as
+          # the other sidecars are.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            shell: msys2 {0}
+            smoke: true
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential nasm pkg-config zlib1g-dev \
+            libgnutls28-dev libasound2-dev libpulse-dev meson ninja-build cmake \
+            patchelf libfontconfig1-dev libfreetype-dev
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install nasm pkg-config ninja cmake
+
+      - name: Set up MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            git
+            make
+            diffutils
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-amf-headers
+            mingw-w64-x86_64-libvpl
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-dlfcn
+
+      - name: Build
+        run: ./scripts/build-media.sh --target ${{ matrix.target }} --out dist
+
+      - name: Smoke test
+        if: matrix.smoke
+        run: ./scripts/media-smoke.sh dist/media-${{ matrix.target }}.tar.xz ${{ matrix.target }}
+
+      - name: Size
+        run: ./scripts/media-size.sh dist/media-${{ matrix.target }}.tar.xz ${{ matrix.target }} >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: media-${{ matrix.target }}
+          path: dist/media-*.tar.xz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish media]')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read versions
+        run: |
+          . scripts/media-versions.sh
+          {
+            echo "MEDIA_TAG=$MEDIA_TAG"
+            echo "FFMPEG_TAG=$FFMPEG_TAG"
+            echo "MLT_VERSION=$MLT_VERSION"
+            echo "QT_VERSION=$QT_VERSION"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: media-*
+          path: dist
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum media-*.tar.xz > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: media-${{ env.MEDIA_TAG }}
+          name: Media tools ${{ env.MEDIA_TAG }}
+          body: |
+            The media bundle shipped with Haruspex, made by `scripts/build-media.sh`
+            and fetched by `scripts/fetch-media.sh`: ffmpeg and ffprobe, melt, and
+            the libraries they share.
+
+            - ffmpeg ${{ env.FFMPEG_TAG }}, a GPL-3.0-or-later build with x264 (nothing nonfree)
+            - MLT ${{ env.MLT_VERSION }} (LGPL-2.1-or-later; the qt6, plusgpl and normalize modules are GPL)
+            - Qt ${{ env.QT_VERSION }} qtbase and qtsvg (LGPL-3.0)
+            - libxml2 (MIT), lame (LGPL)
+
+            Each archive's `media/LICENSES/` holds every licence text.
+            Sources: https://github.com/FFmpeg/FFmpeg/tree/${{ env.FFMPEG_TAG }},
+            https://github.com/mltframework/mlt/tree/v${{ env.MLT_VERSION }},
+            https://download.qt.io/archive/qt/
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/media-*.tar.xz
+            dist/SHA256SUMS
