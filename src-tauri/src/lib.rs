@@ -31,6 +31,7 @@ mod integrations;
 mod lemonade;
 mod links;
 mod lint;
+mod media_env;
 mod memory;
 mod models;
 mod net_util;

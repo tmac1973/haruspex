@@ -455,7 +455,11 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&conf).unwrap()).unwrap();
         let external = parsed["bundle"]["externalBin"].as_array().unwrap();
         assert!(!external.is_empty(), "externalBin should not be empty");
-        for wanted in ["binaries/haruspex-ffmpeg", "binaries/haruspex-ffprobe"] {
+        for wanted in [
+            "binaries/haruspex-ffmpeg",
+            "binaries/haruspex-ffprobe",
+            "binaries/haruspex-melt",
+        ] {
             assert!(
                 external.iter().any(|e| e.as_str() == Some(wanted)),
                 "{wanted} should be bundled"

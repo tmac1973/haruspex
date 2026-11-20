@@ -67,17 +67,26 @@ own tree. Both are bundled as application resources.
 Neither runtime is modified. `uv` provisions its own CPython on demand, so no
 Python distribution is bundled with Haruspex.
 
-## Bundled ffmpeg
+## Bundled ffmpeg and melt
 
-Haruspex bundles `ffmpeg` and `ffprobe` from [FFmpeg](https://ffmpeg.org/),
-built from the unmodified upstream tag pinned in `scripts/build-ffmpeg.sh`
-with [LAME](https://lame.sourceforge.io/) linked in. The build is LGPL only
-(`--enable-version3`, no `--enable-gpl` or `--enable-nonfree`), so the
-binaries are distributed under the
-[GNU LGPL v3 or later](https://www.gnu.org/licenses/lgpl-3.0.html); LAME is
-LGPL 2 or later. `scripts/build-ffmpeg.sh` is the complete build recipe, and the
-source is at <https://github.com/FFmpeg/FFmpeg> and
-<https://sourceforge.net/projects/lame/>.
+Haruspex bundles `ffmpeg` and `ffprobe` from [FFmpeg](https://ffmpeg.org/) and
+`melt` from [MLT](https://www.mltframework.org/), with the libraries they
+share. All are built from unmodified upstream sources, pinned in
+`scripts/media-versions.sh` and `scripts/build-media.sh`, which is the complete
+build recipe:
+
+| Component | Upstream | License |
+| --- | --- | --- |
+| FFmpeg (libav*, ffmpeg, ffprobe) | <https://github.com/FFmpeg/FFmpeg> | [GPL v3 or later](https://www.gnu.org/licenses/gpl-3.0.html): built with `--enable-gpl --enable-version3`, no `--enable-nonfree` |
+| x264 | <https://code.videolan.org/videolan/x264> | GPL v2 or later |
+| LAME | <https://sourceforge.net/projects/lame/> | LGPL v2 or later |
+| MLT (libmlt, melt and its modules) | <https://github.com/mltframework/mlt> | LGPL v2.1 or later; the qt6, plusgpl and normalize modules are GPL |
+| Qt 6 (qtbase, qtsvg) | <https://download.qt.io/archive/qt/> | LGPL v3 |
+| libxml2 | <https://gitlab.gnome.org/GNOME/libxml2> | MIT |
+
+On Linux, libva, libdrm and libvpl (MIT) are linked in for hardware encoding.
+Every component's licence text ships in `binaries/media/LICENSES/`, and each
+`media-<tag>` release names its versions and sources.
 
 ## Bundled libraries
 

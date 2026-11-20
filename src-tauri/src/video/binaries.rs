@@ -1,6 +1,6 @@
 //! Finding ffmpeg, ffprobe and melt.
 //!
-//! ffmpeg and ffprobe ship with the app as LGPL builds (`haruspex-ffmpeg`,
+//! ffmpeg and ffprobe ship with the app (`haruspex-ffmpeg`,
 //! `haruspex-ffprobe`), which the cameras need too. melt is not bundled: it
 //! comes with Kdenlive (and Shotcut), so the one thing a user installs for the
 //! video tools is Kdenlive. Each binary is looked for in these places, first
@@ -341,7 +341,7 @@ async fn first_that_runs(
 
 /// An ffmpeg to ask which hardware encoders melt can open: the one chosen in
 /// Settings → Video editing. The bundled build has the hardware encoders melt
-/// is tried with (see `scripts/build-ffmpeg.sh`).
+/// is tried with (see `scripts/build-media.sh`).
 pub async fn hardware_probe_ffmpeg(overrides: &BinaryOverrides) -> Option<String> {
     first_that_runs(
         Tool::Ffmpeg,
