@@ -11,9 +11,10 @@
 //! when the app exits.
 
 use super::check::{self, RenderCheck};
+use super::format::ProjectDoc;
 use super::loudness::MAX_GAIN;
 use super::project::VideoSettings;
-use super::{binaries, encode, kdenlive, paths, project};
+use super::{binaries, encode, paths, project};
 use crate::orphans::{self, RunningServer};
 use crate::sync_util::LockExt;
 use crate::tasks::{BackgroundTask, BackgroundTasks, TaskFollower, TaskKind, TaskPatch, TaskState};
@@ -206,20 +207,21 @@ pub async fn start_render(
         req.project.as_deref(),
         false,
     )?;
-    let doc = kdenlive::open(&project_path)?;
+    let doc = ProjectDoc::open(&project_path)?;
     let frames = doc.sequence_end();
     if frames == 0 {
         return Err("The project is empty: there is nothing to render.".into());
     }
-    let expected = doc.fps.secs(frames);
+    let expected = doc.fps().secs(frames);
     // Clips whose gain is at its bound, so normalising can't raise them.
-    let at_limit: Vec<String> = kdenlive::summary(&doc, &req.working_dir, &project_path)
+    let at_limit: Vec<String> = doc
+        .summary(&req.working_dir, &project_path)
         .items
         .into_iter()
         .filter(|i| i.gain_db.is_some_and(|g| g >= MAX_GAIN - 0.05))
         .map(|i| i.path)
         .collect();
-    let fps = doc.fps.num as f64 / doc.fps.den as f64;
+    let fps = doc.fps().num as f64 / doc.fps().den as f64;
     let episode_dir = project::episode_home(&req.working_dir, &req.episode, &project_path)?;
     let out = output_path(&episode_dir, &project_path);
     std::fs::create_dir_all(out.parent().unwrap_or(&episode_dir))
@@ -236,7 +238,7 @@ pub async fn start_render(
         .arg(&project_path)
         .arg("-consumer")
         .arg(format!("avformat:{}", part.display()))
-        .args(encode::consumer_args(encoder, doc.height, fps))
+        .args(encode::consumer_args(encoder, doc.height(), fps))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())

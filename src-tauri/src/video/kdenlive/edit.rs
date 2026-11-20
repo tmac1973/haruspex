@@ -18,68 +18,9 @@
 //! `<entry>`, effects included; only its `in` and `out` change.
 
 use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS};
-use super::xml::{escape, Splices};
+use crate::video::mlt::xml::{escape, Splices};
+use crate::video::timeline::{Edited, Media, Placement, Source};
 use std::collections::{HashMap, HashSet};
-
-/// Media a new clip comes from, probed and hashed by the caller.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Media {
-    /// As the project's `resource` will say: relative to its root when inside
-    /// it, absolute otherwise, forward slashes either way.
-    pub resource: String,
-    /// In project frames.
-    pub length: i64,
-    pub video_index: Option<u32>,
-    pub audio_index: Option<u32>,
-    pub file_size: u64,
-    pub file_hash: String,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Source {
-    /// The main-track item with this index in `Doc::items`.
-    Existing(usize),
-    /// Another copy of that item, with chains of its own and its effects: a
-    /// piece of a clip split in two.
-    Piece(usize),
-    New(Media),
-}
-
-/// One clip of the wanted main track. `None` keeps an existing item's point,
-/// or is the start / end of new media.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Placement {
-    pub source: Source,
-    pub in_frame: Option<i64>,
-    pub out_frame: Option<i64>,
-    /// A crossfade of this many frames from the clip before (Haruspex's own).
-    pub mix_in: Option<i64>,
-    /// The gain to set on its sound, in dB; `None` leaves what is there, and
-    /// 0 removes Haruspex's.
-    pub gain_db: Option<f64>,
-    /// With `gain_db`: a Limiter after the gain, holding peaks at -1.5 dB.
-    pub limiter: bool,
-}
-
-impl Placement {
-    pub fn of(source: Source) -> Placement {
-        Placement {
-            source,
-            in_frame: None,
-            out_frame: None,
-            mix_in: None,
-            gain_db: None,
-            limiter: false,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Edited {
-    pub text: String,
-    /// Things worth telling the model (a clamped trim, other tracks).
-    pub notes: Vec<String>,
-}
 
 /// A clip as laid out: where each of its entries goes.
 struct Laid {

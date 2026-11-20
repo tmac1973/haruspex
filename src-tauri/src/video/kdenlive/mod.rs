@@ -15,13 +15,14 @@
 pub mod doc;
 pub mod edit;
 pub mod timeline_map;
-pub mod xml;
 
 #[cfg(test)]
 mod tests;
 
+use crate::video::format::{OtherClip, ProjectSummary, SummaryItem};
+use crate::video::mlt::profile::{profile, profile_tag};
+use crate::video::mlt::{mlt_path, xml};
 use doc::Doc;
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// An empty project saved by Kdenlive 26.08.2: two audio and two video tracks,
@@ -30,72 +31,6 @@ const TEMPLATE: &str = include_str!("../../../resources/video/empty-26.08.kdenli
 
 /// Backups kept per project.
 const BACKUPS_KEPT: usize = 20;
-
-/// A preset's MLT profile.
-pub struct Profile {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub width: u32,
-    pub height: u32,
-    pub fps: u32,
-}
-
-pub fn profile(preset: &str) -> Result<Profile, String> {
-    let p = match preset {
-        "1080p30" => Profile {
-            name: "atsc_1080p_30",
-            description: "HD 1080p 30 fps",
-            width: 1920,
-            height: 1080,
-            fps: 30,
-        },
-        "1080p60" => Profile {
-            name: "atsc_1080p_60",
-            description: "HD 1080p 60 fps",
-            width: 1920,
-            height: 1080,
-            fps: 60,
-        },
-        "1440p60" => Profile {
-            name: "qhd_1440p_60",
-            description: "2.5K QHD 1440p 60 fps",
-            width: 2560,
-            height: 1440,
-            fps: 60,
-        },
-        "2160p30" => Profile {
-            name: "uhd_2160p_30",
-            description: "4K UHD 2160p 30 fps",
-            width: 3840,
-            height: 2160,
-            fps: 30,
-        },
-        other => {
-            return Err(format!(
-                "Unknown format {other}: use 1080p30, 1080p60, 1440p60 or 2160p30."
-            ))
-        }
-    };
-    Ok(p)
-}
-
-fn profile_tag(p: &Profile) -> String {
-    format!(
-        "<profile colorspace=\"709\" description=\"{}\" display_aspect_den=\"9\" display_aspect_num=\"16\" \
-         frame_rate_den=\"1\" frame_rate_num=\"{}\" height=\"{}\" progressive=\"1\" sample_aspect_den=\"1\" \
-         sample_aspect_num=\"1\" width=\"{}\"/>",
-        p.description, p.fps, p.height, p.width
-    )
-}
-
-/// A path as a project's `root` or `resource` says it: forward slashes, a
-/// Windows drive kept as `C:/…`.
-pub fn mlt_path(path: &Path) -> String {
-    let s = crate::fs_tools::path::strip_verbatim(path)
-        .to_string_lossy()
-        .into_owned();
-    s.replace('\\', "/")
-}
 
 /// A new, empty project.
 pub fn template_text(preset: &str, root: &Path) -> Result<String, String> {
@@ -275,59 +210,6 @@ pub async fn save(project: &Path, text: &str, melt: &str) -> Result<(), String> 
     Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct SummaryItem {
-    /// 1-based, as the tools number clips.
-    pub index: u32,
-    pub path: String,
-    pub source_in_secs: f64,
-    pub source_out_secs: f64,
-    pub start_secs: f64,
-    pub duration_secs: f64,
-    /// Effects the user put on it.
-    pub effects: u32,
-    pub has_video: bool,
-    pub has_audio: bool,
-    /// How long it crossfades from the clip before.
-    pub crossfade_in_secs: Option<f64>,
-    /// The gain Haruspex set on its sound, in dB.
-    pub gain_db: Option<f64>,
-    /// Haruspex put a Limiter after the gain to hold its peaks.
-    pub limited: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct OtherClip {
-    /// "V2", "A2".
-    pub track: String,
-    pub path: String,
-    pub start_secs: f64,
-    pub end_secs: f64,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectSummary {
-    /// Relative to the working folder.
-    pub project: String,
-    pub width: u32,
-    pub height: u32,
-    pub fps: f64,
-    pub kdenlive_version: String,
-    /// Why it can't be edited, when it can't.
-    pub read_only: Option<String>,
-    pub items: Vec<SummaryItem>,
-    pub other_clips: Vec<OtherClip>,
-    pub mixes: u32,
-    pub guides: u32,
-    pub total_secs: f64,
-}
-
 fn track_name(doc: &Doc, track: usize) -> String {
     if doc.tracks[track].audio {
         format!("A{}", doc.main_audio as i64 - track as i64 + 1)
@@ -413,7 +295,8 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         width: doc.width,
         height: doc.height,
         fps: fps.num as f64 / fps.den as f64,
-        kdenlive_version: doc.kdenlive_version.clone(),
+        editor: crate::video::format::Format::Kdenlive,
+        editor_version: doc.kdenlive_version.clone(),
         read_only: doc.editable().err(),
         items,
         other_clips,
@@ -431,4 +314,44 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         guides,
         total_secs: fps.secs(doc.sequence_end()),
     }
+}
+
+/// The main track's clips, for the tools that measure or cut them.
+pub fn clips(doc: &Doc) -> Vec<crate::video::timeline::Clip> {
+    use crate::video::timeline::{Clip, ClipAudio};
+    doc.items()
+        .iter()
+        .map(|item| {
+            let e = item.any();
+            Clip {
+                resource: resource_of(doc, &e.chain),
+                in_frame: e.in_frame,
+                out_frame: e.out_frame,
+                audio: item.audio.as_ref().map(|a| ClipAudio {
+                    stream: doc
+                        .tree
+                        .by_id(&a.chain)
+                        .and_then(|c| doc.tree.property(c, "audio_index"))
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(1),
+                    in_frame: a.in_frame,
+                    out_frame: a.out_frame,
+                }),
+            }
+        })
+        .collect()
+}
+
+/// The files on tracks other than the main one.
+pub fn other_track_resources(doc: &Doc) -> Vec<String> {
+    (0..doc.tracks.len())
+        .filter(|&t| t != doc.main_video && t != doc.main_audio)
+        .flat_map(|t| doc.track_entries(t))
+        .filter_map(|e| {
+            doc.tree
+                .by_id(&e.chain)
+                .and_then(|c| doc.tree.property(c, "resource"))
+                .map(str::to_string)
+        })
+        .collect()
 }

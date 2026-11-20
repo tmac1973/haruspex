@@ -5,6 +5,7 @@
 import { getSettings } from '#lib/stores/settings.ts';
 import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
+import type { Format } from '#lib/ipc/gen/Format.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { SummaryItem } from '#lib/ipc/gen/SummaryItem.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
@@ -126,10 +127,13 @@ export function itemLine(i: SummaryItem): string {
 	return parts.join(' · ');
 }
 
+/** Each project format's editor, as the user knows it. */
+export const EDITOR_NAMES: Record<Format, string> = { kdenlive: 'Kdenlive' };
+
 export function summaryReport(p: ProjectSummary): string {
 	const fps = Number.isInteger(p.fps) ? p.fps : p.fps.toFixed(2);
 	const lines = [
-		`${p.project} · ${p.width}×${p.height} @ ${fps} fps · ${formatDuration(p.totalSecs)} long · Kdenlive ${p.kdenliveVersion || '?'}`
+		`${p.project} · ${p.width}×${p.height} @ ${fps} fps · ${formatDuration(p.totalSecs)} long · ${EDITOR_NAMES[p.editor]} ${p.editorVersion || '?'}`
 	];
 	if (p.readOnly) lines.push(p.readOnly);
 	if (p.items.length === 0) lines.push('The main track (V1/A1) is empty.');

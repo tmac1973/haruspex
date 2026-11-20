@@ -626,20 +626,14 @@ pub fn timeline_transcript(
     working_dir: &str,
     episode: &str,
     project: Option<&str>,
-) -> Result<
-    (
-        TimelineTranscript,
-        Vec<super::kdenlive::timeline_map::Line>,
-        PathBuf,
-    ),
-    String,
-> {
-    use super::kdenlive::{self, timeline_map};
+) -> Result<(TimelineTranscript, Vec<super::timeline::Line>, PathBuf), String> {
+    use super::format::ProjectDoc;
+    use super::timeline;
     let path = super::project::default_project(working_dir, episode, project, false)?;
-    let doc = kdenlive::open(&path)?;
+    let doc = ProjectDoc::open(&path)?;
     let episode_dir = paths::resolve_episode(working_dir, episode)?;
-    let spans = timeline_map::spans(&doc);
-    let (lines, missing) = timeline_map::lines(&spans, |file| {
+    let spans = doc.spans();
+    let (lines, missing) = timeline::lines(&spans, |file| {
         cached(&episode_dir, file).map(|t| t.segments)
     });
     let t = TimelineTranscript {
@@ -654,7 +648,7 @@ pub fn timeline_transcript(
             })
             .collect(),
         untranscribed: missing.into_iter().map(|i| i as u32).collect(),
-        total_secs: doc.fps.secs(doc.sequence_end()),
+        total_secs: doc.fps().secs(doc.sequence_end()),
     };
     Ok((t, lines, path))
 }

@@ -1,6 +1,8 @@
 use super::doc::{Doc, Fps, Item};
-use super::edit::{apply, current, Media, Placement, Source};
+use super::edit::{apply, current};
 use super::*;
+use crate::video::mlt::mlt_path;
+use crate::video::timeline::{Media, Placement, Source};
 use std::path::Path;
 
 fn fixture(name: &str) -> String {

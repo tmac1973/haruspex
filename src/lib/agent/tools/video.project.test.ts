@@ -38,7 +38,8 @@ const summary: ProjectSummary = {
 	width: 1920,
 	height: 1080,
 	fps: 60,
-	kdenliveVersion: '26.08.2',
+	editor: 'kdenlive',
+	editorVersion: '26.08.2',
 	readOnly: null,
 	items: [
 		{

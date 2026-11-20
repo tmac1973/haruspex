@@ -46,7 +46,7 @@ pub async fn video_project_summary(
     working_dir: String,
     episode: String,
     project: Option<String>,
-) -> Result<super::kdenlive::ProjectSummary, String> {
+) -> Result<super::format::ProjectSummary, String> {
     super::project::summary(&working_dir, &episode, project.as_deref())
 }
 
@@ -370,8 +370,8 @@ pub fn video_write_chapters(
 ) -> Result<ChaptersWritten, String> {
     use super::subtitles;
     let path = super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
-    let doc = super::kdenlive::open(&path)?;
-    let total = doc.fps.secs(doc.sequence_end());
+    let doc = super::format::ProjectDoc::open(&path)?;
+    let total = doc.fps().secs(doc.sequence_end());
     let mut chapters = chapters;
     chapters.sort_by(|a, b| a.at_secs.total_cmp(&b.at_secs));
     let problems = subtitles::check_chapters(&chapters, total);
@@ -490,10 +490,10 @@ pub async fn video_frames(
                 request.project.as_deref(),
                 false,
             )?;
-            let doc = super::kdenlive::open(&project)?;
-            let spans = super::kdenlive::timeline_map::spans(&doc);
+            let doc = super::format::ProjectDoc::open(&project)?;
+            let spans = doc.spans();
             for &t in times {
-                let (span, at) = super::kdenlive::timeline_map::source_at(&spans, t)
+                let (span, at) = super::timeline::source_at(&spans, t)
                     .ok_or_else(|| format!("Nothing is on the main track at {t:.1} s."))?;
                 wanted.push((
                     span.file.clone(),
@@ -635,9 +635,9 @@ pub async fn video_thumbnail_from_frame(
         (None, None, Some(t)) => {
             let proj =
                 super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
-            let doc = super::kdenlive::open(&proj)?;
-            let spans = super::kdenlive::timeline_map::spans(&doc);
-            let (span, at) = super::kdenlive::timeline_map::source_at(&spans, t)
+            let doc = super::format::ProjectDoc::open(&proj)?;
+            let spans = doc.spans();
+            let (span, at) = super::timeline::source_at(&spans, t)
                 .ok_or_else(|| format!("Nothing is on the main track at {t:.1} s."))?;
             (span.file.clone(), at)
         }
@@ -928,8 +928,8 @@ mod tests {
             &project,
         )
         .unwrap();
-        let doc = super::super::kdenlive::open(&project).unwrap();
-        let total = doc.fps.secs(doc.sequence_end());
+        let doc = super::super::format::ProjectDoc::open(&project).unwrap();
+        let total = doc.fps().secs(doc.sequence_end());
         assert!(total >= 40.0, "the fixture is only {total}s");
         (dir, total)
     }
