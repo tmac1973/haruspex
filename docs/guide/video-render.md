@@ -1,11 +1,11 @@
 ---
 title: Rendering videos
-description: Rendering a Kdenlive project to an MP4 for YouTube in the background, where renders go, the encoder setting, the checks on a finished render, and making a thumbnail.
+description: Rendering a Shotcut or Kdenlive project to an MP4 for YouTube in the background, where renders go, the encoder setting, the checks on a finished render, and making a thumbnail.
 ---
 
 # Rendering videos
 
-The assistant renders the episode's Kdenlive project with melt, the program Kdenlive renders with. Setting up the video tools and making the project are on the `video-editing` page.
+The assistant renders the episode's Shotcut or Kdenlive project with melt, the program both editors render with. Setting up the video tools is on the `video-editing` page, and making the project on the `video-cut` page.
 
 ## Render a video
 
@@ -25,6 +25,6 @@ Haruspex doesn't put text on a thumbnail. An image model can draw a short title 
 
 ## What it doesn't do
 
-- It doesn't render anything but the project's main sequence, at the project's size and frame rate. Change those in Kdenlive (Project → Project Settings) or ask for another format before the first cut.
+- It doesn't render anything but the project's main sequence, at the project's size and frame rate. Change those in the editor (Shotcut: Settings → Video Mode; Kdenlive: Project → Project Settings) or ask for another format before the first cut.
 - It doesn't keep a render going after Haruspex quits, or run two at once.
 - It doesn't fix what the check finds by itself; ask for the fix.

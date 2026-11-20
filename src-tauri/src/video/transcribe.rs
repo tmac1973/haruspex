@@ -629,7 +629,7 @@ pub fn timeline_transcript(
 ) -> Result<(TimelineTranscript, Vec<super::timeline::Line>, PathBuf), String> {
     use super::format::ProjectDoc;
     use super::timeline;
-    let path = super::project::default_project(working_dir, episode, project, false)?;
+    let path = super::project::default_project(working_dir, episode, project, None)?;
     let doc = ProjectDoc::open(&path)?;
     let episode_dir = paths::resolve_episode(working_dir, episode)?;
     let spans = doc.spans();

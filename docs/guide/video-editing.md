@@ -1,17 +1,17 @@
 ---
 title: Video editing
-description: Setting up video editing with Kdenlive, picking a series or episode folder, asking about and looking at your clips, and having the assistant cut a Kdenlive project you can also edit.
+description: Setting up video editing, picking a series or episode folder, setting an intro and outro, and asking about and looking at your clips.
 ---
 
 # Video editing
 
-The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg and ffprobe, which ship with Haruspex, and melt, which comes with Kdenlive. The tools are off until you turn them on and all three are found.
+The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg and ffprobe, which ship with Haruspex, and melt, which comes with Shotcut and Kdenlive. The tools are off until you turn them on and all three are found.
 
 ## Set up video editing
 
-Install Kdenlive for melt. On Linux, use your distribution's package: the Flatpak's melt can't be run from outside it. Fedora's `mlt-melt` and `melt-7` are found too.
+Install Shotcut or Kdenlive for melt. On Linux, use your distribution's package or Shotcut's tarball in `/opt/shotcut`: a Flatpak's melt can't be run from outside it. Fedora's `mlt-melt` and `melt-7` are found too.
 
-Open Settings → Video editing. **Programs** shows each one with its version and where it was found. **Use** picks ffmpeg and ffprobe: **Automatic** (bundled, then PATH, then Kdenlive), **Bundled with Haruspex**, **System**, or **Custom paths**. If melt or a custom ffmpeg says **Not found**, type its path or click **Browse…**.
+Open Settings → Video editing. **Programs** shows each one with its version and where it was found. **Use** picks ffmpeg and ffprobe: **Automatic** (bundled, then PATH, then an editor's), **Bundled with Haruspex**, **System**, or **Custom paths**. If melt or a custom ffmpeg says **Not found**, type its path or click **Browse…**.
 
 Then turn on **Let the assistant edit videos** under **Video tools**.
 
@@ -30,7 +30,7 @@ Clips are found in the episode folder and one level of subfolders. Folders start
 
 Settings → Video editing → **New videos** has **Intro** and **Outro**: a clip to put at the start or end of a video when you ask for it. They may be anywhere on disk; they are the only files outside the working folder the video tools may read. An intro inside a series folder (a file or folder whose name starts with "intro" or "outro") works too: the assistant lists those it sees.
 
-**Format** is the size and frame rate new video projects are made in: 1080p at 30 or 60 fps, 1440p at 60 fps, or 4K at 30 fps.
+**Editor** is the editor new projects are made for: Shotcut (the default) or Kdenlive. **Format** is the size and frame rate they are made in: 1080p at 30 or 60 fps, 1440p at 60 fps, or 4K at 30 fps.
 
 ## Ask about your clips
 
@@ -42,34 +42,11 @@ With a model that can see images, ask "look at ep012 every two minutes" or "show
 
 ## Make a cut
 
-Ask "make ep012 from the clips in order, intro as usual" or "cut ep012: the first clip from 0:10, then the second". The assistant writes a Kdenlive project and lays the clips end to end on the main track (V1 with A1), with the intro first and the outro last when you ask.
-
-A new project is `ep012/ep012.kdenlive`, made in the Settings → Video editing → **Format**. If the episode already has one, that is used: one in the episode folder, or one in the working folder whose name ends in the episode's number, such as `show_012.kdenlive` for `ep012`. Name another to use it.
-
-Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them.
-
-Before each change the project is copied to `.haruspex/backups/` next to it (the last 20 are kept), and the change is kept only if melt can still load the project.
-
-## Crossfades and even sound
-
-Ask for "1 second crossfades between the clips", or a crossfade into one clip (not the first). Each is a normal Kdenlive mix: a dissolve on the picture and a crossfade on the sound, up to 3 seconds, and never more than half the shorter clip. Without one the clips join with a hard cut.
-
-Each clip's sound is measured and given a gain that brings it to YouTube's loudness (-14 LUFS) without clipping, so a quiet phone clip and a loud recording sound alike. The gain is a Volume effect on the clip, followed by a Limiter when the gain would push the loudest moments past -1.5 dB, as it usually does for speech; you can see and change both in Kdenlive. Ask to "leave the volume alone" to skip it. A gain adds at most 20 dB, so very quiet footage stays quieter, and the assistant says so.
-
-## Edit it in Kdenlive too
-
-The project is a normal Kdenlive project: open it, change it and save. The assistant reads the saved file before each change, and only edits the main track. Clips on other tracks, effects, guides and titles you add stay as they are, and a clip keeps its effects when it is trimmed or moved.
-
-- Close the project in Kdenlive without saving before asking for a change, then reopen it, or Kdenlive will save over the change.
-- A crossfade you add in Kdenlive keeps its two clips together. The assistant won't move one of them away from the other; remove the crossfade in Kdenlive first. Its own crossfades and gains it changes freely.
-- Clips on other tracks don't move when the main track gets shorter or longer.
-- Projects saved by a Kdenlive older than 25.04 can be read but not edited.
-
-To turn the project into a video file, see the `video-render` page. To cut by what was said, and for chapters and captions, see the `video-speech` page.
+Ask "make ep012 from the clips in order". The assistant writes a Shotcut or Kdenlive project you can open and change yourself: see the `video-cut` page. To render it, see the `video-render` page; to cut by what was said, the `video-speech` page.
 
 ## What it doesn't do
 
-- It doesn't control a running Kdenlive window.
+- It doesn't control a running Shotcut or Kdenlive window.
 - It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades and gains.
 - It doesn't run in Shell tabs, jobs or subtasks.
 - It doesn't read files outside the working folder, except the intro and outro set in Settings → Video editing.

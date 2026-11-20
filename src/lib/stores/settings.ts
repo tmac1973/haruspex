@@ -17,6 +17,7 @@ import type { SpecialistEntry } from '#lib/specialists/types.ts';
 import { imageModelsFromFields } from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
+import type { Format } from '#lib/ipc/gen/Format.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 import type { PeerConfig } from '#lib/ipc/gen/PeerConfig.ts';
@@ -1020,6 +1021,8 @@ export interface AppSettings {
 	videoMeltPath: string;
 	/** The format a new video project is made in. */
 	videoPreset: VideoPreset;
+	/** Settings → Video editing → Editor: which editor's project a new video is. */
+	videoEditor: Format;
 	/**
 	 * An intro and outro to put on every video, anywhere on disk. The only
 	 * files outside the working folder the video tools may read.
@@ -1350,6 +1353,7 @@ const defaults: AppSettings = {
 	videoFfprobePath: '',
 	videoMeltPath: '',
 	videoPreset: '1080p60',
+	videoEditor: 'shotcut',
 	videoIntroPath: '',
 	videoOutroPath: '',
 	videoEncoder: 'libx264',
@@ -1557,6 +1561,7 @@ function load(): AppSettings {
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				cameras: storedCameras(rest.cameras),
 				videoFfmpegChoice: storedFfmpegChoice(rest),
+				videoEditor: rest.videoEditor === 'kdenlive' ? 'kdenlive' : 'shotcut',
 				cameraTrustedServers: Array.isArray(rest.cameraTrustedServers)
 					? rest.cameraTrustedServers.filter((u: unknown) => typeof u === 'string')
 					: [],

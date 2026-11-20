@@ -1,27 +1,31 @@
 //! Which editor a project is for, and the one interface the video tools read
 //! and edit a project through. Each editor's format lives in its own module
-//! (`kdenlive`); this dispatches to it.
+//! (`kdenlive`, `shotcut`); this dispatches to it.
 
 use super::kdenlive::{self, doc::Doc as KdenliveDoc};
 use super::mlt::fps::Fps;
+use super::shotcut::{self, doc::Doc as ShotcutDoc};
 use super::timeline::{Clip, Edited, Placement, Span};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// The editor a project is made for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+/// The editor a project is made for. Shotcut is the default for new ones.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
+    #[default]
+    Shotcut,
     Kdenlive,
 }
 
 impl Format {
-    pub const ALL: [Format; 1] = [Format::Kdenlive];
+    pub const ALL: [Format; 2] = [Format::Shotcut, Format::Kdenlive];
 
     /// The project file's extension, without the dot.
     pub fn extension(self) -> &'static str {
         match self {
+            Format::Shotcut => "mlt",
             Format::Kdenlive => "kdenlive",
         }
     }
@@ -29,6 +33,7 @@ impl Format {
     /// The editor's name, as the user knows it.
     pub fn name(self) -> &'static str {
         match self {
+            Format::Shotcut => "Shotcut",
             Format::Kdenlive => "Kdenlive",
         }
     }
@@ -44,6 +49,7 @@ impl Format {
 
 /// A project, read.
 pub enum ProjectDoc {
+    Shotcut(ShotcutDoc),
     Kdenlive(KdenliveDoc),
 }
 
@@ -62,6 +68,7 @@ fn not_a_project(path: &Path) -> String {
 impl ProjectDoc {
     pub fn open(path: &Path) -> Result<ProjectDoc, String> {
         match Format::from_path(path) {
+            Some(Format::Shotcut) => Ok(ProjectDoc::Shotcut(shotcut::open(path)?)),
             Some(Format::Kdenlive) => Ok(ProjectDoc::Kdenlive(kdenlive::open(path)?)),
             None => Err(not_a_project(path)),
         }
@@ -70,6 +77,10 @@ impl ProjectDoc {
     /// A new, empty project in `format` at a preset, rooted at `root`.
     pub fn template(format: Format, preset: &str, root: &Path) -> Result<ProjectDoc, String> {
         match format {
+            Format::Shotcut => Ok(ProjectDoc::Shotcut(ShotcutDoc::parse(
+                shotcut::template_text(preset, root)?,
+                None,
+            )?)),
             Format::Kdenlive => Ok(ProjectDoc::Kdenlive(KdenliveDoc::parse(
                 kdenlive::template_text(preset, root)?,
             )?)),
@@ -78,18 +89,21 @@ impl ProjectDoc {
 
     pub fn format(&self) -> Format {
         match self {
+            ProjectDoc::Shotcut(_) => Format::Shotcut,
             ProjectDoc::Kdenlive(_) => Format::Kdenlive,
         }
     }
 
     pub fn fps(&self) -> Fps {
         match self {
+            ProjectDoc::Shotcut(d) => d.fps,
             ProjectDoc::Kdenlive(d) => d.fps,
         }
     }
 
     pub fn height(&self) -> u32 {
         match self {
+            ProjectDoc::Shotcut(d) => d.height,
             ProjectDoc::Kdenlive(d) => d.height,
         }
     }
@@ -97,6 +111,7 @@ impl ProjectDoc {
     /// The folder relative resources are read from.
     pub fn root_dir(&self) -> &str {
         match self {
+            ProjectDoc::Shotcut(d) => &d.root_dir,
             ProjectDoc::Kdenlive(d) => &d.root_dir,
         }
     }
@@ -104,6 +119,7 @@ impl ProjectDoc {
     /// Where the timeline ends, in frames.
     pub fn sequence_end(&self) -> i64 {
         match self {
+            ProjectDoc::Shotcut(d) => d.sequence_end(),
             ProjectDoc::Kdenlive(d) => d.sequence_end(),
         }
     }
@@ -111,6 +127,7 @@ impl ProjectDoc {
     /// Why Haruspex can't edit it, when it can't.
     pub fn editable(&self) -> Result<(), String> {
         match self {
+            ProjectDoc::Shotcut(d) => d.editable(),
             ProjectDoc::Kdenlive(d) => d.editable(),
         }
     }
@@ -118,6 +135,11 @@ impl ProjectDoc {
     /// The same project at another preset's profile.
     pub fn with_profile(&self, preset: &str) -> Result<ProjectDoc, String> {
         match self {
+            ProjectDoc::Shotcut(d) => {
+                let mut changed = ShotcutDoc::parse(shotcut::set_profile(d, preset)?, None)?;
+                changed.root_dir = d.root_dir.clone();
+                Ok(ProjectDoc::Shotcut(changed))
+            }
             ProjectDoc::Kdenlive(d) => Ok(ProjectDoc::Kdenlive(KdenliveDoc::parse(
                 kdenlive::set_profile(d, preset)?,
             )?)),
@@ -127,6 +149,7 @@ impl ProjectDoc {
     /// The main track as placements: applying them changes nothing.
     pub fn current(&self) -> Vec<Placement> {
         match self {
+            ProjectDoc::Shotcut(d) => shotcut::edit::current(d),
             ProjectDoc::Kdenlive(d) => kdenlive::edit::current(d),
         }
     }
@@ -134,18 +157,21 @@ impl ProjectDoc {
     /// The project's text with the main track made `wanted`.
     pub fn apply(&self, wanted: &[Placement]) -> Result<Edited, String> {
         match self {
+            ProjectDoc::Shotcut(d) => shotcut::edit::apply(d, wanted),
             ProjectDoc::Kdenlive(d) => kdenlive::edit::apply(d, wanted),
         }
     }
 
     pub fn spans(&self) -> Vec<Span> {
         match self {
+            ProjectDoc::Shotcut(d) => shotcut::timeline_map::spans(d),
             ProjectDoc::Kdenlive(d) => kdenlive::timeline_map::spans(d),
         }
     }
 
     pub fn clips(&self) -> Vec<Clip> {
         match self {
+            ProjectDoc::Shotcut(d) => shotcut::clips(d),
             ProjectDoc::Kdenlive(d) => kdenlive::clips(d),
         }
     }
@@ -153,12 +179,14 @@ impl ProjectDoc {
     /// The files on tracks other than the main one.
     pub fn other_track_resources(&self) -> Vec<String> {
         match self {
+            ProjectDoc::Shotcut(d) => shotcut::other_track_resources(d),
             ProjectDoc::Kdenlive(d) => kdenlive::other_track_resources(d),
         }
     }
 
     pub fn summary(&self, working_dir: &str, project: &Path) -> ProjectSummary {
         match self {
+            ProjectDoc::Shotcut(d) => shotcut::summary(d, working_dir, project),
             ProjectDoc::Kdenlive(d) => kdenlive::summary(d, working_dir, project),
         }
     }
@@ -168,6 +196,7 @@ impl ProjectDoc {
 /// and checked by melt after.
 pub async fn save(project: &Path, text: &str, melt: &str) -> Result<(), String> {
     match Format::from_path(project) {
+        Some(Format::Shotcut) => shotcut::save(project, text, melt).await,
         Some(Format::Kdenlive) => kdenlive::save(project, text, melt).await,
         None => Err(not_a_project(project)),
     }

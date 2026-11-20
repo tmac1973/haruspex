@@ -59,7 +59,7 @@ For more than about eight assets it suggests an Asset generation job (see the `j
 `cut-video` takes an episode from raw clips to a finished video, in order, and stops where you need to decide:
 
 1. It lists the clips, saying which are mixed formats or have no sound, and transcribes them.
-2. It makes the cut, then **stops** for you to look. Close the project in Kdenlive before it goes on.
+2. It makes the cut, then **stops** for you to look. Close the project in Shotcut or Kdenlive before it goes on.
 3. It cuts out silences, and lists the retakes it finds in the transcript. It **asks** which to cut, and cuts only those.
 4. It writes chapters for a longer video, renders in the background, and checks the render's loudness, length and sound.
 5. It writes captions next to the render, and offers moments for a thumbnail.

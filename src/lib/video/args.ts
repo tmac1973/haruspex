@@ -5,6 +5,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { CutSpec } from '#lib/ipc/gen/CutSpec.ts';
+import type { Format } from '#lib/ipc/gen/Format.ts';
 import type { CutItemSpec } from '#lib/ipc/gen/CutItemSpec.ts';
 import type { EndClip } from '#lib/ipc/gen/EndClip.ts';
 import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
@@ -19,7 +20,8 @@ export function videoSettings(): VideoSettings {
 		overrides: videoOverrides(),
 		intro: s.videoIntroPath,
 		outro: s.videoOutroPath,
-		preset: s.videoPreset
+		preset: s.videoPreset,
+		editor: s.videoEditor
 	};
 }
 
@@ -63,8 +65,13 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 	if (preset && !VIDEO_PRESETS.some((p) => p.id === preset)) {
 		return `preset must be one of ${VIDEO_PRESETS.map((p) => p.id).join(', ')}.`;
 	}
+	const editor = trimmedOrNull(args.editor)?.toLowerCase() ?? null;
+	if (editor && editor !== 'shotcut' && editor !== 'kdenlive') {
+		return 'editor must be shotcut or kdenlive.';
+	}
 	return {
 		project: trimmedOrNull(args.project),
+		editor: editor as Format | null,
 		preset,
 		intro: endClip(args.intro),
 		outro: endClip(args.outro),

@@ -14,6 +14,7 @@
 	import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 	import type { FoundBinary } from '#lib/ipc/gen/FoundBinary.ts';
 	import type { FfmpegChoice } from '#lib/ipc/gen/FfmpegChoice.ts';
+	import type { Format } from '#lib/ipc/gen/Format.ts';
 
 	type Tool = 'ffmpeg' | 'ffprobe' | 'melt';
 	const TOOLS: Tool[] = ['ffmpeg', 'ffprobe', 'melt'];
@@ -43,6 +44,7 @@
 	});
 	let enabled = $state(getSettings().videoEditingEnabled);
 	let preset = $state<VideoPreset>(getSettings().videoPreset);
+	let editor = $state<Format>(getSettings().videoEditor);
 	let intro = $state(getSettings().videoIntroPath);
 	let outro = $state(getSettings().videoOutroPath);
 	let encoder = $state(getSettings().videoEncoder);
@@ -178,6 +180,11 @@
 		if (typeof chosen !== 'string') return;
 		paths[tool] = chosen;
 		savePath(tool);
+	}
+
+	function chooseEditor(e: Event) {
+		editor = (e.currentTarget as HTMLSelectElement).value as Format;
+		updateSettings({ videoEditor: editor });
 	}
 
 	function choosePreset(e: Event) {
@@ -333,6 +340,17 @@
 <section class="settings-section">
 	<h2>New videos</h2>
 	<div class="fields">
+		<label for="video-editor">Editor:</label>
+		<select
+			id="video-editor"
+			value={editor}
+			onchange={chooseEditor}
+			title="Format for new projects. Existing projects keep theirs."
+		>
+			<option value="shotcut">Shotcut</option>
+			<option value="kdenlive">Kdenlive</option>
+		</select>
+
 		<label for="video-preset">Format:</label>
 		<select
 			id="video-preset"

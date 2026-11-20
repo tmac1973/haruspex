@@ -1,0 +1,201 @@
+<?xml version="1.0" standalone="no"?>
+<mlt LC_NUMERIC="C" version="7.40.0" title="Shotcut version 26.6.25" producer="main_bin">
+  <profile description="HD 1080p 30 fps" width="1920" height="1080" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="16" display_aspect_den="9" frame_rate_num="30" frame_rate_den="1" colorspace="709"/>
+  <playlist id="main_bin">
+    <property name="shotcut:colorTransfer">sdr</property>
+    <property name="xml_retain">1</property>
+  </playlist>
+  <producer id="black" in="00:00:00.000" out="00:00:17.967">
+    <property name="length">00:00:18.000</property>
+    <property name="eof">pause</property>
+    <property name="resource">0</property>
+    <property name="aspect_ratio">1</property>
+    <property name="mlt_service">color</property>
+    <property name="mlt_image_format">rgba</property>
+    <property name="set.test_audio">0</property>
+  </producer>
+  <playlist id="background">
+    <entry producer="black" in="00:00:00.000" out="00:00:17.967"/>
+  </playlist>
+  <chain id="chain0" out="00:00:09.967">
+    <property name="length">00:00:10.000</property>
+    <property name="eof">pause</property>
+    <property name="resource">a.mp4</property>
+    <property name="mlt_service">avformat-novalidate</property>
+    <property name="meta.media.nb_streams">2</property>
+    <property name="meta.media.0.stream.type">video</property>
+    <property name="meta.media.0.codec.name">h264</property>
+    <property name="meta.media.1.stream.type">audio</property>
+    <property name="meta.media.1.codec.name">aac</property>
+    <property name="seekable">1</property>
+    <property name="audio_index">1</property>
+    <property name="video_index">0</property>
+    <property name="creation_time">2026-11-01T10:00:00</property>
+    <property name="vstream">0</property>
+    <property name="astream">0</property>
+    <property name="shotcut:skipConvert">1</property>
+    <property name="shotcut:hash">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</property>
+    <property name="shotcut:caption">a.mp4</property>
+  </chain>
+  <chain id="chain1" out="00:00:07.967">
+    <property name="length">00:00:08.000</property>
+    <property name="eof">pause</property>
+    <property name="resource">b.mp4</property>
+    <property name="mlt_service">avformat-novalidate</property>
+    <property name="meta.media.nb_streams">2</property>
+    <property name="meta.media.0.stream.type">video</property>
+    <property name="meta.media.0.codec.name">h264</property>
+    <property name="meta.media.1.stream.type">audio</property>
+    <property name="meta.media.1.codec.name">aac</property>
+    <property name="seekable">1</property>
+    <property name="audio_index">1</property>
+    <property name="video_index">0</property>
+    <property name="creation_time">2026-11-01T10:00:00</property>
+    <property name="vstream">0</property>
+    <property name="astream">0</property>
+    <property name="shotcut:skipConvert">1</property>
+    <property name="shotcut:hash">bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</property>
+    <property name="shotcut:caption">b.mp4</property>
+  </chain>
+  <tractor id="tractor0" in="00:00:00.000" out="00:00:00.467">
+    <property name="shotcut:transition">lumaMix</property>
+    <track producer="chain0" in="00:00:05.000" out="00:00:05.467"/>
+    <track producer="chain1" in="00:00:01.000" out="00:00:01.467"/>
+    <transition id="transition0" out="00:00:00.467">
+      <property name="a_track">0</property>
+      <property name="b_track">1</property>
+      <property name="factory">loader</property>
+      <property name="mlt_service">luma</property>
+      <property name="alpha_over">1</property>
+      <property name="fix_background_alpha">1</property>
+    </transition>
+    <transition id="transition1" out="00:00:00.467">
+      <property name="a_track">0</property>
+      <property name="b_track">1</property>
+      <property name="start">-1</property>
+      <property name="accepts_blanks">1</property>
+      <property name="mlt_service">mix</property>
+    </transition>
+  </tractor>
+  <chain id="chain2" out="00:00:05.967">
+    <property name="length">00:00:06.000</property>
+    <property name="eof">pause</property>
+    <property name="resource">c.mp4</property>
+    <property name="mlt_service">avformat-novalidate</property>
+    <property name="meta.media.nb_streams">2</property>
+    <property name="meta.media.0.stream.type">video</property>
+    <property name="meta.media.0.codec.name">h264</property>
+    <property name="meta.media.1.stream.type">audio</property>
+    <property name="meta.media.1.codec.name">aac</property>
+    <property name="seekable">1</property>
+    <property name="audio_index">1</property>
+    <property name="video_index">0</property>
+    <property name="creation_time">2026-11-01T10:00:00</property>
+    <property name="vstream">0</property>
+    <property name="astream">0</property>
+    <property name="shotcut:skipConvert">1</property>
+    <property name="shotcut:hash">cccccccccccccccccccccccccccccccc</property>
+    <property name="shotcut:caption">c.mp4</property>
+    <filter id="filter0" out="00:00:05.967">
+      <property name="argument">Episode 12</property>
+      <property name="geometry">0 0 1920 1080 1</property>
+      <property name="family">Sans</property>
+      <property name="size">96</property>
+      <property name="fgcolour">#ffffffff</property>
+      <property name="halign">center</property>
+      <property name="valign">bottom</property>
+      <property name="mlt_service">dynamictext</property>
+      <property name="shotcut:filter">dynamicText</property>
+    </filter>
+  </chain>
+  <playlist id="playlist0">
+    <property name="shotcut:video">1</property>
+    <property name="shotcut:name">V1</property>
+    <entry producer="chain0" in="00:00:00.000" out="00:00:04.967"/>
+    <entry producer="tractor0" in="00:00:00.000" out="00:00:00.467"/>
+    <entry producer="chain1" in="00:00:01.500" out="00:00:06.967"/>
+    <blank length="00:00:01.000"/>
+    <entry producer="chain2" in="00:00:00.000" out="00:00:05.967"/>
+  </playlist>
+  <producer id="producer0" in="00:00:00.000" out="03:59:59.967">
+    <property name="length">04:00:00.000</property>
+    <property name="eof">pause</property>
+    <property name="resource">logo.png</property>
+    <property name="ttl">1</property>
+    <property name="aspect_ratio">1</property>
+    <property name="mlt_service">qimage</property>
+    <property name="shotcut:caption">logo.png</property>
+  </producer>
+  <playlist id="playlist1">
+    <property name="shotcut:video">1</property>
+    <property name="shotcut:name">V2</property>
+    <blank length="00:00:02.000"/>
+    <entry producer="producer0" in="00:00:00.000" out="00:00:02.967"/>
+  </playlist>
+  <playlist id="playlist2">
+    <property name="shotcut:audio">1</property>
+    <property name="shotcut:name">A1</property>
+    <blank length="00:00:00.033"/>
+  </playlist>
+  <tractor id="tractor1" title="Shotcut version 26.6.25" in="00:00:00.000" out="00:00:17.967">
+    <property name="shotcut:colorTransfer">sdr</property>
+    <property name="shotcut">1</property>
+    <property name="shotcut:projectAudioChannels">2</property>
+    <property name="shotcut:projectFolder">1</property>
+    <property name="meta.shotcut.vui">1</property>
+    <properties name="shotcut:markers">
+      <properties name="0">
+        <property name="text">Intro done</property>
+        <property name="start">00:00:02.000</property>
+        <property name="end">00:00:02.000</property>
+        <property name="color">#008000</property>
+      </properties>
+    </properties>
+    <track producer="background"/>
+    <track producer="playlist0"/>
+    <track producer="playlist1"/>
+    <track producer="playlist2" hide="video"/>
+    <transition id="transition2">
+      <property name="a_track">0</property>
+      <property name="b_track">1</property>
+      <property name="mlt_service">mix</property>
+      <property name="always_active">1</property>
+      <property name="sum">1</property>
+    </transition>
+    <transition id="transition3">
+      <property name="a_track">0</property>
+      <property name="b_track">1</property>
+      <property name="compositing">0</property>
+      <property name="distort">0</property>
+      <property name="rotate_center">0</property>
+      <property name="mlt_service">qtblend</property>
+      <property name="threads">0</property>
+      <property name="disable">1</property>
+    </transition>
+    <transition id="transition4">
+      <property name="a_track">1</property>
+      <property name="b_track">2</property>
+      <property name="compositing">0</property>
+      <property name="distort">0</property>
+      <property name="rotate_center">0</property>
+      <property name="mlt_service">qtblend</property>
+      <property name="threads">0</property>
+      <property name="disable">0</property>
+    </transition>
+    <transition id="transition5">
+      <property name="a_track">0</property>
+      <property name="b_track">2</property>
+      <property name="mlt_service">mix</property>
+      <property name="always_active">1</property>
+      <property name="sum">1</property>
+    </transition>
+    <transition id="transition6">
+      <property name="a_track">0</property>
+      <property name="b_track">3</property>
+      <property name="mlt_service">mix</property>
+      <property name="always_active">1</property>
+      <property name="sum">1</property>
+    </transition>
+    <property name="shotcut:processingMode">Native8Cpu</property>
+  </tractor>
+</mlt>

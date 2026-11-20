@@ -9,8 +9,8 @@ metadata:
 # Cutting a video
 
 The video tools each do one step. These instructions put them in order and
-say where to stop and ask. The user can open the Kdenlive project and change
-it at any point, so read it again (`video_project_read`) before every change
+say where to stop and ask. The user can open the project in its editor
+(Shotcut or Kdenlive) and change it at any point, so read it again (`video_project_read`) before every change
 after the first.
 
 ## 1. Look at the clips
@@ -39,8 +39,8 @@ crossfades, and never on the first clip. Loudness is evened out on its own.
 
 Then **stop**. Show the cut (`video_project_read`): the clips, their trims
 and the total length. Ask the user to look before going on. Tell them to
-close the project in Kdenlive before you make the next change, or Kdenlive
-will save over it.
+close the project in its editor before you make the next change, or the
+editor will save over it.
 
 ## 4. Take out silences and retakes
 
@@ -83,6 +83,6 @@ finishes. When it does, read the render's check:
 
 - Say what each step did in a line, with the file it wrote.
 - Never upload anything.
-- If a tool refuses (Kdenlive's own crossfade joins two clips, or a project
-  saved by an older Kdenlive), pass its words on to the user, with what they
-  can do in Kdenlive.
+- If a tool refuses (a crossfade made in the editor joins two clips, a
+  project saved by an older Kdenlive, or a Shotcut project in GPU processing
+  mode), pass its words on to the user, with what they can do in the editor.

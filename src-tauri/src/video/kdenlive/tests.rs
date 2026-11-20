@@ -2,6 +2,7 @@ use super::doc::{Doc, Fps, Item};
 use super::edit::{apply, current};
 use super::*;
 use crate::video::mlt::mlt_path;
+use crate::video::mlt::project_file::melt_loads;
 use crate::video::timeline::{Media, Placement, Source};
 use std::path::Path;
 

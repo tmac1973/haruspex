@@ -48,6 +48,7 @@ const PAGES = [
 	'speech',
 	'video-generation',
 	'video-editing',
+	'video-cut',
 	'video-render',
 	'video-speech',
 	'textures',

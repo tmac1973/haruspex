@@ -3,6 +3,7 @@
 
 pub mod fps;
 pub mod profile;
+pub mod project_file;
 pub mod xml;
 
 use std::path::Path;

@@ -201,12 +201,8 @@ pub async fn start_render(
     let melt = found.require(binaries::Tool::Melt)?.to_string();
     let ffmpeg = found.require(binaries::Tool::Ffmpeg)?.to_string();
     let ffprobe = found.require(binaries::Tool::Ffprobe)?.to_string();
-    let project_path = project::default_project(
-        &req.working_dir,
-        &req.episode,
-        req.project.as_deref(),
-        false,
-    )?;
+    let project_path =
+        project::default_project(&req.working_dir, &req.episode, req.project.as_deref(), None)?;
     let doc = ProjectDoc::open(&project_path)?;
     let frames = doc.sequence_end();
     if frames == 0 {

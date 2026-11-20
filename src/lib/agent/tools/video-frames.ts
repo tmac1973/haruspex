@@ -170,7 +170,8 @@ registerTool({
 					},
 					project: {
 						type: 'string',
-						description: 'With timeline_times: the .kdenlive file, if not the episode’s.'
+						description:
+							'With timeline_times: the project file (.mlt or .kdenlive), if not the episode’s.'
 					}
 				}
 			}

@@ -17,6 +17,7 @@ pub mod paths;
 pub mod probe;
 pub mod project;
 pub mod scenes;
+pub mod shotcut;
 pub mod silence;
 pub mod subtitles;
 pub mod tasks;

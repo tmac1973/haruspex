@@ -369,7 +369,7 @@ pub fn video_write_chapters(
     chapters: Vec<super::subtitles::Chapter>,
 ) -> Result<ChaptersWritten, String> {
     use super::subtitles;
-    let path = super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
+    let path = super::project::default_project(&working_dir, &episode, project.as_deref(), None)?;
     let doc = super::format::ProjectDoc::open(&path)?;
     let total = doc.fps().secs(doc.sequence_end());
     let mut chapters = chapters;
@@ -488,7 +488,7 @@ pub async fn video_frames(
                 &working_dir,
                 &episode,
                 request.project.as_deref(),
-                false,
+                None,
             )?;
             let doc = super::format::ProjectDoc::open(&project)?;
             let spans = doc.spans();
@@ -552,7 +552,7 @@ fn thumbnail_target(
     project: Option<&str>,
     name: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
-    let episode_dir = match super::project::default_project(working_dir, episode, project, false) {
+    let episode_dir = match super::project::default_project(working_dir, episode, project, None) {
         Ok(p) => super::project::episode_home(working_dir, episode, &p)?,
         Err(_) => paths::resolve_episode(working_dir, episode)?,
     };
@@ -565,7 +565,7 @@ fn thumbnail_target(
             format!("{n}.jpg")
         }
         None => {
-            let stem = super::project::default_project(working_dir, episode, project, false)
+            let stem = super::project::default_project(working_dir, episode, project, None)
                 .ok()
                 .and_then(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
                 .or_else(|| {
@@ -634,7 +634,7 @@ pub async fn video_thumbnail_from_frame(
         ),
         (None, None, Some(t)) => {
             let proj =
-                super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
+                super::project::default_project(&working_dir, &episode, project.as_deref(), None)?;
             let doc = super::format::ProjectDoc::open(&proj)?;
             let spans = doc.spans();
             let (span, at) = super::timeline::source_at(&spans, t)
@@ -724,7 +724,7 @@ pub async fn youtube_upload_plan(
 ) -> Result<UploadPlan, String> {
     use base64::Engine;
     let project_path =
-        super::project::default_project(&working_dir, &episode, project.as_deref(), false).ok();
+        super::project::default_project(&working_dir, &episode, project.as_deref(), None).ok();
     let episode_dir = match &project_path {
         Some(p) => super::project::episode_home(&working_dir, &episode, p)?,
         None => paths::resolve_episode(&working_dir, &episode)?,
