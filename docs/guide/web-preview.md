@@ -15,7 +15,7 @@ Each session has one preview window. Previewing another page in the same session
 
 ## Open a preview yourself
 
-A **Preview** button sits beside `.html` files the agent names in its answers, and on the diff card of an `.html` file it wrote. Click it to open the page in the session's preview window, or bring that window forward.
+A **Preview** button sits beside `.html` files the agent names in its answers, on the diff card of an `.html` file it wrote, and on each "Previewed" step where the agent showed you a page. Click it to open the page in the session's preview window, or bring that window forward. That is also how you get a preview back after closing its window.
 
 ## Check a page at phone or tablet width
 
@@ -25,6 +25,8 @@ The toolbar above the page has:
 - **Reload**, to load the page again;
 - **Phone** (390 pixels wide), **Tablet** (820) and **Full** (the window's width). The window remembers your choice;
 - **Open in browser**, to open the same address in your web browser.
+
+The window follows the app's zoom (see the `shortcuts` page), so the page is zoomed by the same amount.
 
 ## Let the agent see the page
 
