@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.21](https://github.com/tmac1973/haruspex/compare/v0.2.20...v0.2.21) (2026-11-20)
+
+
+### Bug Fixes
+
+* **code:** hide chat usage and model name in the window header on the Code tab ([#1131](https://github.com/tmac1973/haruspex/issues/1131)) ([a53f492](https://github.com/tmac1973/haruspex/commit/a53f492cfa8ad85b6b64e29f726c6bde9448d0b8))
+* **mcp:** keep SystemRoot for MCP servers on Windows, so they start ([#1132](https://github.com/tmac1973/haruspex/issues/1132)) ([f2199b4](https://github.com/tmac1973/haruspex/commit/f2199b4b92b9352e1d05bd992132d0f7482bfcde))
+* **mcp:** run npm by a plain path on Windows, so npm installs work ([#1128](https://github.com/tmac1973/haruspex/issues/1128)) ([5ba07a8](https://github.com/tmac1973/haruspex/commit/5ba07a8686e94bd293dda6a14aed95c3f798a104))
+* **mcp:** start MCP servers, npm and uv without a console window on Windows ([#1133](https://github.com/tmac1973/haruspex/issues/1133)) ([a33a7fa](https://github.com/tmac1973/haruspex/commit/a33a7fa0da87c70ccc359b0da6bd50562411ad42))
+* **shell:** load the bash hook in WSL tabs on installed Windows builds ([#1130](https://github.com/tmac1973/haruspex/issues/1130)) ([42e20cc](https://github.com/tmac1973/haruspex/commit/42e20cca0c7bc0754d6b1d3d62dd58fbda391036))
+
 ## [0.2.20](https://github.com/tmac1973/haruspex/compare/v0.2.19...v0.2.20) (2026-11-19)
 
 
