@@ -104,8 +104,10 @@ fi
 WORK="${MEDIA_BUILD_DIR:-$(mktemp -d)}"
 PREFIX="$WORK/prefix"
 mkdir -p "$WORK" "$PREFIX" "$OUT_DIR"
-WORK="$(cd "$WORK" && pwd)"
-PREFIX="$(cd "$PREFIX" && pwd)"
+# Physical paths: Qt refuses a build directory reached through a symlink, as
+# macOS's temp folder is (/var -> /private/var).
+WORK="$(cd "$WORK" && pwd -P)"
+PREFIX="$(cd "$PREFIX" && pwd -P)"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 echo ">> Building the media bundle ($MEDIA_TAG) for $TARGET in $WORK"
 
@@ -465,8 +467,11 @@ if [ ! -f "$WORK/mlt-build/.installed" ]; then
     for m in "${MLT_MODULES[@]}"; do MOD_FLAGS+=("-DMOD_$(echo "$m" | tr '[:lower:]' '[:upper:]')=ON"); done
     for m in "${MLT_OFF[@]}"; do MOD_FLAGS+=("-DMOD_$(echo "$m" | tr '[:lower:]' '[:upper:]')=OFF"); done
     MLT_CFLAGS=""
+    # melt opens an SDL preview window on macOS and Windows unless told not
+    # to; it only ever renders here, and we build no SDL.
+    [ "$OS" != linux ] && MLT_CFLAGS="-DMELT_NOSDL"
     # libxml2 is static: its headers must not ask for dllimport.
-    [ "$OS" = windows ] && MLT_CFLAGS="-DLIBXML_STATIC"
+    [ "$OS" = windows ] && MLT_CFLAGS="$MLT_CFLAGS -DLIBXML_STATIC"
     cmake -S "$WORK/mlt-$MLT_VERSION" -B "$WORK/mlt-build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
         -DCMAKE_PREFIX_PATH="$PREFIX" ${CMAKE_EXTRA[@]+"${CMAKE_EXTRA[@]}"} \
