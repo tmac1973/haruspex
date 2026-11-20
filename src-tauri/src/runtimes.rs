@@ -320,6 +320,9 @@ pub fn npm_command(app: &AppHandle) -> Result<Command, String> {
     let npm_cli = npm_cli_path(app)?;
     let mut cmd = Command::new(node);
     cmd.arg(npm_cli);
+    // A console program started from the GUI app gets a console window of
+    // its own, left on screen for as long as it runs.
+    crate::shell::platform::apply_no_window(cmd.as_std_mut());
     scrub_runtime_env(&mut cmd);
     if let Some(shim) = node_shim_dir(app) {
         prepend_path(&mut cmd, &shim);
@@ -330,6 +333,7 @@ pub fn npm_command(app: &AppHandle) -> Result<Command, String> {
 /// A command that runs the bundled `uv`. Callers append uv's own arguments.
 pub fn uv_command() -> Result<Command, String> {
     let mut cmd = Command::new(uv_path()?);
+    crate::shell::platform::apply_no_window(cmd.as_std_mut());
     scrub_runtime_env(&mut cmd);
     Ok(cmd)
 }
