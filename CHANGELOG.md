@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.22](https://github.com/tmac1973/haruspex/compare/v0.2.21...v0.2.22) (2026-11-20)
+
+
+### Bug Fixes
+
+* **build:** patch espeak-ng's __has_include_next tests for MSVC 19.52 ([#1135](https://github.com/tmac1973/haruspex/issues/1135)) ([9df8808](https://github.com/tmac1973/haruspex/commit/9df880894ace5a0005bb60ef5aae43bcb9603128))
+
 ## [0.2.21](https://github.com/tmac1973/haruspex/compare/v0.2.20...v0.2.21) (2026-11-20)
 
 
