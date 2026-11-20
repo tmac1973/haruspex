@@ -427,6 +427,7 @@ fn addon_step<'a>(
 async fn run_setup(spawn: &SpawnConfig) -> Result<String, String> {
     let mut cmd = tokio::process::Command::new(&spawn.program);
     cmd.args(&spawn.args);
+    crate::shell::platform::apply_no_window(cmd.as_std_mut());
     cmd.env_clear();
     for (key, value) in &spawn.env {
         cmd.env(key, value);

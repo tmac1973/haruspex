@@ -455,6 +455,9 @@ impl McpSupervisor {
 
         let mut cmd = tokio::process::Command::new(&config.program);
         cmd.args(&config.args);
+        // Windows: otherwise the server gets a console window of its own,
+        // open on the user's screen for as long as the server runs.
+        crate::shell::platform::apply_no_window(cmd.as_std_mut());
         // Cleared, not inherited: an MCP server must behave the same on the
         // user's machine as on ours, and the ambient environment is where that
         // guarantee goes to die. The catalog supplies what a server needs.
