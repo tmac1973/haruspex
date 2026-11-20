@@ -34,7 +34,6 @@ function badge(): HTMLElement {
 	return document.querySelector('.status-badge') as HTMLElement;
 }
 
-const openrouter = { baseUrl: 'https://openrouter.ai/api', modelId: 'anthropic/claude-x' };
 const gpuBox = { baseUrl: 'http://gpu-box:8080', modelId: 'qwen3.8-27b' };
 
 beforeEach(() => {
@@ -86,27 +85,40 @@ describe('ServerStatusBadge', () => {
 		screen.getByText('Stopped · qwen3.5-9b');
 	});
 
-	it("shows a Code session's OpenRouter model, not the server state", () => {
-		mockState({ status: 'stopped' });
-		mockView({ kind: 'override', backend: openrouter, source: 'code' });
+	it('names no model on the Code tab', () => {
+		mockState({ status: 'ready' });
+		mockView({ kind: 'server' });
 		render(ServerStatusBadge);
-		screen.getByText('anthropic/claude-x · OpenRouter');
-		expect(badge().getAttribute('data-status')).toBe('remote');
-		expect(badge().title).toMatch(/^This Code session's own model, not Settings → Inference/);
-		expect(badge().title).toContain('Click to open Settings → Inference.');
+		screen.getByText('Ready');
+		expect(badge().getAttribute('data-status')).toBe('ready');
+		expect(badge().title).toContain('qwen3.5-9b');
+		expect(badge().title).toContain('Each Code session shows its own model');
 	});
 
-	it("shows a Code session's remote server model", () => {
-		mockState({ status: 'ready' });
-		mockView({ kind: 'override', backend: gpuBox, source: 'code' });
+	it('keeps the state and error on the Code tab', () => {
+		mockState({ status: 'starting' });
+		mockView({ kind: 'server' });
+		const { unmount } = render(ServerStatusBadge);
+		screen.getByText('Starting…');
+		unmount();
+
+		mockState({ status: 'error', errorMessage: 'model failed to load' });
 		render(ServerStatusBadge);
-		screen.getByText('qwen3.8-27b · gpu-box:8080');
-		expect(screen.queryByText(/Ready/)).toBeNull();
+		screen.getByText('Error: model failed to load');
+		screen.getByText('View logs');
+	});
+
+	it('drops the remote model name on the Code tab', () => {
+		mockState({ status: 'remote', remoteLabel: 'qwen3.8-27b @ gpu-box:8080' });
+		mockView({ kind: 'server' });
+		render(ServerStatusBadge);
+		screen.getByText('Remote');
+		expect(badge().title).toContain('qwen3.8-27b @ gpu-box:8080');
 	});
 
 	it("shows a job's own model", () => {
 		mockState({ status: 'ready' });
-		mockView({ kind: 'override', backend: gpuBox, source: 'job' });
+		mockView({ kind: 'override', backend: gpuBox });
 		render(ServerStatusBadge);
 		screen.getByText('qwen3.8-27b · gpu-box:8080');
 		expect(badge().title).toMatch(/^This job's own model, not Settings → Inference/);

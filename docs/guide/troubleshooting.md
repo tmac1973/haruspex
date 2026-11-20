@@ -68,7 +68,7 @@ Turn Haruspex on in System Settings → Privacy & Security → Local Network and
 
 ## The model server will not start
 
-The status badge names the model of the chat, Code session or job in view, and for the Settings → Inference model the server's state: **Ready**, **Starting**, **Error** or **Stopped**. Click it for Settings → Inference, or on **Error** the logs. Its Server section has **Restart Server**, **Start Server** and **Stop Server**, and **Run Setup Wizard** to pick a model again.
+The status badge names the model of the chat or job in view (in Code, each session names its own), and the Settings → Inference server's state: **Ready**, **Starting**, **Error** or **Stopped**. Click it for Settings → Inference, or on **Error** the logs. Its Server section has **Restart Server**, **Start Server**, **Stop Server** and **Run Setup Wizard** to pick a model.
 
 If you set Settings → Inference → **Extra llama-server arguments**, clear them and restart: a typo there stops the server.
 

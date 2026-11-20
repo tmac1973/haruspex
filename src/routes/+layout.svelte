@@ -765,7 +765,10 @@
 			<LeanModeBadge />
 			<CameraIndicator />
 			<ServerStatusBadge onOpenLogs={openLogViewer} />
-			<ContextIndicator jobsActive={getActiveTab() === 'jobs'} />
+			<!-- Each Code session shows its own model and usage in its header. -->
+			{#if getActiveTab() !== 'code'}
+				<ContextIndicator jobsActive={getActiveTab() === 'jobs'} />
+			{/if}
 			<button
 				class="header-icon-btn"
 				title="Toggle light / dark"

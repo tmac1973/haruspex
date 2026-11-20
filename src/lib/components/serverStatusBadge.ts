@@ -1,6 +1,7 @@
 /**
- * What the header status badge says: the model of the chat, session or job in
- * view, and for the Settings model, the state of its server.
+ * What the header status badge says: the model of the chat or job in view,
+ * and for the Settings model, the state of its server. On the Code tab it
+ * names no model, since each session shows its own.
  */
 import type { ServerState, ServerStatusType } from '#lib/stores/llamaServer.svelte.ts';
 import type { AppSettings } from '#lib/stores/settings.ts';
@@ -18,6 +19,7 @@ export interface StatusBadge {
 
 const SETTINGS = 'Click to open Settings → Inference.';
 const LOGS = 'Click to open logs.';
+const CODE = 'Each Code session shows its own model in its header.';
 
 export function statusBadge(
 	view: ModelInView,
@@ -26,16 +28,26 @@ export function statusBadge(
 ): StatusBadge {
 	if (view.kind === 'override') {
 		const { label } = overrideModelLabel(view.backend);
-		const whose = view.source === 'code' ? "This Code session's" : "This job's";
 		return {
 			status: 'remote',
 			label,
-			title: `${whose} own model, not Settings → Inference: ${label} (${view.backend.baseUrl}). ${SETTINGS}`,
+			title: `This job's own model, not Settings → Inference: ${label} (${view.backend.baseUrl}). ${SETTINGS}`,
 			opens: 'settings'
 		};
 	}
 
 	const name = localModelName(settings.activeLocalModelFilename);
+	const badge = settingsBadge(name, state);
+	if (view.kind !== 'server') return badge;
+	// Code tab: the state alone, since each session names its own model.
+	return {
+		...badge,
+		label: badge.label.split(' · ')[0] + (state.status === 'starting' ? '…' : ''),
+		title: `${badge.title} ${CODE}`
+	};
+}
+
+function settingsBadge(name: string, state: ServerState): StatusBadge {
 	switch (state.status) {
 		case 'ready':
 			return {
