@@ -317,7 +317,11 @@ describe('calibrating pan/tilt', () => {
 		// Home becomes where it points now: 2 pulses right of the camera's own.
 		await fireEvent.click(screen.getByText('Set home here'));
 		await screen.findByText(/home \(set here\) is 3\.9 from the left end/);
-		screen.getByText("Camera's own home");
+		// Reset home sits with the aim buttons; set it again after.
+		await fireEvent.click(screen.getByText('Reset home'));
+		expect(screen.queryByText('Reset home')).toBeNull();
+		await fireEvent.click(screen.getByText('Set home here'));
+		screen.getByText('Reset home');
 		await fireEvent.input(input(/^Note$/), {
 			target: { value: ' Faces the sofa; behind it is a wall ' }
 		});

@@ -26,9 +26,9 @@ Calibrate again after moving the camera or changing its home position. **Connect
 Home is where **Home** sends the camera and where a look-around ends. A camera's own home can point somewhere useless, such as the ceiling. After calibrating:
 
 1. Turn the camera with **Left**, **Right**, **Up** and **Down** (starting from **Home**) until it points where home should be.
-2. Click **Set home here**, then **Save**.
+2. Click **Set home here** (beside **Home**, with the turn buttons), then **Save**.
 
-Haruspex keeps this home itself, as steps from the camera's own (Thingino cameras ignore a new home sent to them), so going home takes a few seconds longer. **Camera's own home** goes back to the camera's. It is kept when you calibrate again.
+Haruspex keeps this home itself, as steps from the camera's own (Thingino cameras ignore a new home sent to them), so going home takes a few seconds longer. **Reset home** goes back to the camera's. It is kept when you calibrate again.
 
 ## Choose the part worth looking around
 

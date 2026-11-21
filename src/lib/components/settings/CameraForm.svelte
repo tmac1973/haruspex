@@ -679,24 +679,6 @@
 							<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
 						{/if}
 					</div>
-					<div class="edges">
-						<button
-							type="button"
-							class="btn btn-small"
-							onclick={setHome}
-							disabled={panAt === null || calibration.homePulses == null}
-							title="Home (and where a look-around ends) becomes where the camera points now, tilt included. Turn it with the buttons below first."
-							>Set home here</button
-						>
-						{#if calibration.homeOffset}
-							<button
-								type="button"
-								class="btn btn-small"
-								onclick={clearHome}
-								title="Home goes back to the one saved on the camera.">Camera's own home</button
-							>
-						{/if}
-					</div>
 				{/if}
 				{#if calibrateError}<p class="error">{calibrateError}</p>{/if}
 			{/if}
@@ -863,6 +845,24 @@
 					title={a.title}>{a.label}</button
 				>
 			{/each}
+			{#if calibration}
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={setHome}
+					disabled={aiming || panAt === null || calibration.homePulses == null}
+					title="Home (and where a look-around ends) becomes where the camera points now, tilt included. Save keeps it."
+					>Set home here</button
+				>
+				{#if calibration.homeOffset}
+					<button
+						type="button"
+						class="btn btn-small"
+						onclick={clearHome}
+						title="Home goes back to the one saved on the camera. Save keeps it.">Reset home</button
+					>
+				{/if}
+			{/if}
 		</div>
 	{/if}
 	{#if saveError}<span class="error">{saveError}</span>{/if}
