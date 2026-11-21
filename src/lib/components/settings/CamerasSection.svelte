@@ -6,6 +6,7 @@
 	 */
 	import CameraForm from '#lib/components/settings/CameraForm.svelte';
 	import CameraEventLog from '#lib/components/settings/CameraEventLog.svelte';
+	import CameraAlertsSection from '#lib/components/settings/CameraAlertsSection.svelte';
 	import { cameraWatchStatus } from '#lib/stores/cameraActivity.svelte.ts';
 	import { isTrustableServer, trustedServerKey } from '#lib/camera/trust.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
@@ -211,6 +212,8 @@
 		<span>days</span>
 	</label>
 </section>
+
+<CameraAlertsSection />
 
 <section class="settings-section">
 	<h2>Trusted servers</h2>

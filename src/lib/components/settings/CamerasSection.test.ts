@@ -85,6 +85,10 @@ vi.mock('@tauri-apps/api/core', async () =>
 					}
 				];
 			},
+			camera_alert_send: (a) => {
+				state.calls.push({ cmd: 'camera_alert_send', args: a });
+				return 'msg-1@example.com';
+			},
 			camera_event_dismiss: (a) => {
 				state.calls.push({ cmd: 'camera_event_dismiss', args: a });
 				return null;
@@ -558,5 +562,54 @@ describe('camera alerts', () => {
 		await screen.findByText('A man leaves a box at the door.');
 		expect(screen.queryByText('Nothing unusual.')).toBeNull();
 		expect(screen.queryByLabelText(/^Dismiss the alert from/)).toBeNull();
+	});
+});
+
+describe('the Alerts card', () => {
+	const account = {
+		id: 'acc-1',
+		label: 'Home',
+		enabled: true,
+		sendEnabled: true,
+		emailAddress: 'home@example.com'
+	};
+
+	it('saves where alerts go and sends a test only there', async () => {
+		updateSettings({ integrations: { email: { accounts: [account] } } as never });
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Email alerts'));
+		await fireEvent.input(input(/^Send to$/), {
+			target: { value: 'tim@example.com, bad address' }
+		});
+		await screen.findByText('One of these is not an email address.');
+		await fireEvent.input(input(/^Send to$/), {
+			target: { value: 'tim@example.com, sam@example.com' }
+		});
+		await fireEvent.change(input(/^Send to$/));
+		expect(getSettings().cameraAlerts).toEqual({
+			enabled: true,
+			accountId: 'acc-1',
+			to: ['tim@example.com', 'sam@example.com']
+		});
+
+		await fireEvent.click(screen.getByText('Send test'));
+		await screen.findByText('Sent to tim@example.com, sam@example.com.');
+		const call = state.calls.find((c) => c.cmd === 'camera_alert_send')!;
+		expect(call.args).toMatchObject({
+			to: ['tim@example.com', 'sam@example.com'],
+			account: { id: 'acc-1' },
+			alert: { kind: 'test' }
+		});
+	});
+
+	it('points to Settings → Integrations → Email when no account can send', async () => {
+		updateSettings({
+			integrations: { email: { accounts: [{ ...account, sendEnabled: false }] } } as never
+		});
+		render(CamerasSection);
+		screen.getByText(
+			'No email account can send. Turn on Allow sending in Settings → Integrations → Email.'
+		);
+		expect((screen.getByLabelText('Email alerts') as HTMLInputElement).disabled).toBe(true);
 	});
 });

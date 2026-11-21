@@ -17,14 +17,14 @@ With an account on, the assistant can list recent mail, summarise a message, or 
 
 ## Let the assistant draft emails
 
-Turn on **Allow sending** for an account and fill in its SMTP server (filled in for listed providers). The assistant can then draft a reply or a new message, which opens in a **Review email** window. You can edit any of it. Nothing is sent until you click **Send**. **Discard** declines it; anything in **Note** goes back to the assistant. Replies thread under the original, and a copy goes to Sent. Jobs can never send email, and auto-approve does not apply.
+Turn on **Allow sending** for an account and fill in its SMTP server (preset for listed providers). The assistant can then draft a reply or a new message, which opens in a **Review email** window. Edit any of it. Nothing is sent until you click **Send**. **Discard** declines it; a **Note** goes back to the assistant. Replies thread under the original, and a copy goes to Sent. Jobs never send email (camera alerts aside: `camera-alerts` page); auto-approve does not apply.
 
 ## Connect calendars and contacts
 
 Settings → Integrations → Calendar & Contacts. Access is read-only: the assistant can list and search events and look up contacts, but never changes anything.
 
 - **Sign in with Google** opens Google in your browser. **Remove** also revokes access at Google.
-- **Add a server account** is for CalDAV/CardDAV servers such as Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology. Enter your address or server URL, username and app password, then click **Check** to list your calendars and address books. If your server is not found, fill in **Calendar URL** or **Contacts URL** by hand.
+- **Add a server account** is for CalDAV/CardDAV servers such as Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology. Enter your address or server URL, username and app password, then **Check** lists your calendars and address books. If your server is not found, fill in **Calendar URL** or **Contacts URL** by hand.
 - **Add a calendar link** takes an iCal address (`https://…` or `webcal://…`). One link is one calendar, with no contacts. Anyone with the link can read the calendar, so Haruspex stores it like a password.
 
 To find the link:

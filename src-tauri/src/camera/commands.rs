@@ -3,6 +3,7 @@
 //! (`overrides`), which the cameras share with the video tools.
 
 use super::aim::{self, Aim, CameraAimResult};
+use super::alert_mail::{self, CameraAlert, MAX_ATTACHMENTS};
 use super::capture::{self, SNAPSHOT_MAX_WIDTH};
 use super::onvif::discovery::{self, DiscoveredCamera};
 use super::onvif::{self, ptz::Ptz, OnvifConnection};
@@ -10,6 +11,8 @@ use super::usb::{self, UsbDevices};
 use super::watcher::{remove_files, CameraWatchStatus, WatcherRegistry};
 use super::{CameraCaps, CameraConfig, Credentials, OnvifPreset};
 use crate::db::{AlertLevel, CameraEvent, CameraEventFilter, Database, HourCounts};
+use crate::integrations::email::auth::EmailAccount;
+use crate::integrations::email::smtp_client;
 use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -316,6 +319,46 @@ pub async fn camera_event_hour_counts(
         db.camera_event_hour_counts(&camera_id, since, offset_ms)
     })
     .await
+}
+
+/// Send a camera alert email from `account` to `to`, the addresses set in
+/// Settings → Cameras → Alerts, with the pictures of `alert.event_ids`
+/// attached. Its subject is fixed by its kind; nothing in it chooses who it
+/// goes to. No copy goes to Sent. Returns the new Message-ID, for the next
+/// alert to thread under.
+#[tauri::command]
+pub async fn camera_alert_send(
+    db: tauri::State<'_, Database>,
+    account: EmailAccount,
+    to: Vec<String>,
+    alert: CameraAlert,
+) -> Result<String, String> {
+    let mailboxes = alert_mail::recipients(&to)?;
+    let ids: Vec<i64> = alert
+        .event_ids
+        .iter()
+        .copied()
+        .take(MAX_ATTACHMENTS)
+        .collect();
+    let pictures = on_db(&db, move |db| {
+        let mut out = Vec::new();
+        for id in ids {
+            let Some(path) = db.camera_event_thumb_path(id)? else {
+                continue;
+            };
+            if let Ok(jpeg) = std::fs::read(&path) {
+                out.push((format!("event-{id}.jpg"), jpeg));
+            }
+        }
+        Ok(out)
+    })
+    .await?;
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let sent = smtp_client::send_built(&account, |from, message_id| {
+        alert_mail::build(from, &mailboxes, &alert, pictures, message_id, &date)
+    })
+    .await?;
+    Ok(sent.message_id)
 }
 
 /// The events waiting for a caption, oldest first.

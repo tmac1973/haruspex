@@ -444,6 +444,7 @@ pub fn run() {
             camera::commands::camera_event_thumb,
             camera::commands::camera_event_set_caption,
             camera::commands::camera_event_set_judgement,
+            camera::commands::camera_alert_send,
             camera::commands::camera_event_dismiss,
             camera::commands::camera_event_hour_counts,
             camera::commands::camera_events_pending,

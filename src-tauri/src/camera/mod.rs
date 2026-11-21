@@ -11,6 +11,7 @@
 //! See `plan/camera-integration/` for the design.
 
 pub mod aim;
+pub mod alert_mail;
 pub(crate) mod calibrate;
 pub mod capture;
 pub mod commands;

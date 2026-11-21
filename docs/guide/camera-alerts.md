@@ -23,7 +23,15 @@ Judging uses the chat model that writes captions: the local model or a server yo
 - **Unusual**: more people than **Usual people**, anyone moving about during a quiet hour, or an unfamiliar large object.
 - **Normal**: everything else.
 
-An Urgent entry shows a desktop notification. Unusual and Urgent entries show their level and the reason in the camera's **Activity** list.
+An Urgent entry shows a desktop notification, and an email when alert emails are on (below). Unusual and Urgent entries show their level and the reason in the camera's **Activity** list.
+
+## Get alerts by email
+
+1. Have an email account with **Allow sending** on (Settings → Integrations → Email; see the `integrations` page).
+2. In Settings → Cameras → **Alerts**, turn on **Email alerts**, pick **Send from**, and type up to 5 addresses in **Send to**, separated by commas.
+3. Click **Send test** to check it arrives.
+
+The first Urgent entry on a camera is emailed at once with its picture, what was seen, why it was flagged and what was heard. More Urgent entries on that camera in the next 10 minutes come in one follow-up email, in the same thread. Alert emails go only to the addresses typed here, and no copy is saved to Sent.
 
 ## Watch rules
 
@@ -44,7 +52,7 @@ Expect some false alarms at first. Watch rules are how you teach it what's norma
 
 ## When there's no model to judge
 
-With no model that may see the camera, or a model that's stopped or loading, entries wait as "caption pending" and are judged once one is back.
+With no model that may see the camera, or a model that's stopped or loading, entries wait as "caption pending" and are judged once one is back. With alert emails on, you get one "alerts paused" email when this starts and one "alerts resumed" email when judging starts again.
 
 ## What it doesn't do
 
