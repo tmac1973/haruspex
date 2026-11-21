@@ -224,6 +224,13 @@ export async function checkRoom(camera: CameraConfig, now = Date.now()): Promise
 	});
 	if (shot.busy) return 'busy';
 	if (!shot.hasReferences) return 'no-reference';
+	// The scores tune ROOM_SAME (see plan/camera-alerts phase 05).
+	logDebug('camera', 'room shot', {
+		camera: camera.name,
+		night: shot.night,
+		similarity: shot.similarity,
+		toLast: shot.similarityToLast
+	});
 	// The change already logged, still there: not logged again.
 	if (shot.similarityToLast !== null && shot.similarityToLast >= ROOM_SAME) return 'repeat';
 	if (shot.similarity === null || !shot.reference) {
