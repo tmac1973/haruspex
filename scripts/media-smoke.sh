@@ -22,19 +22,34 @@ FFMPEG="$DIR/haruspex-ffmpeg-$TARGET$EXT"
 
 fail=0
 # Captured first: grep -q stopping early would SIGPIPE melt under pipefail.
-declare -A LISTED
-for k in transitions filters producers consumers; do
-    LISTED[$k]="$("$MELT" -query "$k" 2>&1 || true)"
-done
+# (No associative arrays: macOS's bash is 3.2.)
+TRANSITIONS="$("$MELT" -query transitions 2>&1 || true)"
+FILTERS="$("$MELT" -query filters 2>&1 || true)"
+PRODUCERS="$("$MELT" -query producers 2>&1 || true)"
+CONSUMERS="$("$MELT" -query consumers 2>&1 || true)"
+listed() {
+    case "$1" in
+        transition) echo "$TRANSITIONS" ;;
+        filter) echo "$FILTERS" ;;
+        producer) echo "$PRODUCERS" ;;
+        consumer) echo "$CONSUMERS" ;;
+    esac
+}
 for kind in transition:qtblend transition:luma transition:mix filter:volume \
     filter:avfilter.alimiter filter:panner filter:audiolevel filter:brightness \
     producer:avformat-novalidate producer:color producer:kdenlivetitle consumer:avformat; do
     service="${kind#*:}"
-    if ! grep -q -- "- $service\$" <<<"${LISTED[${kind%%:*}s]}"; then
+    if ! listed "${kind%%:*}" | grep -q -- "- $service\$"; then
         echo "::error::melt has no ${kind%%:*} $service"
         fail=1
     fi
 done
+if [ "$fail" != 0 ]; then
+    echo "--- the bundle:"
+    find "$DIR" -maxdepth 3 | sort | head -80
+    echo "--- MLT_REPOSITORY=$MLT_REPOSITORY"
+    "$MELT" -query filters 2>&1 | head -20
+fi
 [ "$fail" = 0 ] || exit 1
 
 OUT="$DIR/smoke.mp4"

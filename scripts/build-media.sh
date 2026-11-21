@@ -558,7 +558,20 @@ case "$OS" in
         done; }
         ;;
     windows)
-        deps_of() { PATH="$PREFIX:$PREFIX/bin:$PATH" ldd "$1" 2>/dev/null | awk '/=> \// {print $1" "$3}'; }
+        # MSYS's ldd prints Windows-mapped paths (/d/a/...) that don't match
+        # $PREFIX, so look each DLL up by name where we built it, or in
+        # MinGW's folder; system DLLs are found in neither and stay out.
+        deps_of() {
+            PATH="$PREFIX:$PREFIX/bin:$PATH" ldd "$1" 2>/dev/null | awk '/=>/ {print $1}' |
+                while read -r n; do
+                    for d in "$PREFIX" "$PREFIX/bin" "$PREFIX/lib" /mingw64/bin; do
+                        if [ -f "$d/$n" ]; then
+                            echo "$n $d/$n"
+                            break
+                        fi
+                    done
+                done
+        }
         ;;
 esac
 while :; do
