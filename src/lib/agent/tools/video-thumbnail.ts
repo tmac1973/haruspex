@@ -117,7 +117,8 @@ registerTool({
 					},
 					at: {
 						type: 'string',
-						description: 'frame: the moment, in the source’s time (or the video’s, for the cut).'
+						description:
+							'frame: required, the moment (e.g. "4:10"), in the source’s time (or the video’s, for the cut).'
 					},
 					prompt: { type: 'string', description: 'generate: what to draw.' },
 					fit: {

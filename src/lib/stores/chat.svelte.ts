@@ -99,7 +99,7 @@ import {
 	setContextUsage
 } from '#lib/stores/context.svelte.ts';
 import { ChatRun } from '#lib/stores/chatRun.svelte.ts';
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { setChatTaskHandler, takeNotices } from '#lib/tasks/notices.ts';
@@ -381,12 +381,20 @@ function onTaskEnded(owner: string, task?: BackgroundTask): void {
 }
 
 /**
- * Run a conversation's waiting task notices as a turn there, if it is idle.
- * A turn the user starts while they are taken gets them as steering.
+ * Conversations whose last turn was stopped, by the user or at the turn
+ * limit: their notices wait for the next turn the user starts, rather than
+ * starting one themselves. In memory, like `messageStops`.
+ */
+const heldNotices = new SvelteSet<string>();
+
+/**
+ * Run a conversation's waiting task notices as a turn there, if it is idle
+ * and wasn't stopped. A turn the user starts while they are taken gets them
+ * as steering.
  */
 async function deliverNotices(id: string): Promise<void> {
 	const owner = `chat:${id}`;
-	if (getRun(id).busy || !hasPendingNotices(owner)) return;
+	if (getRun(id).busy || heldNotices.has(id) || !hasPendingNotices(owner)) return;
 	if (!conversations.some((c) => c.id === id)) return;
 	const notice = await takeNotices(owner);
 	if (notice.text) await sendMessageTo(id, notice.text, notice.images);
@@ -1082,7 +1090,10 @@ export async function clearAllConversations(): Promise<void> {
  * error banner's Retry dispatches it later.
  */
 export function cancelGeneration(id = getActiveConversationId()): void {
-	if (id) runs.get(id)?.cancel();
+	if (!id) return;
+	const run = runs.get(id);
+	if (run?.busy) heldNotices.add(id);
+	run?.cancel();
 }
 
 function extractUrlsFromSteps(steps: SearchStep[]): string[] {
@@ -1279,6 +1290,7 @@ function commitMessage(
 	// show why the turn ended and offer Continue. 'complete' = model's own call.
 	if (stopReason && stopReason !== 'complete') {
 		conversation.messageStops[messageIndex] = stopReason;
+		heldNotices.add(conversation.id);
 	}
 	const stepsForThisTurn = conversation.searchSteps.filter(
 		(s) => s.status === 'done' && (s.result || s.thumbDataUrl || s.artifacts?.length)
@@ -1699,6 +1711,9 @@ function recordRecallStep(
  */
 async function runCurrentTurn(conversation: Conversation): Promise<void> {
 	const run = runFor(conversation.id);
+	// Someone carried on after a stop: notices may start turns again, once
+	// this one ends.
+	heldNotices.delete(conversation.id);
 	const signal = resetTurnState(conversation, run);
 	// Read once: the toggle belongs to the composer, and may change for
 	// another conversation's send while this turn runs.

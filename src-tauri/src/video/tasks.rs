@@ -209,14 +209,17 @@ pub async fn start_render(
         return Err("The project is empty: there is nothing to render.".into());
     }
     let expected = doc.fps().secs(frames);
-    // Clips whose gain is at its bound, so normalising can't raise them.
-    let at_limit: Vec<String> = doc
-        .summary(&req.working_dir, &project_path)
-        .items
-        .into_iter()
-        .filter(|i| i.gain_db.is_some_and(|g| g >= MAX_GAIN - 0.05))
-        .map(|i| i.path)
-        .collect();
+    let items = doc.summary(&req.working_dir, &project_path).items;
+    let with_sound: Vec<_> = items.iter().filter(|i| i.has_audio).collect();
+    let gains = check::Gains {
+        // Clips whose gain is at its bound, so normalising can't raise them.
+        at_limit: items
+            .iter()
+            .filter(|i| i.gain_db.is_some_and(|g| g >= MAX_GAIN - 0.05))
+            .map(|i| i.path.clone())
+            .collect(),
+        normalized: !with_sound.is_empty() && with_sound.iter().all(|i| i.gain_db.is_some()),
+    };
     let fps = doc.fps().num as f64 / doc.fps().den as f64;
     let episode_dir = project::episode_home(&req.working_dir, &req.episode, &project_path)?;
     let out = output_path(&episode_dir, &project_path);
@@ -323,7 +326,7 @@ pub async fn start_render(
             Some(Ok(status)) if status.success() && part.exists() => {
                 match std::fs::rename(&part, &out) {
                     Ok(()) => {
-                        let check = check::check(&ffprobe, &ffmpeg, &out, expected, &at_limit)
+                        let check = check::check(&ffprobe, &ffmpeg, &out, expected, &gains)
                             .await
                             .ok();
                         Ending::done(&RenderResult {

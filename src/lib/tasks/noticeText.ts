@@ -33,6 +33,19 @@ export function isTaskNotice(text: string): boolean {
 	return OPENING.test(text);
 }
 
+/**
+ * The line a notice shows as, collapsed: its one task's opening, or how many
+ * ended. `joinNotices` puts each notice at the start of a paragraph.
+ */
+export function taskNoticeTitle(text: string): string {
+	const openings = text
+		.split('\n\n')
+		.map((part) => OPENING.exec(part)?.[0])
+		.filter((o): o is string => !!o);
+	if (openings.length <= 1) return openings[0] ?? 'Background task ended';
+	return `${openings.length} background tasks ended`;
+}
+
 function videoNotice(t: BackgroundTask): string {
 	const what = t.kind === 'youtube_upload' ? 'upload' : 'render';
 	const render = renderResult(t);

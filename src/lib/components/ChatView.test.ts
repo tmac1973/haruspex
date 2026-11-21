@@ -267,6 +267,34 @@ describe('ChatView input history', () => {
 	});
 });
 
+describe('ChatView task notices', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(getActiveConversation).mockReturnValue({
+			...conversation!,
+			messages: [
+				{ role: 'user', content: 'make a fox' },
+				{ role: 'assistant', content: 'started' },
+				{ role: 'user', content: 'Background task "Fox" finished: a clip.' },
+				{ role: 'assistant', content: 'here it is' }
+			]
+		} as unknown as ReturnType<typeof getActiveConversation>);
+		vi.mocked(getConversations).mockReturnValue([]);
+		vi.mocked(getErrorMessage).mockReturnValue(null as unknown as string);
+		vi.mocked(getIsGenerating).mockReturnValue(false);
+	});
+
+	it('shows one as a folded note from Haruspex, not as something the user sent', async () => {
+		render(ChatView);
+		const notice = screen.getByTestId('task-notice');
+		expect(notice.querySelector('summary')?.textContent).toBe('Background task "Fox" finished');
+		expect(screen.getAllByText('You')).toHaveLength(1);
+		const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+		await fireEvent.keyDown(box, { key: 'ArrowUp' });
+		expect(box.value).not.toContain('Background task');
+	});
+});
+
 describe('ChatView — a chat started from Home', () => {
 	it('opens with the draft in the box, unsent', async () => {
 		vi.clearAllMocks();
