@@ -53,8 +53,9 @@ events reach the user, as the overview decided.
    - "Email not sent: alerts are off (Settings → Cameras → Alerts)"
    - "Email not sent: no address to send to (Settings → Cameras → Alerts)"
    - "Email not sent: the account can't send (Settings → Email)"
-     A send failure leaves the run succeeded and puts "Email not sent: <error>"
-     in the step output. "Nothing was logged." sends nothing.
+
+   A send failure leaves the run succeeded and puts "Email not sent: <error>"
+   in the step output. "Nothing was logged." sends nothing.
 
 4. Editor switch and guide lines.
 
