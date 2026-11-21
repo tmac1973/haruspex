@@ -38,7 +38,9 @@ Hover over a dot to see what it means. The Remote control page (see the `remote-
 
 A long task started from a conversation, such as a video render or an upload (see the `video-render` page), reports back to that conversation when it ends. The assistant gets the result and answers in that conversation straight away, even if you're in a different one. A notice says which conversation it was, with **Open** to go there, and the conversation is marked unread.
 
-If that conversation is busy when the task ends, the result waits until its current answer is done.
+If that conversation is busy when the task ends, the result waits until its current answer is done. If you stopped its last answer, or it stopped at the turn limit, the result waits for your next message or **Continue** instead, and goes to the assistant after that turn.
+
+The result shows in the conversation as a folded line, such as *Background task "Fox" finished*; Haruspex sent it, not you. Click it to read what the assistant was told. Code sessions do the same, for tasks, background commands and subtasks.
 
 ## See background tasks
 

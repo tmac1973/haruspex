@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AgentLoopOptions } from '#lib/agent/loop.ts';
+import type { AgentLoopOptions, AgentStopReason } from '#lib/agent/loop.ts';
 
 // Conversations running turns side by side: each has its own run state
 // (streaming text, Stop, error banner), and one conversation's turn never
@@ -107,7 +107,7 @@ describe('concurrent chat conversations', () => {
 	 */
 	async function heldTurns() {
 		const { runAgentLoop } = await import('#lib/agent/loop.ts');
-		const finish = new Map<string, () => void>();
+		const finish = new Map<string, (meta?: { stopReason: AgentStopReason }) => void>();
 		vi.mocked(runAgentLoop).mockImplementation(
 			(options: AgentLoopOptions) =>
 				new Promise<void>((resolve, reject) => {
@@ -124,10 +124,10 @@ describe('concurrent chat conversations', () => {
 						}
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-					finish.set(id, () => {
+					finish.set(id, (meta) => {
 						const steers = options.takeSteering?.() ?? [];
 						if (steers.length) options.onSteering?.(steers);
-						options.onComplete();
+						options.onComplete(meta);
 						resolve();
 					});
 				})
@@ -293,6 +293,51 @@ describe('concurrent chat conversations', () => {
 			`answer in ${a}`,
 			'Video render finished: /tmp/a.mp4.'
 		]);
+	});
+
+	it('holds notices after the turn limit until the user carries on', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		const finish = await heldTurns();
+		const chat = await setup();
+		await chat.initChatStore();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		finish.get(a)!({ stopReason: 'max_iterations' });
+		await sent;
+		taskEnded(a, 'Video render finished: /tmp/a.mp4.');
+		await new Promise((r) => setTimeout(r, 0));
+		await settle();
+		expect(runAgentLoop).toHaveBeenCalledTimes(1);
+
+		const resumed = chat.continueTurn(a);
+		await settle();
+		finish.get(a)!();
+		await resumed;
+		await new Promise((r) => setTimeout(r, 0));
+		await settle();
+		expect(runAgentLoop).toHaveBeenCalledTimes(3);
+		const conv = chat.getConversations().find((c) => c.id === a)!;
+		expect(conv.messages.at(-1)?.content).toBe('Video render finished: /tmp/a.mp4.');
+	});
+
+	it('holds notices after the user stops a turn', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		await heldTurns();
+		const chat = await setup();
+		await chat.initChatStore();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		chat.cancelGeneration(a);
+		await sent;
+		taskEnded(a, 'Video render finished: /tmp/a.mp4.');
+		await new Promise((r) => setTimeout(r, 0));
+		await settle();
+		expect(runAgentLoop).toHaveBeenCalledTimes(1);
+		expect(chat.getRun(a).busy).toBe(false);
 	});
 
 	it('does not mark unread a conversation shown on the Remote control page', async () => {

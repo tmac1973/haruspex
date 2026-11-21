@@ -15,9 +15,11 @@
 	import { InputHistory, placeCaret, recallInto, sentHistory } from '#lib/inputHistory.ts';
 	import { isWatchNotification } from '#lib/shell/backgroundWatch.ts';
 	import { isSubtaskNotification } from '#lib/code/backgroundSubtasks.ts';
+	import { isTaskNotice } from '#lib/tasks/noticeText.ts';
 
 	/** A turn Haruspex sent on the user's behalf, not one they typed. */
-	const isNotification = (text: string) => isWatchNotification(text) || isSubtaskNotification(text);
+	const isNotification = (text: string) =>
+		isWatchNotification(text) || isSubtaskNotification(text) || isTaskNotice(text);
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodeSessionView } from '#lib/code/sessionView.ts';

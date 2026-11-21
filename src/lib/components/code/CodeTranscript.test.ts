@@ -668,4 +668,17 @@ describe('CodeTranscript subtask notifications', () => {
 		render(CodeTranscript, { session: fakeSession({ messages }) });
 		screen.getByText('Subtask finished');
 	});
+
+	it('shows a background task’s notice as a folded note', () => {
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'render it' },
+			{ role: 'assistant', content: 'started' },
+			{ role: 'user', content: 'Video render finished: ep01/renders/ep01.mp4. 0:11.' },
+			{ role: 'assistant', content: 'done' }
+		];
+		render(CodeTranscript, { session: fakeSession({ messages }) });
+		expect(screen.getByTestId('task-notice').querySelector('summary')?.textContent?.trim()).toBe(
+			'Video render finished'
+		);
+	});
 });

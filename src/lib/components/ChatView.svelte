@@ -15,6 +15,7 @@
 	import { hasStreamingAnswer } from '#lib/agent/thinkStream.ts';
 	import { messageText } from '#lib/api.ts';
 	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
+	import { isTaskNotice, taskNoticeTitle } from '#lib/tasks/noticeText.ts';
 	import { localChatSource } from '#lib/stores/chat.svelte.ts';
 	import type { ChatSource } from '#lib/chat/source.ts';
 	import { peerColor } from '#lib/peers/color.ts';
@@ -244,7 +245,7 @@
 	const history = new InputHistory(() =>
 		sentHistory(
 			(activeConversation?.messages ?? [])
-				.filter((m) => m.role === 'user')
+				.filter((m) => m.role === 'user' && !isTaskNotice(messageText(m.content)))
 				.map((m) => typedText(messageText(m.content)))
 		)
 	);
@@ -513,6 +514,14 @@
 								>Earlier messages summarised</summary
 							>
 							<pre>{summaryText(msg)}</pre>
+						</details>
+					{:else if msg.role === 'user' && isTaskNotice(messageText(msg.content))}
+						<!-- Sent by Haruspex when a background task ended, not typed. -->
+						<details class="summary-divider" data-testid="task-notice">
+							<summary title="Haruspex sent this when the task ended."
+								>{taskNoticeTitle(messageText(msg.content))}</summary
+							>
+							<pre>{messageText(msg.content)}</pre>
 						</details>
 					{:else if msg.role !== 'system'}
 						{#if msg.role === 'assistant' && activeConversation.messageSteps[i]?.length}

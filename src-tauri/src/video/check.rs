@@ -110,7 +110,15 @@ pub fn problems(
     }
     if let Some(l) = loudness {
         let quiet = l.lufs < TARGET_LUFS - LUFS_TOLERANCE;
-        if l.lufs.is_finite() && quiet && !at_limit.is_empty() {
+        // Silence has no loudness to even out: normalising only sets gain on
+        // sound that is there, so it gets a note of its own and nothing else.
+        if !l.lufs.is_finite() || l.lufs < -60.0 {
+            out.push(
+                "The sound is silent: the clips have no audio, or it is all muted. \
+                 video_normalize can't help; tell the user, or add sound to the cut."
+                    .into(),
+            );
+        } else if quiet && !at_limit.is_empty() {
             out.push(format!(
                 "Loudness is {:.1} LUFS, under YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}, and \
                  video_normalize can't raise it: {} already {} the most gain allowed \
@@ -119,14 +127,11 @@ pub fn problems(
                 at_limit.join(", "),
                 if at_limit.len() == 1 { "has" } else { "have" }
             ));
-        } else if l.lufs.is_finite() && (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE {
+        } else if (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE {
             out.push(format!(
                 "Loudness is {:.1} LUFS, outside YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}; video_normalize evens it out.",
                 l.lufs
             ));
-        }
-        if !l.lufs.is_finite() || l.lufs < -60.0 {
-            out.push("The sound is silent.".into());
         }
         if l.true_peak_db.is_some_and(|p| p > MAX_TRUE_PEAK) {
             out.push(format!(
@@ -231,6 +236,19 @@ mod tests {
         assert!(p.iter().any(|x| x.contains("true peak")));
         assert!(p.iter().any(|x| x.contains("video_normalize evens it out")));
         assert!(problems(120.0, 120.0, false, None, 0.04, &[])[0].contains("no sound"));
+    }
+
+    #[test]
+    fn silence_is_not_sent_back_to_normalise() {
+        let silent = parse_ebur128(SILENT).unwrap();
+        let p = problems(4.2, 4.2, true, Some(&silent), 1.0 / 30.0, &[]);
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert!(p[0].starts_with("The sound is silent"));
+        assert!(p[0].contains("can't help"));
+        assert!(!p[0].contains("LUFS"));
+        let at_limit = ["a.mp4".to_string()];
+        let p = problems(4.2, 4.2, true, Some(&silent), 1.0 / 30.0, &at_limit);
+        assert_eq!(p.len(), 1, "{p:?}");
     }
 
     #[test]
