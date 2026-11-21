@@ -7,12 +7,7 @@
 	import type { YoutubeAccount } from '#lib/ipc/gen/YoutubeAccount.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-	import {
-		refreshVideoBinaries,
-		syncMediaShims,
-		videoBinariesStatus,
-		videoEncoders
-	} from '#lib/video/binaries.ts';
+	import { refreshVideoBinaries, videoBinariesStatus, videoEncoders } from '#lib/video/binaries.ts';
 	import type { EncoderOption } from '#lib/ipc/gen/EncoderOption.ts';
 	import { VIDEO_PRESETS, type VideoPreset } from '#lib/video/types.ts';
 	import { YOUTUBE_UPLOAD } from '#lib/video/youtube.ts';
@@ -167,7 +162,6 @@
 
 	function toggle() {
 		updateSettings({ videoEditingEnabled: enabled });
-		void syncMediaShims();
 	}
 
 	function saveChoice() {
