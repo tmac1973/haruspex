@@ -9,6 +9,11 @@
  * Settings → Cameras) captions; with any other the events stay pending until
  * one is. A model that can't see marks them skipped.
  *
+ * A camera with Alerts on (Settings → Cameras) gets a judgement with its
+ * caption, in one call at `prompt` priority, so an urgent event is known as
+ * soon as the current chat turn ends (`judge.ts`). Its events are taken first,
+ * and wait for a model that can see rather than being skipped.
+ *
  * One event at a time, oldest first. Started once by the main window
  * (`startCaptioner`), which also runs a pass at startup for events left
  * pending last time.
@@ -30,6 +35,19 @@ import {
 import { stripThinkBlocks } from '#lib/markdown.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import { stamp } from '#lib/camera/log.ts';
+import {
+	applyRules,
+	isQuietAt,
+	isUnreachable,
+	JUDGE_TOKENS,
+	judgeMessages,
+	parseJudgement,
+	quietHoursFor,
+	type Judgement
+} from '#lib/camera/judge.ts';
+import { emitCannotJudge, emitJudged } from '#lib/camera/alertEvents.ts';
 
 export const CAPTION_PROMPT =
 	"Describe this camera frame in one sentence: who or what is in it and what they are doing. Mention people and animals; if there are none, say what the scene shows. Don't guess identities.";
@@ -80,6 +98,8 @@ const attempts = new Map<number, number>();
  * `MAX_ATTEMPTS` times.
  */
 async function captionOne(event: CameraEvent): Promise<Stop | null> {
+	const camera = alertsCamera(event);
+	if (camera) return judgeOne(event, camera);
 	const descriptor = resolveBackendDescriptor();
 	if (!cameraDataAllowed(descriptor)) return 'not-allowed';
 	if (!descriptor.vision || !event.hasThumb) {
@@ -122,6 +142,100 @@ async function captionOne(event: CameraEvent): Promise<Stop | null> {
 	}
 }
 
+/** The event's camera when it has Alerts on; null otherwise. */
+function alertsCamera(event: CameraEvent): CameraConfig | null {
+	const camera = getSettings().cameras.find((c) => c.id === event.cameraId);
+	return camera?.alerts.enabled ? camera : null;
+}
+
+async function saveJudgement(event: CameraEvent, camera: CameraConfig, j: Judgement) {
+	const caption = j.caption || null;
+	await invoke('camera_event_set_judgement', {
+		id: event.id,
+		caption,
+		level: j.level,
+		reason: j.reason
+	});
+	emitJudged(
+		{
+			...event,
+			caption,
+			captionStatus: caption ? 'done' : 'skipped',
+			alertLevel: j.level,
+			alertReason: j.reason
+		},
+		camera
+	);
+}
+
+/**
+ * Caption and judge one event of an Alerts-on camera. With no model that may
+ * see its frame, or one that can't be reached, it stays pending and the pass
+ * stops (`not-allowed`); a reply that fails `MAX_ATTEMPTS` times is skipped.
+ */
+async function judgeOne(event: CameraEvent, camera: CameraConfig): Promise<Stop | null> {
+	const descriptor = resolveBackendDescriptor();
+	if (!cameraDataAllowed(descriptor) || (!descriptor.vision && event.hasThumb)) {
+		emitCannotJudge(camera.id);
+		return 'not-allowed';
+	}
+	const at = new Date(event.startedAt);
+	try {
+		const quietHour = isQuietAt(await quietHoursFor(camera), at);
+		const rules = {
+			transcript: event.transcript,
+			usualPeople: camera.alerts.usualPeople,
+			quietHour
+		};
+		if (!event.hasThumb) {
+			// Nothing to look at: only what was heard can flag it.
+			const j = applyRules(
+				{ caption: '', people: 0, level: 'normal', reason: '', rule: null },
+				rules
+			);
+			await saveJudgement(event, camera, j);
+			return null;
+		}
+		const thumb = await invoke<string>('camera_event_thumb', { id: event.id });
+		const reply = await withInferenceSlot({ consumer: 'camera', priority: 'prompt' }, async () => {
+			const now = resolveBackendDescriptor();
+			if (!cameraDataAllowed(now) || !now.vision) return undefined;
+			const reasoning = getOpenRouterReasoningParam(now, false);
+			const response = await chatCompletion({
+				messages: judgeMessages(event, thumb, camera, { time: stamp(at), quietHour }),
+				...getSamplingParams(now),
+				temperature: 0,
+				max_tokens: JUDGE_TOKENS,
+				chat_template_kwargs: getChatTemplateKwargs(now, false),
+				...(reasoning ? { reasoning } : {})
+			});
+			return response.content ?? '';
+		});
+		if (reply === undefined) {
+			emitCannotJudge(camera.id);
+			return 'not-allowed';
+		}
+		await saveJudgement(event, camera, applyRules(parseJudgement(reply), rules));
+		attempts.delete(event.id);
+		return null;
+	} catch (e) {
+		if (isUnreachable(e)) {
+			logDebug('camera', 'judging an event waits for the model', { id: event.id });
+			emitCannotJudge(camera.id);
+			return 'not-allowed';
+		}
+		const tries = (attempts.get(event.id) ?? 0) + 1;
+		logDebug('camera', 'judging an event failed', { id: event.id, tries, error: errMessage(e) });
+		if (tries < MAX_ATTEMPTS) {
+			attempts.set(event.id, tries);
+			return 'failed';
+		}
+		attempts.delete(event.id);
+		await setCaption(event.id, null).catch(() => {});
+		return null;
+	}
+}
+
 let running = false;
 let again = false;
 
@@ -150,7 +264,10 @@ async function drain(): Promise<void> {
 		if (!cameraDataAllowed(resolveBackendDescriptor())) return;
 		const events = await invoke<CameraEvent[]>('camera_events_pending', { limit: BATCH });
 		if (events.length === 0) return;
-		for (const event of events) {
+		// Alerts-on cameras' events first; each group keeps its oldest-first order.
+		const judged = events.filter((e) => alertsCamera(e));
+		const rest = events.filter((e) => !alertsCamera(e));
+		for (const event of [...judged, ...rest]) {
 			if (await captionOne(event)) return;
 		}
 	}

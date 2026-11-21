@@ -4,7 +4,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 const state = vi.hoisted(() => ({
 	stored: new Map<string, string>(),
 	calls: [] as { cmd: string; args: Record<string, unknown> | undefined }[],
-	hostname: ''
+	hostname: '',
+	/** Extra fields on the logged entry, such as a judgement. */
+	entry: {} as Record<string, unknown>
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -74,9 +76,24 @@ vi.mock('@tauri-apps/api/core', async () =>
 						transcript: 'Parcel for you.',
 						caption: 'A man leaves a box at the door.',
 						captionStatus: 'done',
-						hasThumb: true
+						hasThumb: true,
+						alertLevel: null,
+						alertReason: '',
+						dismissedAt: null,
+						dismissNote: '',
+						...state.entry
 					}
 				];
+			},
+			camera_event_dismiss: (a) => {
+				state.calls.push({ cmd: 'camera_event_dismiss', args: a });
+				return null;
+			},
+			camera_event_hour_counts: {
+				weekday: Array(24).fill(0),
+				weekend: Array(24).fill(0),
+				daysWeekday: 0,
+				daysWeekend: 0
 			},
 			camera_event_thumb: 'data:image/jpeg;base64,THUMB',
 			camera_event_delete: (a) => {
@@ -114,6 +131,7 @@ function input(id: RegExp): HTMLInputElement {
 beforeEach(() => {
 	state.stored.clear();
 	state.hostname = '';
+	state.entry = {};
 	state.calls = [];
 	localStorage.clear();
 	setCameras([]);
@@ -478,5 +496,67 @@ describe('the ambient log', () => {
 		await screen.findByText('No entries.');
 		expect(state.calls).toContainEqual({ cmd: 'camera_events_clear', args: { cameraId: 'k1' } });
 		confirm.mockRestore();
+	});
+});
+
+describe('camera alerts', () => {
+	it("saves a camera's alert settings from its form", async () => {
+		setCameras([kitchen({ watcher: { ...defaultWatcherConfig, enabled: true } })]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		await fireEvent.click(screen.getByLabelText('Judge entries'));
+		await fireEvent.input(input(/^Usual people$/), { target: { value: '2' } });
+		await fireEvent.click(screen.getByText('Add rule'));
+		await fireEvent.input(input(/^Watch rule 1$/), {
+			target: { value: 'Tell me if the back door is open' }
+		});
+		await fireEvent.click(screen.getByText('Add rule'));
+		await fireEvent.click(screen.getByLabelText('Edit quiet hours'));
+		await fireEvent.click(screen.getByLabelText('Weekdays 3:00'));
+		await fireEvent.click(screen.getByText('Save'));
+
+		await waitFor(() => expect(getSettings().cameras[0].alerts.enabled).toBe(true));
+		const alerts = getSettings().cameras[0].alerts;
+		expect(alerts.usualPeople).toBe(2);
+		// The blank second rule isn't kept.
+		expect(alerts.watchRules).toEqual(['Tell me if the back door is open']);
+		expect(alerts.quietHours?.weekday[3]).toBe(true);
+		expect(alerts.quietHours?.weekday[4]).toBe(false);
+	});
+
+	it('shows an urgent entry and dismisses it with a note that becomes a rule', async () => {
+		state.entry = { alertLevel: 'urgent', alertReason: 'Someone is searching the drawers.' };
+		setCameras([kitchen({ alerts: { ...defaultAlertConfig, enabled: true } })]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+		await screen.findByText('Someone is searching the drawers.');
+		screen.getByText('Urgent');
+
+		await fireEvent.click(screen.getByLabelText(/^Dismiss the alert from/));
+		await fireEvent.input(input(/^Why this is fine$/), {
+			target: { value: 'Me tidying the drawers is normal' }
+		});
+		await fireEvent.click(screen.getByText('Dismiss and add rule'));
+
+		await waitFor(() =>
+			expect(state.calls).toContainEqual({
+				cmd: 'camera_event_dismiss',
+				args: { id: 7, note: 'Me tidying the drawers is normal' }
+			})
+		);
+		expect(getSettings().cameras[0].alerts.watchRules).toEqual([
+			'Me tidying the drawers is normal'
+		]);
+		expect(screen.queryByLabelText(/^Dismiss the alert from/)).toBeNull();
+	});
+
+	it('shows nothing extra for a Normal entry', async () => {
+		state.entry = { alertLevel: 'normal', alertReason: 'Nothing unusual.' };
+		setCameras([kitchen()]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+		await screen.findByText('A man leaves a box at the door.');
+		expect(screen.queryByText('Nothing unusual.')).toBeNull();
+		expect(screen.queryByLabelText(/^Dismiss the alert from/)).toBeNull();
 	});
 });

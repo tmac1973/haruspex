@@ -57,6 +57,7 @@ const PAGES = [
 	'camera-chat',
 	'camera-pan-tilt',
 	'camera-log',
+	'camera-alerts',
 	'search-and-network',
 	'guest-chat',
 	'remote-control',

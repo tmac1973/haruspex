@@ -1571,7 +1571,7 @@ describe('camera settings', () => {
 				caps: null,
 				alerts: { enabled: true, usualPeople: 2, watchRules: Array(25).fill(' door ') }
 			}
-		]);
+		] as Parameters<typeof fresh.setCameras>[0]);
 		const alerts = fresh.getSettings().cameras[0].alerts;
 		expect(alerts.watchRules).toHaveLength(20);
 		expect(alerts.watchRules[0]).toBe('door');

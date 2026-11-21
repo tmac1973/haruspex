@@ -28,6 +28,9 @@
 	import type { OnvifPreset } from '#lib/ipc/gen/OnvifPreset.ts';
 	import type { PtzKind } from '#lib/ipc/gen/PtzKind.ts';
 	import type { UsbDevices } from '#lib/ipc/gen/UsbDevices.ts';
+	import type { AlertConfig } from '#lib/ipc/gen/AlertConfig.ts';
+	import { normalizeAlertConfig } from '#lib/camera/alertConfig.ts';
+	import CameraAlertFields from '#lib/components/settings/CameraAlertFields.svelte';
 	import { forgetCameraPassword, withStoredCameraPassword } from '#lib/stores/cameraSecrets.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { videoOverrides } from '#lib/video/binaries.ts';
@@ -78,6 +81,7 @@
 	let hoursLimited = $state(!!start.watcher.activeHours);
 	let sensitivity = $state<MotionSensitivity>(start.watcher.motionSensitivity);
 	let soundDb = $state(start.watcher.soundThresholdDb);
+	let alerts = $state<AlertConfig>(normalizeAlertConfig(start.alerts));
 
 	let found = $state<DiscoveredCamera[] | null>(null);
 	let finding = $state(false);
@@ -210,7 +214,8 @@
 			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
 			caps,
 			calibration: savedPtz === 'onvif' ? $state.snapshot(calibration) : undefined,
-			note: note.trim() || undefined
+			note: note.trim() || undefined,
+			alerts: normalizeAlertConfig($state.snapshot(alerts))
 		};
 	}
 
@@ -810,6 +815,8 @@
 			/>
 			<span>{Math.round(soundDb)} dB</span>
 		</div>
+
+		<CameraAlertFields cameraId={start.id} bind:alerts />
 	{/if}
 </div>
 

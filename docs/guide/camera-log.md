@@ -63,4 +63,4 @@ It needs a camera set to Allow and the local model or a trusted server; the edit
 
 - It only runs while Haruspex is open.
 - No face or person recognition: captions don't say who someone is.
-- No alerts or notifications when something happens.
+- No alerts on its own: to have entries judged and be told about urgent ones, see the `camera-alerts` page.

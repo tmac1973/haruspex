@@ -80,7 +80,8 @@ export function logLimit(raw: unknown): number {
 const TRIGGER_TEXT: Record<string, string> = {
 	motion: 'motion',
 	sound: 'sound',
-	both: 'motion and sound'
+	both: 'motion and sound',
+	room: 'room check'
 };
 
 /** Text ending in a full stop, unless it already ends a sentence. */
@@ -104,7 +105,15 @@ export function renderCameraLogEntry(event: CameraEvent, camera: string): string
 	const words = event.transcript.trim();
 	const heard = words ? ` Heard: "${words}"` : '';
 	const trigger = TRIGGER_TEXT[event.trigger] ?? event.trigger;
-	return `${stamp(new Date(event.startedAt))} · ${camera} · ${trigger} — ${seen}${heard}`;
+	return `${stamp(new Date(event.startedAt))} · ${camera} · ${trigger} — ${seen}${heard}${flagged(event)}`;
+}
+
+/** An Unusual or Urgent judgement, and its reason, after an entry. */
+function flagged(event: CameraEvent): string {
+	if (event.alertLevel !== 'unusual' && event.alertLevel !== 'urgent') return '';
+	const level = event.alertLevel === 'urgent' ? 'Urgent' : 'Unusual';
+	const why = event.alertReason ? `: ${sentence(event.alertReason)}` : '.';
+	return ` ${level}${why}${event.dismissedAt !== null ? ' (dismissed)' : ''}`;
 }
 
 /** Log entries, newest first, one per line; camera ids named from Settings → Cameras. */

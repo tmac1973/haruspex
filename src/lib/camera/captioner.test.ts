@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	listen: vi.fn(),
 	chatCompletion: vi.fn(),
 	withInferenceSlot: vi.fn(),
+	notify: vi.fn(),
 	descriptor: { kind: 'local', baseUrl: 'http://127.0.0.1:8765', vision: true } as {
 		kind: string;
 		baseUrl: string;
@@ -15,7 +16,19 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
-vi.mock('#lib/api.ts', () => ({ chatCompletion: mocks.chatCompletion }));
+vi.mock('#lib/api.ts', () => ({
+	chatCompletion: mocks.chatCompletion,
+	ApiError: class ApiError extends Error {
+		constructor(
+			message: string,
+			public statusCode?: number
+		) {
+			super(message);
+			this.name = 'ApiError';
+		}
+	}
+}));
+vi.mock('#lib/notify.ts', () => ({ notify: mocks.notify }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
 }));
@@ -43,6 +56,9 @@ import {
 } from './captioner';
 import { defaultWatcherConfig, updateSettings } from '#lib/stores/settings.ts';
 import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
+import { ApiError } from '#lib/api.ts';
+import { _resetJudgeForTests } from '#lib/camera/judge.ts';
+import { _resetAlertEventsForTests, onCannotJudge, onJudged } from '#lib/camera/alertEvents.ts';
 
 const THUMB = 'data:image/jpeg;base64,AAAA';
 
@@ -69,15 +85,38 @@ function event(id: number, over: Partial<CameraEvent> = {}): CameraEvent {
 /** The events still pending, as `camera_events_pending` answers. */
 let pending: CameraEvent[] = [];
 let saved: { id: number; caption: string | null }[] = [];
+let judgements: { id: number; caption: string | null; level: string; reason: string }[] = [];
 
 beforeEach(() => {
 	_resetCaptionerForTests();
+	_resetJudgeForTests();
+	_resetAlertEventsForTests();
+	judgements = [];
+	mocks.notify.mockReset().mockResolvedValue(undefined);
 	mocks.descriptor = { kind: 'local', baseUrl: 'http://127.0.0.1:8765', vision: true };
 	pending = [event(1), event(2)];
 	saved = [];
 	mocks.invoke.mockReset().mockImplementation(async (cmd: string, args?: Record<string, never>) => {
 		if (cmd === 'camera_events_pending') return [...pending];
 		if (cmd === 'camera_event_thumb') return THUMB;
+		if (cmd === 'camera_event_hour_counts') {
+			return {
+				weekday: Array(24).fill(0),
+				weekend: Array(24).fill(0),
+				daysWeekday: 0,
+				daysWeekend: 0
+			};
+		}
+		if (cmd === 'camera_event_set_judgement') {
+			judgements.push({
+				id: args!.id,
+				caption: args!.caption,
+				level: args!.level,
+				reason: args!.reason
+			});
+			pending = pending.filter((e) => e.id !== args!.id);
+			return null;
+		}
 		if (cmd === 'camera_event_set_caption') {
 			saved.push({ id: args!.id, caption: args!.caption });
 			pending = pending.filter((e) => e.id !== args!.id);
@@ -239,5 +278,151 @@ describe('the request', () => {
 	it('keeps a caption to one line', () => {
 		expect(cleanCaption('  A dog.\n\nIt barks. ')).toBe('A dog. It barks.');
 		expect(cleanCaption(null)).toBe('');
+	});
+});
+
+describe('judging events of a camera with Alerts on', () => {
+	function alertsOn(over: Partial<typeof defaultAlertConfig> = {}) {
+		updateSettings({
+			cameras: [
+				{
+					id: 'cam-1',
+					name: 'Kitchen',
+					source: { kind: 'usb', videoDevice: '/dev/video0', audioDevice: null },
+					permission: 'allow',
+					ptz: 'none',
+					onvif: null,
+					watcher: { ...defaultWatcherConfig, enabled: true },
+					caps: null,
+					alerts: { ...defaultAlertConfig, enabled: true, ...over }
+				},
+				{
+					id: 'cam-2',
+					name: 'Hall',
+					source: { kind: 'usb', videoDevice: '/dev/video1', audioDevice: null },
+					permission: 'allow',
+					ptz: 'none',
+					onvif: null,
+					watcher: { ...defaultWatcherConfig, enabled: true },
+					caps: null,
+					alerts: { ...defaultAlertConfig }
+				}
+			]
+		});
+	}
+
+	it('writes the caption and judgement in one call at prompt priority', async () => {
+		alertsOn();
+		pending = [event(1)];
+		mocks.chatCompletion.mockResolvedValue({
+			content:
+				'{"caption": "A person opens a drawer.", "people": 1, "level": "urgent", "reason": "Someone is searching drawers.", "rule": null}'
+		});
+		const seen: string[] = [];
+		onJudged((e) => {
+			seen.push(`${e.id}:${e.alertLevel}`);
+		});
+		await captionPending();
+		expect(mocks.withInferenceSlot).toHaveBeenCalledWith(
+			{ consumer: 'camera', priority: 'prompt' },
+			expect.any(Function)
+		);
+		expect(mocks.chatCompletion.mock.calls[0][0]).toMatchObject({ temperature: 0 });
+		expect(judgements).toEqual([
+			{
+				id: 1,
+				caption: 'A person opens a drawer.',
+				level: 'urgent',
+				reason: 'Someone is searching drawers.'
+			}
+		]);
+		expect(saved).toEqual([]);
+		expect(seen).toEqual(['1:urgent']);
+		expect(mocks.notify).toHaveBeenCalledWith('Urgent: Kitchen', 'Someone is searching drawers.');
+	});
+
+	it('takes Alerts-on events before the others, and captions the others as before', async () => {
+		alertsOn();
+		pending = [event(1, { cameraId: 'cam-2' }), event(2)];
+		mocks.chatCompletion.mockImplementation(async (o: { messages: { content: unknown }[] }) =>
+			JSON.stringify(o).includes('JSON only')
+				? { content: '{"caption": "Empty kitchen.", "people": 0, "level": "normal", "reason": ""}' }
+				: { content: 'A hallway.' }
+		);
+		await captionPending();
+		expect(judgements.map((j) => j.id)).toEqual([2]);
+		expect(saved).toEqual([{ id: 1, caption: 'A hallway.' }]);
+		expect(mocks.withInferenceSlot.mock.calls.map((c) => c[0].priority)).toEqual([
+			'prompt',
+			'background'
+		]);
+	});
+
+	it('raises the level for more people than usual', async () => {
+		alertsOn({ usualPeople: 1 });
+		pending = [event(1)];
+		mocks.chatCompletion.mockResolvedValue({
+			content:
+				'{"caption": "Two people on the couch.", "people": 2, "level": "normal", "reason": ""}'
+		});
+		await captionPending();
+		expect(judgements[0]).toMatchObject({
+			level: 'unusual',
+			reason: '2 people in view; usually 1.'
+		});
+	});
+
+	it("leaves events pending, and says so, on a model that can't see", async () => {
+		alertsOn();
+		pending = [event(1)];
+		mocks.descriptor = { ...mocks.descriptor, vision: false };
+		const waiting: string[] = [];
+		onCannotJudge((id) => {
+			waiting.push(id);
+		});
+		await captionPending();
+		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+		expect(judgements).toEqual([]);
+		expect(saved).toEqual([]);
+		expect(pending).toHaveLength(1);
+		expect(waiting).toEqual(['cam-1']);
+	});
+
+	it('waits for a stopped model without counting it as a failure', async () => {
+		alertsOn();
+		pending = [event(1)];
+		const waiting: string[] = [];
+		onCannotJudge((id) => {
+			waiting.push(id);
+		});
+		mocks.chatCompletion.mockRejectedValue(
+			new ApiError('Failed to connect to the AI model. Is it still loading?')
+		);
+		for (let i = 0; i < 5; i++) await captionPending();
+		expect(pending).toHaveLength(1);
+		expect(saved).toEqual([]);
+		expect(waiting).toHaveLength(5);
+
+		mocks.chatCompletion.mockResolvedValue({
+			content: '{"caption": "x", "people": 0, "level": "normal"}'
+		});
+		await captionPending();
+		expect(judgements).toHaveLength(1);
+	});
+
+	it('skips an event whose replies keep failing', async () => {
+		alertsOn();
+		pending = [event(1)];
+		mocks.chatCompletion.mockRejectedValue(new ApiError('Server error: bad request', 400));
+		for (let i = 0; i < 3; i++) await captionPending();
+		expect(saved).toEqual([{ id: 1, caption: null }]);
+	});
+
+	it('judges an event with no picture from what was heard', async () => {
+		alertsOn();
+		pending = [event(1, { hasThumb: false, transcript: '[alarm beeping]' })];
+		await captionPending();
+		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+		expect(judgements[0]).toMatchObject({ level: 'urgent', reason: 'Alarm sound heard.' });
 	});
 });
