@@ -29,7 +29,7 @@ The `narrate` skill can load by itself the first time the assistant makes speech
 - writes the script for listening (short sentences, numbers as they are said, no lists), shows it with the voice it picked, and **stops** for your OK. Give the exact words ("read this: …") to skip that;
 - keeps one voice for each character, and makes game lines one file each, named for what the code calls them and saved where it loads sounds;
 - for a set length ("a 30-second voiceover"), measures what it made and records it again faster or slower to fit;
-- saves a voiceover next to the video, and leaves adding it to the Shotcut or Kdenlive project to you.
+- saves a voiceover next to the video, and with the video tools on puts it under the picture in the Shotcut or Kdenlive project at the time you say (see the `video-cut` page).
 
 See the `media-skills` page for how skills are offered.
 

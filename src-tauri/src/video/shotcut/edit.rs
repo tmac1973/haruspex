@@ -14,7 +14,7 @@
 //! Everything else in the file is left as it was, and a no-op edit gives the
 //! text back unchanged.
 
-use super::doc::{Doc, Slot, OURS};
+use super::doc::{Doc, Slot, OURS, OURS_LUFS};
 use crate::video::mlt::fps::Fps;
 use crate::video::mlt::xml::{escape, Splices};
 use crate::video::timeline::{Edited, Media, Placement, Source};
@@ -67,7 +67,7 @@ enum FadeIn {
 }
 
 /// A chain's whole length in frames, from its `length` property.
-fn chain_length(doc: &Doc, chain: &str) -> Option<i64> {
+pub(super) fn chain_length(doc: &Doc, chain: &str) -> Option<i64> {
     let c = doc.chain(chain)?;
     doc.tree
         .property(c, "length")
@@ -251,14 +251,22 @@ fn layout(
     Ok(laid)
 }
 
-fn tc(fps: &Fps, frames: i64) -> String {
+pub(super) fn tc(fps: &Fps, frames: i64) -> String {
     fps.timecode(frames.max(0))
 }
 
 /// Haruspex's Gain / Volume filter, as Shotcut writes its own.
-fn gain_filter(id: &str, gain_db: f64) -> String {
+pub(super) fn gain_filter(id: &str, gain_db: f64) -> String {
+    gain_filter_for(id, gain_db, None)
+}
+
+/// The gain filter, keeping the loudness it aims at when that isn't -14 LUFS.
+pub(super) fn gain_filter_for(id: &str, gain_db: f64, lufs: Option<f64>) -> String {
     let g = format!("{gain_db:.2}");
     let g = g.trim_end_matches('0').trim_end_matches('.');
+    let target = lufs.map_or(String::new(), |l| {
+        format!("\x20     <property name=\"{OURS_LUFS}\">{l}</property>\n")
+    });
     format!(
         "    <filter id=\"{id}\">\n\
          \x20     <property name=\"window\">75</property>\n\
@@ -268,6 +276,7 @@ fn gain_filter(id: &str, gain_db: f64) -> String {
          \x20     <property name=\"mlt_service\">volume</property>\n\
          \x20     <property name=\"shotcut:filter\">audioGain</property>\n\
          \x20     <property name=\"{OURS}\">1</property>\n\
+         {target}\
          \x20   </filter>\n"
     )
 }
@@ -275,7 +284,7 @@ fn gain_filter(id: &str, gain_db: f64) -> String {
 /// Haruspex's Limiter: `avfilter.alimiter` holding peaks at -1.5 dB, the same
 /// as in Kdenlive projects. Shotcut's own Limiter is a LADSPA plugin melt
 /// here doesn't have, so Shotcut keeps this one but doesn't list it.
-fn limiter_filter(id: &str) -> String {
+pub(super) fn limiter_filter(id: &str) -> String {
     let limit = format!("{:.3}", 10f64.powf(crate::video::loudness::LIMIT_DB / 20.0));
     let props = [
         ("av.level_in", "1"),
@@ -298,7 +307,7 @@ fn limiter_filter(id: &str) -> String {
 }
 
 /// A chain for new media, as Shotcut writes one.
-fn new_chain(fps: &Fps, id: &str, m: &Media) -> String {
+pub(super) fn new_chain(fps: &Fps, id: &str, m: &Media) -> String {
     let caption = m.resource.rsplit('/').next().unwrap_or(&m.resource);
     let index = |i: Option<u32>| i.map_or("-1".to_string(), |i| i.to_string());
     format!(
@@ -325,7 +334,7 @@ fn new_chain(fps: &Fps, id: &str, m: &Media) -> String {
 
 /// The text of an element's start tag with some attributes set, adding any it
 /// didn't have.
-fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
+pub(super) fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
     let n = doc.tree.node(node);
     let mut out = format!("<{}", n.name);
     for (k, v) in &n.attrs {
@@ -346,7 +355,7 @@ fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
 }
 
 /// Replace a start tag's attributes, if any value differs.
-fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
+pub(super) fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
     let n = doc.tree.node(node);
     if set.iter().all(|(k, v)| n.attr(k) == Some(v.as_str())) {
         return;
@@ -361,7 +370,7 @@ fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String
 
 /// The span of an element with the indentation before it, so removing it
 /// leaves no blank line.
-fn whole_line(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
+pub(super) fn whole_line(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
     let line_start = text[..span.start].rfind('\n').map_or(0, |i| i + 1);
     let start = if text[line_start..span.start].trim().is_empty() {
         line_start
@@ -378,7 +387,7 @@ fn whole_line(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize
 
 /// Rename every `id="…"` inside a copied element: the chain to `chain`, its
 /// filters to new filter ids.
-fn copy_chain(text: &str, old_id: &str, chain: &str, next_filter: &mut i64) -> String {
+pub(super) fn copy_chain(text: &str, old_id: &str, chain: &str, next_filter: &mut i64) -> String {
     let mut out = text.replacen(
         &format!("id=\"{}\"", escape(old_id)),
         &format!("id=\"{chain}\""),
@@ -703,32 +712,42 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         })
         .max()
         .unwrap_or(0);
-    if others > 0 && track_changed {
+    // The audio tracks are Haruspex's too, and follow the main track.
+    let others_video = (0..doc.tracks.len())
+        .filter(|&t| t != main && doc.tracks[t].video)
+        .any(|t| !doc.track_entries(t).is_empty());
+    if others_video && track_changed {
         notes.push("Clips on other tracks did not move.".into());
     }
     let total = main_end.max(others).max(1);
     if total != doc.sequence_end().max(1) || track_changed {
-        let last = tc(&fps, total - 1);
-        set_attrs(
-            doc,
-            &mut splices,
-            doc.main_tractor,
-            &[("in", "00:00:00.000".to_string()), ("out", last.clone())],
-        );
-        if let Some(black) = doc.tree.by_id("black") {
-            set_attrs(doc, &mut splices, black, &[("out", last.clone())]);
-            if let Some(p) = doc.tree.property_node(black, "length") {
-                let n = doc.tree.node(p);
-                splices.replace(n.inner_start..n.inner_end, tc(&fps, total));
-            }
-        }
-        if let Some(bg) = doc.tree.by_id("background") {
-            if let Some(e) = doc.tree.children_named(bg, "entry").next() {
-                set_attrs(doc, &mut splices, e, &[("out", last)]);
-            }
-        }
+        set_length(doc, &mut splices, total);
     }
 
     let text = splices.apply(text)?;
     Ok(Edited { text, notes })
+}
+
+/// Make the main tractor and the black background `total` frames long.
+pub(super) fn set_length(doc: &Doc, splices: &mut Splices, total: i64) {
+    let fps = doc.fps;
+    let last = tc(&fps, total - 1);
+    set_attrs(
+        doc,
+        splices,
+        doc.main_tractor,
+        &[("in", "00:00:00.000".to_string()), ("out", last.clone())],
+    );
+    if let Some(black) = doc.tree.by_id("black") {
+        set_attrs(doc, splices, black, &[("out", last.clone())]);
+        if let Some(p) = doc.tree.property_node(black, "length") {
+            let n = doc.tree.node(p);
+            splices.replace(n.inner_start..n.inner_end, tc(&fps, total));
+        }
+    }
+    if let Some(bg) = doc.tree.by_id("background") {
+        if let Some(e) = doc.tree.children_named(bg, "entry").next() {
+            set_attrs(doc, splices, e, &[("out", last)]);
+        }
+    }
 }

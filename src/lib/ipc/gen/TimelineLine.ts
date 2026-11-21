@@ -7,4 +7,9 @@ export type TimelineLine = { start: number, end: number, text: string,
 /**
  * The clip it is from, 1-based.
  */
-index: number, };
+index: number, 
+/**
+ * From an item on the audio tracks under the picture (a voiceover):
+ * `index` then numbers those.
+ */
+audio: boolean, };

@@ -7,7 +7,9 @@ use super::kdenlive;
 use super::mlt::{mlt_path, profile::profile};
 use super::paths::{display_path, resolve_episode, resolve_in_working, resolve_media};
 use super::probe;
-use super::timeline::{Media, Placement, Source};
+use super::timeline::{
+    assign_audio_tracks, current_audio, AudioPlacement, AudioSource, Media, Placement, Source,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -48,6 +50,25 @@ pub struct CutItemSpec {
     pub crossfade_secs: Option<f64>,
 }
 
+/// A sound on an audio track under the picture: a voiceover or music bed.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CutAudioSpec {
+    /// 1-based: an item already on the audio tracks.
+    pub index: Option<u32>,
+    /// A new sound file, in the working folder.
+    pub path: Option<String>,
+    /// Where it starts in the video, in seconds. Default 0.
+    pub at_secs: Option<f64>,
+    /// Where to start and stop in the file.
+    pub in_secs: Option<f64>,
+    pub out_secs: Option<f64>,
+    /// How loud to make it: -14 LUFS (the default) for speech, about -30
+    /// for music under speech.
+    pub lufs: Option<f64>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase", default)]
@@ -59,6 +80,9 @@ pub struct CutSpec {
     pub intro: Option<EndClip>,
     pub outro: Option<EndClip>,
     pub items: Vec<CutItemSpec>,
+    /// Everything on the audio tracks under the picture, replacing what is
+    /// there. None keeps it, moved with the clips it starts over.
+    pub audio: Option<Vec<CutAudioSpec>>,
     /// A crossfade at every join, in seconds; 0 or none for hard cuts.
     pub crossfade_secs: Option<f64>,
     /// Even out the sound to YouTube's -14 LUFS. Default true.
@@ -179,6 +203,279 @@ async fn normalize_gains(
         ));
     }
     Ok(note)
+}
+
+/// The loudness an audio-track item may aim at.
+const LUFS_RANGE: (f64, f64) = (-40.0, -10.0);
+
+/// Set each audio placement's gain so it reaches its loudness: -14 LUFS, or
+/// the one it asks for or already aims at. `doc` is the project the
+/// placements' `Existing` indexes are read from. Returns a note, or none
+/// when there is nothing on the audio tracks.
+async fn normalize_audio(
+    doc: &ProjectDoc,
+    wanted: &mut [AudioPlacement],
+    ffmpeg: &str,
+    episode_dir: &Path,
+) -> Result<Option<String>, String> {
+    use super::check::{LUFS_TOLERANCE, TARGET_LUFS};
+    use super::loudness::{self, Stretch};
+    let clips = doc.audio_clips();
+    let fps = doc.fps();
+    let root = Path::new(doc.root_dir());
+    let file_of = |r: &str| {
+        let p = Path::new(r);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            root.join(p)
+        }
+    };
+    let mut stretches = Vec::new();
+    let mut which = Vec::new();
+    for (k, p) in wanted.iter().enumerate() {
+        let (file, stream, in_f, out_f, target) = match &p.source {
+            AudioSource::Existing(i) => {
+                let Some(c) = clips.get(*i) else { continue };
+                let Some(stream) = c.stream else { continue };
+                (
+                    file_of(&c.resource),
+                    stream,
+                    p.in_frame.unwrap_or(c.in_frame),
+                    p.out_frame.unwrap_or(c.out_frame),
+                    p.lufs.or(c.lufs),
+                )
+            }
+            AudioSource::New(m) => {
+                let Some(stream) = m.audio_index else {
+                    continue;
+                };
+                (
+                    file_of(&m.resource),
+                    stream,
+                    p.in_frame.unwrap_or(0),
+                    p.out_frame.unwrap_or(m.length - 1),
+                    p.lufs,
+                )
+            }
+        };
+        stretches.push(Stretch {
+            file,
+            stream,
+            from: fps.secs(in_f),
+            to: fps.secs(out_f + 1),
+        });
+        which.push((k, target.unwrap_or(TARGET_LUFS)));
+    }
+    if which.is_empty() {
+        return Ok(None);
+    }
+    let measured = loudness::measure_all(ffmpeg, episode_dir, &stretches, &|_, _| {}).await?;
+    let n = which.len();
+    let mut quiet = Vec::new();
+    for (((k, target), m), s) in which.into_iter().zip(measured).zip(&stretches) {
+        let gain = loudness::gain_for_target(&m, target);
+        wanted[k].gain_db = Some(gain.map_or(0.0, |g| g.db));
+        wanted[k].limiter = gain.is_some_and(|g| g.limit);
+        wanted[k].lufs = ((target - TARGET_LUFS).abs() > 0.05).then_some(target);
+        if let Some(g) = gain {
+            if loudness::short_of(&m, &g, target) > LUFS_TOLERANCE {
+                let name = s.file.file_name().map_or_else(
+                    || s.file.display().to_string(),
+                    |f| f.to_string_lossy().into_owned(),
+                );
+                quiet.push(name);
+            }
+        }
+    }
+    let mut note = format!(
+        "Set the sound of {n} audio-track item{} to its loudness (-14 LUFS unless lufs says \
+         otherwise).",
+        if n == 1 { "" } else { "s" }
+    );
+    if !quiet.is_empty() {
+        note.push_str(&format!(
+            " Some stay under it, as more gain would raise their noise or squash their peaks: \
+             {}.",
+            quiet.join(", ")
+        ));
+    }
+    Ok(Some(note))
+}
+
+/// Where an audio-track item that started at `s` (old timeline frames)
+/// starts after the main track became `wanted`: with the main-track clip it
+/// started over, at the same moment of that clip; when that moment was cut
+/// out, at the next piece kept. `old` and `new` are each main-track item's
+/// (start, in, out) frames, `new` in `wanted`'s order.
+fn follow(s: i64, old: &[(i64, i64, i64)], new: &[(i64, i64, i64)], wanted: &[Placement]) -> i64 {
+    let from_item = |k: usize| -> Vec<usize> {
+        let mut js: Vec<usize> = (0..new.len())
+            .filter(
+                |&j| matches!(wanted[j].source, Source::Existing(i) | Source::Piece(i) if i == k),
+            )
+            .collect();
+        js.sort_by_key(|&j| new[j].1);
+        js
+    };
+    let end = |items: &[(i64, i64, i64)]| {
+        items
+            .iter()
+            .map(|&(st, i, o)| st + o - i + 1)
+            .max()
+            .unwrap_or(0)
+    };
+    let next_kept = |after: usize| {
+        (after..old.len()).find_map(|k| from_item(k).iter().map(|&j| new[j].0).min())
+    };
+    let inside = old
+        .iter()
+        .rposition(|&(st, i, o)| s >= st && s < st + o - i + 1);
+    if let Some(k) = inside {
+        let (st, i, _) = old[k];
+        let f = i + (s - st);
+        let hit = from_item(k).into_iter().find(|&j| new[j].2 >= f);
+        if let Some(j) = hit {
+            return new[j].0 + (f - new[j].1).max(0);
+        }
+        return next_kept(k + 1).unwrap_or(s);
+    }
+    let old_end = end(old);
+    if s >= old_end {
+        return (s + end(new) - old_end).max(0);
+    }
+    // In a gap: as far before the next clip as it was.
+    match old.iter().position(|&(st, _, _)| st > s) {
+        Some(k) => next_kept(k).map_or(s, |n| (n - (old[k].0 - s)).max(0)),
+        None => s,
+    }
+}
+
+/// Each main-track item's (start, in, out) frames.
+fn item_frames(doc: &ProjectDoc) -> Vec<(i64, i64, i64)> {
+    let fps = doc.fps();
+    doc.spans()
+        .iter()
+        .zip(doc.clips())
+        .map(|(s, c)| (fps.frames(s.start), c.in_frame, c.out_frame))
+        .collect()
+}
+
+/// Write `main` to the main track, then the audio tracks: `audio` when the
+/// call says what they hold, else what is there, each item moved with the
+/// main-track clip it starts over. Evens out the audio tracks' sound when
+/// `normalize` gives the ffmpeg and episode folder to measure with.
+async fn edit_text(
+    doc: &ProjectDoc,
+    main: &[Placement],
+    audio: Option<Vec<AudioPlacement>>,
+    normalize: Option<(&str, &Path)>,
+    notes: &mut Vec<String>,
+) -> Result<String, String> {
+    let first = doc.apply(main)?;
+    notes.extend(first.notes);
+    let after = doc.reparse(first.text)?;
+    let clips = after.audio_clips();
+    let mut wanted = match audio {
+        Some(w) => w,
+        None if clips.is_empty() => return Ok(after_text(after)),
+        None => {
+            let old = item_frames(doc);
+            let new = item_frames(&after);
+            let mut w = current_audio(&clips);
+            if new.len() == main.len() {
+                for p in &mut w {
+                    p.at = follow(p.at, &old, &new, main);
+                }
+            }
+            w
+        }
+    };
+    if wanted.is_empty() && clips.is_empty() {
+        return Ok(after_text(after));
+    }
+    if let Some((ffmpeg, dir)) = normalize {
+        if let Some(note) = normalize_audio(&after, &mut wanted, ffmpeg, dir).await? {
+            notes.push(note);
+        }
+    }
+    let lens: Vec<i64> = wanted
+        .iter()
+        .map(|p| {
+            let (i, o) = match &p.source {
+                AudioSource::Existing(k) => {
+                    clips.get(*k).map_or((0, 0), |c| (c.in_frame, c.out_frame))
+                }
+                AudioSource::New(m) => (0, m.length - 1),
+            };
+            p.out_frame.unwrap_or(o) - p.in_frame.unwrap_or(i) + 1
+        })
+        .collect();
+    assign_audio_tracks(&mut wanted, &lens, after.audio_track_count());
+    let second = after.apply_audio(&wanted)?;
+    notes.extend(second.notes);
+    Ok(second.text)
+}
+
+fn after_text(doc: ProjectDoc) -> String {
+    match doc {
+        ProjectDoc::Shotcut(d) => d.text,
+        ProjectDoc::Kdenlive(d) => d.text,
+    }
+}
+
+/// The audio tracks a cut asks for, as placements.
+async fn audio_placements(
+    doc: &ProjectDoc,
+    working_dir: &str,
+    list: &[CutAudioSpec],
+    settings: &VideoSettings,
+    ffprobe: &str,
+) -> Result<Vec<AudioPlacement>, String> {
+    let clips = doc.audio_clips();
+    let fps = doc.fps();
+    let mut out = Vec::new();
+    for (n, a) in list.iter().enumerate() {
+        let (source, track) = match (&a.index, &a.path) {
+            (Some(i), None) if *i >= 1 && (*i as usize) <= clips.len() => {
+                let k = *i as usize - 1;
+                (AudioSource::Existing(k), clips[k].track)
+            }
+            (Some(i), None) => {
+                return Err(format!(
+                    "Audio item {} names audio item {i}, but the audio tracks have {}. \
+                     video_project_read lists them.",
+                    n + 1,
+                    clips.len()
+                ))
+            }
+            (None, Some(p)) => {
+                let m = media(doc, working_dir, p, settings, ffprobe).await?;
+                if m.audio_index.is_none() {
+                    return Err(format!("{p} has no sound to put on the audio track."));
+                }
+                (AudioSource::New(m), 0)
+            }
+            _ => {
+                return Err(format!(
+                    "Audio item {} needs exactly one of index (an item already on the audio \
+                     tracks, from 1) or path.",
+                    n + 1
+                ))
+            }
+        };
+        out.push(AudioPlacement {
+            source,
+            at: fps.frames(a.at_secs.unwrap_or(0.0).max(0.0)),
+            in_frame: a.in_secs.map(|s| fps.frames(s.max(0.0))),
+            out_frame: a.out_secs.map(|s| fps.frames(s) - 1),
+            track,
+            gain_db: None,
+            limiter: false,
+            lufs: a.lufs.map(|l| l.clamp(LUFS_RANGE.0, LUFS_RANGE.1)),
+        });
+    }
+    Ok(out)
 }
 
 /// A crossfade on the cut's first clip has nothing before it to fade from.
@@ -630,16 +927,27 @@ pub async fn cut(
             p
         })
         .collect();
-    if spec.normalize.unwrap_or(true) {
-        let episode_dir = resolve_episode(working_dir, episode)?;
+    let normalize = spec.normalize.unwrap_or(true);
+    let episode_dir = resolve_episode(working_dir, episode)?;
+    if normalize {
         notes.push(normalize_gains(&doc, &mut wanted, &ffmpeg, &episode_dir).await?);
     }
-    let edited = doc.apply(&wanted)?;
-    notes.extend(edited.notes);
+    let audio = match &spec.audio {
+        Some(list) => Some(audio_placements(&doc, working_dir, list, settings, &ffprobe).await?),
+        None => None,
+    };
+    let text = edit_text(
+        &doc,
+        &wanted,
+        audio,
+        normalize.then_some((ffmpeg.as_str(), episode_dir.as_path())),
+        &mut notes,
+    )
+    .await?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("can't make {}: {e}", dir.display()))?;
     }
-    format::save(&path, &edited.text, &melt).await?;
+    format::save(&path, &text, &melt).await?;
     let rel = display_path(working_dir, &path);
     if let Ok(dir) = resolve_episode(working_dir, episode) {
         write_state(&dir, &rel);
@@ -668,6 +976,7 @@ pub async fn op(
     let min_piece = doc.fps().frames(MIN_PIECE_SECS).max(1);
     let mut notes = Vec::new();
     let count = wanted.len() as u32;
+    let normalizing = matches!(op, ProjectOp::Normalize);
     let check = |i: u32| {
         if i == 0 || i > count {
             Err(format!("There is no clip {i}; the cut has {count}."))
@@ -781,9 +1090,19 @@ pub async fn op(
             ));
         }
     }
-    let edited = doc.apply(&wanted)?;
-    notes.extend(edited.notes);
-    format::save(&path, &edited.text, &melt).await?;
+    let episode_dir = resolve_episode(working_dir, episode)?;
+    // Normalising measures the audio tracks too; other ops move them with
+    // the clips they start over.
+    let (audio, measure) = if normalizing {
+        (
+            Some(current_audio(&doc.audio_clips())),
+            Some((ffmpeg.as_str(), episode_dir.as_path())),
+        )
+    } else {
+        (None, None)
+    };
+    let text = edit_text(&doc, &wanted, audio, measure, &mut notes).await?;
+    format::save(&path, &text, &melt).await?;
     let after = ProjectDoc::open(&path)?;
     Ok(CutResult {
         summary: after.summary(working_dir, &path),
@@ -1019,6 +1338,115 @@ mod tests {
             past.starts_with("Item 2 names clip 3, but the cut has 2."),
             "{past}"
         );
+    }
+
+    /// Audio-track items move with the main-track clip they start over when
+    /// a stretch of it is cut out or it goes, in both formats alike.
+    #[tokio::test]
+    async fn audio_items_follow_the_clip_they_start_over() {
+        let mut results = Vec::new();
+        for f in format::Format::ALL {
+            let doc = ProjectDoc::template(f, "1080p30", Path::new("/videos")).unwrap();
+            let fps = doc.fps();
+            let m = |r: &str, secs: f64, video: bool| Media {
+                resource: r.into(),
+                length: fps.frames(secs),
+                video_index: video.then_some(0),
+                audio_index: Some(1),
+                file_size: 1,
+                file_hash: "0".repeat(32),
+            };
+            let main = vec![
+                Placement::of(Source::New(m("a.mp4", 10.0, true))),
+                Placement::of(Source::New(m("b.mp4", 8.0, true))),
+            ];
+            let under = |r: &str, secs: f64, at: f64| AudioPlacement {
+                source: AudioSource::New(m(r, secs, false)),
+                at: fps.frames(at),
+                in_frame: None,
+                out_frame: None,
+                track: 0,
+                gain_db: None,
+                limiter: false,
+                lufs: None,
+            };
+            let mut notes = Vec::new();
+            let audio = vec![under("voice.wav", 4.0, 12.0), under("tag.wav", 1.0, 3.0)];
+            let text = edit_text(&doc, &main, Some(audio), None, &mut notes)
+                .await
+                .unwrap();
+            let doc = doc.reparse(text).unwrap();
+            let starts = |d: &ProjectDoc| -> Vec<(String, f64)> {
+                d.audio_clips()
+                    .iter()
+                    .map(|c| (c.resource.clone(), d.fps().secs(c.start)))
+                    .collect()
+            };
+            let placed = starts(&doc);
+            // Cut 1–2 s out of a.mp4.
+            let mut wanted = doc.current();
+            cut_ranges(
+                &mut wanted,
+                0,
+                0,
+                0,
+                fps.frames(10.0) - 1,
+                &[(fps.frames(1.0), fps.frames(2.0))],
+                6,
+            );
+            let text = edit_text(&doc, &wanted, None, None, &mut notes)
+                .await
+                .unwrap();
+            let doc = doc.reparse(text).unwrap();
+            let after_cut = starts(&doc);
+            // Remove both pieces of a.mp4: tag.wav goes to where b.mp4 now starts.
+            let mut wanted = doc.current();
+            wanted.drain(0..2);
+            let text = edit_text(&doc, &wanted, None, None, &mut notes)
+                .await
+                .unwrap();
+            let doc = doc.reparse(text).unwrap();
+            results.push((placed, after_cut, starts(&doc), doc.sequence_end()));
+        }
+        assert_eq!(results[0], results[1]);
+        let (placed, after_cut, after_remove, end) = &results[0];
+        let s = |v: &Vec<(String, f64)>| -> Vec<(String, i64)> {
+            v.iter()
+                .map(|(r, t)| (r.clone(), (t * 10.0).round() as i64))
+                .collect()
+        };
+        assert_eq!(
+            s(placed),
+            [("tag.wav".to_string(), 30), ("voice.wav".to_string(), 120)]
+        );
+        assert_eq!(
+            s(after_cut),
+            [("tag.wav".to_string(), 20), ("voice.wav".to_string(), 110)]
+        );
+        assert_eq!(
+            s(after_remove),
+            [("tag.wav".to_string(), 0), ("voice.wav".to_string(), 20)]
+        );
+        // b.mp4 is 8 s; the voice ends at 6 s, inside it.
+        assert_eq!(*end, 240);
+    }
+
+    #[test]
+    fn a_moment_cut_out_lands_on_the_next_piece_and_the_end_keeps_its_distance() {
+        let old = [(0, 0, 299), (300, 0, 239)];
+        // Clip 1 lost 30–59; clip 2 follows.
+        let new = [(0, 0, 29), (30, 60, 299), (270, 0, 239)];
+        let wanted = [
+            Placement::of(Source::Existing(0)),
+            Placement::of(Source::Piece(0)),
+            Placement::of(Source::Existing(1)),
+        ];
+        assert_eq!(follow(10, &old, &new, &wanted), 10);
+        assert_eq!(follow(45, &old, &new, &wanted), 30);
+        assert_eq!(follow(100, &old, &new, &wanted), 70);
+        assert_eq!(follow(330, &old, &new, &wanted), 300);
+        // Past the end: as far past the new end.
+        assert_eq!(follow(600, &old, &new, &wanted), 570);
     }
 
     /// A cut from generated clips into a new project, then an op, end to end

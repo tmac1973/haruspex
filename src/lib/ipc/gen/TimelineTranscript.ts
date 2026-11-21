@@ -9,4 +9,8 @@ project: string, lines: Array<TimelineLine>,
 /**
  * Clips with no transcript yet, 1-based.
  */
-untranscribed: Array<number>, totalSecs: number, };
+untranscribed: Array<number>, 
+/**
+ * Audio-track items with no transcript yet, 1-based.
+ */
+untranscribedAudio: Array<number>, totalSecs: number, };

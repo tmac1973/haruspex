@@ -72,6 +72,32 @@ const summary: ProjectSummary = {
 			limited: true
 		}
 	],
+	audio: [
+		{
+			index: 1,
+			track: 'A2',
+			path: 'ep010/voice.wav',
+			startSecs: 12.5,
+			durationSecs: 30,
+			sourceInSecs: 0,
+			sourceOutSecs: 30,
+			gainDb: 2,
+			limited: false,
+			lufs: null
+		},
+		{
+			index: 2,
+			track: 'A3',
+			path: 'ep010/bed.mp3',
+			startSecs: 0,
+			durationSecs: 125.5,
+			sourceInSecs: 0,
+			sourceOutSecs: 125.5,
+			gainDb: -9.5,
+			limited: false,
+			lufs: -30
+		}
+	],
 	otherClips: [{ track: 'V2', path: 'logo.png', startSecs: 0, endSecs: 3 }],
 	mixes: 1,
 	guides: 2,
@@ -91,6 +117,30 @@ describe('parseCut', () => {
 		expect(parseCut({ items: [{ index: 2 }] })).toMatchObject({ items: [{ index: 2 }] });
 		expect(parseCut({ items: [{}] })).toContain('exactly one of index');
 		expect(parseCut({ items: [{ index: 1, path: 'a' }] })).toContain('exactly one of index');
+	});
+
+	it('reads sound for the audio tracks, or leaves them alone', () => {
+		expect(parseCut({ items: [] })).toMatchObject({ audio: null });
+		expect(
+			parseCut({
+				items: [],
+				audio: [
+					{ path: 'ep010/voice.wav', at: '0:12.5' },
+					{ index: 1, at: 3, lufs: -30 }
+				]
+			})
+		).toMatchObject({
+			audio: [
+				{ path: 'ep010/voice.wav', index: null, atSecs: 12.5, lufs: null },
+				{ index: 1, path: null, atSecs: 3, lufs: -30 }
+			]
+		});
+		expect(parseCut({ items: [], audio: [] })).toMatchObject({ audio: [] });
+		expect(parseCut({ items: [], audio: [{ at: 1 }] })).toContain('audio[0] needs exactly one');
+		expect(parseCut({ items: [], audio: [{ path: 'a.wav', at: 'soon' }] })).toContain(
+			'must be a time'
+		);
+		expect(parseCut({ items: [], audio: 'a.wav' })).toContain('must be a list');
 	});
 
 	it('checks the preset and reads intro choices', () => {
@@ -126,6 +176,12 @@ describe('the summary report', () => {
 			'2. ep010/raw/obs.mp4 · at 0:05.0 · 2:00.5 long · clip 0:10.0–2:10.5 · crossfades in over 1.0 s · gain +3.5 dB, peaks limited · 1 effect added in the editor'
 		);
 		expect(text).toContain('- V2: logo.png 0:00.0–0:03.0');
+		expect(text).toContain("Audio tracks, under the picture (video_cut's audio), in time order:");
+		expect(text).toContain(
+			'1. A2 · ep010/voice.wav · at 0:12.5 · 0:30.0 long · file 0:00.0–0:30.0 · gain +2 dB'
+		);
+		expect(text).toContain('2. A3 · ep010/bed.mp3 · at 0:00.0 · 2:05.5 long');
+		expect(text).toContain('gain -9.5 dB · set to -30 LUFS');
 		expect(text).toContain('1 crossfade on the main track · 2 guides');
 	});
 
@@ -147,9 +203,26 @@ describe("the cut's transcript", () => {
 		start: 5 + i,
 		end: 6 + i,
 		text: 'words '.repeat(5),
-		index: 2
+		index: 2,
+		audio: false
 	}));
-	const t = { project: 'ep010/ep010.kdenlive', lines, untranscribed: [1], totalSecs: 405 };
+	const t = {
+		project: 'ep010/ep010.kdenlive',
+		lines,
+		untranscribed: [1],
+		untranscribedAudio: [],
+		totalSecs: 405
+	};
+
+	it('marks speech from the audio tracks and names sound with no transcript', () => {
+		const text = timelineTranscriptReport({
+			...t,
+			lines: [{ start: 12.5, end: 14, text: 'Hello there.', index: 1, audio: true }],
+			untranscribedAudio: [2]
+		});
+		expect(text).toContain('[0:13] (audio 1) Hello there.');
+		expect(text).toContain('Audio-track item 2 has no transcript yet.');
+	});
 
 	it('names a clip with no transcript by its file', () => {
 		const text = timelineTranscriptReport(t, { items: summary.items });
@@ -190,6 +263,7 @@ describe('video_cut', () => {
 				items: [
 					{ index: null, path: 'ep010/raw/obs.mp4', inSecs: 10, outSecs: null, crossfadeSecs: null }
 				],
+				audio: null,
 				crossfadeSecs: null,
 				normalize: null
 			},

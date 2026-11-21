@@ -25,6 +25,7 @@ pub fn spans(doc: &Doc) -> Vec<Span> {
                 start: fps.secs(item.start),
                 source_in: fps.secs(item.in_frame),
                 source_out: fps.secs(item.out_frame + 1),
+                audio: false,
             }
         })
         .collect()

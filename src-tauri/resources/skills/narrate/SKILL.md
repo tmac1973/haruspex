@@ -61,8 +61,10 @@ for character: about 0.9 for slow and weighty, 1.1 for quick. Stay within
   sounds from, with `path`. Don't replace an existing file unless the user
   asks.
 - **A voiceover for a video:** save it next to the video with `path` if
-  there's a working folder. Don't change a Shotcut or Kdenlive project yourself: tell
-  the user to add it as an audio track.
+  there's a working folder. When the video is a Shotcut or Kdenlive project
+  and `video_cut` is offered, put the voiceover under the picture with its
+  `audio` list, at the time it should start, keeping the clips as they are.
+  Otherwise tell the user to add it to the project as an audio track.
 
 ## 5. Check the length
 

@@ -7,6 +7,7 @@ import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { CutSpec } from '#lib/ipc/gen/CutSpec.ts';
 import type { Format } from '#lib/ipc/gen/Format.ts';
 import type { CutItemSpec } from '#lib/ipc/gen/CutItemSpec.ts';
+import type { CutAudioSpec } from '#lib/ipc/gen/CutAudioSpec.ts';
 import type { EndClip } from '#lib/ipc/gen/EndClip.ts';
 import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
 import type { VideoSettings } from '#lib/ipc/gen/VideoSettings.ts';
@@ -41,9 +42,39 @@ export function endClip(v: unknown): EndClip | null {
 	return s;
 }
 
-/** The tool's arguments as the Rust side's cut, or what is wrong with them. */
-export function parseCut(args: Record<string, unknown>): CutSpec | string {
-	const raw = Array.isArray(args.items) ? args.items : [];
+/** `audio`: the sounds under the picture, null when the call leaves them as they are. */
+export function parseAudio(v: unknown): CutAudioSpec[] | null | string {
+	if (v === undefined || v === null) return null;
+	if (!Array.isArray(v)) return 'audio must be a list of sounds.';
+	const out: CutAudioSpec[] = [];
+	for (const [n, it] of v.entries()) {
+		if (!it || typeof it !== 'object') return `audio[${n}] must be an object.`;
+		const o = it as Record<string, unknown>;
+		const index = parsedFiniteOrNull(o.index);
+		const path = trimmedOrNull(o.path);
+		if ((index === null) === (path === null)) {
+			return `audio[${n}] needs exactly one of index (a sound already on the audio tracks, from 1) or path (a new one).`;
+		}
+		const at = o.at ?? o.at_secs;
+		const atSecs = at === undefined || at === null ? null : parseTime(at);
+		if (at !== undefined && at !== null && atSecs === null) {
+			return `audio[${n}].at must be a time in the video, like 12.5 or "1:02.5".`;
+		}
+		out.push({
+			index: index === null ? null : Math.round(index),
+			path,
+			atSecs,
+			inSecs: parsedFiniteOrNull(o.in_secs),
+			outSecs: parsedFiniteOrNull(o.out_secs),
+			lufs: parsedFiniteOrNull(o.lufs)
+		});
+	}
+	return out;
+}
+
+/** `items`: the main track's clips, or what is wrong with them. */
+function parseItems(v: unknown): CutItemSpec[] | string {
+	const raw = Array.isArray(v) ? v : [];
 	const items: CutItemSpec[] = [];
 	for (const [n, it] of raw.entries()) {
 		if (!it || typeof it !== 'object') return `items[${n}] must be an object.`;
@@ -61,6 +92,13 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs)
 		});
 	}
+	return items;
+}
+
+/** The tool's arguments as the Rust side's cut, or what is wrong with them. */
+export function parseCut(args: Record<string, unknown>): CutSpec | string {
+	const items = parseItems(args.items);
+	if (typeof items === 'string') return items;
 	const preset = trimmedOrNull(args.preset);
 	if (preset && !VIDEO_PRESETS.some((p) => p.id === preset)) {
 		return `preset must be one of ${VIDEO_PRESETS.map((p) => p.id).join(', ')}.`;
@@ -69,6 +107,8 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 	if (editor && editor !== 'shotcut' && editor !== 'kdenlive') {
 		return 'editor must be shotcut or kdenlive.';
 	}
+	const audio = parseAudio(args.audio);
+	if (typeof audio === 'string') return audio;
 	return {
 		project: trimmedOrNull(args.project),
 		editor: editor as Format | null,
@@ -76,6 +116,7 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 		intro: endClip(args.intro),
 		outro: endClip(args.outro),
 		items,
+		audio,
 		crossfadeSecs: parsedFiniteOrNull(args.crossfade_secs),
 		normalize: typeof args.normalize === 'boolean' ? args.normalize : null
 	};
