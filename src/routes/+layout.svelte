@@ -90,6 +90,7 @@
 	import { startPromptBridge } from '#lib/peers/promptBridge.svelte.ts';
 	import { startCaptioner } from '#lib/camera/captioner.ts';
 	import { startAlertDispatch } from '#lib/camera/alertDispatch.ts';
+	import { startRoomChecks } from '#lib/camera/roomCheck.ts';
 	import { syncCameraWatchers } from '#lib/camera/watchSync.ts';
 	import { watchCameraWatchers } from '#lib/stores/cameraActivity.svelte.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
@@ -440,8 +441,10 @@
 		// event is captioned once no chat turn needs the model. Main window
 		// only, like the watchers themselves.
 		void watchCameraWatchers().catch((e: unknown) => console.warn('Camera watchers:', e));
-		// Camera alerts email what the captioner judges urgent.
+		// Camera alerts email what the captioner judges urgent, and room
+		// checks compare each room with its reference.
 		startAlertDispatch();
+		startRoomChecks();
 		void startCaptioner().catch((e: unknown) => console.warn('Camera captions:', e));
 
 		try {

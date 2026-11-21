@@ -2,9 +2,18 @@
 	/**
 	 * A camera's Alerts fields in its Settings → Cameras form: whether its
 	 * events are judged, how many people are usually in view, the user's watch
-	 * rules and quiet hours (learned from the log, or set here). Edits the
-	 * form's draft through `alerts`; the form saves it.
+	 * rules and quiet hours (learned from the log, or set here), and the room's
+	 * reference pictures (This is normal) for room checks. Edits the form's
+	 * draft through `alerts`; the form saves it. References are saved at once,
+	 * for a camera already saved.
 	 */
+	import { invoke } from '@tauri-apps/api/core';
+	import type { References } from '#lib/ipc/gen/References.ts';
+	import type { Light } from '#lib/ipc/gen/Light.ts';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import { videoOverrides } from '#lib/video/binaries.ts';
+	import { stamp } from '#lib/camera/log.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 	import type { AlertConfig } from '#lib/ipc/gen/AlertConfig.ts';
 	import type { QuietHours } from '#lib/ipc/gen/QuietHours.ts';
 	import {
@@ -22,6 +31,60 @@
 	let { cameraId, alerts = $bindable() }: Props = $props();
 
 	let learned = $state<QuietHours | null>(null);
+	let refs = $state<References | null>(null);
+	let shooting = $state(false);
+	let refError = $state('');
+
+	/** The camera as saved: references need one that works without the form's draft. */
+	const saved = $derived(getSettings().cameras.find((c) => c.id === cameraId));
+
+	async function loadRefs() {
+		try {
+			refs = await invoke<References>('camera_reference_get', { cameraId });
+		} catch {
+			refs = null;
+		}
+	}
+
+	$effect(() => {
+		if (alerts.enabled && saved && !refs) void loadRefs();
+	});
+
+	async function setNormal() {
+		if (!saved) return;
+		shooting = true;
+		refError = '';
+		try {
+			const overrides = videoOverrides();
+			if (saved.ptz !== 'none') {
+				await invoke('camera_aim', {
+					config: saved,
+					aim: { direction: 'home', amount: 'medium' },
+					overrides
+				});
+			}
+			const jpeg = await invoke<string>('camera_snapshot', {
+				config: saved,
+				overrides,
+				maxWidth: 1280
+			});
+			await invoke<Light>('camera_reference_set', { cameraId, jpeg });
+			await loadRefs();
+		} catch (e) {
+			refError = errMessage(e);
+		} finally {
+			shooting = false;
+		}
+	}
+
+	async function clearRef(light: Light) {
+		try {
+			await invoke('camera_reference_clear', { cameraId, light });
+			await loadRefs();
+		} catch (e) {
+			refError = errMessage(e);
+		}
+	}
 
 	$effect(() => {
 		if (!alerts.enabled || learned) return;
@@ -116,6 +179,43 @@
 			title="Something to be told about, or something that is normal here. A match is urgent unless the rule says otherwise."
 			>Add rule</button
 		>
+	</div>
+
+	<span class="label">Room</span>
+	<div class="room">
+		{#if !saved}
+			<p class="hint">Save the camera first.</p>
+		{:else}
+			<div class="refs">
+				{#each [{ light: 'day', label: 'Day' }, { light: 'night', label: 'Night' }] as r (r.light)}
+					{@const ref = refs?.[r.light as Light]}
+					<div class="ref">
+						{#if ref}
+							<img src={ref.dataUrl} alt="{r.label} reference" />
+							<span class="hint">{r.label} · {stamp(new Date(ref.setAt)).slice(0, 16)}</span>
+							<button
+								type="button"
+								class="btn btn-small"
+								aria-label="Clear the {r.label.toLowerCase()} reference"
+								onclick={() => clearRef(r.light as Light)}>Clear</button
+							>
+						{:else}
+							<span class="no-ref" aria-hidden="true"></span>
+							<span class="hint">{r.label}: none</span>
+						{/if}
+					</div>
+				{/each}
+			</div>
+			<button
+				type="button"
+				class="btn btn-small add"
+				onclick={setNormal}
+				disabled={shooting}
+				title="Takes a picture at the camera's home as the room normally looks. Day and night (infrared) are kept apart; press it again at night, or the first night check sets it. Room checks compare against it a minute after activity and hourly."
+				>{shooting ? 'Taking…' : 'This is normal'}</button
+			>
+			{#if refError}<p class="error">{refError}</p>{/if}
+		{/if}
 	</div>
 
 	<span class="label">Quiet hours</span>
@@ -227,5 +327,48 @@
 
 	.hour:disabled {
 		cursor: default;
+	}
+
+	.room {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+	}
+
+	.refs {
+		display: flex;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.ref {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+	}
+
+	.ref img,
+	.no-ref {
+		width: 128px;
+		height: 72px;
+		object-fit: cover;
+		border-radius: 4px;
+		border: 1px solid var(--border);
+		background: var(--bg-secondary);
+	}
+
+	.hint {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.error {
+		margin: 0;
+		color: var(--error-text);
+		font-size: 0.8rem;
+		overflow-wrap: anywhere;
 	}
 </style>

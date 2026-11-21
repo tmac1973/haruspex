@@ -17,6 +17,7 @@ pub mod capture;
 pub mod commands;
 pub(crate) mod detect;
 pub mod onvif;
+pub mod reference;
 pub(crate) mod shared;
 pub mod usb;
 #[cfg(target_os = "linux")]

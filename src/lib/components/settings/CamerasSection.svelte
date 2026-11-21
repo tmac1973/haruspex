@@ -4,6 +4,7 @@
 	 * through, and the remote servers trusted with what they see and hear.
 	 * One camera's form is open at a time and saves only on its Save.
 	 */
+	import { invoke } from '@tauri-apps/api/core';
 	import CameraForm from '#lib/components/settings/CameraForm.svelte';
 	import CameraEventLog from '#lib/components/settings/CameraEventLog.svelte';
 	import CameraAlertsSection from '#lib/components/settings/CameraAlertsSection.svelte';
@@ -95,6 +96,7 @@
 
 	function remove(camera: CameraConfig) {
 		void forgetCameraPassword($state.snapshot(camera) as CameraConfig);
+		void invoke('camera_reference_clear', { cameraId: camera.id, light: null }).catch(() => {});
 		save(cameras.filter((c) => c.id !== camera.id));
 		if (openId === camera.id) openId = null;
 		if (logId === camera.id) logId = null;

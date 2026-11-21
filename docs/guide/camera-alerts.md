@@ -1,6 +1,6 @@
 ---
 title: Camera alerts
-description: Have each camera log entry judged as normal, unusual or urgent from what is happening, set the usual number of people, watch rules and quiet hours, and dismiss false alarms in Settings → Cameras.
+description: Have camera log entries judged as normal, unusual or urgent, get urgent ones by email, check rooms against a picture of how they normally look, and dismiss false alarms in Settings → Cameras.
 ---
 
 # Camera alerts
@@ -37,6 +37,15 @@ The first Urgent entry on a camera is emailed at once with its picture, what was
 
 A watch rule is one sentence about this camera, such as "Tell me if the back door is left open" or "More than 2 children in the room is unusual". Each entry is judged with the camera's rules. A camera keeps up to 20, of up to 300 characters each.
 
+## Spot a changed room
+
+Room checks compare the room with a picture of it as it normally looks, to catch furniture moved, something large gone or new, or smoke.
+
+1. With the room as it should be, click **This is normal** under **Room** in the camera's Alerts settings. A camera that turns goes to its home first.
+2. Day and night (a greyscale infrared picture) are kept apart. Click it again at night, or the first check at night saves the night picture.
+
+A check runs about a minute after activity stops and hourly otherwise, at the camera's home view. If you or the assistant turned the camera in the last 5 minutes, it waits. A picture almost the same as the reference ends there; otherwise the model compares the two. A changed room is logged as a **Room check** entry, judged and emailed like any other. A normal check with nobody in view becomes the new reference, so a slow change doesn't keep alerting.
+
 ## Quiet hours
 
 Haruspex learns when a room is normally quiet from the last 14 days of its log, weekdays and weekends apart. Until a camera has about a week of entries, no hour counts as quiet. **Quiet hours** in the camera's Alerts settings shows the learned hours; **Edit** lets you set them yourself by clicking hours, and **Use learned** goes back.
@@ -58,4 +67,5 @@ With no model that may see the camera, or a model that's stopped or loading, ent
 
 - It doesn't recognise people, faces or voices.
 - It isn't a smoke detector or an alarm system: it sees one view, only while Haruspex is open, and a judgement can be wrong.
+- Room checks only see the home view, and miss small objects.
 - Entries from cameras without **Judge entries** are captioned as before, with no level.

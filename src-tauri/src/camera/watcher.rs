@@ -614,7 +614,7 @@ pub(crate) fn should_run(cfg: &CameraConfig, now: u32) -> Result<bool, String> {
 }
 
 /// A camera id as a folder name.
-fn folder_name(id: &str) -> String {
+pub(crate) fn folder_name(id: &str) -> String {
     let safe: String = id
         .chars()
         .map(|c| {

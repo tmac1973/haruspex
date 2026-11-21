@@ -7,6 +7,7 @@ use super::alert_mail::{self, CameraAlert, MAX_ATTACHMENTS};
 use super::capture::{self, SNAPSHOT_MAX_WIDTH};
 use super::onvif::discovery::{self, DiscoveredCamera};
 use super::onvif::{self, ptz::Ptz, OnvifConnection};
+use super::reference::{self, Light, References};
 use super::usb::{self, UsbDevices};
 use super::watcher::{remove_files, CameraWatchStatus, WatcherRegistry};
 use super::{CameraCaps, CameraConfig, Credentials, OnvifPreset};
@@ -147,6 +148,8 @@ pub async fn camera_aim(
     aim: Aim,
     overrides: BinaryOverrides,
 ) -> Result<CameraAimResult, String> {
+    // A person or a chat turned it: room checks leave it alone for a while.
+    reference::record_aim(&config.id, crate::time_util::now_ms());
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await.ok();
     aim::aim(&config, &aim, ffmpeg.as_deref()).await
 }
@@ -158,6 +161,7 @@ pub async fn camera_calibrate(
     config: CameraConfig,
     overrides: BinaryOverrides,
 ) -> Result<super::PtzCalibration, String> {
+    reference::record_aim(&config.id, crate::time_util::now_ms());
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
     super::calibrate::calibrate(&config, &ffmpeg).await
 }
@@ -359,6 +363,201 @@ pub async fn camera_alert_send(
     })
     .await?;
     Ok(sent.message_id)
+}
+
+fn app_data(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data folder: {e}"))
+}
+
+/// The JPEG bytes in a `data:image/jpeg;base64,` URL (or bare base64).
+fn jpeg_from_data_url(url: &str) -> Result<Vec<u8>, String> {
+    let b64 = url.split_once(',').map_or(url, |(_, b)| b);
+    base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|_| "The picture is not valid base64.".to_string())
+}
+
+fn data_url(jpeg: &[u8]) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(jpeg);
+    format!("data:image/jpeg;base64,{encoded}")
+}
+
+/// Save a picture as a camera's room reference for its light (camera
+/// alerts' This is normal); which light it was for.
+#[tauri::command]
+pub async fn camera_reference_set(
+    app: tauri::AppHandle,
+    camera_id: String,
+    jpeg: String,
+) -> Result<Light, String> {
+    let dir = reference::refs_dir(&app_data(&app)?, &camera_id);
+    let bytes = jpeg_from_data_url(&jpeg)?;
+    tokio::task::spawn_blocking(move || reference::save(&dir, &bytes))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// A camera's day and night room references, with when each was saved.
+#[tauri::command]
+pub async fn camera_reference_get(
+    app: tauri::AppHandle,
+    camera_id: String,
+) -> Result<References, String> {
+    let dir = reference::refs_dir(&app_data(&app)?, &camera_id);
+    tokio::task::spawn_blocking(move || {
+        let one = |light| {
+            reference::load(&dir, light).map(|(jpeg, set_at)| reference::Reference {
+                set_at,
+                data_url: data_url(&jpeg),
+            })
+        };
+        References {
+            day: one(Light::Day),
+            night: one(Light::Night),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Remove a camera's reference for one light, or both when none is named.
+#[tauri::command]
+pub async fn camera_reference_clear(
+    app: tauri::AppHandle,
+    camera_id: String,
+    light: Option<Light>,
+) -> Result<(), String> {
+    let dir = reference::refs_dir(&app_data(&app)?, &camera_id);
+    match light {
+        Some(l) => reference::clear(&dir, l),
+        None => {
+            reference::clear(&dir, Light::Day)?;
+            reference::clear(&dir, Light::Night)
+        }
+    }
+}
+
+/// What a room check's picture found.
+#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomShot {
+    /// Someone turned the camera in the last five minutes: no picture taken.
+    pub busy: bool,
+    /// The picture, as a data URL; empty when busy.
+    pub jpeg: String,
+    pub night: bool,
+    /// How alike it is to the reference for its light, -1 to 1; `None` when
+    /// there is no such reference.
+    pub similarity: Option<f64>,
+    /// When that reference was saved, epoch ms.
+    #[ts(type = "number | null")]
+    pub reference_at: Option<i64>,
+    /// The reference, as a data URL, when there is one.
+    pub reference: Option<String>,
+    /// Whether the camera has a reference for either light: none means the
+    /// user hasn't set one with This is normal yet.
+    pub has_references: bool,
+}
+
+/// A room check's picture: the camera sent home first if it turns (unless
+/// someone turned it in the last five minutes), then compared with its
+/// reference. Its own turn home doesn't count as someone turning it.
+#[tauri::command]
+pub async fn camera_room_shot(
+    app: tauri::AppHandle,
+    config: CameraConfig,
+    overrides: BinaryOverrides,
+) -> Result<RoomShot, String> {
+    let busy = RoomShot {
+        busy: true,
+        jpeg: String::new(),
+        night: false,
+        similarity: None,
+        reference_at: None,
+        reference: None,
+        has_references: false,
+    };
+    if config.ptz != super::PtzKind::None {
+        if reference::busy(&config.id, crate::time_util::now_ms()) {
+            return Ok(busy);
+        }
+        let home = Aim::Move {
+            direction: aim::AimDirection::Home,
+            amount: Default::default(),
+        };
+        aim::aim(&config, &home, None).await?;
+    }
+    let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
+    let jpeg = capture::snapshot(&ffmpeg, &config, ROOM_SHOT_WIDTH).await?;
+    let dir = reference::refs_dir(&app_data(&app)?, &config.id);
+    tokio::task::spawn_blocking(move || {
+        let has_references = reference::load(&dir, Light::Day).is_some()
+            || reference::load(&dir, Light::Night).is_some();
+        let night = reference::is_night(&jpeg)?;
+        let light = if night { Light::Night } else { Light::Day };
+        let (similarity, reference_at, reference) = match reference::load(&dir, light) {
+            Some((r, at)) => (
+                Some(reference::similarity(&r, &jpeg)?),
+                Some(at),
+                Some(data_url(&r)),
+            ),
+            None => (None, None, None),
+        };
+        Ok(RoomShot {
+            busy: false,
+            jpeg: data_url(&jpeg),
+            night,
+            similarity,
+            reference_at,
+            reference,
+            has_references,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// How wide a room check's picture is.
+const ROOM_SHOT_WIDTH: u32 = 1280;
+
+/// Log a room check that found the room changed: a `room` entry with its
+/// picture and judgement already set. Returns the entry.
+#[tauri::command]
+pub async fn camera_room_event_add(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Database>,
+    camera_id: String,
+    jpeg: String,
+    caption: String,
+    level: AlertLevel,
+    reason: String,
+) -> Result<CameraEvent, String> {
+    let events_dir = app_data(&app)?.join("camera_events");
+    let bytes = jpeg_from_data_url(&jpeg)?;
+    on_db(&db, move |db| {
+        let now = crate::time_util::now_ms();
+        let id = super::watcher::store_event(
+            &db,
+            &events_dir,
+            &crate::db::NewCameraEvent {
+                camera_id,
+                started_at: now,
+                ended_at: now,
+                trigger: "room".into(),
+                level_db: -120.0,
+                transcript: String::new(),
+            },
+            Some(&bytes),
+        )?;
+        db.set_camera_event_judgement(id, Some(&caption), level, &reason)?;
+        db.camera_event(id)?
+            .ok_or_else(|| "The room entry was not saved.".to_string())
+    })
+    .await
 }
 
 /// The events waiting for a caption, oldest first.

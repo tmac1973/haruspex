@@ -85,6 +85,24 @@ vi.mock('@tauri-apps/api/core', async () =>
 					}
 				];
 			},
+			camera_reference_get: () =>
+				state.calls.some((c) => c.cmd === 'camera_reference_set')
+					? {
+							day: {
+								setAt: new Date(2026, 10, 21, 9, 0).getTime(),
+								dataUrl: 'data:image/jpeg;base64,REF'
+							},
+							night: null
+						}
+					: { day: null, night: null },
+			camera_reference_set: (a) => {
+				state.calls.push({ cmd: 'camera_reference_set', args: a });
+				return 'day';
+			},
+			camera_reference_clear: (a) => {
+				state.calls.push({ cmd: 'camera_reference_clear', args: a });
+				return null;
+			},
 			camera_alert_send: (a) => {
 				state.calls.push({ cmd: 'camera_alert_send', args: a });
 				return 'msg-1@example.com';
@@ -562,6 +580,40 @@ describe('camera alerts', () => {
 		await screen.findByText('A man leaves a box at the door.');
 		expect(screen.queryByText('Nothing unusual.')).toBeNull();
 		expect(screen.queryByLabelText(/^Dismiss the alert from/)).toBeNull();
+	});
+});
+
+describe('room references', () => {
+	it('saves what the camera sees as normal and shows it', async () => {
+		setCameras([
+			kitchen({
+				watcher: { ...defaultWatcherConfig, enabled: true },
+				alerts: { ...defaultAlertConfig, enabled: true }
+			})
+		]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		await screen.findByText('Day: none');
+		await fireEvent.click(screen.getByText('This is normal'));
+		await screen.findByAltText('Day reference');
+		expect(state.calls).toContainEqual({
+			cmd: 'camera_reference_set',
+			args: { cameraId: 'k1', jpeg: 'data:image/jpeg;base64,AAAA' }
+		});
+	});
+
+	it('clears both references when the camera is removed', async () => {
+		setCameras([kitchen()]);
+		render(CamerasSection);
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+		await fireEvent.click(screen.getByLabelText('Remove Kitchen'));
+		confirm.mockRestore();
+		await waitFor(() =>
+			expect(state.calls).toContainEqual({
+				cmd: 'camera_reference_clear',
+				args: { cameraId: 'k1', light: null }
+			})
+		);
 	});
 });
 

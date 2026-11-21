@@ -270,6 +270,15 @@ impl Database {
         Ok(hour_counts(&starts, offset_ms))
     }
 
+    /// One event by id; `None` when there is no such event.
+    pub fn camera_event(&self, id: i64) -> Result<Option<CameraEvent>, String> {
+        let sql = format!("SELECT {COLS} FROM camera_events e WHERE e.id = ?1");
+        Ok(self
+            .query_camera_events(&sql, vec![Value::Integer(id)])?
+            .into_iter()
+            .next())
+    }
+
     /// The events still waiting for a caption, oldest first.
     pub fn pending_camera_events(&self, limit: u32) -> Result<Vec<CameraEvent>, String> {
         let sql = format!(
