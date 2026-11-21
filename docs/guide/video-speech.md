@@ -9,7 +9,7 @@ The assistant can transcribe an episode's footage and use what was said to cut i
 
 ## Transcribe the footage
 
-Ask "transcribe ep012". Each clip with sound is transcribed with timestamps, in that clip's own time; the step shows which clip and how far it has got. **Stop** cancels between pieces. A long recording takes a few minutes.
+Ask "transcribe ep012". Each clip with sound, and each voiceover on an audio track, is transcribed with timestamps, in that clip's own time; the step shows which clip and how far it has got. **Stop** cancels between pieces. A long recording takes a few minutes.
 
 Transcripts are kept in the episode's `.haruspex/transcripts/` folder, so asking again is instant until a clip changes. The sound is extracted once to `.haruspex/audio/`.
 
@@ -23,7 +23,7 @@ Transcription runs its own copy of whisper-server on port 8768, so voice input k
 
 ## Cut silences and retakes
 
-- "Cut the silences longer than two seconds from ep012" cuts each one, leaving a quarter second of quiet at each side. Without a clip number it does every clip.
+- "Cut the silences longer than two seconds from ep012" cuts each one, leaving a quarter second of quiet at each side. Without a clip number it does every clip on the main track. A voiceover on an audio track isn't cut; it moves with the clip it starts over.
 - "Cut the retake at 4:10 in clip 2" cuts a stretch the assistant finds in the transcript. A clip cut in the middle becomes two pieces on the main track; each keeps the clip's effects.
 - "Where are the silences in the OBS recording?" lists them without cutting.
 
@@ -35,7 +35,7 @@ Ask "add chapters to ep012". The assistant reads the cut's speech in the video's
 
 ## Write captions
 
-Ask "write captions for ep012". The SRT is made from the clips' transcripts, mapped into the cut, so removed parts have none. It is saved next to the newest render (`renders/ep012-…srt`), or next to the project before there is one. Lines are at most 42 characters, two to a caption, and each caption stays up for at most seven seconds.
+Ask "write captions for ep012". The SRT is made from the clips' transcripts, and a voiceover's on an audio track, mapped into the cut, so removed parts have none. It is saved next to the newest render (`renders/ep012-…srt`), or next to the project before there is one. Lines are at most 42 characters, two to a caption, and each caption stays up for at most seven seconds.
 
 Haruspex doesn't upload captions. Add the file in YouTube Studio → Subtitles.
 

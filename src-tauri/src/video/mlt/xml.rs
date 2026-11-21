@@ -186,6 +186,11 @@ impl Splices {
         self.edits.push((at..at, text));
     }
 
+    /// How many edits there are so far.
+    pub fn count(&self) -> usize {
+        self.edits.len()
+    }
+
     /// Apply them all. Overlapping ranges are a bug in the caller.
     pub fn apply(mut self, text: &str) -> Result<String, String> {
         // Stable, so two inserts at one point land in the order they were made.

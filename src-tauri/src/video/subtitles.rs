@@ -147,6 +147,7 @@ mod tests {
             end,
             text: text.into(),
             index: 1,
+            audio: false,
         }
     }
 

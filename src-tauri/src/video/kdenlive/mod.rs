@@ -12,6 +12,7 @@
 //!   writing, melt must load the result, or the backup goes back.
 //! - Only document version 1.1 (Kdenlive 25.04–26.08) is edited.
 
+pub mod audio;
 pub mod doc;
 pub mod edit;
 pub mod timeline_map;
@@ -139,8 +140,9 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         })
         .collect();
     let mut other_clips = Vec::new();
+    let overlay = doc.audio_tracks();
     for t in 0..doc.tracks.len() {
-        if t == doc.main_video || t == doc.main_audio {
+        if t == doc.main_video || t == doc.main_audio || overlay.contains(&t) {
             continue;
         }
         for e in doc.track_entries(t) {
@@ -167,6 +169,9 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         editor_version: doc.kdenlive_version.clone(),
         read_only: doc.editable().err(),
         items,
+        audio: crate::video::format::AudioItem::from_clips(&audio::clips(doc), fps, |r| {
+            shown_resource(doc, working_dir, r)
+        }),
         other_clips,
         // A crossfade is a mix on each of the picture and sound tracks: count joins.
         mixes: {
@@ -212,8 +217,9 @@ pub fn clips(doc: &Doc) -> Vec<crate::video::timeline::Clip> {
 
 /// The files on tracks other than the main one.
 pub fn other_track_resources(doc: &Doc) -> Vec<String> {
+    let overlay = doc.audio_tracks();
     (0..doc.tracks.len())
-        .filter(|&t| t != doc.main_video && t != doc.main_audio)
+        .filter(|&t| t != doc.main_video && t != doc.main_audio && !overlay.contains(&t))
         .flat_map(|t| doc.track_entries(t))
         .filter_map(|e| {
             doc.tree

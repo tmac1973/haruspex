@@ -5,7 +5,7 @@
 use super::kdenlive::{self, doc::Doc as KdenliveDoc};
 use super::mlt::fps::Fps;
 use super::shotcut::{self, doc::Doc as ShotcutDoc};
-use super::timeline::{Clip, Edited, Placement, Span};
+use super::timeline::{AudioClip, AudioPlacement, Clip, Edited, Placement, Span};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -162,6 +162,49 @@ impl ProjectDoc {
         }
     }
 
+    /// The project's text with the audio tracks under the picture made
+    /// `wanted`.
+    pub fn apply_audio(&self, wanted: &[AudioPlacement]) -> Result<Edited, String> {
+        match self {
+            ProjectDoc::Shotcut(d) => shotcut::audio::apply(d, wanted),
+            ProjectDoc::Kdenlive(d) => kdenlive::audio::apply(d, wanted),
+        }
+    }
+
+    /// The clips on the audio tracks under the picture, in time order: the
+    /// order the tools number them in.
+    pub fn audio_clips(&self) -> Vec<AudioClip> {
+        match self {
+            ProjectDoc::Shotcut(d) => shotcut::audio::clips(d),
+            ProjectDoc::Kdenlive(d) => kdenlive::audio::clips(d),
+        }
+    }
+
+    /// How many audio tracks under the picture the project has.
+    pub fn audio_track_count(&self) -> usize {
+        match self {
+            ProjectDoc::Shotcut(d) => d.audio_tracks().len(),
+            ProjectDoc::Kdenlive(d) => d.audio_tracks().len(),
+        }
+    }
+
+    /// The audio-track clips as spans, numbered as `audio_clips`.
+    pub fn audio_spans(&self) -> Vec<Span> {
+        super::timeline::audio_spans(&self.audio_clips(), self.root_dir(), self.fps())
+    }
+
+    /// The same project read from edited text.
+    pub fn reparse(&self, text: String) -> Result<ProjectDoc, String> {
+        match self {
+            ProjectDoc::Shotcut(d) => {
+                let mut changed = ShotcutDoc::parse(text, None)?;
+                changed.root_dir = d.root_dir.clone();
+                Ok(ProjectDoc::Shotcut(changed))
+            }
+            ProjectDoc::Kdenlive(_) => Ok(ProjectDoc::Kdenlive(KdenliveDoc::parse(text)?)),
+        }
+    }
+
     pub fn spans(&self) -> Vec<Span> {
         match self {
             ProjectDoc::Shotcut(d) => shotcut::timeline_map::spans(d),
@@ -176,7 +219,7 @@ impl ProjectDoc {
         }
     }
 
-    /// The files on tracks other than the main one.
+    /// The files on tracks other than the main one and the audio tracks.
     pub fn other_track_resources(&self) -> Vec<String> {
         match self {
             ProjectDoc::Shotcut(d) => shotcut::other_track_resources(d),
@@ -225,6 +268,52 @@ pub struct SummaryItem {
     pub limited: bool,
 }
 
+/// A sound on an audio track under the picture.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioItem {
+    /// 1-based, in time order, as `video_cut`'s audio index names it.
+    pub index: u32,
+    /// "A1", "A2", as the editor shows it.
+    pub track: String,
+    pub path: String,
+    pub start_secs: f64,
+    pub duration_secs: f64,
+    pub source_in_secs: f64,
+    pub source_out_secs: f64,
+    /// The gain Haruspex set on it, in dB.
+    pub gain_db: Option<f64>,
+    pub limited: bool,
+    /// The loudness that gain aims at, when it isn't -14 LUFS.
+    pub lufs: Option<f64>,
+}
+
+impl AudioItem {
+    pub fn from_clips(
+        clips: &[AudioClip],
+        fps: Fps,
+        shown: impl Fn(&str) -> String,
+    ) -> Vec<AudioItem> {
+        clips
+            .iter()
+            .enumerate()
+            .map(|(i, c)| AudioItem {
+                index: i as u32 + 1,
+                track: c.track_name.clone(),
+                path: shown(&c.resource),
+                start_secs: fps.secs(c.start),
+                duration_secs: fps.secs(c.len()),
+                source_in_secs: fps.secs(c.in_frame),
+                source_out_secs: fps.secs(c.out_frame + 1),
+                gain_db: c.gain_db,
+                limited: c.limited,
+                lufs: c.lufs,
+            })
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
@@ -251,6 +340,8 @@ pub struct ProjectSummary {
     /// Why it can't be edited, when it can't.
     pub read_only: Option<String>,
     pub items: Vec<SummaryItem>,
+    /// The audio tracks under the picture: voiceover, music.
+    pub audio: Vec<AudioItem>,
     pub other_clips: Vec<OtherClip>,
     pub mixes: u32,
     pub guides: u32,
@@ -262,7 +353,7 @@ mod tests {
     //! The same edits on a Shotcut and a Kdenlive project read back the same:
     //! the tools above this layer can't tell the formats apart.
     use super::*;
-    use crate::video::timeline::{Media, Source};
+    use crate::video::timeline::{current_audio, AudioSource, Media, Source};
 
     fn media(resource: &str, secs: f64, fps: Fps) -> Media {
         Media {
@@ -272,6 +363,63 @@ mod tests {
             audio_index: Some(1),
             file_size: 1234,
             file_hash: "0".repeat(32),
+        }
+    }
+
+    fn sound(resource: &str, secs: f64, fps: Fps) -> Media {
+        Media {
+            video_index: None,
+            audio_index: Some(0),
+            ..media(resource, secs, fps)
+        }
+    }
+
+    fn under(m: Media, at: i64) -> AudioPlacement {
+        AudioPlacement {
+            source: AudioSource::New(m),
+            at,
+            in_frame: None,
+            out_frame: None,
+            track: 0,
+            gain_db: None,
+            limiter: false,
+            lufs: None,
+        }
+    }
+
+    type AudioShape = Vec<(
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        Option<f64>,
+        bool,
+        Option<f64>,
+    )>;
+
+    fn audio_shape(doc: &ProjectDoc) -> AudioShape {
+        doc.audio_clips()
+            .iter()
+            .map(|c| {
+                (
+                    c.track_name.clone(),
+                    c.resource.clone(),
+                    c.start,
+                    c.in_frame,
+                    c.out_frame,
+                    c.gain_db,
+                    c.limited,
+                    c.lufs,
+                )
+            })
+            .collect()
+    }
+
+    fn after_text(doc: &ProjectDoc) -> &str {
+        match doc {
+            ProjectDoc::Shotcut(d) => &d.text,
+            ProjectDoc::Kdenlive(d) => &d.text,
         }
     }
 
@@ -358,6 +506,66 @@ mod tests {
             ));
         }
         assert_eq!(results[0], results[1]);
+        // And the audio tracks under the picture: a voiceover over the first
+        // clip, a music bed later at -30 LUFS, then the voiceover trimmed and
+        // moved, the bed dropped.
+        let mut audio = Vec::new();
+        for doc in &docs {
+            let (cut, _) = edit(
+                doc,
+                &[Placement::of(Source::New(media("a.mp4", 10.0, fps)))],
+            );
+            let mut voice = under(sound("voice.wav", 6.0, fps), fps.frames(1.0));
+            voice.gain_db = Some(3.0);
+            voice.limiter = true;
+            let mut bed = under(sound("bed.mp3", 3.0, fps), fps.frames(7.5));
+            bed.gain_db = Some(-12.0);
+            bed.lufs = Some(-30.0);
+            let out = cut.apply_audio(&[voice, bed]).unwrap();
+            let placed = cut.reparse(out.text).unwrap();
+            let first = audio_shape(&placed);
+            // Unchanged, it is written back byte for byte.
+            let same = placed
+                .apply_audio(&current_audio(&placed.audio_clips()))
+                .unwrap();
+            assert_eq!(same.text, after_text(&placed), "{:?}", doc.format());
+            let mut moved = current_audio(&placed.audio_clips());
+            moved.truncate(1);
+            moved[0].at = fps.frames(2.0);
+            moved[0].in_frame = Some(fps.frames(0.5));
+            let out = placed.apply_audio(&moved).unwrap();
+            let again = placed.reparse(out.text).unwrap();
+            let summary = again.summary("/videos", Path::new("/videos/ep/ep.x"));
+            audio.push((
+                first,
+                audio_shape(&again),
+                summary.audio.len(),
+                summary.other_clips.len(),
+                summary.total_secs,
+            ));
+        }
+        assert_eq!(audio[0].0[0].0, "A1");
+        assert_eq!(audio[1].0[0].0, "A2");
+        // Track names aside (Shotcut's first audio track is A1, Kdenlive's
+        // above the main sound A2), the two agree.
+        let without_names = |s: &AudioShape| -> Vec<_> {
+            s.iter()
+                .map(|x| (x.1.clone(), x.2, x.3, x.4, x.5, x.6, x.7))
+                .collect()
+        };
+        assert_eq!(without_names(&audio[0].0), without_names(&audio[1].0));
+        assert_eq!(without_names(&audio[0].1), without_names(&audio[1].1));
+        assert_eq!(
+            audio[0].2..=audio[0].4 as usize,
+            audio[1].2..=audio[1].4 as usize
+        );
+        let first = &audio[0].0;
+        assert_eq!((first[0].2, first[0].5, first[0].6), (30, Some(3.0), true));
+        assert_eq!((first[1].2, first[1].7), (225, Some(-30.0)));
+        let again = &audio[0].1;
+        assert_eq!(again.len(), 1);
+        assert_eq!((again[0].2, again[0].3), (60, 15));
+        assert_eq!(audio[0].3, 0);
         // And what it is: c (4.5 dB, limited) leads, no crossfade into it.
         let (_, _, clips, gains, fades, total, _, _) = &results[0];
         assert_eq!(clips.len(), 4);

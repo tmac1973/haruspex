@@ -143,7 +143,7 @@ registerTool({
 		function: {
 			name: 'video_project_read',
 			description:
-				"Read an episode's project (Shotcut or Kdenlive): the main track's clips in order (numbered from 1) with their trims, and what is on other tracks.",
+				"Read an episode's project (Shotcut or Kdenlive): the main track's clips in order (numbered from 1) with their trims, the sound on the audio tracks under the picture, and what is on other tracks.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -174,7 +174,7 @@ registerTool({
 		function: {
 			name: 'video_cut',
 			description:
-				'Set the main track (V1) of the project to these clips, end to end, in order. Makes the project if there is none, for the editor in Settings → Video editing unless editor says otherwise. Clips already in the cut are kept by index with their effects; anything on other tracks is left alone. The user can open the project in its editor and change it too.',
+				'Set the main track (V1) of the project to these clips, end to end, in order, and optionally the audio tracks under the picture: a voiceover or music bed at a chosen time. Makes the project if there is none, for the editor in Settings → Video editing unless editor says otherwise. Clips already in the cut are kept by index with their effects; other video tracks are left alone. The user can open the project in its editor and change it too.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -212,6 +212,36 @@ registerTool({
 							}
 						}
 					},
+					audio: {
+						type: 'array',
+						description:
+							'Sound under the picture (a voiceover, music), on the audio tracks instead of after the clips: everything they should hold, replacing what is there. Omit to keep what is there, moved with the clips it starts over. Sounds that overlap go on separate tracks.',
+						items: {
+							type: 'object',
+							properties: {
+								index: {
+									type: 'integer',
+									description:
+										'A sound already on the audio tracks, by its number from video_project_read.'
+								},
+								path: {
+									type: 'string',
+									description: 'A new sound file, relative to the working folder.'
+								},
+								at: {
+									type: 'string',
+									description: 'Where it starts in the video, e.g. "0:12.5" or 12.5. Default 0:00.'
+								},
+								in_secs: { type: 'number', description: 'Start this far into the file.' },
+								out_secs: { type: 'number', description: 'Stop this far into the file.' },
+								lufs: {
+									type: 'number',
+									description:
+										'How loud to make it, -40 to -10. Default -14 for speech; about -30 for music under speech.'
+								}
+							}
+						}
+					},
 					intro: {
 						type: 'string',
 						description:
@@ -238,7 +268,8 @@ registerTool({
 					},
 					normalize: {
 						type: 'boolean',
-						description: "Even out each clip's sound to YouTube's -14 LUFS. Default true."
+						description:
+							"Even out each clip's sound, and each audio-track sound, to YouTube's -14 LUFS (or its lufs). Default true."
 					}
 				},
 				required: ['items']
@@ -259,7 +290,7 @@ registerTool({
 		function: {
 			name: 'video_edit',
 			description:
-				'Change one clip on the main track: trim its start or end, remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change.',
+				'Change one clip on the main track: trim its start or end, remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -367,7 +398,7 @@ registerTool({
 		function: {
 			name: 'video_normalize',
 			description:
-				"Measure every clip on the main track again and set its gain so the video sounds even at YouTube's -14 LUFS. Use it when a render's check reports the loudness is off.",
+				"Measure every clip on the main track and every sound on the audio tracks again, and set their gain so the video sounds even at YouTube's -14 LUFS (a sound set to its own lufs keeps it). Use it when a render's check reports the loudness is off.",
 			parameters: {
 				type: 'object',
 				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM }

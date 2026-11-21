@@ -36,6 +36,9 @@ nothing.
 Run `video_cut` with the clips in order, with the intro and outro only if
 the user asks for them. Add `crossfade_secs` only if the user asks for
 crossfades, and never on the first clip. Loudness is evened out on its own.
+A voiceover or music bed goes in `audio` with the time it starts (`at`),
+never in `items`, which would play it after the last clip. Give music under
+speech `lufs: -30`.
 
 Then **stop**. Show the cut (`video_project_read`): the clips, their trims
 and the total length. Ask the user to look before going on. Tell them to

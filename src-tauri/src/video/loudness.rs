@@ -43,10 +43,15 @@ pub struct Gain {
 /// lowered only as far as keeps the limiting within `MAX_LIMITING`. None for
 /// silence.
 pub fn gain_for(m: &Measured) -> Option<Gain> {
+    gain_for_target(m, TARGET_LUFS)
+}
+
+/// As `gain_for`, to `target` LUFS: a music bed sits well under speech.
+pub fn gain_for_target(m: &Measured, target: f64) -> Option<Gain> {
     if !m.lufs.is_finite() || m.lufs < SILENT_LUFS {
         return None;
     }
-    let mut db = (TARGET_LUFS - m.lufs).clamp(-MAX_GAIN, MAX_GAIN);
+    let mut db = (target - m.lufs).clamp(-MAX_GAIN, MAX_GAIN);
     let mut limit = false;
     if let Some(peak) = m.true_peak {
         let over = peak + db - LIMIT_DB;
@@ -64,7 +69,12 @@ pub fn gain_for(m: &Measured) -> Option<Gain> {
 /// How many dB under -14 LUFS a clip stays with its gain: none unless the
 /// ±20 dB bound or the limiting bound held the gain back.
 pub fn short_of_target(m: &Measured, g: &Gain) -> f64 {
-    (TARGET_LUFS - (m.lufs + g.db)).max(0.0)
+    short_of(m, g, TARGET_LUFS)
+}
+
+/// As `short_of_target`, for `target` LUFS.
+pub fn short_of(m: &Measured, g: &Gain, target: f64) -> f64 {
+    (target - (m.lufs + g.db)).max(0.0)
 }
 
 fn cache_path(episode_dir: &Path) -> PathBuf {

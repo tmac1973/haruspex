@@ -27,6 +27,9 @@ use std::path::Path;
 /// Marks a filter or crossfade as Haruspex's: Shotcut keeps properties it
 /// doesn't know, so the marker survives the user saving in Shotcut.
 pub const OURS: &str = "haruspex:ours";
+/// On Haruspex's gain filter: the loudness the gain aims at, when it isn't
+/// -14 LUFS (a music bed under speech).
+pub const OURS_LUFS: &str = "haruspex:lufs";
 
 /// A playlist on the main tractor.
 #[derive(Clone, Debug, PartialEq)]
@@ -426,6 +429,21 @@ impl Doc {
                 .flatten()
                 .and_then(|l| l.rsplit('=').next()?.trim().parse::<f64>().ok())
         })
+    }
+
+    /// The loudness Haruspex's gain on a chain aims at, when it isn't -14 LUFS.
+    pub fn our_lufs(&self, chain: &str) -> Option<f64> {
+        self.our_filters(chain)
+            .into_iter()
+            .find_map(|f| self.tree.property(f, OURS_LUFS)?.trim().parse().ok())
+    }
+
+    /// Indexes into `tracks` of the audio tracks, which hold sound under the
+    /// picture: A1, A2, … in order.
+    pub fn audio_tracks(&self) -> Vec<usize> {
+        (0..self.tracks.len())
+            .filter(|&t| !self.tracks[t].video)
+            .collect()
     }
 
     pub fn our_limiter(&self, chain: &str) -> bool {

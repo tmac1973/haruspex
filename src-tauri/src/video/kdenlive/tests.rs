@@ -112,12 +112,14 @@ fn the_real_project_reads() {
     assert!(obs.video.is_some() && obs.audio.is_some());
     let s = summary(&doc, "/videos", Path::new("/videos/ep010.kdenlive"));
     assert_eq!(s.items[0].path, "ep010/raw/obs.mp4");
-    assert_eq!(s.other_clips.len(), 2);
+    assert_eq!(s.other_clips.len(), 1);
     assert!(s
         .other_clips
         .iter()
         .any(|c| c.track == "V2" && c.path == "intro001/intro.mp4"));
-    assert!(s.other_clips.iter().any(|c| c.track == "A2"));
+    // A2 is an audio track under the picture: Haruspex's to edit.
+    assert_eq!(s.audio.len(), 1);
+    assert_eq!(s.audio[0].track, "A2");
     assert!((s.total_secs - 1948.31).abs() < 0.01);
 }
 

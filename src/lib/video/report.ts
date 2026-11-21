@@ -8,6 +8,7 @@ import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { Format } from '#lib/ipc/gen/Format.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { SummaryItem } from '#lib/ipc/gen/SummaryItem.ts';
+import type { AudioItem } from '#lib/ipc/gen/AudioItem.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
 
@@ -127,6 +128,22 @@ export function itemLine(i: SummaryItem): string {
 	return parts.join(' · ');
 }
 
+/** `1. A1 · ep010/voice.wav · at 0:03.0 · 0:12.0 long · gain +2 dB`. */
+export function audioLine(a: AudioItem): string {
+	const parts = [
+		`${a.index}. ${a.track} · ${a.path}`,
+		`at ${formatTime(a.startSecs)}`,
+		`${formatTime(a.durationSecs)} long`,
+		`file ${formatTime(a.sourceInSecs)}–${formatTime(a.sourceOutSecs)}`
+	];
+	if (a.gainDb != null) {
+		const limited = a.limited ? ', peaks limited' : '';
+		parts.push(`gain ${a.gainDb > 0 ? '+' : ''}${a.gainDb} dB${limited}`);
+	}
+	if (a.lufs != null) parts.push(`set to ${a.lufs} LUFS`);
+	return parts.join(' · ');
+}
+
 /** Each project format's editor, as the user knows it. */
 export const EDITOR_NAMES: Record<Format, string> = { shotcut: 'Shotcut', kdenlive: 'Kdenlive' };
 
@@ -139,6 +156,10 @@ export function summaryReport(p: ProjectSummary): string {
 	if (p.items.length === 0) lines.push('The main track (V1/A1) is empty.');
 	else lines.push('Main track (V1/A1), in order:');
 	for (const i of p.items) lines.push(itemLine(i));
+	if (p.audio.length > 0) {
+		lines.push("Audio tracks, under the picture (video_cut's audio), in time order:");
+		for (const a of p.audio) lines.push(audioLine(a));
+	}
 	if (p.otherClips.length > 0) {
 		lines.push('On other tracks (not edited by these tools):');
 		for (const c of p.otherClips) {
@@ -194,7 +215,8 @@ export function timelineTranscriptReport(
 	let used = 0;
 	for (const l of t.lines) {
 		if (l.start < from - 0.05) continue;
-		const line = `[${formatDuration(l.start)}] ${l.text}`;
+		const source = l.audio ? ` (audio ${l.index})` : '';
+		const line = `[${formatDuration(l.start)}]${source} ${l.text}`;
 		if (used + line.length > cap) {
 			// Say where the rest starts, so it isn't read as speech that isn't there.
 			const at = formatTime(l.start);
@@ -208,5 +230,11 @@ export function timelineTranscriptReport(
 	}
 	if (t.lines.length === 0) lines.push('(nothing transcribed yet: use video_transcribe)');
 	if (t.untranscribed.length > 0) lines.push(untranscribedNote(t, items));
+	if (t.untranscribedAudio.length > 0) {
+		const n = t.untranscribedAudio;
+		lines.push(
+			`Audio-track item${n.length === 1 ? '' : 's'} ${n.join(', ')} ${n.length === 1 ? 'has' : 'have'} no transcript yet.`
+		);
+	}
 	return lines.join('\n');
 }

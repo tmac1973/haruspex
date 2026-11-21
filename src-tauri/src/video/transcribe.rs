@@ -607,6 +607,9 @@ pub struct TimelineLine {
     pub text: String,
     /// The clip it is from, 1-based.
     pub index: u32,
+    /// From an item on the audio tracks under the picture (a voiceover):
+    /// `index` then numbers those.
+    pub audio: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -618,6 +621,8 @@ pub struct TimelineTranscript {
     pub lines: Vec<TimelineLine>,
     /// Clips with no transcript yet, 1-based.
     pub untranscribed: Vec<u32>,
+    /// Audio-track items with no transcript yet, 1-based.
+    pub untranscribed_audio: Vec<u32>,
     pub total_secs: f64,
 }
 
@@ -632,7 +637,8 @@ pub fn timeline_transcript(
     let path = super::project::default_project(working_dir, episode, project, None)?;
     let doc = ProjectDoc::open(&path)?;
     let episode_dir = paths::resolve_episode(working_dir, episode)?;
-    let spans = doc.spans();
+    let mut spans = doc.spans();
+    spans.extend(doc.audio_spans());
     let (lines, missing) = timeline::lines(&spans, |file| {
         cached(&episode_dir, file).map(|t| t.segments)
     });
@@ -645,9 +651,15 @@ pub fn timeline_transcript(
                 end: l.end,
                 text: l.text.clone(),
                 index: l.index as u32,
+                audio: l.audio,
             })
             .collect(),
-        untranscribed: missing.into_iter().map(|i| i as u32).collect(),
+        untranscribed: missing
+            .iter()
+            .filter(|m| !m.1)
+            .map(|m| m.0 as u32)
+            .collect(),
+        untranscribed_audio: missing.iter().filter(|m| m.1).map(|m| m.0 as u32).collect(),
         total_secs: doc.fps().secs(doc.sequence_end()),
     };
     Ok((t, lines, path))

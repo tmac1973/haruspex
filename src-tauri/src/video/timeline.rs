@@ -57,6 +57,109 @@ impl Placement {
     }
 }
 
+/// Where a sound under the picture comes from.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AudioSource {
+    /// The audio-track item with this index in `ProjectDoc::audio_clips`.
+    Existing(usize),
+    New(Media),
+}
+
+/// One item of the wanted audio tracks: a sound placed at a time in the
+/// video, under the picture, on a track of its own.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioPlacement {
+    pub source: AudioSource,
+    /// Where it starts on the timeline, in frames.
+    pub at: i64,
+    pub in_frame: Option<i64>,
+    pub out_frame: Option<i64>,
+    /// Index into the doc's audio tracks (`AudioClip::track`); one past the
+    /// last asks for a new track.
+    pub track: usize,
+    /// As `Placement::gain_db`.
+    pub gain_db: Option<f64>,
+    pub limiter: bool,
+    /// The loudness its gain aims at, kept with the gain; `None` is -14 LUFS.
+    pub lufs: Option<f64>,
+}
+
+/// A clip on one of the audio tracks under the picture.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioClip {
+    /// Index into the doc's audio tracks, bottom (nearest the main track) first.
+    pub track: usize,
+    /// "A1", "A2", as the editor shows it.
+    pub track_name: String,
+    pub resource: String,
+    pub start: i64,
+    pub in_frame: i64,
+    pub out_frame: i64,
+    /// The file's audio stream it plays, when it has one.
+    pub stream: Option<u32>,
+    pub gain_db: Option<f64>,
+    pub limited: bool,
+    pub lufs: Option<f64>,
+}
+
+impl AudioClip {
+    pub fn len(&self) -> i64 {
+        self.out_frame - self.in_frame + 1
+    }
+}
+
+/// The current audio tracks as placements: applying them changes nothing.
+pub fn current_audio(clips: &[AudioClip]) -> Vec<AudioPlacement> {
+    clips
+        .iter()
+        .enumerate()
+        .map(|(i, c)| AudioPlacement {
+            source: AudioSource::Existing(i),
+            at: c.start,
+            in_frame: None,
+            out_frame: None,
+            track: c.track,
+            gain_db: None,
+            limiter: false,
+            lufs: None,
+        })
+        .collect()
+}
+
+/// Put each placement on a track where it overlaps nothing: the one it is on
+/// when it still fits there, else the lowest that fits, else a new one.
+/// Items already on a track choose first, so adding a sound leaves them be.
+/// `lens` is each placement's length in frames; the project has `tracks`
+/// audio tracks already.
+pub fn assign_audio_tracks(wanted: &mut [AudioPlacement], lens: &[i64], tracks: usize) {
+    let mut order: Vec<usize> = (0..wanted.len()).collect();
+    order.sort_by_key(|&k| {
+        let new = matches!(wanted[k].source, AudioSource::New(_));
+        (new, wanted[k].at, k)
+    });
+    let mut busy: Vec<Vec<(i64, i64)>> = vec![Vec::new(); tracks];
+    let fits = |busy: &Vec<Vec<(i64, i64)>>, t: usize, a: i64, b: i64| {
+        busy.get(t)
+            .is_none_or(|spans| spans.iter().all(|&(x, y)| b <= x || a >= y))
+    };
+    for k in order {
+        let (a, b) = (wanted[k].at, wanted[k].at + lens[k].max(1));
+        let preferred = wanted[k].track;
+        let t = if preferred < busy.len() && fits(&busy, preferred, a, b) {
+            preferred
+        } else {
+            (0..=busy.len())
+                .find(|&t| fits(&busy, t, a, b))
+                .unwrap_or(busy.len())
+        };
+        if busy.len() <= t {
+            busy.resize(t + 1, Vec::new());
+        }
+        busy[t].push((a, b));
+        wanted[k].track = t;
+    }
+}
+
 #[derive(Debug)]
 pub struct Edited {
     pub text: String,
@@ -94,6 +197,38 @@ pub struct Span {
     pub start: f64,
     pub source_in: f64,
     pub source_out: f64,
+    /// On an audio track under the picture; `index` then counts those items.
+    pub audio: bool,
+}
+
+/// The audio-track clips as spans, numbered from 1 in time order as the
+/// tools list them.
+pub fn audio_spans(
+    clips: &[AudioClip],
+    root_dir: &str,
+    fps: crate::video::mlt::fps::Fps,
+) -> Vec<Span> {
+    let mut order: Vec<&AudioClip> = clips.iter().collect();
+    order.sort_by_key(|c| (c.start, c.track));
+    order
+        .into_iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let p = Path::new(&c.resource);
+            Span {
+                index: i + 1,
+                file: if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    Path::new(root_dir).join(p)
+                },
+                start: fps.secs(c.start),
+                source_in: fps.secs(c.in_frame),
+                source_out: fps.secs(c.out_frame + 1),
+                audio: true,
+            }
+        })
+        .collect()
 }
 
 /// Which item shows the cut at `t` seconds, and the moment of its source.
@@ -112,18 +247,21 @@ pub struct Line {
     pub end: f64,
     pub text: String,
     pub index: usize,
+    /// From an audio-track item, as `Span::audio`.
+    pub audio: bool,
 }
 
 /// Shorter than this, a stretch of speech left by a cut is a sliver, not a line.
 const MIN_LINE_SECS: f64 = 0.3;
 
-/// Each span's transcribed speech, mapped into the cut. A segment shows once,
+/// Each span's transcribed speech, mapped into the cut. Main-track and
+/// audio-track spans of one file are told apart. A segment shows once,
 /// in the piece that plays most of it (a clip split by a cut would otherwise
 /// say its sentence twice), clipped to that piece; slivers are left out.
 pub fn lines(
     spans: &[Span],
     transcript_for: impl Fn(&Path) -> Option<Vec<crate::whisper::Segment>>,
-) -> (Vec<Line>, Vec<usize>) {
+) -> (Vec<Line>, Vec<(usize, bool)>) {
     let mut out = Vec::new();
     let mut missing = Vec::new();
     let mut transcripts: std::collections::HashMap<PathBuf, Option<Vec<crate::whisper::Segment>>> =
@@ -133,7 +271,7 @@ pub fn lines(
             .entry(span.file.clone())
             .or_insert_with(|| transcript_for(&span.file));
         if segments.is_none() {
-            missing.push(span.index);
+            missing.push((span.index, span.audio));
         }
     }
     let overlap = |span: &Span, s: &crate::whisper::Segment| {
@@ -141,24 +279,30 @@ pub fn lines(
     };
     for (file, segments) in &transcripts {
         let Some(segments) = segments else { continue };
-        let pieces: Vec<&Span> = spans.iter().filter(|s| &s.file == file).collect();
-        for s in segments {
-            let best = pieces
+        for audio in [false, true] {
+            let pieces: Vec<&Span> = spans
                 .iter()
-                .filter(|p| overlap(p, s) > 0.0)
-                .max_by(|a, b| overlap(a, s).total_cmp(&overlap(b, s)));
-            let Some(span) = best else { continue };
-            if overlap(span, s) < MIN_LINE_SECS {
-                continue;
+                .filter(|s| &s.file == file && s.audio == audio)
+                .collect();
+            for s in segments {
+                let best = pieces
+                    .iter()
+                    .filter(|p| overlap(p, s) > 0.0)
+                    .max_by(|a, b| overlap(a, s).total_cmp(&overlap(b, s)));
+                let Some(span) = best else { continue };
+                if overlap(span, s) < MIN_LINE_SECS {
+                    continue;
+                }
+                let from = s.start.max(span.source_in);
+                let to = s.end.min(span.source_out);
+                out.push(Line {
+                    start: span.start + from - span.source_in,
+                    end: span.start + to - span.source_in,
+                    text: s.text.clone(),
+                    index: span.index,
+                    audio,
+                });
             }
-            let from = s.start.max(span.source_in);
-            let to = s.end.min(span.source_out);
-            out.push(Line {
-                start: span.start + from - span.source_in,
-                end: span.start + to - span.source_in,
-                text: s.text.clone(),
-                index: span.index,
-            });
         }
     }
     out.sort_by(|a, b| a.start.total_cmp(&b.start));
@@ -168,6 +312,41 @@ pub fn lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_that_overlaps_goes_on_another_track_and_kept_items_stay() {
+        let p = |source: AudioSource, at: i64, track: usize| AudioPlacement {
+            source,
+            at,
+            in_frame: None,
+            out_frame: None,
+            track,
+            gain_db: None,
+            limiter: false,
+            lufs: None,
+        };
+        let media = Media {
+            resource: "bed.wav".into(),
+            length: 100,
+            video_index: None,
+            audio_index: Some(0),
+            file_size: 0,
+            file_hash: String::new(),
+        };
+        // A voice already on A1 at 30; a bed from 0 joins it.
+        let mut w = vec![
+            p(AudioSource::Existing(0), 30, 0),
+            p(AudioSource::New(media.clone()), 0, 0),
+            p(AudioSource::New(media), 200, 0),
+        ];
+        assign_audio_tracks(&mut w, &[20, 100, 100], 1);
+        let tracks: Vec<usize> = w.iter().map(|x| x.track).collect();
+        assert_eq!(tracks, [0, 1, 0]);
+        // One on a track that no longer exists moves to the lowest free.
+        let mut w = vec![p(AudioSource::Existing(0), 0, 3)];
+        assign_audio_tracks(&mut w, &[10], 1);
+        assert_eq!(w[0].track, 0);
+    }
     use crate::whisper::Segment;
 
     fn span(index: usize, file: &str, start: f64, source_in: f64, source_out: f64) -> Span {
@@ -177,6 +356,7 @@ mod tests {
             start,
             source_in,
             source_out,
+            audio: false,
         }
     }
 
@@ -236,7 +416,7 @@ mod tests {
                 (11.0, 14.0, "two")
             ]
         );
-        assert_eq!(missing, [3]);
+        assert_eq!(missing, [(3, false)]);
     }
 
     #[test]

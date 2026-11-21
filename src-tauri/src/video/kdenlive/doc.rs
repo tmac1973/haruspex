@@ -78,6 +78,9 @@ pub struct Mix {
 
 /// The property that marks a filter or transition as Haruspex's own.
 pub const OURS: &str = "kdenlive:haruspex";
+/// On Haruspex's Volume filter: the loudness the gain aims at, when it isn't
+/// -14 LUFS (a music bed under speech).
+pub const OURS_LUFS: &str = "kdenlive:haruspex_lufs";
 
 /// A clip on the main track: its picture and its sound, together.
 #[derive(Clone, Debug, PartialEq)]
@@ -384,6 +387,22 @@ impl Doc {
                 let value = level.rsplit('=').next()?.trim().parse::<f64>().ok()?;
                 Some((f, value))
             })
+    }
+
+    /// The loudness Haruspex's gain on an entry aims at, when it isn't -14 LUFS.
+    pub fn our_lufs(&self, entry: usize) -> Option<f64> {
+        self.our_filters(entry)
+            .into_iter()
+            .find_map(|f| self.tree.property(f, OURS_LUFS)?.trim().parse().ok())
+    }
+
+    /// Indexes into `tracks` of the audio tracks above A1, which hold sound
+    /// under the picture: A2, A3, … in order.
+    pub fn audio_tracks(&self) -> Vec<usize> {
+        (0..self.main_audio)
+            .rev()
+            .filter(|&t| self.tracks[t].audio)
+            .collect()
     }
 
     /// The highest number in any element id of the form `<prefix><n>`,

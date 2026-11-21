@@ -209,16 +209,24 @@ pub async fn start_render(
         return Err("The project is empty: there is nothing to render.".into());
     }
     let expected = doc.fps().secs(frames);
-    let items = doc.summary(&req.working_dir, &project_path).items;
-    let with_sound: Vec<_> = items.iter().filter(|i| i.has_audio).collect();
+    // Every sound the project plays: the main track's clips with sound and
+    // the audio tracks under the picture.
+    let summary = doc.summary(&req.working_dir, &project_path);
+    let sounds: Vec<(Option<f64>, &String)> = summary
+        .items
+        .iter()
+        .filter(|i| i.has_audio)
+        .map(|i| (i.gain_db, &i.path))
+        .chain(summary.audio.iter().map(|a| (a.gain_db, &a.path)))
+        .collect();
     let gains = check::Gains {
         // Clips whose gain is at its bound, so normalising can't raise them.
-        at_limit: items
+        at_limit: sounds
             .iter()
-            .filter(|i| i.gain_db.is_some_and(|g| g >= MAX_GAIN - 0.05))
-            .map(|i| i.path.clone())
+            .filter(|(g, _)| g.is_some_and(|g| g >= MAX_GAIN - 0.05))
+            .map(|(_, p)| (*p).clone())
             .collect(),
-        normalized: !with_sound.is_empty() && with_sound.iter().all(|i| i.gain_db.is_some()),
+        normalized: !sounds.is_empty() && sounds.iter().all(|(g, _)| g.is_some()),
     };
     let fps = doc.fps().num as f64 / doc.fps().den as f64;
     let episode_dir = project::episode_home(&req.working_dir, &req.episode, &project_path)?;
@@ -618,6 +626,176 @@ mod tests {
                 .iter()
                 .any(|t| t.state == TaskState::Running));
         }
+    }
+
+    /// A voiceover on the audio track renders under the picture, starting
+    /// where it was put, in each editor's format; in Shotcut a music bed
+    /// under it gets a second audio track. Skipped without melt, as above.
+    #[tokio::test]
+    async fn render_a_voiceover_under_the_picture_in_both_editors() {
+        let found = binaries::resolve(&Default::default()).await;
+        if found.melt.is_none() || found.ffmpeg.is_none() || found.ffprobe.is_none() {
+            eprintln!("skipped: needs ffmpeg, ffprobe and melt");
+            return;
+        }
+        let ffmpeg = found.ffmpeg.unwrap().path;
+        let make = |args: Vec<String>| {
+            let ffmpeg = ffmpeg.clone();
+            async move {
+                let mut cmd = tokio::process::Command::new(&ffmpeg);
+                cmd.args(["-v", "error", "-y"]).args(args);
+                crate::video::prepare_child(&mut cmd);
+                assert!(cmd.status().await.unwrap().success());
+            }
+        };
+        for editor in [Format::Shotcut, Format::Kdenlive] {
+            let dir = temp_dir(&format!("render_voiceover_{}", editor.extension()));
+            let ep = dir.join("ep1");
+            std::fs::create_dir_all(&ep).unwrap();
+            // Two silent 4 s clips, a 2 s "voice" and an 8 s "bed".
+            for (name, src) in [("a.mp4", "testsrc"), ("b.mp4", "smptebars")] {
+                make(vec![
+                    "-f".into(),
+                    "lavfi".into(),
+                    "-i".into(),
+                    format!("{src}=s=640x360:r=30:d=4"),
+                    "-c:v".into(),
+                    "libx264".into(),
+                    ep.join(name).to_string_lossy().into_owned(),
+                ])
+                .await;
+            }
+            for (name, f, d) in [("voice.wav", 440, 2), ("bed.wav", 220, 8)] {
+                make(vec![
+                    "-f".into(),
+                    "lavfi".into(),
+                    "-i".into(),
+                    format!("sine=f={f}:d={d}"),
+                    "-ac".into(),
+                    "2".into(),
+                    ep.join(name).to_string_lossy().into_owned(),
+                ])
+                .await;
+            }
+            let wd = dir.to_string_lossy().into_owned();
+            let settings = VideoSettings {
+                preset: "1080p30".into(),
+                editor,
+                ..Default::default()
+            };
+            let spec = project::CutSpec {
+                items: ["ep1/a.mp4", "ep1/b.mp4"]
+                    .iter()
+                    .map(|p| project::CutItemSpec {
+                        path: Some(p.to_string()),
+                        ..Default::default()
+                    })
+                    .collect(),
+                audio: Some(vec![project::CutAudioSpec {
+                    path: Some("ep1/voice.wav".into()),
+                    at_secs: Some(3.0),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            let cut = project::cut(&wd, "ep1", spec, &settings).await.unwrap();
+            assert_eq!(cut.summary.audio.len(), 1, "{editor:?}");
+            let voice = &cut.summary.audio[0];
+            assert!((voice.start_secs - 3.0).abs() < 0.05, "{voice:?}");
+            assert!(voice.gain_db.is_some(), "{voice:?}");
+            assert!(
+                (cut.summary.total_secs - 8.0).abs() < 0.05,
+                "{editor:?}: {}",
+                cut.summary.total_secs
+            );
+            let render = render_now(&wd, &settings).await;
+            let check = render.check.as_ref().unwrap();
+            assert!((check.duration_secs - 8.0).abs() < 0.2, "{check:?}");
+            assert!(check.has_audio);
+            // Silence until 3 s, the voice to 5 s, silence after.
+            let file = dir.join(&render.path);
+            let quiet = crate::video::silence::detect(&ffmpeg, &file, -40.0, 0.5, None)
+                .await
+                .unwrap();
+            println!("{editor:?}: {quiet:?}");
+            assert_eq!(quiet.len(), 2, "{editor:?}: {quiet:?}");
+            assert!(
+                quiet[0].start < 0.1 && (quiet[0].end - 3.0).abs() < 0.15,
+                "{quiet:?}"
+            );
+            assert!((quiet[1].start - 5.0).abs() < 0.15, "{quiet:?}");
+
+            if editor == Format::Shotcut {
+                // A bed under the voice from the start: a second audio track.
+                let spec = project::CutSpec {
+                    items: vec![
+                        project::CutItemSpec {
+                            index: Some(1),
+                            ..Default::default()
+                        },
+                        project::CutItemSpec {
+                            index: Some(2),
+                            ..Default::default()
+                        },
+                    ],
+                    audio: Some(vec![
+                        project::CutAudioSpec {
+                            index: Some(1),
+                            at_secs: Some(3.0),
+                            ..Default::default()
+                        },
+                        project::CutAudioSpec {
+                            path: Some("ep1/bed.wav".into()),
+                            lufs: Some(-30.0),
+                            ..Default::default()
+                        },
+                    ]),
+                    ..Default::default()
+                };
+                let cut = project::cut(&wd, "ep1", spec, &settings).await.unwrap();
+                let tracks: Vec<(&str, &str)> = cut
+                    .summary
+                    .audio
+                    .iter()
+                    .map(|a| (a.track.as_str(), a.path.as_str()))
+                    .collect();
+                assert_eq!(tracks, [("A2", "ep1/bed.wav"), ("A1", "ep1/voice.wav")]);
+                assert_eq!(cut.summary.audio[0].lufs, Some(-30.0));
+                let render = render_now(&wd, &settings).await;
+                let file = dir.join(&render.path);
+                let quiet = crate::video::silence::detect(&ffmpeg, &file, -50.0, 0.5, None)
+                    .await
+                    .unwrap();
+                assert!(quiet.is_empty(), "the bed plays throughout: {quiet:?}");
+                let l = render.check.unwrap().loudness.unwrap();
+                println!("with the bed: {l:?}");
+            }
+        }
+    }
+
+    /// Render the episode's project and wait for it.
+    async fn render_now(wd: &str, settings: &VideoSettings) -> RenderResult {
+        let tasks = BackgroundTasks::new(None, Arc::new(|_| {}), Arc::new(|_| {}));
+        let req = RenderRequest {
+            working_dir: wd.to_string(),
+            episode: "ep1".into(),
+            project: None,
+            owner: "chat:test".into(),
+            encoder: String::new(),
+            settings: settings.clone(),
+        };
+        let started = start_render(tasks.clone(), VideoTasks::new(None), req)
+            .await
+            .unwrap();
+        let done = loop {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let t = tasks.get(&started.id).unwrap();
+            if t.state != TaskState::Running {
+                break t;
+            }
+        };
+        assert_eq!(done.state, TaskState::Done, "{:?}", done.error);
+        serde_json::from_value(done.result.unwrap()).unwrap()
     }
 
     #[test]

@@ -17,7 +17,7 @@
 //! Everything else in the file is left as it was. A kept item keeps its whole
 //! `<entry>`, effects included; only its `in` and `out` change.
 
-use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS};
+use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS, OURS_LUFS};
 use crate::video::mlt::xml::{escape, Splices};
 use crate::video::timeline::{Edited, Media, Placement, Source};
 use std::collections::{HashMap, HashSet};
@@ -262,9 +262,12 @@ fn assign_lanes(laid: &mut [Laid], mixes: &[(usize, usize, i64)]) -> Result<(), 
 }
 
 /// Haruspex's Volume filter, as Kdenlive writes a Volume effect.
-fn gain_filter(id: &str, gain_db: f64) -> String {
+fn gain_filter(id: &str, gain_db: f64, lufs: Option<f64>) -> String {
     let g = format!("{gain_db:.2}");
     let g = g.trim_end_matches('0').trim_end_matches('.');
+    let target = lufs.map_or(String::new(), |l| {
+        format!("    <property name=\"{OURS_LUFS}\">{l}</property>\n")
+    });
     format!(
         "   <filter id=\"{id}\">\n\
          \x20   <property name=\"window\">75</property>\n\
@@ -275,6 +278,7 @@ fn gain_filter(id: &str, gain_db: f64) -> String {
          \x20   <property name=\"kdenlive_id\">volume</property>\n\
          \x20   <property name=\"kdenlive:collapsed\">0</property>\n\
          \x20   <property name=\"{OURS}\">1</property>\n\
+         {target}\
          \x20  </filter>\n"
     )
 }
@@ -307,10 +311,11 @@ fn limiter_filter(id: &str) -> String {
 
 /// What to write for a clip's sound: its gain and, when its peaks need one,
 /// a limiter, with the ids they get.
-struct GainWrite {
-    db: f64,
-    volume_id: String,
-    limiter_id: Option<String>,
+pub(super) struct GainWrite {
+    pub db: f64,
+    pub volume_id: String,
+    pub limiter_id: Option<String>,
+    pub lufs: Option<f64>,
 }
 
 /// A same-track mix as Kdenlive writes one: `luma` on a video track, `mix` on
@@ -375,7 +380,7 @@ fn mix_transition(
 }
 
 /// The text of an element's start tag with some attributes set.
-fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
+pub(super) fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
     let n = doc.tree.node(node);
     let mut out = format!("<{}", n.name);
     for (k, v) in &n.attrs {
@@ -391,7 +396,7 @@ fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
 }
 
 /// Replace a start tag's attributes, if any value differs.
-fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
+pub(super) fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
     let n = doc.tree.node(node);
     if set.iter().all(|(k, v)| n.attr(k) == Some(v.as_str())) {
         return;
@@ -405,7 +410,13 @@ fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String
 }
 
 /// Set a `<property>`'s value, if it differs.
-fn set_property(doc: &Doc, splices: &mut Splices, owner: usize, name: &str, value: &str) {
+pub(super) fn set_property(
+    doc: &Doc,
+    splices: &mut Splices,
+    owner: usize,
+    name: &str,
+    value: &str,
+) {
     if let Some(p) = doc.tree.property_node(owner, name) {
         if doc.tree.node(p).text != value {
             splices.replace(
@@ -422,7 +433,7 @@ fn set_property(doc: &Doc, splices: &mut Splices, owner: usize, name: &str, valu
 
 /// The whole line an element sits on (its indent through its newline), for
 /// removing it.
-fn line_of(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
+pub(super) fn line_of(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
     let start = text[..span.start].rfind('\n').map_or(span.start, |i| i + 1);
     let start = if text[start..span.start].trim().is_empty() {
         start
@@ -437,13 +448,13 @@ fn line_of(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
     start..end
 }
 
-fn new_uuid() -> String {
+pub(super) fn new_uuid() -> String {
     format!("{{{}}}", uuid::Uuid::new_v4())
 }
 
 /// A chain for new media, as Kdenlive writes one. `track` is `Some(audio?)`
 /// for a timeline instance, `None` for the bin clip.
-fn chain_text(
+pub(super) fn chain_text(
     fps: Fps,
     id: &str,
     kdenlive_id: &str,
@@ -501,10 +512,16 @@ fn chain_text(
 }
 
 /// One playlist's wanted contents: `(start, entry text, original entry)`.
-type Lane = Vec<(i64, i64, String, Option<usize>, i64, i64)>;
+pub(super) type Lane = Vec<(i64, i64, String, Option<usize>, i64, i64)>;
 
 /// Rewrite a playlist's clips, or leave it alone when nothing about them changed.
-fn rewrite_playlist(doc: &Doc, splices: &mut Splices, playlist: usize, lane: usize, wanted: &Lane) {
+pub(super) fn rewrite_playlist(
+    doc: &Doc,
+    splices: &mut Splices,
+    playlist: usize,
+    lane: usize,
+    wanted: &Lane,
+) {
     let current = doc.entries(playlist, lane);
     let same = current.len() == wanted.len()
         && current
@@ -567,21 +584,24 @@ fn rewrite_playlist(doc: &Doc, splices: &mut Splices, playlist: usize, lane: usi
 
 /// The entry text for a laid clip on one track. `gain` (on the sound only)
 /// replaces Haruspex's Volume filter: `Some(0)` removes it, `None` leaves it.
-fn entry_text(
+#[allow(clippy::too_many_arguments)]
+pub(super) fn entry_text(
     doc: &Doc,
     fps: Fps,
-    l: &Laid,
+    in_frame: i64,
+    out_frame: i64,
+    bin_id: &str,
     old: Option<&Entry>,
     chain: &str,
     gain: Option<GainWrite>,
 ) -> String {
-    let in_tc = fps.timecode(l.in_frame);
-    let out_tc = fps.timecode(l.out_frame);
+    let in_tc = fps.timecode(in_frame);
+    let out_tc = fps.timecode(out_frame);
     // Volume, then the Limiter that catches what the gain pushed over.
     let filter = gain.as_ref().and_then(|g| {
         let mut text = String::new();
         if g.db.abs() >= 0.01 {
-            text.push_str(&gain_filter(&g.volume_id, g.db));
+            text.push_str(&gain_filter(&g.volume_id, g.db, g.lufs));
         }
         if let Some(id) = &g.limiter_id {
             text.push_str(&limiter_filter(id));
@@ -628,14 +648,14 @@ fn entry_text(
         }
         None => format!(
             "<entry in=\"{in_tc}\" out=\"{out_tc}\" producer=\"{chain}\">\n   <property name=\"kdenlive:id\">{}</property>\n{}  </entry>",
-            l.bin_id,
+            bin_id,
             filter.unwrap_or_default()
         ),
     }
 }
 
 /// Kdenlive's groups layout: four-space indents, a newline after the list.
-fn groups_text(groups: &serde_json::Value) -> String {
+pub(super) fn groups_text(groups: &serde_json::Value) -> String {
     use serde::Serialize;
     let list = groups.as_array().map_or(0, Vec::len);
     if list == 0 {
@@ -652,7 +672,10 @@ fn groups_text(groups: &serde_json::Value) -> String {
 
 /// Move main-track leaves to their clips' new positions, drop leaves of
 /// removed clips, and drop groups left with one member.
-fn remap_groups(value: &mut serde_json::Value, moves: &HashMap<(usize, i64), Option<i64>>) -> bool {
+pub(super) fn remap_groups(
+    value: &mut serde_json::Value,
+    moves: &HashMap<(usize, i64), Option<i64>>,
+) -> bool {
     use serde_json::Value;
     let mut changed = false;
     if let Some(children) = value.get_mut("children").and_then(Value::as_array_mut) {
@@ -727,35 +750,10 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
     let mut next_id = doc.max_kdenlive_id() + 1;
     let mut next_chain = doc.max_id_number("chain") + 1;
     let mut new_chains = String::new();
-    let mut new_bin_chains = String::new();
-    let mut new_bin_entries = String::new();
-    let bin = doc.bin_clips();
-    let mut added_bin: HashMap<String, (String, String)> = HashMap::new();
+    let mut bins = BinAdds::new(doc);
     for l in laid.iter_mut() {
         let Source::New(m) = &l.source else { continue };
-        let existing = bin
-            .iter()
-            .find(|b| b.resource == m.resource)
-            .map(|b| (b.kdenlive_id.clone(), b.uuid.clone()))
-            .or_else(|| added_bin.get(&m.resource).cloned());
-        let (kid, uuid) = match existing {
-            Some(found) => found,
-            None => {
-                let kid = next_id.to_string();
-                next_id += 1;
-                let uuid = new_uuid();
-                let id = format!("chain{next_chain}");
-                next_chain += 1;
-                new_bin_chains.push_str(&chain_text(fps, &id, &kid, &uuid, m, None));
-                new_bin_entries.push_str(&format!(
-                    "\n  <entry in=\"{}\" out=\"{}\" producer=\"{id}\"/>",
-                    fps.timecode(0),
-                    fps.timecode(m.length - 1)
-                ));
-                added_bin.insert(m.resource.clone(), (kid.clone(), uuid.clone()));
-                (kid, uuid)
-            }
-        };
+        let (kid, uuid) = bins.clip_for(doc, m, &mut next_id, &mut next_chain);
         l.bin_id = kid.clone();
         if m.audio_index.is_some() {
             let id = format!("chain{next_chain}");
@@ -853,12 +851,22 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     db,
                     volume_id,
                     limiter_id,
+                    lufs: None,
                 }
             });
             lanes[lane].push((
                 l.start,
                 l.len(),
-                entry_text(doc, fps, l, old, &chain, gain),
+                entry_text(
+                    doc,
+                    fps,
+                    l.in_frame,
+                    l.out_frame,
+                    &l.bin_id,
+                    old,
+                    &chain,
+                    gain,
+                ),
                 old.map(|e| e.node),
                 l.in_frame,
                 l.out_frame,
@@ -910,16 +918,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         let at = line_of(&doc.text, first..first).start;
         splices.insert(at, new_chains);
     }
-    if !new_bin_chains.is_empty() {
-        let at = line_of(&doc.text, doc.tree.node(doc.bin).span.clone()).start;
-        splices.insert(at, new_bin_chains);
-        let bin_node = doc.tree.node(doc.bin);
-        let last = bin_node
-            .children
-            .last()
-            .map_or(bin_node.inner_start, |&c| doc.tree.node(c).span.end);
-        splices.insert(last, new_bin_entries);
-    }
+    bins.write(doc, &mut splices);
 
     // Groups: moved leaves follow their clips; new clips get an AVSplit.
     let mut moves: HashMap<(usize, i64), Option<i64>> = HashMap::new();
@@ -1071,7 +1070,12 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         .max()
         .unwrap_or(0);
     let total = main_end.max(others);
-    if others > 0 {
+    // The audio tracks above A1 are Haruspex's too, and follow the main track.
+    let overlay = doc.audio_tracks();
+    let others_left = (0..doc.tracks.len())
+        .filter(|&t| t != doc.main_video && t != doc.main_audio && !overlay.contains(&t))
+        .any(|t| doc.track_end(t) > 0);
+    if others_left {
         notes.push("Clips on other tracks did not move.".into());
     }
     let last = |end: i64| fps.timecode((end - 1).max(0));
@@ -1087,43 +1091,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         doc.tracks[doc.main_audio].tractor,
         &[("out", last(audio_end))],
     );
-    set_attrs(doc, &mut splices, doc.sequence, &[("out", last(total))]);
-    set_property(
-        doc,
-        &mut splices,
-        doc.sequence,
-        "kdenlive:duration",
-        &fps.timecode(total),
-    );
-    set_property(
-        doc,
-        &mut splices,
-        doc.sequence,
-        "kdenlive:maxduration",
-        &total.to_string(),
-    );
-    if let Some(pt) = doc.project_tractor {
-        set_attrs(doc, &mut splices, pt, &[("out", last(total))]);
-        if let Some(t) = doc.tree.children_named(pt, "track").next() {
-            set_attrs(doc, &mut splices, t, &[("out", last(total))]);
-        }
-    }
-    if let Some(black) = doc.black {
-        let current = doc
-            .tree
-            .node(black)
-            .attr("out")
-            .and_then(|o| fps.parse(o))
-            .unwrap_or(0);
-        if current < total {
-            set_attrs(
-                doc,
-                &mut splices,
-                black,
-                &[("out", fps.timecode(total + fps.frames(300.0)))],
-            );
-        }
-    }
+    set_sequence_length(doc, &mut splices, total);
 
     Ok(Edited {
         text: splices.apply(&doc.text)?,
@@ -1150,4 +1118,117 @@ pub fn current(doc: &Doc) -> Vec<Placement> {
             p
         })
         .collect()
+}
+
+/// Bin clips for new media, added once per file.
+pub(super) struct BinAdds {
+    bin: Vec<super::doc::BinClip>,
+    added: HashMap<String, (String, String)>,
+    chains: String,
+    entries: String,
+}
+
+impl BinAdds {
+    pub fn new(doc: &Doc) -> BinAdds {
+        BinAdds {
+            bin: doc.bin_clips(),
+            added: HashMap::new(),
+            chains: String::new(),
+            entries: String::new(),
+        }
+    }
+
+    /// The bin clip's `kdenlive:id` and uuid for `m`, adding one when the bin
+    /// has none.
+    pub fn clip_for(
+        &mut self,
+        doc: &Doc,
+        m: &Media,
+        next_id: &mut i64,
+        next_chain: &mut i64,
+    ) -> (String, String) {
+        let existing = self
+            .bin
+            .iter()
+            .find(|b| b.resource == m.resource)
+            .map(|b| (b.kdenlive_id.clone(), b.uuid.clone()))
+            .or_else(|| self.added.get(&m.resource).cloned());
+        if let Some(found) = existing {
+            return found;
+        }
+        let fps = doc.fps;
+        let kid = next_id.to_string();
+        *next_id += 1;
+        let uuid = new_uuid();
+        let id = format!("chain{next_chain}");
+        *next_chain += 1;
+        self.chains
+            .push_str(&chain_text(fps, &id, &kid, &uuid, m, None));
+        self.entries.push_str(&format!(
+            "\n  <entry in=\"{}\" out=\"{}\" producer=\"{id}\"/>",
+            fps.timecode(0),
+            fps.timecode(m.length - 1)
+        ));
+        self.added
+            .insert(m.resource.clone(), (kid.clone(), uuid.clone()));
+        (kid, uuid)
+    }
+
+    pub fn write(self, doc: &Doc, splices: &mut Splices) {
+        if self.chains.is_empty() {
+            return;
+        }
+        let at = line_of(&doc.text, doc.tree.node(doc.bin).span.clone()).start;
+        splices.insert(at, self.chains);
+        let bin_node = doc.tree.node(doc.bin);
+        let last = bin_node
+            .children
+            .last()
+            .map_or(bin_node.inner_start, |&c| doc.tree.node(c).span.end);
+        splices.insert(last, self.entries);
+    }
+}
+
+/// Make the sequence, the project tractor and the black track cover `total`
+/// frames.
+pub(super) fn set_sequence_length(doc: &Doc, splices: &mut Splices, total: i64) {
+    let fps = doc.fps;
+    let last = |end: i64| fps.timecode((end - 1).max(0));
+    set_attrs(doc, splices, doc.sequence, &[("out", last(total))]);
+    set_property(
+        doc,
+        splices,
+        doc.sequence,
+        "kdenlive:duration",
+        &fps.timecode(total),
+    );
+    set_property(
+        doc,
+        splices,
+        doc.sequence,
+        "kdenlive:maxduration",
+        &total.to_string(),
+    );
+    if let Some(pt) = doc.project_tractor {
+        set_attrs(doc, splices, pt, &[("out", last(total))]);
+        if let Some(t) = doc.tree.children_named(pt, "track").next() {
+            set_attrs(doc, splices, t, &[("out", last(total))]);
+        }
+    }
+    if let Some(black) = doc.black {
+        let current = doc
+            .tree
+            .node(black)
+            .attr("out")
+            .and_then(|o| fps.parse(o))
+            .unwrap_or(0);
+        if current < total {
+            set_attrs(
+                doc,
+                splices,
+                black,
+                &[("out", fps.timecode(total + fps.frames(300.0)))],
+            );
+        }
+    }
 }

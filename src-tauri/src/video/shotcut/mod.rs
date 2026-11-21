@@ -14,6 +14,7 @@
 //! The format followed is Shotcut [`SHOTCUT_FIXTURE_VERSION`]'s, the newest
 //! release when this was written; the fixtures in `fixtures/` follow it.
 
+pub mod audio;
 pub mod doc;
 pub mod edit;
 pub mod timeline_map;
@@ -170,10 +171,10 @@ pub fn clips(doc: &Doc) -> Vec<Clip> {
         .collect()
 }
 
-/// The files on tracks other than the main one.
+/// The files on tracks other than the main one and the audio tracks.
 pub fn other_track_resources(doc: &Doc) -> Vec<String> {
     (0..doc.tracks.len())
-        .filter(|&t| Some(t) != doc.main)
+        .filter(|&t| Some(t) != doc.main && doc.tracks[t].video)
         .flat_map(|t| doc.track_entries(t))
         .map(|e| doc.resource(&e.chain))
         .filter(|r| !r.is_empty())
@@ -206,7 +207,7 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         .collect();
     let mut other_clips = Vec::new();
     for t in 0..doc.tracks.len() {
-        if Some(t) == doc.main {
+        if Some(t) == doc.main || !doc.tracks[t].video {
             continue;
         }
         for e in doc.track_entries(t) {
@@ -227,6 +228,9 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         editor_version: doc.version.clone(),
         read_only: doc.editable().err(),
         items,
+        audio: crate::video::format::AudioItem::from_clips(&audio::clips(doc), fps, |r| {
+            shown_resource(doc, working_dir, r)
+        }),
         other_clips,
         mixes: doc.fades.len() as u32,
         guides: doc.markers() as u32,
