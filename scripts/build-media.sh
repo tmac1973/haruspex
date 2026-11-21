@@ -66,8 +66,8 @@ LIBXML2_VERSION="2.13.8"
 LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_VERSION%.*}/libxml2-$LIBXML2_VERSION.tar.xz"
 LIBXML2_SHA256="277294cb33119ab71b2bc81f2f445e9bc9435b893ad15bb2cd2b0e859a0ee84a"
 QT_URL="https://download.qt.io/archive/qt/${QT_VERSION%.*}/$QT_VERSION/submodules"
-QTBASE_SHA256="56001b905601bb9023d399f3ba780d7fa940f3e4861e496a7c490331f49e0b80"
-QTSVG_SHA256="35eb516460f00f264eb504baa253432384351cf23fb9980a5857190e8deef438"
+QTBASE_SHA256="46de0710b594945a5d446ae44354daa386141c6903c53781b2ca547bc62f8f8f"
+QTSVG_SHA256="9bdf6fa4b5a2d91c3eaa2edd12263fdff0ae19d0ac25d3c99946cd4189a07123"
 MLT_URL="https://github.com/mltframework/mlt/releases/download/v$MLT_VERSION/mlt-$MLT_VERSION.tar.gz"
 MLT_SHA256="f11c30e21670f62a3dfc56a31306ac02f3feea00908a2821a4a0bf3e989d3d6a"
 # Hardware encoders' dependencies, by git tag.
@@ -146,6 +146,7 @@ LAME_HOST=()
 PKG_CONFIG_FLAGS=()
 CMAKE_EXTRA=()
 QT_PLATFORM=()
+QT_ARCHS=()
 EXTRA_CFLAGS="-I$PREFIX/include"
 EXTRA_LDFLAGS="-L$PREFIX/lib"
 HW_ENCODERS=""
@@ -178,8 +179,8 @@ case "$TARGET" in
         ;;
     aarch64-apple-darwin|x86_64-apple-darwin)
         OS=macos
-        # Qt 6.8 supports macOS 12 and newer, so the bundle does too.
-        export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
+        # Qt 6.11 supports macOS 13 and newer, so the bundle does too.
+        export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
         # Autodetect stays on here: it is what finds the system frameworks
         # avfoundation needs. Anything a Homebrew runner might offer is
         # switched off by name.
@@ -202,7 +203,11 @@ case "$TARGET" in
         [ "$MAC_ARCH" = "aarch64" ] && MAC_ARCH="arm64"
         CMAKE_EXTRA=(-DCMAKE_OSX_ARCHITECTURES="$MAC_ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
         QT_PLATFORM=(-DFEATURE_framework=OFF -DFEATURE_system_freetype=OFF)
+        # Qt cross-compiled to x86_64 would need a host Qt for its tools; built
+        # universal it runs its own, and the x86_64 half is kept at the end.
+        QT_ARCHS=(-DCMAKE_OSX_ARCHITECTURES="$MAC_ARCH")
         if [ "$TARGET" = "x86_64-apple-darwin" ] && [ "$(uname -m)" != "x86_64" ]; then
+            QT_ARCHS=(-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64")
             CROSS=(--enable-cross-compile --arch=x86_64 --target-os=darwin)
             EXTRA_CFLAGS="$EXTRA_CFLAGS -arch x86_64"
             EXTRA_LDFLAGS="$EXTRA_LDFLAGS -arch x86_64"
@@ -436,7 +441,8 @@ if [ ! -f "$PREFIX/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake" ]; then
         -DFEATURE_system_pcre2=OFF -DFEATURE_system_harfbuzz=OFF \
         -DFEATURE_system_doubleconversion=OFF -DFEATURE_system_libb2=OFF \
         -DFEATURE_backtrace=OFF -DFEATURE_freetype=ON \
-        ${QT_PLATFORM[@]+"${QT_PLATFORM[@]}"}
+        ${QT_PLATFORM[@]+"${QT_PLATFORM[@]}"} \
+        ${QT_ARCHS[@]+"${QT_ARCHS[@]}"}
     cmake --build "$WORK/qtbase-build" -j"$JOBS"
     cmake --install "$WORK/qtbase-build"
     "$PREFIX/bin/qt-configure-module" "$WORK/qtsvg-everywhere-src-$QT_VERSION" \
@@ -444,6 +450,7 @@ if [ ! -f "$PREFIX/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake" ]; then
         || cmake -S "$WORK/qtsvg-everywhere-src-$QT_VERSION" -B "$WORK/qtsvg-build" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
             -DCMAKE_PREFIX_PATH="$PREFIX" ${CMAKE_EXTRA[@]+"${CMAKE_EXTRA[@]}"} \
+            ${QT_ARCHS[@]+"${QT_ARCHS[@]}"} \
             -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF
     cmake --build "$WORK/qtsvg-build" -j"$JOBS"
     cmake --install "$WORK/qtsvg-build"
@@ -616,6 +623,12 @@ case "$OS" in
         done
         for f in "$MEDIA"/mlt/*; do relink "$f" "@loader_path/../lib"; done
         for f in "$MEDIA"/qt-plugins/*/*; do relink "$f" "@loader_path/../../lib"; done
+        # Universal Qt in an x86_64 bundle: keep the x86_64 half.
+        for f in $(code_files); do
+            if lipo -info "$f" 2>/dev/null | grep -q 'are:'; then
+                lipo -thin "${MAC_ARCH}" "$f" -output "$f.thin" && mv "$f.thin" "$f"
+            fi
+        done
         for f in $(code_files); do strip -x "$f" 2>/dev/null || true; done
         # The app is ad-hoc signed; arm64 won't load an unsigned dylib, and
         # every edit above voided the linker's signature.

@@ -5,7 +5,11 @@
 _media="$(cd "$1/media" && pwd)"
 case "$(uname -s)" in
     Darwin) export DYLD_LIBRARY_PATH="$_media/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" ;;
-    MINGW*|MSYS*|CYGWIN*) export PATH="$_media/lib:$PATH" ;;
+    MINGW*|MSYS*|CYGWIN*)
+        export PATH="$_media/lib:$PATH"
+        # Native Windows programs read the rest; give them Windows paths.
+        _media="$(cygpath -m "$_media")"
+        ;;
     *) export LD_LIBRARY_PATH="$_media/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
 esac
 export MLT_REPOSITORY="$_media/mlt"

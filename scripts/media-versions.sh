@@ -11,5 +11,6 @@
 FFMPEG_TAG="n8.1.3"
 # The MLT Kdenlive 26.08 is built against.
 MLT_VERSION="7.40.0"
-QT_VERSION="6.8.3"
+# The Qt 6 LTS Fedora 44 runs MLT 7.40 on.
+QT_VERSION="6.11.3"
 MEDIA_TAG="${FFMPEG_TAG}-mlt${MLT_VERSION}-1"
