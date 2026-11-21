@@ -181,6 +181,14 @@ impl Session {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         sanitize_appimage_env(&mut cmd);
+        // While Settings → Video editing is on, the bundled ffmpeg, ffprobe
+        // and melt come first on PATH. Not in WSL, whose PATH is Linux's; and
+        // a session keeps the PATH it started with.
+        if wsl_distro.is_none() {
+            for (k, v) in crate::media_env::shell_env(std::env::var_os("PATH").as_deref()) {
+                cmd.env(k, v);
+            }
+        }
         for (k, v) in &plan.env {
             cmd.env(k, v);
         }

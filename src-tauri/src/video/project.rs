@@ -1,12 +1,13 @@
 //! Which project a tool means, the media it adds, and the cut and ops the
-//! tools ask for, put together over `kdenlive`.
+//! tools ask for, put together over `format::ProjectDoc`.
 
 use super::binaries::{self, BinaryOverrides, Tool};
-use super::kdenlive::doc::Doc;
-use super::kdenlive::edit::{self, Media, Placement, Source};
-use super::kdenlive::{self, ProjectSummary};
+use super::format::{self, ProjectDoc, ProjectSummary};
+use super::kdenlive;
+use super::mlt::{mlt_path, profile::profile};
 use super::paths::{display_path, resolve_episode, resolve_in_working, resolve_media};
 use super::probe;
+use super::timeline::{Media, Placement, Source};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,8 @@ use std::path::{Path, PathBuf};
 #[serde(rename_all = "camelCase", default)]
 pub struct VideoSettings {
     pub overrides: BinaryOverrides,
+    /// Settings → Video editing → Editor: the format of a new project.
+    pub editor: format::Format,
     pub intro: String,
     pub outro: String,
     pub preset: String,
@@ -50,6 +53,8 @@ pub struct CutItemSpec {
 #[serde(rename_all = "camelCase", default)]
 pub struct CutSpec {
     pub project: Option<String>,
+    /// The format of a new project, overriding Settings → Video editing.
+    pub editor: Option<format::Format>,
     pub preset: Option<String>,
     pub intro: Option<EndClip>,
     pub outro: Option<EndClip>,
@@ -96,30 +101,24 @@ pub enum ProjectOp {
 /// Set each placement's gain so its stretch of sound reaches -14 LUFS.
 /// Returns a note for the model.
 async fn normalize_gains(
-    doc: &Doc,
+    doc: &ProjectDoc,
     wanted: &mut [Placement],
     ffmpeg: &str,
     episode_dir: &Path,
 ) -> Result<String, String> {
     use super::loudness::{self, Stretch};
-    let items = doc.items();
-    let spans = super::kdenlive::timeline_map::spans(doc);
-    let fps = doc.fps;
+    let clips = doc.clips();
+    let spans = doc.spans();
+    let fps = doc.fps();
     let mut stretches = Vec::new();
     let mut which = Vec::new();
     for (k, p) in wanted.iter().enumerate() {
         let (file, stream, in_f, out_f) = match &p.source {
             Source::Existing(i) | Source::Piece(i) => {
-                let Some(a) = &items[*i].audio else { continue };
-                let stream = doc
-                    .tree
-                    .by_id(&a.chain)
-                    .and_then(|c| doc.tree.property(c, "audio_index"))
-                    .and_then(|v| v.parse::<u32>().ok())
-                    .unwrap_or(1);
+                let Some(a) = &clips[*i].audio else { continue };
                 (
                     spans[*i].file.clone(),
-                    stream,
+                    a.stream,
                     p.in_frame.unwrap_or(a.in_frame),
                     p.out_frame.unwrap_or(a.out_frame),
                 )
@@ -132,7 +131,7 @@ async fn normalize_gains(
                 let file = if r.is_absolute() {
                     r.to_path_buf()
                 } else {
-                    Path::new(&doc.root_dir).join(r)
+                    Path::new(doc.root_dir()).join(r)
                 };
                 (
                     file,
@@ -297,11 +296,18 @@ fn write_state(episode_dir: &Path, project: &str) {
     }
 }
 
-fn kdenlive_files(dir: &Path) -> Vec<PathBuf> {
+/// The projects in a folder: `.kdenlive` files, and `.mlt` files that are
+/// Shotcut projects (Shotcut also saves playlists and presets as `.mlt`).
+fn project_files(dir: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "kdenlive"))
+                .filter(|p| p.is_file())
+                .filter(|p| match format::Format::from_path(p) {
+                    Some(format::Format::Kdenlive) => true,
+                    Some(format::Format::Shotcut) => super::shotcut::is_project(p),
+                    None => false,
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -318,18 +324,21 @@ fn trailing_number(name: &str) -> Option<&str> {
 /// Which project a tool means.
 ///
 /// Named → that one. Otherwise: the one the episode's last cut used; else the
-/// only `.kdenlive` in the episode folder; else the only one in the working
-/// folder whose name ends in the episode's number (`spronglehump_010.kdenlive`
-/// for `ep010`); else, when the call may create one, `<episode>/<episode>.kdenlive`.
+/// only project (`.mlt` or `.kdenlive`) in the episode folder; else the only
+/// one in the working folder whose name ends in the episode's number
+/// (`spronglehump_010.mlt` for `ep010`); else, when the call may create one,
+/// `<episode>/<episode>.<the create format's extension>`.
 pub fn default_project(
     working_dir: &str,
     episode: &str,
     named: Option<&str>,
-    may_create: bool,
+    create: Option<format::Format>,
 ) -> Result<PathBuf, String> {
     if let Some(named) = named.map(str::trim).filter(|n| !n.is_empty()) {
-        if !named.ends_with(".kdenlive") {
-            return Err(format!("{named} is not a .kdenlive file."));
+        if format::Format::from_path(Path::new(named)).is_none() {
+            return Err(format!(
+                "{named} is not a project: use a Shotcut (.mlt) or Kdenlive (.kdenlive) file."
+            ));
         }
         return resolve_in_working(working_dir, named);
     }
@@ -341,7 +350,7 @@ pub fn default_project(
             }
         }
     }
-    let here = kdenlive_files(&episode_dir);
+    let here = project_files(&episode_dir);
     match here.len() {
         1 => return Ok(here[0].clone()),
         n if n > 1 => {
@@ -357,7 +366,7 @@ pub fn default_project(
         .to_string();
     if let Some(num) = trailing_number(&name) {
         let root = resolve_episode(working_dir, "")?;
-        let matches: Vec<PathBuf> = kdenlive_files(&root)
+        let matches: Vec<PathBuf> = project_files(&root)
             .into_iter()
             .filter(|p| {
                 p.file_stem()
@@ -369,8 +378,8 @@ pub fn default_project(
             return Ok(matches[0].clone());
         }
     }
-    if may_create {
-        return Ok(episode_dir.join(format!("{name}.kdenlive")));
+    if let Some(f) = create {
+        return Ok(episode_dir.join(format!("{name}.{}", f.extension())));
     }
     Err(format!(
         "There is no project for {} yet. Make one with video_cut.",
@@ -397,8 +406,8 @@ pub fn episode_home(working_dir: &str, episode: &str, project: &Path) -> Result<
 
 /// The resource string a file gets in a project rooted at `root`.
 fn resource_for(root: &str, file: &Path) -> String {
-    let file = kdenlive::mlt_path(&file.canonicalize().unwrap_or_else(|_| file.to_path_buf()));
-    let root = kdenlive::mlt_path(
+    let file = mlt_path(&file.canonicalize().unwrap_or_else(|_| file.to_path_buf()));
+    let root = mlt_path(
         &Path::new(root)
             .canonicalize()
             .unwrap_or_else(|_| PathBuf::from(root)),
@@ -409,7 +418,7 @@ fn resource_for(root: &str, file: &Path) -> String {
 }
 
 async fn media(
-    doc: &Doc,
+    doc: &ProjectDoc,
     working_dir: &str,
     path: &str,
     settings: &VideoSettings,
@@ -418,8 +427,8 @@ async fn media(
     let file = resolve_media(working_dir, path, &settings.intro, &settings.outro)?;
     let info = probe::probe_file(ffprobe, &file, path.to_string()).await?;
     Ok(Media {
-        resource: resource_for(&doc.root_dir, &file),
-        length: doc.fps.frames(info.duration_secs).max(1),
+        resource: resource_for(doc.root_dir(), &file),
+        length: doc.fps().frames(info.duration_secs).max(1),
         video_index: info.video.as_ref().map(|_| 0),
         audio_index: info.audio.first().map(|a| a.index),
         file_size: info.size_bytes,
@@ -440,34 +449,6 @@ fn video_stream_index(info: &probe::ClipInfo) -> u32 {
     (0..)
         .find(|i| !info.audio.iter().any(|a| a.index == *i))
         .unwrap_or(0)
-}
-
-/// The resource of each main-track item, for matching an intro to a clip
-/// already there.
-fn item_resources(doc: &Doc) -> Vec<String> {
-    doc.items()
-        .iter()
-        .map(|i| {
-            doc.tree
-                .by_id(&i.any().chain)
-                .and_then(|c| doc.tree.property(c, "resource"))
-                .unwrap_or("")
-                .to_string()
-        })
-        .collect()
-}
-
-fn other_track_resources(doc: &Doc) -> Vec<String> {
-    (0..doc.tracks.len())
-        .filter(|&t| t != doc.main_video && t != doc.main_audio)
-        .flat_map(|t| doc.track_entries(t))
-        .filter_map(|e| {
-            doc.tree
-                .by_id(&e.chain)
-                .and_then(|c| doc.tree.property(c, "resource"))
-                .map(str::to_string)
-        })
-        .collect()
 }
 
 fn end_clip_path<'a>(
@@ -523,7 +504,8 @@ pub async fn cut(
     settings: &VideoSettings,
 ) -> Result<CutResult, String> {
     let (ffprobe, melt, ffmpeg) = tools(settings).await?;
-    let path = default_project(working_dir, episode, spec.project.as_deref(), true)?;
+    let editor = spec.editor.unwrap_or(settings.editor);
+    let path = default_project(working_dir, episode, spec.project.as_deref(), Some(editor))?;
     let created = !path.exists();
     let mut notes = Vec::new();
     let mut doc = if created {
@@ -536,29 +518,33 @@ pub async fn cut(
         } else {
             preset
         };
-        Doc::parse(kdenlive::template_text(
+        ProjectDoc::template(
+            format::Format::from_path(&path).unwrap_or(editor),
             &preset,
             &resolve_episode(working_dir, "")?,
-        )?)?
+        )?
     } else {
-        kdenlive::open(&path)?
+        ProjectDoc::open(&path)?
     };
     doc.editable()?;
     if let (Some(preset), false) = (&spec.preset, created) {
-        let p = kdenlive::profile(preset)?;
-        let same_rate = doc.fps.num == p.fps * doc.fps.den;
-        if !same_rate && !doc.items().is_empty() {
-            return Err(
-                "This project already has clips at another frame rate. Change it in Kdenlive \
-                        (Project → Project Settings)."
-                    .into(),
-            );
+        let p = profile(preset)?;
+        let fps = doc.fps();
+        let same_rate = fps.num == p.fps * fps.den;
+        if !same_rate && !doc.clips().is_empty() {
+            let where_to = match doc.format() {
+                format::Format::Shotcut => "Shotcut (Settings → Video Mode)",
+                format::Format::Kdenlive => "Kdenlive (Project → Project Settings)",
+            };
+            return Err(format!(
+                "This project already has clips at another frame rate. Change it in {where_to}."
+            ));
         }
-        doc = Doc::parse(kdenlive::set_profile(&doc, preset)?)?;
+        doc = doc.with_profile(preset)?;
     }
 
-    let resources = item_resources(&doc);
-    let elsewhere = other_track_resources(&doc);
+    let resources: Vec<String> = doc.clips().into_iter().map(|c| c.resource).collect();
+    let elsewhere = doc.other_track_resources();
     let mut wanted: Vec<Placement> = Vec::new();
     // Each placement's own crossfade, when its item names one.
     let mut fades: Vec<Option<f64>> = Vec::new();
@@ -611,8 +597,8 @@ pub async fn cut(
         };
         wanted.push(Placement {
             source,
-            in_frame: item.in_secs.map(|s| doc.fps.frames(s.max(0.0))),
-            out_frame: item.out_secs.map(|s| doc.fps.frames(s) - 1),
+            in_frame: item.in_secs.map(|s| doc.fps().frames(s.max(0.0))),
+            out_frame: item.out_secs.map(|s| doc.fps().frames(s) - 1),
             mix_in: None,
             gain_db: None,
             limiter: false,
@@ -639,7 +625,7 @@ pub async fn cut(
         .map(|(k, (mut p, own))| {
             let secs = own.or(spec.crossfade_secs).unwrap_or(0.0).clamp(0.0, 3.0);
             if k > 0 && secs > 0.0 {
-                p.mix_in = Some(doc.fps.frames(secs));
+                p.mix_in = Some(doc.fps().frames(secs));
             }
             p
         })
@@ -648,19 +634,19 @@ pub async fn cut(
         let episode_dir = resolve_episode(working_dir, episode)?;
         notes.push(normalize_gains(&doc, &mut wanted, &ffmpeg, &episode_dir).await?);
     }
-    let edited = edit::apply(&doc, &wanted)?;
+    let edited = doc.apply(&wanted)?;
     notes.extend(edited.notes);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("can't make {}: {e}", dir.display()))?;
     }
-    kdenlive::save(&path, &edited.text, &melt).await?;
+    format::save(&path, &edited.text, &melt).await?;
     let rel = display_path(working_dir, &path);
     if let Ok(dir) = resolve_episode(working_dir, episode) {
         write_state(&dir, &rel);
     }
-    let after = kdenlive::open(&path)?;
+    let after = ProjectDoc::open(&path)?;
     Ok(CutResult {
-        summary: kdenlive::summary(&after, working_dir, &path),
+        summary: after.summary(working_dir, &path),
         notes,
         created,
     })
@@ -675,11 +661,11 @@ pub async fn op(
     settings: &VideoSettings,
 ) -> Result<CutResult, String> {
     let (_, melt, ffmpeg) = tools(settings).await?;
-    let path = default_project(working_dir, episode, project, false)?;
-    let doc = kdenlive::open(&path)?;
-    let mut wanted = edit::current(&doc);
-    let items = doc.items();
-    let min_piece = doc.fps.frames(MIN_PIECE_SECS).max(1);
+    let path = default_project(working_dir, episode, project, None)?;
+    let doc = ProjectDoc::open(&path)?;
+    let mut wanted = doc.current();
+    let items = doc.clips();
+    let min_piece = doc.fps().frames(MIN_PIECE_SECS).max(1);
     let mut notes = Vec::new();
     let count = wanted.len() as u32;
     let check = |i: u32| {
@@ -697,10 +683,10 @@ pub async fn op(
         } => {
             let i = check(index)?;
             if let Some(s) = in_secs {
-                wanted[i].in_frame = Some(doc.fps.frames(s.max(0.0)));
+                wanted[i].in_frame = Some(doc.fps().frames(s.max(0.0)));
             }
             if let Some(s) = out_secs {
-                wanted[i].out_frame = Some(doc.fps.frames(s) - 1);
+                wanted[i].out_frame = Some(doc.fps().frames(s) - 1);
             }
         }
         ProjectOp::Remove { index } => {
@@ -714,10 +700,10 @@ pub async fn op(
         }
         ProjectOp::RemoveRanges { index, ranges } => {
             let i = check(index)?;
-            let e = items[i].any();
+            let e = &items[i];
             let frames: Vec<(i64, i64)> = ranges
                 .iter()
-                .map(|r| (doc.fps.frames(r.start), doc.fps.frames(r.end)))
+                .map(|r| (doc.fps().frames(r.start), doc.fps().frames(r.end)))
                 .collect();
             let removed = cut_ranges(
                 &mut wanted,
@@ -730,7 +716,7 @@ pub async fn op(
             );
             notes.push(format!(
                 "Removed {} from clip {index}.",
-                format_secs(doc.fps.secs(removed))
+                format_secs(doc.fps().secs(removed))
             ));
         }
         ProjectOp::Normalize => {
@@ -748,13 +734,13 @@ pub async fn op(
                 Some(n) => vec![check(n)?],
                 None => (0..items.len()).collect(),
             };
-            let spans = super::kdenlive::timeline_map::spans(&doc);
+            let spans = doc.spans();
             let mut total = 0;
             let mut cut_count = 0;
             // From the last, so earlier positions in `wanted` stay put.
             for &i in targets.iter().rev() {
-                let e = items[i].any();
-                if items[i].audio.is_none() {
+                let e = &items[i];
+                if e.audio.is_none() {
                     continue;
                 }
                 let span = &spans[i];
@@ -770,7 +756,12 @@ pub async fn op(
                 let frames: Vec<(i64, i64)> = found
                     .iter()
                     .filter(|r| r.len() > 2.0 * pad)
-                    .map(|r| (doc.fps.frames(r.start + pad), doc.fps.frames(r.end - pad)))
+                    .map(|r| {
+                        (
+                            doc.fps().frames(r.start + pad),
+                            doc.fps().frames(r.end - pad),
+                        )
+                    })
                     .collect();
                 cut_count += frames.len();
                 total += cut_ranges(
@@ -786,16 +777,16 @@ pub async fn op(
             notes.push(format!(
                 "Cut {cut_count} silence{} longer than {min_secs} s, {} in all.",
                 if cut_count == 1 { "" } else { "s" },
-                format_secs(doc.fps.secs(total))
+                format_secs(doc.fps().secs(total))
             ));
         }
     }
-    let edited = edit::apply(&doc, &wanted)?;
+    let edited = doc.apply(&wanted)?;
     notes.extend(edited.notes);
-    kdenlive::save(&path, &edited.text, &melt).await?;
-    let after = kdenlive::open(&path)?;
+    format::save(&path, &edited.text, &melt).await?;
+    let after = ProjectDoc::open(&path)?;
     Ok(CutResult {
-        summary: kdenlive::summary(&after, working_dir, &path),
+        summary: after.summary(working_dir, &path),
         notes,
         created: false,
     })
@@ -806,9 +797,9 @@ pub fn summary(
     episode: &str,
     project: Option<&str>,
 ) -> Result<ProjectSummary, String> {
-    let path = default_project(working_dir, episode, project, false)?;
-    let doc = kdenlive::open(&path)?;
-    Ok(kdenlive::summary(&doc, working_dir, &path))
+    let path = default_project(working_dir, episode, project, None)?;
+    let doc = ProjectDoc::open(&path)?;
+    Ok(doc.summary(working_dir, &path))
 }
 
 #[cfg(test)]
@@ -830,12 +821,12 @@ mod tests {
         fs::write(dir.join("spronglehump_010.kdenlive"), "").unwrap();
         fs::write(dir.join("spronglehump_009.kdenlive"), "").unwrap();
         let wd = dir.to_string_lossy();
-        let p = default_project(&wd, "ep010", None, false).unwrap();
+        let p = default_project(&wd, "ep010", None, None).unwrap();
         assert!(p.ends_with("spronglehump_010.kdenlive"));
         // ep011 has none, so a new one is made in its folder.
-        let p = default_project(&wd, "ep011", None, true).unwrap();
+        let p = default_project(&wd, "ep011", None, Some(format::Format::Kdenlive)).unwrap();
         assert!(p.ends_with("ep011/ep011.kdenlive"));
-        assert!(default_project(&wd, "ep011", None, false)
+        assert!(default_project(&wd, "ep011", None, None)
             .unwrap_err()
             .contains("video_cut"));
     }
@@ -845,28 +836,79 @@ mod tests {
         let dir = series();
         let wd = dir.to_string_lossy();
         fs::write(dir.join("ep010/a.kdenlive"), "").unwrap();
-        assert!(default_project(&wd, "ep010", None, false)
+        assert!(default_project(&wd, "ep010", None, None)
             .unwrap()
             .ends_with("a.kdenlive"));
         fs::write(dir.join("ep010/b.kdenlive"), "").unwrap();
-        let err = default_project(&wd, "ep010", None, false).unwrap_err();
+        let err = default_project(&wd, "ep010", None, None).unwrap_err();
         assert!(
             err.contains("ep010/a.kdenlive") && err.contains("ep010/b.kdenlive"),
             "{err}"
         );
         // The last cut's choice settles it.
         write_state(&dir.join("ep010"), "ep010/b.kdenlive");
-        assert!(default_project(&wd, "ep010", None, false)
+        assert!(default_project(&wd, "ep010", None, None)
             .unwrap()
             .ends_with("b.kdenlive"));
     }
 
+    fn shotcut_text() -> String {
+        fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/video/shotcut/fixtures/edited-26.6.mlt"),
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn a_named_project_must_be_kdenlive_and_inside() {
+    fn shotcut_projects_are_found_and_made_in_the_chosen_editor() {
         let dir = series();
         let wd = dir.to_string_lossy();
-        assert!(default_project(&wd, "ep010", Some("notes.txt"), true).is_err());
-        assert!(default_project(&wd, "ep010", Some("../x.kdenlive"), true).is_err());
+        // A playlist Shotcut saved as .mlt is not a project.
+        fs::write(dir.join("ep010/playlist.mlt"), "<mlt/>").unwrap();
+        fs::write(dir.join("ep010/ep010.mlt"), shotcut_text()).unwrap();
+        assert!(default_project(&wd, "ep010", None, None)
+            .unwrap()
+            .ends_with("ep010/ep010.mlt"));
+        // Both editors' projects in one episode: the tools ask which.
+        fs::write(dir.join("ep010/ep010.kdenlive"), "").unwrap();
+        let err = default_project(&wd, "ep010", None, None).unwrap_err();
+        assert!(
+            err.contains("ep010.mlt") && err.contains("ep010.kdenlive"),
+            "{err}"
+        );
+        // A new project takes the editor's extension.
+        let p = default_project(&wd, "ep011", None, Some(format::Format::Shotcut)).unwrap();
+        assert!(p.ends_with("ep011/ep011.mlt"));
+        let p = default_project(&wd, "ep011", None, Some(format::Format::Kdenlive)).unwrap();
+        assert!(p.ends_with("ep011/ep011.kdenlive"));
+        // Named, by number, in the working folder.
+        fs::write(dir.join("show_012.mlt"), shotcut_text()).unwrap();
+        fs::create_dir_all(dir.join("ep012")).unwrap();
+        assert!(default_project(&wd, "ep012", None, None)
+            .unwrap()
+            .ends_with("show_012.mlt"));
+        assert!(default_project(&wd, "ep010", Some("ep010/ep010.mlt"), None).is_ok());
+    }
+
+    #[test]
+    fn a_named_project_must_be_a_project_and_inside() {
+        let dir = series();
+        let wd = dir.to_string_lossy();
+        assert!(default_project(
+            &wd,
+            "ep010",
+            Some("notes.txt"),
+            Some(format::Format::Shotcut)
+        )
+        .is_err());
+        assert!(default_project(
+            &wd,
+            "ep010",
+            Some("../x.kdenlive"),
+            Some(format::Format::Shotcut)
+        )
+        .is_err());
     }
 
     #[test]

@@ -40,13 +40,24 @@ pub async fn video_probe_file(
     probe::probe_file(ffprobe, &file, paths::display_path(&working_dir, &file)).await
 }
 
+/// Put the bundled ffmpeg, ffprobe and melt on the PATH of the model's own
+/// commands (Code tab, Shell tab), or take them off: on while Settings →
+/// Video editing is on. Returns whether they are on, which they can't be
+/// without the media bundle.
+#[tauri::command]
+pub async fn media_shims_set(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::media_env::set_shims(&app, enabled))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// The project's main track and what else is in it.
 #[tauri::command]
 pub async fn video_project_summary(
     working_dir: String,
     episode: String,
     project: Option<String>,
-) -> Result<super::kdenlive::ProjectSummary, String> {
+) -> Result<super::format::ProjectSummary, String> {
     super::project::summary(&working_dir, &episode, project.as_deref())
 }
 
@@ -369,9 +380,9 @@ pub fn video_write_chapters(
     chapters: Vec<super::subtitles::Chapter>,
 ) -> Result<ChaptersWritten, String> {
     use super::subtitles;
-    let path = super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
-    let doc = super::kdenlive::open(&path)?;
-    let total = doc.fps.secs(doc.sequence_end());
+    let path = super::project::default_project(&working_dir, &episode, project.as_deref(), None)?;
+    let doc = super::format::ProjectDoc::open(&path)?;
+    let total = doc.fps().secs(doc.sequence_end());
     let mut chapters = chapters;
     chapters.sort_by(|a, b| a.at_secs.total_cmp(&b.at_secs));
     let problems = subtitles::check_chapters(&chapters, total);
@@ -488,12 +499,12 @@ pub async fn video_frames(
                 &working_dir,
                 &episode,
                 request.project.as_deref(),
-                false,
+                None,
             )?;
-            let doc = super::kdenlive::open(&project)?;
-            let spans = super::kdenlive::timeline_map::spans(&doc);
+            let doc = super::format::ProjectDoc::open(&project)?;
+            let spans = doc.spans();
             for &t in times {
-                let (span, at) = super::kdenlive::timeline_map::source_at(&spans, t)
+                let (span, at) = super::timeline::source_at(&spans, t)
                     .ok_or_else(|| format!("Nothing is on the main track at {t:.1} s."))?;
                 wanted.push((
                     span.file.clone(),
@@ -552,7 +563,7 @@ fn thumbnail_target(
     project: Option<&str>,
     name: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
-    let episode_dir = match super::project::default_project(working_dir, episode, project, false) {
+    let episode_dir = match super::project::default_project(working_dir, episode, project, None) {
         Ok(p) => super::project::episode_home(working_dir, episode, &p)?,
         Err(_) => paths::resolve_episode(working_dir, episode)?,
     };
@@ -565,7 +576,7 @@ fn thumbnail_target(
             format!("{n}.jpg")
         }
         None => {
-            let stem = super::project::default_project(working_dir, episode, project, false)
+            let stem = super::project::default_project(working_dir, episode, project, None)
                 .ok()
                 .and_then(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
                 .or_else(|| {
@@ -634,10 +645,10 @@ pub async fn video_thumbnail_from_frame(
         ),
         (None, None, Some(t)) => {
             let proj =
-                super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
-            let doc = super::kdenlive::open(&proj)?;
-            let spans = super::kdenlive::timeline_map::spans(&doc);
-            let (span, at) = super::kdenlive::timeline_map::source_at(&spans, t)
+                super::project::default_project(&working_dir, &episode, project.as_deref(), None)?;
+            let doc = super::format::ProjectDoc::open(&proj)?;
+            let spans = doc.spans();
+            let (span, at) = super::timeline::source_at(&spans, t)
                 .ok_or_else(|| format!("Nothing is on the main track at {t:.1} s."))?;
             (span.file.clone(), at)
         }
@@ -724,7 +735,7 @@ pub async fn youtube_upload_plan(
 ) -> Result<UploadPlan, String> {
     use base64::Engine;
     let project_path =
-        super::project::default_project(&working_dir, &episode, project.as_deref(), false).ok();
+        super::project::default_project(&working_dir, &episode, project.as_deref(), None).ok();
     let episode_dir = match &project_path {
         Some(p) => super::project::episode_home(&working_dir, &episode, p)?,
         None => paths::resolve_episode(&working_dir, &episode)?,
@@ -928,8 +939,8 @@ mod tests {
             &project,
         )
         .unwrap();
-        let doc = super::super::kdenlive::open(&project).unwrap();
-        let total = doc.fps.secs(doc.sequence_end());
+        let doc = super::super::format::ProjectDoc::open(&project).unwrap();
+        let total = doc.fps().secs(doc.sequence_end());
         assert!(total >= 40.0, "the fixture is only {total}s");
         (dir, total)
     }

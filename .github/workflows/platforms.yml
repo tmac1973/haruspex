@@ -85,7 +85,7 @@ jobs:
         run: |
           $target = (rustc --print host-tuple)
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
-          foreach ($name in 'haruspex-llama-server', 'haruspex-whisper-server', 'haruspex-koko', 'haruspex-ruff', 'haruspex-node', 'haruspex-uv', 'haruspex-sd-server', 'haruspex-ffmpeg', 'haruspex-ffprobe') {
+          foreach ($name in 'haruspex-llama-server', 'haruspex-whisper-server', 'haruspex-koko', 'haruspex-ruff', 'haruspex-node', 'haruspex-uv', 'haruspex-sd-server', 'haruspex-ffmpeg', 'haruspex-ffprobe', 'haruspex-melt') {
             # externalBin resolves to `<name>-<triple>.exe` on Windows.
             Set-Content -Path "src-tauri/binaries/$name-$target.exe" -Value '@echo off'
           }
@@ -95,6 +95,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path src-tauri/binaries/libs | Out-Null
           New-Item -ItemType Directory -Force -Path src-tauri/binaries/sd-libs | Out-Null
           Set-Content -Path src-tauri/binaries/sd-libs/.placeholder -Value ''
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries/media | Out-Null
+          Set-Content -Path src-tauri/binaries/media/.placeholder -Value ''
           New-Item -ItemType Directory -Force -Path src-tauri/binaries/espeak-ng-data/lang/placeholder | Out-Null
           Set-Content -Path src-tauri/binaries/libs/.placeholder -Value ''
           Set-Content -Path src-tauri/binaries/espeak-ng-data/.placeholder -Value ''
@@ -152,12 +154,12 @@ jobs:
         run: |
           TARGET=$(rustc --print host-tuple)
           mkdir -p src-tauri/binaries
-          for name in haruspex-llama-server haruspex-whisper-server haruspex-koko haruspex-ruff haruspex-node haruspex-uv haruspex-sd-server haruspex-ffmpeg haruspex-ffprobe; do
+          for name in haruspex-llama-server haruspex-whisper-server haruspex-koko haruspex-ruff haruspex-node haruspex-uv haruspex-sd-server haruspex-ffmpeg haruspex-ffprobe haruspex-melt; do
             echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
             chmod +x "src-tauri/binaries/${name}-${TARGET}"
           done
-          mkdir -p src-tauri/binaries/node-modules src-tauri/binaries/libs src-tauri/binaries/sd-libs
-          touch src-tauri/binaries/node-modules/.placeholder src-tauri/binaries/libs/.placeholder src-tauri/binaries/sd-libs/.placeholder
+          mkdir -p src-tauri/binaries/node-modules src-tauri/binaries/libs src-tauri/binaries/sd-libs src-tauri/binaries/media
+          touch src-tauri/binaries/node-modules/.placeholder src-tauri/binaries/libs/.placeholder src-tauri/binaries/sd-libs/.placeholder src-tauri/binaries/media/.placeholder
           mkdir -p src-tauri/binaries/espeak-ng-data/lang/placeholder
           touch src-tauri/binaries/espeak-ng-data/.placeholder
           touch src-tauri/binaries/espeak-ng-data/lang/.placeholder

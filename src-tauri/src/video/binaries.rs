@@ -1,18 +1,18 @@
 //! Finding ffmpeg, ffprobe and melt.
 //!
-//! ffmpeg and ffprobe ship with the app as LGPL builds (`haruspex-ffmpeg`,
-//! `haruspex-ffprobe`), which the cameras need too. melt is not bundled: it
-//! comes with Kdenlive (and Shotcut), so the one thing a user installs for the
-//! video tools is Kdenlive. Each binary is looked for in these places, first
-//! hit wins:
+//! All three ship with the app (`haruspex-ffmpeg`, `haruspex-ffprobe`,
+//! `haruspex-melt`, the media bundle), so nothing needs installing for the
+//! video tools; the cameras use ffmpeg too. Each is looked for in these
+//! places, first hit wins, as its choice in Settings → Video editing allows
+//! (ffmpeg's covers ffprobe):
 //!
-//! 1. The path the user set in Settings → Video editing.
-//! 2. The bundled copy (ffmpeg and ffprobe only), found as the other sidecars
-//!    are: see `runtimes::resolve_binary`.
-//! 3. PATH.
-//! 4. Inside a Kdenlive install. On Linux that is the distro's `/usr/bin`,
-//!    which PATH already covers; on macOS the app bundle; on Windows Kdenlive's
-//!    `bin` folder.
+//! 1. The path the user set (Custom only).
+//! 2. The bundled copy (Auto and Bundled), found as the other sidecars are:
+//!    see `runtimes::resolve_binary`.
+//! 3. PATH (Auto and System).
+//! 4. Inside a Shotcut or Kdenlive install (Auto and System). On Linux that is
+//!    the distro's `/usr/bin` and Shotcut's tarball in `/opt/shotcut`; on
+//!    macOS the app bundles; on Windows their install folders.
 //!
 //! A candidate counts only when it answers `-version` in time. A file that
 //! exists but does not run (a wrong architecture, a broken symlink) is
@@ -58,8 +58,7 @@ impl Tool {
 }
 
 /// The choices in Settings → Video editing: which ffmpeg (and ffprobe with
-/// it), and the paths set for Custom and for melt. An empty melt path means
-/// "find it".
+/// it) and which melt, and the paths set for Custom.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase", default)]
@@ -67,20 +66,21 @@ pub struct BinaryOverrides {
     pub ffmpeg: String,
     pub ffprobe: String,
     pub melt: String,
-    pub ffmpeg_choice: FfmpegChoice,
+    pub ffmpeg_choice: ToolChoice,
+    pub melt_choice: ToolChoice,
 }
 
-/// Which ffmpeg and ffprobe to use.
+/// Which copy of a tool to use: ffmpeg (with ffprobe), or melt.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
-pub enum FfmpegChoice {
-    /// The bundled pair, then the system's (PATH), then Kdenlive's.
+pub enum ToolChoice {
+    /// The bundled one, then the system's (PATH), then an editor's.
     #[default]
     Auto,
-    /// Only the pair that ships with Haruspex.
+    /// Only the one that ships with Haruspex.
     Bundled,
-    /// The system's (PATH), then Kdenlive's; never the bundled pair.
+    /// The system's (PATH), then an editor's; never the bundled one.
     System,
     /// The paths set in Settings → Video editing, and nothing else.
     Custom,
@@ -106,8 +106,8 @@ pub enum BinarySource {
     /// The copy that ships with Haruspex.
     Bundled,
     Path,
-    /// Inside a Kdenlive install.
-    Kdenlive,
+    /// Inside a Shotcut or Kdenlive install.
+    Editor,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -195,22 +195,41 @@ pub(crate) fn path_dirs() -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-/// Where a Kdenlive install keeps its binaries, beyond PATH.
-fn kdenlive_dirs() -> Vec<PathBuf> {
+/// Where Shotcut and Kdenlive installs keep their binaries, beyond PATH.
+/// Flatpak and Snap installs aren't here: their melt only runs inside the
+/// sandbox, and the bundled melt covers those users.
+fn editor_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if cfg!(target_os = "linux") {
         dirs.push(PathBuf::from("/usr/bin"));
         dirs.push(PathBuf::from("/usr/local/bin"));
+        // Shotcut's portable tarball.
+        dirs.push(PathBuf::from("/opt/shotcut/Shotcut.app/bin"));
+        if let Some(home) = std::env::var_os("HOME") {
+            dirs.push(PathBuf::from(home).join("Shotcut/Shotcut.app/bin"));
+        }
     }
     if cfg!(target_os = "macos") {
-        dirs.push(PathBuf::from("/Applications/kdenlive.app/Contents/MacOS"));
-        if let Some(home) = std::env::var_os("HOME") {
-            dirs.push(PathBuf::from(home).join("Applications/kdenlive.app/Contents/MacOS"));
+        for app in ["Shotcut.app", "kdenlive.app"] {
+            dirs.push(
+                PathBuf::from("/Applications")
+                    .join(app)
+                    .join("Contents/MacOS"),
+            );
+            if let Some(home) = std::env::var_os("HOME") {
+                dirs.push(
+                    PathBuf::from(home)
+                        .join("Applications")
+                        .join(app)
+                        .join("Contents/MacOS"),
+                );
+            }
         }
     }
     if cfg!(windows) {
         for var in ["ProgramFiles", "ProgramFiles(x86)"] {
             if let Some(base) = std::env::var_os(var) {
+                dirs.push(PathBuf::from(&base).join("Shotcut"));
                 dirs.push(PathBuf::from(base).join("kdenlive").join("bin"));
             }
         }
@@ -254,12 +273,9 @@ async fn version_of(path: &Path) -> Option<String> {
     Some(line.chars().take(120).collect())
 }
 
-/// The copy of `tool` that ships with the app. melt is not bundled.
+/// The copy of `tool` that ships with the app.
 fn bundled(tool: Tool) -> Option<PathBuf> {
-    match tool {
-        Tool::Ffmpeg | Tool::Ffprobe => crate::runtimes::resolve_binary(tool.name()).ok(),
-        Tool::Melt => None,
-    }
+    crate::runtimes::resolve_binary(tool.name()).ok()
 }
 
 /// Candidates for `tool`, in the order they are tried.
@@ -273,32 +289,31 @@ fn candidates_with(
     overrides: &BinaryOverrides,
     bundled: Option<PathBuf>,
 ) -> Vec<(PathBuf, BinarySource)> {
-    // melt isn't bundled, so its path is the only choice it has.
     let choice = match tool {
-        Tool::Melt => None,
-        Tool::Ffmpeg | Tool::Ffprobe => Some(overrides.ffmpeg_choice),
+        Tool::Melt => overrides.melt_choice,
+        Tool::Ffmpeg | Tool::Ffprobe => overrides.ffmpeg_choice,
     };
     let mut out = Vec::new();
-    let set = overrides.get(tool).trim();
-    if !set.is_empty() && matches!(choice, None | Some(FfmpegChoice::Custom)) {
-        out.push((PathBuf::from(set), BinarySource::Override));
-    }
-    if choice == Some(FfmpegChoice::Custom) {
+    if choice == ToolChoice::Custom {
+        let set = overrides.get(tool).trim();
+        if !set.is_empty() {
+            out.push((PathBuf::from(set), BinarySource::Override));
+        }
         return out;
     }
-    if matches!(choice, Some(FfmpegChoice::Auto | FfmpegChoice::Bundled)) {
+    if matches!(choice, ToolChoice::Auto | ToolChoice::Bundled) {
         if let Some(p) = bundled {
             out.push((p, BinarySource::Bundled));
         }
     }
-    if choice == Some(FfmpegChoice::Bundled) {
+    if choice == ToolChoice::Bundled {
         return out;
     }
     if let Some(p) = which_any(&path_dirs(), tool.file_names()) {
         out.push((p, BinarySource::Path));
     }
-    if let Some(p) = which_any(&kdenlive_dirs(), tool.file_names()) {
-        out.push((p, BinarySource::Kdenlive));
+    if let Some(p) = which_any(&editor_dirs(), tool.file_names()) {
+        out.push((p, BinarySource::Editor));
     }
     out
 }
@@ -341,7 +356,7 @@ async fn first_that_runs(
 
 /// An ffmpeg to ask which hardware encoders melt can open: the one chosen in
 /// Settings → Video editing. The bundled build has the hardware encoders melt
-/// is tried with (see `scripts/build-ffmpeg.sh`).
+/// is tried with (see `scripts/build-media.sh`).
 pub async fn hardware_probe_ffmpeg(overrides: &BinaryOverrides) -> Option<String> {
     first_that_runs(
         Tool::Ffmpeg,
@@ -473,10 +488,11 @@ mod tests {
         let set = make_exe(&dir, "my-melt", "");
         let overrides = BinaryOverrides {
             melt: set.to_string_lossy().into_owned(),
+            melt_choice: ToolChoice::Custom,
             ..Default::default()
         };
         let list = candidates(Tool::Melt, &overrides);
-        assert_eq!(list[0], (set, BinarySource::Override));
+        assert_eq!(list, vec![(set, BinarySource::Override)]);
     }
 
     #[test]
@@ -495,11 +511,11 @@ mod tests {
         assert!(
             after
                 .iter()
-                .all(|s| matches!(s, BinarySource::Path | BinarySource::Kdenlive)),
+                .all(|s| matches!(s, BinarySource::Path | BinarySource::Editor)),
             "{sources:?}"
         );
         // PATH, when there is one, is tried before Kdenlive.
-        let first_kdenlive = after.iter().position(|s| *s == BinarySource::Kdenlive);
+        let first_kdenlive = after.iter().position(|s| *s == BinarySource::Editor);
         let last_path = after.iter().rposition(|s| *s == BinarySource::Path);
         if let (Some(k), Some(p)) = (first_kdenlive, last_path) {
             assert!(p < k, "{sources:?}");
@@ -507,8 +523,26 @@ mod tests {
     }
 
     #[test]
-    fn melt_is_never_bundled() {
-        assert_eq!(bundled(Tool::Melt), None);
+    fn each_melt_choice_keeps_to_its_own_copies() {
+        let dir = temp_dir("melt_choice");
+        let set = make_exe(&dir, "my-melt", "");
+        let ours = make_exe(&dir, "haruspex-melt", "");
+        let sources = |choice| -> Vec<BinarySource> {
+            let o = BinaryOverrides {
+                melt: set.to_string_lossy().into_owned(),
+                melt_choice: choice,
+                ..Default::default()
+            };
+            candidates_with(Tool::Melt, &o, Some(ours.clone()))
+                .into_iter()
+                .map(|(_, s)| s)
+                .collect()
+        };
+        assert_eq!(sources(ToolChoice::Auto)[0], BinarySource::Bundled);
+        assert!(!sources(ToolChoice::Auto).contains(&BinarySource::Override));
+        assert_eq!(sources(ToolChoice::Bundled), vec![BinarySource::Bundled]);
+        assert!(!sources(ToolChoice::System).contains(&BinarySource::Bundled));
+        assert_eq!(sources(ToolChoice::Custom), vec![BinarySource::Override]);
     }
 
     #[cfg(unix)]
@@ -565,15 +599,16 @@ mod tests {
                 .map(|(_, s)| s)
                 .collect()
         };
-        assert_eq!(sources(FfmpegChoice::Custom), vec![BinarySource::Override]);
-        assert_eq!(sources(FfmpegChoice::Bundled), vec![BinarySource::Bundled]);
-        assert!(sources(FfmpegChoice::System)
+        assert_eq!(sources(ToolChoice::Custom), vec![BinarySource::Override]);
+        assert_eq!(sources(ToolChoice::Bundled), vec![BinarySource::Bundled]);
+        assert!(sources(ToolChoice::System)
             .iter()
-            .all(|s| matches!(s, BinarySource::Path | BinarySource::Kdenlive)));
-        // melt keeps its own path whatever ffmpeg is chosen.
+            .all(|s| matches!(s, BinarySource::Path | BinarySource::Editor)));
+        // melt keeps its own choice whatever ffmpeg's is.
         let melt = BinaryOverrides {
             melt: set.to_string_lossy().into_owned(),
-            ffmpeg_choice: FfmpegChoice::Bundled,
+            ffmpeg_choice: ToolChoice::Bundled,
+            melt_choice: ToolChoice::Custom,
             ..Default::default()
         };
         assert_eq!(candidates(Tool::Melt, &melt)[0].1, BinarySource::Override);
@@ -586,6 +621,7 @@ mod tests {
         let broken = make_exe(&dir, "melt", "#!/bin/sh\nexit 3\n");
         let overrides = BinaryOverrides {
             melt: broken.to_string_lossy().into_owned(),
+            melt_choice: ToolChoice::Custom,
             ..Default::default()
         };
         let mut hints = Vec::new();
@@ -596,8 +632,8 @@ mod tests {
     }
 
     /// The real lookup on this machine: with Kdenlive installed and nothing on
-    /// PATH, all three come from the Kdenlive install, bar a bundled ffmpeg or
-    /// ffprobe that runs.
+    /// PATH, all three come from the Kdenlive install, bar a bundled one that
+    /// runs.
     /// `PATH=/usr/bin:/bin cargo test -- --ignored finds_kdenlives_own --nocapture`
     #[tokio::test]
     #[ignore = "needs Kdenlive installed"]
@@ -609,8 +645,7 @@ mod tests {
                 .get(tool)
                 .unwrap_or_else(|| panic!("{} not found", tool.name()));
             assert!(
-                found.source == BinarySource::Kdenlive
-                    || (tool != Tool::Melt && found.source == BinarySource::Bundled),
+                found.source == BinarySource::Editor || found.source == BinarySource::Bundled,
                 "{}: {:?}",
                 tool.name(),
                 found.source

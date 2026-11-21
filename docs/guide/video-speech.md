@@ -27,7 +27,7 @@ Transcription runs its own copy of whisper-server on port 8768, so voice input k
 - "Cut the retake at 4:10 in clip 2" cuts a stretch the assistant finds in the transcript. A clip cut in the middle becomes two pieces on the main track; each keeps the clip's effects.
 - "Where are the silences in the OBS recording?" lists them without cutting.
 
-The cuts go into the Kdenlive project like any other edit, and you can undo one there. Clips joined by a crossfade made in Kdenlive can't be cut this way; see the `video-editing` page.
+The cuts go into the Shotcut or Kdenlive project like any other edit, and you can undo one there. Clips joined by a crossfade made in the editor can't be cut this way; see the `video-cut` page.
 
 ## Write chapters
 

@@ -133,7 +133,7 @@ registerTool({
 const PROJECT_PARAM = {
 	type: 'string',
 	description:
-		"The .kdenlive file, relative to the working folder. Omit to use the episode's project (the last one cut, the only one in the episode folder, or one in the working folder ending in the episode number)."
+		"The project file, a Shotcut .mlt or a Kdenlive .kdenlive, relative to the working folder. Omit to use the episode's project (the last one cut, the only one in the episode folder, or one in the working folder ending in the episode number)."
 };
 
 registerTool({
@@ -143,7 +143,7 @@ registerTool({
 		function: {
 			name: 'video_project_read',
 			description:
-				"Read an episode's Kdenlive project: the main track's clips in order (numbered from 1) with their trims, and what is on other tracks.",
+				"Read an episode's project (Shotcut or Kdenlive): the main track's clips in order (numbered from 1) with their trims, and what is on other tracks.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -174,7 +174,7 @@ registerTool({
 		function: {
 			name: 'video_cut',
 			description:
-				'Set the main track (V1/A1) of the Kdenlive project to these clips, end to end, in order. Makes the project if there is none. Clips already in the cut are kept by index with their effects; anything on other tracks is left alone. The user can open the project in Kdenlive and change it too.',
+				'Set the main track (V1) of the project to these clips, end to end, in order. Makes the project if there is none, for the editor in Settings → Video editing unless editor says otherwise. Clips already in the cut are kept by index with their effects; anything on other tracks is left alone. The user can open the project in its editor and change it too.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -226,6 +226,11 @@ registerTool({
 						type: 'string',
 						enum: VIDEO_PRESETS.map((p) => p.id),
 						description: 'Format for a new project. Default from Settings → Video editing.'
+					},
+					editor: {
+						type: 'string',
+						enum: ['shotcut', 'kdenlive'],
+						description: 'Editor for a new project. Default from Settings → Video editing.'
 					},
 					crossfade_secs: {
 						type: 'number',
@@ -328,7 +333,7 @@ registerTool({
 		function: {
 			name: 'video_render',
 			description:
-				"Render an episode's Kdenlive project to an MP4 for YouTube in the background, in the project's format. Returns at once; a message arrives in this conversation when it finishes.",
+				"Render an episode's project to an MP4 for YouTube in the background, in the project's format. Returns at once; a message arrives in this conversation when it finishes.",
 			parameters: {
 				type: 'object',
 				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM }

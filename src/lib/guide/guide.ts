@@ -45,6 +45,7 @@ const ORDER = [
 	'speech',
 	'video-generation',
 	'video-editing',
+	'video-cut',
 	'video-render',
 	'video-speech',
 	'textures',

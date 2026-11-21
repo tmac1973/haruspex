@@ -145,7 +145,10 @@ if (YOUTUBE_UPLOAD) {
 							type: 'string',
 							description: 'The episode folder. Empty when the working folder is the episode.'
 						},
-						project: { type: 'string', description: 'The .kdenlive file, if not the episode’s.' },
+						project: {
+							type: 'string',
+							description: 'The project file (.mlt or .kdenlive), if not the episode’s.'
+						},
 						render: {
 							type: 'string',
 							description: 'The MP4 to upload. Default: the project’s newest render.'

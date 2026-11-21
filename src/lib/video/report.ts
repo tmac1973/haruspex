@@ -5,6 +5,7 @@
 import { getSettings } from '#lib/stores/settings.ts';
 import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
+import type { Format } from '#lib/ipc/gen/Format.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { SummaryItem } from '#lib/ipc/gen/SummaryItem.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
@@ -122,14 +123,17 @@ export function itemLine(i: SummaryItem): string {
 	}
 	if (!i.hasVideo) parts.push('sound only');
 	if (!i.hasAudio) parts.push('no sound');
-	if (i.effects > 0) parts.push(`${plural(i.effects, 'effect')} added in Kdenlive`);
+	if (i.effects > 0) parts.push(`${plural(i.effects, 'effect')} added in the editor`);
 	return parts.join(' · ');
 }
+
+/** Each project format's editor, as the user knows it. */
+export const EDITOR_NAMES: Record<Format, string> = { shotcut: 'Shotcut', kdenlive: 'Kdenlive' };
 
 export function summaryReport(p: ProjectSummary): string {
 	const fps = Number.isInteger(p.fps) ? p.fps : p.fps.toFixed(2);
 	const lines = [
-		`${p.project} · ${p.width}×${p.height} @ ${fps} fps · ${formatDuration(p.totalSecs)} long · Kdenlive ${p.kdenliveVersion || '?'}`
+		`${p.project} · ${p.width}×${p.height} @ ${fps} fps · ${formatDuration(p.totalSecs)} long · ${EDITOR_NAMES[p.editor]} ${p.editorVersion || '?'}`
 	];
 	if (p.readOnly) lines.push(p.readOnly);
 	if (p.items.length === 0) lines.push('The main track (V1/A1) is empty.');
@@ -148,13 +152,16 @@ export function summaryReport(p: ProjectSummary): string {
 	return lines.join('\n');
 }
 
-const KDENLIVE_OPEN =
-	'If this project is open in Kdenlive, close it without saving and reopen it, or Kdenlive will overwrite these changes.';
+/** What to do when the project is open in its editor while Haruspex changes it. */
+export function editorOpenNote(editor: Format): string {
+	const name = EDITOR_NAMES[editor];
+	return `If this project is open in ${name}, close it without saving and reopen it, or ${name} will overwrite these changes.`;
+}
 
 export function cutReport(r: CutResult): string {
 	const lines = [`${r.created ? 'Made' : 'Saved'} ${r.summary.project}.`, summaryReport(r.summary)];
 	if (r.notes.length) lines.push(...r.notes);
-	lines.push(KDENLIVE_OPEN);
+	lines.push(editorOpenNote(r.summary.editor));
 	return lines.join('\n');
 }
 

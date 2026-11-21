@@ -31,6 +31,7 @@ mod integrations;
 mod lemonade;
 mod links;
 mod lint;
+mod media_env;
 mod memory;
 mod models;
 mod net_util;
@@ -445,6 +446,7 @@ pub fn run() {
             camera::commands::camera_events_pending,
             camera::commands::camera_event_delete,
             camera::commands::camera_events_clear,
+            video::commands::media_shims_set,
             video::commands::video_binaries_status,
             video::commands::video_probe_folder,
             video::commands::video_probe_file,

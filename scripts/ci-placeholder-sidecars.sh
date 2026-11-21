@@ -8,12 +8,12 @@ bin="$(git rev-parse --show-toplevel)/src-tauri/binaries"
 mkdir -p "$bin"
 cd "$bin"
 TARGET=$(rustc --print host-tuple)
-for name in haruspex-llama-server haruspex-whisper-server haruspex-koko haruspex-ruff haruspex-node haruspex-uv haruspex-sd-server haruspex-ffmpeg haruspex-ffprobe; do
+for name in haruspex-llama-server haruspex-whisper-server haruspex-koko haruspex-ruff haruspex-node haruspex-uv haruspex-sd-server haruspex-ffmpeg haruspex-ffprobe haruspex-melt; do
     [[ -e "${name}-${TARGET}" ]] && continue
     echo '#!/bin/sh' >"${name}-${TARGET}"
     chmod +x "${name}-${TARGET}"
 done
-for dir in node-modules libs sd-libs espeak-ng-data espeak-ng-data/lang espeak-ng-data/lang/placeholder; do
+for dir in node-modules libs sd-libs media espeak-ng-data espeak-ng-data/lang espeak-ng-data/lang/placeholder; do
     mkdir -p "$dir"
     touch "$dir/.placeholder"
 done

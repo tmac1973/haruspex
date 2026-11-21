@@ -1,6 +1,6 @@
 //! Captions (SRT) and YouTube chapters from the cut's transcript.
 
-use super::kdenlive::timeline_map::Line;
+use super::timeline::Line;
 use serde::{Deserialize, Serialize};
 
 /// Characters per caption line, and lines per caption.

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two tracks composited by qtblend, as Kdenlive and Shotcut join video
+     tracks: red underneath, half-opaque blue over the top-left quarter. The
+     media smoke test renders it and checks both colours came out. -->
+<mlt LC_NUMERIC="C" version="7.40.0">
+  <profile description="smoke" width="320" height="240" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="4" display_aspect_den="3" frame_rate_num="25" frame_rate_den="1" colorspace="709"/>
+  <producer id="red" in="0" out="49">
+    <property name="mlt_service">color</property>
+    <property name="resource">#ffff0000</property>
+  </producer>
+  <producer id="blue" in="0" out="49">
+    <property name="mlt_service">color</property>
+    <property name="resource">#ff0000ff</property>
+  </producer>
+  <playlist id="v1">
+    <entry producer="red" in="0" out="49"/>
+  </playlist>
+  <playlist id="v2">
+    <entry producer="blue" in="0" out="49"/>
+  </playlist>
+  <tractor id="main" in="0" out="49">
+    <track producer="v1"/>
+    <track producer="v2"/>
+    <transition id="blend">
+      <property name="mlt_service">qtblend</property>
+      <property name="a_track">0</property>
+      <property name="b_track">1</property>
+      <property name="rect">0 0 160 120 0.5</property>
+      <property name="compositing">0</property>
+    </transition>
+  </tractor>
+</mlt>

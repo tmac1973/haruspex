@@ -20,6 +20,7 @@ vi.mock('#lib/video/youtube.ts', () => ({
 const settings = vi.hoisted(() => ({
 	videoEditingEnabled: false,
 	videoFfmpegChoice: 'auto',
+	videoMeltChoice: 'auto',
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -49,6 +50,8 @@ let status: VideoBinariesStatus;
 beforeEach(() => {
 	Object.assign(settings, {
 		videoEditingEnabled: false,
+		videoFfmpegChoice: 'auto',
+		videoMeltChoice: 'auto',
 		videoFfmpegPath: '',
 		videoFfprobePath: '',
 		videoMeltPath: '',
@@ -60,7 +63,7 @@ beforeEach(() => {
 	status = {
 		ffmpeg: found('ffmpeg'),
 		ffprobe: found('ffprobe'),
-		melt: found('melt', 'kdenlive'),
+		melt: found('melt', 'editor'),
 		hints: []
 	};
 	vi.mocked(invoke).mockImplementation(
@@ -83,7 +86,7 @@ beforeEach(() => {
 describe('VideoEditingSection', () => {
 	it('shows what it found and where', async () => {
 		render(VideoEditingSection);
-		await screen.findByText('melt 7.1 (Kdenlive)');
+		await screen.findByText('melt 7.1 (Shotcut or Kdenlive)');
 		screen.getByText('ffmpeg 7.1 (PATH)');
 	});
 
@@ -111,35 +114,39 @@ describe('VideoEditingSection', () => {
 		status = { ...status, melt: null, hints: ['Not found: melt.'] };
 		render(VideoEditingSection);
 		await screen.findByText('Not found');
-		screen.getByText('Install Kdenlive, or set the paths above.');
+		screen.getByText('Choose Automatic, or set the paths above.');
 	});
 
 	it('saves an override path as a plain string and looks again', async () => {
 		render(VideoEditingSection);
-		await screen.findByText('melt 7.1 (Kdenlive)');
-		const input = screen.getByLabelText('melt:') as HTMLInputElement;
+		await screen.findByText('melt 7.1 (Shotcut or Kdenlive)');
+		expect(screen.queryByLabelText('melt path:')).toBeNull();
+		await fireEvent.change(screen.getByLabelText('melt:'), { target: { value: 'custom' } });
+		expect(updateSettings).toHaveBeenCalledWith({ videoMeltChoice: 'custom' });
+		const input = screen.getByLabelText('melt path:') as HTMLInputElement;
 		await fireEvent.input(input, { target: { value: ' /opt/melt ' } });
 		await fireEvent.blur(input);
 		expect(updateSettings).toHaveBeenCalledWith({ videoMeltPath: '/opt/melt' });
 		expect(typeof settings.videoMeltPath).toBe('string');
 		expect(
 			vi.mocked(invoke).mock.calls.filter(([c]) => c === 'video_binaries_status')
-		).toHaveLength(2);
+		).toHaveLength(3);
 	});
 
 	it('picks which ffmpeg to use, with paths only for a custom one', async () => {
 		render(VideoEditingSection);
-		await screen.findByText('melt 7.1 (Kdenlive)');
-		expect(screen.queryByLabelText('ffmpeg:')).toBeNull();
-		screen.getByLabelText('melt:');
-		const use = screen.getByLabelText('Use:') as HTMLSelectElement;
+		await screen.findByText('melt 7.1 (Shotcut or Kdenlive)');
+		expect(screen.queryByLabelText('ffmpeg path:')).toBeNull();
+		const use = screen.getByLabelText('ffmpeg and ffprobe:') as HTMLSelectElement;
 		await fireEvent.change(use, { target: { value: 'custom' } });
 		expect(updateSettings).toHaveBeenCalledWith({ videoFfmpegChoice: 'custom' });
-		screen.getByLabelText('ffmpeg:');
-		screen.getByLabelText('ffprobe:');
+		screen.getByLabelText('ffmpeg path:');
+		screen.getByLabelText('ffprobe path:');
+		// melt keeps its own choice.
+		expect(screen.queryByLabelText('melt path:')).toBeNull();
 		await fireEvent.change(use, { target: { value: 'bundled' } });
 		expect(updateSettings).toHaveBeenCalledWith({ videoFfmpegChoice: 'bundled' });
-		expect(screen.queryByLabelText('ffmpeg:')).toBeNull();
+		expect(screen.queryByLabelText('ffmpeg path:')).toBeNull();
 		settings.videoFfmpegChoice = 'auto';
 	});
 
@@ -161,7 +168,7 @@ describe('VideoEditingSection', () => {
 	it('shows no YouTube sign-in while the upload is hidden', async () => {
 		flags.youtube = false;
 		render(VideoEditingSection);
-		await screen.findByText('melt 7.1 (Kdenlive)');
+		await screen.findByText('melt 7.1 (Shotcut or Kdenlive)');
 		expect(screen.queryByText('Sign in to YouTube')).toBeNull();
 		flags.youtube = true;
 	});

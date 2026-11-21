@@ -161,7 +161,8 @@ const EPISODE_PARAM = {
 };
 const PROJECT_PARAM = {
 	type: 'string',
-	description: 'The .kdenlive file, relative to the working folder. Omit for the episode’s project.'
+	description:
+		'The project file (.mlt or .kdenlive), relative to the working folder. Omit for the episode’s project.'
 };
 
 registerTool({

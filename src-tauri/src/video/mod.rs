@@ -8,17 +8,21 @@ pub mod binaries;
 pub mod check;
 pub mod commands;
 pub mod encode;
+pub mod format;
 pub mod frames;
 pub mod kdenlive;
 pub mod loudness;
+pub mod mlt;
 pub mod paths;
 pub mod probe;
 pub mod project;
 pub mod scenes;
+pub mod shotcut;
 pub mod silence;
 pub mod subtitles;
 pub mod tasks;
 pub mod thumbnail;
+pub mod timeline;
 pub mod transcribe;
 pub mod youtube;
 
@@ -40,10 +44,14 @@ pub(crate) fn copy_file(from: &std::path::Path, to: &std::path::Path) -> std::io
 }
 
 /// Ready a spawned ffmpeg, ffprobe or melt: undo an AppImage's environment,
-/// whose bundled libraries stop the system ffmpeg starting, and hide the
-/// console window it would open on Windows.
+/// whose bundled libraries stop the system ffmpeg starting; give a bundled
+/// one the media bundle's libraries, modules and plugins (after the scrub, so
+/// it can't take them away again); and hide the console window it would open
+/// on Windows. Every spawn of the three, cameras' and the audio cache's
+/// included, comes through here.
 pub(crate) fn prepare_child(cmd: &mut tokio::process::Command) {
     crate::env_util::sanitize_appimage_env(cmd.as_std_mut());
+    crate::media_env::apply(cmd.as_std_mut());
     crate::shell::platform::apply_no_window(cmd.as_std_mut());
 }
 

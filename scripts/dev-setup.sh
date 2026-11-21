@@ -101,22 +101,24 @@ if [ "$SKIP_RUNTIMES" = false ]; then
     echo
 fi
 
-# ---- Download ffmpeg and ffprobe (video tools, cameras) ----
-# Our LGPL build from this repo's ffmpeg-<tag> release. tauri-build wants every
+# ---- Download the media bundle: ffmpeg, ffprobe, melt (video tools, cameras) ----
+# Our build from this repo's media-<tag> release. tauri-build wants every
 # externalBin on disk, so when the download is skipped a placeholder stands in;
-# it answers nothing to `-version`, so the app passes over it for the ffmpeg on
+# it answers nothing to `-version`, so the app passes over it for the one on
 # PATH. A later run replaces it, since the script checks its .version stamp.
-"$SCRIPT_DIR/fetch-ffmpeg.sh" --target "$TARGET_TRIPLE"
+"$SCRIPT_DIR/fetch-media.sh" --target "$TARGET_TRIPLE"
 FF_EXT=""
 case "$TARGET_TRIPLE" in *windows*) FF_EXT=".exe" ;; esac
-for name in haruspex-ffmpeg haruspex-ffprobe; do
+for name in haruspex-ffmpeg haruspex-ffprobe haruspex-melt; do
     stub="$BINARIES_DIR/$name-$TARGET_TRIPLE$FF_EXT"
     if [ ! -e "$stub" ]; then
         echo '#!/bin/sh' > "$stub"
         chmod +x "$stub"
-        echo "   Placeholder: $stub (ffmpeg comes from PATH)"
+        echo "   Placeholder: $stub (it comes from PATH)"
     fi
 done
+# tauri.conf.json lists binaries/media/ as a resource.
+mkdir -p "$BINARIES_DIR/media"
 echo
 
 # ---- Download Pyodide runtime (Python sandbox) ----

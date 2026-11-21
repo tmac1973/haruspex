@@ -11,6 +11,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 			videoIntroPath: '/elsewhere/intro.mp4',
 			videoOutroPath: '',
 			videoPreset: '1440p60',
+			videoEditor: 'kdenlive',
 			videoEncoder: 'libx264'
 		})
 	})
@@ -38,7 +39,8 @@ const summary: ProjectSummary = {
 	width: 1920,
 	height: 1080,
 	fps: 60,
-	kdenliveVersion: '26.08.2',
+	editor: 'kdenlive',
+	editorVersion: '26.08.2',
 	readOnly: null,
 	items: [
 		{
@@ -121,7 +123,7 @@ describe('the summary report', () => {
 		const text = summaryReport(summary);
 		expect(text).toContain('ep010/ep010.kdenlive · 1920×1080 @ 60 fps · 2:06 long');
 		expect(text).toContain(
-			'2. ep010/raw/obs.mp4 · at 0:05.0 · 2:00.5 long · clip 0:10.0–2:10.5 · crossfades in over 1.0 s · gain +3.5 dB, peaks limited · 1 effect added in Kdenlive'
+			'2. ep010/raw/obs.mp4 · at 0:05.0 · 2:00.5 long · clip 0:10.0–2:10.5 · crossfades in over 1.0 s · gain +3.5 dB, peaks limited · 1 effect added in the editor'
 		);
 		expect(text).toContain('- V2: logo.png 0:00.0–0:03.0');
 		expect(text).toContain('1 crossfade on the main track · 2 guides');
@@ -181,6 +183,7 @@ describe('video_cut', () => {
 			episode: 'ep010',
 			spec: {
 				project: null,
+				editor: null,
 				preset: null,
 				intro: true,
 				outro: null,
@@ -191,15 +194,38 @@ describe('video_cut', () => {
 				normalize: null
 			},
 			settings: {
-				overrides: { ffmpeg: '', ffprobe: '', melt: '', ffmpegChoice: 'auto' },
+				overrides: { ffmpeg: '', ffprobe: '', melt: '', ffmpegChoice: 'auto', meltChoice: 'auto' },
 				intro: '/elsewhere/intro.mp4',
 				outro: '',
-				preset: '1440p60'
+				preset: '1440p60',
+				editor: 'kdenlive'
 			}
 		});
 		expect(out.result).toMatch(/^Made ep010\/ep010\.kdenlive\./);
 		expect(out.result).toContain('Clips on other tracks did not move.');
-		expect(out.result).toContain('close it without saving');
+		expect(out.result).toContain('open in Kdenlive, close it without saving');
+	});
+
+	it('passes the editor asked for, and refuses one it does not know', async () => {
+		vi.mocked(invoke).mockResolvedValue({
+			summary: { ...summary, editor: 'shotcut' },
+			notes: [],
+			created: true
+		});
+		const out = await executeTool(
+			'video_cut',
+			{ episode: 'ep010', editor: 'Shotcut', items: [{ path: 'ep010/raw/obs.mp4' }] },
+			chat
+		);
+		const [args] = allInvokeArgs<{ spec: { editor: string } }>(vi.mocked(invoke));
+		expect(args.spec.editor).toBe('shotcut');
+		expect(out.result).toContain('open in Shotcut');
+		const bad = await executeTool(
+			'video_cut',
+			{ episode: 'ep010', editor: 'premiere', items: [] },
+			chat
+		);
+		expect(bad.result).toContain('editor must be shotcut or kdenlive');
 	});
 
 	it('returns a refusal from Rust as an error', async () => {
