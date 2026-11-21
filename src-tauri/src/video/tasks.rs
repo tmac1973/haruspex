@@ -484,6 +484,7 @@ pub async fn start_upload(
 mod tests {
     use super::*;
     use crate::test_util::temp_dir;
+    use crate::video::format::Format;
 
     #[test]
     fn progress_lines_parse() {
@@ -516,92 +517,104 @@ mod tests {
         assert!(part_path(&p).to_str().unwrap().ends_with(".part.mp4"));
     }
 
-    /// A real render of a generated project, through the task.
+    /// A real render of a project each editor's format, through the task: two
+    /// clips with a crossfade and evened-out sound. Runs wherever melt is
+    /// found (the media bundle, after `./scripts/fetch-media.sh`), and is
+    /// skipped elsewhere.
     #[tokio::test]
-    #[ignore = "needs ffmpeg, ffprobe and melt"]
-    async fn render_a_real_project() {
-        let dir = temp_dir("render_real");
-        std::fs::create_dir_all(dir.join("ep1")).unwrap();
-        let ok = crate::test_util::host_command("ffmpeg")
-            .args([
-                "-v",
-                "error",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc=s=640x360:r=30:d=4",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=d=4",
-                "-shortest",
-            ])
-            .arg(dir.join("ep1/a.mp4"))
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok);
-        let wd = dir.to_string_lossy().into_owned();
-        let settings = VideoSettings {
-            preset: "1080p30".into(),
-            ..Default::default()
-        };
-        let spec = project::CutSpec {
-            items: vec![project::CutItemSpec {
-                path: Some("ep1/a.mp4".into()),
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        project::cut(&wd, "ep1", spec, &settings).await.unwrap();
-        let seen = Arc::new(Mutex::new(Vec::<BackgroundTask>::new()));
-        let sink = seen.clone();
-        let tasks = BackgroundTasks::new(
-            None,
-            Arc::new(move |t| sink.lock().unwrap().push(t.clone())),
-            Arc::new(|_| {}),
-        );
-        let video = VideoTasks::new(None);
-        let req = RenderRequest {
-            working_dir: wd.clone(),
-            episode: "ep1".into(),
-            project: None,
-            owner: "chat:test".into(),
-            encoder: String::new(),
-            settings,
-        };
-        let started = start_render(tasks.clone(), video.clone(), req.clone())
-            .await
-            .unwrap();
-        assert!(start_render(tasks.clone(), video, req)
-            .await
-            .unwrap_err()
-            .contains("already running"));
-        let done = loop {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            let t = tasks.get(&started.id).unwrap();
-            if t.state != TaskState::Running {
-                break t;
+    async fn render_real_projects_in_both_editors() {
+        let found = binaries::resolve(&Default::default()).await;
+        if found.melt.is_none() || found.ffmpeg.is_none() || found.ffprobe.is_none() {
+            eprintln!("skipped: needs ffmpeg, ffprobe and melt");
+            return;
+        }
+        let ffmpeg = found.ffmpeg.unwrap().path;
+        for editor in [Format::Shotcut, Format::Kdenlive] {
+            let dir = temp_dir(&format!("render_real_{}", editor.extension()));
+            std::fs::create_dir_all(dir.join("ep1")).unwrap();
+            for (name, src) in [("a.mp4", "testsrc"), ("b.mp4", "smptebars")] {
+                let mut cmd = tokio::process::Command::new(&ffmpeg);
+                cmd.args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+                    .arg(format!("{src}=s=640x360:r=30:d=4"))
+                    .args(["-f", "lavfi", "-i", "sine=d=4", "-shortest"])
+                    .args(["-c:v", "libx264", "-c:a", "aac"])
+                    .arg(dir.join("ep1").join(name));
+                crate::video::prepare_child(&mut cmd);
+                assert!(cmd.status().await.unwrap().success());
             }
-        };
-        assert_eq!(done.state, TaskState::Done, "{:?}", done.error);
-        let result: RenderResult = serde_json::from_value(done.result.unwrap()).unwrap();
-        assert!(
-            result.path.starts_with("ep1/renders/ep1-"),
-            "{}",
-            result.path
-        );
-        let check = result.check.as_ref().unwrap();
-        assert!((check.duration_secs - 4.0).abs() < 0.2, "{check:?}");
-        assert_eq!((check.width, check.height), (1920, 1080));
-        assert!(check.has_audio);
-        println!("{check:#?}");
-        assert!(seen
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|t| t.state == TaskState::Running));
+            let wd = dir.to_string_lossy().into_owned();
+            let settings = VideoSettings {
+                preset: "1080p30".into(),
+                editor,
+                ..Default::default()
+            };
+            let spec = project::CutSpec {
+                items: ["ep1/a.mp4", "ep1/b.mp4"]
+                    .iter()
+                    .map(|p| project::CutItemSpec {
+                        path: Some(p.to_string()),
+                        ..Default::default()
+                    })
+                    .collect(),
+                crossfade_secs: Some(1.0),
+                ..Default::default()
+            };
+            let cut = project::cut(&wd, "ep1", spec, &settings).await.unwrap();
+            assert_eq!(cut.summary.editor, editor);
+            assert!(cut.summary.project.ends_with(editor.extension()));
+            assert_eq!(cut.summary.mixes, 1);
+            let seen = Arc::new(Mutex::new(Vec::<BackgroundTask>::new()));
+            let sink = seen.clone();
+            let tasks = BackgroundTasks::new(
+                None,
+                Arc::new(move |t| sink.lock().unwrap().push(t.clone())),
+                Arc::new(|_| {}),
+            );
+            let video = VideoTasks::new(None);
+            let req = RenderRequest {
+                working_dir: wd.clone(),
+                episode: "ep1".into(),
+                project: None,
+                owner: "chat:test".into(),
+                encoder: String::new(),
+                settings: settings.clone(),
+            };
+            let started = start_render(tasks.clone(), video.clone(), req.clone())
+                .await
+                .unwrap();
+            assert!(start_render(tasks.clone(), video, req)
+                .await
+                .unwrap_err()
+                .contains("already running"));
+            let done = loop {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                let t = tasks.get(&started.id).unwrap();
+                if t.state != TaskState::Running {
+                    break t;
+                }
+            };
+            assert_eq!(done.state, TaskState::Done, "{editor:?}: {:?}", done.error);
+            let result: RenderResult = serde_json::from_value(done.result.unwrap()).unwrap();
+            assert!(
+                result.path.starts_with("ep1/renders/ep1-"),
+                "{}",
+                result.path
+            );
+            let check = result.check.as_ref().unwrap();
+            // Two 4 s clips overlapping by 1 s.
+            assert!(
+                (check.duration_secs - 7.0).abs() < 0.2,
+                "{editor:?}: {check:?}"
+            );
+            assert_eq!((check.width, check.height), (1920, 1080));
+            assert!(check.has_audio, "{editor:?}");
+            println!("{editor:?}: {check:#?}");
+            assert!(seen
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|t| t.state == TaskState::Running));
+        }
     }
 
     #[test]

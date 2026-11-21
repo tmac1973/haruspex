@@ -256,3 +256,113 @@ pub struct ProjectSummary {
     pub guides: u32,
     pub total_secs: f64,
 }
+
+#[cfg(test)]
+mod tests {
+    //! The same edits on a Shotcut and a Kdenlive project read back the same:
+    //! the tools above this layer can't tell the formats apart.
+    use super::*;
+    use crate::video::timeline::{Media, Source};
+
+    fn media(resource: &str, secs: f64, fps: Fps) -> Media {
+        Media {
+            resource: resource.into(),
+            length: fps.frames(secs),
+            video_index: Some(0),
+            audio_index: Some(1),
+            file_size: 1234,
+            file_hash: "0".repeat(32),
+        }
+    }
+
+    /// Apply `wanted` to `doc` and read the result back.
+    fn edit(doc: &ProjectDoc, wanted: &[Placement]) -> (ProjectDoc, Vec<String>) {
+        let out = doc.apply(wanted).unwrap();
+        let back = match doc.format() {
+            Format::Shotcut => ProjectDoc::Shotcut(ShotcutDoc::parse(out.text, None).unwrap()),
+            Format::Kdenlive => ProjectDoc::Kdenlive(KdenliveDoc::parse(out.text).unwrap()),
+        };
+        (back, out.notes)
+    }
+
+    fn shape(doc: &ProjectDoc) -> Vec<(String, i64, i64, String)> {
+        doc.spans()
+            .iter()
+            .map(|s| {
+                (
+                    s.file.file_name().unwrap().to_string_lossy().into_owned(),
+                    doc.fps().frames(s.start),
+                    doc.fps().frames(s.source_in),
+                    format!("{:.3}", s.source_out),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn both_formats_agree_on_every_kind_of_edit() {
+        let root = Path::new("/videos");
+        let docs: Vec<ProjectDoc> = [Format::Shotcut, Format::Kdenlive]
+            .iter()
+            .map(|&f| ProjectDoc::template(f, "1080p30", root).unwrap())
+            .collect();
+        let fps = docs[0].fps();
+        assert_eq!(fps, docs[1].fps());
+        let mut results = Vec::new();
+        for doc in &docs {
+            // A cut: three clips, the first trimmed, crossfades into the last two.
+            let mut wanted = vec![
+                Placement::of(Source::New(media("a.mp4", 10.0, fps))),
+                Placement::of(Source::New(media("b.mp4", 8.0, fps))),
+                Placement::of(Source::New(media("c.mp4", 6.0, fps))),
+            ];
+            wanted[0].in_frame = Some(fps.frames(2.0));
+            wanted[1].mix_in = Some(fps.frames(1.0));
+            wanted[2].mix_in = Some(fps.frames(0.5));
+            wanted[2].gain_db = Some(4.5);
+            wanted[2].limiter = true;
+            let (cut, _) = edit(doc, &wanted);
+            let after_cut = shape(&cut);
+            // Move the last first, trim the middle, split the first in two.
+            let mut next = cut.current();
+            let last = next.remove(2);
+            next.insert(0, last);
+            next[2].out_frame = Some(fps.frames(5.0));
+            let mut piece = Placement::of(Source::Piece(0));
+            piece.in_frame = Some(fps.frames(7.0));
+            next[1].out_frame = Some(fps.frames(5.0) - 1);
+            next.push(piece);
+            let (moved, notes) = edit(&cut, &next);
+            let clips: Vec<(i64, i64, bool)> = moved
+                .clips()
+                .iter()
+                .map(|c| (c.in_frame, c.out_frame, c.audio.is_some()))
+                .collect();
+            let summary = moved.summary("/videos", Path::new("/videos/ep/ep.x"));
+            let gains: Vec<(Option<f64>, bool)> = summary
+                .items
+                .iter()
+                .map(|i| (i.gain_db, i.limited))
+                .collect();
+            let crossfades: Vec<Option<f64>> =
+                summary.items.iter().map(|i| i.crossfade_in_secs).collect();
+            results.push((
+                after_cut,
+                shape(&moved),
+                clips,
+                gains,
+                crossfades,
+                summary.total_secs,
+                notes,
+                moved.sequence_end(),
+            ));
+        }
+        assert_eq!(results[0], results[1]);
+        // And what it is: c (4.5 dB, limited) leads, no crossfade into it.
+        let (_, _, clips, gains, fades, total, _, _) = &results[0];
+        assert_eq!(clips.len(), 4);
+        assert_eq!(gains[0], (Some(4.5), true));
+        assert_eq!(fades[0], None);
+        assert!(*total > 0.0);
+    }
+}
