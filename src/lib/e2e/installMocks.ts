@@ -179,6 +179,8 @@ const TABLE: Record<string, Handler> = {
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),
 	// No ffmpeg or melt in the e2e world: the video tools stay off.
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
+	// Nothing bundled to put on the shell's PATH.
+	media_shims_set: () => false,
 	// No cameras: none is watching.
 	camera_watch_status: () => ({ running: [], errors: {} }),
 	task_list: empty,
