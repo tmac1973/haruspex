@@ -14,6 +14,9 @@ on:
     paths:
       - scripts/build-media.sh
       - scripts/media-versions.sh
+      - scripts/media-env.sh
+      - scripts/media-smoke.sh
+      - scripts/media-size.sh
       - scripts/fixtures/qtblend-smoke.mlt
       - .github/workflows/build-media.yml
 
