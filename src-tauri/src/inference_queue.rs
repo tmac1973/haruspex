@@ -37,6 +37,11 @@
 //!     finishes, so a chat or Code turn keeps card jobs out for its whole
 //!     life, not only while it holds the slot. A running background ticket
 //!     is never pre-empted.
+//!   - A `prompt` ticket (a camera event being judged) sits between the two:
+//!     it waits while a foreground ticket on its lane is running or waiting,
+//!     but not for a reservation, and every waiting background ticket on the
+//!     lane gives way to it. A judgement is one short call, so it may run in
+//!     the gap a long tool leaves rather than wait out the whole turn.
 //!   - State changes broadcast a full `inference://queue` snapshot to every
 //!     window so each can render who is waiting / running.
 //!
@@ -90,7 +95,11 @@ impl TicketState {
 pub enum Priority {
     #[default]
     Foreground,
-    /// Admitted only when its lane has no foreground ticket and no reservation.
+    /// Admitted only when its lane has no foreground ticket; a reservation
+    /// doesn't hold it. Goes before the lane's background tickets.
+    Prompt,
+    /// Admitted only when its lane has no foreground or waiting prompt
+    /// ticket and no reservation.
     Background,
 }
 
@@ -98,6 +107,7 @@ impl Priority {
     fn parse(s: Option<&str>) -> Priority {
         match s {
             Some("background") => Priority::Background,
+            Some("prompt") => Priority::Prompt,
             _ => Priority::Foreground,
         }
     }
@@ -105,6 +115,7 @@ impl Priority {
     fn as_str(self) -> &'static str {
         match self {
             Priority::Foreground => "foreground",
+            Priority::Prompt => "prompt",
             Priority::Background => "background",
         }
     }
@@ -219,20 +230,40 @@ impl Inner {
         counts
     }
 
-    /// Whether a background ticket on `lane` must keep waiting: a foreground
-    /// ticket there is running or waiting, or a turn holds a reservation.
-    fn lane_busy_for_background(&self, lane: &str) -> bool {
+    /// Whether a prompt ticket on `lane` must keep waiting: a foreground
+    /// ticket there is running or waiting.
+    fn lane_busy_for_prompt(&self, lane: &str) -> bool {
         self.tickets
             .iter()
             .any(|t| t.lane == lane && t.priority == Priority::Foreground)
+    }
+
+    /// Whether a background ticket on `lane` must keep waiting: a foreground
+    /// ticket there is running or waiting, a prompt ticket is waiting, or a
+    /// turn holds a reservation.
+    fn lane_busy_for_background(&self, lane: &str) -> bool {
+        self.lane_busy_for_prompt(lane)
+            || self.tickets.iter().any(|t| {
+                t.lane == lane && t.priority == Priority::Prompt && t.state == TicketState::Waiting
+            })
             || self.reservations.iter().any(|r| r.lane == lane)
     }
 
     /// Admit waiting tickets in FIFO order while their lane has capacity,
     /// waking each via its oneshot sender. Lanes are independent: a full local
     /// lane never blocks a waiting remote ticket and vice versa. A background
-    /// ticket is passed over while its lane is busy for it.
+    /// or prompt ticket is passed over while its lane is busy for it.
+    ///
+    /// Passes repeat until one admits nothing: a background ticket passed over
+    /// for a waiting prompt ticket behind it gets another look once that
+    /// prompt ticket runs, in case the lane still has room.
     fn pump(&mut self) {
+        while self.pump_once() {}
+    }
+
+    /// One FIFO pass of [`pump`]; whether it admitted anyone.
+    fn pump_once(&mut self) -> bool {
+        let mut admitted = false;
         let mut running = self.running_by_lane();
         for i in 0..self.tickets.len() {
             if self.tickets[i].state != TicketState::Waiting {
@@ -243,18 +274,23 @@ impl Inner {
             if running.get(&lane).copied().unwrap_or(0) >= cap {
                 continue;
             }
-            if self.tickets[i].priority == Priority::Background
-                && self.lane_busy_for_background(&lane)
-            {
+            let busy = match self.tickets[i].priority {
+                Priority::Foreground => false,
+                Priority::Prompt => self.lane_busy_for_prompt(&lane),
+                Priority::Background => self.lane_busy_for_background(&lane),
+            };
+            if busy {
                 continue;
             }
             let id = self.tickets[i].id.clone();
             self.tickets[i].state = TicketState::Running;
             *running.entry(lane).or_insert(0) += 1;
+            admitted = true;
             if let Some(tx) = self.senders.remove(&id) {
                 let _ = tx.send(());
             }
         }
+        admitted
     }
 
     fn snapshot(&self) -> Vec<TicketDto> {
@@ -538,7 +574,8 @@ pub fn spawn_lease_sweeper(app: AppHandle) {
 /// gave up while a long tool ran: it goes ahead of the lane's waiting turns,
 /// and `replaces` names the request it released. `priority` is
 /// `"background"` for a Home card's job, which waits while the lane has any
-/// other work.
+/// other work, or `"prompt"` for a camera event being judged, which waits only
+/// for foreground turns and goes before background ones.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn inference_acquire(
@@ -1211,5 +1248,128 @@ mod tests {
         q.release_with("a", true);
         let mut chat = enqueue_local(&q, "chat", json!("chat"));
         assert!(admitted(&mut chat));
+    }
+
+    /// A camera event being judged.
+    fn enqueue_prompt(q: &InferenceQueue, id: &str, lane: &str) -> oneshot::Receiver<()> {
+        q.enqueue_with(
+            id.into(),
+            json!("camera"),
+            lane.into(),
+            Some(1),
+            "main".into(),
+            Admission {
+                priority: Priority::Prompt,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn prompt_goes_before_a_background_ticket_queued_earlier() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "chat", json!("chat"));
+        let mut job = enqueue_background(&q, "job", "local");
+        let mut judge = enqueue_prompt(&q, "judge", "local");
+        assert!(admitted(&mut chat));
+        assert!(!admitted(&mut job));
+        assert!(!admitted(&mut judge));
+
+        q.release("chat");
+        assert!(admitted(&mut judge));
+        assert!(!admitted(&mut job));
+        assert_eq!(q.snapshot()[1].priority, "prompt");
+
+        q.release("judge");
+        assert!(admitted(&mut job));
+    }
+
+    #[test]
+    fn prompt_waits_for_a_running_or_waiting_foreground_ticket() {
+        let q = InferenceQueue::new();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut judge = enqueue_prompt(&q, "judge", "local");
+        // A foreground turn that arrives after the judgement still goes first.
+        let mut b = enqueue_local(&q, "b", json!("shell"));
+        assert!(admitted(&mut a));
+        assert!(!admitted(&mut judge));
+        q.release("a");
+        assert!(admitted(&mut b));
+        assert!(!admitted(&mut judge));
+        q.release("b");
+        assert!(admitted(&mut judge));
+    }
+
+    #[test]
+    fn a_turn_taking_its_slot_back_goes_before_a_waiting_prompt() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "c1", json!("chat"));
+        assert!(admitted(&mut chat));
+        let mut other = enqueue_local(&q, "other", json!("shell"));
+        let mut judge = enqueue_prompt(&q, "judge", "local");
+        q.release_with("c1", true);
+        assert!(admitted(&mut other));
+        let mut again = take_back(&q, "c2", "c1");
+        q.release("other");
+        assert!(admitted(&mut again));
+        assert!(!admitted(&mut judge));
+        q.release("c2");
+        assert!(admitted(&mut judge));
+    }
+
+    #[test]
+    fn a_reservation_does_not_hold_a_prompt_ticket() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "c1", json!("code"));
+        assert!(admitted(&mut chat));
+        let mut job = enqueue_background(&q, "job", "local");
+        let mut judge = enqueue_prompt(&q, "judge", "local");
+        q.release_with("c1", true);
+        assert!(admitted(&mut judge));
+        q.release("judge");
+        // The reservation still keeps the card job out.
+        assert!(!admitted(&mut job));
+    }
+
+    #[test]
+    fn prompt_on_one_lane_does_not_block_another() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "chat", json!("chat"));
+        let mut judge = enqueue_prompt(&q, "judge", "local");
+        let mut job = enqueue_background(&q, "job", "remote:x");
+        assert!(admitted(&mut chat));
+        assert!(!admitted(&mut judge));
+        assert!(admitted(&mut job));
+    }
+
+    #[test]
+    fn a_background_ticket_passed_over_gets_room_left_after_a_prompt() {
+        let q = InferenceQueue::new();
+        // Two slots: the job is passed over for the waiting judgement, then
+        // admitted in the same pump once the judgement runs.
+        let mk = |id: &str, priority| {
+            q.enqueue_with(
+                id.into(),
+                json!("x"),
+                "local".into(),
+                Some(2),
+                "main".into(),
+                Admission {
+                    priority,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let mut chat = mk("chat", Priority::Foreground);
+        let mut job = mk("job", Priority::Background);
+        let mut judge = mk("judge", Priority::Prompt);
+        assert!(admitted(&mut chat));
+        assert!(!admitted(&mut job));
+        assert!(!admitted(&mut judge));
+        q.release("chat");
+        assert!(admitted(&mut judge));
+        assert!(admitted(&mut job));
     }
 }

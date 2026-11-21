@@ -88,10 +88,15 @@ export interface WithSlotOptions {
 	/**
 	 * `'background'` for a Home card's job: it waits while its lane has any
 	 * other turn running or waiting, or a turn that gave its slot back for a
-	 * long tool. Foreground otherwise.
+	 * long tool. `'prompt'` for a camera event being judged: it waits only for
+	 * foreground turns on its lane and goes before background ones. Foreground
+	 * otherwise.
 	 */
-	priority?: 'foreground' | 'background';
+	priority?: InferencePriority;
 }
+
+/** How a turn gives way to others on its lane; see `inference_queue.rs`. */
+export type InferencePriority = 'foreground' | 'prompt' | 'background';
 
 /** The slot a turn holds, which it can give back while a long tool runs. */
 export interface HeldSlot {
