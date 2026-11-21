@@ -514,6 +514,7 @@
 						{#if messageStops[i]}
 							<StopIndicator
 								reason={messageStops[i]}
+								limitSetting="Settings → Shell → Max steps per turn"
 								disabled={submitting}
 								onContinue={session.continueTurn}
 							/>

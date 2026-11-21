@@ -303,6 +303,7 @@
 				{#if session.messageStops[i]}
 					<StopIndicator
 						reason={session.messageStops[i]}
+						limitSetting="Settings → Code → Max steps per task"
 						disabled={session.busy}
 						onContinue={session.continueTurn}
 					/>

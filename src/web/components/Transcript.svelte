@@ -79,7 +79,12 @@
 			<Message message={msg} root={session.root} />
 		{/if}
 		{#if stopAt(i)}
-			<StopIndicator reason={stopAt(i) as never} disabled={session.busy} onContinue={oncontinue} />
+			<StopIndicator
+				reason={stopAt(i) as never}
+				disabled={session.busy}
+				limitSetting="Settings → Code → Max steps per task"
+				onContinue={oncontinue}
+			/>
 		{/if}
 	{/each}
 	{#if session.searchSteps.length}
