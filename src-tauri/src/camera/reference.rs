@@ -78,12 +78,44 @@ pub fn fingerprint_jpeg(jpeg: &[u8]) -> Result<Vec<u8>, String> {
         .into_raw())
 }
 
-/// How alike two pictures are, from -1 to 1 (1 the same view).
+/// How far, in fingerprint pixels, one picture may be shifted against the
+/// other and still count as the same view: about 6% of the width and 8% of
+/// the height. A pan/tilt camera sent home by counting steps lands a little
+/// differently each time (the D1's steps vary in size).
+const MAX_SHIFT_X: i32 = 4;
+const MAX_SHIFT_Y: i32 = 3;
+
+/// How alike two pictures are, from -1 to 1 (1 the same view): the best
+/// correlation over small shifts of one against the other, so a camera that
+/// came home slightly off doesn't read as a changed room.
 pub fn similarity(a: &[u8], b: &[u8]) -> Result<f64, String> {
-    Ok(super::capture::correlation(
+    Ok(shifted_correlation(
         &fingerprint_jpeg(a)?,
         &fingerprint_jpeg(b)?,
     ))
+}
+
+/// The best correlation of two fingerprints over shifts up to
+/// [`MAX_SHIFT_X`] × [`MAX_SHIFT_Y`], comparing only where they overlap.
+fn shifted_correlation(a: &[u8], b: &[u8]) -> f64 {
+    let (w, h) = (FINGERPRINT_W as i32, FINGERPRINT_H as i32);
+    if a.len() != b.len() || a.len() != (w * h) as usize {
+        return super::capture::correlation(a, b);
+    }
+    let mut best = f64::MIN;
+    for dy in -MAX_SHIFT_Y..=MAX_SHIFT_Y {
+        for dx in -MAX_SHIFT_X..=MAX_SHIFT_X {
+            let (mut pa, mut pb) = (Vec::new(), Vec::new());
+            for y in dy.max(0)..h + dy.min(0) {
+                for x in dx.max(0)..w + dx.min(0) {
+                    pa.push(a[(y * w + x) as usize]);
+                    pb.push(b[((y - dy) * w + (x - dx)) as usize]);
+                }
+            }
+            best = best.max(super::capture::correlation(&pa, &pb));
+        }
+    }
+    best
 }
 
 /// The folder a camera's references live in.
@@ -235,6 +267,25 @@ mod tests {
             }
         });
         assert!(similarity(&a, &a).unwrap() > 0.999);
+        // The same room seen a little lower, as a camera that came home a
+        // few steps off would see it.
+        let tilted = jpeg(|x, y| {
+            let y = y.saturating_sub(6);
+            if x < 80 {
+                [180, 120, 60]
+            } else if y < 45 {
+                [40, 90, 160]
+            } else {
+                [200, 200, 190]
+            }
+        });
+        assert!(
+            super::super::capture::correlation(
+                &fingerprint_jpeg(&a).unwrap(),
+                &fingerprint_jpeg(&tilted).unwrap()
+            ) < 0.95
+        );
+        assert!(similarity(&a, &tilted).unwrap() > 0.98);
         assert!(similarity(&a, &brighter).unwrap() > 0.99);
         assert!(similarity(&a, &moved).unwrap() < 0.9);
     }
