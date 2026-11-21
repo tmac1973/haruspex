@@ -52,7 +52,7 @@ Ask, for example, "save what we just did as a skill called deploy-check", or ask
 
 ## Repo instructions (AGENTS.md)
 
-In a git repo with an `AGENTS.md` at its root (or a `CLAUDE.md` when there is none), the Shell assistant reads it into every turn, in both Read-only and Full access. Outside a git repo, the nearest folder with one (below your home folder) counts as the project. A file in a subfolder nearer your current folder is read too. Up to 8 KB is read per turn; the badge warns when the file was cut.
+In a git repo with an `AGENTS.md` at its root (or a `CLAUDE.md` if none), the Shell assistant reads it into every turn, in both modes. Outside a repo, the nearest folder with one (below your home folder) counts. A file in a subfolder nearer your current folder is read too. Up to 8 KB is read per turn; the badge warns when the file was cut.
 
 A repo's instructions and skills come from whoever made it, so the first time Haruspex finds them it asks **Use this repo's instructions?**, with **Use them** or **Ignore them**. It asks again if a different repo appears in that folder, or the repo gains new skills.
 
@@ -60,7 +60,7 @@ Settings → Skills → Repos keeps the answers: switch a repo between Use and I
 
 ## Draft an AGENTS.md with /init
 
-In the Code tab or with Full access, `/init` reads the repo's manifests, CI, README and agent files and drafts a short `AGENTS.md`: the real build, test and lint commands, conventions and gotchas. It opens for review before saving, and changes an existing file rather than rewriting it. Outside a git repo it saves in the folder you're in. In a Read-only Shell, `/init` only adds a note saying where it works.
+In the Code tab or with Full access, `/init` reads the repo's manifests, CI, README and agent files and drafts a short `AGENTS.md`: the real build, test and lint commands, conventions and gotchas. It opens for review before saving, and changes an existing file rather than rewriting it. Outside a repo it saves in your current folder. In a Read-only Shell, `/init` only adds a note saying where it works.
 
 ## Audit or plan a project
 
