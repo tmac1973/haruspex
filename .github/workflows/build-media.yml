@@ -7,18 +7,6 @@ name: Build media tools
 # scripts/media-versions.sh changes, before the next app release.
 on:
   workflow_dispatch:
-  # While the bundle is being built on its branch: build on every push that
-  # touches it, and publish when the commit message says [publish media].
-  push:
-    branches: ['claude/melt-bundling-*']
-    paths:
-      - scripts/build-media.sh
-      - scripts/media-versions.sh
-      - scripts/media-env.sh
-      - scripts/media-smoke.sh
-      - scripts/media-size.sh
-      - scripts/fixtures/qtblend-smoke.mlt
-      - .github/workflows/build-media.yml
 
 jobs:
   build:
@@ -108,7 +96,6 @@ jobs:
 
   publish:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish media]')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
