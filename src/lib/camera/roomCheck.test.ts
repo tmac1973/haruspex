@@ -191,6 +191,7 @@ describe('checkRoom', () => {
 		expect(parts.map((p) => p.image_url?.url)).toEqual(['REF', 'NOW', undefined]);
 		expect(parts[2].text).toContain('1. Tell me if the TV is gone');
 		expect(parts[2].text).toContain("people and pets coming, going or moving about don't");
+		expect(parts[2].text).toContain("the whole view shifted or tilted a little isn't a change");
 		expect(parts[2].text).toContain('- Someone searched the drawers.');
 	});
 
