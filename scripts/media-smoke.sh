@@ -53,6 +53,9 @@ fi
 [ "$fail" = 0 ] || exit 1
 
 OUT="$DIR/smoke.mp4"
+# melt reads it inside "avformat:…", which MSYS doesn't translate for a
+# native Windows program.
+command -v cygpath >/dev/null 2>&1 && OUT="$(cygpath -m "$OUT")"
 "$MELT" "$SCRIPT_DIR/fixtures/qtblend-smoke.mlt" -consumer "avformat:$OUT" \
     vcodec=libx264 acodec=aac 2>&1 | tail -5
 [ -s "$OUT" ] || { echo "::error::melt wrote no smoke.mp4"; exit 1; }
