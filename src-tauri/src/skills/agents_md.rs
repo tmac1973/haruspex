@@ -42,11 +42,14 @@ pub struct AgentsMdDraft {
     pub current: Option<String>,
 }
 
-/// The root `AGENTS.md` of the repo `cwd` is in.
+/// The `AGENTS.md` at the root of the project `cwd` is in: its repo, or
+/// outside one the folder itself (see `instructions_root`).
 fn target(cwd: &Path) -> Result<PathBuf, String> {
-    super::find_project_root(cwd)
+    super::instructions_root(cwd)
         .map(|root| root.join("AGENTS.md"))
-        .ok_or_else(|| "the shell is not in a git repo; AGENTS.md goes at a repo's root".into())
+        .ok_or_else(|| {
+            "the shell is in the home folder; AGENTS.md goes in a project's folder".into()
+        })
 }
 
 pub fn draft(cwd: &Path) -> Result<AgentsMdDraft, String> {
@@ -165,9 +168,22 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_write_outside_a_repo_or_past_the_cap() {
+    fn writes_in_a_folder_that_is_not_a_repo() {
+        let base = temp_dir("write_plain");
+        let d = draft(&base).unwrap();
+        assert_eq!(d.path, base.join("AGENTS.md").to_string_lossy());
+        save(&base, "# Songs\n").unwrap();
+        // Saved, it makes the folder a project, found from below too.
+        fs::create_dir_all(base.join("examples")).unwrap();
+        assert_eq!(
+            draft(&base.join("examples")).unwrap().current.as_deref(),
+            Some("# Songs\n")
+        );
+    }
+
+    #[test]
+    fn refuses_to_write_past_the_cap() {
         let base = temp_dir("write_refused");
-        assert!(draft(&base).unwrap_err().contains("not in a git repo"));
         fs::create_dir_all(base.join(".git")).unwrap();
         assert!(save(&base, " ").unwrap_err().contains("empty"));
         let long = "x".repeat(MAX_BYTES + 1);

@@ -222,7 +222,7 @@ registerTool({
 		function: {
 			name: WRITE_AGENTS_MD_TOOL,
 			description:
-				"Write the repo's AGENTS.md at its root, replacing the current one if there is one. Use for /init, or when the user asks for AGENTS.md to be written or changed. The user reviews the text before it is saved.",
+				"Write the project's AGENTS.md at its root (the repo's root, or outside a repo the folder you are in), replacing the current one if there is one. Use for /init, or when the user asks for AGENTS.md to be written or changed. The user reviews the text before it is saved.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -238,7 +238,7 @@ registerTool({
 	async execute(args, ctx) {
 		const cwd = ctxHostCwd(ctx);
 		if (!ctx.codeMode || !cwd) {
-			return toolResult(toolError('AGENTS.md can only be written in Code mode, inside a repo.'));
+			return toolResult(toolError('AGENTS.md can only be written in Code mode.'));
 		}
 		const content = String(args.content ?? '');
 		if (!content.trim()) return toolResult(toolError('content is empty: give the whole file.'));

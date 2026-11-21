@@ -471,13 +471,52 @@ pub struct ProjectInstructions {
     pub origin: Option<String>,
 }
 
-/// The repo `cwd` is in: the nearest ancestor (or `cwd` itself) holding a
-/// `.git` entry. A folder outside any repo has no project, so a shell sitting
-/// in `~` doesn't treat the home directory's skills as a project's.
+/// The project `cwd` is in: the nearest ancestor (or `cwd` itself) holding a
+/// `.git` entry. Outside any repo, the nearest folder with its own `AGENTS.md`
+/// or `CLAUDE.md`, below the home folder: a project of plain files has
+/// instructions too, but a shell sitting in `~` doesn't treat the home
+/// directory's skills as a project's.
 pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
+    project_root_in(cwd, home_dir().as_deref())
+}
+
+/// Where `/init` writes for a shell in `cwd`: its project, or outside one the
+/// folder itself, unless that is the home folder or above it.
+pub fn instructions_root(cwd: &Path) -> Option<PathBuf> {
+    let home = home_dir();
+    project_root_in(cwd, home.as_deref())
+        .or_else(|| below_home(cwd, cwd, home.as_deref()).then(|| cwd.to_path_buf()))
+}
+
+fn project_root_in(cwd: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(repo) = cwd.ancestors().find(|dir| dir.join(".git").exists()) {
+        return Some(repo.to_path_buf());
+    }
     cwd.ancestors()
-        .find(|dir| dir.join(".git").exists())
+        .take_while(|dir| below_home(dir, cwd, home))
+        .find(|dir| {
+            ["AGENTS.md", "CLAUDE.md"]
+                .iter()
+                .any(|f| dir.join(f).is_file())
+        })
         .map(Path::to_path_buf)
+}
+
+/// Whether `dir` is inside the home folder, or anywhere but the home folder
+/// and its parents. With no home folder known, only `cwd` itself counts.
+fn below_home(dir: &Path, cwd: &Path, home: Option<&Path>) -> bool {
+    match home {
+        Some(home) => !home.starts_with(dir),
+        None => dir == cwd,
+    }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let key = "USERPROFILE";
+    #[cfg(not(windows))]
+    let key = "HOME";
+    std::env::var_os(key).map(PathBuf::from)
 }
 
 fn project_instructions(root: &Path) -> ProjectInstructions {
@@ -747,6 +786,36 @@ mod tests {
         );
         fs::create_dir_all(base.join("plain")).unwrap();
         assert_eq!(find_project_root(&base.join("plain")), None);
+    }
+
+    #[test]
+    fn a_folder_of_plain_files_is_a_project_once_it_has_instructions() {
+        let home = temp_dir("plain_home");
+        let project = home.join("songs/examples");
+        fs::create_dir_all(&project).unwrap();
+        assert_eq!(project_root_in(&project, Some(home.as_path())), None);
+        fs::write(home.join("songs/AGENTS.md"), "rules").unwrap();
+        assert_eq!(
+            project_root_in(&project, Some(home.as_path())),
+            Some(home.join("songs"))
+        );
+        // The home folder's own file doesn't make every folder in it a project.
+        fs::write(home.join("CLAUDE.md"), "mine").unwrap();
+        fs::create_dir_all(home.join("other")).unwrap();
+        assert_eq!(
+            project_root_in(&home.join("other"), Some(home.as_path())),
+            None
+        );
+        assert_eq!(project_root_in(&home, Some(home.as_path())), None);
+    }
+
+    #[test]
+    fn without_a_home_folder_only_the_folder_itself_counts() {
+        let base = temp_dir("plain_nohome");
+        fs::create_dir_all(base.join("a/b")).unwrap();
+        fs::write(base.join("a/AGENTS.md"), "rules").unwrap();
+        assert_eq!(project_root_in(&base.join("a/b"), None), None);
+        assert_eq!(project_root_in(&base.join("a"), None), Some(base.join("a")));
     }
 
     #[test]
