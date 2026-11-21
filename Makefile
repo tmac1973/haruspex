@@ -45,20 +45,22 @@ ensure-uv: ## Download the uv sidecar (runs PyPI-packaged MCP servers) when miss
 ensure-sdcpp: ## Download the sd-server image sidecar when missing or its pin changed
 	@./scripts/fetch-sdcpp.sh --target $(TARGET)
 
-.PHONY: ensure-ffmpeg
-ensure-ffmpeg: ## Download the ffmpeg + ffprobe sidecars when missing or their pin changed
-	@./scripts/fetch-ffmpeg.sh --target $(TARGET)
+.PHONY: ensure-media
+ensure-media: ## Download the media bundle (ffmpeg, ffprobe, melt) when missing or its pin changed
+	@./scripts/fetch-media.sh --target $(TARGET)
 	@# tauri-build wants every externalBin on disk. When the fetch was skipped,
 	@# an empty script stands in; it answers nothing to -version, so the app
-	@# uses the ffmpeg on PATH. Same placeholder as dev-setup.sh.
+	@# uses the one on PATH. Same placeholders as dev-setup.sh.
 	@ext=""; case "$(TARGET)" in *windows*) ext=".exe" ;; esac; \
-	for name in haruspex-ffmpeg haruspex-ffprobe; do \
+	for name in haruspex-ffmpeg haruspex-ffprobe haruspex-melt; do \
 		stub="src-tauri/binaries/$$name-$(TARGET)$$ext"; \
 		if [ ! -e "$$stub" ]; then \
 			printf '#!/bin/sh\n' > "$$stub"; chmod +x "$$stub"; \
-			echo ">> Placeholder: $$stub (ffmpeg comes from PATH)"; \
+			echo ">> Placeholder: $$stub (it comes from PATH)"; \
 		fi; \
 	done
+	@# tauri.conf.json lists binaries/media/ as a resource.
+	@mkdir -p src-tauri/binaries/media
 
 .PHONY: ensure-pdfium
 ensure-pdfium: ## Download the PDFium shared library when missing
@@ -137,7 +139,7 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 	fi
 
 .PHONY: dev
-dev: ensure-sidecars ensure-sdcpp ensure-ffmpeg ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-web-client ensure-libs-linked ## Run the app in dev mode
+dev: ensure-sidecars ensure-sdcpp ensure-media ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-web-client ensure-libs-linked ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 # The two check-*.mjs guards mirror the frontend CI job. They used to run ONLY
