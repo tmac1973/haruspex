@@ -10,14 +10,21 @@
 	interface Props {
 		reason: AgentStopReason;
 		disabled?: boolean;
+		/** Where the user raises this tab's step limit, e.g. "Settings → Code → Max steps per task". */
+		limitSetting?: string;
 		onContinue: () => void;
 	}
 
-	let { reason, disabled = false, onContinue }: Props = $props();
+	let {
+		reason,
+		disabled = false,
+		limitSetting = 'Settings → Chat → Max steps per turn',
+		onContinue
+	}: Props = $props();
 
 	const text = $derived(
 		reason === 'max_iterations'
-			? 'Stopped at the turn limit — the agent ran out of steps and was told to wrap up, so this answer may be incomplete.'
+			? `Stopped at the turn limit — the agent ran out of steps and was told to wrap up, so this answer may be incomplete. If this happens often, raise ${limitSetting}.`
 			: 'Stopped early — the agent produced malformed output or kept repeating the same action.'
 	);
 </script>
