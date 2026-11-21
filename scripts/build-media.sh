@@ -478,6 +478,14 @@ if [ ! -f "$WORK/mlt-build/.installed" ]; then
     sed -i.orig -e '/^ *consumer_qglsl\.cpp$/d' "$QT_MOD/CMakeLists.txt"
     sed -i.orig -e '/"qglsl"/d' "$QT_MOD/factory.c"
     sed -i.orig -e '/#include <X11\/Xlib.h>/d' "$QT_MOD/common.cpp"
+    # On Windows (and in relocatable builds) MLT reads its modules only from
+    # beside the executable; let MLT_REPOSITORY point elsewhere, as it does on
+    # Linux, so the app's media/mlt folder is used.
+    FACTORY="$WORK/mlt-$MLT_VERSION/src/framework/mlt_factory.c"
+    if [ "$(grep -c 'getenv("MLT_REPOSITORY")' "$FACTORY")" = 1 ]; then
+        perl -0pi -e 's/(#else\n        if \(directory\) \{)/#else\n        if ((directory == NULL || !strcmp(directory, "")) \&\& getenv("MLT_REPOSITORY"))\n            directory = getenv("MLT_REPOSITORY");\n        if (directory) {/' "$FACTORY"
+        grep -c 'getenv("MLT_REPOSITORY")' "$FACTORY" | grep -q 3 || { echo "ERROR: the MLT_REPOSITORY patch did not apply"; exit 1; }
+    fi
     MOD_FLAGS=()
     for m in "${MLT_MODULES[@]}"; do MOD_FLAGS+=("-DMOD_$(echo "$m" | tr '[:lower:]' '[:upper:]')=ON"); done
     for m in "${MLT_OFF[@]}"; do MOD_FLAGS+=("-DMOD_$(echo "$m" | tr '[:lower:]' '[:upper:]')=OFF"); done
