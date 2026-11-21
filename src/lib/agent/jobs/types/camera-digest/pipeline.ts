@@ -10,7 +10,11 @@
  *   when the job asks for one and the model can see, `camera_snapshot`. Both
  *   pass through the camera gate, which refuses an Ask camera to a job.
  *
- * An empty period ends with "Nothing was logged." and no model turn.
+ * Entries camera alerts flagged Unusual or Urgent, and not dismissed, lead
+ * the prompt and the result. With Email the result on, the summary goes to
+ * the addresses in Settings → Cameras → Alerts.
+ *
+ * An empty period ends with "Nothing was logged." and no model turn, and no email.
  */
 import { invoke } from '@tauri-apps/api/core';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
@@ -22,13 +26,15 @@ import {
 	markRunStepStarted
 } from '#lib/stores/jobRuns.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { normalizeAbort } from '#lib/utils/error.ts';
+import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
 import { parseModelJson } from '#lib/agent/jobs/cardResult.ts';
 import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 import { NOT_LOCAL } from '#lib/agent/tools/_cameraGate.ts';
 import { cameraDataAllowed } from '#lib/camera/trust.ts';
 import { renderCameraLog, stamp } from '#lib/camera/log.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { sendAlert } from '#lib/camera/alertDispatch.ts';
+import { MAX_ATTACHMENTS_PER_EMAIL } from '#lib/camera/alertConfig.ts';
 import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
 import {
 	parseCameraDigestConfig,
@@ -37,6 +43,8 @@ import {
 
 /** Entries read from each camera's log, newest first. */
 export const PER_CAMERA = 200;
+/** Flagged entries per camera that always reach the prompt. */
+export const FLAGGED_PER_CAMERA = 50;
 const DAY = 24 * 3_600_000;
 /** Tool rounds the summary turn may take: a few log searches and pictures. */
 const MAX_ITERATIONS = 8;
@@ -64,6 +72,36 @@ export interface Highlight {
 export interface CameraDigestResult {
 	summary: string;
 	highlights: Highlight[];
+	/** The flagged entries the summary covered, in time order. */
+	flagged?: Highlight[];
+}
+
+/** Whether camera alerts flagged an entry and it wasn't dismissed. */
+export function isFlagged(e: CameraEvent): boolean {
+	return (e.alertLevel === 'unusual' || e.alertLevel === 'urgent') && e.dismissedAt === null;
+}
+
+/**
+ * Split entries (newest first) into the flagged ones, up to
+ * `FLAGGED_PER_CAMERA` a camera, and the rest.
+ */
+export function splitFlagged(events: CameraEvent[]): {
+	flagged: CameraEvent[];
+	rest: CameraEvent[];
+} {
+	const count = new Map<string, number>();
+	const flagged: CameraEvent[] = [];
+	const rest: CameraEvent[] = [];
+	for (const e of events) {
+		const n = count.get(e.cameraId) ?? 0;
+		if (isFlagged(e) && n < FLAGGED_PER_CAMERA) {
+			count.set(e.cameraId, n + 1);
+			flagged.push(e);
+		} else {
+			rest.push(e);
+		}
+	}
+	return { flagged, rest };
 }
 
 /**
@@ -122,7 +160,7 @@ export function digestToolAllowlist(includeSnapshot: boolean, vision: boolean): 
 }
 
 const SYSTEM_PROMPT =
-	"You summarise what a person's home cameras logged. Each entry is one time something moved or someone spoke: what was said, and a one-line caption of what was seen. Report only what the entries and pictures show; never guess who someone is. Answer with JSON only.";
+	"You summarise what a person's home cameras logged. Each entry is one time something moved or someone spoke: what was said, and a one-line caption of what was seen. Some entries were flagged Unusual or Urgent, with why. Report only what the entries and pictures show; never guess who someone is. Answer with JSON only.";
 
 export function summaryPrompt(opts: {
 	cameras: CameraConfig[];
@@ -133,13 +171,19 @@ export function summaryPrompt(opts: {
 	omitted: number;
 	focus: string;
 	snapshot: boolean;
+	/** The flagged entries as log lines, oldest first; empty for none. */
+	flagged?: string;
 }): string {
 	const names = opts.cameras.map((c) => c.name).join(', ');
-	const lines = [
+	const lines: string[] = [];
+	if (opts.flagged) {
+		lines.push('Flagged entries (Unusual or Urgent), oldest first:', '', opts.flagged, '');
+	}
+	lines.push(
 		`Camera log for ${names}, from ${stamp(new Date(opts.since))} to ${stamp(new Date(opts.until))} (local time). ${opts.count} ${opts.count === 1 ? 'entry' : 'entries'}, oldest first:`,
 		'',
 		opts.log
-	];
+	);
 	if (opts.omitted > 0) {
 		lines.push('', `${opts.omitted} older entries were left out; camera_log can search them.`);
 	}
@@ -149,8 +193,10 @@ export function summaryPrompt(opts: {
 	lines.push('');
 	if (opts.focus.trim()) lines.push(`Focus: ${opts.focus.trim()}`, '');
 	lines.push(
-		'Summarise what happened in a short paragraph, then pick the moments worth knowing about.',
-		'Reply with only a JSON object: {"summary":"…","highlights":[{"time":"14:03","camera":"Kitchen","text":"…"}]}. At most 8 highlights, in time order; none if nothing stands out.'
+		opts.flagged
+			? 'Start the summary with the flagged entries: what happened and why each was flagged. Then summarise the rest in a short paragraph, and pick the moments worth knowing about.'
+			: 'Summarise what happened in a short paragraph, then pick the moments worth knowing about.',
+		'Reply with only a JSON object: {"summary":"…","flagged":[{"time":"03:10","camera":"Kitchen","text":"…"}],"highlights":[{"time":"14:03","camera":"Kitchen","text":"…"}]}. "flagged" has one item per flagged entry, in time order, and is empty when none were flagged. At most 8 highlights, in time order; none if nothing stands out.'
 	);
 	return lines.join('\n');
 }
@@ -161,18 +207,23 @@ export function parseDigest(text: string): CameraDigestResult {
 	if (typeof raw !== 'object' || raw === null || typeof raw.summary !== 'string') {
 		throw new Error('The reply must be an object with a "summary" string.');
 	}
-	const list = raw.highlights ?? [];
-	if (!Array.isArray(list)) throw new Error('"highlights" must be an array.');
-	const highlights = list.slice(0, 8).map((h, i) => {
+	const highlights = readHighlights(raw.highlights, 'highlights', 'Highlight', 8);
+	const flagged = readHighlights(raw.flagged, 'flagged', 'Flagged entry', 50);
+	return { summary: raw.summary.trim(), highlights, ...(flagged.length ? { flagged } : {}) };
+}
+
+function readHighlights(value: unknown, key: string, label: string, max: number): Highlight[] {
+	const list = value ?? [];
+	if (!Array.isArray(list)) throw new Error(`"${key}" must be an array.`);
+	return list.slice(0, max).map((h, i) => {
 		const item = (h ?? {}) as Record<string, unknown>;
 		for (const field of ['time', 'camera', 'text']) {
 			if (typeof item[field] !== 'string') {
-				throw new Error(`Highlight ${i + 1}'s "${field}" must be a string.`);
+				throw new Error(`${label} ${i + 1}'s "${field}" must be a string.`);
 			}
 		}
 		return { time: item.time as string, camera: item.camera as string, text: item.text as string };
 	});
-	return { summary: raw.summary.trim(), highlights };
 }
 
 /**
@@ -242,8 +293,10 @@ async function summarise(
 	{ cameras, since, until, events }: Gathered
 ): Promise<CameraDigestResult> {
 	const vision = ctx.visionSupported();
-	const fitted = fitEntries(events, ctx.contextSize());
+	const { flagged, rest } = splitFlagged(events);
+	const fitted = fitEntries(rest, ctx.contextSize());
 	const prompt = summaryPrompt({
+		flagged: renderCameraLog([...flagged].reverse()),
 		cameras,
 		since,
 		until,
@@ -271,6 +324,44 @@ async function summarise(
 			if (attempt > 0) throw e;
 			message = `${prompt}\n\nYour last reply could not be used: ${(e as Error).message} Reply again with only the JSON object.`;
 		}
+	}
+}
+
+/** The digest as lines of text: the summary, flagged entries, then highlights. */
+export function digestLines(digest: CameraDigestResult): string[] {
+	const item = (h: Highlight) => `- ${h.time} · ${h.camera} — ${h.text}`;
+	const lines = [digest.summary];
+	if (digest.flagged?.length) lines.push('', 'Flagged:', ...digest.flagged.map(item));
+	if (digest.highlights.length) {
+		if (digest.flagged?.length) lines.push('', 'Highlights:');
+		lines.push(...digest.highlights.map(item));
+	}
+	return lines;
+}
+
+/**
+ * Email the digest to the alert addresses, with the pictures of the first
+ * flagged entries; why it wasn't sent, or null when it was.
+ */
+async function emailDigest(digest: CameraDigestResult, gathered: Gathered): Promise<string | null> {
+	const flaggedIds = splitFlagged(gathered.events)
+		.flagged.sort((a, b) => a.startedAt - b.startedAt)
+		.slice(0, MAX_ATTACHMENTS_PER_EMAIL)
+		.map((e) => e.id);
+	try {
+		await sendAlert({
+			kind: 'digest',
+			lines: [
+				`Camera digest for ${gathered.cameras.map((c) => c.name).join(', ')}.`,
+				'',
+				...digestLines(digest)
+			],
+			eventIds: flaggedIds
+		});
+		return null;
+	} catch (e) {
+		const msg = errMessage(e);
+		return msg.startsWith('Email not sent') ? msg : `Email not sent: ${msg}`;
 	}
 }
 
@@ -312,11 +403,12 @@ export async function runCameraDigestPipeline(ctx: JobRunContext): Promise<void>
 		}
 		const digest = await summarise(ctx, config, gathered);
 		await ctx.setResult(digest);
-		const lines = [
-			digest.summary,
-			...digest.highlights.map((h) => `- ${h.time} · ${h.camera} — ${h.text}`)
-		];
+		const lines = digestLines(digest);
 		if (config.include_snapshot && !ctx.visionSupported()) lines.push('', NO_VISION);
+		if (config.email_result) {
+			const failed = await emailDigest(digest, gathered);
+			if (failed) lines.push('', failed);
+		}
 		finish(SUMMARISE, 'succeeded', lines.join('\n'), null);
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {

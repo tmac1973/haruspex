@@ -56,6 +56,9 @@ A **Camera digest** job (Jobs tab) summarises the log and picks out moments wort
 - **Period**: since the last run (the last 24 hours on the first), the last 24 hours, or today.
 - **Include a snapshot**: also takes a fresh picture from each camera. Skipped when the job's model can't see images.
 - **Focus**: optional, such as "only mention people and deliveries".
+- **Email the result**: sends the summary to the addresses in Settings → Cameras → Alerts (see the `camera-alerts` page).
+
+Entries camera alerts flagged Unusual or Urgent, and not dismissed, come first in the summary.
 
 It needs a camera set to Allow and the local model or a trusted server; the editor says so when either is missing. A period with no entries ends with "Nothing was logged." without using the model.
 

@@ -7,7 +7,7 @@ description: What each kind of job in the Jobs tab does: digests, research, audi
 
 Pick a job's type in the job editor's **Job type** (see the `jobs` page for running and scheduling jobs).
 
-**Digests.** Email and news digests are what two Home cards run (see the `home` page). A camera digest summarises camera logs (see the `camera-log` page).
+**Digests.** Email and news digests are what two Home cards run (see the `home` page). A camera digest summarises camera logs, leading with entries camera alerts flagged, and can email the result (see the `camera-log` and `camera-alerts` pages).
 
 **Research.** A list of steps run in order, each a fresh conversation given the last step's output, with optional **Deep research**. Python runs without asking, in the run's own sandbox.
 

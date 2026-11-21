@@ -108,9 +108,15 @@ beforeEach(() => {
 		}
 		if (cmd === 'db_list_job_runs') return runs;
 		if (cmd === 'camera_snapshot') return 'data:image/jpeg;base64,AAAA';
+		if (cmd === 'camera_alert_send') {
+			mailed.push(args as { to: string[]; alert: Record<string, unknown> });
+			return 'msg-1@example.com';
+		}
 		throw new Error(`unexpected invoke: ${cmd}`);
 	});
 });
+
+let mailed: { to: string[]; alert: Record<string, unknown> }[] = [];
 
 interface TurnSeen {
 	userMessage: string;
@@ -184,7 +190,8 @@ describe('camera digest config', () => {
 			cameras: ['cam-1'],
 			period: 'today',
 			include_snapshot: true,
-			focus: '  people and deliveries  '
+			focus: '  people and deliveries  ',
+			email_result: true
 		};
 		const json = def.configToJson(config)!;
 		expect(def.configFromJob(json)).toEqual({ ...config, focus: 'people and deliveries' });
@@ -314,6 +321,86 @@ describe('camera digest pipeline', () => {
 		const { h, ctx } = harness({ focus: 'Only deliveries' }, { replies: [REPLY] });
 		await runCameraDigestPipeline(ctx);
 		expect(h.turns[0].userMessage).toContain('Focus: Only deliveries');
+	});
+});
+
+describe('flagged entries and email', () => {
+	const ACCOUNT = { id: 'acc-1', enabled: true, sendEnabled: true, emailAddress: 'h@example.com' };
+	const FLAGGED_REPLY =
+		'{"summary":"Someone searched the kitchen drawers at night.","flagged":[{"time":"03:10","camera":"Kitchen","text":"Drawers searched."}],"highlights":[]}';
+
+	beforeEach(() => {
+		mailed = [];
+		updateSettings({
+			integrations: { email: { accounts: [ACCOUNT] } } as never,
+			cameraAlerts: { enabled: true, accountId: 'acc-1', to: ['tim@example.com'] }
+		});
+		log = [
+			event(1, 'cam-1', NOW - 3_600_000),
+			{
+				...event(2, 'cam-1', NOW - 1_800_000),
+				alertLevel: 'urgent',
+				alertReason: 'Someone is searching the drawers.'
+			},
+			{
+				...event(3, 'cam-1', NOW - 900_000),
+				alertLevel: 'unusual',
+				alertReason: 'Two people.',
+				dismissedAt: NOW - 600_000
+			}
+		];
+	});
+
+	it('leads the prompt with flagged entries that were not dismissed', async () => {
+		const { h, ctx } = harness({ cameras: ['cam-1'] }, { replies: [FLAGGED_REPLY] });
+		await runCameraDigestPipeline(ctx);
+		const prompt = h.turns[0].userMessage;
+		const flaggedPart = prompt.slice(0, prompt.indexOf('Camera log for'));
+		expect(flaggedPart).toContain('Flagged entries');
+		expect(flaggedPart).toContain('Urgent: Someone is searching the drawers.');
+		expect(flaggedPart).not.toContain('Two people');
+		expect(prompt).toContain('(dismissed)');
+		expect(h.result?.flagged).toEqual([
+			{ time: '03:10', camera: 'Kitchen', text: 'Drawers searched.' }
+		]);
+		expect(h.steps[1].output).toContain('Flagged:\n- 03:10 · Kitchen — Drawers searched.');
+		expect(mailed).toEqual([]);
+	});
+
+	it('emails the result with the flagged pictures when asked', async () => {
+		const { h, ctx } = harness(
+			{ cameras: ['cam-1'], email_result: true },
+			{ replies: [FLAGGED_REPLY] }
+		);
+		await runCameraDigestPipeline(ctx);
+		expect(h.finished).toEqual({ status: 'succeeded', error: null });
+		expect(mailed).toHaveLength(1);
+		expect(mailed[0].to).toEqual(['tim@example.com']);
+		expect(mailed[0].alert).toMatchObject({ kind: 'digest', eventIds: [2] });
+		expect((mailed[0].alert.lines as string[]).join('\n')).toContain(
+			'Someone searched the kitchen drawers at night.'
+		);
+	});
+
+	it('says why it was not emailed, and still succeeds', async () => {
+		updateSettings({ cameraAlerts: { enabled: false, accountId: 'acc-1', to: [] } });
+		const { h, ctx } = harness(
+			{ cameras: ['cam-1'], email_result: true },
+			{ replies: [FLAGGED_REPLY] }
+		);
+		await runCameraDigestPipeline(ctx);
+		expect(h.finished?.status).toBe('succeeded');
+		expect(h.steps[1].output).toContain(
+			'Email not sent: alerts are off (Settings → Cameras → Alerts)'
+		);
+		expect(mailed).toEqual([]);
+	});
+
+	it('sends nothing for an empty period', async () => {
+		log = [];
+		const { ctx } = harness({ cameras: ['cam-1'], email_result: true });
+		await runCameraDigestPipeline(ctx);
+		expect(mailed).toEqual([]);
 	});
 });
 

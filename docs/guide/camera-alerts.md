@@ -23,7 +23,7 @@ Judging uses the chat model that writes captions: the local model or a server yo
 - **Unusual**: more people than **Usual people**, anyone moving about during a quiet hour, or an unfamiliar large object.
 - **Normal**: everything else.
 
-An Urgent entry shows a desktop notification, and an email when alert emails are on (below). Unusual and Urgent entries show their level and the reason in the camera's **Activity** list.
+An Urgent entry shows a desktop notification, and an email when alert emails are on (below). Unusual and Urgent entries show their level and the reason in the camera's **Activity** list. Unusual ones reach you through a Camera digest job with **Email the result** on (see the `camera-log` page): flagged entries lead its summary.
 
 ## Get alerts by email
 

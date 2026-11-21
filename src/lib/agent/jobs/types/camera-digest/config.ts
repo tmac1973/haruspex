@@ -21,6 +21,8 @@ export interface CameraDigestConfig {
 	include_snapshot: boolean;
 	/** What to pay attention to, in the user's words; may be blank. */
 	focus: string;
+	/** Email the result to Settings → Cameras → Alerts' addresses. */
+	email_result: boolean;
 }
 
 export const FOCUS_MAX = 500;
@@ -29,7 +31,13 @@ export const NEEDS =
 	'Needs a camera set to Allow in Settings → Cameras, and a local or trusted model.';
 
 export function cameraDigestDefaults(): CameraDigestConfig {
-	return { cameras: [], period: 'since_last_run', include_snapshot: false, focus: '' };
+	return {
+		cameras: [],
+		period: 'since_last_run',
+		include_snapshot: false,
+		focus: '',
+		email_result: false
+	};
 }
 
 /** The config stored on a job; anything missing or malformed takes its default. */
@@ -44,6 +52,7 @@ export function parseCameraDigestConfig(typeConfig: string | null): CameraDigest
 		if (PERIODS.includes(raw.period as DigestPeriod)) out.period = raw.period as DigestPeriod;
 		if (typeof raw.include_snapshot === 'boolean') out.include_snapshot = raw.include_snapshot;
 		if (typeof raw.focus === 'string') out.focus = raw.focus;
+		if (typeof raw.email_result === 'boolean') out.email_result = raw.email_result;
 	} catch {
 		// A config that doesn't parse runs on the defaults, and the editor shows them.
 	}
@@ -55,7 +64,8 @@ export function cameraDigestConfigToJson(c: CameraDigestConfig): string {
 		cameras: c.cameras,
 		period: c.period,
 		include_snapshot: c.include_snapshot,
-		focus: c.focus.trim()
+		focus: c.focus.trim(),
+		email_result: c.email_result
 	});
 }
 

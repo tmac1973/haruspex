@@ -13,6 +13,8 @@ export const MAX_WATCH_RULES = 20;
 export const MAX_WATCH_RULE_CHARS = 300;
 /** Most addresses alerts go to. */
 export const MAX_ALERT_ADDRESSES = 5;
+/** Most pictures one alert email carries; matches Rust's `alert_mail::MAX_ATTACHMENTS`. */
+export const MAX_ATTACHMENTS_PER_EMAIL = 6;
 /** The most people a camera may usually have in view. */
 export const MAX_USUAL_PEOPLE = 20;
 

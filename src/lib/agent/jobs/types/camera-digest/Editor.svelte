@@ -10,6 +10,7 @@
 		cameraDigestUsable,
 		type CameraDigestConfig
 	} from '#lib/agent/jobs/types/camera-digest/config.ts';
+	import { alertRoute, BLOCK_TEXT } from '#lib/camera/alertDispatch.ts';
 
 	let {
 		config = $bindable(),
@@ -22,6 +23,10 @@
 	const usable = $derived(
 		cameraDigestUsable(jobModel ? backendOverrideFor(modelColumnsFromForm(jobModel)) : undefined)
 	);
+
+	const route = alertRoute();
+	/** Why the digest can't be emailed, or '' when it can. */
+	const emailBlocked = 'blocked' in route ? BLOCK_TEXT[route.blocked] : '';
 
 	function toggle(id: string, on: boolean) {
 		cfg.cameras = on ? [...cfg.cameras, id] : cfg.cameras.filter((c) => c !== id);
@@ -88,6 +93,25 @@
 			<Tooltip
 				label="About the snapshot"
 				text="Takes a fresh picture from each camera for the summary. Needs a model that can see images; without one it is skipped."
+			/>
+		</span>
+	</label>
+</div>
+
+<div class="toggle-row">
+	<label>
+		<input
+			type="checkbox"
+			bind:checked={cfg.email_result}
+			disabled={!!emailBlocked && !cfg.email_result}
+		/>
+		<span class="label">
+			Email the result
+			<Tooltip
+				label="About emailing the result"
+				text={emailBlocked
+					? `Can't email: ${emailBlocked}.`
+					: 'Sends the summary, with pictures of flagged entries, to the addresses in Settings → Cameras → Alerts.'}
 			/>
 		</span>
 	</label>
