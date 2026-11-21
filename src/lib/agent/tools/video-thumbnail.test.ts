@@ -51,6 +51,19 @@ describe('video_thumbnail', () => {
 		expect(out.artifacts?.[0]).toMatchObject({ kind: 'image' });
 	});
 
+	it('refuses a title rather than ignoring it', async () => {
+		const ctx = makeToolContext({ interactive: true, workingDir: '/videos' });
+		const out = await executeTool(
+			'video_thumbnail',
+			{ episode: 'ep010', from: 'frame', at: '3:12', title: 'Episode 10' },
+			ctx
+		);
+		const error = JSON.parse(out.result as string).error as string;
+		expect(error).toContain('has no "title"');
+		expect(error).toContain('from: "generate"');
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
 	it('takes a frame of a named clip in its own time', async () => {
 		const ctx = makeToolContext({ interactive: true, workingDir: '/videos' });
 		await executeTool(

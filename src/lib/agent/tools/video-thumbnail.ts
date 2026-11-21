@@ -71,7 +71,18 @@ async function fromPrompt(
 	});
 }
 
+/** Text the model asks to put on the picture, which Haruspex never draws. */
+const TEXT_ARGS = ['title', 'text', 'caption', 'overlay'];
+
 async function thumbnail(args: Record<string, unknown>, ctx: ToolContext) {
+	const text = TEXT_ARGS.find((k) => trimmedOrNull(args[k]) !== null);
+	if (text) {
+		return toolResult(
+			toolError(
+				`video_thumbnail has no "${text}": Haruspex puts no text on a thumbnail. To have one drawn in, use from: "generate" and say the words in the prompt.`
+			)
+		);
+	}
 	try {
 		const written =
 			args.from === 'generate' ? await fromPrompt(args, ctx) : await fromFrame(args, ctx);
