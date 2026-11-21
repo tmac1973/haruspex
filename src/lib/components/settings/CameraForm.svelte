@@ -9,6 +9,7 @@
 	 * (`camera:<id>:test`) and deleted when the form closes, which leaves the
 	 * saved password alone until Save. The aim buttons use the same test camera.
 	 */
+	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onDestroy } from 'svelte';
 	import { redactCameraError, splitUrlCredentials } from '#lib/camera/credentials.ts';
@@ -117,6 +118,8 @@
 	let frame = $state('');
 	let level = $state<number | null>(null);
 	let testError = $state('');
+	/** The picture shown large, when one is. */
+	let viewer = $state<{ src: string; alt: string } | null>(null);
 	let aiming = $state(false);
 	/** The key a password typed for Test was kept under, deleted when the form closes. */
 	let testKey: string | null = null;
@@ -797,7 +800,15 @@
 
 {#if frame || caps || level !== null || testError}
 	<div class="test-result">
-		{#if frame}<img src={frame} alt="What {name.trim() || 'the camera'} sees" />{/if}
+		{#if frame}
+			{@const alt = `What ${name.trim() || 'the camera'} sees`}
+			<button
+				type="button"
+				class="zoom"
+				aria-label="Show the picture larger"
+				onclick={() => (viewer = { src: frame, alt })}><img src={frame} {alt} /></button
+			>
+		{/if}
 		<div class="test-notes">
 			{#if caps && frame}
 				<p class="help">
@@ -893,7 +904,18 @@
 	>
 </div>
 
+<ImageViewerModal src={viewer?.src ?? null} alt={viewer?.alt} onClose={() => (viewer = null)} />
+
 <style>
+	.zoom {
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: zoom-in;
+		line-height: 0;
+		flex: none;
+	}
+
 	.form {
 		display: grid;
 		grid-template-columns: max-content 1fr;

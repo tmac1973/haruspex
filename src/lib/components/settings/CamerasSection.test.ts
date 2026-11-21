@@ -587,6 +587,27 @@ describe('camera alerts', () => {
 	});
 });
 
+describe('larger pictures', () => {
+	it('opens the test picture and a reference large, and closes them', async () => {
+		setCameras([
+			kitchen({
+				watcher: { ...defaultWatcherConfig, enabled: true },
+				alerts: { ...defaultAlertConfig, enabled: true }
+			})
+		]);
+		state.calls.push({ cmd: 'camera_reference_set', args: {} });
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		await fireEvent.click(screen.getByText('Test'));
+		await fireEvent.click(await screen.findByLabelText('Show the picture larger'));
+		expect(screen.getAllByAltText('What Kitchen sees')).toHaveLength(2);
+		await fireEvent.keyDown(window, { key: 'Escape' });
+		await waitFor(() => expect(screen.getAllByAltText('What Kitchen sees')).toHaveLength(1));
+		await fireEvent.click(await screen.findByLabelText('Show the day reference larger'));
+		expect(screen.getAllByAltText('Day reference')).toHaveLength(2);
+	});
+});
+
 describe('room references', () => {
 	it('saves what the camera sees as normal and shows it', async () => {
 		setCameras([

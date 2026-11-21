@@ -38,7 +38,7 @@ On Linux, a webcam that can pan and tilt (such as an OBSBOT Tiny) can set **Pan/
 
 ## Test a camera
 
-Click **Test** in the camera's form. Haruspex shows one frame with its size and codec, then listens for 3 seconds and shows how loud it was ("Silent" when nothing was heard). If it fails, the reason from ffmpeg is shown, with the password taken out.
+Click **Test** in the camera's form. Haruspex shows one frame with its size and codec, then listens for 3 seconds and shows how loud it was ("Silent" when nothing was heard). Click the frame to see it larger; the same goes for room references and Activity pictures. If it fails, the reason from ffmpeg is shown, with the password taken out.
 
 A camera with pan/tilt also gets **Left**, **Right**, **Up**, **Down** and **Home** buttons, and **Calibrate**: see the `camera-pan-tilt` page.
 

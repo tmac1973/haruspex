@@ -6,6 +6,7 @@
 	 * an Unusual or Urgent entry shows its level and why, and can be dismissed;
 	 * the note given then can become one of the camera's watch rules.
 	 */
+	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { onDestroy } from 'svelte';
@@ -29,6 +30,8 @@
 	let events = $state<CameraEvent[] | null>(null);
 	let thumbs = $state<Record<number, string>>({});
 	let error = $state('');
+	/** The picture shown large, when one is. */
+	let viewer = $state<{ src: string; alt: string } | null>(null);
 
 	async function load() {
 		try {
@@ -150,7 +153,13 @@
 			{#each events as e (e.id)}
 				<li>
 					{#if thumbs[e.id]}
-						<img src={thumbs[e.id]} alt="" />
+						<button
+							type="button"
+							class="zoom"
+							aria-label={`Show the picture from ${stamp(new Date(e.startedAt))} larger`}
+							onclick={() => (viewer = { src: thumbs[e.id], alt: caption(e) })}
+							><img src={thumbs[e.id]} alt="" /></button
+						>
 					{:else}
 						<span class="no-thumb" aria-hidden="true"></span>
 					{/if}
@@ -216,7 +225,18 @@
 	{/if}
 </div>
 
+<ImageViewerModal src={viewer?.src ?? null} alt={viewer?.alt} onClose={() => (viewer = null)} />
+
 <style>
+	.zoom {
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: zoom-in;
+		line-height: 0;
+		flex: none;
+	}
+
 	.log {
 		font-size: 0.85rem;
 	}

@@ -7,6 +7,7 @@
 	 * draft through `alerts`; the form saves it. References are saved at once,
 	 * for a camera already saved.
 	 */
+	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import type { References } from '#lib/ipc/gen/References.ts';
 	import type { Light } from '#lib/ipc/gen/Light.ts';
@@ -34,6 +35,8 @@
 	let refs = $state<References | null>(null);
 	let shooting = $state(false);
 	let refError = $state('');
+	/** The picture shown large, when one is. */
+	let viewer = $state<{ src: string; alt: string } | null>(null);
 
 	/** The camera as saved: references need one that works without the form's draft. */
 	const saved = $derived(getSettings().cameras.find((c) => c.id === cameraId));
@@ -191,7 +194,13 @@
 					{@const ref = refs?.[r.light as Light]}
 					<div class="ref">
 						{#if ref}
-							<img src={ref.dataUrl} alt="{r.label} reference" />
+							<button
+								type="button"
+								class="zoom"
+								aria-label="Show the {r.label.toLowerCase()} reference larger"
+								onclick={() => (viewer = { src: ref.dataUrl, alt: `${r.label} reference` })}
+								><img src={ref.dataUrl} alt="{r.label} reference" /></button
+							>
 							<span class="hint">{r.label} · {stamp(new Date(ref.setAt)).slice(0, 16)}</span>
 							<button
 								type="button"
@@ -259,7 +268,18 @@
 	</div>
 {/if}
 
+<ImageViewerModal src={viewer?.src ?? null} alt={viewer?.alt} onClose={() => (viewer = null)} />
+
 <style>
+	.zoom {
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: zoom-in;
+		line-height: 0;
+		flex: none;
+	}
+
 	/* The form's grid: labels and inputs as in CameraForm. */
 	.label {
 		padding-top: 6px;
