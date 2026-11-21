@@ -422,6 +422,10 @@ if [ ! -f "$PREFIX/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake" ]; then
     echo ">> Building Qt $QT_VERSION"
     fetch "$QT_URL/qtbase-everywhere-src-$QT_VERSION.tar.xz" "$QTBASE_SHA256" "qtbase-everywhere-src-$QT_VERSION"
     fetch "$QT_URL/qtsvg-everywhere-src-$QT_VERSION.tar.xz" "$QTSVG_SHA256" "qtsvg-everywhere-src-$QT_VERSION"
+    # The x86_64 macOS cross build exports -arch flags for the autotools
+    # builds above; Qt sets its own architectures and must not see them.
+    (
+    unset CFLAGS CXXFLAGS LDFLAGS
     cmake -S "$WORK/qtbase-everywhere-src-$QT_VERSION" -B "$WORK/qtbase-build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
         ${CMAKE_EXTRA[@]+"${CMAKE_EXTRA[@]}"} \
@@ -454,6 +458,7 @@ if [ ! -f "$PREFIX/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake" ]; then
             -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF
     cmake --build "$WORK/qtsvg-build" -j"$JOBS"
     cmake --install "$WORK/qtsvg-build"
+    )
 fi
 
 # ---- MLT ----
