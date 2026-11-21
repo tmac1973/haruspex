@@ -199,6 +199,9 @@ case "$TARGET" in
             --install-name-dir=@rpath
         )
         HW_ENCODERS="h264_videotoolbox"
+        # Room in the load commands for the rpaths and install names the
+        # collect step rewrites.
+        EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-headerpad_max_install_names"
         MAC_ARCH="${TARGET%%-*}"
         [ "$MAC_ARCH" = "aarch64" ] && MAC_ARCH="arm64"
         CMAKE_EXTRA=(-DCMAKE_OSX_ARCHITECTURES="$MAC_ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
