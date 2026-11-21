@@ -35,7 +35,7 @@ Haruspex keeps this home itself, as steps from the camera's own (Thingino camera
 A camera on a shelf may face a wall for half its turn. After calibrating, mark the part a look-around should cover:
 
 1. Turn the camera with **Left** and **Right** (or **Home**) until it points at one edge of what matters.
-2. Click **Set left edge**. Turn it to the other edge and click **Set right edge**.
+2. Click **Set left edge**, beside the turn buttons. Turn it to the other edge and click **Set right edge**.
 3. Click **Save**. **Whole range** clears the edges.
 
 The edges are kept when you calibrate again, as long as they still fit. The buttons work only while Haruspex knows where the camera points: after **Home** or Calibrate, and the turns since.

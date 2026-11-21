@@ -658,27 +658,6 @@
 				</button>
 				{#if calibration}
 					<p class="help">Turns {describeRange(calibration)}.</p>
-					<div class="edges">
-						<button
-							type="button"
-							class="btn btn-small"
-							onclick={() => setEdge('from')}
-							disabled={panAt === null}
-							title="Look around starts where the camera points now. Turn it with the buttons below, or Home, first."
-							>Set left edge</button
-						>
-						<button
-							type="button"
-							class="btn btn-small"
-							onclick={() => setEdge('to')}
-							disabled={panAt === null}
-							title="Look around ends where the camera points now. Turn it with the buttons below, or Home, first."
-							>Set right edge</button
-						>
-						{#if calibration.sweep}
-							<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
-						{/if}
-					</div>
 				{/if}
 				{#if calibrateError}<p class="error">{calibrateError}</p>{/if}
 			{/if}
@@ -862,6 +841,25 @@
 						title="Home goes back to the one saved on the camera. Save keeps it.">Reset home</button
 					>
 				{/if}
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={() => setEdge('from')}
+					disabled={aiming || panAt === null}
+					title="Look around starts where the camera points now. Save keeps it."
+					>Set left edge</button
+				>
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={() => setEdge('to')}
+					disabled={aiming || panAt === null}
+					title="Look around ends where the camera points now. Save keeps it."
+					>Set right edge</button
+				>
+				{#if calibration.sweep}
+					<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
+				{/if}
 			{/if}
 		</div>
 	{/if}
@@ -912,13 +910,6 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-	}
-
-	.edges {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 4px;
 	}
 
 	.hours input,
