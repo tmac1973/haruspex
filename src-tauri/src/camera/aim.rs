@@ -55,6 +55,19 @@ pub enum AimAmount {
     Large,
 }
 
+/// Where a calibrated camera points, as far as Haruspex knows: since it last
+/// went home it has only turned by calibrated steps. Each is `None` while
+/// unknown (after a restart, or a turn that wasn't counted).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraPosition {
+    /// Pulses from the left end of its pan.
+    pub pan_pulses: Option<u32>,
+    /// Pulses from the bottom of its tilt.
+    pub tilt_pulses: Option<u32>,
+}
+
 /// What `camera_aim` did.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
@@ -349,6 +362,11 @@ pub(crate) mod position {
 
     fn at() -> std::sync::MutexGuard<'static, HashMap<String, At>> {
         AT.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Where the camera points now, as far as it is known.
+    pub(crate) fn get(camera_id: &str) -> At {
+        at().get(camera_id).copied().unwrap_or_default()
     }
 
     pub(crate) fn set(camera_id: &str, now: Option<At>) {

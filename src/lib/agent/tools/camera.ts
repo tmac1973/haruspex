@@ -7,7 +7,8 @@
  * bundled whisper transcribe it; the clip itself is never kept.
  *
  * `camera_look` aims a pan/tilt camera (ONVIF, or UVC on Linux) by a
- * direction or a saved preset, then takes a picture like `camera_snapshot`.
+ * direction, a saved preset or a look-around edge set in Settings → Cameras,
+ * then takes a picture like `camera_snapshot`.
  *
  * `camera_log` (in `camera-log.ts`) reads the ambient log, and
  * `camera_look_around` (in `camera-look-around.ts`) sweeps a camera end to end.
@@ -24,6 +25,9 @@ import type { Aim } from '#lib/ipc/gen/Aim.ts';
 import type { AimAmount } from '#lib/ipc/gen/AimAmount.ts';
 import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
+import type { CameraPosition } from '#lib/ipc/gen/CameraPosition.ts';
+import type { PtzCalibration } from '#lib/ipc/gen/PtzCalibration.ts';
+import type { SweepRange } from '#lib/ipc/gen/SweepRange.ts';
 import { describeRange } from '#lib/camera/calibration.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
@@ -50,6 +54,12 @@ export const CAMERA_PARAM = {
 function hasAudio(camera: CameraConfig): boolean {
 	if (camera.source.kind === 'usb' && !camera.source.audioDevice) return false;
 	return camera.caps?.hasAudio !== false;
+}
+
+/** The look-around edges for camera_list, and how to point at them. */
+function describeEdges(cal: PtzCalibration, sweep: SweepRange): string {
+	const at = (p: number) => Math.round(p * cal.viewsPerPulse * 10) / 10;
+	return `set by the user: left edge ${at(sweep.from)}, right edge ${at(sweep.to)} picture widths from the left end. camera_look with left_edge or right_edge points at them.`;
 }
 
 /** Whether the camera can be aimed: ONVIF found over the network, or a UVC webcam. */
@@ -88,6 +98,9 @@ registerTool({
 				? { presets: (c.onvif?.presets ?? []).map((p) => p.name) }
 				: {}),
 			...(canAim(c) && c.calibration ? { pan_range: describeRange(c.calibration) } : {}),
+			...(canAim(c) && c.calibration?.sweep
+				? { look_around_edges: describeEdges(c.calibration, c.calibration.sweep) }
+				: {}),
 			...(c.note?.trim() ? { note: c.note.trim() } : {}),
 			permission: c.permission
 		}));
@@ -195,6 +208,11 @@ registerTool({
 export const CANT_MOVE = "This camera can't move.";
 export const DIRECTION_OR_PRESET = 'Give a direction or a preset.';
 const DIRECTIONS: readonly AimDirection[] = ['left', 'right', 'up', 'down', 'home'];
+/** The look-around edges, as `camera_look` directions. */
+const EDGES = ['left_edge', 'right_edge'] as const;
+type EdgeDirection = (typeof EDGES)[number];
+/** Aim at the edge of the look-around set in Settings → Cameras. */
+export type EdgeAim = { edge: 'left' | 'right' };
 const AMOUNTS: readonly AimAmount[] = ['small', 'medium', 'large'];
 /** Roughly how far each amount turns, for the model's answer: pan / tilt degrees. */
 const DEGREES: Record<AimAmount, [number, number]> = {
@@ -204,14 +222,17 @@ const DEGREES: Record<AimAmount, [number, number]> = {
 };
 
 /** The aim the model asked for, or why it can't be read. */
-export function parseAim(args: Record<string, unknown>): Aim | { error: string } {
+export function parseAim(args: Record<string, unknown>): Aim | EdgeAim | { error: string } {
 	const has = (v: unknown) => v !== undefined && v !== null && String(v).trim() !== '';
 	const direction = has(args.direction) ? String(args.direction).trim().toLowerCase() : '';
 	const preset = has(args.preset) ? String(args.preset).trim() : '';
 	if (!direction === !preset) return { error: DIRECTION_OR_PRESET };
 	if (preset) return { preset };
+	if (EDGES.includes(direction as EdgeDirection)) {
+		return { edge: direction === 'left_edge' ? 'left' : 'right' };
+	}
 	if (!DIRECTIONS.includes(direction as AimDirection)) {
-		return { error: `Direction must be one of ${DIRECTIONS.join(', ')}.` };
+		return { error: `Direction must be one of ${[...DIRECTIONS, ...EDGES].join(', ')}.` };
 	}
 	const rawAmount = has(args.amount) ? String(args.amount).trim().toLowerCase() : 'medium';
 	if (!AMOUNTS.includes(rawAmount as AimAmount)) {
@@ -245,7 +266,7 @@ const ROUGHLY: Record<AimAmount, string> = {
  */
 export function describeAim(
 	name: string,
-	aim: Aim,
+	aim: Aim | EdgeAim,
 	moved: Pick<CameraAimResult, 'atLimit' | 'unmoved' | 'turnedViews'> & { rehomed?: boolean },
 	degrees: boolean
 ): string {
@@ -256,10 +277,11 @@ export function describeAim(
 
 function describeTurn(
 	name: string,
-	aim: Aim,
+	aim: Aim | EdgeAim,
 	moved: Pick<CameraAimResult, 'atLimit' | 'unmoved' | 'turnedViews'>,
 	degrees: boolean
 ): string {
+	if ('edge' in aim) return `Pointed ${name} at the ${aim.edge} edge set for its look-around`;
 	if ('preset' in aim) return `Moved ${name} to the preset "${aim.preset}"`;
 	if (aim.direction === 'home') return `Moved ${name} back to its home position`;
 	if (moved.unmoved) {
@@ -284,15 +306,16 @@ registerTool({
 		function: {
 			name: 'camera_look',
 			description:
-				"Turn (pan or tilt) one of the user's pan/tilt cameras, then take a picture so you can see where it points. It is the only tool that moves a camera. Give either a direction (with an amount) or the name of a preset saved on the camera, not both. Use it when the user asks to look somewhere the camera isn't pointing.",
+				"Turn (pan or tilt) one of the user's pan/tilt cameras, then take a picture so you can see where it points. It is the only tool that moves a camera. Give either a direction (with an amount) or the name of a preset saved on the camera, not both. Use it when the user asks to look somewhere the camera isn't pointing. left_edge and right_edge point it at the edges the user set for its look-around (camera_list shows them); they are not the ends of its travel.",
 			parameters: {
 				type: 'object',
 				properties: {
 					camera: CAMERA_PARAM,
 					direction: {
 						type: 'string',
-						enum: [...DIRECTIONS],
-						description: 'Which way to turn; home points it back to the middle.'
+						enum: [...DIRECTIONS, ...EDGES],
+						description:
+							'Which way to turn; home points it back to the middle; left_edge and right_edge go straight to the look-around edges set in Settings (no amount).'
 					},
 					amount: {
 						type: 'string',
@@ -317,6 +340,9 @@ registerTool({
 		const access = cameraAccessRefusal(ctx);
 		const named = access ? null : resolveCamera(args.camera);
 		if (named && !canAim(named)) return toolResult(toolError(CANT_MOVE));
+		if (named && 'edge' in aim && !named.calibration?.sweep) {
+			return toolResult(toolError(noEdges(named.name)));
+		}
 		const gate = await cameraGate(ctx, args.camera, 'move');
 		if (!gate.camera) return refused(gate);
 		const camera = gate.camera;
@@ -324,7 +350,8 @@ registerTool({
 		let outcome: { moved: CameraAimResult; dataUrl: string | null; shotError: string };
 		try {
 			outcome = await withCameraActivity(camera.id, 'move', async () => {
-				const moved = await aimCamera(camera, aim);
+				const moved =
+					'edge' in aim ? await aimAtEdge(camera, aim.edge) : await aimCamera(camera, aim);
 				if (!canSee) return { moved, dataUrl: null, shotError: '' };
 				try {
 					return { moved, dataUrl: await shoot(camera), shotError: '' };
@@ -361,6 +388,48 @@ export function aimCamera(camera: CameraConfig, aim: Aim): Promise<CameraAimResu
 		config: camera,
 		aim,
 		overrides: videoOverrides()
+	});
+}
+
+/** Why a camera can't be pointed at its edges. */
+export function noEdges(name: string): string {
+	return `${name} has no look-around edges set. The user sets them in Settings → Cameras (Set left edge, Set right edge); its ends are as far as left or right go.`;
+}
+
+/**
+ * Point a calibrated camera at a look-around edge: the steps between there
+ * and where it points now, after going home if where it points isn't known.
+ */
+export async function aimAtEdge(
+	camera: CameraConfig,
+	edge: 'left' | 'right'
+): Promise<CameraAimResult> {
+	const sweep = camera.calibration?.sweep;
+	if (!sweep) throw new Error(noEdges(camera.name));
+	const target = edge === 'left' ? sweep.from : sweep.to;
+	let at = (await invoke<CameraPosition>('camera_position', { cameraId: camera.id })).panPulses;
+	let moved: CameraAimResult | null = null;
+	if (at == null) {
+		moved = await aimCamera(camera, { direction: 'home', amount: 'medium' });
+		at = moved.panPulses;
+	}
+	if (at == null)
+		throw new Error("Haruspex doesn't know where it points. Calibrate it in Settings → Cameras.");
+	if (at === target) {
+		return (
+			moved ?? {
+				atLimit: false,
+				unmoved: false,
+				turnedViews: null,
+				rehomed: false,
+				panPulses: at,
+				tiltPulses: null
+			}
+		);
+	}
+	return aimCamera(camera, {
+		direction: target > at ? 'right' : 'left',
+		pulses: Math.abs(target - at)
 	});
 }
 

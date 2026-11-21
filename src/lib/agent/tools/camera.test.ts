@@ -358,6 +358,68 @@ describe('camera_look', () => {
 		expect(out.result).toMatch(/^Turned Kitchen left some way and took a picture/);
 	});
 
+	describe('the look-around edges', () => {
+		const CAL = {
+			pulseMs: 400,
+			viewsPerPulse: 0.5,
+			rangePulses: 9,
+			homePulses: 5,
+			sweep: { from: 4, to: 6 }
+		};
+		const aims = () =>
+			vi
+				.mocked(invoke)
+				.mock.calls.filter((c) => c[0] === 'camera_aim')
+				.map((c) => (c[1] as { aim: Aim }).aim);
+		const at = (pan: number | null) =>
+			vi.mocked(invoke).mockImplementation(async (cmd) => {
+				if (cmd === 'camera_position') return { panPulses: pan, tiltPulses: null };
+				if (cmd === 'camera_aim') return { atLimit: false, panPulses: 5 };
+				if (cmd === 'camera_snapshot') return FRAME;
+				throw new Error(`unexpected invoke: ${cmd}`);
+			});
+
+		beforeEach(() => updateSettings({ cameras: [aimable({ calibration: CAL })] }));
+
+		it('steps from where the camera points to the edge', async () => {
+			at(8);
+			const out = await executeTool(
+				'camera_look',
+				{ camera: 'Kitchen', direction: 'left_edge' },
+				chat()
+			);
+			expect(aims()).toEqual([{ direction: 'left', pulses: 4 }]);
+			expect(out.result).toMatch(/^Pointed Kitchen at the left edge/);
+		});
+
+		it('goes home first when where it points is unknown', async () => {
+			at(null);
+			await executeTool('camera_look', { camera: 'Kitchen', direction: 'right_edge' }, chat());
+			expect(aims()).toEqual([
+				{ direction: 'home', amount: 'medium' },
+				{ direction: 'right', pulses: 1 }
+			]);
+		});
+
+		it('refuses when no edges are set', async () => {
+			updateSettings({ cameras: [aimable({ calibration: { ...CAL, sweep: undefined } })] });
+			const out = await executeTool(
+				'camera_look',
+				{ camera: 'Kitchen', direction: 'left_edge' },
+				chat()
+			);
+			expect(error(out.result)).toMatch(/no look-around edges set/);
+			expect(aims()).toEqual([]);
+		});
+
+		it('names them in camera_list', async () => {
+			const list = JSON.parse((await executeTool('camera_list', {}, chat())).result);
+			expect(list[0].look_around_edges).toBe(
+				'set by the user: left edge 2, right edge 3 picture widths from the left end. camera_look with left_edge or right_edge points at them.'
+			);
+		});
+	});
+
 	it('goes to a preset by name', async () => {
 		await executeTool('camera_look', { camera: 'Kitchen', preset: 'Door' }, chat());
 		expect(invoke).toHaveBeenCalledWith('camera_aim', {

@@ -17,6 +17,7 @@
 	import type { PtzCalibration } from '#lib/ipc/gen/PtzCalibration.ts';
 	import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 	import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
+	import type { CameraPosition } from '#lib/ipc/gen/CameraPosition.ts';
 	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import type { CameraListenResult } from '#lib/ipc/gen/CameraListenResult.ts';
@@ -73,6 +74,19 @@
 	let panAt = $state<number | null>(null);
 	/** The same for tilt, in pulses from the bottom. */
 	let tiltAt = $state<number | null>(null);
+	// Haruspex may already know where it points: it has only turned by
+	// counted steps since it last went home.
+	if (start.ptz === 'onvif' && start.calibration) {
+		void invoke<CameraPosition>('camera_position', { cameraId: start.id })
+			.then((p) => {
+				if (panAt !== null) return;
+				panAt = p.panPulses;
+				tiltAt = p.tiltPulses;
+			})
+			.catch((e: unknown) => console.warn('camera_position failed', e));
+	}
+	/** Why the buttons that use where the camera points are off. */
+	const UNKNOWN_AT = 'Press Home first, so Haruspex knows where the camera points.';
 	let note = $state(start.note ?? '');
 	let watchOn = $state(start.watcher.enabled);
 	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
@@ -830,7 +844,9 @@
 					class="btn btn-small"
 					onclick={setHome}
 					disabled={aiming || panAt === null || calibration.homePulses == null}
-					title="Home (and where a look-around ends) becomes where the camera points now, tilt included. Save keeps it."
+					title={panAt === null
+						? UNKNOWN_AT
+						: 'Home (and where a look-around ends) becomes where the camera points now, tilt included. Save keeps it.'}
 					>Set home here</button
 				>
 				{#if calibration.homeOffset}
@@ -846,7 +862,9 @@
 					class="btn btn-small"
 					onclick={() => setEdge('from')}
 					disabled={aiming || panAt === null}
-					title="Look around starts where the camera points now. Save keeps it."
+					title={panAt === null
+						? UNKNOWN_AT
+						: 'Look around starts where the camera points now. Save keeps it.'}
 					>Set left edge</button
 				>
 				<button
@@ -854,8 +872,9 @@
 					class="btn btn-small"
 					onclick={() => setEdge('to')}
 					disabled={aiming || panAt === null}
-					title="Look around ends where the camera points now. Save keeps it."
-					>Set right edge</button
+					title={panAt === null
+						? UNKNOWN_AT
+						: 'Look around ends where the camera points now. Save keeps it.'}>Set right edge</button
 				>
 				{#if calibration.sweep}
 					<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>

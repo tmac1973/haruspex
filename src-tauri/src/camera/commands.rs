@@ -157,6 +157,17 @@ pub async fn camera_aim(
     aim::aim(&config, &aim, ffmpeg.as_deref()).await
 }
 
+/// Where a calibrated camera points, as far as Haruspex knows: Settings →
+/// Cameras reads it on opening, so the edge buttons work before a turn.
+#[tauri::command]
+pub fn camera_position(camera_id: String) -> aim::CameraPosition {
+    let at = aim::position::get(&camera_id);
+    aim::CameraPosition {
+        pan_pulses: at.pan,
+        tilt_pulses: at.tilt,
+    }
+}
+
 /// Measure how far a network camera's pan turns go (see `calibrate`). Takes
 /// about a minute, and leaves the camera at home.
 #[tauri::command]
