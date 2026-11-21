@@ -372,20 +372,21 @@ fn playlists_and_presets_saved_as_mlt_are_not_projects() {
     assert!(!is_project(&playlist));
 }
 
-/// The melt to check written projects with: `HARUSPEX_MELT`, else `melt` on PATH.
-fn melt() -> Option<String> {
-    let melt = std::env::var("HARUSPEX_MELT").unwrap_or_else(|_| "melt".into());
-    std::process::Command::new(&melt)
-        .arg("-version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|_| melt)
+/// The melt to check written projects with: `HARUSPEX_MELT`, else the one
+/// Settings → Video editing would find (the bundled one, when fetched).
+async fn melt() -> Option<String> {
+    if let Ok(m) = std::env::var("HARUSPEX_MELT") {
+        return Some(m);
+    }
+    crate::video::binaries::resolve(&Default::default())
+        .await
+        .melt
+        .map(|m| m.path)
 }
 
 #[tokio::test]
 async fn melt_loads_and_renders_a_written_project() {
-    let Some(melt) = melt() else {
+    let Some(melt) = melt().await else {
         eprintln!("skipped: no melt (set HARUSPEX_MELT)");
         return;
     };
@@ -414,13 +415,13 @@ async fn melt_loads_and_renders_a_written_project() {
     save(&project, &text, &melt).await.unwrap();
     // MJPEG in MOV: an encoder the bundled ffmpeg and the distros' both have.
     let out = dir.join("cut.mov");
-    let status = std::process::Command::new(&melt)
-        .arg(&project)
+    let mut cmd = tokio::process::Command::new(&melt);
+    cmd.arg(&project)
         .arg("-consumer")
         .arg(format!("avformat:{}", out.display()))
         .args(["vcodec=mjpeg", "acodec=pcm_s16le"])
-        .env("QT_QPA_PLATFORM", "offscreen")
-        .status()
-        .unwrap();
+        .env("QT_QPA_PLATFORM", "offscreen");
+    crate::video::prepare_child(&mut cmd);
+    let status = cmd.status().await.unwrap();
     assert!(status.success() && out.metadata().unwrap().len() > 0);
 }
