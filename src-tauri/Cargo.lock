@@ -3014,7 +3014,7 @@ dependencies = [
 
 [[package]]
 name = "haruspex"
-version = "0.2.23"
+version = "0.2.24"
 dependencies = [
  "apple-native-keyring-store",
  "arboard",

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.24](https://github.com/tmac1973/haruspex/compare/v0.2.23...v0.2.24) (2026-11-21)
+
+
+### Features
+
+* **video:** bundle melt and add shotcut projects ([#1141](https://github.com/tmac1973/haruspex/issues/1141)) ([5202e0b](https://github.com/tmac1973/haruspex/commit/5202e0b0d9e37b616dc5c83c801c6b183d279991))
+
+
+### Bug Fixes
+
+* **dev:** make dev fetches the media bundle with fetch-media.sh ([#1142](https://github.com/tmac1973/haruspex/issues/1142)) ([b890bb8](https://github.com/tmac1973/haruspex/commit/b890bb888271216d298d36dcb0fa4c042b4e8c1a))
+* **mcp:** stop a second launch reaping the first one's live servers ([#1140](https://github.com/tmac1973/haruspex/issues/1140)) ([23e1349](https://github.com/tmac1973/haruspex/commit/23e13493e22d2db81bdd6f278410a9f327dec2c2))
+
+
+### Documentation
+
+* **plan:** camera alerts plan for judging events, room checks and email alerts ([#1146](https://github.com/tmac1973/haruspex/issues/1146)) ([082c9a7](https://github.com/tmac1973/haruspex/commit/082c9a79a87eb511dc6d163ee1e1d22a4fb4e7c7))
+
 ## [0.2.23](https://github.com/tmac1973/haruspex/compare/v0.2.22...v0.2.23) (2026-11-20)
 
 
