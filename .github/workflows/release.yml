@@ -329,8 +329,10 @@ jobs:
             # sd-libs last: linuxdeploy needs it for sd-server's
             # libstable-diffusion.so, and must still take llama.cpp's ggml
             # (same sonames, other versions) from libs/ (docs/image-generation.md).
+            # media/lib after it: the shared libav*, MLT and Qt the bundled
+            # ffmpeg, ffprobe and melt need (scripts/build-media.sh).
             APPIMAGE_EXTRACT_AND_RUN=1 \
-            NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs" \
+            NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs:$PWD/src-tauri/binaries/media/lib" \
               npm run tauri build -- --bundles appimage,deb,rpm ${{ matrix.tauri_args }}
           elif [ "$RUNNER_OS" = "Windows" ]; then
             npm run tauri build -- --bundles nsis,msi ${{ matrix.tauri_args }}

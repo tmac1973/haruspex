@@ -134,12 +134,20 @@ workflow's environment, or linuxdeploy can't find the sidecars' libraries and
 the AppImage fails:
 
 ```bash
-NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs" \
+NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs:$PWD/src-tauri/binaries/media/lib" \
     npm run tauri build -- --bundles appimage,deb,rpm
 ```
 
 Check the deb, rpm and AppImage are made and list `/usr/bin/haruspex-*`
-(`dpkg -c`, `rpm -qlp`, or `bsdtar -tf` where those are missing).
+(`dpkg -c`, `rpm -qlp`, or `bsdtar -tf` where those are missing), with
+`haruspex-melt` among them and `usr/lib/Haruspex/binaries/media/` beside.
+
+Then the media bundle, with no Shotcut, Kdenlive or ffmpeg installed (a clean
+VM, or `dnf remove kdenlive mlt ffmpeg-free` on Fedora): install the rpm,
+open Settings → Video editing, check all three tools say **bundled**, and
+render `scripts/fixtures/qtblend-smoke.mlt` with the installed melt through
+`video_render` or `scripts/media-smoke.sh` pointed at `/usr`. On mactest and
+wintest, after the Release workflow, the same from the installed app.
 Installers for Windows and macOS are built by the Release workflow from the
 tag; they can't be checked before it.
 
