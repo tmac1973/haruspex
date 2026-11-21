@@ -214,6 +214,9 @@
 				title="Takes a picture at the camera's home as the room normally looks. Day and night (infrared) are kept apart; press it again at night, or the first night check sets it. Room checks compare against it a minute after activity and hourly."
 				>{shooting ? 'Taking…' : 'This is normal'}</button
 			>
+			{#if saved.ptz !== 'none'}
+				<p class="hint">Taken from the camera's home; Set home here changes it.</p>
+			{/if}
 			{#if refError}<p class="error">{refError}</p>{/if}
 		{/if}
 	</div>

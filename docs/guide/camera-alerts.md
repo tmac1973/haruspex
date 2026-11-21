@@ -41,7 +41,7 @@ A watch rule is one sentence about this camera, such as "Tell me if the back doo
 
 Room checks compare the room with a picture of it as it normally looks, to catch furniture moved, something large gone or new, or smoke.
 
-1. With the room as it should be, click **This is normal** under **Room** in the camera's Alerts settings. A camera that turns goes to its home first.
+1. With the room as it should be, click **This is normal** under **Room** in the camera's Alerts settings. A camera that turns goes to its home first (set it with **Set home here**; see the `camera-pan-tilt` page). You can be in the picture: people and pets don't count, and the first check with nobody in view replaces it.
 2. Day and night (a greyscale infrared picture) are kept apart. Click it again at night, or the first check at night saves the night picture.
 
 A check runs about a minute after activity stops and hourly otherwise, at the camera's home view. If you or the assistant turned, looked or listened through the camera in the last 5 minutes, it waits. A picture almost the same as the reference ends there; otherwise the model compares the two. A changed room is logged as a **Room check** entry, judged and emailed like any other. The same change is logged once. A normal check with nobody in view becomes the new reference, and so does a **Room check** entry you dismiss.

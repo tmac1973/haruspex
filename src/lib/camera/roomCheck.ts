@@ -60,7 +60,7 @@ export interface RoomJudgement {
 
 const ROOM_INSTRUCTIONS = `You check a room for its owner. The first picture is the room as it normally looks; the second is now, from the same camera. Never judge who anyone is.
 
-Changes in light, shadows, screens, curtains, pets and small objects don't count.
+Only the room itself counts: people and pets coming, going or moving about don't (either picture may have someone in it), and nor do changes in light, shadows, screens, curtains or small objects.
 Urgent: smoke, flames or a fire glow; a door or window forced; or valuables gone right after an urgent entry listed below; or a watch rule below that matches.
 Unusual: large furniture moved, a large object missing, or a new large object.
 Normal: anything else.

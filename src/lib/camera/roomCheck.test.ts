@@ -190,6 +190,7 @@ describe('checkRoom', () => {
 		const parts = msg.content as { type: string; image_url?: { url: string }; text?: string }[];
 		expect(parts.map((p) => p.image_url?.url)).toEqual(['REF', 'NOW', undefined]);
 		expect(parts[2].text).toContain('1. Tell me if the TV is gone');
+		expect(parts[2].text).toContain("people and pets coming, going or moving about don't");
 		expect(parts[2].text).toContain('- Someone searched the drawers.');
 	});
 
