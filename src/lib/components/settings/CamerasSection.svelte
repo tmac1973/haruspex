@@ -19,6 +19,7 @@
 		setCameras
 	} from '#lib/stores/settings.ts';
 	import { newId } from '#lib/utils/id.ts';
+	import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 	/** The list as saved, read again after every change. */
 	let cameras = $state<CameraConfig[]>(getSettings().cameras);
@@ -53,7 +54,8 @@
 			ptz: 'none',
 			onvif: null,
 			watcher: { ...defaultWatcherConfig },
-			caps: null
+			caps: null,
+			alerts: { ...defaultAlertConfig }
 		};
 	}
 

@@ -1065,6 +1065,7 @@ mod tests {
             caps: None,
             calibration: None,
             note: None,
+            alerts: Default::default(),
         }
     }
 

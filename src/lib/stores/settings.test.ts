@@ -1529,11 +1529,52 @@ describe('camera settings', () => {
 				ptz: 'none',
 				onvif: null,
 				watcher: fresh.defaultWatcherConfig,
-				caps: null
+				caps: null,
+				alerts: { enabled: false, usualPeople: 1, watchRules: [] }
 			}
 		]);
 		expect(s.cameraTrustedServers).toEqual(['http://lan:8080']);
 		expect(s.cameraEventRetentionDays).toBe(7);
+	});
+
+	it('start with alert emails off, and clean the stored addresses', async () => {
+		expect((await loadWith(null)).getSettings().cameraAlerts).toEqual({
+			enabled: false,
+			accountId: '',
+			to: []
+		});
+		const fresh = await loadWith({
+			cameraAlerts: { enabled: true, accountId: 'a1', to: ['tim@example.com', 'nope', 7] }
+		});
+		expect(fresh.getCameraAlerts()).toEqual({
+			enabled: true,
+			accountId: 'a1',
+			to: ['tim@example.com']
+		});
+		fresh.setCameraAlerts({
+			enabled: true,
+			accountId: 'a1',
+			to: ['a@x.io', 'b@x.io', 'c@x.io', 'd@x.io', 'e@x.io', 'f@x.io']
+		});
+		expect(fresh.getCameraAlerts().to).toHaveLength(5);
+	});
+
+	it('keep watch rules to their limits when cameras are saved', async () => {
+		const fresh = await loadWith(null);
+		fresh.setCameras([
+			{
+				...camera,
+				permission: 'allow',
+				ptz: 'none',
+				onvif: null,
+				watcher: fresh.defaultWatcherConfig,
+				caps: null,
+				alerts: { enabled: true, usualPeople: 2, watchRules: Array(25).fill(' door ') }
+			}
+		]);
+		const alerts = fresh.getSettings().cameras[0].alerts;
+		expect(alerts.watchRules).toHaveLength(20);
+		expect(alerts.watchRules[0]).toBe('door');
 	});
 
 	it('store a plain copy, not the object handed in', async () => {

@@ -9,7 +9,7 @@ use super::onvif::{self, ptz::Ptz, OnvifConnection};
 use super::usb::{self, UsbDevices};
 use super::watcher::{remove_files, CameraWatchStatus, WatcherRegistry};
 use super::{CameraCaps, CameraConfig, Credentials, OnvifPreset};
-use crate::db::{CameraEvent, CameraEventFilter, Database};
+use crate::db::{AlertLevel, CameraEvent, CameraEventFilter, Database, HourCounts};
 use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -271,6 +271,49 @@ pub async fn camera_event_set_caption(
 ) -> Result<(), String> {
     on_db(&db, move |db| {
         db.set_camera_event_caption(id, caption.as_deref())
+    })
+    .await
+}
+
+/// Save an event's caption and its camera-alerts judgement together.
+#[tauri::command]
+pub async fn camera_event_set_judgement(
+    db: tauri::State<'_, Database>,
+    id: i64,
+    caption: Option<String>,
+    level: AlertLevel,
+    reason: String,
+) -> Result<(), String> {
+    on_db(&db, move |db| {
+        db.set_camera_event_judgement(id, caption.as_deref(), level, &reason)
+    })
+    .await
+}
+
+/// Mark an event's alert dismissed, with the user's note.
+#[tauri::command]
+pub async fn camera_event_dismiss(
+    db: tauri::State<'_, Database>,
+    id: i64,
+    note: String,
+) -> Result<(), String> {
+    on_db(&db, move |db| {
+        db.dismiss_camera_event(id, &note, crate::time_util::now_ms())
+    })
+    .await
+}
+
+/// A camera's events per local hour since `since` (epoch ms), weekdays and
+/// weekends apart; camera alerts learn its quiet hours from them.
+#[tauri::command]
+pub async fn camera_event_hour_counts(
+    db: tauri::State<'_, Database>,
+    camera_id: String,
+    since: i64,
+) -> Result<HourCounts, String> {
+    let offset_ms = i64::from(chrono::Local::now().offset().local_minus_utc()) * 1000;
+    on_db(&db, move |db| {
+        db.camera_event_hour_counts(&camera_id, since, offset_ms)
     })
     .await
 }

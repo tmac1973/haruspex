@@ -956,6 +956,13 @@ impl Database {
             // The helper ids a Code session offers, as a JSON array; NULL
             // means the ones switched on in Settings → Code → Helpers.
             "ALTER TABLE code_sessions ADD COLUMN helpers TEXT",
+            // Camera alerts (camera_events::): the judgement of an event,
+            // 'normal', 'unusual' or 'urgent' (NULL until judged), why, and
+            // when the user dismissed it, with their note.
+            "ALTER TABLE camera_events ADD COLUMN alert_level TEXT",
+            "ALTER TABLE camera_events ADD COLUMN alert_reason TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE camera_events ADD COLUMN dismissed_at INTEGER",
+            "ALTER TABLE camera_events ADD COLUMN dismiss_note TEXT NOT NULL DEFAULT ''",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();
@@ -967,6 +974,7 @@ impl Database {
 
         Self::migrate_type_config(&conn)?;
         Self::fill_messages_fts(&conn)?;
+        Self::widen_camera_events_fts(&conn)?;
 
         info!("Database migration complete");
         Ok(())
@@ -995,6 +1003,58 @@ impl Database {
         )
         .map_err(|e| format!("Migration (chat search) failed: {e}"))?;
         Ok(())
+    }
+
+    /// Give `camera_events_fts` the alert reason as a third column, once.
+    /// The table and triggers above are the two-column ones every database
+    /// first had; this drops them and makes the three-column ones under the
+    /// same names, so the `IF NOT EXISTS` above leaves them alone afterwards.
+    fn widen_camera_events_fts(conn: &Connection) -> Result<(), String> {
+        let fail = |e: rusqlite::Error| format!("Migration (camera log search) failed: {e}");
+        let cols: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('camera_events_fts')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(fail)?;
+        if cols >= 3 {
+            return Ok(());
+        }
+        conn.execute_batch(
+            "DROP TRIGGER IF EXISTS camera_events_fts_insert;
+             DROP TRIGGER IF EXISTS camera_events_fts_delete;
+             DROP TRIGGER IF EXISTS camera_events_fts_update;
+             DROP TABLE IF EXISTS camera_events_fts;
+
+             CREATE VIRTUAL TABLE camera_events_fts USING fts5(
+                 transcript, caption, alert_reason,
+                 content='camera_events', content_rowid='id'
+             );
+
+             CREATE TRIGGER camera_events_fts_insert
+             AFTER INSERT ON camera_events BEGIN
+                 INSERT INTO camera_events_fts(rowid, transcript, caption, alert_reason)
+                 VALUES (new.id, new.transcript, coalesce(new.caption, ''), new.alert_reason);
+             END;
+
+             CREATE TRIGGER camera_events_fts_delete
+             AFTER DELETE ON camera_events BEGIN
+                 INSERT INTO camera_events_fts(camera_events_fts, rowid, transcript, caption, alert_reason)
+                 VALUES ('delete', old.id, old.transcript, coalesce(old.caption, ''), old.alert_reason);
+             END;
+
+             CREATE TRIGGER camera_events_fts_update
+             AFTER UPDATE OF transcript, caption, alert_reason ON camera_events BEGIN
+                 INSERT INTO camera_events_fts(camera_events_fts, rowid, transcript, caption, alert_reason)
+                 VALUES ('delete', old.id, old.transcript, coalesce(old.caption, ''), old.alert_reason);
+                 INSERT INTO camera_events_fts(rowid, transcript, caption, alert_reason)
+                 VALUES (new.id, new.transcript, coalesce(new.caption, ''), new.alert_reason);
+             END;
+
+             INSERT INTO camera_events_fts(camera_events_fts) VALUES ('rebuild');",
+        )
+        .map_err(fail)
     }
 
     fn migrate_type_config(conn: &Connection) -> Result<(), String> {
@@ -1067,7 +1127,7 @@ mod stats;
 mod tasks;
 
 pub use audio::AudioRow;
-pub use camera_events::{CameraEvent, CameraEventFilter, NewCameraEvent};
+pub use camera_events::{AlertLevel, CameraEvent, CameraEventFilter, HourCounts, NewCameraEvent};
 pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;

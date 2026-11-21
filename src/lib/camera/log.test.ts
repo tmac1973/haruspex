@@ -72,6 +72,10 @@ describe('renderCameraLog', () => {
 		caption: 'A man puts a box by the door.',
 		captionStatus: 'done',
 		hasThumb: true,
+		alertLevel: null,
+		alertReason: '',
+		dismissedAt: null,
+		dismissNote: '',
 		...over
 	});
 

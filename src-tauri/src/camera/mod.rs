@@ -52,6 +52,47 @@ pub struct CameraConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub note: Option<String>,
+    /// Camera alerts: whether its events are judged, and what counts as
+    /// normal for it. Off by default.
+    #[serde(default)]
+    pub alerts: AlertConfig,
+}
+
+/// What camera alerts treat as normal for one camera. The frontend keeps the
+/// rules to 20 of 300 characters (`camera/alertConfig.ts`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AlertConfig {
+    pub enabled: bool,
+    /// How many people are usually in view at once; more is unusual.
+    pub usual_people: u32,
+    /// The user's own rules, such as "tell me if the back door is left open".
+    pub watch_rules: Vec<String>,
+    /// The user's quiet hours; `None` uses the ones learned from the log.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub quiet_hours: Option<QuietHours>,
+}
+
+impl Default for AlertConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            usual_people: 1,
+            watch_rules: Vec::new(),
+            quiet_hours: None,
+        }
+    }
+}
+
+/// Which local hours are quiet, 24 per day kind, midnight first.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct QuietHours {
+    pub weekday: Vec<bool>,
+    pub weekend: Vec<bool>,
 }
 
 /// A network camera's pan, measured in picture widths rather than degrees:
@@ -372,5 +413,19 @@ mod tests {
             }
         );
         assert!(cfg.caps.is_none() && cfg.onvif.is_none());
+        assert_eq!(cfg.alerts, AlertConfig::default());
+        assert_eq!(cfg.alerts.usual_people, 1);
+    }
+
+    #[test]
+    fn alert_settings_round_trip_and_leave_out_unset_quiet_hours() {
+        let json = r#"{"id":"c1","name":"Kitchen","permission":"ask","ptz":"none",
+            "source":{"kind":"rtsp","url":"rtsp://cam/ch0"},
+            "alerts":{"enabled":true,"usualPeople":3,"watchRules":["door open"]}}"#;
+        let cfg: CameraConfig = serde_json::from_str(json).unwrap();
+        assert!(cfg.alerts.enabled);
+        assert_eq!(cfg.alerts.watch_rules, ["door open"]);
+        let out = serde_json::to_string(&cfg.alerts).unwrap();
+        assert!(!out.contains("quietHours"), "{out}");
     }
 }

@@ -105,6 +105,7 @@ import {
 	updateSettings
 } from '#lib/stores/settings.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 function input(id: RegExp): HTMLInputElement {
 	return screen.getByLabelText(id) as HTMLInputElement;
@@ -354,7 +355,8 @@ describe('removing a camera', () => {
 				ptz: 'none',
 				onvif: null,
 				watcher: defaultWatcherConfig,
-				caps: null
+				caps: null,
+				alerts: { ...defaultAlertConfig }
 			}
 		]);
 		render(CamerasSection);
@@ -397,6 +399,7 @@ function kitchen(over: Partial<CameraConfig> = {}): CameraConfig {
 		onvif: null,
 		watcher: { ...defaultWatcherConfig },
 		caps: null,
+		alerts: { ...defaultAlertConfig },
 		...over
 	};
 }

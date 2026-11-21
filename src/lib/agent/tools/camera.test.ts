@@ -32,6 +32,7 @@ import { activeCameraUses } from '#lib/stores/cameraActivity.svelte.ts';
 import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 const FRAME = 'data:image/jpeg;base64,AAAA';
 const OPENROUTER = { baseUrl: 'https://openrouter.ai/api', modelId: 'x/y' };
@@ -53,6 +54,7 @@ function camera(over: Partial<CameraConfig> = {}): CameraConfig {
 		onvif: null,
 		watcher: { ...defaultWatcherConfig },
 		caps: { hasAudio: true, width: 1920, height: 1080, videoCodec: 'h264' },
+		alerts: { ...defaultAlertConfig },
 		...over
 	};
 }
@@ -229,7 +231,8 @@ describe('camera_list', () => {
 					id: 'cam-2',
 					name: 'Desk',
 					source: { kind: 'usb', videoDevice: '/dev/video0', audioDevice: null },
-					caps: null
+					caps: null,
+					alerts: { ...defaultAlertConfig }
 				})
 			]
 		});

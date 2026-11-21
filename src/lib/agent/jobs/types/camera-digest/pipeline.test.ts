@@ -39,6 +39,7 @@ import {
 	runCameraDigestPipeline,
 	type CameraDigestResult
 } from './pipeline';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 function camera(id: string, name: string, permission: 'ask' | 'allow'): CameraConfig {
 	return {
@@ -55,7 +56,8 @@ function camera(id: string, name: string, permission: 'ask' | 'allow'): CameraCo
 		ptz: 'none',
 		onvif: null,
 		watcher: { ...defaultWatcherConfig, enabled: true },
-		caps: { hasAudio: true, width: 1920, height: 1080, videoCodec: 'h264' }
+		caps: { hasAudio: true, width: 1920, height: 1080, videoCodec: 'h264' },
+		alerts: { ...defaultAlertConfig }
 	};
 }
 
@@ -74,7 +76,11 @@ function event(id: number, cameraId: string, startedAt: number): CameraEvent {
 		transcript: `words ${id}`,
 		caption: `caption ${id}`,
 		captionStatus: 'done',
-		hasThumb: true
+		hasThumb: true,
+		alertLevel: null,
+		alertReason: '',
+		dismissedAt: null,
+		dismissNote: ''
 	};
 }
 

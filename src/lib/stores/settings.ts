@@ -22,6 +22,12 @@ import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 import type { PeerConfig } from '#lib/ipc/gen/PeerConfig.ts';
 import type { WatcherConfig } from '#lib/ipc/gen/WatcherConfig.ts';
+import {
+	defaultCameraAlerts,
+	normalizeAlertConfig,
+	normalizeCameraAlerts,
+	type CameraAlertsSettings
+} from '#lib/camera/alertConfig.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
@@ -1058,6 +1064,8 @@ export interface AppSettings {
 	cameraTrustedServers: string[];
 	/** Days the ambient log keeps an entry. */
 	cameraEventRetentionDays: number;
+	/** Where camera alert emails go (Settings → Cameras → Alerts). */
+	cameraAlerts: CameraAlertsSettings;
 	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
@@ -1374,7 +1382,8 @@ const defaults: AppSettings = {
 	videoEncoder: 'libx264',
 	cameras: [],
 	cameraTrustedServers: [],
-	cameraEventRetentionDays: 7
+	cameraEventRetentionDays: 7,
+	cameraAlerts: defaultCameraAlerts
 };
 
 /** A new camera's watcher: off, all day, medium motion, -35 dBFS. Matches Rust's default. */
@@ -1403,7 +1412,8 @@ function storedCameras(value: unknown): CameraConfig[] {
 			ptz: c.ptz ?? 'none',
 			onvif: c.onvif ?? null,
 			watcher: { ...defaultWatcherConfig, ...(c.watcher ?? {}) },
-			caps: c.caps ?? null
+			caps: c.caps ?? null,
+			alerts: normalizeAlertConfig(c.alerts)
 		}));
 }
 
@@ -1575,6 +1585,7 @@ function load(): AppSettings {
 				codeHelpers: booleanRecord(rest.codeHelpers),
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				cameras: storedCameras(rest.cameras),
+				cameraAlerts: normalizeCameraAlerts(rest.cameraAlerts),
 				videoFfmpegChoice: storedFfmpegChoice(rest),
 				videoMeltChoice: storedMeltChoice(rest),
 				videoEditor: rest.videoEditor === 'kdenlive' ? 'kdenlive' : 'shotcut',
@@ -1703,7 +1714,19 @@ export function setCodeHelperConfig(id: string, value: unknown): void {
 
 /** Replace the camera list (Settings → Cameras). The UI edits a working copy and saves it whole. */
 export function setCameras(cameras: CameraConfig[]): void {
-	commit({ ...settings, cameras });
+	commit({
+		...settings,
+		cameras: cameras.map((c) => ({ ...c, alerts: normalizeAlertConfig(c.alerts) }))
+	});
+}
+
+/** Where camera alert emails go; addresses are cleaned and kept to five. */
+export function getCameraAlerts(): CameraAlertsSettings {
+	return settings.cameraAlerts;
+}
+
+export function setCameraAlerts(value: CameraAlertsSettings): void {
+	commit({ ...settings, cameraAlerts: normalizeCameraAlerts(value) });
 }
 
 /** Replace the servers marked as the user's own for camera use. */

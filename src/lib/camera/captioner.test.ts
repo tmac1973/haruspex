@@ -42,6 +42,7 @@ import {
 	startCaptioner
 } from './captioner';
 import { defaultWatcherConfig, updateSettings } from '#lib/stores/settings.ts';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 const THUMB = 'data:image/jpeg;base64,AAAA';
 
@@ -57,6 +58,10 @@ function event(id: number, over: Partial<CameraEvent> = {}): CameraEvent {
 		caption: null,
 		captionStatus: 'pending',
 		hasThumb: true,
+		alertLevel: null,
+		alertReason: '',
+		dismissedAt: null,
+		dismissNote: '',
 		...over
 	};
 }
@@ -95,7 +100,8 @@ beforeEach(() => {
 				ptz: 'none',
 				onvif: null,
 				watcher: { ...defaultWatcherConfig, enabled: true },
-				caps: null
+				caps: null,
+				alerts: { ...defaultAlertConfig }
 			}
 		],
 		cameraTrustedServers: []
