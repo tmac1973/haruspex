@@ -2,7 +2,9 @@
 	/**
 	 * One camera's ambient log in Settings → Cameras → Activity: its latest 50
 	 * entries with their thumbnails, a delete for each, and Clear all. New
-	 * entries for the camera appear as they are logged.
+	 * entries for the camera appear as they are logged. With camera alerts on,
+	 * an Unusual or Urgent entry shows its level and why, and can be dismissed;
+	 * the note given then can become one of the camera's watch rules.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
@@ -11,6 +13,8 @@
 	import type { CameraEventNotice } from '#lib/ipc/gen/CameraEventNotice.ts';
 	import { stamp } from '#lib/camera/log.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { getSettings, setCameras } from '#lib/stores/settings.ts';
+	import { MAX_WATCH_RULES } from '#lib/camera/alertConfig.ts';
 
 	interface Props {
 		cameraId: string;
@@ -56,6 +60,46 @@
 		}
 	}
 
+	/** The entry whose Dismiss is open, and the note typed for it. */
+	let dismissing = $state<number | null>(null);
+	let note = $state('');
+
+	function openDismiss(id: number) {
+		dismissing = id;
+		note = '';
+	}
+
+	async function dismiss(e: CameraEvent, addRule: boolean) {
+		const text = note.trim();
+		try {
+			await invoke('camera_event_dismiss', { id: e.id, note: text });
+			// A room check found this change and you say it's fine: it's the room now.
+			if (e.trigger === 'room' && e.hasThumb) {
+				const jpeg = await invoke<string>('camera_event_thumb', { id: e.id });
+				await invoke('camera_reference_set', { cameraId, jpeg });
+			}
+			if (addRule && text) {
+				setCameras(
+					getSettings().cameras.map((c) =>
+						c.id === cameraId && c.alerts.watchRules.length < MAX_WATCH_RULES
+							? { ...c, alerts: { ...c.alerts, watchRules: [...c.alerts.watchRules, text] } }
+							: c
+					)
+				);
+			}
+			events = (events ?? []).map((x) =>
+				x.id === e.id ? { ...x, dismissedAt: Date.now(), dismissNote: text } : x
+			);
+			dismissing = null;
+		} catch (err) {
+			error = errMessage(err);
+		}
+	}
+
+	function flagged(e: CameraEvent): boolean {
+		return e.alertLevel === 'unusual' || e.alertLevel === 'urgent';
+	}
+
 	async function clearAll() {
 		if (!confirm(`Delete every entry in ${cameraName}'s log? This can't be undone.`)) return;
 		try {
@@ -92,7 +136,8 @@
 	const TRIGGERS: Record<string, string> = {
 		motion: 'Motion',
 		sound: 'Sound',
-		both: 'Motion and sound'
+		both: 'Motion and sound',
+		room: 'Room check'
 	};
 </script>
 
@@ -111,11 +156,46 @@
 					{/if}
 					<div class="text">
 						<span class="meta"
-							>{stamp(new Date(e.startedAt))} · {TRIGGERS[e.trigger] ?? e.trigger}</span
+							>{stamp(new Date(e.startedAt))} · {TRIGGERS[e.trigger] ?? e.trigger}
+							{#if flagged(e)}<span
+									class="chip {e.alertLevel}"
+									class:dismissed={e.dismissedAt !== null}
+									title={e.dismissedAt !== null ? 'Dismissed' : undefined}
+									>{e.alertLevel === 'urgent' ? 'Urgent' : 'Unusual'}</span
+								>{/if}</span
 						>
 						<span class="caption">{caption(e)}</span>
+						{#if flagged(e) && e.alertReason}<span class="reason">{e.alertReason}</span>{/if}
 						{#if e.transcript.trim()}<span class="said">“{e.transcript.trim()}”</span>{/if}
+						{#if dismissing === e.id}
+							<div class="dismiss">
+								<input
+									type="text"
+									bind:value={note}
+									placeholder="Me cooking late is normal"
+									aria-label="Why this is fine"
+								/>
+								<button type="button" class="btn btn-small" onclick={() => dismiss(e, false)}
+									>Dismiss</button
+								>
+								<button
+									type="button"
+									class="btn btn-small"
+									disabled={!note.trim()}
+									title="Saves the note as one of this camera's watch rules, so later entries are judged with it."
+									onclick={() => dismiss(e, true)}>Dismiss and add rule</button
+								>
+							</div>
+						{/if}
 					</div>
+					{#if flagged(e) && e.dismissedAt === null && dismissing !== e.id}
+						<button
+							type="button"
+							class="btn btn-small"
+							aria-label={`Dismiss the alert from ${stamp(new Date(e.startedAt))}`}
+							onclick={() => openDismiss(e.id)}>Dismiss</button
+						>
+					{/if}
 					<button
 						type="button"
 						class="btn btn-small"
@@ -185,6 +265,44 @@
 
 	.said {
 		color: var(--text-secondary);
+	}
+
+	.chip {
+		margin-left: 6px;
+		padding: 0 6px;
+		border-radius: 8px;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.chip.unusual {
+		background: color-mix(in srgb, var(--warning) 14%, transparent);
+		color: var(--warning);
+	}
+
+	.chip.urgent {
+		background: var(--error-bg);
+		color: var(--error-text);
+	}
+
+	.chip.dismissed {
+		opacity: 0.5;
+	}
+
+	.reason {
+		color: var(--text-secondary);
+		font-style: italic;
+	}
+
+	.dismiss {
+		display: flex;
+		gap: 6px;
+		margin-top: 4px;
+	}
+
+	.dismiss input {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.help {

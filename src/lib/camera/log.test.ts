@@ -72,6 +72,10 @@ describe('renderCameraLog', () => {
 		caption: 'A man puts a box by the door.',
 		captionStatus: 'done',
 		hasThumb: true,
+		alertLevel: null,
+		alertReason: '',
+		dismissedAt: null,
+		dismissNote: '',
 		...over
 	});
 
@@ -98,5 +102,24 @@ describe('renderCameraLog', () => {
 		expect(lines).toHaveLength(2);
 		expect(lines[0]).toContain('· Porch ·');
 		expect(lines[1]).toContain('· cam-9 ·');
+	});
+
+	it('adds an Unusual or Urgent judgement and its reason, and marks a dismissed one', () => {
+		expect(
+			renderCameraLogEntry(
+				entry({ alertLevel: 'urgent', alertReason: 'Someone is searching drawers' }),
+				'Porch'
+			)
+		).toMatch(/Heard: "Parcel for you\." Urgent: Someone is searching drawers\.$/);
+		expect(
+			renderCameraLogEntry(
+				entry({ alertLevel: 'unusual', alertReason: '', dismissedAt: 5 }),
+				'Porch'
+			)
+		).toMatch(/ Unusual\. \(dismissed\)$/);
+		expect(
+			renderCameraLogEntry(entry({ alertLevel: 'normal', alertReason: 'Fine.' }), 'Porch')
+		).not.toMatch(/Fine/);
+		expect(renderCameraLogEntry(entry({ trigger: 'room' }), 'Porch')).toContain(' · room check — ');
 	});
 });

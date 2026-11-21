@@ -16,6 +16,7 @@ import { _resetWatchSyncForTests, syncCameraWatchers } from './watchSync';
 import { activeCameraUses, cameraWatchStatus } from '#lib/stores/cameraActivity.svelte.ts';
 import { defaultWatcherConfig, getSettings, updateSettings } from '#lib/stores/settings.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 const cam: CameraConfig = {
 	id: 'k1',
@@ -25,7 +26,8 @@ const cam: CameraConfig = {
 	ptz: 'none',
 	onvif: null,
 	watcher: { ...defaultWatcherConfig, enabled: true },
-	caps: null
+	caps: null,
+	alerts: { ...defaultAlertConfig }
 };
 
 beforeEach(() => {

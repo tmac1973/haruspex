@@ -3,6 +3,8 @@
 //! Nothing here sends on its own initiative: `email_send` is invoked only by
 //! the review dialog's Send button, after the user has read and edited the
 //! draft. The model can open a draft (`email_compose`); it cannot send one.
+//! Camera alerts send through `send_built`, with a fixed subject and only the
+//! addresses the user set (`camera::alert_mail`).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -204,6 +206,23 @@ pub async fn send_message(account: &EmailAccount, msg: &OutgoingMessage) -> Resu
     let account = auth::resolve(account).await?;
     let message_id = new_message_id(&account.email_address);
     let message = build_message(&account, msg, &message_id)?;
+    let raw = message.formatted();
+    let t = transport(&account)?;
+    bounded(&account.smtp_host, CALL_LIMIT, t.send(message)).await?;
+    Ok(Sent { message_id, raw })
+}
+
+/// Send a message built by `build`, which gets the account's address (the
+/// From) and the new Message-ID: camera alerts, whose parts are fixed rather
+/// than reviewed. Needs Allow sending, as every send does.
+pub async fn send_built(
+    account: &EmailAccount,
+    build: impl FnOnce(&str, &str) -> Result<Message, String>,
+) -> Result<Sent, String> {
+    require_sending(account)?;
+    let account = auth::resolve(account).await?;
+    let message_id = new_message_id(&account.email_address);
+    let message = build(&account.email_address, &message_id)?;
     let raw = message.formatted();
     let t = transport(&account)?;
     bounded(&account.smtp_host, CALL_LIMIT, t.send(message)).await?;

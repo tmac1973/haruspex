@@ -362,8 +362,15 @@ pub(crate) async fn gray_frame(
 /// doesn't count as a change. On a Cinnado D1 a turn that hit the end of its
 /// travel scored 0.975 or more, every real turn 0.38 or less.
 pub(crate) fn same_view(a: &[u8], b: &[u8]) -> bool {
+    correlation(a, b) >= SAME_VIEW
+}
+
+/// The correlation of two [`fingerprint`]s, -1 to 1. Fingerprints of
+/// different sizes score -1. A flat picture (a lens cap, a blank wall)
+/// scores 1 against another equally bright one and 0 otherwise.
+pub(crate) fn correlation(a: &[u8], b: &[u8]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
-        return false;
+        return -1.0;
     }
     let n = a.len() as f64;
     let mean = |v: &[u8]| v.iter().map(|&x| f64::from(x)).sum::<f64>() / n;
@@ -376,10 +383,9 @@ pub(crate) fn same_view(a: &[u8], b: &[u8]) -> bool {
         vb += dy * dy;
     }
     if va == 0.0 || vb == 0.0 {
-        // A flat picture (a lens cap, a blank wall): same only if equally bright.
-        return (ma - mb).abs() < 4.0;
+        return if (ma - mb).abs() < 4.0 { 1.0 } else { 0.0 };
     }
-    cov / (va * vb).sqrt() >= SAME_VIEW
+    cov / (va * vb).sqrt()
 }
 
 const SAME_VIEW: f64 = 0.95;
@@ -626,6 +632,7 @@ mod tests {
             caps: None,
             calibration: None,
             note: None,
+            alerts: Default::default(),
         }
     }
 

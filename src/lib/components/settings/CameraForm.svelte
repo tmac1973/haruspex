@@ -17,6 +17,7 @@
 	import type { PtzCalibration } from '#lib/ipc/gen/PtzCalibration.ts';
 	import type { AimDirection } from '#lib/ipc/gen/AimDirection.ts';
 	import type { CameraAimResult } from '#lib/ipc/gen/CameraAimResult.ts';
+	import type { CameraPosition } from '#lib/ipc/gen/CameraPosition.ts';
 	import type { CameraCaps } from '#lib/ipc/gen/CameraCaps.ts';
 	import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 	import type { CameraListenResult } from '#lib/ipc/gen/CameraListenResult.ts';
@@ -28,6 +29,9 @@
 	import type { OnvifPreset } from '#lib/ipc/gen/OnvifPreset.ts';
 	import type { PtzKind } from '#lib/ipc/gen/PtzKind.ts';
 	import type { UsbDevices } from '#lib/ipc/gen/UsbDevices.ts';
+	import type { AlertConfig } from '#lib/ipc/gen/AlertConfig.ts';
+	import { normalizeAlertConfig } from '#lib/camera/alertConfig.ts';
+	import CameraAlertFields from '#lib/components/settings/CameraAlertFields.svelte';
 	import { forgetCameraPassword, withStoredCameraPassword } from '#lib/stores/cameraSecrets.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { videoOverrides } from '#lib/video/binaries.ts';
@@ -70,6 +74,19 @@
 	let panAt = $state<number | null>(null);
 	/** The same for tilt, in pulses from the bottom. */
 	let tiltAt = $state<number | null>(null);
+	// Haruspex may already know where it points: it has only turned by
+	// counted steps since it last went home.
+	if (start.ptz === 'onvif' && start.calibration) {
+		void invoke<CameraPosition>('camera_position', { cameraId: start.id })
+			.then((p) => {
+				if (panAt !== null) return;
+				panAt = p.panPulses;
+				tiltAt = p.tiltPulses;
+			})
+			.catch((e: unknown) => console.warn('camera_position failed', e));
+	}
+	/** Why the buttons that use where the camera points are off. */
+	const UNKNOWN_AT = 'Press Home first, so Haruspex knows where the camera points.';
 	let note = $state(start.note ?? '');
 	let watchOn = $state(start.watcher.enabled);
 	let hoursStart = $state(start.watcher.activeHours?.start ?? '');
@@ -78,6 +95,7 @@
 	let hoursLimited = $state(!!start.watcher.activeHours);
 	let sensitivity = $state<MotionSensitivity>(start.watcher.motionSensitivity);
 	let soundDb = $state(start.watcher.soundThresholdDb);
+	let alerts = $state<AlertConfig>(normalizeAlertConfig(start.alerts));
 
 	let found = $state<DiscoveredCamera[] | null>(null);
 	let finding = $state(false);
@@ -210,7 +228,8 @@
 			onvif: kind === 'rtsp' ? $state.snapshot(onvif) : null,
 			caps,
 			calibration: savedPtz === 'onvif' ? $state.snapshot(calibration) : undefined,
-			note: note.trim() || undefined
+			note: note.trim() || undefined,
+			alerts: normalizeAlertConfig($state.snapshot(alerts))
 		};
 	}
 
@@ -653,45 +672,6 @@
 				</button>
 				{#if calibration}
 					<p class="help">Turns {describeRange(calibration)}.</p>
-					<div class="edges">
-						<button
-							type="button"
-							class="btn btn-small"
-							onclick={() => setEdge('from')}
-							disabled={panAt === null}
-							title="Look around starts where the camera points now. Turn it with the buttons below, or Home, first."
-							>Set left edge</button
-						>
-						<button
-							type="button"
-							class="btn btn-small"
-							onclick={() => setEdge('to')}
-							disabled={panAt === null}
-							title="Look around ends where the camera points now. Turn it with the buttons below, or Home, first."
-							>Set right edge</button
-						>
-						{#if calibration.sweep}
-							<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
-						{/if}
-					</div>
-					<div class="edges">
-						<button
-							type="button"
-							class="btn btn-small"
-							onclick={setHome}
-							disabled={panAt === null || calibration.homePulses == null}
-							title="Home (and where a look-around ends) becomes where the camera points now, tilt included. Turn it with the buttons below first."
-							>Set home here</button
-						>
-						{#if calibration.homeOffset}
-							<button
-								type="button"
-								class="btn btn-small"
-								onclick={clearHome}
-								title="Home goes back to the one saved on the camera.">Camera's own home</button
-							>
-						{/if}
-					</div>
 				{/if}
 				{#if calibrateError}<p class="error">{calibrateError}</p>{/if}
 			{/if}
@@ -810,6 +790,8 @@
 			/>
 			<span>{Math.round(soundDb)} dB</span>
 		</div>
+
+		<CameraAlertFields cameraId={start.id} bind:alerts />
 	{/if}
 </div>
 
@@ -856,6 +838,48 @@
 					title={a.title}>{a.label}</button
 				>
 			{/each}
+			{#if calibration}
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={setHome}
+					disabled={aiming || panAt === null || calibration.homePulses == null}
+					title={panAt === null
+						? UNKNOWN_AT
+						: 'Home (and where a look-around ends) becomes where the camera points now, tilt included. Save keeps it.'}
+					>Set home here</button
+				>
+				{#if calibration.homeOffset}
+					<button
+						type="button"
+						class="btn btn-small"
+						onclick={clearHome}
+						title="Home goes back to the one saved on the camera. Save keeps it.">Reset home</button
+					>
+				{/if}
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={() => setEdge('from')}
+					disabled={aiming || panAt === null}
+					title={panAt === null
+						? UNKNOWN_AT
+						: 'Look around starts where the camera points now. Save keeps it.'}
+					>Set left edge</button
+				>
+				<button
+					type="button"
+					class="btn btn-small"
+					onclick={() => setEdge('to')}
+					disabled={aiming || panAt === null}
+					title={panAt === null
+						? UNKNOWN_AT
+						: 'Look around ends where the camera points now. Save keeps it.'}>Set right edge</button
+				>
+				{#if calibration.sweep}
+					<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
+				{/if}
+			{/if}
 		</div>
 	{/if}
 	{#if saveError}<span class="error">{saveError}</span>{/if}
@@ -905,13 +929,6 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-	}
-
-	.edges {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 4px;
 	}
 
 	.hours input,

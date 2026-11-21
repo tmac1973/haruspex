@@ -4,8 +4,10 @@
 	 * through, and the remote servers trusted with what they see and hear.
 	 * One camera's form is open at a time and saves only on its Save.
 	 */
+	import { invoke } from '@tauri-apps/api/core';
 	import CameraForm from '#lib/components/settings/CameraForm.svelte';
 	import CameraEventLog from '#lib/components/settings/CameraEventLog.svelte';
+	import CameraAlertsSection from '#lib/components/settings/CameraAlertsSection.svelte';
 	import { cameraWatchStatus } from '#lib/stores/cameraActivity.svelte.ts';
 	import { isTrustableServer, trustedServerKey } from '#lib/camera/trust.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
@@ -19,6 +21,7 @@
 		setCameras
 	} from '#lib/stores/settings.ts';
 	import { newId } from '#lib/utils/id.ts';
+	import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 	/** The list as saved, read again after every change. */
 	let cameras = $state<CameraConfig[]>(getSettings().cameras);
@@ -53,7 +56,8 @@
 			ptz: 'none',
 			onvif: null,
 			watcher: { ...defaultWatcherConfig },
-			caps: null
+			caps: null,
+			alerts: { ...defaultAlertConfig }
 		};
 	}
 
@@ -92,6 +96,7 @@
 
 	function remove(camera: CameraConfig) {
 		void forgetCameraPassword($state.snapshot(camera) as CameraConfig);
+		void invoke('camera_reference_clear', { cameraId: camera.id, light: null }).catch(() => {});
 		save(cameras.filter((c) => c.id !== camera.id));
 		if (openId === camera.id) openId = null;
 		if (logId === camera.id) logId = null;
@@ -209,6 +214,8 @@
 		<span>days</span>
 	</label>
 </section>
+
+<CameraAlertsSection />
 
 <section class="settings-section">
 	<h2>Trusted servers</h2>

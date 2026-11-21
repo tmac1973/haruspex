@@ -4,7 +4,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 const state = vi.hoisted(() => ({
 	stored: new Map<string, string>(),
 	calls: [] as { cmd: string; args: Record<string, unknown> | undefined }[],
-	hostname: ''
+	hostname: '',
+	/** Extra fields on the logged entry, such as a judgement. */
+	entry: {} as Record<string, unknown>
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -74,9 +76,46 @@ vi.mock('@tauri-apps/api/core', async () =>
 						transcript: 'Parcel for you.',
 						caption: 'A man leaves a box at the door.',
 						captionStatus: 'done',
-						hasThumb: true
+						hasThumb: true,
+						alertLevel: null,
+						alertReason: '',
+						dismissedAt: null,
+						dismissNote: '',
+						...state.entry
 					}
 				];
+			},
+			camera_reference_get: () =>
+				state.calls.some((c) => c.cmd === 'camera_reference_set')
+					? {
+							day: {
+								setAt: new Date(2026, 10, 21, 9, 0).getTime(),
+								dataUrl: 'data:image/jpeg;base64,REF'
+							},
+							night: null
+						}
+					: { day: null, night: null },
+			camera_reference_set: (a) => {
+				state.calls.push({ cmd: 'camera_reference_set', args: a });
+				return 'day';
+			},
+			camera_reference_clear: (a) => {
+				state.calls.push({ cmd: 'camera_reference_clear', args: a });
+				return null;
+			},
+			camera_alert_send: (a) => {
+				state.calls.push({ cmd: 'camera_alert_send', args: a });
+				return 'msg-1@example.com';
+			},
+			camera_event_dismiss: (a) => {
+				state.calls.push({ cmd: 'camera_event_dismiss', args: a });
+				return null;
+			},
+			camera_event_hour_counts: {
+				weekday: Array(24).fill(0),
+				weekend: Array(24).fill(0),
+				daysWeekday: 0,
+				daysWeekend: 0
 			},
 			camera_event_thumb: 'data:image/jpeg;base64,THUMB',
 			camera_event_delete: (a) => {
@@ -105,6 +144,7 @@ import {
 	updateSettings
 } from '#lib/stores/settings.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 function input(id: RegExp): HTMLInputElement {
 	return screen.getByLabelText(id) as HTMLInputElement;
@@ -113,6 +153,7 @@ function input(id: RegExp): HTMLInputElement {
 beforeEach(() => {
 	state.stored.clear();
 	state.hostname = '';
+	state.entry = {};
 	state.calls = [];
 	localStorage.clear();
 	setCameras([]);
@@ -276,7 +317,11 @@ describe('calibrating pan/tilt', () => {
 		// Home becomes where it points now: 2 pulses right of the camera's own.
 		await fireEvent.click(screen.getByText('Set home here'));
 		await screen.findByText(/home \(set here\) is 3\.9 from the left end/);
-		screen.getByText("Camera's own home");
+		// Reset home sits with the aim buttons; set it again after.
+		await fireEvent.click(screen.getByText('Reset home'));
+		expect(screen.queryByText('Reset home')).toBeNull();
+		await fireEvent.click(screen.getByText('Set home here'));
+		screen.getByText('Reset home');
 		await fireEvent.input(input(/^Note$/), {
 			target: { value: ' Faces the sofa; behind it is a wall ' }
 		});
@@ -354,7 +399,8 @@ describe('removing a camera', () => {
 				ptz: 'none',
 				onvif: null,
 				watcher: defaultWatcherConfig,
-				caps: null
+				caps: null,
+				alerts: { ...defaultAlertConfig }
 			}
 		]);
 		render(CamerasSection);
@@ -397,6 +443,7 @@ function kitchen(over: Partial<CameraConfig> = {}): CameraConfig {
 		onvif: null,
 		watcher: { ...defaultWatcherConfig },
 		caps: null,
+		alerts: { ...defaultAlertConfig },
 		...over
 	};
 }
@@ -475,5 +522,150 @@ describe('the ambient log', () => {
 		await screen.findByText('No entries.');
 		expect(state.calls).toContainEqual({ cmd: 'camera_events_clear', args: { cameraId: 'k1' } });
 		confirm.mockRestore();
+	});
+});
+
+describe('camera alerts', () => {
+	it("saves a camera's alert settings from its form", async () => {
+		setCameras([kitchen({ watcher: { ...defaultWatcherConfig, enabled: true } })]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		await fireEvent.click(screen.getByLabelText('Judge entries'));
+		await fireEvent.input(input(/^Usual people$/), { target: { value: '2' } });
+		await fireEvent.click(screen.getByText('Add rule'));
+		await fireEvent.input(input(/^Watch rule 1$/), {
+			target: { value: 'Tell me if the back door is open' }
+		});
+		await fireEvent.click(screen.getByText('Add rule'));
+		await fireEvent.click(screen.getByLabelText('Edit quiet hours'));
+		await fireEvent.click(screen.getByLabelText('Weekdays 3:00'));
+		await fireEvent.click(screen.getByText('Save'));
+
+		await waitFor(() => expect(getSettings().cameras[0].alerts.enabled).toBe(true));
+		const alerts = getSettings().cameras[0].alerts;
+		expect(alerts.usualPeople).toBe(2);
+		// The blank second rule isn't kept.
+		expect(alerts.watchRules).toEqual(['Tell me if the back door is open']);
+		expect(alerts.quietHours?.weekday[3]).toBe(true);
+		expect(alerts.quietHours?.weekday[4]).toBe(false);
+	});
+
+	it('shows an urgent entry and dismisses it with a note that becomes a rule', async () => {
+		state.entry = { alertLevel: 'urgent', alertReason: 'Someone is searching the drawers.' };
+		setCameras([kitchen({ alerts: { ...defaultAlertConfig, enabled: true } })]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+		await screen.findByText('Someone is searching the drawers.');
+		screen.getByText('Urgent');
+
+		await fireEvent.click(screen.getByLabelText(/^Dismiss the alert from/));
+		await fireEvent.input(input(/^Why this is fine$/), {
+			target: { value: 'Me tidying the drawers is normal' }
+		});
+		await fireEvent.click(screen.getByText('Dismiss and add rule'));
+
+		await waitFor(() =>
+			expect(state.calls).toContainEqual({
+				cmd: 'camera_event_dismiss',
+				args: { id: 7, note: 'Me tidying the drawers is normal' }
+			})
+		);
+		expect(getSettings().cameras[0].alerts.watchRules).toEqual([
+			'Me tidying the drawers is normal'
+		]);
+		expect(screen.queryByLabelText(/^Dismiss the alert from/)).toBeNull();
+	});
+
+	it('shows nothing extra for a Normal entry', async () => {
+		state.entry = { alertLevel: 'normal', alertReason: 'Nothing unusual.' };
+		setCameras([kitchen()]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Kitchen activity'));
+		await screen.findByText('A man leaves a box at the door.');
+		expect(screen.queryByText('Nothing unusual.')).toBeNull();
+		expect(screen.queryByLabelText(/^Dismiss the alert from/)).toBeNull();
+	});
+});
+
+describe('room references', () => {
+	it('saves what the camera sees as normal and shows it', async () => {
+		setCameras([
+			kitchen({
+				watcher: { ...defaultWatcherConfig, enabled: true },
+				alerts: { ...defaultAlertConfig, enabled: true }
+			})
+		]);
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Edit Kitchen'));
+		await screen.findByText('Day: none');
+		await fireEvent.click(screen.getByText('This is normal'));
+		await screen.findByAltText('Day reference');
+		expect(state.calls).toContainEqual({
+			cmd: 'camera_reference_set',
+			args: { cameraId: 'k1', jpeg: 'data:image/jpeg;base64,AAAA' }
+		});
+	});
+
+	it('clears both references when the camera is removed', async () => {
+		setCameras([kitchen()]);
+		render(CamerasSection);
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+		await fireEvent.click(screen.getByLabelText('Remove Kitchen'));
+		confirm.mockRestore();
+		await waitFor(() =>
+			expect(state.calls).toContainEqual({
+				cmd: 'camera_reference_clear',
+				args: { cameraId: 'k1', light: null }
+			})
+		);
+	});
+});
+
+describe('the Alerts card', () => {
+	const account = {
+		id: 'acc-1',
+		label: 'Home',
+		enabled: true,
+		sendEnabled: true,
+		emailAddress: 'home@example.com'
+	};
+
+	it('saves where alerts go and sends a test only there', async () => {
+		updateSettings({ integrations: { email: { accounts: [account] } } as never });
+		render(CamerasSection);
+		await fireEvent.click(screen.getByLabelText('Email alerts'));
+		await fireEvent.input(input(/^Send to$/), {
+			target: { value: 'tim@example.com, bad address' }
+		});
+		await screen.findByText('One of these is not an email address.');
+		await fireEvent.input(input(/^Send to$/), {
+			target: { value: 'tim@example.com, sam@example.com' }
+		});
+		await fireEvent.change(input(/^Send to$/));
+		expect(getSettings().cameraAlerts).toEqual({
+			enabled: true,
+			accountId: 'acc-1',
+			to: ['tim@example.com', 'sam@example.com']
+		});
+
+		await fireEvent.click(screen.getByText('Send test'));
+		await screen.findByText('Sent to tim@example.com, sam@example.com.');
+		const call = state.calls.find((c) => c.cmd === 'camera_alert_send')!;
+		expect(call.args).toMatchObject({
+			to: ['tim@example.com', 'sam@example.com'],
+			account: { id: 'acc-1' },
+			alert: { kind: 'test' }
+		});
+	});
+
+	it('points to Settings → Integrations → Email when no account can send', async () => {
+		updateSettings({
+			integrations: { email: { accounts: [{ ...account, sendEnabled: false }] } } as never
+		});
+		render(CamerasSection);
+		screen.getByText(
+			'No email account can send. Turn on Allow sending in Settings → Integrations → Email.'
+		);
+		expect((screen.getByLabelText('Email alerts') as HTMLInputElement).disabled).toBe(true);
 	});
 });

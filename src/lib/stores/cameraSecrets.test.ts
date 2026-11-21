@@ -23,6 +23,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 import { defaultWatcherConfig } from './settings';
 import { cameraSecretKey, forgetCameraPassword, withStoredCameraPassword } from './cameraSecrets';
+import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 function camera(over: Partial<CameraConfig> = {}): CameraConfig {
 	return {
@@ -40,6 +41,7 @@ function camera(over: Partial<CameraConfig> = {}): CameraConfig {
 		onvif: null,
 		watcher: defaultWatcherConfig,
 		caps: null,
+		alerts: { ...defaultAlertConfig },
 		...over
 	};
 }
