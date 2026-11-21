@@ -40,6 +40,17 @@ pub async fn video_probe_file(
     probe::probe_file(ffprobe, &file, paths::display_path(&working_dir, &file)).await
 }
 
+/// Put the bundled ffmpeg, ffprobe and melt on the PATH of the model's own
+/// commands (Code tab, Shell tab), or take them off: on while Settings →
+/// Video editing is on. Returns whether they are on, which they can't be
+/// without the media bundle.
+#[tauri::command]
+pub async fn media_shims_set(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::media_env::set_shims(&app, enabled))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// The project's main track and what else is in it.
 #[tauri::command]
 pub async fn video_project_summary(

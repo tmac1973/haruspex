@@ -13,6 +13,8 @@ Open Settings → Video editing. **Programs** shows each one with its version an
 
 Then turn on **Let the assistant edit videos** under **Video tools**.
 
+While **Let the assistant edit videos** is on, the bundled `ffmpeg`, `ffprobe` and `melt` also come first in the commands the assistant runs in the Code tab, and in Shell tabs opened after you turn it on (not in WSL). Turning it off leaves your own PATH as it was.
+
 ## Pick a folder
 
 The video tools work on the conversation's working folder and nothing outside it. In Chat, click the folder icon in the chat box; in the Code tab it is the session's folder. Shell tabs, jobs and subtasks don't get the video tools.

@@ -126,7 +126,16 @@ fn default_shell_command(command: &str) -> tokio::process::Command {
     c.arg("-c").arg(command);
     // An AppImage's PYTHONHOME would stop every `python3` the model runs.
     crate::env_util::sanitize_appimage_env(c.as_std_mut());
+    with_media_shims(&mut c);
     c
+}
+
+/// The bundled ffmpeg, ffprobe and melt first on `PATH`, while Settings →
+/// Video editing is on (see `media_env::shell_env`).
+fn with_media_shims(c: &mut tokio::process::Command) {
+    for (k, v) in crate::media_env::shell_env(std::env::var_os("PATH").as_deref()) {
+        c.env(k, v);
+    }
 }
 
 #[cfg(windows)]
@@ -186,6 +195,7 @@ $global:__hx_ok = $?
         "-EncodedCommand",
     ])
     .arg(base64::engine::general_purpose::STANDARD.encode(utf16));
+    with_media_shims(&mut c);
     c
 }
 

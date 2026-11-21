@@ -329,6 +329,7 @@ export const IPC = {
 	mcp_update_stage: 'mcp_update_stage',
 	mcp_update_status: 'mcp_update_status',
 	mcp_update_swap: 'mcp_update_swap',
+	media_shims_set: 'media_shims_set',
 	memory_add: 'memory_add',
 	memory_count: 'memory_count',
 	memory_delete: 'memory_delete',

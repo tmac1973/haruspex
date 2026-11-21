@@ -41,12 +41,27 @@ export function videoBinariesStatus(): VideoBinariesStatus | null {
 	return status;
 }
 
-/** Look again and cache the answer. */
+/** Look again and cache the answer, and bring the model's PATH in line. */
 export async function refreshVideoBinaries(): Promise<VideoBinariesStatus> {
 	status = await invoke<VideoBinariesStatus>('video_binaries_status', {
 		overrides: videoOverrides()
 	});
+	void syncMediaShims();
 	return status;
+}
+
+/**
+ * Put the bundled ffmpeg, ffprobe and melt first on the PATH of the model's
+ * own Code tab and Shell commands while Settings → Video editing is on, and
+ * take them off when it isn't. Resolves to whether they are on; never rejects.
+ */
+export function syncMediaShims(): Promise<boolean> {
+	return invoke<boolean>('media_shims_set', {
+		enabled: getSettings().videoEditingEnabled
+	}).catch((e) => {
+		console.warn('media shims:', e);
+		return false;
+	});
 }
 
 let encoders: Promise<EncoderOption[]> | null = null;
