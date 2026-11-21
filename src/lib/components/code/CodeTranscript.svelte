@@ -20,6 +20,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import { isSubtaskNotification } from '#lib/code/backgroundSubtasks.ts';
+	import { isTaskNotice, taskNoticeTitle } from '#lib/tasks/noticeText.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
@@ -268,6 +269,13 @@
 			{:else if msg.role === 'user' && isSubtaskNotification(messageText(msg.content))}
 				<details class="bg-notice">
 					<summary>Subtask finished</summary>
+					<pre>{messageText(msg.content)}</pre>
+				</details>
+			{:else if msg.role === 'user' && isTaskNotice(messageText(msg.content))}
+				<details class="bg-notice" data-testid="task-notice">
+					<summary title="Haruspex sent this when the task ended.">
+						{taskNoticeTitle(messageText(msg.content))}</summary
+					>
 					<pre>{messageText(msg.content)}</pre>
 				</details>
 			{:else if msg.role === 'user'}

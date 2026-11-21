@@ -299,6 +299,12 @@ export class CodeSession implements CodeSessionView {
 	private closed = false;
 	/** A watch notification is being put together. */
 	private flushing = false;
+	/**
+	 * The last turn was stopped, by the user or at the turn limit: watched
+	 * commands, task notices and subtasks wait for the next turn the user
+	 * starts, rather than starting one themselves.
+	 */
+	private noticesHeld = false;
 	private bgTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly unwatch: () => void;
 	private readonly unwatchShell: () => void;
@@ -800,7 +806,7 @@ export class CodeSession implements CodeSessionView {
 	 * once it ends. Everything finished goes in one turn.
 	 */
 	flushWatchNotifications = async (): Promise<void> => {
-		if (this.busy || this.closed || this.flushing || this.folderMissing) return;
+		if (this.busy || this.closed || this.flushing || this.folderMissing || this.noticesHeld) return;
 		const completed = peekCompletedCodeWatches(this.id);
 		if (completed.length === 0) {
 			// A background task this session started, then subtasks.
@@ -890,6 +896,8 @@ export class CodeSession implements CodeSessionView {
 	 */
 	private runTurn(opening: ChatMessage, opts: { typed?: boolean } = {}): Promise<boolean> {
 		if (this.busy || this.closed) return Promise.resolve(false);
+		// The user carried on after a stop: what waited follows this turn.
+		if (opts.typed) this.noticesHeld = false;
 		this.status = 'running';
 		const done = this.turn(opening, opts.typed ?? false).finally(() => {
 			this.status = 'idle';
@@ -1198,6 +1206,12 @@ export class CodeSession implements CodeSessionView {
 			}
 		}
 		if (result.outcome === 'aborted') this.lastError = 'Stopped.';
+		if (
+			result.outcome === 'aborted' ||
+			(result.outcome === 'complete' && result.stopReason !== 'complete')
+		) {
+			this.noticesHeld = true;
+		}
 		if (result.outcome === 'error') {
 			this.lastError = result.error ?? 'The turn failed.';
 			logDebug('code', 'turn failed', { id: this.id, error: this.lastError });

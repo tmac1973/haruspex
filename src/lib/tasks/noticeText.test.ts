@@ -7,7 +7,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }));
 
-import { isTaskNotice, joinNotices, noticeFor } from './noticeText.ts';
+import { isTaskNotice, joinNotices, noticeFor, taskNoticeTitle } from './noticeText.ts';
 import {
 	_resetForTests,
 	setChatTaskHandler,
@@ -84,6 +84,14 @@ describe('notices', () => {
 		}
 		expect(isTaskNotice(text)).toBe(true);
 		expect(isTaskNotice('Video render is great')).toBe(false);
+	});
+
+	it('name one task by its opening, and several by how many ended', () => {
+		expect(taskNoticeTitle(noticeFor(done).text)).toBe('Video render finished');
+		const fox = { ...done, id: 'v1', kind: 'video' as const, label: 'Fox', result: null };
+		const sea = { ...fox, id: 'v2', label: 'Waves', state: 'failed' as const, error: 'no' };
+		expect(taskNoticeTitle(noticeFor(fox).text)).toBe('Background task "Fox" finished');
+		expect(taskNoticeTitle(joinNotices([fox, sea, done]).text)).toBe('3 background tasks ended');
 	});
 
 	it('carry melt’s last words when a render fails', () => {

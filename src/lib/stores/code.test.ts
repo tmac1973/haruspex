@@ -905,6 +905,42 @@ describe('background watch completions', () => {
 		expect(s.messages.filter((m) => m.role === 'user')).toHaveLength(2);
 	});
 
+	it('wait after a turn that stopped at the limit, until the user carries on', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) =>
+			o.onComplete({ stopReason: 'max_iterations' })
+		);
+		await s.send('go');
+		mocks.completedWatches = [{ id: 'watch-1' }];
+		mocks.watchHandlers.get(s.id)!();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1);
+		expect(mocks.consumeWatches).not.toHaveBeenCalled();
+
+		await s.continueTurn();
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalledTimes(3));
+		await vi.waitFor(() => expect(s.status).toBe('idle'));
+		expect(mocks.consumeWatches).toHaveBeenCalledWith(['watch-1']);
+	});
+
+	it('wait after the user stops a turn', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			await new Promise<void>((resolve) =>
+				o.signal!.addEventListener('abort', () => resolve(), { once: true })
+			);
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const sending = s.send('build it');
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalled());
+		s.stop();
+		await sending;
+		mocks.completedWatches = [{ id: 'watch-1' }];
+		mocks.watchHandlers.get(s.id)!();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1);
+	});
+
 	it('do nothing when none has finished', async () => {
 		const s = await newSession('/proj');
 		mocks.watchHandlers.get(s.id)!();
