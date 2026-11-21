@@ -153,6 +153,7 @@ export type RoomOutcome =
 	| 'no-model'
 	| 'refreshed'
 	| 'people'
+	| 'repeat'
 	| 'logged';
 
 async function recentUrgent(camera: CameraConfig, now: number): Promise<string[]> {
@@ -199,6 +200,7 @@ async function actOn(camera: CameraConfig, jpeg: string, j: RoomJudgement): Prom
 		if (j.people > 0) return 'people';
 		if (j.changes.length > 0) return 'unchanged';
 		await invoke('camera_reference_set', { cameraId: camera.id, jpeg });
+		lastLogged.delete(camera.id);
 		return 'refreshed';
 	}
 	const event = await invoke<CameraEvent>('camera_room_event_add', {
@@ -208,6 +210,7 @@ async function actOn(camera: CameraConfig, jpeg: string, j: RoomJudgement): Prom
 		level: j.level,
 		reason: j.reason || (j.changes[0] ?? 'The room has changed.')
 	});
+	lastLogged.set(camera.id, jpeg);
 	emitJudged(event, camera);
 	return 'logged';
 }
@@ -216,16 +219,20 @@ async function actOn(camera: CameraConfig, jpeg: string, j: RoomJudgement): Prom
 export async function checkRoom(camera: CameraConfig, now = Date.now()): Promise<RoomOutcome> {
 	const shot = await invoke<RoomShot>('camera_room_shot', {
 		config: camera,
-		overrides: videoOverrides()
+		overrides: videoOverrides(),
+		last: lastLogged.get(camera.id) ?? null
 	});
 	if (shot.busy) return 'busy';
 	if (!shot.hasReferences) return 'no-reference';
+	// The change already logged, still there: not logged again.
+	if (shot.similarityToLast !== null && shot.similarityToLast >= ROOM_SAME) return 'repeat';
 	if (shot.similarity === null || !shot.reference) {
 		// The first check in this light: it becomes that light's reference.
 		await invoke('camera_reference_set', { cameraId: camera.id, jpeg: shot.jpeg });
 		return 'first-for-light';
 	}
 	const fresh = shot.referenceAt !== null && now - shot.referenceAt < REFERENCE_FRESH_MS;
+	if (shot.similarity >= ROOM_SAME) lastLogged.delete(camera.id);
 	if (shot.similarity >= ROOM_SAME && fresh) return 'unchanged';
 
 	const reference = shot.reference;
@@ -239,6 +246,10 @@ export async function checkRoom(camera: CameraConfig, now = Date.now()): Promise
 }
 
 const lastCheck = new Map<string, number>();
+/** The picture of each camera's last logged change, until the room matches its reference again. */
+const lastLogged = new Map<string, string>();
+/** Cameras asked for a check while one ran: it runs again when that one ends. */
+const rerun = new Set<string>();
 const settleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Set<string>();
 let tick: ReturnType<typeof setInterval> | null = null;
@@ -247,7 +258,11 @@ let stopJudged: (() => void) | null = null;
 /** Run a check on a camera unless one is running; retry once when busy. */
 export async function runCheck(cameraId: string, retry = true): Promise<RoomOutcome | null> {
 	const camera = checkedCameras().find((c) => c.id === cameraId);
-	if (!camera || running.has(cameraId)) return null;
+	if (!camera) return null;
+	if (running.has(cameraId)) {
+		rerun.add(cameraId);
+		return null;
+	}
 	if (!inActiveHours(camera, new Date())) return null;
 	running.add(cameraId);
 	try {
@@ -270,6 +285,7 @@ export async function runCheck(cameraId: string, retry = true): Promise<RoomOutc
 		return null;
 	} finally {
 		running.delete(cameraId);
+		if (rerun.delete(cameraId)) void runCheck(cameraId);
 	}
 }
 
@@ -318,5 +334,7 @@ export function _resetRoomChecksForTests(): void {
 	for (const t of settleTimers.values()) clearTimeout(t);
 	settleTimers.clear();
 	lastCheck.clear();
+	lastLogged.clear();
+	rerun.clear();
 	running.clear();
 }

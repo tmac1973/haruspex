@@ -198,6 +198,7 @@ describe('isUnreachable', () => {
 		).toBe(true);
 		expect(isUnreachable(new ApiError('Server error: loading model', 503))).toBe(true);
 		expect(isUnreachable(new ApiError('Server error: bad', 400))).toBe(false);
+		expect(isUnreachable(new ApiError('Server error: image rejected', 500))).toBe(false);
 		expect(isUnreachable(new ApiError('No response from model'))).toBe(false);
 		expect(isUnreachable('This event has no picture.')).toBe(false);
 	});

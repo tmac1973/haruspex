@@ -36,6 +36,8 @@ pub async fn camera_snapshot(
     overrides: BinaryOverrides,
     max_width: Option<u32>,
 ) -> Result<String, String> {
+    // Someone is looking through it: room checks leave it where it points.
+    reference::record_aim(&config.id, crate::time_util::now_ms());
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
     // Smaller for a sweep's many pictures; never larger than a lone one.
     let width = max_width.map_or(SNAPSHOT_MAX_WIDTH, |w| w.clamp(320, SNAPSHOT_MAX_WIDTH));
@@ -57,6 +59,7 @@ pub async fn camera_listen(
     transcribe: bool,
     overrides: BinaryOverrides,
 ) -> Result<CameraListenResult, String> {
+    reference::record_aim(&config.id, crate::time_util::now_ms());
     use crate::video::transcribe::{language_for, lease_server, model_for};
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
     // Found before recording, so a missing model doesn't waste the clip.
@@ -459,8 +462,11 @@ pub struct RoomShot {
     /// The reference, as a data URL, when there is one.
     pub reference: Option<String>,
     /// Whether the camera has a reference for either light: none means the
-    /// user hasn't set one with This is normal yet.
+    /// user hasn't set one with This is normal yet, and no picture is taken.
     pub has_references: bool,
+    /// How alike it is to `last`, the picture of the last change logged,
+    /// when one was given: the same change again isn't logged twice.
+    pub similarity_to_last: Option<f64>,
 }
 
 /// A room check's picture: the camera sent home first if it turns (unless
@@ -471,19 +477,31 @@ pub async fn camera_room_shot(
     app: tauri::AppHandle,
     config: CameraConfig,
     overrides: BinaryOverrides,
+    last: Option<String>,
 ) -> Result<RoomShot, String> {
-    let busy = RoomShot {
+    let dir = reference::refs_dir(&app_data(&app)?, &config.id);
+    let has_references = reference::load(&dir, Light::Day).is_some()
+        || reference::load(&dir, Light::Night).is_some();
+    let nothing = RoomShot {
         busy: true,
         jpeg: String::new(),
         night: false,
         similarity: None,
         reference_at: None,
         reference: None,
-        has_references: false,
+        has_references,
+        similarity_to_last: None,
     };
+    // No reference yet: nothing to compare with, so the camera isn't turned.
+    if !has_references {
+        return Ok(RoomShot {
+            busy: false,
+            ..nothing
+        });
+    }
     if config.ptz != super::PtzKind::None {
         if reference::busy(&config.id, crate::time_util::now_ms()) {
-            return Ok(busy);
+            return Ok(nothing);
         }
         let home = Aim::Move {
             direction: aim::AimDirection::Home,
@@ -493,10 +511,12 @@ pub async fn camera_room_shot(
     }
     let ffmpeg = resolve_tool(Tool::Ffmpeg, &overrides).await?;
     let jpeg = capture::snapshot(&ffmpeg, &config, ROOM_SHOT_WIDTH).await?;
-    let dir = reference::refs_dir(&app_data(&app)?, &config.id);
+    let last = last.as_deref().map(jpeg_from_data_url).transpose()?;
     tokio::task::spawn_blocking(move || {
-        let has_references = reference::load(&dir, Light::Day).is_some()
-            || reference::load(&dir, Light::Night).is_some();
+        let similarity_to_last = match &last {
+            Some(l) => reference::similarity(l, &jpeg).ok(),
+            None => None,
+        };
         let night = reference::is_night(&jpeg)?;
         let light = if night { Light::Night } else { Light::Day };
         let (similarity, reference_at, reference) = match reference::load(&dir, light) {
@@ -515,6 +535,7 @@ pub async fn camera_room_shot(
             reference_at,
             reference,
             has_references,
+            similarity_to_last,
         })
     })
     .await

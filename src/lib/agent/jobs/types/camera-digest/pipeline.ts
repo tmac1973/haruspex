@@ -233,9 +233,10 @@ function readHighlights(value: unknown, key: string, label: string, max: number)
  */
 function fitEntries(
 	events: CameraEvent[],
-	contextSize: number
+	contextSize: number,
+	reserved = 0
 ): { events: CameraEvent[]; omitted: number } {
-	const budget = Math.max(contextSize, 2048) * 2;
+	const budget = Math.max(Math.max(contextSize, 2048) * 2 - reserved, 0);
 	let used = 0;
 	let kept = 0;
 	for (const e of events) {
@@ -294,9 +295,10 @@ async function summarise(
 ): Promise<CameraDigestResult> {
 	const vision = ctx.visionSupported();
 	const { flagged, rest } = splitFlagged(events);
-	const fitted = fitEntries(rest, ctx.contextSize());
+	const flaggedText = renderCameraLog([...flagged].reverse());
+	const fitted = fitEntries(rest, ctx.contextSize(), flaggedText.length);
 	const prompt = summaryPrompt({
-		flagged: renderCameraLog([...flagged].reverse()),
+		flagged: flaggedText,
 		cameras,
 		since,
 		until,

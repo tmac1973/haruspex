@@ -410,6 +410,36 @@ describe('judging events of a camera with Alerts on', () => {
 		expect(judgements).toHaveLength(1);
 	});
 
+	it("captions other cameras' events while an Alerts-on one waits for a model that can see", async () => {
+		alertsOn();
+		pending = [event(1), event(2, { cameraId: 'cam-2' })];
+		mocks.descriptor = { ...mocks.descriptor, vision: false };
+		await captionPending();
+		expect(judgements).toEqual([]);
+		expect(saved).toEqual([{ id: 2, caption: null }]);
+		expect(pending.map((e) => e.id)).toEqual([1]);
+	});
+
+	it('looks again 30 s after judging had to wait', async () => {
+		vi.useFakeTimers();
+		try {
+			alertsOn();
+			pending = [event(1)];
+			mocks.chatCompletion.mockRejectedValueOnce(
+				new ApiError('Failed to connect to the AI model. Is it still loading?')
+			);
+			mocks.chatCompletion.mockResolvedValue({
+				content: '{"caption": "x", "people": 0, "level": "normal"}'
+			});
+			await captionPending();
+			expect(judgements).toEqual([]);
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(judgements).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('skips an event whose replies keep failing', async () => {
 		alertsOn();
 		pending = [event(1)];

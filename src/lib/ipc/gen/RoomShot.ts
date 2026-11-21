@@ -27,6 +27,11 @@ referenceAt: number | null,
 reference: string | null, 
 /**
  * Whether the camera has a reference for either light: none means the
- * user hasn't set one with This is normal yet.
+ * user hasn't set one with This is normal yet, and no picture is taken.
  */
-hasReferences: boolean, };
+hasReferences: boolean, 
+/**
+ * How alike it is to `last`, the picture of the last change logged,
+ * when one was given: the same change again isn't logged twice.
+ */
+similarityToLast: number | null, };

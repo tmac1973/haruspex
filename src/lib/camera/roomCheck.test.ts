@@ -72,6 +72,7 @@ function room(over: Partial<RoomShot> = {}): RoomShot {
 		referenceAt: Date.now() - HOUR,
 		reference: 'data:image/jpeg;base64,REF',
 		hasReferences: true,
+		similarityToLast: null,
 		...over
 	};
 }
@@ -152,6 +153,24 @@ describe('checkRoom', () => {
 		expect(judged).toEqual(['room:unusual']);
 	});
 
+	it('logs the same change once, and again only after the room was back to normal', async () => {
+		mocks.chatCompletion.mockResolvedValue({
+			content: '{"people":0,"changes":["the sofa moved"],"level":"unusual","reason":"Moved."}'
+		});
+		expect(await checkRoom(camera)).toBe('logged');
+		const lastArg = () => calls.filter((c) => c.cmd === 'camera_room_shot').at(-1)!.args.last;
+		shot = room({ similarityToLast: 0.999 });
+		expect(await checkRoom(camera)).toBe('repeat');
+		expect(lastArg()).toBe('data:image/jpeg;base64,NOW');
+		expect(cmds().filter((c) => c === 'camera_room_event_add')).toHaveLength(1);
+		// Back to how it was: the logged change is forgotten.
+		shot = room({ similarity: 0.999 });
+		expect(await checkRoom(camera)).toBe('unchanged');
+		shot = room();
+		await checkRoom(camera);
+		expect(lastArg()).toBeNull();
+	});
+
 	it('does nothing until a reference is set, and fills in the other light once there is one', async () => {
 		shot = room({ hasReferences: false, similarity: null, reference: null, referenceAt: null });
 		expect(await checkRoom(camera)).toBe('no-reference');
@@ -207,6 +226,25 @@ describe('when checks run', () => {
 		expect(cmds()).not.toContain('camera_room_shot');
 		runDueChecks(t0 + HOURLY_MS);
 		await vi.waitFor(() => expect(cmds()).toContain('camera_room_shot'));
+	});
+
+	it('runs a check asked for during another once that one ends', async () => {
+		let release: () => void = () => {};
+		mocks.invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+			calls.push({ cmd, args });
+			if (cmd === 'camera_room_shot') {
+				await new Promise<void>((r) => (release = r));
+				return room({ similarity: 0.999 });
+			}
+			throw new Error(`unexpected ${cmd}`);
+		});
+		const first = runCheck('cam-1');
+		await vi.waitFor(() => expect(cmds()).toContain('camera_room_shot'));
+		expect(await runCheck('cam-1')).toBeNull();
+		release();
+		await first;
+		await vi.waitFor(() => expect(cmds().filter((c) => c === 'camera_room_shot')).toHaveLength(2));
+		release();
 	});
 
 	it('tries a busy camera once more five minutes later', async () => {

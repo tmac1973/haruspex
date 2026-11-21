@@ -73,6 +73,11 @@
 		const text = note.trim();
 		try {
 			await invoke('camera_event_dismiss', { id: e.id, note: text });
+			// A room check found this change and you say it's fine: it's the room now.
+			if (e.trigger === 'room' && e.hasThumb) {
+				const jpeg = await invoke<string>('camera_event_thumb', { id: e.id });
+				await invoke('camera_reference_set', { cameraId, jpeg });
+			}
 			if (addRule && text) {
 				setCameras(
 					getSettings().cameras.map((c) =>

@@ -259,16 +259,41 @@ export async function captionPending(): Promise<void> {
 	}
 }
 
+/** How soon a pass runs again after judging had to wait for the model. */
+export const JUDGE_RETRY_MS = 30_000;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Look again soon: the model may be back (loaded, restarted, or switched to one that sees). */
+function retrySoon(): void {
+	if (retryTimer) return;
+	retryTimer = setTimeout(() => {
+		retryTimer = null;
+		void captionPending().catch((e) => console.warn('Camera captions:', errMessage(e)));
+	}, JUDGE_RETRY_MS);
+}
+
 async function drain(): Promise<void> {
+	// Alerts-on cameras whose events wait for a model this pass: the other
+	// cameras' events still get captions.
+	const waiting = new Set<string>();
 	for (;;) {
 		if (!cameraDataAllowed(resolveBackendDescriptor())) return;
 		const events = await invoke<CameraEvent[]>('camera_events_pending', { limit: BATCH });
-		if (events.length === 0) return;
+		const ready = events.filter((e) => !waiting.has(e.cameraId));
+		if (ready.length === 0) {
+			if (waiting.size) retrySoon();
+			return;
+		}
 		// Alerts-on cameras' events first; each group keeps its oldest-first order.
-		const judged = events.filter((e) => alertsCamera(e));
-		const rest = events.filter((e) => !alertsCamera(e));
+		const judged = ready.filter((e) => alertsCamera(e));
+		const rest = ready.filter((e) => !alertsCamera(e));
 		for (const event of [...judged, ...rest]) {
-			if (await captionOne(event)) return;
+			const stop = await captionOne(event);
+			if (stop === 'not-allowed' && alertsCamera(event)) {
+				waiting.add(event.cameraId);
+				continue;
+			}
+			if (stop) return;
 		}
 	}
 }
@@ -291,4 +316,6 @@ export function _resetCaptionerForTests(): void {
 	running = false;
 	again = false;
 	attempts.clear();
+	if (retryTimer) clearTimeout(retryTimer);
+	retryTimer = null;
 }

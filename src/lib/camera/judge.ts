@@ -215,7 +215,8 @@ export function isQuietAt(hours: QuietHours, at: Date): boolean {
 export function isUnreachable(e: unknown): boolean {
 	if (!(e instanceof ApiError)) return false;
 	if (e.statusCode === undefined) return /connect|loading/i.test(e.message);
-	return e.statusCode >= 500;
+	// 503 is llama-server loading a model; other errors are answers, and count.
+	return e.statusCode === 503;
 }
 
 /** For tests: forget the learned hours. */
