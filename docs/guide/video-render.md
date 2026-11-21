@@ -15,7 +15,7 @@ Renders go in the episode's `renders` folder, named after the project and the ti
 
 Settings → Video editing → **Encoder** is x264 by default. A hardware encoder (VA-API, NVENC, Quick Sync, AMF or VideoToolbox) is listed only when a test encode with it works on this computer, tested with the ffmpeg chosen under **Use**; **Retest** tries again. Hardware encoding is faster; x264 gives the best picture for its size.
 
-The check reports loudness against YouTube's -14 LUFS, a render whose length differs from the project, and a render with no sound or only silence (clips with no audio). Silence isn't sent to `video_normalize`, which can't raise it.
+The check reports loudness against YouTube's -14 LUFS, a render whose length differs from the project, and a render with no sound or only silence (clips with no audio). It suggests `video_normalize` only while a clip's sound hasn't been evened out yet: running it again sets the same gains, and it can't raise silence.
 
 ## Make a thumbnail
 

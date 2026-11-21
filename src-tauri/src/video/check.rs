@@ -89,6 +89,18 @@ pub async fn measure(ffmpeg: &str, file: &Path) -> Result<Loudness, String> {
         .ok_or_else(|| "ffmpeg reported no loudness".to_string())
 }
 
+/// What the project says about its clips' gains, for the loudness advice.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Gains {
+    /// Clips whose gain is at its ±`MAX_GAIN` bound, so normalising can't
+    /// raise them.
+    pub at_limit: Vec<String>,
+    /// Every clip with sound already has the gain `video_normalize` sets.
+    /// It works the same gain out of the same measurement each time, so
+    /// running it again changes nothing.
+    pub normalized: bool,
+}
+
 /// The problems worth reporting, from what was measured.
 pub fn problems(
     duration: f64,
@@ -96,8 +108,9 @@ pub fn problems(
     has_audio: bool,
     loudness: Option<&Loudness>,
     frame: f64,
-    at_limit: &[String],
+    gains: &Gains,
 ) -> Vec<String> {
+    let at_limit = &gains.at_limit;
     let mut out = Vec::new();
     // A frame either way is rounding; more is a real difference.
     if (duration - expected).abs() > (2.0 * frame).max(0.5) {
@@ -127,6 +140,14 @@ pub fn problems(
                 at_limit.join(", "),
                 if at_limit.len() == 1 { "has" } else { "have" }
             ));
+        } else if (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE && gains.normalized {
+            out.push(format!(
+                "Loudness is {:.1} LUFS, outside YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}, but \
+                 every clip already has the gain video_normalize sets (held back where more \
+                 would raise noise or squash peaks), so running it again changes nothing. \
+                 Tell the user.",
+                l.lufs
+            ));
         } else if (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE {
             out.push(format!(
                 "Loudness is {:.1} LUFS, outside YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}; video_normalize evens it out.",
@@ -149,7 +170,7 @@ pub async fn check(
     ffmpeg: &str,
     file: &Path,
     expected_secs: f64,
-    at_limit: &[String],
+    gains: &Gains,
 ) -> Result<RenderCheck, String> {
     let info = probe::probe_file(ffprobe, file, file.display().to_string()).await?;
     let has_audio = !info.audio.is_empty();
@@ -184,7 +205,7 @@ pub async fn check(
             has_audio,
             loudness.as_ref(),
             frame,
-            at_limit,
+            gains,
         ),
         loudness,
     })
@@ -223,30 +244,70 @@ mod tests {
             lra: 6.0,
             true_peak_db: Some(-1.5),
         };
-        assert!(problems(120.0, 120.01, true, Some(&ok), 1.0 / 60.0, &[]).is_empty());
-        let p = problems(110.0, 120.0, true, Some(&ok), 1.0 / 60.0, &[]);
+        assert!(problems(
+            120.0,
+            120.01,
+            true,
+            Some(&ok),
+            1.0 / 60.0,
+            &Gains::default()
+        )
+        .is_empty());
+        let p = problems(110.0, 120.0, true, Some(&ok), 1.0 / 60.0, &Gains::default());
         assert!(p[0].contains("110.0 s long"));
         let quiet = Loudness {
             lufs: -21.1,
             lra: 6.0,
             true_peak_db: Some(-0.2),
         };
-        let p = problems(120.0, 120.0, true, Some(&quiet), 1.0 / 60.0, &[]);
+        let p = problems(
+            120.0,
+            120.0,
+            true,
+            Some(&quiet),
+            1.0 / 60.0,
+            &Gains::default(),
+        );
         assert!(p.iter().any(|x| x.contains("-21.1 LUFS")));
         assert!(p.iter().any(|x| x.contains("true peak")));
         assert!(p.iter().any(|x| x.contains("video_normalize evens it out")));
-        assert!(problems(120.0, 120.0, false, None, 0.04, &[])[0].contains("no sound"));
+        assert!(
+            problems(120.0, 120.0, false, None, 0.04, &Gains::default())[0].contains("no sound")
+        );
+    }
+
+    #[test]
+    fn normalised_clips_are_not_sent_back_to_normalise() {
+        let short = Loudness {
+            lufs: -15.8,
+            lra: 6.0,
+            true_peak_db: Some(-1.6),
+        };
+        let done = Gains {
+            at_limit: vec![],
+            normalized: true,
+        };
+        let p = problems(8.0, 8.0, true, Some(&short), 1.0 / 30.0, &done);
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert!(p[0].contains("-15.8 LUFS"));
+        assert!(p[0].contains("changes nothing"));
+        assert!(!p[0].contains("evens it out"));
+        let p = problems(8.0, 8.0, true, Some(&short), 1.0 / 30.0, &Gains::default());
+        assert!(p[0].contains("evens it out"));
     }
 
     #[test]
     fn silence_is_not_sent_back_to_normalise() {
         let silent = parse_ebur128(SILENT).unwrap();
-        let p = problems(4.2, 4.2, true, Some(&silent), 1.0 / 30.0, &[]);
+        let p = problems(4.2, 4.2, true, Some(&silent), 1.0 / 30.0, &Gains::default());
         assert_eq!(p.len(), 1, "{p:?}");
         assert!(p[0].starts_with("The sound is silent"));
         assert!(p[0].contains("can't help"));
         assert!(!p[0].contains("LUFS"));
-        let at_limit = ["a.mp4".to_string()];
+        let at_limit = Gains {
+            at_limit: vec!["a.mp4".to_string()],
+            normalized: true,
+        };
         let p = problems(4.2, 4.2, true, Some(&silent), 1.0 / 30.0, &at_limit);
         assert_eq!(p.len(), 1, "{p:?}");
     }
@@ -258,7 +319,10 @@ mod tests {
             lra: 9.0,
             true_peak_db: Some(-1.4),
         };
-        let at_limit = ["raw/02-demo.mp4".to_string()];
+        let at_limit = Gains {
+            at_limit: vec!["raw/02-demo.mp4".to_string()],
+            normalized: false,
+        };
         let p = problems(50.0, 50.0, true, Some(&quiet), 1.0 / 60.0, &at_limit);
         assert_eq!(p.len(), 1);
         assert!(p[0].contains("can't raise it: raw/02-demo.mp4 already has"));
