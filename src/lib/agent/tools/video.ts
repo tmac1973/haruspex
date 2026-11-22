@@ -310,7 +310,7 @@ registerTool({
 		function: {
 			name: 'video_edit',
 			description:
-				'Change one clip on the main track: trim its start or end, set how its picture fits the frame, mute or change the gain of a stretch of its sound (gain_range), remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
+				'Change one clip on the main track: trim its start or end, set how its picture fits the frame, mute or change the gain of a stretch of its sound (gain_range), hold a frame of it (hold), remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
 			parameters: {
 				type: 'object',
 				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM, ...EDIT_PROPERTIES },

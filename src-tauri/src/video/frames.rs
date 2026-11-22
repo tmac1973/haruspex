@@ -134,6 +134,42 @@ pub async fn extract_still(
     image::image_dimensions(out).map_err(|e| format!("the still didn't decode: {e}"))
 }
 
+/// A silent clip of `frames` frames showing one picture, at `num/den` fps:
+/// a hold frame for a project. H.264, sized to even numbers as it needs.
+pub async fn still_clip(
+    ffmpeg: &str,
+    png: &Path,
+    (num, den): (u32, u32),
+    frames: i64,
+    out: &Path,
+) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-loop", "1"])
+        .args(["-framerate", &format!("{num}/{den}"), "-i"])
+        .arg(png)
+        .args(["-frames:v", &frames.max(1).to_string()])
+        .args(["-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p"])
+        .args([
+            "-c:v", "libx264", "-crf", "12", "-preset", "veryfast", "-an", "-y",
+        ])
+        .arg(out)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    super::prepare_child(&mut cmd);
+    let done = tokio::time::timeout(Duration::from_secs(120), cmd.output())
+        .await
+        .map_err(|_| "making the hold took too long".to_string())?
+        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    if !done.status.success() || std::fs::metadata(out).map(|m| m.len()).unwrap_or(0) == 0 {
+        let err = String::from_utf8_lossy(&done.stderr);
+        return Err(format!(
+            "could not make the hold: {}",
+            err.lines().next().unwrap_or("ffmpeg failed").trim()
+        ));
+    }
+    Ok(())
+}
+
 /// A JPEG at most `max_width` wide, for showing a still in the chat.
 pub fn preview_jpeg(png: &Path, max_width: u32) -> Result<Vec<u8>, String> {
     let img = image::open(png)

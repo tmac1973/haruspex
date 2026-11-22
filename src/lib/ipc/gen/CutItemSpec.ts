@@ -33,4 +33,8 @@ fit: Fit | null,
  * Gains over stretches of its sound, in its own time, replacing those
  * Haruspex set; none keeps them.
  */
-gainRanges: Array<RangeSpec> | null, };
+gainRanges: Array<RangeSpec> | null, 
+/**
+ * Hold its last frame this long after it.
+ */
+holdAfterSecs: number | null, };

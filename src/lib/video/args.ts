@@ -146,8 +146,12 @@ export const GAIN_RANGE_PARAMS = {
 	}
 };
 
-/** `video_cut` items' `gain_ranges`. */
+/** `video_cut` items' `gain_ranges` and `hold_after_secs`. */
 export const ITEM_RANGES_PARAM = {
+	hold_after_secs: {
+		type: 'number',
+		description: 'Hold its last frame this long after it, up to 60 s.'
+	},
 	gain_ranges: {
 		type: 'array',
 		description:
@@ -229,6 +233,10 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 		if (typeof fit === 'string') return `items[${n}]: ${fit}`;
 		const gainRanges = parseRanges(o.gain_ranges, `items[${n}].`);
 		if (typeof gainRanges === 'string') return gainRanges;
+		const holdAfterSecs = parsedFiniteOrNull(o.hold_after_secs);
+		if (holdAfterSecs !== null && (holdAfterSecs <= 0 || holdAfterSecs > 60)) {
+			return `items[${n}].hold_after_secs is more than 0 and at most 60.`;
+		}
 		items.push({
 			index: index === null ? null : Math.round(index),
 			path,
@@ -237,7 +245,8 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 			...frames,
 			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs),
 			fit,
-			gainRanges
+			gainRanges,
+			holdAfterSecs
 		});
 	}
 	return items;
@@ -321,6 +330,19 @@ function moveOp(args: Record<string, unknown>, index: number): ProjectOp | strin
 	return { op: 'move', from: index, to };
 }
 
+function holdOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const secs = parseTime(args.secs);
+	if (secs === null || secs <= 0 || secs > 60)
+		return 'A hold needs "secs", more than 0 and at most 60.';
+	const end = trimmedOrNull(args.end)?.toLowerCase() ?? 'last';
+	if (end !== 'first' && end !== 'last') return 'end is first or last.';
+	const at = args.at === undefined || args.at === null ? null : parseTime(args.at);
+	if (args.at !== undefined && args.at !== null && at === null) {
+		return 'at is a time in the clip\'s own time, like 2.5 or "0:02.5".';
+	}
+	return { op: 'hold', index, end, atSecs: at, secs };
+}
+
 /** `video_edit`'s ops on one clip, by name. */
 const CLIP_OPS: Record<
 	string,
@@ -330,6 +352,7 @@ const CLIP_OPS: Record<
 	fit: fitOp,
 	gain_range: (args, index) => rangeOp('gain_range', args, index),
 	clear_gain_ranges: (args, index) => rangeOp('clear_gain_ranges', args, index),
+	hold: holdOp,
 	remove: (_, index) => ({ op: 'remove', index }),
 	move: moveOp,
 	remove_ranges: removeRangesOp

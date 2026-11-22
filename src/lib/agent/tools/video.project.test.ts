@@ -237,6 +237,28 @@ describe('gain ranges', () => {
 	});
 });
 
+describe('holds', () => {
+	it('hold the last frame by default, or the first, or one at a time', () => {
+		expect(parseOp({ op: 'hold', index: 1, secs: 1.5 })).toEqual({
+			op: 'hold',
+			index: 1,
+			end: 'last',
+			atSecs: null,
+			secs: 1.5
+		});
+		expect(parseOp({ op: 'hold', index: 1, secs: 1, end: 'first' })).toMatchObject({
+			end: 'first'
+		});
+		expect(parseOp({ op: 'hold', index: 1, secs: 1, at: '0:02' })).toMatchObject({ atSecs: 2 });
+		expect(parseOp({ op: 'hold', index: 1 })).toContain('"secs"');
+		expect(parseOp({ op: 'hold', index: 1, secs: 1, end: 'middle' })).toContain('first or last');
+		expect(parseCut({ items: [{ path: 'a.mp4', hold_after_secs: 2 }] })).toMatchObject({
+			items: [{ holdAfterSecs: 2 }]
+		});
+		expect(parseCut({ items: [{ path: 'a.mp4', hold_after_secs: 99 }] })).toContain('at most 60');
+	});
+});
+
 describe('parseFit', () => {
 	it('takes letterbox, fill or a crop region inside the picture', () => {
 		expect(parseFit(undefined)).toBeNull();
@@ -363,7 +385,8 @@ describe('video_cut', () => {
 						outFrame: null,
 						crossfadeSecs: null,
 						fit: null,
-						gainRanges: null
+						gainRanges: null,
+						holdAfterSecs: null
 					}
 				],
 				audio: null,

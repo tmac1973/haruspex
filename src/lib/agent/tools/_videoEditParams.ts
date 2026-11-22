@@ -19,6 +19,18 @@ export const EDIT_PROPERTIES = {
 	...FIT_PARAMS,
 	...GAIN_RANGE_PARAMS,
 	to: { type: 'integer', description: 'move: its new position, from 1.' },
+	secs: { type: 'number', description: 'hold: how long to hold the frame, up to 60 s.' },
+	end: {
+		type: 'string',
+		enum: ['first', 'last'],
+		description:
+			'hold: its first frame before it, or its last after it (the default). Ignored with at.'
+	},
+	at: {
+		type: 'string',
+		description:
+			"hold: instead, the frame at this time in the clip's own time; the clip splits around the hold."
+	},
 	ranges: {
 		type: 'array',
 		description:
