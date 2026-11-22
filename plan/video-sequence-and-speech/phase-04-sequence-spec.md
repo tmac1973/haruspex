@@ -1,6 +1,6 @@
 # Phase 04 — The sequence spec: types, validation, clip plan and estimate
 
-**Depends on:** 01 (`end_image` and sound capabilities in `VideoLimits`), 02
+**Depends on:** 01 (the `end_image` capability), 02
 (the `Fit` type for existing-clip sections) ·
 **Enables:** 05 (the job writes and checks a spec), 06–09 (every stage reads
 the clip plan)
@@ -60,8 +60,9 @@ so the job stages and a later `propose_job` tool can share it.
    - a `generated` section with no `start_image` and no image backend is
      text-to-video: allowed only if the instance makes video from text alone,
      else an error naming the section;
-   - music needs a music backend, `clip_sound` needs sound from the instance
-     (else a note and `false`);
+   - music needs a music backend; `clip_sound` is not checked here, since
+     only a made clip shows whether the set has sound (phase 09 notes clips
+     that had none);
    - no length cap; `seconds` > 0.
 4. `plan.ts`: for each generated section, split `seconds` into clips of the
    instance's longest clip (`maxFrames` at the chosen size, Wan 4n+1 rule from
