@@ -19,7 +19,14 @@
 		type EmailResearchConfig
 	} from '#lib/agent/jobs/types/email-research/config.ts';
 	import { stripPhrase } from '#lib/agent/jobs/types/email-research/body.ts';
-	import { authLine, authSummary, reasonLabel, stateLabel } from '#lib/home/emailRequests.ts';
+	import {
+		authLine,
+		authSummary,
+		reasonLabel,
+		stateLabel,
+		watchLine
+	} from '#lib/home/emailRequests.ts';
+	import { emailWatchState } from '#lib/agent/jobs/types/email-research/watch.svelte.ts';
 
 	/** Rows the card lists. */
 	const LIMIT = 20;
@@ -92,6 +99,13 @@
 		return null;
 	});
 
+	/** What the inbox watcher is doing, for a job that picks up on arrival. */
+	const watch = $derived(
+		jobId !== null && config?.pickup === 'arrival' && blocked === null
+			? watchLine(emailWatchState(jobId))
+			: null
+	);
+
 	let open = $state<number | null>(null);
 
 	function subjectOf(row: EmailRequestRow): string {
@@ -113,6 +127,9 @@
 			<p class="setup">
 				Email {account.emailAddress} with “{config.phrase}” in the subject.
 			</p>
+		{/if}
+		{#if watch}
+			<p class="muted" class:error={watch.problem} title={watch.detail}>{watch.text}</p>
 		{/if}
 		{#if running}
 			<p class="muted">{waiting ? 'Waiting for chat…' : 'Checking for requests…'}</p>

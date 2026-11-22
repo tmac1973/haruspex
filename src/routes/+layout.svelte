@@ -92,6 +92,11 @@
 	import { startAlertDispatch } from '#lib/camera/alertDispatch.ts';
 	import { startRoomChecks } from '#lib/camera/roomCheck.ts';
 	import { syncCameraWatchers } from '#lib/camera/watchSync.ts';
+	import {
+		startEmailWatch,
+		syncEmailWatch
+	} from '#lib/agent/jobs/types/email-research/watch.svelte.ts';
+	import { getJobs } from '#lib/stores/jobs.svelte.ts';
 	import { watchCameraWatchers } from '#lib/stores/cameraActivity.svelte.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
 	import { installMarkdownActions } from '#lib/markdownActions.ts';
@@ -365,6 +370,17 @@
 		if (!detached) syncCameraWatchers(settings);
 	});
 
+	// Research by email on arrival: the main window keeps Rust's inbox
+	// watchers in step with the jobs and the email accounts (only a change is
+	// pushed), on load and after every settings or jobs change.
+	$effect(() => {
+		const accounts = getLiveSettings().integrations.email.accounts;
+		const jobs = getJobs();
+		if (!detached) {
+			void syncEmailWatch(jobs, accounts).catch((e: unknown) => console.warn('Email watch:', e));
+		}
+	});
+
 	onMount(async () => {
 		applyTheme();
 		applyAccent();
@@ -421,6 +437,9 @@
 		// Home cards' Notify on new items. Main window only, like the scheduler
 		// whose runs it watches.
 		startCardWatch();
+		// Research by email on arrival: runs a job when its inbox watcher sees
+		// a request. Main window only, like the scheduler.
+		startEmailWatch();
 		// Home's meetings and weather cards, read on their interval.
 		startFetchedCards();
 		// Remote web chat, if Settings has it on. Only the main window does

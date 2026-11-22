@@ -19,7 +19,10 @@
 //!   looks alive. A wait that took far longer on the wall clock than on the
 //!   timer means the computer slept, so the task reconnects at once.
 //! - **A reconnect looks from where the last connection stopped**, so mail
-//!   that came in during the gap is still checked.
+//!   that came in during the gap is still checked. The first connection
+//!   looks for a request candidate still in the Inbox from the last
+//!   [`LOOK_BACK_MS`] instead, which catches one that came while the app was
+//!   closed: a handled request is moved out of the Inbox.
 //! - **Errors back off** from [`BACKOFF_MIN`] to [`BACKOFF_MAX`].
 //!
 //! The watchers run only while the app is open.
@@ -51,6 +54,8 @@ const SLEPT_SLACK: Duration = Duration::from_secs(60);
 /// The first wait before a failed connection is tried again, and the longest.
 const BACKOFF_MIN: Duration = Duration::from_secs(2);
 const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
+/// How far back the first look goes, as far as a job's scan does.
+const LOOK_BACK_MS: i64 = 48 * 60 * 60 * 1000;
 /// A connection this old was healthy, so the next failure waits the least.
 const HEALTHY: Duration = Duration::from_secs(60);
 
@@ -140,12 +145,12 @@ struct Cursor {
 /// left and what SELECT reports now.
 #[derive(Debug, PartialEq, Eq)]
 enum Resume {
-    /// The first connection: nothing before now is looked at.
+    /// The first connection: look for a candidate still in the Inbox.
     Fresh,
     /// The same mailbox: look from where the last connection stopped.
     From(u32),
-    /// UIDVALIDITY changed, so the old UIDs mean nothing: start from now and
-    /// let the job's run look, since mail may have arrived in the gap.
+    /// UIDVALIDITY changed, so the old UIDs mean nothing: look as a first
+    /// connection does.
     Reset,
 }
 
@@ -399,12 +404,18 @@ async fn connection(ctx: &Ctx<'_>, cursor: &mut Option<Cursor>) -> Result<Infall
         next: now_next,
     });
     match resume {
-        Resume::Fresh => {}
+        Resume::Fresh | Resume::Reset => {
+            let since_ms = crate::time_util::now_ms() - LOOK_BACK_MS;
+            if requests::any_candidate(&mut session, &account, &ctx.entry.phrase, since_ms, &t)
+                .await?
+            {
+                ctx.hit();
+            }
+        }
         Resume::From(next) => {
             c.next = next;
             look(ctx, &mut session, &account, c, &t).await?;
         }
-        Resume::Reset => ctx.hit(),
     }
     if has_idle {
         ctx.report(EmailWatchState::Idle);

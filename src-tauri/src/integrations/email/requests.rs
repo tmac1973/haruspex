@@ -277,6 +277,33 @@ fn request_terms(address: &str, phrase: &str) -> String {
     q
 }
 
+/// For the inbox watcher's first look: whether the Inbox holds a request
+/// candidate that arrived since `since_ms`. A handled request has been moved
+/// out of the Inbox, so one still there is new, or waiting for its Sent copy.
+pub(super) async fn any_candidate(
+    session: &mut ImapSession,
+    account: &EmailAccount,
+    phrase: &str,
+    since_ms: i64,
+    t: &Timeouts,
+) -> Result<bool, String> {
+    let host = account.imap_host.as_str();
+    let address = account.email_address.as_str();
+    let query = scan_query(address, phrase, since_ms);
+    let hits = search_views(
+        session,
+        host,
+        t,
+        &query,
+        MAX_SCANNED,
+        "(UID FLAGS INTERNALDATE BODY.PEEK[HEADER])",
+    )
+    .await?;
+    Ok(hits.iter().any(|(_, internal, deleted, view)| {
+        !deleted && internal.is_some_and(|ms| ms >= since_ms) && is_candidate(view, address, phrase)
+    }))
+}
+
 /// What the inbox watcher found since its last look.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Arrivals {
