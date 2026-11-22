@@ -800,6 +800,38 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_camera_events_camera
                 ON camera_events(camera_id, started_at);
 
+            -- Research by email's record (email_requests::): one row per
+            -- request a job has seen, ignored ones included. references_json
+            -- and auth_json are JSON; thread_id is the root request's
+            -- Message-ID.
+            CREATE TABLE IF NOT EXISTS email_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                message_id TEXT NOT NULL,
+                thread_id TEXT NOT NULL,
+                references_json TEXT NOT NULL DEFAULT '[]',
+                subject TEXT NOT NULL,
+                question TEXT NULL,
+                answer TEXT NULL,
+                reply_kind TEXT NULL,
+                state TEXT NOT NULL,
+                reason TEXT NULL,
+                auth_json TEXT NULL,
+                reply_message_id TEXT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                send_attempts INTEGER NOT NULL DEFAULT 0,
+                first_seen_at INTEGER NOT NULL,
+                claimed_at INTEGER NULL,
+                updated_at INTEGER NOT NULL,
+                run_id INTEGER NULL,
+                UNIQUE(job_id, message_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_email_requests_job
+                ON email_requests(job_id, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_email_requests_reply
+                ON email_requests(reply_message_id);
+
             -- Full-text search over what was said and seen, kept in step with
             -- camera_events by the triggers below.
             CREATE VIRTUAL TABLE IF NOT EXISTS camera_events_fts USING fts5(
@@ -1115,6 +1147,7 @@ mod code_notices;
 mod code_sessions;
 mod commands;
 mod conversations;
+mod email_requests;
 mod home_cards;
 mod images;
 mod jobs;
@@ -1131,6 +1164,7 @@ pub use camera_events::{AlertLevel, CameraEvent, CameraEventFilter, HourCounts, 
 pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;
+pub use email_requests::{EmailRequestPatch, EmailRequestRow, NewEmailRequest};
 pub use home_cards::{HomeCard, RecentRun};
 pub use images::ImageRow;
 pub use memory_commands::*;
