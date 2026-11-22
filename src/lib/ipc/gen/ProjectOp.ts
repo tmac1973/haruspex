@@ -6,4 +6,4 @@ export type ProjectOp = { "op": "trim", index: number, inSecs: number | null, ou
 /**
  * Exact frames, overriding the seconds: the first and last shown.
  */
-inFrame: number | null, outFrame: number | null, } | { "op": "fit", index: number, fit: Fit, } | { "op": "remove", index: number, } | { "op": "move", from: number, to: number, } | { "op": "removeRanges", index: number, ranges: Array<SilenceRange>, } | { "op": "removeSilences", index: number | null, minSecs: number, padSecs: number, } | { "op": "normalize" };
+inFrame: number | null, outFrame: number | null, } | { "op": "fit", index: number, fit: Fit, } | { "op": "gainRange", index: number, fromSecs: number, toSecs: number, gainDb: number, } | { "op": "clearGainRanges", index: number, } | { "op": "remove", index: number, } | { "op": "move", from: number, to: number, } | { "op": "removeRanges", index: number, ranges: Array<SilenceRange>, } | { "op": "removeSilences", index: number | null, minSecs: number, padSecs: number, } | { "op": "normalize" };

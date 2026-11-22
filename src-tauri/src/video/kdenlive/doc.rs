@@ -371,6 +371,31 @@ impl Doc {
         self.our_filters(entry)
             .into_iter()
             .filter(|&f| self.tree.property(f, "mlt_service") != Some("crop"))
+            .filter(|&f| !self.is_range(f))
+            .collect()
+    }
+
+    fn is_range(&self, f: usize) -> bool {
+        crate::video::mlt::gain_range::is_range(|k| self.tree.property(f, k).map(str::to_string))
+    }
+
+    /// Haruspex's gain-range filters on an entry.
+    pub fn our_range_filters(&self, entry: usize) -> Vec<usize> {
+        self.our_filters(entry)
+            .into_iter()
+            .filter(|&f| self.is_range(f))
+            .collect()
+    }
+
+    /// The gain ranges Haruspex set on an entry, in source frames.
+    pub fn our_gain_ranges(&self, entry: usize) -> Vec<crate::video::timeline::GainRange> {
+        self.our_range_filters(entry)
+            .into_iter()
+            .filter_map(|f| {
+                crate::video::mlt::gain_range::read(|k| {
+                    self.tree.property(f, k).map(str::to_string)
+                })
+            })
             .collect()
     }
 
@@ -393,7 +418,7 @@ impl Doc {
 
     /// Whether Haruspex put a Limiter on an entry.
     pub fn our_limiter(&self, entry: usize) -> bool {
-        self.our_filters(entry)
+        self.our_sound_filters(entry)
             .into_iter()
             .any(|f| self.tree.property(f, "mlt_service") == Some("avfilter.alimiter"))
     }
@@ -405,6 +430,7 @@ impl Doc {
             .find(|&f| {
                 self.tree.property(f, OURS) == Some("1")
                     && self.tree.property(f, "mlt_service") == Some("volume")
+                    && !self.is_range(f)
             })
             .and_then(|f| {
                 let level = self.tree.property(f, "level")?;
@@ -416,7 +442,7 @@ impl Doc {
 
     /// The loudness Haruspex's gain on an entry aims at, when it isn't -14 LUFS.
     pub fn our_lufs(&self, entry: usize) -> Option<f64> {
-        self.our_filters(entry)
+        self.our_sound_filters(entry)
             .into_iter()
             .find_map(|f| self.tree.property(f, OURS_LUFS)?.trim().parse().ok())
     }

@@ -107,6 +107,14 @@ function plural(n: number, word: string): string {
 	return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
+/** A clip's gain ranges, as the summary line says them. */
+function rangeParts(i: SummaryItem): string[] {
+	return (i.gainRanges ?? []).map((r) => {
+		const what = r.gainDb <= -60 ? 'muted' : `${r.gainDb > 0 ? '+' : ''}${r.gainDb} dB`;
+		return `${what} ${formatTime(r.fromSecs)}–${formatTime(r.toSecs)} of the clip`;
+	});
+}
+
 /** `2. ep010/raw/a.mp4 · at 0:05.0 · 2:00.0 long · clip 0:10.0–2:10.0`. */
 export function itemLine(i: SummaryItem): string {
 	const parts = [
@@ -128,6 +136,7 @@ export function itemLine(i: SummaryItem): string {
 		const f = i.fit;
 		parts.push(`cropped to ${pct(f.w)}×${pct(f.h)} at ${pct(f.x)}, ${pct(f.y)}`);
 	}
+	parts.push(...rangeParts(i));
 	if (!i.hasVideo) parts.push('sound only');
 	if (!i.hasAudio) parts.push('no sound');
 	if (i.effects > 0) parts.push(`${plural(i.effects, 'effect')} added in the editor`);

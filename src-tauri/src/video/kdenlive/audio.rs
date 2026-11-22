@@ -201,7 +201,7 @@ pub fn apply(doc: &Doc, wanted: &[AudioPlacement]) -> Result<Edited, String> {
             at,
             len,
             entry_text(
-                doc, fps, in_frame, out_frame, &bin_id, old, &chain, gain, None,
+                doc, fps, in_frame, out_frame, &bin_id, old, &chain, gain, None, None,
             ),
             old.map(|e| e.node),
             in_frame,

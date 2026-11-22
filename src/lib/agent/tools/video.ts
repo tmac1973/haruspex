@@ -20,9 +20,18 @@ import {
 	timelineTranscriptReport
 } from '#lib/video/report.ts';
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
-import { parseCut, parseOp, parseTime, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
-import { FIT_PARAMS, FRAME_PARAMS } from '#lib/video/args.ts';
+import {
+	episodeArg,
+	FIT_PARAMS,
+	FRAME_PARAMS,
+	ITEM_RANGES_PARAM,
+	parseCut,
+	parseOp,
+	parseTime,
+	videoSettings
+} from '#lib/video/args.ts';
+import { EDIT_PROPERTIES } from '#lib/agent/tools/_videoEditParams.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
@@ -53,7 +62,13 @@ function editLabel(args: Record<string, unknown>): string {
 	}
 	if (op === 'remove_ranges') return `Cutting parts of clip ${String(args.index ?? '')}`;
 	const verb =
-		{ trim: 'Trimming', remove: 'Removing', move: 'Moving', fit: 'Fitting' }[op] ?? 'Editing';
+		{
+			trim: 'Trimming',
+			remove: 'Removing',
+			move: 'Moving',
+			fit: 'Fitting',
+			gain_range: 'Changing the sound of'
+		}[op] ?? 'Editing';
 	return `${verb} clip ${String(args.index ?? '')}`;
 }
 
@@ -212,7 +227,8 @@ registerTool({
 									type: 'number',
 									description: 'A crossfade into this clip, 0–3 s; overrides crossfade_secs below.'
 								},
-								...FIT_PARAMS
+								...FIT_PARAMS,
+								...ITEM_RANGES_PARAM
 							}
 						}
 					},
@@ -294,43 +310,10 @@ registerTool({
 		function: {
 			name: 'video_edit',
 			description:
-				'Change one clip on the main track: trim its start or end, set how its picture fits the frame, remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
+				'Change one clip on the main track: trim its start or end, set how its picture fits the frame, mute or change the gain of a stretch of its sound (gain_range), remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
 			parameters: {
 				type: 'object',
-				properties: {
-					episode: EPISODE_PARAM,
-					project: PROJECT_PARAM,
-					op: {
-						type: 'string',
-						enum: ['trim', 'fit', 'remove', 'move', 'remove_ranges', 'remove_silences']
-					},
-					index: {
-						type: 'integer',
-						description: 'The clip, from 1. remove_silences: omit for every clip.'
-					},
-					in_secs: { type: 'number', description: 'trim: start this far into the clip.' },
-					out_secs: { type: 'number', description: 'trim: stop this far into the clip.' },
-					...FRAME_PARAMS,
-					...FIT_PARAMS,
-					to: { type: 'integer', description: 'move: its new position, from 1.' },
-					ranges: {
-						type: 'array',
-						description:
-							"remove_ranges: stretches to cut, in the clip's own time (as video_transcribe and video_silences give it), e.g. a retake.",
-						items: {
-							type: 'object',
-							properties: { from: { type: 'string' }, to: { type: 'string' } }
-						}
-					},
-					min_secs: {
-						type: 'number',
-						description: 'remove_silences: shortest silence to cut. Default 1.5.'
-					},
-					pad_secs: {
-						type: 'number',
-						description: 'remove_silences: quiet kept at each side of a cut. Default 0.25.'
-					}
-				},
+				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM, ...EDIT_PROPERTIES },
 				required: ['op']
 			}
 		}

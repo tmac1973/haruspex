@@ -3,7 +3,7 @@ use super::edit::{apply, current};
 use super::*;
 use crate::video::mlt::mlt_path;
 use crate::video::mlt::project_file::melt_loads;
-use crate::video::timeline::{Fit, Media, Placement, Source};
+use crate::video::timeline::{Fit, GainRange, Media, Placement, Source};
 use std::path::Path;
 
 fn fixture(name: &str) -> String {
@@ -211,6 +211,7 @@ fn trimming_the_start_keeps_the_leading_gap_and_the_groups() {
         gain_db: None,
         limiter: false,
         fit: None,
+        gain_ranges: None,
     };
     let out = apply(&doc, &[trimmed]).unwrap();
     let after = reparse(out.text.clone());
@@ -265,6 +266,7 @@ fn an_effect_on_a_kept_clip_survives_a_trim() {
         gain_db: None,
         limiter: false,
         fit: None,
+        gain_ranges: None,
     };
     let out = reparse(apply(&doc, &[keep(0), trimmed]).unwrap().text);
     assert_eq!(out.items()[1].filters(), 1);
@@ -364,6 +366,7 @@ fn a_crossfade_made_in_kdenlive_keeps_its_clips_together() {
         gain_db: None,
         limiter: false,
         fit: None,
+        gain_ranges: None,
     };
     let out = reparse(apply(&doc, &[trimmed, keep(1), keep(2)]).unwrap().text);
     let m = &out.mixes(out.main_video)[0];
@@ -385,6 +388,7 @@ fn an_end_past_the_clip_is_clamped_and_said() {
         gain_db: None,
         limiter: false,
         fit: None,
+        gain_ranges: None,
     };
     let out = apply(&doc, &[p]).unwrap();
     assert!(out.notes.iter().any(|n| n.contains("past the clip's end")));
@@ -563,6 +567,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         gain_db: None,
         limiter: false,
         fit: None,
+        gain_ranges: None,
     };
     let second = Placement {
         source: Source::Piece(0),
@@ -572,6 +577,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         gain_db: None,
         limiter: false,
         fit: None,
+        gain_ranges: None,
     };
     let out = reparse(apply(&doc, &[first, second]).unwrap().text);
     let items = out.items();
@@ -1010,4 +1016,101 @@ async fn melt_loads_a_kdenlive_project_with_fits() {
     let project = dir.join("fits.kdenlive");
     std::fs::write(&project, &text).unwrap();
     melt_loads(&melt, &project).await.unwrap();
+}
+
+#[test]
+fn gain_ranges_go_on_the_sound_beside_its_gain_and_come_off_again() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mute = GainRange {
+        from_frame: 60,
+        to_frame: 89,
+        gain_db: -70.0,
+    };
+    let mut a = new(media("a.mp4", 4.0, fps));
+    a.gain_db = Some(2.0);
+    a.gain_ranges = Some(vec![mute]);
+    let once = reparse(apply(&doc, &[a]).unwrap().text);
+    let a0 = once.items()[0].audio.as_ref().unwrap().node;
+    assert_eq!(once.our_gain_ranges(a0), vec![mute]);
+    assert_eq!(once.our_gain(a0).map(|(_, g)| g), Some(2.0));
+    assert!(once.our_gain_ranges(video_node(&once, 0)).is_empty());
+    assert_eq!(once.items()[0].filters(), 0);
+    assert_eq!(apply(&once, &current(&once)).unwrap().text, once.text);
+    // A new gain keeps them; a trim keeps them where they were in the clip.
+    let mut again = current(&once);
+    again[0].gain_db = Some(-1.0);
+    again[0].in_frame = Some(30);
+    let twice = reparse(apply(&once, &again).unwrap().text);
+    let a0 = twice.items()[0].audio.as_ref().unwrap().node;
+    assert_eq!(twice.our_gain_ranges(a0), vec![mute]);
+    let mut off = current(&twice);
+    off[0].gain_ranges = Some(Vec::new());
+    let gone = reparse(apply(&twice, &off).unwrap().text);
+    let a0 = gone.items()[0].audio.as_ref().unwrap().node;
+    assert!(gone.our_range_filters(a0).is_empty());
+    assert_eq!(gone.our_gain(a0).map(|(_, g)| g), Some(-1.0));
+}
+
+#[tokio::test]
+async fn melt_mutes_a_kdenlive_gain_range() {
+    let Some(melt) = crate::video::binaries::resolve(&Default::default())
+        .await
+        .melt
+        .map(|m| m.path)
+    else {
+        eprintln!("skipped: no melt");
+        return;
+    };
+    let dir = crate::test_util::temp_dir("kdenlive_range");
+    let status = crate::test_util::host_command("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("color=c=gray:s=320x180:r=60:d=3")
+        .args(["-f", "lavfi", "-i", "sine=f=440:d=3", "-shortest"])
+        .args(["-c:v", "mpeg4", "-c:a", "pcm_s16le"])
+        .arg(dir.join("tone.mov"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let doc = Doc::parse(template_text("1080p60", &dir).unwrap()).unwrap();
+    let fps = doc.fps;
+    let mut clip = new(media("tone.mov", 3.0, fps));
+    clip.in_frame = Some(30);
+    // 1.0–1.5 s of the clip's own time: 0.5–1.0 s into the cut.
+    clip.gain_ranges = Some(vec![GainRange {
+        from_frame: 60,
+        to_frame: 89,
+        gain_db: -70.0,
+    }]);
+    let text = apply(&doc, &[clip]).unwrap().text;
+    let project = dir.join("range.kdenlive");
+    std::fs::write(&project, &text).unwrap();
+    melt_loads(&melt, &project).await.unwrap();
+    let out = dir.join("range.wav");
+    let mut cmd = tokio::process::Command::new(&melt);
+    cmd.arg(&project)
+        .arg("-consumer")
+        .arg(format!("avformat:{}", out.display()))
+        .args(["acodec=pcm_s16le", "vn=1"]);
+    crate::video::prepare_child(&mut cmd);
+    assert!(cmd.status().await.unwrap().success());
+    let db = |at: f64| {
+        let o = crate::test_util::host_command("ffmpeg")
+            .args(["-v", "info", "-ss", &at.to_string(), "-t", "0.3", "-i"])
+            .arg(&out)
+            .args(["-af", "volumedetect", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        let t = String::from_utf8_lossy(&o.stderr).to_string();
+        let i = t.find("mean_volume: ").unwrap() + 13;
+        t[i..]
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap()
+    };
+    let (before, muted, after) = (db(0.1), db(0.6), db(1.2));
+    assert!(before > -40.0 && after > -40.0, "{before} {after}");
+    assert!(muted < -80.0, "muted stretch {muted}");
 }

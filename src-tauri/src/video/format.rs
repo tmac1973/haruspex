@@ -268,6 +268,28 @@ pub struct SummaryItem {
     pub limited: bool,
     /// The fit Haruspex set on its picture; `None` is letterbox.
     pub fit: Option<crate::video::timeline::Fit>,
+    /// Gains Haruspex set over stretches of its sound, in its own time.
+    pub gain_ranges: Vec<SummaryRange>,
+}
+
+/// A gain range as the summary shows it: seconds in the clip's own time.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryRange {
+    pub from_secs: f64,
+    pub to_secs: f64,
+    pub gain_db: f64,
+}
+
+impl SummaryRange {
+    pub fn of(r: &crate::video::timeline::GainRange, fps: crate::video::mlt::fps::Fps) -> Self {
+        SummaryRange {
+            from_secs: fps.secs(r.from_frame),
+            to_secs: fps.secs(r.to_frame + 1),
+            gain_db: r.gain_db,
+        }
+    }
 }
 
 /// A sound on an audio track under the picture.

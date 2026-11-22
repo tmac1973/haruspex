@@ -60,6 +60,19 @@ impl Fit {
     }
 }
 
+/// A gain over a stretch of a clip's sound, in the clip's source frames
+/// (`to_frame` the last one it covers). A gain of -60 dB or less is a mute.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct GainRange {
+    #[ts(type = "number")]
+    pub from_frame: i64,
+    #[ts(type = "number")]
+    pub to_frame: i64,
+    pub gain_db: f64,
+}
+
 /// One clip of the wanted main track. `None` keeps an existing item's point,
 /// or is the start / end of new media.
 #[derive(Clone, Debug, PartialEq)]
@@ -77,6 +90,9 @@ pub struct Placement {
     /// How its picture fills the frame; `None` leaves what is there, and
     /// `Letterbox` removes Haruspex's crop.
     pub fit: Option<Fit>,
+    /// Gains over stretches of its sound; `None` leaves what is there, and an
+    /// empty list removes Haruspex's.
+    pub gain_ranges: Option<Vec<GainRange>>,
 }
 
 impl Placement {
@@ -89,6 +105,7 @@ impl Placement {
             gain_db: None,
             limiter: false,
             fit: None,
+            gain_ranges: None,
         }
     }
 }
@@ -212,6 +229,10 @@ pub struct Clip {
     pub in_frame: i64,
     pub out_frame: i64,
     pub audio: Option<ClipAudio>,
+    /// The gain ranges Haruspex set on its sound.
+    pub gain_ranges: Vec<GainRange>,
+    /// The fit Haruspex set on its picture; `None` is letterbox.
+    pub fit: Option<Fit>,
 }
 
 /// The sound of a clip, when it has any on the main track.

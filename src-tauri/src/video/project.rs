@@ -7,6 +7,7 @@ use super::kdenlive;
 use super::mlt::{mlt_path, profile::profile};
 use super::paths::{display_path, resolve_episode, resolve_in_working, resolve_media};
 use super::probe;
+use super::timeline::GainRange;
 use super::timeline::{
     assign_audio_tracks, current_audio, AudioPlacement, AudioSource, Fit, Media, Placement, Source,
 };
@@ -57,6 +58,48 @@ pub struct CutItemSpec {
     /// How its picture fills the frame; none keeps what is there (letterbox
     /// for a new clip).
     pub fit: Option<Fit>,
+    /// Gains over stretches of its sound, in its own time, replacing those
+    /// Haruspex set; none keeps them.
+    pub gain_ranges: Option<Vec<RangeSpec>>,
+}
+
+/// A gain over a stretch of a clip's sound, in seconds of the clip's own time.
+/// A gain of -60 dB or less mutes it.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct RangeSpec {
+    pub from_secs: f64,
+    pub to_secs: f64,
+    pub gain_db: f64,
+}
+
+impl RangeSpec {
+    /// In the clip's source frames, or what is wrong with it.
+    fn frames(&self, fps: &super::mlt::fps::Fps) -> Result<GainRange, String> {
+        let ok = [self.from_secs, self.to_secs, self.gain_db]
+            .iter()
+            .all(|v| v.is_finite());
+        if !ok || self.from_secs < 0.0 || self.to_secs <= self.from_secs {
+            return Err("A gain range needs from_secs before to_secs, both from 0.".into());
+        }
+        if self.gain_db > 20.0 {
+            return Err("A gain range adds at most 20 dB.".into());
+        }
+        Ok(GainRange {
+            from_frame: fps.frames(self.from_secs),
+            to_frame: (fps.frames(self.to_secs) - 1).max(fps.frames(self.from_secs)),
+            gain_db: self.gain_db.max(-70.0),
+        })
+    }
+}
+
+/// Add a range to a clip's ranges, replacing any it overlaps, in time order.
+fn with_range(mut ranges: Vec<GainRange>, r: GainRange) -> Vec<GainRange> {
+    ranges.retain(|o| o.to_frame < r.from_frame || o.from_frame > r.to_frame);
+    ranges.push(r);
+    ranges.sort_by_key(|o| o.from_frame);
+    ranges
 }
 
 /// A sound on an audio track under the picture: a voiceover or music bed.
@@ -119,6 +162,19 @@ pub enum ProjectOp {
     Fit {
         index: u32,
         fit: Fit,
+    },
+    /// A gain over a stretch of one clip's sound, in its own time; it replaces
+    /// any range of Haruspex's it overlaps.
+    #[serde(rename_all = "camelCase")]
+    GainRange {
+        index: u32,
+        from_secs: f64,
+        to_secs: f64,
+        gain_db: f64,
+    },
+    /// Take Haruspex's gain ranges off one clip.
+    ClearGainRanges {
+        index: u32,
     },
     Remove {
         index: u32,
@@ -550,6 +606,7 @@ fn cut_ranges(
     let gain = wanted[pos].gain_db;
     let limiter = wanted[pos].limiter;
     let fit = wanted[pos].fit;
+    let ranges = wanted[pos].gain_ranges.clone();
     let pieces: Vec<Placement> = keeps
         .iter()
         .enumerate()
@@ -565,6 +622,7 @@ fn cut_ranges(
             gain_db: gain,
             limiter,
             fit,
+            gain_ranges: ranges.clone(),
         })
         .collect();
     wanted.splice(pos..=pos, pieces);
@@ -931,10 +989,21 @@ pub async fn cut(
             (item.in_frame, item.out_frame),
         )
         .map_err(|e| format!("Item {}: {e}", n + 1))?;
+        let gain_ranges = match &item.gain_ranges {
+            Some(list) => Some(
+                list.iter()
+                    .try_fold(Vec::new(), |acc, r| {
+                        r.frames(&doc.fps()).map(|g| with_range(acc, g))
+                    })
+                    .map_err(|e| format!("Item {}: {e}", n + 1))?,
+            ),
+            None => None,
+        };
         wanted.push(Placement {
             in_frame,
             out_frame,
             fit: item.fit,
+            gain_ranges,
             ..Placement::of(source)
         });
         fades.push(item.crossfade_secs);
@@ -1037,6 +1106,25 @@ pub async fn op(
             if b.is_some() {
                 wanted[i].out_frame = b;
             }
+        }
+        ProjectOp::GainRange {
+            index,
+            from_secs,
+            to_secs,
+            gain_db,
+        } => {
+            let i = check(index)?;
+            let r = RangeSpec {
+                from_secs,
+                to_secs,
+                gain_db,
+            }
+            .frames(&doc.fps())?;
+            wanted[i].gain_ranges = Some(with_range(items[i].gain_ranges.clone(), r));
+        }
+        ProjectOp::ClearGainRanges { index } => {
+            let i = check(index)?;
+            wanted[i].gain_ranges = Some(Vec::new());
         }
         ProjectOp::Fit { index, fit } => {
             let i = check(index)?;
@@ -1304,6 +1392,7 @@ mod tests {
                 gain_db: None,
                 limiter: false,
                 fit: None,
+                gain_ranges: None,
             },
             Placement {
                 source: Source::Existing(1),
@@ -1313,6 +1402,7 @@ mod tests {
                 gain_db: None,
                 limiter: false,
                 fit: None,
+                gain_ranges: None,
             },
         ];
         // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
@@ -1339,6 +1429,7 @@ mod tests {
             gain_db: None,
             limiter: false,
             fit: None,
+            gain_ranges: None,
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));
