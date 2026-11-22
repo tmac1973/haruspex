@@ -16,6 +16,7 @@ use super::auth::EmailAccount;
 use super::imap_client::{self, ListFilters};
 use super::parser::{EmailListing, NormalizedMessage};
 use super::provider::{saves_sent_copy, EmailProviderPreset, PRESETS};
+use super::requests::{self, RequestCandidate, RequestFolder};
 use super::smtp_client::{self, OutgoingMessage, ReplyContext};
 use super::sub_agent::{self, SummarizerInput};
 use crate::sync_util::LockExt;
@@ -169,6 +170,47 @@ pub async fn email_prepare_summary(
     })
     .await?;
     Ok(sub_agent::prepare(&msg).into())
+}
+
+/// Research by email: Inbox messages since `since_ms` from the account to
+/// itself with the phrase in the subject. Not yet trusted; see
+/// [`email_request_sent_has`].
+#[tauri::command]
+pub async fn email_request_scan(
+    account: EmailAccount,
+    phrase: String,
+    since_ms: i64,
+) -> Result<Vec<RequestCandidate>, String> {
+    requests::scan(&account, &phrase, since_ms).await
+}
+
+/// Research by email: whether the Sent folder holds this request's own copy.
+#[tauri::command]
+pub async fn email_request_sent_has(
+    account: EmailAccount,
+    message_id: String,
+    phrase: String,
+) -> Result<bool, String> {
+    requests::sent_has(&account, &message_id, &phrase).await
+}
+
+/// Research by email: whether a reply Haruspex sent has arrived.
+#[tauri::command]
+pub async fn email_request_reply_seen(
+    account: EmailAccount,
+    reply_message_id: String,
+) -> Result<bool, String> {
+    requests::reply_seen(&account, &reply_message_id).await
+}
+
+/// Research by email: move a request to one of the job's two folders.
+#[tauri::command]
+pub async fn email_request_move(
+    account: EmailAccount,
+    handle: String,
+    folder: RequestFolder,
+) -> Result<(), String> {
+    requests::move_to(&account, &handle, folder).await
 }
 
 /// Move one INBOX message to the account's Trash. Only Home's email card

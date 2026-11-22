@@ -71,7 +71,7 @@ const WHOLE_MESSAGE_MAX: u32 = 5 * 1024 * 1024;
 const LARGE_TEXT_BYTES: u32 = 512 * 1024;
 
 /// A logged-in session, over TLS from the start or after STARTTLS.
-type ImapSession = async_imap::Session<TlsStream<TcpStream>>;
+pub(super) type ImapSession = async_imap::Session<TlsStream<TcpStream>>;
 
 /// The limits on each network step.
 #[derive(Clone, Copy, Debug)]
@@ -102,7 +102,7 @@ fn span(d: Duration) -> String {
 
 /// Run one network step under its time limit; either failure names the step
 /// and the host.
-async fn within<T, E: std::fmt::Display>(
+pub(super) async fn within<T, E: std::fmt::Display>(
     limit: Duration,
     host: &str,
     step: &str,
@@ -264,7 +264,7 @@ fn login_of(account: &EmailAccount) -> u64 {
 
 /// A logged-in session for the account: the kept one if it is fresh and
 /// still answers, else a new login.
-async fn checkout(account: &EmailAccount, t: &Timeouts) -> Result<ImapSession, String> {
+pub(super) async fn checkout(account: &EmailAccount, t: &Timeouts) -> Result<ImapSession, String> {
     let kept = kept().lock_or_recover().remove(&account.id);
     if let Some(mut k) = kept {
         if k.login == login_of(account) && k.used.elapsed() < SESSION_IDLE {
@@ -277,7 +277,7 @@ async fn checkout(account: &EmailAccount, t: &Timeouts) -> Result<ImapSession, S
 }
 
 /// Keep a session that finished its call cleanly.
-fn checkin(account: &EmailAccount, session: ImapSession) {
+pub(super) fn checkin(account: &EmailAccount, session: ImapSession) {
     kept().lock_or_recover().insert(
         account.id.clone(),
         Kept {
@@ -295,14 +295,18 @@ pub fn forget(account_id: &str) {
 }
 
 /// SELECT INBOX; its UIDVALIDITY.
-async fn select_inbox(session: &mut ImapSession, host: &str, t: &Timeouts) -> Result<u32, String> {
+pub(super) async fn select_inbox(
+    session: &mut ImapSession,
+    host: &str,
+    t: &Timeouts,
+) -> Result<u32, String> {
     let mailbox = within(t.command, host, "SELECT INBOX", session.select("INBOX")).await?;
     Ok(mailbox.uid_validity.unwrap_or(0))
 }
 
 /// A UID FETCH, collected. One message the server could not send is
 /// skipped, not fatal.
-async fn fetch(
+pub(super) async fn fetch(
     session: &mut ImapSession,
     host: &str,
     t: &Timeouts,
@@ -373,7 +377,7 @@ fn build_search_query(filters: &ListFilters) -> String {
 /// a CR/LF would terminate the SEARCH line and inject a new command on
 /// the authenticated session; a backslash or quote could splice the
 /// quoted string.
-fn sanitize_search_value(v: &str) -> String {
+pub(super) fn sanitize_search_value(v: &str) -> String {
     v.chars()
         .filter(|c| !matches!(c, '"' | '\\' | '\r' | '\n' | '\0'))
         .collect()
@@ -420,7 +424,7 @@ fn imap_since_for_hours(hours: u32) -> String {
 /// Convert a Unix timestamp to IMAP's `DD-Mon-YYYY` date format.
 /// Pure integer math so we don't need chrono; accuracy is
 /// day-granularity which is all SINCE consumes.
-fn unix_to_imap_date(secs: i64) -> String {
+pub(super) fn unix_to_imap_date(secs: i64) -> String {
     // Day-granularity is all IMAP's SINCE consumes. Shared calendar math
     // lives in crate::time_util (no chrono dependency).
     let (y, m, d) = crate::time_util::days_to_ymd(secs.div_euclid(86_400));
@@ -601,7 +605,7 @@ fn result_cap(max: u32) -> usize {
     }) as usize
 }
 
-fn uid_set(uids: &[u32]) -> String {
+pub(super) fn uid_set(uids: &[u32]) -> String {
     uids.iter()
         .map(u32::to_string)
         .collect::<Vec<_>>()
@@ -705,7 +709,7 @@ async fn read_in(
 }
 
 /// Names a Sent folder goes by on servers that do not flag one `\Sent`.
-const SENT_NAMES: &[&str] = &[
+pub(super) const SENT_NAMES: &[&str] = &[
     "Sent",
     "Sent Items",
     "Sent Messages",
@@ -727,7 +731,7 @@ const TRASH_NAMES: &[&str] = &[
 ];
 
 /// A special-use mailbox: the one LIST flags, else one with a well-known name.
-fn special_mailbox(names: &[(String, bool)], known: &[&str]) -> Option<String> {
+pub(super) fn special_mailbox(names: &[(String, bool)], known: &[&str]) -> Option<String> {
     names
         .iter()
         .find(|(_, flagged)| *flagged)
@@ -822,21 +826,35 @@ async fn trash_in(
     t: &Timeouts,
 ) -> Result<(), String> {
     use async_imap::types::NameAttribute;
-    use futures_util::TryStreamExt;
     let host = account.imap_host.as_str();
     let names = mailboxes(session, host, t, |a| matches!(a, NameAttribute::Trash)).await?;
     let trash = special_mailbox(&names, TRASH_NAMES)
         .ok_or_else(|| "no Trash mailbox was found".to_string())?;
     let validity = select_inbox(session, host, t).await?;
     let set = uid_from_handle(message_id, validity)?.to_string();
+    move_selected(session, host, t, &set, &trash).await
+}
+
+/// Move messages of the selected mailbox to `dest`: UID MOVE where the
+/// server has it, else copy, flag `\Deleted` and, with UIDPLUS, expunge
+/// just those. Without UIDPLUS they stay flagged where they were, which mail
+/// apps hide, rather than risk expunging another app's flagged mail.
+pub(super) async fn move_selected(
+    session: &mut ImapSession,
+    host: &str,
+    t: &Timeouts,
+    set: &str,
+    dest: &str,
+) -> Result<(), String> {
+    use futures_util::TryStreamExt;
     let caps = within(t.command, host, "CAPABILITY", session.capabilities()).await?;
     if caps.has_str("MOVE") {
-        return within(t.command, host, "MOVE", session.uid_mv(&set, &trash)).await;
+        return within(t.command, host, "MOVE", session.uid_mv(set, dest)).await;
     }
-    within(t.command, host, "COPY", session.uid_copy(&set, &trash)).await?;
+    within(t.command, host, "COPY", session.uid_copy(set, dest)).await?;
     let store = async {
         session
-            .uid_store(&set, "+FLAGS.SILENT (\\Deleted)")
+            .uid_store(set, "+FLAGS.SILENT (\\Deleted)")
             .await?
             .try_collect::<Vec<_>>()
             .await
@@ -845,7 +863,7 @@ async fn trash_in(
     if caps.has_str("UIDPLUS") {
         let expunge = async {
             session
-                .uid_expunge(&set)
+                .uid_expunge(set)
                 .await?
                 .try_collect::<Vec<_>>()
                 .await
