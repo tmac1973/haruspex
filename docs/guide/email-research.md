@@ -9,6 +9,8 @@ A Research by email job lets you ask Haruspex a question from your phone. You em
 
 ## Set it up
 
+The easy way is **Home → Add card → Email requests…**, which makes the job and shows its requests (below). Or, by hand:
+
 1. In Settings → Integrations → Email, have the account you'll write from, with **Allow sending** on (see the `integrations` page).
 2. In the Jobs tab, make a job of type **Research by email** (see the `jobs` page).
 3. Pick the **Email account**, type a **Trigger phrase** such as `ask haruspex`, and set the **Daily limit** (10 by default, or **No limit**).
@@ -44,6 +46,12 @@ DKIM, SPF and DMARC results are recorded for each request and shown on Home's Em
 ## Where the mail goes
 
 When Haruspex picks up a request, it moves it from the Inbox to a `Haruspex` folder. Ignored requests (no copy in Sent, or over the daily limit) go to `Haruspex/Ignored`. Nothing is marked read. Replies go only to the account's own address, never to a Reply-To or Cc in the request, and no copy of them is saved to Sent.
+
+## See the requests on Home
+
+The Email requests card shows the phrase and address to use, then the last 20 requests, newest first. Each has a state: **Waiting** (for its copy in Sent), **Researching**, **Sending**, **Answered**, **Failed** or **Ignored**. Failed and Ignored ones give the reason: No copy in Sent, Daily limit, Research failed or Couldn't send. A line under each gives its DKIM, SPF and DMARC results.
+
+Click an answered request to read its question and answer; **Open run** shows the run in the Jobs tab. The card is greyed out while the account has **Allow sending** off. **⋯ → Notify on new items** sends a notification for each new answer. A list of ignored requests you didn't send means someone is trying the phrase.
 
 ## What it can't do
 

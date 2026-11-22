@@ -9,6 +9,10 @@ import type { RecentRun } from '#lib/ipc/gen/RecentRun.ts';
 import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
 import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
 import { emailCardAccountsOf } from '#lib/home/emailCard.ts';
+import { authLine, reasonLabel, stateLabel } from '#lib/home/emailRequests.ts';
+import { listEmailRequests } from '#lib/stores/emailRequests.ts';
+import { parseEmailResearchConfig } from '#lib/agent/jobs/types/email-research/config.ts';
+import { stripPhrase } from '#lib/agent/jobs/types/email-research/body.ts';
 import {
 	getActiveRunForJob,
 	getActiveRuns,
@@ -27,7 +31,8 @@ import { weatherLabel, type DayForecast, type WeatherResult } from '#lib/home/we
 import { dbQuery } from '#lib/stores/dbCall.ts';
 import { getHomeCards, loadHomeCards } from '#lib/stores/homeCards.svelte.ts';
 import { getJobRun, type JobRunSummary } from '#lib/stores/jobRuns.svelte.ts';
-import { getJobs } from '#lib/stores/jobs.svelte.ts';
+import { getJob, getJobs } from '#lib/stores/jobs.svelte.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import type {
 	HomeCardPayload,
 	HomeCardView,
@@ -165,6 +170,39 @@ async function judgedPayload(
 	return { type, ...state, accounts, items: emailItems(json) };
 }
 
+/** Rows the Email requests card lists. */
+const EMAIL_REQUEST_ROWS = 20;
+
+async function emailRequestsPayload(card: HomeCard): Promise<HomeCardPayload> {
+	const jobId = card.job_id;
+	if (jobId === null) return { type: 'email_requests', ...IDLE, setup: null, requests: null };
+	const [{ state }, job, rows] = await Promise.all([
+		jobState(jobId),
+		getJob(jobId),
+		listEmailRequests(jobId, EMAIL_REQUEST_ROWS).catch((e: unknown) => {
+			console.warn('Email requests: reading the requests failed', e);
+			return null;
+		})
+	]);
+	const config = job ? parseEmailResearchConfig(job.type_config) : null;
+	const account = config
+		? getSettings().integrations.email.accounts.find((a) => a.id === config.accountId)
+		: undefined;
+	const setup =
+		config && account
+			? `Email ${account.emailAddress} with “${config.phrase}” in the subject.`
+			: null;
+	const requests =
+		rows?.map((r) => ({
+			subject: stripPhrase(r.subject, config?.phrase ?? '') || '(no subject)',
+			state: stateLabel(r.state),
+			reason: reasonLabel(r.state, r.reason),
+			auth: authLine(r.auth),
+			at: r.updatedAt
+		})) ?? null;
+	return { type: 'email_requests', ...state, setup, requests };
+}
+
 const MEETING_ORDER: MeetingGroup[] = ['Now', 'Later today', 'Tomorrow', 'Later'];
 
 function meetingsPayload(card: HomeCard, now: Date): HomeCardPayload {
@@ -266,6 +304,8 @@ async function payloadOf(card: HomeCard, now: Date): Promise<HomeCardPayload> {
 		case 'important_emails':
 		case 'news':
 			return judgedPayload(card, card.card_type);
+		case 'email_requests':
+			return emailRequestsPayload(card);
 		case 'upcoming_meetings':
 			return meetingsPayload(card, now);
 		case 'weather':

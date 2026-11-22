@@ -20,11 +20,15 @@ The Home tab is the first tab: cards that show what Haruspex is doing and what n
 
 **Add card → Important emails…** needs an email account (see the `integrations` page). Pick the accounts (named at the top of the card), say what counts as important ("from my manager, or about invoices"), how far back to look, how many to show and how often to check (every 30 minutes to start).
 
-Each check lists your unread inbox mail and the model picks the ones that fit your rule, reading only sender, subject and first lines. Subject, sender and age come straight from your mail; the model's short reason sits under each, with a coloured edge, and can't change what a message says it is. Read mail drops off at the next check; checking marks nothing as read. **↻** checks now.
+Each check lists your unread inbox mail and the model picks the ones that fit your rule, reading only sender, subject and first lines. Subject, sender and age come straight from your mail; the model's short reason sits under each and can't change what a message says it is. Read mail drops off at the next check; checking marks nothing as read. **↻** checks now.
+
+## Answer questions you email yourself
+
+**Add card → Email requests…** sets up research by email and lists its requests (see the `email-research` page).
 
 ## Follow the news you care about
 
-**Add card → News…** asks for RSS or Atom feeds (tick listed ones or paste your own) and your interests ("local politics, Rust, space"). Each morning at 7, or on **↻**, it reads the feeds and the model picks the stories that match, each with a one-line summary. Headlines, sources and links come from the feeds; a feed that can't be read is skipped.
+**Add card → News…** asks for RSS or Atom feeds (tick listed ones or paste your own) and your interests ("local politics, Rust, space"). Each morning at 7, or on **↻**, it reads the feeds and the model picks the stories that match, each with a one-line summary. A feed that can't be read is skipped.
 
 ## See your next meetings and the weather
 
@@ -32,7 +36,7 @@ Each check lists your unread inbox mail and the model picks the ones that fit yo
 
 **Add card → Weather…** looks up a town or city, in °C or °F. The forecast comes from Open-Meteo (no account) through Settings → Network → Network Proxy, which is sent only the place's coordinates. Now, today and tomorrow; every 30 minutes.
 
-Both keep their last result, shown at start-up with the time it was read. **↻** reads again now (weather under 10 minutes old comes back unchanged). A failed read keeps the last result and says what went wrong.
+Both keep their last result, shown at start-up with the time it was read. **↻** reads again now. A failed read keeps the last result and says what went wrong.
 
 ## Keep up with GitHub
 
@@ -53,7 +57,7 @@ Each email, story, meeting and GitHub item has a **⋯** menu.
 
 **Add card**, top right, adds a card at the end; drag a card by its title to move it. Cards are one height and scroll inside. One that needs an account or server first is greyed out; hover it to see what's missing. Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (two columns) or **Normal width**, **Edit job** (its job's schedule and settings, in the Jobs tab) and **Remove**.
 
-The email and news cards make their own job, with a **Home** badge in the Jobs tab; **Use a job** in their form shows one of your Email digest or News digest jobs instead, which stays yours. A card's job waits while chat or Code uses the model ("Waiting for chat"), and doesn't run in lean mode. **⋯ → Notify on new items** (off to start) sends a desktop notification naming what's new. Removing a card deletes a job it made unless you untick **Also delete the job**; a job of yours stays unless you tick it.
+The email and news cards make their own job, with a **Home** badge in the Jobs tab; **Use a job** in their form shows one of your jobs of that type instead, which stays yours. A card's job waits while chat or Code uses the model ("Waiting for chat"), and doesn't run in lean mode. **⋯ → Notify on new items** (off to start) sends a desktop notification naming what's new. Removing a card deletes a job it made unless you untick **Also delete the job**; a job of yours stays unless you tick it.
 
 Cards and their order are kept across restarts and stack on a narrow window. A card from a newer Haruspex shows as **Unknown card**.
 
