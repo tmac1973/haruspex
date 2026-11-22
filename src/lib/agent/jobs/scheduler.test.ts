@@ -148,6 +148,16 @@ describe('scheduler tick', () => {
 		]);
 	});
 
+	it('runs a Research by email card job while the Home tab is off', async () => {
+		mocks.cards = [{ job_id: 5, card_type: 'email_requests' }];
+		mocks.listDueJobs.mockResolvedValue([
+			dueJob({ id: 5, job_type: 'email_research', working_dir: '' })
+		]);
+		mocks.homeTab = false;
+		await tick();
+		expect(mocks.enqueue.mock.calls).toEqual([[5, 'scheduled']]);
+	});
+
 	it('is a no-op when no jobs are due', async () => {
 		mocks.listDueJobs.mockResolvedValueOnce([]);
 		await tick();

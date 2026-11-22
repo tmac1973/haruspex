@@ -108,7 +108,7 @@ async function processDueJob(job: JobSummary, now: number): Promise<void> {
 		await setJobNextDueAt(job.id, null);
 	}
 
-	if (await pausedWithHome(job.id)) {
+	if (await pausedWithHome(job)) {
 		logDebug('jobs', 'scheduler: Home tab is off, skipping a card job', { jobId: job.id });
 		return;
 	}
@@ -120,10 +120,12 @@ async function processDueJob(job: JobSummary, now: number): Promise<void> {
  * Settings → General → Home tab is off. Nobody would see its result, so its
  * scheduled run is skipped; Run now in the Jobs tab still runs it. A pinned
  * job, or one a card was given (Add card → Use a job), is the user's own and
- * keeps its schedule.
+ * keeps its schedule. Research by email always runs: its answer goes by
+ * email, so nobody needs the card to see it.
  */
-async function pausedWithHome(jobId: number): Promise<boolean> {
-	if (getSettings().homeTab) return false;
+async function pausedWithHome(job: JobSummary): Promise<boolean> {
+	if (getSettings().homeTab || job.job_type === 'email_research') return false;
+	const jobId = job.id;
 	await loadHomeCards();
 	return getHomeCards().some(
 		(c) => c.job_id === jobId && c.card_type !== 'pinned_job' && !cardUsesExistingJob(c)

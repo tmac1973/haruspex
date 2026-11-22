@@ -148,7 +148,8 @@ const CARD_TYPES: CardType[] = [
 		jobType: 'email_research',
 		notifies: true,
 		itemLabel: (item) => String(item.subject ?? ''),
-		defaultSchedule: { kind: 'interval', minutes: 15 }
+		// The backup check: the job picks up on arrival.
+		defaultSchedule: { kind: 'hourly' }
 	},
 	{
 		id: 'news',

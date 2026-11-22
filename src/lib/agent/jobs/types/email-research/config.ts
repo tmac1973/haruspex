@@ -6,7 +6,14 @@ export interface EmailResearchConfig {
 	phrase: string;
 	/** Most requests researched a day; null is no limit. */
 	dailyLimit: number | null;
+	/**
+	 * 'arrival': Rust watches the inbox and the job runs when a request comes
+	 * in, with the schedule as the backup check. 'schedule': only the schedule.
+	 */
+	pickup: EmailPickup;
 }
+
+export type EmailPickup = 'arrival' | 'schedule';
 
 export const DEFAULT_DAILY_LIMIT = 10;
 export const MAX_DAILY_LIMIT = 100;
@@ -14,15 +21,21 @@ export const PHRASE_MIN = 3;
 export const PHRASE_MAX = 60;
 
 export function emailResearchDefaults(): EmailResearchConfig {
-	return { accountId: '', phrase: '', dailyLimit: DEFAULT_DAILY_LIMIT };
+	return { accountId: '', phrase: '', dailyLimit: DEFAULT_DAILY_LIMIT, pickup: 'arrival' };
 }
 
-/** The config stored on a job; anything missing or malformed takes its default. */
+/**
+ * The config stored on a job; anything missing or malformed takes its default,
+ * except `pickup`: a job saved before it existed ran on its schedule only, and
+ * still does.
+ */
 export function parseEmailResearchConfig(typeConfig: string | null): EmailResearchConfig {
 	const out = emailResearchDefaults();
 	if (!typeConfig) return out;
+	out.pickup = 'schedule';
 	try {
 		const raw = JSON.parse(typeConfig) as Partial<EmailResearchConfig>;
+		if (raw.pickup === 'arrival') out.pickup = 'arrival';
 		if (typeof raw.accountId === 'string') out.accountId = raw.accountId;
 		if (typeof raw.phrase === 'string') out.phrase = raw.phrase;
 		if (raw.dailyLimit === null) out.dailyLimit = null;
@@ -39,7 +52,8 @@ export function emailResearchConfigJson(c: EmailResearchConfig): string {
 	return JSON.stringify({
 		accountId: c.accountId,
 		phrase: c.phrase.trim(),
-		dailyLimit: c.dailyLimit
+		dailyLimit: c.dailyLimit,
+		pickup: c.pickup
 	});
 }
 
