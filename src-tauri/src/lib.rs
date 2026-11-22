@@ -785,6 +785,7 @@ pub fn run() {
             integrations::email::commands::email_request_sent_has,
             integrations::email::commands::email_request_reply_seen,
             integrations::email::commands::email_request_move,
+            integrations::email::commands::email_request_reply,
             integrations::email::commands::email_reply_context,
             secrets::secret_available,
             secrets::secret_store_kind,

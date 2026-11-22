@@ -193,6 +193,7 @@ export const IPC = {
 	email_read_full: 'email_read_full',
 	email_reply_context: 'email_reply_context',
 	email_request_move: 'email_request_move',
+	email_request_reply: 'email_request_reply',
 	email_request_reply_seen: 'email_request_reply_seen',
 	email_request_scan: 'email_request_scan',
 	email_request_sent_has: 'email_request_sent_has',

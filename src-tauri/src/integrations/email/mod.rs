@@ -15,6 +15,7 @@
 //! - `smtp_client` — lettre sending, and the reply a draft starts from
 //! - `requests` — Research by email: request scan, the Sent-copy check,
 //!   reply lookup and the job's folders
+//! - `request_reply` — Research by email: the threaded reply to a request
 //! - `auth_results` — Authentication-Results → DKIM, SPF, DMARC
 //! - `sub_agent` — email_summarize_message implementation (focused
 //!   chat completion that compresses one message body)
@@ -26,6 +27,7 @@ pub mod commands;
 pub mod imap_client;
 pub mod parser;
 pub mod provider;
+pub mod request_reply;
 pub mod requests;
 pub mod smtp_client;
 pub mod structure;
