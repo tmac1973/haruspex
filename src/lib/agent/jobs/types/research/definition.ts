@@ -18,6 +18,8 @@ export const researchJobType: JobTypeDefinition = {
 		steps.some((s) => s.prompt.trim().length > 0) ? null : 'At least one step prompt is required.',
 	missingRequired: ({ steps }) =>
 		steps.some((s) => s.prompt.trim().length > 0) ? [] : ['Step prompt'],
+	// The steps are the job: the brief is kept as its description.
+	propose: { settings: {} },
 	planSteps: planResearchSteps,
 	runPipeline: runResearchPipeline
 };

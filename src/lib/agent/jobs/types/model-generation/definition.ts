@@ -18,6 +18,9 @@ import {
 	type JobModelForm
 } from '#lib/agent/jobs/jobModelForm.ts';
 import Editor from '#lib/agent/jobs/types/model-generation/Editor.svelte';
+import { DEFAULT_MODELS_SPEC_PATH } from '#lib/models3d/spec/paths.ts';
+import { parseModelSpec } from '#lib/models3d/spec/parse.ts';
+import { validateModelSpec } from '#lib/models3d/spec/validate.ts';
 
 /** The editor's working state (concrete values; '' = unset). */
 export interface ModelGenerationEditorState {
@@ -180,6 +183,35 @@ export const modelGenerationJobType: JobTypeDefinition = {
 			...(stageModelProblem('creation model', s.chain_create_model) ? ['Creation model'] : []),
 			...(stageModelProblem('animation model', s.chain_animate_model) ? ['Animation model'] : [])
 		];
+	},
+	propose: {
+		settings: {
+			spec_path: {
+				help: `The spec file, relative to the folder. Default ${DEFAULT_MODELS_SPEC_PATH}.`
+			},
+			run_mode: {
+				help: 'attended stops after creation for a review; unattended does not. Default attended.',
+				values: ['attended', 'unattended']
+			},
+			allow_textures: { help: 'Offer the code-drawn texture tool. Default false.' },
+			rounds: {
+				help: `Turns per model before it is marked "needs work", ${MIN_ROUNDS} to ${MAX_ROUNDS}.`
+			},
+			use_git: { help: 'Commit the models. Default true.' }
+		},
+		brief: (draft, brief) => ({ ...draft, config: { ...draft.config, description: brief } }),
+		spec: {
+			path: (config) => String(config.spec_path ?? '').trim() || DEFAULT_MODELS_SPEC_PATH,
+			// A blank path with no description reads as nothing to make.
+			select: (config) =>
+				String(config.spec_path ?? '').trim()
+					? config
+					: { ...config, spec_path: DEFAULT_MODELS_SPEC_PATH },
+			problems: (text) => {
+				const parsed = parseModelSpec(text);
+				return 'errors' in parsed ? parsed.errors : validateModelSpec(parsed.spec);
+			}
+		}
 	},
 	planSteps: planModelSteps,
 	runPipeline: runModelGenerationPipeline

@@ -1,6 +1,6 @@
 ---
 title: Jobs
-description: The Jobs tab — saved prompts run by hand or on a schedule: research, audit, guided planning, autonomous coding, asset generation and 3D models, plus per-job models.
+description: The Jobs tab — saved prompts run by hand or on a schedule: research, audit, guided planning, autonomous coding, asset generation and 3D models, plus per-job models and jobs drafted from a chat.
 ---
 
 # Jobs
@@ -22,6 +22,14 @@ Runs start side by side while their model has room (Settings → Inference → P
 ## Find and organize jobs
 
 A job another job's run started sits under it. **Filter jobs** matches names, descriptions and types. Deleting a job keeps the jobs it started. A job a Home card made has a **Home** badge (see the `home` page).
+
+## Turn a chat into a job
+
+In Chat or the Code tab, ask the model to make a job from the conversation ("make that a planning job"). It drafts one and opens it in the Jobs tab, filled in and not saved: the type, a name, the working directory, the type's settings, and a brief of what the chat settled. Nothing runs until you save it and press Run.
+
+The model can draft research, audit, guided planning, autonomous coding, asset generation and 3D models jobs. A guided-planning job starts from the brief, so its interview asks only what the chat left open. An asset or 3D job can carry a spec the chat wrote; Save writes it into the working directory, and stops if a different file is already at that path.
+
+The model can't schedule a job or start one. It can't draft one in lean mode, from Shell, or from a Code session driven from another computer.
 
 ## Fill in the job editor
 

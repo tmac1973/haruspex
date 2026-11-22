@@ -120,6 +120,7 @@
 	} from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
+	import { listenForJobDrafts } from '#lib/agent/jobs/openDraft.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import { isDetachedRoute, rendersAgentModals } from '#lib/windowRoutes.ts';
@@ -300,7 +301,12 @@
 	onMount(() => {
 		if (detached) return;
 		const stop = listenForCodeWindows(() => setActiveTab('code'));
-		return () => void stop.then((f) => f()).catch(() => {});
+		// A job a detached Code window's turn drafted (`propose_job`).
+		const stopDrafts = listenForJobDrafts();
+		return () => {
+			void stop.then((f) => f()).catch(() => {});
+			void stopDrafts.then((f) => f()).catch(() => {});
+		};
 	});
 
 	onMount(() => {

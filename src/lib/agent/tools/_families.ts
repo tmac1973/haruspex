@@ -95,6 +95,11 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
 		has: byCategory('skills-write')
 	},
 	{
+		id: 'jobs',
+		line: 'jobs — draft a long job for the user to run',
+		has: byCategory('job-proposal')
+	},
+	{
 		id: 'assets',
 		line: 'assets — make game art: textures, sprites and tiles',
 		has: byName('make_asset')

@@ -143,6 +143,46 @@ export interface JobValidateInput {
 	config: Record<string, unknown>;
 }
 
+/**
+ * How `propose_job` (`agent/tools/propose-job.ts`) fills a job of this type
+ * in from a chat. The chat drafts it; the user saves and runs it.
+ */
+export interface JobProposal {
+	/**
+	 * The editor-state keys a chat may set, each with one line for the
+	 * model. Anything else stays at its default: a chain's own fields, and the
+	 * per-stage models, are not a chat's to choose.
+	 */
+	settings: Record<string, ProposalSetting>;
+	/**
+	 * Where the chat's brief goes: what the type starts from in place of its
+	 * own interview. Absent = the brief becomes the job's description.
+	 */
+	brief?: (draft: ProposedFields, brief: string) => ProposedFields;
+	/** For a type that reads a spec file: where it goes, and what is wrong with one. */
+	spec?: {
+		/** The path, relative to the working folder, for this config. */
+		path: (config: Record<string, unknown>) => string;
+		/** Problems with the text, empty when the type can read it. */
+		problems: (text: string) => string[];
+		/** The config pointed at the spec, for a type whose blank path means "no spec". */
+		select?: (config: Record<string, unknown>) => Record<string, unknown>;
+	};
+}
+
+/** One setting a chat may set. Its type is its default's. */
+export interface ProposalSetting {
+	help: string;
+	/** The values a string setting takes. */
+	values?: readonly string[];
+}
+
+/** The parts of a draft a proposal's `brief` may change. */
+export interface ProposedFields {
+	config: Record<string, unknown>;
+	steps: JobStepInput[];
+}
+
 /** One registered job type. */
 export interface JobTypeDefinition {
 	/** The persisted jobs.job_type value. */
@@ -212,6 +252,8 @@ export interface JobTypeDefinition {
 	 * dropped. Audit overrides to persist exactly one step (its prompt).
 	 */
 	persistSteps?: (steps: JobStepInput[]) => JobStepInput[];
+	/** What a chat may fill in through `propose_job`. Absent = it can't propose this type. */
+	propose?: JobProposal;
 	/** The display/execution step list a fresh run starts with. */
 	planSteps: (job: JobWithSteps) => PlannedStep[];
 	/** Execute one run. Must finalize the run and call ctx.onSettled() when done. */
