@@ -127,6 +127,9 @@ function use(answers: Record<string, Answer>) {
 			invokeRouter({
 				comfy_cancel: null,
 				audio_store_url: { hash: HASH, mime: 'video/webm', bytes: 123456 },
+				video_probe_cached: {
+					audio: [{ index: 1, codec: 'opus', channels: 2, sampleRate: 48000 }]
+				},
 				toolchest_json: httpRouter(answers),
 				toolchest_upload: httpRouter(answers)
 			})
@@ -249,7 +252,15 @@ describe('making a clip', () => {
 			method: 'DELETE',
 			path: JOB
 		});
-		expect(result).toMatchObject({ hash: HASH, width: 832, frames: 33, fps: 24, seed: 7 });
+		expect(result).toMatchObject({
+			hash: HASH,
+			width: 832,
+			frames: 33,
+			fps: 24,
+			seed: 7,
+			hasAudio: true
+		});
+		expect(calls('video_probe_cached')[0]).toMatchObject({ hash: HASH });
 		expect(result.url).toBe(`haruspex-video://localhost/${HASH}`);
 	});
 
@@ -267,6 +278,21 @@ describe('making a clip', () => {
 		]);
 		expect(upload.fields).toBe(true);
 		expect(upload.call.body.prompt).toBe('a red fox in the snow');
+	});
+
+	it('sends an end picture as a second form part, alone or with a start', async () => {
+		const end = { name: 'den.png', hash: 'e'.repeat(64) };
+		await generateVideo({ ...request, endImage: end });
+		expect(calls('toolchest_upload')[0].files).toEqual([
+			{ field: 'end_image', filename: 'den.png', hash: end.hash, cache: 'image', bytes: null }
+		]);
+		await generateVideo({
+			...request,
+			startImage: { name: 'fox.png', hash: 'f'.repeat(64) },
+			endImage: end
+		});
+		const both = calls('toolchest_upload')[1]!.files as { field: string }[];
+		expect(both.map((f) => f.field)).toEqual(['start_image', 'end_image']);
 	});
 
 	it('sends to a stopped instance, which toolchest starts, but not a failed one', async () => {

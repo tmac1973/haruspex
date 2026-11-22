@@ -545,6 +545,110 @@ pub async fn video_frames(
     })
 }
 
+/// One frame of a clip, kept at full size.
+#[derive(serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct StillRequest {
+    /// A clip in the working folder…
+    pub path: Option<String>,
+    /// …or a generated clip in the cache, by hash.
+    pub video_hash: Option<String>,
+    /// `time` (with `at_secs`), `first` or `last`.
+    pub which: String,
+    pub at_secs: Option<f64>,
+    /// A `.png` in the episode folder; default `<episode>/.haruspex/stills/`.
+    pub out: Option<String>,
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct StillWritten {
+    /// Relative to the working folder.
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+    /// `data:image/jpeg;base64,…`, at most 960 wide, to show in the chat.
+    pub preview_data_url: String,
+}
+
+/// A cached clip's file, by an already checked hash.
+fn cached_clip(app: &tauri::AppHandle, hash: &str) -> Result<std::path::PathBuf, String> {
+    if !crate::blob_cache::is_valid_hash(hash) {
+        return Err("That is not a generated clip's hash.".into());
+    }
+    crate::audio_cache::protocol::locate(app, hash)
+        .map(|(_, path)| path)
+        .map_err(|_| "That clip is no longer in the cache.".to_string())
+}
+
+/// Take one full-size frame of a clip (the true last frame, the first, or one
+/// at a time) as a PNG in the episode folder.
+#[tauri::command]
+pub async fn video_still_extract(
+    app: tauri::AppHandle,
+    working_dir: String,
+    episode: String,
+    request: StillRequest,
+    settings: super::project::VideoSettings,
+) -> Result<StillWritten, String> {
+    use super::frames::{self, StillAt};
+    use base64::Engine;
+    let found = binaries::resolve(&settings.overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?.to_string();
+    let (file, stem) = match (request.path.as_deref(), request.video_hash.as_deref()) {
+        (Some(p), None) => {
+            let f = paths::resolve_media(&working_dir, p, &settings.intro, &settings.outro)?;
+            let stem = f
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("clip")
+                .to_string();
+            (f, stem)
+        }
+        (None, Some(h)) => (cached_clip(&app, h)?, format!("clip-{}", &h[..12])),
+        _ => return Err("Give a clip's path or a generated clip, not both.".into()),
+    };
+    let (at, tag) = match (request.which.as_str(), request.at_secs) {
+        ("last", None) => (StillAt::Last, "last".to_string()),
+        ("first", None) => (StillAt::First, "first".to_string()),
+        ("time", Some(t)) if t.is_finite() && t >= 0.0 => (StillAt::Secs(t), format!("t{t:.2}")),
+        _ => return Err("Give at_secs with which = time, or which = first or last alone.".into()),
+    };
+    let episode_dir = paths::resolve_episode(&working_dir, &episode)?;
+    let out = paths::still_target(
+        &working_dir,
+        &episode_dir,
+        request.out.as_deref(),
+        &format!("{stem}-{tag}.png"),
+    )?;
+    let (width, height) = frames::extract_still(&ffmpeg, &file, at, &out).await?;
+    let jpeg = frames::preview_jpeg(&out, 960)?;
+    Ok(StillWritten {
+        path: paths::display_path(&working_dir, &out),
+        width,
+        height,
+        preview_data_url: format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(jpeg)
+        ),
+    })
+}
+
+/// ffprobe a generated clip in the cache: its length, picture and sound.
+#[tauri::command]
+pub async fn video_probe_cached(
+    app: tauri::AppHandle,
+    hash: String,
+    settings: super::project::VideoSettings,
+) -> Result<probe::ClipInfo, String> {
+    let found = binaries::resolve(&settings.overrides).await;
+    let ffprobe = found.require(Tool::Ffprobe)?.to_string();
+    let file = cached_clip(&app, &hash)?;
+    probe::probe_file(&ffprobe, &file, hash).await
+}
+
 #[derive(serde::Serialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]

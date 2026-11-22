@@ -63,4 +63,31 @@ describe('parseGenerationModels', () => {
 		});
 		expect(familyOfRecipe('flux2-klein-4b')).toBeNull();
 	});
+
+	it('reads end_image and the audio input from a video instance, and keeps older metas', () => {
+		const video = (id: string, capabilities: string[] | undefined) => ({
+			id,
+			owned_by: 'llama-toolchest',
+			meta: {
+				kind: 'video',
+				recipe: 'wan22-i2v',
+				...(capabilities ? { capabilities } : {}),
+				video: { default_fps: 16, default_frames: 33, default_size: '832x480' }
+			}
+		});
+		const [lightning, s2v, old] = parseGenerationModels(
+			{
+				data: [
+					video('lightning1116', ['start_image', 'end_image']),
+					video('s2v', ['start_image', 'audio']),
+					video('ti2v', undefined)
+				]
+			},
+			'video'
+		);
+		expect(lightning.capabilities).toContain('end_image');
+		expect(s2v.capabilities).not.toContain('end_image');
+		expect(old.capabilities).toEqual([]);
+		expect(old.video?.defaultFps).toBe(16);
+	});
 });

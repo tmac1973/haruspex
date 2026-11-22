@@ -23,6 +23,8 @@ export interface VideoRequest {
 	fps: number;
 	seed: number;
 	startImage?: VideoStartImage;
+	/** A picture the clip ends on, on an instance with `end_image`. */
+	endImage?: VideoStartImage;
 }
 
 export interface VideoProgress {
@@ -46,6 +48,8 @@ export interface VideoResult {
 	seed: number;
 	/** The instance that made it. */
 	model: string;
+	/** The clip has a sound track (LTX-2.3 makes one; Wan doesn't). */
+	hasAudio: boolean;
 }
 
 /**

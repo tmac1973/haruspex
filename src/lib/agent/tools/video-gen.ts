@@ -1,6 +1,6 @@
 /**
  * `generate_video`: a short clip from a description, and optionally a picture
- * to start from, made by the llama-toolchest video instance set up in
+ * to start from and one to end on, made by the llama-toolchest video instance set up in
  * Settings → Video generation.
  *
  * Always in the background (`_videoJob.ts`): a clip takes minutes, so the
@@ -104,21 +104,15 @@ function argsRefusal(args: Record<string, unknown>, ctx: ToolContext): string | 
 	return typeof seed === 'string' ? seed : null;
 }
 
-/**
- * The picture the clip starts from, kept in the image cache, and whether the
- * clip is portrait: as asked, else the picture's way round. Or why not.
- */
-async function startFrom(
+type Kept = { image: VideoStartImage; portrait: boolean };
+
+/** The picture `field` names, kept in the image cache, and its way round. Or why not. */
+async function keptPicture(
+	field: 'start_image' | 'end_image',
 	args: Record<string, unknown>,
-	instance: ToolchestInstance,
 	ctx: ToolContext
-): Promise<{ image?: VideoStartImage; portrait: boolean } | string> {
-	const asked = trimmed(args.orientation);
-	if (!trimmed(args.start_image)) return { portrait: asked === 'portrait' };
-	if (!instance.capabilities.includes('start_image')) {
-		return `${instance.id} can't start from a picture.`;
-	}
-	const source = await resolveImage(trimmed(args.start_image), 'start_image', ctx);
+): Promise<Kept | string> {
+	const source = await resolveImage(trimmed(args[field]), field, ctx);
 	if (typeof source === 'string') return source;
 	const input = await hashedInput(
 		source.input,
@@ -126,10 +120,48 @@ async function startFrom(
 		source.height,
 		ctx.conversationId ?? null
 	);
-	if (!('hash' in input)) return 'start_image could not be kept.';
+	if (!('hash' in input)) return `${field} could not be kept.`;
 	return {
 		image: { name: input.name, hash: input.hash },
-		portrait: asked ? asked === 'portrait' : source.height > source.width
+		portrait: source.height > source.width
+	};
+}
+
+/** Why the instance can't take the pictures asked for, or null. */
+function pictureRefusal(wants: (f: string) => boolean, instance: ToolchestInstance): string | null {
+	const can = (c: string) => instance.capabilities.includes(c);
+	if (wants('start_image') && !can('start_image'))
+		return `${instance.id} can't start from a picture.`;
+	if (wants('end_image') && !can('end_image')) {
+		const only = can('start_image') ? ' It can only start from a picture.' : '';
+		return `${instance.id} can't end on a picture.${only}`;
+	}
+	return null;
+}
+
+/**
+ * The pictures the clip starts from and ends on, kept in the image cache, and
+ * whether the clip is portrait: as asked, else the start (or end) picture's
+ * way round. Or why not.
+ */
+export async function picturesFrom(
+	args: Record<string, unknown>,
+	instance: ToolchestInstance,
+	ctx: ToolContext
+): Promise<{ image?: VideoStartImage; endImage?: VideoStartImage; portrait: boolean } | string> {
+	const asked = trimmed(args.orientation);
+	const wants = (f: string) => trimmed(args[f]) !== '';
+	const refused = pictureRefusal(wants, instance);
+	if (refused) return refused;
+	const start = wants('start_image') ? await keptPicture('start_image', args, ctx) : null;
+	if (typeof start === 'string') return start;
+	const end = wants('end_image') ? await keptPicture('end_image', args, ctx) : null;
+	if (typeof end === 'string') return end;
+	const shape = start ?? end;
+	return {
+		...(start ? { image: start.image } : {}),
+		...(end ? { endImage: end.image } : {}),
+		portrait: asked ? asked === 'portrait' : (shape?.portrait ?? false)
 	};
 }
 
@@ -140,7 +172,8 @@ registerTool({
 		function: {
 			name: 'generate_video',
 			description:
-				'Make a short video clip from a description, optionally starting from a picture, with the ' +
+				'Make a short video clip from a description, optionally starting from a picture and ' +
+				'ending on another, with the ' +
 				'video generation set up in Settings → Video generation. It takes minutes and always runs ' +
 				'in the background: the answer says it started, and the clip arrives later as a ' +
 				'notification. Use it when the user asks for a video, clip or animation.',
@@ -167,6 +200,12 @@ registerTool({
 							'A picture to start from: a haruspex-img:// URL from this conversation, or an image ' +
 							'file in the working folder.'
 					},
+					end_image: {
+						type: 'string',
+						description:
+							'A picture to end on, as for start_image, when the model can. With start_image, ' +
+							'the clip moves from one to the other.'
+					},
 					seed: SEED_PARAM,
 					title: { type: 'string', description: 'A short title for the player and the file.' },
 					path: {
@@ -192,7 +231,7 @@ registerTool({
 		if (!instance.video) {
 			return toolResult(toolError(`${instance.id} says nothing of the clips it makes.`));
 		}
-		const start = await startFrom(args, instance, ctx);
+		const start = await picturesFrom(args, instance, ctx);
 		if (typeof start === 'string') return toolResult(toolError(start));
 
 		const asked = typeof args.seconds === 'number' && args.seconds > 0 ? args.seconds : undefined;
@@ -220,7 +259,8 @@ registerTool({
 			frames: fit.frames,
 			fps: fit.fps,
 			seed: seedOf(args.seed) as number,
-			...(start.image ? { startImage: start.image } : {})
+			...(start.image ? { startImage: start.image } : {}),
+			...(start.endImage ? { endImage: start.endImage } : {})
 		};
 		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx);
 	}

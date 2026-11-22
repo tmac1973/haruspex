@@ -201,4 +201,42 @@ describe('a finished clip’s notice', () => {
 			images: []
 		});
 	});
+
+	it('refuses an end picture on an instance that can only start from one', async () => {
+		const out = await executeTool(
+			'generate_video',
+			{ prompt: 'a fox', end_image: 'fox.png' },
+			chat
+		);
+		expect(out.result).toContain("ti2v can't end on a picture. It can only start from a picture.");
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'task_create')).toBe(false);
+	});
+
+	it('says whether a finished clip has sound', () => {
+		const task = {
+			id: 'video-2',
+			kind: 'video',
+			owner: 'chat:c1',
+			label: 'Making Fox',
+			state: 'done',
+			follower: 'frontend',
+			result: {
+				hash: 'a'.repeat(64),
+				mime: 'video/webm',
+				title: 'Fox',
+				width: 832,
+				height: 480,
+				frames: 33,
+				fps: 24,
+				seed: 7,
+				model: 'ltx',
+				hasAudio: true,
+				notes: [],
+				saved: null
+			}
+		} as unknown as BackgroundTask;
+		expect(noticeFor(task).text).toContain(
+			'Video ready (832×480, 1.4 s, ltx, seed 7, with sound).'
+		);
+	});
 });
