@@ -210,6 +210,8 @@ export const IPC = {
 	email_test_connection: 'email_test_connection',
 	email_test_smtp: 'email_test_smtp',
 	email_trash: 'email_trash',
+	email_watch_set: 'email_watch_set',
+	email_watch_status: 'email_watch_status',
 	engine_enabled: 'engine_enabled',
 	engine_events: 'engine_events',
 	engine_reply: 'engine_reply',

@@ -350,6 +350,7 @@ pub fn run() {
         .manage(WhisperServer::new())
         .manage(WhisperServer::video())
         .manage(camera::watcher::WatcherRegistry::default())
+        .manage(integrations::email::watch::EmailWatch::default())
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
         .manage(code_tools::claims::CodeSessionClaims::default())
@@ -791,6 +792,8 @@ pub fn run() {
             integrations::email::commands::email_send,
             integrations::email::commands::email_trash,
             integrations::email::commands::email_request_scan,
+            integrations::email::commands::email_watch_set,
+            integrations::email::commands::email_watch_status,
             integrations::email::commands::email_request_sent_has,
             integrations::email::commands::email_request_reply_seen,
             integrations::email::commands::email_request_move,
@@ -924,6 +927,8 @@ pub fn run() {
                     app.state::<camera::watcher::WatcherRegistry>()
                         .stop_all()
                         .await;
+                    app.state::<integrations::email::watch::EmailWatch>()
+                        .stop_all();
                     let _ = app.state::<whisper::VideoWhisper>().0.stop().await;
                     let _ = tts.stop().await;
                     // ~7 GB of VRAM for Ming: left behind, it outlived the app.
