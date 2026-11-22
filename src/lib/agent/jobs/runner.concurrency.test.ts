@@ -24,6 +24,21 @@ vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => m.inferenceQueue());
 
 useRunnerFixtures();
 
+// A Research by email run that holds until the test lets it go, so the
+// runner's queueing is what the test sees.
+const emailHold = vi.hoisted(() => ({ release: [] as Array<() => void> }));
+vi.mock('#lib/agent/jobs/types/email-research/pipeline.ts', async (orig) => ({
+	...(await orig<object>()),
+	runEmailResearchPipeline: async (ctx: {
+		finalizeRun: (s: string, e: null) => void;
+		onSettled: () => void;
+	}) => {
+		await new Promise<void>((resolve) => emailHold.release.push(resolve));
+		ctx.finalizeRun('succeeded', null);
+		ctx.onSettled();
+	}
+}));
+
 const REMOTE = 'http://other:8000/v1';
 
 /** Each job in its own folder unless a test says otherwise, so only the lane decides. */
@@ -136,6 +151,23 @@ describe('jobs runner — runs side by side', () => {
 		await enqueue(1);
 		expect(getActiveRuns().map((r) => r.jobId)).toEqual([1]);
 		expect(getPendingQueue().map((q) => q.jobId)).toEqual([2, 1]);
+	});
+
+	it('queues a second run of a Research by email job behind its first', async () => {
+		laneState.slots = { local: 4 };
+		jobs({ 1: { job_type: 'email_research', working_dir: '', steps: [] } });
+		heldTurns();
+		const { enqueue, getActiveRuns, getPendingQueue } = await freshRunner();
+		await enqueue(1);
+		await enqueue(1);
+		expect(getActiveRuns().map((r) => r.jobId)).toEqual([1]);
+		expect(getPendingQueue().map((q) => q.jobId)).toEqual([1]);
+		emailHold.release.shift()?.();
+		await tick();
+		await tick();
+		expect(getActiveRuns().map((r) => r.jobId)).toEqual([1]);
+		expect(getPendingQueue()).toEqual([]);
+		emailHold.release.shift()?.();
 	});
 
 	it('runs no two jobs that may interview the user at once', async () => {

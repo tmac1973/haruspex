@@ -240,6 +240,7 @@
 		if (!name.trim()) return 'Name is required.';
 		return (
 			typeDef.validate?.({
+				jobId: jobId === 'new' ? undefined : jobId,
 				name,
 				workingDir,
 				steps: $state.snapshot(steps),

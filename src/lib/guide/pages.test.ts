@@ -39,6 +39,7 @@ const PAGES = [
 	'media-skills',
 	'jobs',
 	'job-types',
+	'email-research',
 	'3d-models',
 	'memory',
 	'images',
