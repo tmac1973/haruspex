@@ -70,11 +70,18 @@ features for one workflow.
     replacements in a saved voice, makes several takes, transcribes them to
     pick the one that said the words, mutes the original span and places the
     take.
+- **Speaking clips and sections** with llama-toolchest's Wan2.2 S2V set:
+  `generate_video` takes an `audio` input (with a portrait), and the sequence
+  spec gets a speaking section whose lines are spoken first. One S2V window is
+  made per stretch of speech, each from the same portrait, with the same audio
+  placed under the picture.
 - Guide pages updated in the same PRs as each user-visible change.
 
 ## Non-goals
 
-- Lip sync inside a replaced span.
+- Lip sync inside a replaced span. That includes remaking the span's picture
+  with S2V: a generated face cut into real footage is unlikely to match, so
+  it waits until S2V has been tried on real footage.
 - Voice fine-tuning (XTTS-style training) or speaker-similarity scoring.
 - Getting a voice from the web, or any reference clip without the user's
   consent checkbox.
@@ -142,6 +149,9 @@ features for one workflow.
   copying a person's voice without their consent is not allowed.
 - Changing a Tauri command or `#[ts(export)]` struct means
   `./scripts/export-ipc-types.sh`; user-visible changes update `docs/guide/`.
+- Speaking sections need a llama-toolchest with the Wan2.2 S2V set and the
+  `audio` video input (tmac1973/llama-toolchest#682). S2V makes silent video
+  at a fixed 16 fps, and its start image is an identity reference.
 - Run time: about 2–4 hours for 2 minutes on LTX-2.3 Full; the job must report
   progress and resume.
 
@@ -195,3 +205,9 @@ features for one workflow.
   Kokoro stays the default and the read-aloud voice.
 - **Jobs from Chat/Code** → not in v1; job options and spec stay plain data
   so a `propose_job` tool can come later.
+- **Wan2.2 S2V** → added after the speech phases as phase 15: an `audio`
+  input on `generate_video` and a speaking section kind, with windows made
+  from the same portrait rather than chained by last frame.
+- **The `audio` capability** → toolchest's `audio` means an audio input. A
+  set's sound output is not in its meta, so Haruspex finds it by probing the
+  clip.

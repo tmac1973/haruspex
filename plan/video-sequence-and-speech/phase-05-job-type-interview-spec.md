@@ -55,7 +55,7 @@ phases land, so this phase ships a working "brief → reviewed spec" job.
 2. Context: `buildSpecContext` lists clips and images in the episode folder
    and one level of subfolders, with each clip's length, size and whether it
    has sound; and the instance's limits (size, fps, longest clip, start/end
-   image, sound).
+   image).
 3. Interview stage (skipped in Unattended unless step 4's first attempt fails
    validation with an error the brief cannot settle):
    - Run one job turn with `toolAllowlist: [ask_user_question]` and the
