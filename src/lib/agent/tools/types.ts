@@ -393,6 +393,9 @@ export interface ToolRegistration {
 		| 'tasks'
 		/** `ask_specialist`: the Code tab, when the session has a specialist on. */
 		| 'specialist'
+		/** `propose_job`: drafts a job for the user to save and run. Interactive
+		 *  Chat and Code-tab turns, from this computer. */
+		| 'job-proposal'
 		/** Looks and listens through Settings → Cameras (`_cameraGate.ts`). Chat only,
 		 *  with a model on this computer or a trusted server. */
 		| 'camera';

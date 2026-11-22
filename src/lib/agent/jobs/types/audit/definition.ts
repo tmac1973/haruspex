@@ -73,6 +73,19 @@ export const auditJobType: JobTypeDefinition = {
 		return null;
 	},
 	missingRequired: ({ steps }) => (steps[0]?.prompt.trim() ? [] : ['Audit prompt']),
+	propose: {
+		settings: {
+			num_runs: { help: 'Independent runs of the prompt, 1 to 20. Default 5.' },
+			output_file: { help: 'The report file, relative to the folder. Default AUDIT.md.' },
+			read_only: { help: 'Runs may only read the code. Default true.' },
+			max_iterations: { help: 'Model steps per run, 1 to 400. Default 200.' }
+		},
+		// The brief is what to audit: the one prompt every run gets.
+		brief: (draft, brief) =>
+			draft.steps[0]?.prompt.trim()
+				? draft
+				: { ...draft, steps: [{ prompt: brief, deep_research: false }] }
+	},
 	// Audit jobs persist exactly one step: the audit prompt.
 	persistSteps: (steps) =>
 		steps

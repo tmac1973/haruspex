@@ -149,6 +149,20 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	},
 	missingRequired: ({ config }) =>
 		(config as unknown as AutonomousCodingEditorState).plan_dir.trim() ? [] : ['Plan directory'],
+	// The plan files are the brief: the run reads them, so the chat's brief is
+	// kept as the job's description.
+	propose: {
+		settings: {
+			plan_dir: { help: 'The folder of plan files, relative to the working folder. Required.' },
+			use_git: { help: 'Use git at all. Default true.' },
+			create_branch: { help: 'Commit on a new branch. Default true.' },
+			web_research: { help: 'The preflight interview may search the web. Default true.' },
+			mute_preflight: {
+				help: 'Settle open decisions without asking, for a plan whose questions the chat already answered. Default false.'
+			},
+			max_turns: { help: `Model steps per coding turn, ${MIN_MAX_TURNS} to ${MAX_MAX_TURNS}.` }
+		}
+	},
 	planSteps: planCodingSteps,
 	runPipeline: runAutonomousCodingPipeline
 };

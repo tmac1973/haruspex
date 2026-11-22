@@ -48,6 +48,7 @@ import '#lib/agent/tools/youtube-upload.ts';
 import '#lib/agent/tools/save-generated.ts';
 import '#lib/agent/tools/skills.ts';
 import '#lib/agent/tools/create-skill.ts';
+import '#lib/agent/tools/propose-job.ts';
 import '#lib/agent/tools/guide.ts';
 import '#lib/agent/tools/load-tools.ts';
 import '#lib/agent/tools/haruspex-feedback.ts';

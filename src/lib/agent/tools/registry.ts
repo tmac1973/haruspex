@@ -368,7 +368,8 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		reg.category === 'video' ||
 		reg.category === 'interaction' ||
 		reg.category === 'desktop' ||
-		reg.category === 'camera'
+		reg.category === 'camera' ||
+		reg.category === 'job-proposal'
 	);
 }
 
@@ -386,6 +387,12 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	const helper = helperForTool(reg.schema.function.name);
 	if (helper) {
 		return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
+	}
+	// A job's draft opens in the Jobs tab for someone at this computer to run.
+	// Chat and the Code tab; Shell has no conversation a job grows out of.
+	if (reg.category === 'job-proposal') {
+		const chat = !opts.codeMode && !opts.shellMode;
+		return opts.interactive && !opts.codeRemote && (chat || isCodeTab(opts));
 	}
 	// Subtasks are the user's to switch off (Settings → Code → Subtasks).
 	if (reg.schema.function.name === 'delegate' && getSettings().codeSubtasks === 'off') {

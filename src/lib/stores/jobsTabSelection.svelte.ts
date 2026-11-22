@@ -4,7 +4,7 @@
  * when it changes. One at a time, a job to show or a new job to start from;
  * a new one replaces the last.
  */
-import type { JobType } from '#lib/stores/jobs.svelte.ts';
+import type { JobStepInput, JobType } from '#lib/stores/jobs.svelte.ts';
 
 /** A new job's starting values, shown unsaved in the editor. */
 export interface JobDraft {
@@ -13,6 +13,14 @@ export interface JobDraft {
 	workingDir: string;
 	/** The type's settings, laid over its defaults. */
 	config: Record<string, unknown>;
+	description?: string;
+	/** The job's authored steps; absent = one empty step. */
+	steps?: JobStepInput[];
+	/**
+	 * A spec for the type to read (a proposed job's), written to the type's
+	 * spec path when the user saves, before the job is created.
+	 */
+	spec?: string;
 }
 
 export type JobsTabSelection =

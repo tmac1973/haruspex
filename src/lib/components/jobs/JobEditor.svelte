@@ -37,6 +37,7 @@
 		listJobTypes
 	} from '#lib/agent/jobs/types/index.ts';
 	import type { JobDraft } from '#lib/stores/jobsTabSelection.svelte.ts';
+	import { writeDraftSpec } from '#lib/agent/jobs/draftSpec.ts';
 
 	// Platform-gated types (autonomous coding) hide from the picker until
 	// their probe says otherwise; idempotent, so fire per mount.
@@ -67,6 +68,8 @@
 	// unsaved edits.
 	let typeConfig = $state<Record<string, unknown>>({});
 	let typeConfigStash: Partial<Record<JobType, Record<string, unknown>>> = {};
+	/** A proposed job's spec, written on its first save while the type is still the draft's. */
+	let draftSpec = $state.raw<{ jobType: JobType; text: string } | null>(null);
 
 	const typeDef = $derived(getJobType(jobType)!);
 	const TypeEditor = $derived(typeDef.Editor);
@@ -177,10 +180,14 @@
 			typeConfig = getJobType('research')!.configDefaults();
 			modelForm = emptyModelForm();
 			modelFormVersion++;
+			draftSpec = null;
 			const from = untrack(() => draft);
 			if (from) {
 				name = from.name;
+				description = from.description ?? '';
 				workingDir = from.workingDir;
+				if (from.steps?.length) steps = from.steps.map((s) => ({ ...s }));
+				draftSpec = from.spec ? { jobType: from.jobType, text: from.spec } : null;
 				jobType = from.jobType;
 				typeConfig = { ...getJobType(from.jobType)!.configDefaults(), ...from.config };
 				openSection = 'type';
@@ -193,6 +200,7 @@
 		}
 		loading = true;
 		baseline = null;
+		draftSpec = null;
 		try {
 			const job = await getJob(id);
 			if (!job) {
@@ -256,6 +264,22 @@
 			.filter((s) => s.prompt.length > 0);
 	}
 
+	/**
+	 * A proposed job's spec, written before the job is created so a job is
+	 * never saved without the spec it reads. Null when done or there is none.
+	 */
+	async function writeProposedSpec(dir: string): Promise<string | null> {
+		const path = proposedSpecPath;
+		return draftSpec && path ? writeDraftSpec(dir, path, draftSpec.text) : null;
+	}
+
+	/** Where Save writes the proposed spec, while the job is still the draft's type. */
+	const proposedSpecPath = $derived(
+		jobId === 'new' && draftSpec?.jobType === jobType
+			? typeDef.propose?.spec?.path(typeConfig)
+			: undefined
+	);
+
 	/** True when the job (and its steps) reached the DB. */
 	async function save(): Promise<boolean> {
 		const v = validate();
@@ -305,6 +329,11 @@
 
 			let id: number;
 			if (jobId === 'new') {
+				const specProblem = await writeProposedSpec(input.working_dir);
+				if (specProblem) {
+					error = specProblem;
+					return false;
+				}
 				const created = await createJob(input);
 				if (created === null) {
 					error = 'Failed to create job.';
@@ -606,6 +635,11 @@
 
 		{#if isRunning}
 			<p class="running-note">This job is running. Changes apply to its next run.</p>
+		{/if}
+		{#if proposedSpecPath}
+			<p class="running-note" title="The spec the chat wrote for this job.">
+				Save also writes the spec to {proposedSpecPath}.
+			</p>
 		{/if}
 		{#if error}
 			<div class="error-box editor-error">{error}</div>

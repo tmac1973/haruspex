@@ -15,6 +15,8 @@ import {
 	type AssetRunMode
 } from '#lib/agent/jobs/types/asset-generation/config.ts';
 import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
+import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
+import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
 import Editor from '#lib/agent/jobs/types/asset-generation/Editor.svelte';
 
@@ -198,6 +200,37 @@ export const assetGenerationJobType: JobTypeDefinition = {
 	},
 	missingRequired: ({ config }) =>
 		(config as unknown as AssetGenerationEditorState).spec_path.trim() ? [] : ['Spec path'],
+	propose: {
+		settings: {
+			spec_path: { help: `The spec file, relative to the folder. Default ${DEFAULT_SPEC_PATH}.` },
+			run_mode: {
+				help: 'attended stops for the user to approve the style anchor; unattended does not. Default attended.',
+				values: ['attended', 'unattended']
+			},
+			target_size: {
+				help: `Output edge in pixels, a power of two from ${MIN_TARGET_SIZE} to ${MAX_TARGET_SIZE}. Default ${DEFAULT_TARGET_SIZE}.`
+			},
+			code_textures: {
+				help: 'Draw textures in code instead of with the image model. Default true.'
+			},
+			texture_variants: {
+				help: `Tiles per code-drawn texture, 1 to ${MAX_TEXTURE_VARIANTS}. Default ${DEFAULT_TEXTURE_VARIANTS}.`
+			},
+			vision_judge: {
+				help: 'Score each asset against the anchor with a vision model. Default true.'
+			},
+			use_git: { help: 'Commit the assets. Default true.' }
+		},
+		// What to make, for a run that writes the spec itself.
+		brief: (draft, brief) => ({ ...draft, config: { ...draft.config, description: brief } }),
+		spec: {
+			path: (config) => String(config.spec_path ?? '').trim() || DEFAULT_SPEC_PATH,
+			problems: (text) => {
+				const parsed = parseAssetSpec(text);
+				return 'errors' in parsed ? parsed.errors : validateAssetSpec(parsed.spec);
+			}
+		}
+	},
 	planSteps: planAssetSteps,
 	runPipeline: runAssetGenerationPipeline
 };

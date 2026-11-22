@@ -4,7 +4,8 @@ import { runGuidedPlanningPipeline } from '#lib/agent/jobs/types/guided-planning
 import {
 	type GuidedPlanningRunMode,
 	type GuidedPlanningVerification,
-	parseGuidedPlanningConfig
+	parseGuidedPlanningConfig,
+	VERIFICATION_MODES
 } from '#lib/agent/jobs/types/guided-planning/config.ts';
 import { DEFAULT_MAX_TURNS } from '#lib/agent/jobs/types/autonomous-coding/config.ts';
 import {
@@ -251,6 +252,31 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 				? ['3D animation model']
 				: [])
 		];
+	},
+	propose: {
+		settings: {
+			verification: {
+				help: 'How hard the plan is checked: full, lite or skip. Default full.',
+				values: VERIFICATION_MODES
+			},
+			run_mode: {
+				help: 'attended asks for approval at the end; unattended_plan does not. Default attended.',
+				values: ['attended', 'unattended_plan']
+			},
+			overview_only: { help: 'Stop after the overview. Default false.' },
+			web_research: { help: 'The interview and writing may search the web. Default true.' },
+			use_git: { help: 'The plan may assume git. Default true.' },
+			plan_output_dir: {
+				help: 'Where the plan goes, relative to the folder. Default plan/<name>/.'
+			},
+			planning_skill: { help: 'A planning skill by name, for this kind of project.' }
+		},
+		// The interview settles only what the description leaves open, so a
+		// brief that carries the chat's decisions stands in for most of it.
+		brief: (draft, brief) => ({
+			...draft,
+			config: { ...draft.config, initial_description: brief }
+		})
 	},
 	planSteps: planGuidedSteps,
 	runPipeline: runGuidedPlanningPipeline
