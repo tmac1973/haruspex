@@ -3555,6 +3555,22 @@ fn email_requests_count_by_claim_time_and_reply_ids_cross_jobs() {
     assert_eq!(db.email_requests_count_since(a, 1000).unwrap(), 1);
     assert_eq!(db.email_requests_count_since(a, 0).unwrap(), 2);
     assert_eq!(db.email_requests_count_since(b, 0).unwrap(), 0);
+    // One another computer took is not this computer's claim.
+    let two = db
+        .email_request_get(a, "two@x.example")
+        .unwrap()
+        .unwrap()
+        .id;
+    db.email_request_update(
+        two,
+        &EmailRequestPatch {
+            state: Some("ignored".into()),
+            reason: Some("claimed_elsewhere".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(db.email_requests_count_since(a, 0).unwrap(), 1);
     let hit = db
         .email_request_by_reply_id("reply-two@x.example")
         .unwrap()

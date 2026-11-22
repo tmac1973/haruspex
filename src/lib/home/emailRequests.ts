@@ -32,7 +32,8 @@ export const REASON_LABELS: Record<string, string> = {
 	no_sent_copy: 'No copy in Sent',
 	daily_limit: 'Daily limit',
 	research_failed: 'Research failed',
-	send_failed: "Couldn't send"
+	send_failed: "Couldn't send",
+	claimed_elsewhere: 'Another computer took it'
 };
 
 export function stateLabel(state: string): string {

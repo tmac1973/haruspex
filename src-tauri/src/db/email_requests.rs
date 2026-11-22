@@ -16,11 +16,12 @@ const STATES: [&str; 6] = [
     "failed",
     "ignored",
 ];
-const REASONS: [&str; 4] = [
+const REASONS: [&str; 5] = [
     "no_sent_copy",
     "daily_limit",
     "research_failed",
     "send_failed",
+    "claimed_elsewhere",
 ];
 const REPLY_KINDS: [&str; 2] = ["answer", "failure"];
 
@@ -343,11 +344,12 @@ impl Database {
     }
 
     /// How many of the job's requests were claimed for research at or after
-    /// `since_ms`.
+    /// `since_ms`. One another computer took is not counted.
     pub fn email_requests_count_since(&self, job_id: i64, since_ms: i64) -> Result<i64, String> {
         self.conn()
             .query_row(
-                "SELECT count(*) FROM email_requests WHERE job_id = ?1 AND claimed_at >= ?2",
+                "SELECT count(*) FROM email_requests WHERE job_id = ?1 AND claimed_at >= ?2
+                 AND reason IS NOT 'claimed_elsewhere'",
                 params![job_id, since_ms],
                 |r| r.get(0),
             )

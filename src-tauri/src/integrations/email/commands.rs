@@ -17,7 +17,7 @@ use super::imap_client::{self, ListFilters};
 use super::parser::{EmailListing, NormalizedMessage};
 use super::provider::{saves_sent_copy, EmailProviderPreset, PRESETS};
 use super::request_reply::{self, ReplyInput};
-use super::requests::{self, RequestCandidate, RequestFolder};
+use super::requests::{self, MoveOutcome, RequestCandidate, RequestFolder};
 use super::smtp_client::{self, OutgoingMessage, ReplyContext};
 use super::sub_agent::{self, SummarizerInput};
 use super::watch::{EmailWatch, EmailWatchEntry, EmailWatchStatus};
@@ -226,12 +226,13 @@ pub async fn email_request_reply_seen(
 }
 
 /// Research by email: move a request to one of the job's two folders.
+/// `gone` when it had already left the Inbox, so another computer has it.
 #[tauri::command]
 pub async fn email_request_move(
     account: EmailAccount,
     handle: String,
     folder: RequestFolder,
-) -> Result<(), String> {
+) -> Result<MoveOutcome, String> {
     requests::move_to(&account, &handle, folder).await
 }
 
