@@ -89,10 +89,12 @@ features for one workflow.
   keeps the job's options and spec as plain data so that tool is a small
   addition later.
 - A generic OpenAI `/v1/audio/speech` backend.
-- Changes to llama-toolchest. The asks (expose `/tts` seed, speed and
-  temperature; a Qwen3-TTS catalog entry; research multi-frame conditioning)
-  are filed as issues on `tmac1973/llama-toolchest`, and Haruspex uses them by
-  capability when they land.
+- Changes to llama-toolchest. The speech asks are done
+  (tmac1973/llama-toolchest#683: the Qwen3-TTS card, and the `/tts` fields
+  documented). Multi-frame conditioning waits on sd.cpp
+  (leejet/stable-diffusion.cpp#2399, tracked in
+  tmac1973/llama-toolchest#681), and Haruspex uses it by capability when it
+  lands.
 - Applying transcript edits from the viewer without the assistant.
 - Video upscaling of generated clips.
 - Running the speech replacement as a job; it stays a chat / Code skill.
@@ -211,3 +213,8 @@ features for one workflow.
 - **The `audio` capability** → toolchest's `audio` means an audio input. A
   set's sound output is not in its meta, so Haruspex finds it by probing the
   clip.
+- **Qwen3-TTS on llama-toolchest** (from tmac1973/llama-toolchest#683) →
+  never send `speed` (it answers 400 for anything but 1.0); stretch takes in
+  Haruspex instead. A seed gives another take but does not reproduce one on
+  a GPU, so takes are kept as audio. Saved voices keep the reference clip's
+  text and send it as `speaker_ref_text` for a closer voice.

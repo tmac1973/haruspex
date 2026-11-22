@@ -21,14 +21,22 @@ narration can use them. Kokoro stays the default and the read-aloud voice.
 - `src/lib/toolchest/kind.ts` — a `speech` kind: list models whose meta says
   `speech: true` (through `probeInferenceServer`, not a webview fetch).
 - `src-tauri/src/speech_server.rs` — `speech_server_synthesize { base_url,
-  key_id, model, text, voice_id?, seed?, speed? } → StoredSpeech`: POST
-  `/tts` (multipart with `speaker_ref` when a voice is given, else JSON),
-  read the WAV, store it in the audio cache like `tts_synthesize_to_cache`;
-  pass `seed`/`speed` only when set. The result carries a SHA-256 of the WAV
-  so a caller can tell two takes apart.
+  key_id, model, text, voice_id?, seed?, temperature? } → StoredSpeech`: POST
+  `/tts` (multipart with `speaker_ref`, and `speaker_ref_text` when the voice
+  has one, when a voice is given; else JSON), read the WAV, store it in the
+  audio cache like `tts_synthesize_to_cache`. It never sends `speed`:
+  Qwen3-TTS answers 400 for anything but 1.0. `seed` and `temperature` are
+  sent only when set. The result carries a SHA-256 of the WAV so a caller can
+  tell two takes apart.
+- `src-tauri/src/tts.rs` — `audio_stretch { hash, factor } → StoredSpeech`:
+  `ffmpeg atempo` (pitch kept, chained for factors outside 0.5–2) on a cached
+  WAV into a new cache entry.
 - `src-tauri/src/voices.rs` — saved voices in `<app data>/voices/<id>/`:
   `reference.wav` (mono, 24 kHz, 5–30 s) and `voice.json { id, name, source:
-  'file'|'clip', source_path?, from_secs?, to_secs?, consented_at }`.
+  'file'|'clip', source_path?, from_secs?, to_secs?, ref_text, consented_at }`.
+  `ref_text` is what the clip says: from phase 10's word times for a clip cut
+  from footage, or transcribed with the video whisper when a file is added.
+  Settings shows it and lets the user correct it.
   Commands `voices_list`, `voice_add_file { path, name, consent }`,
   `voice_add_clip { path, from_secs, to_secs, name, consent }` (extracts with
   ffmpeg), `voice_delete`, `voice_read_bytes`. `consent` must be true or the
@@ -37,11 +45,16 @@ narration can use them. Kokoro stays the default and the read-aloud voice.
 - `src/lib/audio/voiceConsent.ts` — the warning text constant.
 - `src/lib/components/settings/AudioSection.svelte` — **Speech engine**
   (Kokoro / llama.cpp server with ServerAddress, key and model) and **Saved
-  voices** (list with play and delete, **Add from file…**). Adding shows the
+  voices** (list with play, the editable reference text, and delete, **Add from
+  file…**). Adding shows the
   warning and the checkbox; **Add** is disabled until it is ticked.
 - `src/lib/agent/tools/speech-gen.ts` — with the llama-server backend,
-  `voice` accepts a saved voice name; new `seed`; the tool result shows the
-  take's WAV hash and length; Kokoro voices still work
+  `voice` accepts a saved voice name; new `seed` (it makes another take, but
+  on a GPU the same seed does not give the same take, so the tool keeps each
+  take's audio and never offers to remake one from its seed); `speed` is
+  applied after synthesis with `audio_stretch`, so the `narrate` skill's
+  length fitting still works; the tool result shows the take's WAV hash and
+  length; Kokoro voices still work
   when Kokoro is chosen. Register `voice_from_clip` (category `'video'`):
   path, from, to, name; it calls `askUserQuestion` with the warning and
   **This is my voice, or I have permission** / **Cancel**, and only on the
@@ -64,11 +77,17 @@ narration can use them. Kokoro stays the default and the read-aloud voice.
    `src/lib/audio/voiceConsent.ts`.
 2. Settings fields, Saved servers kind, and the `speech` model list.
 3. `voices.rs`: store, convert to mono 24 kHz with the bundled ffmpeg, refuse
-   clips under 5 s or over 30 s, refuse `consent: false`. `voice_add_clip` is
+   clips under 5 s or over 30 s, refuse `consent: false`. A clean 5–10 s clip
+   is enough; the guide says so. `voice_add_clip` is
    confined to the working folder.
 4. `speech_server.rs`: the `/tts` call, with the key resolved by key id as
    the other toolchest calls do; a 404 says the server needs llama.cpp
-   v0.8.0 or newer.
+   v0.8.0 or newer. With `speaker_ref_text`, Qwen3-TTS continues from the
+   reference clip and copies the voice more closely. If the server answers
+   400 to a request with `speaker_ref_text`, send it again without, and
+   report that the server needs llama.cpp b12491 or newer and a projector
+   with the reference encoder (llama-toolchest's **Get speech models** card
+   has one).
 5. Wire `generate_speech`: when `speechBackendKind === 'llama-server'`, route
    to `speech_server_synthesize`; the voice list in its schema is the saved
    voices. Read-aloud (F3) and the speaker icon stay on Kokoro.
@@ -87,13 +106,15 @@ leaves no diff.
 ## Test plan
 
 - Rust: `voice_add_*` with `consent: false` fails and writes nothing; a 3 s
-  clip is refused; `speech_server_synthesize` sends `speaker_ref` only with a
-  voice, and a 404 gives the version message.
+  clip is refused; `speech_server_synthesize` sends `speaker_ref` and
+  `speaker_ref_text` only with a voice, never sends `speed`, retries once
+  without `speaker_ref_text` on a 400, and a 404 gives the version message;
+  `audio_stretch` by 0.8 makes a WAV 1.25 times as long, within 10 ms.
 - TS: `voice_from_clip` does nothing when the answer is **Cancel**;
   `generate_speech` routes by backend.
-- Hand: add a Qwen3-TTS GGUF by hand on llama-toolchest's Models page (the
-  catalog entry is an upstream ask; `/tts` serves a hand-added model today), save a voice from your own
-  recording, "say 'this is a test' in my voice" plays in that voice;
+- Hand: on llama-toolchest, download Qwen3-TTS 1.7B Base from Download
+  Models → **Get speech models**; save a voice from your own recording (check
+  its reference text); "say 'this is a test' in my voice" plays in that voice;
   Settings → Audio's **Add** stays disabled until the box is ticked.
 
 ## Commit
