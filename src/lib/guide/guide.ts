@@ -63,7 +63,7 @@ const ORDER = [
 	'other-computers',
 	'settings',
 	'settings-tools',
-	'run-in-background',
+	'tray',
 	'shortcuts',
 	'model-feedback',
 	'troubleshooting'

@@ -70,6 +70,10 @@
 {/if}
 
 <style>
+	.toggle-row + .toggle-row {
+		margin-top: 12px;
+	}
+
 	.error {
 		color: var(--error-text, #c97);
 		font-size: 0.85rem;

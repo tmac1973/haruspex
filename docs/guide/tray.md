@@ -1,6 +1,6 @@
 ---
 title: Run in the background
-description: Keep Haruspex running in the tray with its window closed, start it at login, and quit it from the tray.
+description: Keep Haruspex running in the tray, start it at login, and quit it.
 ---
 
 # Run in the background
