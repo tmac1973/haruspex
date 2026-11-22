@@ -20,6 +20,7 @@ use super::request_reply::{self, ReplyInput};
 use super::requests::{self, RequestCandidate, RequestFolder};
 use super::smtp_client::{self, OutgoingMessage, ReplyContext};
 use super::sub_agent::{self, SummarizerInput};
+use super::watch::{EmailWatch, EmailWatchEntry, EmailWatchStatus};
 use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -183,6 +184,26 @@ pub async fn email_request_scan(
     since_ms: i64,
 ) -> Result<Vec<RequestCandidate>, String> {
     requests::scan(&account, &phrase, since_ms).await
+}
+
+/// Research by email: watch exactly these jobs' inboxes, starting, stopping
+/// or restarting watchers to match. A watcher emits `email://watch-hit` when
+/// a request candidate arrives, and `email://watch-status` as its state
+/// changes.
+#[tauri::command]
+pub fn email_watch_set(
+    app: tauri::AppHandle,
+    watch: tauri::State<'_, EmailWatch>,
+    entries: Vec<EmailWatchEntry>,
+) -> Vec<EmailWatchStatus> {
+    watch.set(&app, entries);
+    watch.status()
+}
+
+/// Research by email: what each inbox watcher is doing.
+#[tauri::command]
+pub fn email_watch_status(watch: tauri::State<'_, EmailWatch>) -> Vec<EmailWatchStatus> {
+    watch.status()
 }
 
 /// Research by email: whether the Sent folder holds this request's own copy.

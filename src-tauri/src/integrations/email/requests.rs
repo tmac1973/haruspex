@@ -261,15 +261,81 @@ fn folder_names(boxes: &[Mailbox]) -> (String, String) {
 fn scan_query(address: &str, phrase: &str, since_ms: i64) -> String {
     // A day early: SEARCH SINCE compares dates in the server's zone.
     let since = unix_to_imap_date(since_ms.div_euclid(1000) - 86_400);
-    let mut q = format!(
-        "SINCE {since} FROM \"{}\" UNDELETED",
-        sanitize_search_value(address)
-    );
+    format!("SINCE {since} {}", request_terms(address, phrase))
+}
+
+/// The SEARCH terms every request matches: from the account, not deleted,
+/// and the phrase in the subject when SEARCH can carry it safely.
+fn request_terms(address: &str, phrase: &str) -> String {
+    let mut q = format!("FROM \"{}\" UNDELETED", sanitize_search_value(address));
     let clean = sanitize_search_value(phrase.trim());
     if phrase.trim().is_ascii() && clean == phrase.trim() && !clean.is_empty() {
         q.push_str(&format!(" SUBJECT \"{clean}\""));
     }
     q
+}
+
+/// What the inbox watcher found since its last look.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct Arrivals {
+    /// The UID to look from next time.
+    pub next: u32,
+    /// Whether one of the new messages is a request candidate.
+    pub request: bool,
+}
+
+/// The UIDs of `found` at or above `next`. `UID n:*` always matches the
+/// highest UID, even one below `n`, so a quiet mailbox returns its last
+/// message on every look.
+fn at_or_above(found: impl IntoIterator<Item = u32>, next: u32) -> Vec<u32> {
+    let mut out: Vec<u32> = found.into_iter().filter(|&u| u >= next).collect();
+    out.sort_unstable();
+    out
+}
+
+/// For the inbox watcher: whether any message in the selected Inbox at or
+/// above UID `next` is a request candidate, checked as exactly as a scan
+/// checks it. Only a hint; the job's run decides. Nothing is marked read.
+pub(super) async fn arrivals(
+    session: &mut ImapSession,
+    account: &EmailAccount,
+    phrase: &str,
+    next: u32,
+    t: &Timeouts,
+) -> Result<Arrivals, String> {
+    let host = account.imap_host.as_str();
+    let address = account.email_address.as_str();
+    let all = within(
+        t.command,
+        host,
+        "SEARCH",
+        session.uid_search(format!("UID {next}:*")),
+    )
+    .await?;
+    let new = at_or_above(all, next);
+    let Some(&last) = new.last() else {
+        return Ok(Arrivals {
+            next,
+            request: false,
+        });
+    };
+    let query = format!("UID {} {}", uid_set(&new), request_terms(address, phrase));
+    let hits = search_views(
+        session,
+        host,
+        t,
+        &query,
+        MAX_SCANNED,
+        "(UID FLAGS BODY.PEEK[HEADER])",
+    )
+    .await?;
+    let request = hits
+        .iter()
+        .any(|(_, _, deleted, view)| !deleted && is_candidate(view, address, phrase));
+    Ok(Arrivals {
+        next: last.saturating_add(1),
+        request,
+    })
 }
 
 /// The SEARCH for one Message-ID. Only a valid id reaches it, and a valid id
@@ -788,5 +854,24 @@ mod tests {
             id_query("<CAF1234567890abc@x.com>"),
             "HEADER Message-ID \"CAF1234567890abc@x.com\""
         );
+    }
+
+    #[test]
+    fn the_watcher_terms_match_the_scan_without_a_date() {
+        assert_eq!(
+            request_terms(ME, "ask haruspex"),
+            "FROM \"me@example.com\" UNDELETED SUBJECT \"ask haruspex\""
+        );
+        assert_eq!(
+            request_terms(ME, "frag Haruspex – bitte"),
+            "FROM \"me@example.com\" UNDELETED"
+        );
+    }
+
+    #[test]
+    fn a_quiet_mailbox_has_no_arrivals_although_uid_n_star_matches_its_last_message() {
+        // `UID 42:*` on a mailbox whose highest UID is 41 returns 41.
+        assert!(at_or_above([41], 42).is_empty());
+        assert_eq!(at_or_above([44, 42, 43], 42), vec![42, 43, 44]);
     }
 }

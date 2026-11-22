@@ -16,6 +16,8 @@
 //! - `requests` — Research by email: request scan, the Sent-copy check,
 //!   reply lookup and the job's folders
 //! - `request_reply` — Research by email: the threaded reply to a request
+//! - `watch` — Research by email: the IDLE inbox watchers that start a job
+//!   when a request arrives
 //! - `auth_results` — Authentication-Results → DKIM, SPF, DMARC
 //! - `sub_agent` — email_summarize_message implementation (focused
 //!   chat completion that compresses one message body)
@@ -33,3 +35,4 @@ pub mod smtp_client;
 pub mod structure;
 pub mod sub_agent;
 pub mod text;
+pub mod watch;
