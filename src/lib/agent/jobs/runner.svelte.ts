@@ -718,7 +718,8 @@ export function setOneRunAtATime(on: boolean): void {
  * is allowed to start, because the pipeline it reaches has been made
  * non-interactive for exactly this case.
  */
-export type RunTrigger = 'manual' | 'scheduled' | 'chained';
+/** 'email': Research by email's inbox watcher saw a request arrive. */
+export type RunTrigger = 'manual' | 'scheduled' | 'chained' | 'email';
 
 export async function enqueue(
 	jobId: number,

@@ -4,6 +4,7 @@
  */
 import type { AuthResult } from '#lib/ipc/gen/AuthResult.ts';
 import type { AuthResults } from '#lib/ipc/gen/AuthResults.ts';
+import type { EmailWatchState } from '#lib/ipc/gen/EmailWatchState.ts';
 
 /** One row of the card as the engine sends it (Remote control's page), in plain words. */
 export interface HomeEmailRequest {
@@ -65,4 +66,37 @@ export function authSummary(auth: AuthResults | null): string {
 		return 'The message carried no Authentication-Results header. These results never stop a request; the Sent copy does.';
 	}
 	return 'What your mail server recorded in Authentication-Results. A DKIM pass counts only when it is signed for your address’s domain. These results never stop a request; the Sent copy does.';
+}
+
+/** The card's line about the inbox watcher, or null when there is none. */
+export function watchLine(
+	state: EmailWatchState | null
+): { text: string; detail: string; problem: boolean } | null {
+	if (!state) return null;
+	switch (state.state) {
+		case 'connecting':
+			return {
+				text: 'Connecting to the inbox…',
+				detail: 'Requests are picked up as they arrive once it connects.',
+				problem: false
+			};
+		case 'idle':
+			return {
+				text: 'Watching the inbox.',
+				detail: 'Requests are picked up within seconds of arriving.',
+				problem: false
+			};
+		case 'polling':
+			return {
+				text: 'Checking the inbox every 2 minutes.',
+				detail: "The mail server can't announce new mail, so Haruspex asks it instead.",
+				problem: false
+			};
+		case 'retrying':
+			return {
+				text: "Can't reach the inbox. Trying again.",
+				detail: state.reason,
+				problem: true
+			};
+	}
 }

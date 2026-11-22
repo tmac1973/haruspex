@@ -114,6 +114,20 @@
 	</div>
 </div>
 
+<label class="check pickup">
+	<input
+		type="checkbox"
+		bind:checked={
+			() => cfg.pickup === 'arrival', (on) => (cfg.pickup = on ? 'arrival' : 'schedule')
+		}
+	/>
+	Answer when mail arrives
+	<Tooltip
+		label="About answering when mail arrives"
+		text="Haruspex keeps a connection to the inbox open and starts within seconds of a request arriving. The schedule below is the backup check. Haruspex must be open."
+	/>
+</label>
+
 <style>
 	.label {
 		display: inline-flex;

@@ -8,7 +8,12 @@ import {
 } from './config';
 import { accountTakenBy } from './accountJobs.svelte';
 
-const good: EmailResearchConfig = { accountId: 'me', phrase: 'ask haruspex', dailyLimit: 10 };
+const good: EmailResearchConfig = {
+	accountId: 'me',
+	phrase: 'ask haruspex',
+	dailyLimit: 10,
+	pickup: 'arrival'
+};
 
 function ctx(over: Partial<ConfigContext> = {}): ConfigContext {
 	return {
@@ -26,9 +31,21 @@ describe('email research config', () => {
 		expect(parseEmailResearchConfig('{"dailyLimit":"x","phrase":3}')).toEqual({
 			accountId: '',
 			phrase: '',
-			dailyLimit: 10
+			dailyLimit: 10,
+			pickup: 'schedule'
 		});
 		expect(parseEmailResearchConfig('not json').dailyLimit).toBe(10);
+	});
+
+	it('picks up on arrival for a new job, and keeps an older job on its schedule', () => {
+		expect(parseEmailResearchConfig(null).pickup).toBe('arrival');
+		const json = emailResearchConfigJson({ ...good, pickup: 'schedule' });
+		expect(parseEmailResearchConfig(json).pickup).toBe('schedule');
+		// Saved before the field existed.
+		expect(parseEmailResearchConfig('{"accountId":"me","phrase":"ask haruspex"}').pickup).toBe(
+			'schedule'
+		);
+		expect(parseEmailResearchConfig('not json').pickup).toBe('schedule');
 	});
 
 	it('accepts a good config', () => {

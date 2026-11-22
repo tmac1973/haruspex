@@ -14,7 +14,7 @@ import type { JobType } from '#lib/stores/jobs.svelte.ts';
 
 export interface ChainRunFacts {
 	status: JobRunStatus;
-	trigger: 'manual' | 'scheduled' | 'chained';
+	trigger: 'manual' | 'scheduled' | 'chained' | 'email';
 	/** Each step's output, in order. */
 	stepOutputs: (string | null)[];
 }
