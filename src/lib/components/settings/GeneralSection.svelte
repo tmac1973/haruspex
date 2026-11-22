@@ -11,6 +11,7 @@
 	import ModeSelector from '#lib/components/ModeSelector.svelte';
 	import LeanModeSetting from '#lib/components/settings/LeanModeSetting.svelte';
 	import DeferToolsSetting from '#lib/components/settings/DeferToolsSetting.svelte';
+	import BackgroundSetting from '#lib/components/settings/BackgroundSetting.svelte';
 
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
@@ -67,6 +68,8 @@
 		</div>
 	</label>
 </section>
+
+<BackgroundSetting />
 
 <section class="settings-section">
 	<h2>Theme</h2>

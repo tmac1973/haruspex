@@ -66,6 +66,7 @@ const PAGES = [
 	'other-computers',
 	'settings',
 	'settings-tools',
+	'tray',
 	'shortcuts',
 	'model-feedback',
 	'troubleshooting'

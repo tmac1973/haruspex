@@ -105,6 +105,8 @@ const TABLE: Record<string, Handler> = {
 		hostname: null
 	}),
 	owner_clients_list: empty,
+	// Settings → General → Background: tray and start at login both off.
+	background_get: () => ({ tray: false, startAtLogin: false }),
 	owner_trusted_hosts: empty,
 	// Settings → Remote control → Other computers: none trusted, none found.
 	peers_apply: none,

@@ -17,6 +17,7 @@
         "height": 600,
         "resizable": true,
         "fullscreen": false,
+        "visible": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding"
       }
     ],
@@ -82,12 +83,14 @@
         "bundleMediaFramework": true
       },
       "deb": {
+        "depends": ["libayatana-appindicator3-1"],
         "files": {
           "/usr/share/metainfo/com.haruspex.app.metainfo.xml": "linux/com.haruspex.app.metainfo.xml"
         },
         "desktopTemplate": "linux/main.desktop"
       },
       "rpm": {
+        "depends": ["libayatana-appindicator-gtk3"],
         "files": {
           "/usr/share/metainfo/com.haruspex.app.metainfo.xml": "linux/com.haruspex.app.metainfo.xml"
         },
