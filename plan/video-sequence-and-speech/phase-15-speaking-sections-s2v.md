@@ -3,8 +3,8 @@
 **Depends on:** 01 (capability parsing, multipart inputs), 02 (frame trims),
 04 (spec, clip plan, progress, estimate), 05 (job config and pipeline), 06
 (keyframes), 07 (generate stage), 08 (checks), 09 (sound and assembly), 11
-(speech engine and saved voices for the lines) · External: llama-toolchest's
-Wan2.2 S2V set and the `audio` video input (tmac1973/llama-toolchest#682) ·
+(speech engine and saved voices for the lines) · External: llama-toolchest
+v2.64.0 or newer, with the Wan2.2 S2V set (tmac1973/llama-toolchest#686) ·
 **Enables:** talking presenters in generated videos, and speaking clips in
 Chat
 
@@ -38,17 +38,25 @@ and the sound line up.
 - `src/lib/videogen/toolchest.ts` — send `audio` as a multipart file part from
   the audio cache by hash (the same no-bridge upload `start_image` uses, with
   an audio-cache source added to `toolchestUpload`). An instance with
-  `fixedFps` is asked at that rate.
+  `fixedFps` is asked at that rate. A request with `audio` sends no length
+  unless the caller gave one, so the server follows the audio. The error
+  codes `audio_required`, `start_image_required`, `bad_audio` and
+  `over_limit` become plain messages.
 - `src/lib/agent/tools/video-gen.ts` — `audio` argument: a sound file in the
   working folder (imported with `audio_cache_import`), or speech or a song
   made in the conversation (already in the cache). On an instance with the
-  `audio` capability, `start_image` and `audio` are both required, and
-  `seconds` defaults to the audio's length. The tool refuses `audio` on any
-  other instance. `fitClip` uses `fixedFps`.
+  `audio` capability, `start_image` and `audio` are both required. Without
+  `seconds`, the clip is as long as the audio. Audio longer than the
+  instance's longest clip (`maxFrames / fixedFps`, 5.1 s on the S2V set) is
+  refused before upload, with that limit and a note to split the speech at
+  pauses. The tool refuses `audio` on any other instance. `fitClip` uses
+  `fixedFps`.
 - `src/lib/agent/tools/_videoJob.ts` — the chat tool's task: when the request
-  has `audio`, store the clip with that audio muxed in (`video_mux_audio`),
-  so it plays with sound in the chat. The job calls `generateVideo` directly
-  (phase 07), which never muxes, so its clips stay silent.
+  has `audio`, store the clip with that audio muxed in as Opus
+  (`video_mux_audio`), so it plays with sound in the chat. sd.cpp builds from
+  6cd0ef1 put the driving audio in the WebM as PCM, which the webview may not
+  play, and older builds make silent video; the mux replaces either. The job
+  calls `generateVideo` directly (phase 07) and does not mux.
 - `src/lib/sequence/spec/types.ts`:
   - A third `Section` kind: `{ kind: 'speaking', id, portrait?: string,
     portrait_prompt?, prompt, lines: { id, text, voice? }[], window_join?:
@@ -98,7 +106,9 @@ and the sound line up.
   checked against the portrait only (same person). There is no seam check,
   since windows don't continue each other.
 - `src/lib/agent/jobs/types/video-sequence/assemble.ts` — each window is
-  trimmed to its audio's length in frames (phase 02's `out_frame`). The
+  trimmed to its audio's length in frames (phase 02's `out_frame`). A
+  window clip's own sound is muted (`gain_range` −70 dB over the clip),
+  since the window's slice carries the same speech. The
   window's audio slice goes on an audio track at the window's cut time
   (−14 LUFS, as speech). Joins between windows follow `window_join` (a
   crossfade is 0.3 s). Speaking audio counts as narration for the music level
@@ -113,10 +123,11 @@ and the sound line up.
 ## Steps
 
 1. Capability parsing, `audio_cache_import`, the `audio` request part,
-   `fixedFps`, and the tool argument rules. A request without `seconds` sends
-   frames computed from the audio (`4n + 1` at the fixed rate, rounded up so
-   the picture covers the speech). So toolchest never refuses a long track for
-   having no length.
+   `fixedFps`, the error messages, and the tool argument rules. A request
+   without `seconds` sends no length; the server rounds the audio's length up
+   to `4n + 1` frames at 16 fps. The tool checks the audio's length first, so
+   a long track fails with a clear note instead of `over_limit` after the
+   upload.
 2. `video_mux_audio`, `audio_join` and `audio_silences`; muxing in
    `_videoJob.ts`.
 3. Spec types, validator context and rules, and the config field. The
@@ -151,10 +162,11 @@ and the sound line up.
    speaks.
 8. Generate: every window starts from the section portrait. S2V's start image
    is an identity reference, not a frame the output keeps, so last-frame
-   chaining is not used. Progress, resume, retries and Attended's stop after
-   the first window work as for other clips (phase 07). The window count is
-   real from the Speech stage on; after the first window, the time left is
-   estimated from its wall time.
+   chaining is not used, and seams between windows show. Progress, resume,
+   retries and Attended's stop after the first window work as for other
+   clips (phase 07). The window count is real from the Speech stage on;
+   after the first window, the time left is estimated from its wall time
+   (about 11 min for a 3 s window at 832×480 on an R9700).
 9. Check and assemble as listed.
 
 ## Build gate
@@ -168,7 +180,10 @@ leaves no diff. The Guide check needs the two pages.
 - Unit:
   - An instance with `audio` refuses `generate_video` without a start image,
     and a non-S2V instance refuses `audio`.
-  - Frames for a 3.0 s track at 16 fps are 49.
+  - A request with `audio` and no `seconds` sends no `frames` or `seconds`.
+  - A 6 s track on an instance with 81 frames at 16 fps is refused before
+    upload, naming 5.1 s.
+  - `over_limit` and `bad_audio` from the server become plain messages.
   - Three lines of 4, 6 and 9 s with a 10 s window limit become two windows,
     [4 + 6] and [9].
   - A 25 s line splits at silences into pieces of 10 s or less.
@@ -179,16 +194,18 @@ leaves no diff. The Guide check needs the two pages.
     the same length.
   - The [4 + 6] window has two `parts`, one from each line WAV.
   - Duplicate line ids fail validation.
-  - Assembly trims each window to its audio, places the audio at the window's
-    time, and puts music at −30 LUFS under it.
+  - Assembly trims each window to its audio, mutes the window clip's own
+    sound, places the slice at the window's time, and puts music at −30 LUFS
+    under it.
 - Rust:
   - `audio_join` of two slices gives their summed length within 10 ms.
   - `video_mux_audio` output has one video and one audio stream.
   - `audio_silences` finds a 0.5 s gap in a fixture.
   - `audio_cache_import` refuses a path outside the working folder.
-- Hand (needs toolchest with #682):
+- Hand (toolchest v2.64.0, the `s2v` instance on asmodean or compute2):
   - In Chat, "make this portrait say 'hello, welcome to the channel'" plays
-    with the voice and moving lips.
+    with the voice and moving lips, on an sd.cpp build both before and after
+    6cd0ef1 (silent and PCM results).
   - A sequence of a snow section, a speaking section of three lines in a
     saved voice, and a forest section renders with the speech in sync, and
     with the S2V windows at 16 fps in a 24 fps project.

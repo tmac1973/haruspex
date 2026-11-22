@@ -85,8 +85,11 @@ confirm and report a generated clip's own sound so later phases can keep it.
 - TS: `buildVideoBody`/multipart includes `end_image` only when set; the tool
   refuses `end_image` on an instance without the capability; capability
   parsing keeps working on a meta without the new keys.
-- Hand: against toolchest LTX-2.3, make a clip with start and end pictures;
-  the result says it has sound and the player plays it.
+- Hand:
+  - Against toolchest LTX-2.3, make a clip with start and end pictures; the
+    result says it has sound and the player plays it.
+  - Where no LTX-2.3 instance runs: `end_image` on a Wan2.2 I2V instance
+    (`lightning1116` on asmodean), whose result says it has no sound.
 
 ## Commit
 
