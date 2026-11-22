@@ -15,6 +15,7 @@ import { guidedPlanningJobType } from '#lib/agent/jobs/types/guided-planning/def
 import { autonomousCodingJobType } from '#lib/agent/jobs/types/autonomous-coding/definition.ts';
 import { assetGenerationJobType } from '#lib/agent/jobs/types/asset-generation/definition.ts';
 import { modelGenerationJobType } from '#lib/agent/jobs/types/model-generation/definition.ts';
+import { emailResearchJobType } from '#lib/agent/jobs/types/email-research/definition.ts';
 
 registerJobType(researchJobType);
 registerJobType(emailDigestJobType);
@@ -25,6 +26,7 @@ registerJobType(guidedPlanningJobType);
 registerJobType(autonomousCodingJobType);
 registerJobType(assetGenerationJobType);
 registerJobType(modelGenerationJobType);
+registerJobType(emailResearchJobType);
 
 export { getJobType, listJobTypes } from '#lib/agent/jobs/types/registry.ts';
 export {

@@ -238,6 +238,7 @@ async function writeJob(existing: JobWithSteps | null, w: JobWrite): Promise<num
 
 	if (!input.name) throw new Error('a job needs a name');
 	const invalid = def.validate?.({
+		jobId: existing?.id,
 		name: input.name,
 		workingDir: input.working_dir,
 		steps,

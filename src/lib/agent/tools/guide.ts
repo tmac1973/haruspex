@@ -26,14 +26,14 @@ registerTool({
 		function: {
 			name: HARUSPEX_DOCS_TOOL,
 			description:
-				"Read Haruspex's user guide. Without a page: how Haruspex is set up now (model, features on) and the page list. With a page: that page. Use it for any question about Haruspex itself.",
+				"Read Haruspex's user guide. Without a page: the setup now (model, features on) and the page list. With a page: that page. Use it for questions about Haruspex itself.",
 			parameters: {
 				type: 'object',
 				properties: {
 					page: {
 						type: 'string',
 						enum: GUIDE_PAGES.map((p) => p.name),
-						description: 'Omit for the setup status and page list.'
+						description: 'Omit for the setup and page list.'
 					}
 				},
 				required: []

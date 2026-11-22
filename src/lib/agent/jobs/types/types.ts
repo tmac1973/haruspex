@@ -135,6 +135,8 @@ export type JobTypeEditor = Component<any>;
 
 /** What a type's `validate` sees on save — shared fields plus its own config. */
 export interface JobValidateInput {
+	/** The job being saved; absent for a new one. */
+	jobId?: number;
 	name: string;
 	workingDir: string;
 	steps: JobStepInput[];

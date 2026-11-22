@@ -22,7 +22,8 @@ export type JobType =
 	| 'guided_planning'
 	| 'autonomous_coding'
 	| 'asset_generation'
-	| 'model_generation';
+	| 'model_generation'
+	| 'email_research';
 
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 

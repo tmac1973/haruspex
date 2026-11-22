@@ -9,6 +9,8 @@ Pick a job's type in the job editor's **Job type** (see the `jobs` page for runn
 
 **Digests.** Email and news digests are what two Home cards run (see the `home` page). A camera digest summarises camera logs, leading with entries camera alerts flagged, and can email the result (see the `camera-log` and `camera-alerts` pages).
 
+**Research by email.** Answers questions you email to yourself with a trigger phrase in the subject, using web tools only, and replies in the thread. It acts only on a request with a matching copy in your Sent folder. See the `email-research` page.
+
 **Research.** A list of steps run in order, each a fresh conversation given the last step's output, with optional **Deep research**. Python runs without asking, in the run's own sandbox.
 
 **Audit.** Runs one prompt many times independently (1–20), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: runs, max turns per run, **Read-only runs**, your own instructions, an output file.
