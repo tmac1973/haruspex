@@ -22,6 +22,7 @@ import {
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
 import { parseCut, parseOp, parseTime, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
+import { FIT_PARAMS, FRAME_PARAMS } from '#lib/video/args.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
@@ -51,7 +52,8 @@ function editLabel(args: Record<string, unknown>): string {
 		return args.index ? `Cutting silences from clip ${String(args.index)}` : 'Cutting silences';
 	}
 	if (op === 'remove_ranges') return `Cutting parts of clip ${String(args.index ?? '')}`;
-	const verb = { trim: 'Trimming', remove: 'Removing', move: 'Moving' }[op] ?? 'Editing';
+	const verb =
+		{ trim: 'Trimming', remove: 'Removing', move: 'Moving', fit: 'Fitting' }[op] ?? 'Editing';
 	return `${verb} clip ${String(args.index ?? '')}`;
 }
 
@@ -205,10 +207,12 @@ registerTool({
 									type: 'number',
 									description: 'Stop this far into the clip. Default: its end, or its current trim.'
 								},
+								...FRAME_PARAMS,
 								crossfade_secs: {
 									type: 'number',
 									description: 'A crossfade into this clip, 0–3 s; overrides crossfade_secs below.'
-								}
+								},
+								...FIT_PARAMS
 							}
 						}
 					},
@@ -290,7 +294,7 @@ registerTool({
 		function: {
 			name: 'video_edit',
 			description:
-				'Change one clip on the main track: trim its start or end, remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
+				'Change one clip on the main track: trim its start or end, set how its picture fits the frame, remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change, and sound on the audio tracks moves with the clip it starts over.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -298,7 +302,7 @@ registerTool({
 					project: PROJECT_PARAM,
 					op: {
 						type: 'string',
-						enum: ['trim', 'remove', 'move', 'remove_ranges', 'remove_silences']
+						enum: ['trim', 'fit', 'remove', 'move', 'remove_ranges', 'remove_silences']
 					},
 					index: {
 						type: 'integer',
@@ -306,6 +310,8 @@ registerTool({
 					},
 					in_secs: { type: 'number', description: 'trim: start this far into the clip.' },
 					out_secs: { type: 'number', description: 'trim: stop this far into the clip.' },
+					...FRAME_PARAMS,
+					...FIT_PARAMS,
 					to: { type: 'integer', description: 'move: its new position, from 1.' },
 					ranges: {
 						type: 'array',

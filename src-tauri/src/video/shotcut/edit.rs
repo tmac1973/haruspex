@@ -17,7 +17,7 @@
 use super::doc::{Doc, Slot, OURS, OURS_LUFS};
 use crate::video::mlt::fps::Fps;
 use crate::video::mlt::xml::{escape, Splices};
-use crate::video::timeline::{Edited, Media, Placement, Source};
+use crate::video::timeline::{Edited, Fit, Media, Placement, Source};
 use std::collections::HashSet;
 
 /// The main track as placements: applying them changes nothing.
@@ -50,6 +50,7 @@ struct Laid {
     fade: Option<FadeIn>,
     gain_db: Option<f64>,
     limiter: bool,
+    fit: Option<Fit>,
 }
 
 impl Laid {
@@ -230,6 +231,7 @@ fn layout(
             fade,
             gain_db: p.gain_db,
             limiter: p.limiter,
+            fit: p.fit,
         });
     }
     // A clip can't give more than its length to the crossfades at its sides.
@@ -279,6 +281,22 @@ pub(super) fn gain_filter_for(id: &str, gain_db: f64, lufs: Option<f64>) -> Stri
          {target}\
          \x20   </filter>\n"
     )
+}
+
+/// Haruspex's crop for a fit, as Shotcut writes its Crop: Source filter;
+/// nothing for letterbox.
+pub(super) fn fit_filter(id: &str, fit: Fit, width: u32, height: u32) -> String {
+    let Some(props) = crate::video::mlt::fit::properties(fit, width, height) else {
+        return String::new();
+    };
+    let mut out = format!("    <filter id=\"{id}\">\n");
+    for (k, v) in props {
+        out.push_str(&format!("      <property name=\"{k}\">{v}</property>\n"));
+    }
+    out.push_str("      <property name=\"shotcut:filter\">crop</property>\n");
+    out.push_str(&format!("      <property name=\"{OURS}\">1</property>\n"));
+    out.push_str("    </filter>\n");
+    out
 }
 
 /// Haruspex's Limiter: `avfilter.alimiter` holding peaks at -1.5 dB, the same
@@ -440,6 +458,11 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     }
                     c = c.replacen("  </chain>\n", &format!("{filters}  </chain>\n"), 1);
                 }
+                if let Some(fit) = l.fit {
+                    next_filter += 1;
+                    let f = fit_filter(&format!("filter{next_filter}"), fit, doc.width, doc.height);
+                    c = c.replacen("  </chain>\n", &format!("{f}  </chain>\n"), 1);
+                }
                 chain_text.push_str(&c);
             }
             Source::Piece(i) => {
@@ -447,10 +470,17 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 let node = doc.chain(old).ok_or("a clip's chain is missing")?;
                 let span = doc.tree.node(node).span.clone();
                 let mut original = text[span.clone()].to_string();
+                // The copy drops our filters it replaces; the wanted ones go back on.
+                let mut dropped = Vec::new();
                 if l.gain_db.is_some() {
-                    // The copy drops our filters; the wanted gain goes back on.
+                    dropped.extend(doc.our_sound_filters(old));
+                }
+                if l.fit.is_some() {
+                    dropped.extend(doc.our_fit_filter(old));
+                }
+                if !dropped.is_empty() {
                     let mut s = Splices::default();
-                    for f in doc.our_filters(old) {
+                    for f in dropped {
                         let r = whole_line(text, doc.tree.node(f).span.clone());
                         s.replace((r.start - span.start)..(r.end - span.start), String::new());
                     }
@@ -469,6 +499,13 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     let line = c[..at].rfind('\n').map_or(at, |n| n + 1);
                     c.insert_str(line, &filters);
                 }
+                if let Some(fit) = l.fit {
+                    next_filter += 1;
+                    let f = fit_filter(&format!("filter{next_filter}"), fit, doc.width, doc.height);
+                    let at = c.rfind("</chain>").unwrap_or(c.len());
+                    let line = c[..at].rfind('\n').map_or(at, |n| n + 1);
+                    c.insert_str(line, &f);
+                }
                 chain_text.push_str("  ");
                 chain_text.push_str(&c);
                 chain_text.push('\n');
@@ -483,11 +520,11 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             continue;
         };
         let unchanged = doc.our_gain(&l.chain) == Some(g) && doc.our_limiter(&l.chain) == l.limiter
-            || g == 0.0 && doc.our_filters(&l.chain).is_empty();
+            || g == 0.0 && doc.our_sound_filters(&l.chain).is_empty();
         if unchanged {
             continue;
         }
-        for f in doc.our_filters(&l.chain) {
+        for f in doc.our_sound_filters(&l.chain) {
             splices.replace(
                 whole_line(text, doc.tree.node(f).span.clone()),
                 String::new(),
@@ -507,6 +544,35 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 .rfind('\n')
                 .map_or(n.inner_end, |i| i + 1);
             splices.insert(line, filters);
+        }
+    }
+
+    // Fits on kept clips' own chains.
+    for l in &laid {
+        let (Source::Existing(_), Some(fit)) = (&l.source, l.fit) else {
+            continue;
+        };
+        let now = doc.our_fit(&l.chain).unwrap_or(Fit::Letterbox);
+        if now == fit {
+            continue;
+        }
+        if let Some(f) = doc.our_fit_filter(&l.chain) {
+            splices.replace(
+                whole_line(text, doc.tree.node(f).span.clone()),
+                String::new(),
+            );
+        }
+        if fit != Fit::Letterbox {
+            let node = doc.chain(&l.chain).ok_or("a clip's chain is missing")?;
+            let n = doc.tree.node(node);
+            next_filter += 1;
+            let line = text[..n.inner_end]
+                .rfind('\n')
+                .map_or(n.inner_end, |i| i + 1);
+            splices.insert(
+                line,
+                fit_filter(&format!("filter{next_filter}"), fit, doc.width, doc.height),
+            );
         }
     }
 

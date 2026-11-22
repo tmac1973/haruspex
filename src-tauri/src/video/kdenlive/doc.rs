@@ -366,6 +366,31 @@ impl Doc {
             .collect()
     }
 
+    /// Haruspex's sound filters on an entry: its Volume and Limiter.
+    pub fn our_sound_filters(&self, entry: usize) -> Vec<usize> {
+        self.our_filters(entry)
+            .into_iter()
+            .filter(|&f| self.tree.property(f, "mlt_service") != Some("crop"))
+            .collect()
+    }
+
+    /// Haruspex's crop on an entry, which sets its fit.
+    pub fn our_fit_filter(&self, entry: usize) -> Option<usize> {
+        self.our_filters(entry)
+            .into_iter()
+            .find(|&f| self.tree.property(f, "mlt_service") == Some("crop"))
+    }
+
+    /// The fit Haruspex set on an entry; `None` is letterbox, MLT's own.
+    pub fn our_fit(&self, entry: usize) -> Option<crate::video::timeline::Fit> {
+        let f = self.our_fit_filter(entry)?;
+        crate::video::mlt::fit::read(
+            |k| self.tree.property(f, k).map(str::to_string),
+            self.width,
+            self.height,
+        )
+    }
+
     /// Whether Haruspex put a Limiter on an entry.
     pub fn our_limiter(&self, entry: usize) -> bool {
         self.our_filters(entry)

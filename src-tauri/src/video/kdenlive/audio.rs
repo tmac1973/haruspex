@@ -200,7 +200,9 @@ pub fn apply(doc: &Doc, wanted: &[AudioPlacement]) -> Result<Edited, String> {
         lanes[p.track].push((
             at,
             len,
-            entry_text(doc, fps, in_frame, out_frame, &bin_id, old, &chain, gain),
+            entry_text(
+                doc, fps, in_frame, out_frame, &bin_id, old, &chain, gain, None,
+            ),
             old.map(|e| e.node),
             in_frame,
             out_frame,

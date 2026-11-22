@@ -2,7 +2,7 @@ use super::doc::{Doc, OURS};
 use super::edit::{apply, current};
 use super::*;
 use crate::video::mlt::fps::Fps;
-use crate::video::timeline::{Media, Placement, Source};
+use crate::video::timeline::{Fit, Media, Placement, Source};
 use std::path::Path;
 
 fn fixture(name: &str) -> String {
@@ -306,6 +306,87 @@ fn a_piece_with_a_new_gain_drops_the_copied_one() {
     assert_eq!(after.our_filters("chain3").len(), 1);
 }
 
+const CROP: Fit = Fit::Crop {
+    x: 0.25,
+    y: 0.0,
+    w: 0.5,
+    h: 1.0,
+};
+
+#[test]
+fn a_fit_goes_on_beside_the_users_filter_and_comes_off_byte_for_byte() {
+    let doc = edited();
+    let mut wanted = current(&doc);
+    wanted[2].fit = Some(Fit::Fill);
+    let out = apply(&doc, &wanted).unwrap();
+    let after = reparse(out.text.clone());
+    assert_eq!(after.our_fit("chain2"), Some(Fit::Fill));
+    assert!(out
+        .text
+        .contains("<property name=\"shotcut:filter\">crop</property>"));
+    assert_eq!(
+        after.filters("chain2").len(),
+        2,
+        "the text filter and the crop"
+    );
+    let s = summary(&after, "/videos", Path::new("/videos/ep12/ep12.mlt"));
+    assert_eq!(s.items[2].fit, Some(Fit::Fill));
+    assert_eq!(s.items[2].effects, 1, "the crop isn't the user's");
+    // Leaving it alone changes nothing; a crop replaces it; letterbox removes it.
+    assert_eq!(apply(&after, &current(&after)).unwrap().text, out.text);
+    let mut cropped = current(&after);
+    cropped[2].fit = Some(CROP);
+    let cropped = reparse(apply(&after, &cropped).unwrap().text);
+    assert_eq!(cropped.our_fit("chain2"), Some(CROP));
+    assert_eq!(cropped.filters("chain2").len(), 2, "replaced, not added");
+    let mut off = current(&cropped);
+    off[2].fit = Some(Fit::Letterbox);
+    assert_eq!(apply(&cropped, &off).unwrap().text, doc.text);
+}
+
+#[test]
+fn a_gain_and_a_fit_leave_each_other_alone() {
+    let doc = edited();
+    let mut wanted = current(&doc);
+    wanted[2].fit = Some(Fit::Fill);
+    wanted[2].gain_db = Some(-2.0);
+    let both = reparse(apply(&doc, &wanted).unwrap().text);
+    let mut regain = current(&both);
+    regain[2].gain_db = Some(3.0);
+    let regained = reparse(apply(&both, &regain).unwrap().text);
+    assert_eq!(regained.our_fit("chain2"), Some(Fit::Fill));
+    assert_eq!(regained.our_gain("chain2"), Some(3.0));
+    let mut refit = current(&regained);
+    refit[2].fit = Some(CROP);
+    let refitted = reparse(apply(&regained, &refit).unwrap().text);
+    assert_eq!(refitted.our_gain("chain2"), Some(3.0));
+    assert_eq!(refitted.our_fit("chain2"), Some(CROP));
+}
+
+#[test]
+fn a_new_clip_and_both_pieces_of_a_split_one_keep_their_fit() {
+    let doc = edited();
+    let fps = doc.fps;
+    let mut wanted = current(&doc);
+    wanted[2].fit = Some(CROP);
+    let mut added = new(media("d.mp4", 3.0, fps));
+    added.fit = Some(Fit::Fill);
+    wanted.push(added);
+    let fitted = reparse(apply(&doc, &wanted).unwrap().text);
+    let new_chain = fitted.items[3].chain.clone();
+    assert_eq!(fitted.our_fit(&new_chain), Some(Fit::Fill));
+    let mut split = current(&fitted);
+    split[2].out_frame = Some(59);
+    let mut piece = Placement::of(Source::Piece(2));
+    piece.in_frame = Some(120);
+    split.insert(3, piece);
+    let after = reparse(apply(&fitted, &split).unwrap().text);
+    let (a, b) = (&after.items[2].chain, &after.items[3].chain);
+    assert_ne!(a, b);
+    assert_eq!(after.our_fit(a), Some(CROP));
+    assert_eq!(after.our_fit(b), Some(CROP));
+}
+
 #[test]
 fn an_end_past_the_clip_is_clamped_and_said() {
     let doc = edited();
@@ -424,4 +505,42 @@ async fn melt_loads_and_renders_a_written_project() {
     crate::video::prepare_child(&mut cmd);
     let status = cmd.status().await.unwrap();
     assert!(status.success() && out.metadata().unwrap().len() > 0);
+}
+
+#[tokio::test]
+async fn melt_fills_a_portrait_clip_without_bars() {
+    let Some(melt) = melt().await else {
+        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        return;
+    };
+    let dir = crate::test_util::temp_dir("shotcut_fill");
+    let status = crate::test_util::host_command("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("color=c=red:s=360x640:r=30:d=1")
+        .args(["-c:v", "mpeg4"])
+        .arg(dir.join("tall.mp4"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let doc = Doc::parse(template_text("1080p30", &dir).unwrap(), None).unwrap();
+    let fps = doc.fps;
+    let mut clip = new(media("tall.mp4", 1.0, fps));
+    clip.fit = Some(Fit::Fill);
+    let text = apply(&doc, &[clip]).unwrap().text;
+    let project = dir.join("fill.mlt");
+    save(&project, &text, &melt).await.unwrap();
+    let out = dir.join("fill.png");
+    let mut cmd = tokio::process::Command::new(&melt);
+    cmd.arg(&project)
+        .args(["in=10", "out=10", "-consumer"])
+        .arg(format!("avformat:{}", out.display()))
+        .args(["vcodec=png", "f=image2", "update=1"])
+        .env("QT_QPA_PLATFORM", "offscreen");
+    crate::video::prepare_child(&mut cmd);
+    assert!(cmd.status().await.unwrap().success());
+    let img = image::open(&out).unwrap().to_rgb8();
+    assert_eq!((img.width(), img.height()), (1920, 1080));
+    // The left edge is the clip's red, not a bar.
+    let edge = img.get_pixel(5, 540).0;
+    assert!(edge[0] > 150 && edge[1] < 80, "edge {edge:?}");
 }

@@ -122,6 +122,12 @@ export function itemLine(i: SummaryItem): string {
 		const most = i.gainDb >= MAX_GAIN_DB - 0.05 ? ', the most allowed' : '';
 		parts.push(`gain ${i.gainDb > 0 ? '+' : ''}${i.gainDb} dB${most}${limited}`);
 	}
+	if (i.fit?.mode === 'fill') parts.push('fills the frame');
+	if (i.fit?.mode === 'crop') {
+		const pct = (n: number) => `${Math.round(n * 100)}%`;
+		const f = i.fit;
+		parts.push(`cropped to ${pct(f.w)}×${pct(f.h)} at ${pct(f.x)}, ${pct(f.y)}`);
+	}
 	if (!i.hasVideo) parts.push('sound only');
 	if (!i.hasAudio) parts.push('no sound');
 	if (i.effects > 0) parts.push(`${plural(i.effects, 'effect')} added in the editor`);

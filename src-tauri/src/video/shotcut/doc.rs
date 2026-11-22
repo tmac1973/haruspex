@@ -22,6 +22,7 @@
 
 use crate::video::mlt::fps::Fps;
 use crate::video::mlt::xml::Tree;
+use crate::video::timeline::Fit;
 use std::path::Path;
 
 /// Marks a filter or crossfade as Haruspex's: Shotcut keeps properties it
@@ -419,6 +420,31 @@ impl Doc {
             .into_iter()
             .filter(|&f| self.tree.property(f, OURS) == Some("1"))
             .collect()
+    }
+
+    /// Haruspex's sound filters on a chain: its Gain and Limiter.
+    pub fn our_sound_filters(&self, chain: &str) -> Vec<usize> {
+        self.our_filters(chain)
+            .into_iter()
+            .filter(|&f| self.tree.property(f, "mlt_service") != Some("crop"))
+            .collect()
+    }
+
+    /// Haruspex's crop on a chain, which sets its fit.
+    pub fn our_fit_filter(&self, chain: &str) -> Option<usize> {
+        self.our_filters(chain)
+            .into_iter()
+            .find(|&f| self.tree.property(f, "mlt_service") == Some("crop"))
+    }
+
+    /// The fit Haruspex set on a chain; `None` is letterbox, MLT's own.
+    pub fn our_fit(&self, chain: &str) -> Option<Fit> {
+        let f = self.our_fit_filter(chain)?;
+        crate::video::mlt::fit::read(
+            |k| self.tree.property(f, k).map(str::to_string),
+            self.width,
+            self.height,
+        )
     }
 
     /// The gain Haruspex set on a chain, in dB.

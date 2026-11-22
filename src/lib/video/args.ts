@@ -12,6 +12,7 @@ import type { EndClip } from '#lib/ipc/gen/EndClip.ts';
 import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
 import type { VideoSettings } from '#lib/ipc/gen/VideoSettings.ts';
 import type { Chapter } from '#lib/ipc/gen/Chapter.ts';
+import type { Fit } from '#lib/ipc/gen/Fit.ts';
 import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
 
 /** What the Rust side needs from Settings → Video editing. */
@@ -72,6 +73,88 @@ export function parseAudio(v: unknown): CutAudioSpec[] | null | string {
 	return out;
 }
 
+/** Exact trims, as `video_cut` items and `video_edit`'s trim take them. */
+export const FRAME_PARAMS = {
+	in_frame: {
+		type: 'integer',
+		description: "Instead of in_secs: the first frame shown, from 0, at the project's frame rate."
+	},
+	out_frame: { type: 'integer', description: 'Instead of out_secs: the last frame shown.' }
+};
+
+/** A clip's fit, as `video_cut` items and `video_edit` take it. */
+export const FIT_PARAMS = {
+	fit: {
+		type: 'string',
+		enum: ['letterbox', 'fill', 'crop'],
+		description:
+			'How the picture fills a frame of another shape: letterbox (the whole picture, with bars; the default), fill (edge to edge, the spare cut off around the centre), or crop (the region in crop).'
+	},
+	crop: {
+		type: 'object',
+		description: 'With fit crop: the region kept, as fractions 0–1 of the source picture.',
+		properties: {
+			x: { type: 'number' },
+			y: { type: 'number' },
+			w: { type: 'number' },
+			h: { type: 'number' }
+		}
+	}
+};
+
+const FIT_WRONG = 'fit must be letterbox, fill or crop (with crop: {x, y, w, h}).';
+
+/** A crop region {x, y, w, h} inside the picture, or what is wrong with it. */
+function cropRegion(region: unknown): Fit | string {
+	const o = region as Record<string, unknown>;
+	const [x, y, w, h] = [o.x, o.y, o.w, o.h].map(parsedFiniteOrNull);
+	if (x === null || y === null || w === null || h === null) {
+		return 'A crop region needs x, y, w and h, as fractions 0–1 of the picture.';
+	}
+	const inside = [x, y, w, h].every((n) => n >= 0 && n <= 1) && w > 0 && h > 0;
+	if (!inside || x + w > 1 + 1e-9 || y + h > 1 + 1e-9) {
+		return 'A crop region must stay inside the picture: fractions 0–1, x + w and y + h at most 1.';
+	}
+	return { mode: 'crop', x, y, w, h };
+}
+
+/**
+ * `fit`: "letterbox", "fill", or "crop" with `crop` {x, y, w, h} as fractions
+ * of the source frame (a crop region given as `fit` itself works too). Null
+ * when none was given; a string says what is wrong.
+ */
+export function parseFit(fit: unknown, crop?: unknown): Fit | null | string {
+	if (fit === undefined || fit === null) return null;
+	if (typeof fit !== 'string') return fit && typeof fit === 'object' ? cropRegion(fit) : FIT_WRONG;
+	const s = fit.trim().toLowerCase();
+	if (s === 'letterbox' || s === 'fill') return { mode: s };
+	if (s !== 'crop') return FIT_WRONG;
+	return crop && typeof crop === 'object' ? cropRegion(crop) : 'fit crop needs crop: {x, y, w, h}.';
+}
+
+/** A whole frame number from 0, null for none, or what is wrong. */
+function frameArg(v: unknown, name: string): number | null | string {
+	if (v === undefined || v === null) return null;
+	const n = parsedFiniteOrNull(v);
+	if (n === null || n < 0 || !Number.isInteger(n)) return `${name} is a whole frame number from 0.`;
+	return n;
+}
+
+/** `in_frame` / `out_frame`, or what is wrong with them. */
+function framesOf(
+	o: Record<string, unknown>,
+	where: string
+): { inFrame: number | null; outFrame: number | null } | string {
+	const inFrame = frameArg(o.in_frame, `${where}in_frame`);
+	if (typeof inFrame === 'string') return inFrame;
+	const outFrame = frameArg(o.out_frame, `${where}out_frame`);
+	if (typeof outFrame === 'string') return outFrame;
+	if (inFrame !== null && outFrame !== null && outFrame < inFrame) {
+		return `${where}out_frame comes before in_frame.`;
+	}
+	return { inFrame, outFrame };
+}
+
 /** `items`: the main track's clips, or what is wrong with them. */
 function parseItems(v: unknown): CutItemSpec[] | string {
 	const raw = Array.isArray(v) ? v : [];
@@ -84,12 +167,18 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 		if ((index === null) === (path === null)) {
 			return `items[${n}] needs exactly one of index (a clip already in the cut, from 1) or path (a new clip).`;
 		}
+		const frames = framesOf(o, `items[${n}].`);
+		if (typeof frames === 'string') return frames;
+		const fit = parseFit(o.fit, o.crop);
+		if (typeof fit === 'string') return `items[${n}]: ${fit}`;
 		items.push({
 			index: index === null ? null : Math.round(index),
 			path,
 			inSecs: parsedFiniteOrNull(o.in_secs),
 			outSecs: parsedFiniteOrNull(o.out_secs),
-			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs)
+			...frames,
+			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs),
+			fit
 		});
 	}
 	return items;
@@ -131,6 +220,23 @@ export function parseTime(v: unknown): number | null {
 	return s.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
 }
 
+function trimOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const inSecs = parsedFiniteOrNull(args.in_secs);
+	const outSecs = parsedFiniteOrNull(args.out_secs);
+	const frames = framesOf(args, '');
+	if (typeof frames === 'string') return frames;
+	const none = [inSecs, outSecs, frames.inFrame, frames.outFrame].every((v) => v === null);
+	if (none) return 'A trim needs in_secs, out_secs, in_frame or out_frame.';
+	return { op: 'trim', index, inSecs, outSecs, ...frames };
+}
+
+function fitOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const fit = parseFit(args.fit, args.crop);
+	if (fit === null) return 'A fit needs "fit": letterbox, fill or crop (with crop: {x, y, w, h}).';
+	if (typeof fit === 'string') return fit;
+	return { op: 'fit', index, fit };
+}
+
 export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 	const op = trimmedOrNull(args.op);
 	if (op === 'remove_silences') {
@@ -144,12 +250,8 @@ export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 	}
 	const index = parsedFiniteOrNull(args.index);
 	if (index === null) return 'video_edit needs "index", the clip number from 1.';
-	if (op === 'trim') {
-		const inSecs = parsedFiniteOrNull(args.in_secs);
-		const outSecs = parsedFiniteOrNull(args.out_secs);
-		if (inSecs === null && outSecs === null) return 'A trim needs in_secs, out_secs or both.';
-		return { op: 'trim', index, inSecs, outSecs };
-	}
+	if (op === 'trim') return trimOp(args, index);
+	if (op === 'fit') return fitOp(args, index);
 	if (op === 'remove') return { op: 'remove', index };
 	if (op === 'remove_ranges') {
 		const raw = Array.isArray(args.ranges) ? args.ranges : [];
@@ -168,7 +270,7 @@ export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 		if (to === null) return 'A move needs "to", the position from 1.';
 		return { op: 'move', from: index, to };
 	}
-	return 'op must be trim, remove, move, remove_ranges or remove_silences.';
+	return 'op must be trim, fit, remove, move, remove_ranges or remove_silences.';
 }
 
 /** `chapters: [{title, at}]` as the Rust side takes them, or what is wrong. */
