@@ -11,9 +11,10 @@ Click the gear in the header; **← Back** closes.
 
 ## General
 
-Appearance, Home, replies, lean mode and tool loading.
+Appearance, Home, running in the background, replies, lean mode and tool loading.
 
 - **Show the Home tab**: on.
+- **Background**: **Keep running in the tray** and **Start at login**, both off (see `run-in-background`).
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: Teal (default).
 - **Response Format**: Minimal, Standard (default) or Rich.

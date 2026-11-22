@@ -66,6 +66,7 @@ const PAGES = [
 	'other-computers',
 	'settings',
 	'settings-tools',
+	'run-in-background',
 	'shortcuts',
 	'model-feedback',
 	'troubleshooting'

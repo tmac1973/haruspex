@@ -5,6 +5,7 @@ mod app_windows;
 mod artifact_frame;
 mod audio;
 mod audio_cache;
+mod background;
 mod blob_cache;
 mod camera;
 mod clipboard;
@@ -90,6 +91,15 @@ pub fn run() {
     app_log::init();
 
     tauri::Builder::default()
+        // First, so a second launch hands over to the running one before
+        // anything else starts: one process owns the sidecar ports.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            background::show_main(app);
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![background::HIDDEN_ARG]),
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -147,6 +157,10 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 secrets::init(dir);
             }
+            // The main window starts hidden (tauri.conf.json); this shows it,
+            // unless a login start can stay in the tray. See background.
+            app.manage(background::Background::load(app.path().app_data_dir().ok()));
+            background::on_startup(app.handle(), background::started_hidden(std::env::args()));
             // Settings every build shares; see webview_store.
             app.manage(std::sync::Arc::new(webview_store::WebviewStore::new(
                 app.handle(),
@@ -281,6 +295,16 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // With the tray on, the close button hides the main window. It
+            // stays alive because the job scheduler and Home cards run in it.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main"
+                    && window.state::<background::Background>().hides_on_close()
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
             // Primary orphan cleanup: a window that closes (or crashes)
             // forfeits any inference slots/tickets it held, so a detached
             // shell window dying mid-turn can't deadlock the single slot.
@@ -878,10 +902,18 @@ pub fn run() {
             integrations::dav::commands::dav_get_contact,
             integrations::dav::commands::dav_list_events,
             integrations::dav::commands::dav_search_events,
+            background::background_get,
+            background::background_set_tray,
+            background::background_set_start_at_login,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            // The Dock icon brings back a window the tray hid.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = event {
+                background::show_main(app);
+            }
             if let RunEvent::Exit = event {
                 let llama = app.state::<LlamaServer>();
                 let whisper = app.state::<WhisperServer>();
