@@ -16,6 +16,7 @@ use super::auth::EmailAccount;
 use super::imap_client::{self, ListFilters};
 use super::parser::{EmailListing, NormalizedMessage};
 use super::provider::{saves_sent_copy, EmailProviderPreset, PRESETS};
+use super::request_reply::{self, ReplyInput};
 use super::requests::{self, RequestCandidate, RequestFolder};
 use super::smtp_client::{self, OutgoingMessage, ReplyContext};
 use super::sub_agent::{self, SummarizerInput};
@@ -211,6 +212,19 @@ pub async fn email_request_move(
     folder: RequestFolder,
 ) -> Result<(), String> {
     requests::move_to(&account, &handle, folder).await
+}
+
+/// Research by email: send the reply to a request. It goes to the account's
+/// own address only, with the Message-ID the job chose, and is not saved to
+/// Sent (the account's Inbox gets it).
+#[tauri::command]
+pub async fn email_request_reply(account: EmailAccount, input: ReplyInput) -> Result<(), String> {
+    let id = input.reply_message_id.clone();
+    smtp_client::send_built_with_id(&account, &id, |from, message_id| {
+        request_reply::build(from, message_id, &input)
+    })
+    .await?;
+    Ok(())
 }
 
 /// Move one INBOX message to the account's Trash. Only Home's email card

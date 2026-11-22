@@ -219,9 +219,20 @@ pub async fn send_built(
     account: &EmailAccount,
     build: impl FnOnce(&str, &str) -> Result<Message, String>,
 ) -> Result<Sent, String> {
+    let message_id = new_message_id(&account.email_address);
+    send_built_with_id(account, &message_id, build).await
+}
+
+/// [`send_built`] with a Message-ID the caller chose: a research reply, whose
+/// id is stored before sending so a retry after a crash reuses it.
+pub async fn send_built_with_id(
+    account: &EmailAccount,
+    message_id: &str,
+    build: impl FnOnce(&str, &str) -> Result<Message, String>,
+) -> Result<Sent, String> {
     require_sending(account)?;
     let account = auth::resolve(account).await?;
-    let message_id = new_message_id(&account.email_address);
+    let message_id = message_id.to_string();
     let message = build(&account.email_address, &message_id)?;
     let raw = message.formatted();
     let t = transport(&account)?;
