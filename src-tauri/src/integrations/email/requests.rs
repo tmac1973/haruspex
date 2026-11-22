@@ -10,7 +10,9 @@
 //! on what the frontend passes in. IMAP `SEARCH` only narrows: it matches
 //! substrings and servers differ, so each hit is checked again exactly.
 
-use async_imap::types::{Flag, NameAttribute};
+use async_imap::imap_proto::rfc4315::UidSetMember;
+use async_imap::imap_proto::{Outcome, Response, ResponseCode, Status};
+use async_imap::types::{Flag, NameAttribute, UnsolicitedResponse};
 use futures_util::TryStreamExt;
 use mail_parser::{AddressList, Message, MessageParser};
 use serde::{Deserialize, Serialize};
@@ -625,13 +627,74 @@ async fn reply_seen_in(
     Ok(false)
 }
 
+/// What moving a request found. A claim is a lock only because of this: of
+/// two computers moving one request, one sees `Moved`, the other `Gone`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum MoveOutcome {
+    /// This call moved it.
+    Moved,
+    /// It was no longer in the Inbox: another client moved or deleted it first.
+    Gone,
+}
+
+/// What the server said while one UID MOVE ran.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct MoveReport {
+    /// An untagged COPYUID that names the message: this MOVE moved it.
+    copied: bool,
+    /// An EXPUNGE or VANISHED: something left the Inbox, perhaps ours.
+    expunged: bool,
+}
+
+fn covers(set: &[UidSetMember], uid: u32) -> bool {
+    set.iter().any(|m| match m {
+        UidSetMember::Uid(u) => *u == uid,
+        UidSetMember::UidRange(r) => r.contains(&uid),
+    })
+}
+
+/// Add one response the server sent during the MOVE to the report.
+fn note(report: &mut MoveReport, response: &Response<'_>, uid: u32) {
+    match response {
+        Response::Data {
+            status: Status::Ok,
+            outcome:
+                Outcome {
+                    code: Some(ResponseCode::CopyUid(_, src, _)),
+                    ..
+                },
+        } if covers(src, uid) => report.copied = true,
+        Response::Expunge(_) | Response::Vanished { .. } => report.expunged = true,
+        _ => {}
+    }
+}
+
+/// The outcome, from whether the message was in the Inbox just before the
+/// move and what the MOVE reported (`None` when the server has no MOVE).
+///
+/// RFC 6851 has a MOVE that moves something send EXPUNGE or VANISHED, and a
+/// server with UIDPLUS send COPYUID before them. So a MOVE with neither
+/// moved nothing. An EXPUNGE without COPYUID can be another client's move
+/// reported late, but it counts as moved: a second answer is better than
+/// none.
+fn outcome(present: bool, report: Option<MoveReport>) -> MoveOutcome {
+    match report {
+        _ if !present => MoveOutcome::Gone,
+        Some(r) if !r.copied && !r.expunged => MoveOutcome::Gone,
+        _ => MoveOutcome::Moved,
+    }
+}
+
 /// Move one INBOX message (by handle) to one of the job's folders, creating
-/// it (and `Haruspex` above `Ignored`) when it's missing.
+/// it (and `Haruspex` above `Ignored`) when it's missing. A message no longer
+/// in the Inbox is [`MoveOutcome::Gone`], not an error.
 pub async fn move_to(
     account: &EmailAccount,
     message_handle: &str,
     folder: RequestFolder,
-) -> Result<(), String> {
+) -> Result<MoveOutcome, String> {
     with_session!(account, |session, acct, t| move_in(
         session,
         acct,
@@ -647,7 +710,7 @@ async fn move_in(
     message_handle: &str,
     folder: RequestFolder,
     t: &Timeouts,
-) -> Result<(), String> {
+) -> Result<MoveOutcome, String> {
     let host = account.imap_host.as_str();
     let boxes = mailboxes(session, host, t).await?;
     let (top, ignored) = folder_names(&boxes);
@@ -665,8 +728,33 @@ async fn move_in(
         RequestFolder::Ignored => ignored,
     };
     let validity = select_inbox(session, host, t).await?;
-    let set = uid_from_handle(message_handle, validity)?.to_string();
-    move_selected(session, host, t, &set, &dest).await
+    let uid = uid_from_handle(message_handle, validity)?;
+    let set = uid.to_string();
+    let present = fetch(session, host, t, &set, "(UID FLAGS)")
+        .await?
+        .iter()
+        .any(|f| f.uid == Some(uid) && !f.flags().any(|flag| matches!(flag, Flag::Deleted)));
+    if !present {
+        return Ok(MoveOutcome::Gone);
+    }
+    let caps = within(t.command, host, "CAPABILITY", session.capabilities()).await?;
+    if !caps.has_str("MOVE") {
+        move_selected(session, host, t, &set, &dest).await?;
+        return Ok(outcome(true, None));
+    }
+    // Old unsolicited responses would read as this MOVE's, and a full
+    // channel would drop its COPYUID.
+    while session.unsolicited_responses.try_recv().is_ok() {}
+    within(t.command, host, "MOVE", session.uid_mv(&set, &dest)).await?;
+    let mut report = MoveReport::default();
+    while let Ok(response) = session.unsolicited_responses.try_recv() {
+        match response {
+            UnsolicitedResponse::Expunge(_) => report.expunged = true,
+            UnsolicitedResponse::Other(data) => note(&mut report, data.parsed(), uid),
+            _ => {}
+        }
+    }
+    Ok(outcome(true, Some(report)))
 }
 
 #[cfg(test)]
@@ -900,5 +988,63 @@ mod tests {
         // `UID 42:*` on a mailbox whose highest UID is 41 returns 41.
         assert!(at_or_above([41], 42).is_empty());
         assert_eq!(at_or_above([44, 42, 43], 42), vec![42, 43, 44]);
+    }
+
+    fn report_of(lines: &[&[u8]], uid: u32) -> MoveReport {
+        let mut report = MoveReport::default();
+        for line in lines {
+            let (_, response) = Response::parse(line).unwrap();
+            note(&mut report, &response, uid);
+        }
+        report
+    }
+
+    #[test]
+    fn a_copyuid_counts_only_when_it_names_our_message() {
+        let ours = report_of(
+            &[b"* OK [COPYUID 38505 304,319:320 3956:3958] Moved\r\n"],
+            319,
+        );
+        assert!(ours.copied);
+        let other = report_of(&[b"* OK [COPYUID 38505 304 3956] Moved\r\n"], 319);
+        assert!(!other.copied);
+        let expunge = report_of(&[b"* 3 EXPUNGE\r\n"], 319);
+        assert_eq!(
+            expunge,
+            MoveReport {
+                copied: false,
+                expunged: true
+            }
+        );
+        let vanished = report_of(&[b"* VANISHED 319\r\n"], 319);
+        assert!(vanished.expunged);
+    }
+
+    #[test]
+    fn a_request_gone_from_the_inbox_is_gone_not_moved() {
+        // Not there before the move: another computer has it.
+        assert_eq!(outcome(false, None), MoveOutcome::Gone);
+        assert_eq!(
+            outcome(false, Some(MoveReport::default())),
+            MoveOutcome::Gone
+        );
+        // A MOVE that reported nothing moved nothing: it went in between.
+        assert_eq!(
+            outcome(true, Some(MoveReport::default())),
+            MoveOutcome::Gone
+        );
+        let copied = MoveReport {
+            copied: true,
+            expunged: true,
+        };
+        assert_eq!(outcome(true, Some(copied)), MoveOutcome::Moved);
+        // An EXPUNGE alone can't be told apart, so it counts as ours.
+        let expunged = MoveReport {
+            copied: false,
+            expunged: true,
+        };
+        assert_eq!(outcome(true, Some(expunged)), MoveOutcome::Moved);
+        // No MOVE on the server: COPY and EXPUNGE say nothing, so trust the check.
+        assert_eq!(outcome(true, None), MoveOutcome::Moved);
     }
 }

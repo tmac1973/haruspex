@@ -51,11 +51,13 @@ DKIM, SPF and DMARC results are recorded for each request and shown on Home's Em
 
 ## Where the mail goes
 
-When Haruspex picks up a request, it moves it from the Inbox to a `Haruspex` folder. Ignored requests (no copy in Sent, or over the daily limit) go to `Haruspex/Ignored`. Nothing is marked read. Replies go only to the account's own address, never to a Reply-To or Cc in the request, and no copy of them is saved to Sent.
+When Haruspex picks up a request, it moves it from the Inbox to a `Haruspex` folder. Ignored requests (no copy in Sent, or over the daily limit) go to `Haruspex/Ignored`. Nothing is marked read.
+
+The move is also how two computers with the same job share the work. Whichever moves a request first answers it; the other sees it gone from the Inbox and leaves it. Replies go only to the account's own address, never to a Reply-To or Cc in the request, and no copy of them is saved to Sent.
 
 ## See the requests on Home
 
-The Email requests card shows the phrase and address to use, and whether Haruspex is watching the inbox. Under that are the last 20 requests, newest first. Each has a state: **Waiting** (for its copy in Sent), **Researching**, **Sending**, **Answered**, **Failed** or **Ignored**. Failed and Ignored ones give the reason: No copy in Sent, Daily limit, Research failed or Couldn't send. A line under each gives its DKIM, SPF and DMARC results.
+The Email requests card shows the phrase and address to use, and whether Haruspex is watching the inbox. Under that are the last 20 requests, newest first. Each has a state: **Waiting** (for its copy in Sent), **Researching**, **Sending**, **Answered**, **Failed** or **Ignored**. Failed and Ignored ones give the reason: No copy in Sent, Daily limit, Research failed, Couldn't send or Another computer took it. A line under each gives its DKIM, SPF and DMARC results.
 
 Click an answered request to read its question and answer; **Open run** shows the run in the Jobs tab. The card is greyed out while the account has **Allow sending** off. **⋯ → Notify on new items** sends a notification for each new answer. A list of ignored requests you didn't send means someone is trying the phrase.
 
@@ -65,6 +67,6 @@ Click an answered request to read its question and answer; **Open run** shows th
 - Attachments in a request are ignored.
 - It answers only mail from the account to itself.
 - Haruspex must be open to see a request. Mail that arrives while it is closed is picked up when it next starts. With **Answer when mail arrives** off, pickup waits for the next scheduled check.
-- Run the job on one computer only. Two computers with the same job may both answer.
+- Two computers with the same job can still both answer a request if one couldn't move it (no network, or the mail server refused). Some mail servers also leave a narrow gap when both move it at the same moment.
 
 Web pages it reads may see your question in the searches it makes, as with any web research.

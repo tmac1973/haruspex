@@ -13,7 +13,8 @@ export type { EmailRequestPatch, EmailRequestRow, NewEmailRequest };
 export type EmailRequestState =
 	'waiting_sent' | 'researching' | 'sending' | 'answered' | 'failed' | 'ignored';
 
-export type EmailRequestReason = 'no_sent_copy' | 'daily_limit' | 'research_failed' | 'send_failed';
+export type EmailRequestReason =
+	'no_sent_copy' | 'daily_limit' | 'research_failed' | 'send_failed' | 'claimed_elsewhere';
 
 /** The job's row for one request, or null when it hasn't seen it. */
 export function getEmailRequest(jobId: number, messageId: string): Promise<EmailRequestRow | null> {

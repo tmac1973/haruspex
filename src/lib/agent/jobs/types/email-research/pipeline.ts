@@ -4,8 +4,10 @@
  * Two stages.
  * - Check (no model): finish what an earlier run left open, scan the Inbox,
  *   and sort each candidate. A request is trusted only when Rust finds a
- *   matching copy in the account's Sent folder; a trusted one is recorded
- *   and moved out of the Inbox before any research starts.
+ *   matching copy in the account's Sent folder; a trusted one is moved out
+ *   of the Inbox before any research starts. The move is the claim: when
+ *   the message has already left the Inbox, another computer running the
+ *   same job has it, and this one leaves it alone.
  * - Answer: one web-only research turn per claimed request, then a reply in
  *   its thread, which Rust addresses to the account itself.
  *
@@ -13,11 +15,7 @@
  * guards, so a run cut off anywhere resumes without a second answer.
  */
 import { invoke } from '@tauri-apps/api/core';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted
-} from '#lib/stores/jobRuns.svelte.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import { getSettings, type EmailAccount } from '#lib/stores/settings.ts';
 import { emailCall, type NormalizedEmailMessage } from '#lib/agent/tools/email.ts';
 import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
@@ -26,6 +24,7 @@ import type { ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 import type { RequestCandidate } from '#lib/ipc/gen/RequestCandidate.ts';
 import type { ReplyInput } from '#lib/ipc/gen/ReplyInput.ts';
 import type { RequestFolder } from '#lib/ipc/gen/RequestFolder.ts';
+import type { MoveOutcome } from '#lib/ipc/gen/MoveOutcome.ts';
 import {
 	countEmailRequestsSince,
 	emailRequestByReplyId,
@@ -53,6 +52,7 @@ import {
 } from '#lib/agent/jobs/types/email-research/triage.ts';
 import { requestQuestion, stripPhrase } from '#lib/agent/jobs/types/email-research/body.ts';
 import { failureNote, replyParts } from '#lib/agent/jobs/types/email-research/reply.ts';
+import { stepMarkers } from '#lib/agent/jobs/types/email-research/steps.ts';
 import {
 	newReplyId,
 	RESEARCH_TOOLS,
@@ -127,12 +127,20 @@ function subjectOf(run: Run, row: { subject: string }): string {
 	return stripPhrase(row.subject, run.config.phrase) || '(no subject)';
 }
 
-/** Move one message, logging rather than failing: the record already stops a second answer. */
-async function move(run: Run, handle: string, folder: RequestFolder): Promise<void> {
+/**
+ * Move one message, logging rather than failing: the record already stops a
+ * second answer here. Null when the move failed.
+ */
+async function move(run: Run, handle: string, folder: RequestFolder): Promise<MoveOutcome | null> {
 	try {
-		await invoke('email_request_move', { account: run.account, handle, folder });
+		return await invoke<MoveOutcome>('email_request_move', {
+			account: run.account,
+			handle,
+			folder
+		});
 	} catch (e) {
 		console.warn('email_research: move failed', errMessage(e));
+		return null;
 	}
 }
 
@@ -245,7 +253,13 @@ async function finishOpen(run: Run, now: number): Promise<EmailRequestRow[]> {
 	const again: EmailRequestRow[] = [];
 	for (const row of await openEmailRequests(run.ctx.job.id)) {
 		throwIfAborted(run);
-		if (row.state === 'sending') {
+		if (row.state === 'waiting_sent' && row.claimedAt !== null) {
+			// Cut off mid-claim: the move may have gone, so the scan may not
+			// meet it again. Research it, as a failed move would.
+			const attempts = row.attempts + 1;
+			await updateEmailRequest(row.id, { state: 'researching', attempts, runId: run.ctx.runId });
+			again.push({ ...row, state: 'researching', attempts });
+		} else if (row.state === 'sending') {
 			await finishSending(run, row);
 		} else if (row.state === 'researching') {
 			if (row.attempts < MAX_ATTEMPTS) {
@@ -272,12 +286,16 @@ async function threadOf(run: Run, c: RequestCandidate): Promise<string> {
 	return c.messageId;
 }
 
-/** Claim a trusted request: read its body, record it, then move it out of the Inbox. */
+/**
+ * Claim a trusted request: read its body, mark the claim begun, then move it
+ * out of the Inbox. Null when it had left already: another computer has it.
+ * A failed move still claims it, so it is answered here.
+ */
 async function claim(
 	run: Run,
 	c: RequestCandidate,
 	row: EmailRequestRow
-): Promise<EmailRequestRow> {
+): Promise<EmailRequestRow | null> {
 	const full = await emailCall<NormalizedEmailMessage>(
 		'email_read_full',
 		{ account: run.account, messageId: c.handle },
@@ -287,16 +305,15 @@ async function claim(
 	const threadId = await threadOf(run, c);
 	const claimedAt = Date.now();
 	const attempts = row.attempts + 1;
-	await updateEmailRequest(row.id, {
-		state: 'researching',
-		question,
-		threadId,
-		attempts,
-		claimedAt,
-		runId: run.ctx.runId,
-		reason: ''
-	});
-	await move(run, c.handle, 'haruspex');
+	// Still waiting, but with claimedAt: finishOpen researches it after a crash.
+	await updateEmailRequest(row.id, { question, threadId, claimedAt, runId: run.ctx.runId });
+	if ((await move(run, c.handle, 'haruspex')) === 'gone') {
+		await updateEmailRequest(row.id, { state: 'ignored', reason: 'claimed_elsewhere' });
+		run.counts.ignored++;
+		run.checkLog.push(`- Left "${subjectOf(run, c)}": another computer picked it up.`);
+		return null;
+	}
+	await updateEmailRequest(row.id, { state: 'researching', attempts, reason: '' });
 	run.checkLog.push(`- Picked up "${subjectOf(run, c)}".`);
 	return { ...row, state: 'researching', question, threadId, attempts, claimedAt };
 }
@@ -409,28 +426,6 @@ async function prepare(ctx: JobRunContext): Promise<Run> {
 		items: [],
 		checkLog: [],
 		answerLog: []
-	};
-}
-
-function stepMarkers(ctx: JobRunContext) {
-	const { runId } = ctx;
-	return {
-		start(step: number) {
-			const startedAt = Date.now();
-			ctx.patchStep(step, { status: 'running', startedAt });
-			ctx.setCurrentStepIndex(step);
-			void markRunStepStarted(runId, step, startedAt, ctx.stepAuthored(step));
-		},
-		finish(
-			step: number,
-			status: 'succeeded' | 'failed' | 'cancelled',
-			output: string | null,
-			error: string | null
-		) {
-			const finishedAt = Date.now();
-			ctx.patchStep(step, { status, output: output ?? '', error, finishedAt });
-			void markRunStepFinished(runId, step, status, output, error, finishedAt);
-		}
 	};
 }
 

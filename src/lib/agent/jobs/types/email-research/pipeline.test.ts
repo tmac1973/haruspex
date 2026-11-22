@@ -51,6 +51,9 @@ class World {
 	bodies: Record<string, string> = {};
 	calls: Array<[string, Record<string, unknown>]> = [];
 	failReply = false;
+	/** Handles another computer moved out of the Inbox first. */
+	taken = new Set<string>();
+	failMove = false;
 
 	add(r: Partial<EmailRequestRow> & { messageId: string; state: string }): EmailRequestRow {
 		const row: EmailRequestRow = {
@@ -116,7 +119,10 @@ class World {
 			email_request_reply_seen: log('email_request_reply_seen', (a) =>
 				this.seenReplies.has(a.replyMessageId as string)
 			),
-			email_request_move: log('email_request_move', () => null),
+			email_request_move: log('email_request_move', (a) => {
+				if (this.failMove) throw new Error('imap down');
+				return this.taken.has(a.handle as string) ? 'gone' : 'moved';
+			}),
 			email_request_reply: log('email_request_reply', () => {
 				if (this.failReply) throw new Error('smtp down');
 				return null;
@@ -159,7 +165,10 @@ class World {
 			db_email_requests_count_since: (a) =>
 				this.rows.filter(
 					(r) =>
-						r.jobId === a?.jobId && r.claimedAt !== null && r.claimedAt >= (a?.sinceMs as number)
+						r.jobId === a?.jobId &&
+						r.claimedAt !== null &&
+						r.claimedAt >= (a?.sinceMs as number) &&
+						r.reason !== 'claimed_elsewhere'
 				).length,
 			db_email_requests_prune: 0
 		});
@@ -462,5 +471,65 @@ describe('research by email pipeline', () => {
 		const h = await run(w);
 		expect(h.turns).toEqual([]);
 		expect(w.rows).toEqual([]);
+	});
+	it('marks the claim before the move and says researching only after it', async () => {
+		const w = new World();
+		w.mail('req@mail.gmail.com');
+		await run(w);
+		const names = w.names();
+		const begun = w.calls.findIndex(
+			(c) => c[0] === 'update:req@mail.gmail.com:' && c[1].claimedAt !== undefined
+		);
+		const moved = names.indexOf('email_request_move');
+		expect(begun).toBeGreaterThan(-1);
+		expect(begun).toBeLessThan(moved);
+		expect(names.indexOf('update:req@mail.gmail.com:researching')).toBeGreaterThan(moved);
+	});
+
+	it('leaves a request another computer moved first, and does not retry it', async () => {
+		const w = new World();
+		w.mail('taken@mail.gmail.com');
+		w.mail('mine@mail.gmail.com', {}, true);
+		w.taken.add('7:1');
+		const h = await run(w, { config: { dailyLimit: 1 } });
+		expect(w.byId('taken@mail.gmail.com')).toMatchObject({
+			state: 'ignored',
+			reason: 'claimed_elsewhere'
+		});
+		// It used none of the daily limit.
+		expect(w.byId('mine@mail.gmail.com').state).toBe('answered');
+		expect(h.turns).toHaveLength(1);
+		expect(replies(w).map((i) => i.requestMessageId)).toEqual(['mine@mail.gmail.com']);
+		expect(h.result).toMatchObject({ answered: 1, ignored: 1 });
+
+		// The other computer has it now, so the Inbox no longer does.
+		w.inbox = [];
+		w.calls = [];
+		const again = await run(w);
+		expect(again.turns).toEqual([]);
+		expect(w.byId('taken@mail.gmail.com').state).toBe('ignored');
+	});
+
+	it('still answers a request when its move fails for another reason', async () => {
+		const w = new World();
+		w.mail('req@mail.gmail.com');
+		w.failMove = true;
+		const h = await run(w);
+		expect(h.turns).toHaveLength(1);
+		expect(w.byId('req@mail.gmail.com').state).toBe('answered');
+	});
+
+	it('researches a request cut off mid-claim, which the scan may not meet again', async () => {
+		const w = new World();
+		w.add({
+			messageId: 'mid@mail.gmail.com',
+			state: 'waiting_sent',
+			question: 'q',
+			claimedAt: Date.now() - 1000,
+			firstSeenAt: Date.now() - HOUR - 1
+		});
+		const h = await run(w);
+		expect(h.turns).toHaveLength(1);
+		expect(w.byId('mid@mail.gmail.com')).toMatchObject({ state: 'answered', attempts: 1 });
 	});
 });
