@@ -723,3 +723,97 @@ pub async fn db_home_cards_reorder(
     let db = state.inner().clone();
     on_pool(db, move |db| db.reorder_home_cards(&ids)).await
 }
+
+#[tauri::command]
+pub async fn db_email_requests_get(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    message_id: String,
+) -> Result<Option<EmailRequestRow>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_request_get(job_id, &message_id)).await
+}
+
+/// Record a request the job hasn't seen. Returns whether it was added.
+#[tauri::command]
+pub async fn db_email_requests_insert(
+    state: tauri::State<'_, Database>,
+    row: NewEmailRequest,
+) -> Result<bool, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_request_insert(&row)).await
+}
+
+#[tauri::command]
+pub async fn db_email_requests_update(
+    state: tauri::State<'_, Database>,
+    id: i64,
+    patch: EmailRequestPatch,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_request_update(id, &patch)).await
+}
+
+#[tauri::command]
+pub async fn db_email_requests_list(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    limit: i64,
+) -> Result<Vec<EmailRequestRow>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_requests_list(job_id, limit)).await
+}
+
+#[tauri::command]
+pub async fn db_email_requests_open(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+) -> Result<Vec<EmailRequestRow>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_requests_open(job_id)).await
+}
+
+#[tauri::command]
+pub async fn db_email_requests_thread(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    thread_id: String,
+) -> Result<Vec<EmailRequestRow>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_requests_thread(job_id, &thread_id)).await
+}
+
+/// The row whose reply has this Message-ID, in any job.
+#[tauri::command]
+pub async fn db_email_requests_by_reply_id(
+    state: tauri::State<'_, Database>,
+    reply_message_id: String,
+) -> Result<Option<EmailRequestRow>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.email_request_by_reply_id(&reply_message_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn db_email_requests_count_since(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    since_ms: i64,
+) -> Result<i64, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.email_requests_count_since(job_id, since_ms)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn db_email_requests_prune(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+) -> Result<usize, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.email_requests_prune(job_id)).await
+}

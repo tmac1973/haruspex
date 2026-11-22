@@ -3385,3 +3385,236 @@ fn peer_lists_of_removed_peers_go() {
     assert!(db.get_peer_lists("keep").unwrap().is_some());
     assert_eq!(db.get_peer_lists("gone").unwrap(), None);
 }
+
+fn email_request(job_id: i64, message_id: &str, thread_id: &str) -> NewEmailRequest {
+    NewEmailRequest {
+        job_id,
+        message_id: message_id.into(),
+        thread_id: thread_id.into(),
+        references: vec!["older@mail.example".into()],
+        subject: "ask haruspex: e-bikes".into(),
+        state: "waiting_sent".into(),
+        reason: None,
+        auth: Some(crate::integrations::email::auth_results::AuthResults::ABSENT),
+        run_id: Some(7),
+    }
+}
+
+fn set_email_request_times(db: &Database, id: i64, at: i64) {
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE email_requests SET first_seen_at = ?2, updated_at = ?2 WHERE id = ?1",
+            params![id, at],
+        )
+        .unwrap();
+}
+
+#[test]
+fn an_email_request_is_recorded_once() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Email")).unwrap();
+    assert!(db
+        .email_request_insert(&email_request(job, "a@x.example", "a@x.example"))
+        .unwrap());
+    assert!(!db
+        .email_request_insert(&email_request(job, "a@x.example", "a@x.example"))
+        .unwrap());
+    let row = db.email_request_get(job, "a@x.example").unwrap().unwrap();
+    assert_eq!(row.references, vec!["older@mail.example"]);
+    assert_eq!(
+        row.auth,
+        Some(crate::integrations::email::auth_results::AuthResults::ABSENT)
+    );
+    assert_eq!(row.state, "waiting_sent");
+    assert_eq!(row.run_id, Some(7));
+    assert!(db.email_request_get(job, "b@x.example").unwrap().is_none());
+    // A state or reason outside the list is refused.
+    let mut bad = email_request(job, "c@x.example", "c@x.example");
+    bad.state = "done".into();
+    assert!(db.email_request_insert(&bad).is_err());
+}
+
+#[test]
+fn an_email_request_patch_leaves_omitted_fields_and_clears_reason() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Email")).unwrap();
+    let mut new = email_request(job, "a@x.example", "a@x.example");
+    new.state = "ignored".into();
+    new.reason = Some("no_sent_copy".into());
+    db.email_request_insert(&new).unwrap();
+    let id = db
+        .email_request_get(job, "a@x.example")
+        .unwrap()
+        .unwrap()
+        .id;
+
+    db.email_request_update(
+        id,
+        &EmailRequestPatch {
+            question: Some("Which e-bike?".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let row = db.email_request_get(job, "a@x.example").unwrap().unwrap();
+    assert_eq!(row.question.as_deref(), Some("Which e-bike?"));
+    assert_eq!(row.state, "ignored");
+    assert_eq!(row.reason.as_deref(), Some("no_sent_copy"));
+
+    db.email_request_update(
+        id,
+        &EmailRequestPatch {
+            state: Some("researching".into()),
+            reason: Some(String::new()),
+            claimed_at: Some(1000),
+            attempts: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let row = db.email_request_get(job, "a@x.example").unwrap().unwrap();
+    assert_eq!(row.state, "researching");
+    assert_eq!(row.reason, None);
+    assert_eq!(row.claimed_at, Some(1000));
+    assert_eq!(row.attempts, 1);
+    assert_eq!(row.question.as_deref(), Some("Which e-bike?"));
+
+    let bad = EmailRequestPatch {
+        reply_kind: Some("other".into()),
+        ..Default::default()
+    };
+    assert!(db.email_request_update(id, &bad).is_err());
+}
+
+#[test]
+fn email_requests_list_open_and_thread_in_order() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Email")).unwrap();
+    for (n, (mid, state)) in [
+        ("root@x.example", "answered"),
+        ("follow@x.example", "sending"),
+        ("other@x.example", "ignored"),
+        ("late@x.example", "waiting_sent"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let thread = if *mid == "follow@x.example" {
+            "root@x.example"
+        } else {
+            mid
+        };
+        let mut new = email_request(job, mid, thread);
+        new.state = state.to_string();
+        db.email_request_insert(&new).unwrap();
+        let id = db.email_request_get(job, mid).unwrap().unwrap().id;
+        set_email_request_times(&db, id, 1000 + n as i64);
+    }
+    let ids = |rows: Vec<EmailRequestRow>| -> Vec<String> {
+        rows.into_iter().map(|r| r.message_id).collect()
+    };
+    assert_eq!(
+        ids(db.email_requests_list(job, 3).unwrap()),
+        vec!["late@x.example", "other@x.example", "follow@x.example"]
+    );
+    assert_eq!(
+        ids(db.email_requests_open(job).unwrap()),
+        vec!["follow@x.example", "late@x.example"]
+    );
+    assert_eq!(
+        ids(db.email_requests_thread(job, "root@x.example").unwrap()),
+        vec!["root@x.example", "follow@x.example"]
+    );
+}
+
+#[test]
+fn email_requests_count_by_claim_time_and_reply_ids_cross_jobs() {
+    let db = test_db();
+    let a = db.create_job(&sample_job_input("A")).unwrap();
+    let b = db.create_job(&sample_job_input("B")).unwrap();
+    for (mid, claimed) in [
+        ("one@x.example", Some(500)),
+        ("two@x.example", Some(1500)),
+        ("three@x.example", None),
+    ] {
+        db.email_request_insert(&email_request(a, mid, mid))
+            .unwrap();
+        let id = db.email_request_get(a, mid).unwrap().unwrap().id;
+        db.email_request_update(
+            id,
+            &EmailRequestPatch {
+                claimed_at: claimed,
+                reply_message_id: Some(format!("reply-{mid}")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(db.email_requests_count_since(a, 1000).unwrap(), 1);
+    assert_eq!(db.email_requests_count_since(a, 0).unwrap(), 2);
+    assert_eq!(db.email_requests_count_since(b, 0).unwrap(), 0);
+    let hit = db
+        .email_request_by_reply_id("reply-two@x.example")
+        .unwrap()
+        .unwrap();
+    assert_eq!(hit.job_id, a);
+    assert!(db.email_request_by_reply_id("nope").unwrap().is_none());
+}
+
+#[test]
+fn deleting_the_job_deletes_its_email_requests() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Email")).unwrap();
+    db.email_request_insert(&email_request(job, "a@x.example", "a@x.example"))
+        .unwrap();
+    db.delete_job(job).unwrap();
+    assert!(db.email_requests_list(job, 10).unwrap().is_empty());
+}
+
+#[test]
+fn pruning_email_requests_keeps_open_and_young_rows() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Email")).unwrap();
+    let day = 24 * 60 * 60 * 1000_i64;
+    let now = 1_000 * day;
+    for (mid, state, age_days) in [
+        ("ignored-old@x.example", "ignored", 31),
+        ("ignored-young@x.example", "ignored", 20),
+        ("answered-mid@x.example", "answered", 100),
+        ("answered-old@x.example", "answered", 181),
+        ("failed-old@x.example", "failed", 200),
+        ("open-old@x.example", "researching", 400),
+        ("waiting-old@x.example", "waiting_sent", 400),
+    ] {
+        let mut new = email_request(job, mid, mid);
+        new.state = state.into();
+        db.email_request_insert(&new).unwrap();
+        let id = db.email_request_get(job, mid).unwrap().unwrap().id;
+        set_email_request_times(&db, id, now - age_days * day);
+    }
+    assert_eq!(db.email_requests_prune_at(job, now).unwrap(), 3);
+    let mut left: Vec<String> = db
+        .email_requests_list(job, 50)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.message_id)
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        vec![
+            "answered-mid@x.example",
+            "ignored-young@x.example",
+            "open-old@x.example",
+            "waiting-old@x.example"
+        ]
+    );
+    // Nothing under 7 days old goes, whatever its state.
+    let other = db.create_job(&sample_job_input("Other")).unwrap();
+    let mut new = email_request(other, "fresh@x.example", "fresh@x.example");
+    new.state = "ignored".into();
+    db.email_request_insert(&new).unwrap();
+    assert_eq!(db.email_requests_prune(other).unwrap(), 0);
+}
