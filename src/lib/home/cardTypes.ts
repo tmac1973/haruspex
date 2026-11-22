@@ -9,6 +9,8 @@ import CodeSessionsCard from '#lib/components/home/cards/CodeSessionsCard.svelte
 import PinnedJobCard from '#lib/components/home/cards/PinnedJobCard.svelte';
 import ImportantEmailsCard from '#lib/components/home/cards/ImportantEmailsCard.svelte';
 import ImportantEmailsForm from '#lib/components/home/forms/ImportantEmailsForm.svelte';
+import EmailRequestsCard from '#lib/components/home/cards/EmailRequestsCard.svelte';
+import EmailRequestsForm from '#lib/components/home/forms/EmailRequestsForm.svelte';
 import NewsCard from '#lib/components/home/cards/NewsCard.svelte';
 import NewsForm from '#lib/components/home/forms/NewsForm.svelte';
 import MeetingsCard from '#lib/components/home/cards/MeetingsCard.svelte';
@@ -21,7 +23,11 @@ import { GITHUB_PRESETS, fetchGitHub, githubConfigOf, githubServer } from '#lib/
 import { DEFAULT_MEETING_HOURS, fetchMeetings, type MeetingsConfig } from '#lib/home/meetings.ts';
 import { fetchWeather, type WeatherConfig } from '#lib/home/weather.ts';
 import { getJobs, type JobType, type Schedule } from '#lib/stores/jobs.svelte.ts';
-import { hasEnabledCalendarAccount, hasEnabledEmailAccount } from '#lib/stores/settings.ts';
+import {
+	hasEnabledCalendarAccount,
+	hasEnabledEmailAccount,
+	hasSendableEmailAccount
+} from '#lib/stores/settings.ts';
 
 export type CardSize = 'normal' | 'wide';
 
@@ -127,6 +133,22 @@ const CARD_TYPES: CardType[] = [
 		notifies: true,
 		itemLabel: (item) => String((item.source as { subject?: string } | undefined)?.subject ?? ''),
 		defaultSchedule: { kind: 'interval', minutes: 30 }
+	},
+	{
+		id: 'email_requests',
+		label: 'Email requests',
+		kind: 'judged',
+		component: EmailRequestsCard,
+		form: EmailRequestsForm,
+		defaultSize: 'normal',
+		unavailable: () =>
+			hasSendableEmailAccount()
+				? null
+				: 'Turn on Allow sending for an email account in Settings → Integrations → Email.',
+		jobType: 'email_research',
+		notifies: true,
+		itemLabel: (item) => String(item.subject ?? ''),
+		defaultSchedule: { kind: 'interval', minutes: 15 }
 	},
 	{
 		id: 'news',

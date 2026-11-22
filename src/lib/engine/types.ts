@@ -5,6 +5,7 @@
  * phase 3 HTTP and a WebSocket. Rust routes them without looking inside
  * (`src-tauri/src/engine/`), so this file is their only definition.
  */
+import type { HomeEmailRequest } from '#lib/home/emailRequests.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
@@ -503,6 +504,13 @@ export type HomeCardPayload =
 			items: HomeEmailItem[] | null;
 	  })
 	| (HomeJobState & { type: 'news'; items: HomeNewsItem[] | null })
+	| (HomeJobState & {
+			type: 'email_requests';
+			/** "Email me@x.com with “ask haruspex” in the subject."; null until the job is read. */
+			setup: string | null;
+			/** Newest first; null when they couldn't be read. */
+			requests: HomeEmailRequest[] | null;
+	  })
 	| {
 			type: 'upcoming_meetings';
 			/** Null before the first read. */

@@ -6,6 +6,7 @@
 	import type { WebStore } from '../../store.svelte.ts';
 	import CodeSessionsCard from './CodeSessionsCard.svelte';
 	import EmailsCard from './EmailsCard.svelte';
+	import EmailRequestsCard from './EmailRequestsCard.svelte';
 	import GitHubCard from './GitHubCard.svelte';
 	import JobsCard from './JobsCard.svelte';
 	import MeetingsCard from './MeetingsCard.svelte';
@@ -37,6 +38,8 @@
 					<PinnedJobCard payload={p} />
 				{:else if p.type === 'important_emails'}
 					<EmailsCard payload={p} />
+				{:else if p.type === 'email_requests'}
+					<EmailRequestsCard payload={p} />
 				{:else if p.type === 'news'}
 					<NewsCard payload={p} />
 				{:else if p.type === 'upcoming_meetings'}
