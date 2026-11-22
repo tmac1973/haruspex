@@ -91,10 +91,11 @@ features for one workflow.
 - A generic OpenAI `/v1/audio/speech` backend.
 - Changes to llama-toolchest. The speech asks are done
   (tmac1973/llama-toolchest#683: the Qwen3-TTS card, and the `/tts` fields
-  documented). Multi-frame conditioning waits on sd.cpp
-  (leejet/stable-diffusion.cpp#2399, tracked in
-  tmac1973/llama-toolchest#681), and Haruspex uses it by capability when it
-  lands.
+  documented). Multi-frame continuation is not available
+  (tmac1973/llama-toolchest#681): for LTX-2.3 it needs a toolchest route that
+  runs a DGL script in sd-server, which is not scheduled; for S2V it needs
+  model code in sd.cpp (leejet/stable-diffusion.cpp#2399). Haruspex uses it
+  by capability when it lands.
 - Applying transcript edits from the viewer without the assistant.
 - Video upscaling of generated clips.
 - Running the speech replacement as a job; it stays a chat / Code skill.
@@ -151,9 +152,12 @@ features for one workflow.
   copying a person's voice without their consent is not allowed.
 - Changing a Tauri command or `#[ts(export)]` struct means
   `./scripts/export-ipc-types.sh`; user-visible changes update `docs/guide/`.
-- Speaking sections need a llama-toolchest with the Wan2.2 S2V set and the
-  `audio` video input (tmac1973/llama-toolchest#682). S2V makes silent video
-  at a fixed 16 fps, and its start image is an identity reference.
+- Speaking sections need llama-toolchest v2.64.0 or newer with the Wan2.2
+  S2V set (tmac1973/llama-toolchest#686). S2V runs at a fixed 16 fps, makes
+  at most 81 frames (about 5.1 s) a clip, and takes about 11 minutes for a
+  3 s clip on an R9700. Its start image is an identity reference, so seams
+  between windows show. Its clip carries the driving audio as PCM on newer
+  sd.cpp builds and is silent on older ones.
 - Run time: about 2–4 hours for 2 minutes on LTX-2.3 Full; the job must report
   progress and resume.
 
@@ -209,7 +213,9 @@ features for one workflow.
   so a `propose_job` tool can come later.
 - **Wan2.2 S2V** → added after the speech phases as phase 15: an `audio`
   input on `generate_video` and a speaking section kind, with windows made
-  from the same portrait rather than chained by last frame.
+  from the same portrait rather than chained by last frame. Windows are cut
+  along the speech at pauses, and the visible seams are accepted until
+  upstream adds motion frames.
 - **The `audio` capability** → toolchest's `audio` means an audio input. A
   set's sound output is not in its meta, so Haruspex finds it by probing the
   clip.
