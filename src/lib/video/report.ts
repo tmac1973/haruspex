@@ -136,6 +136,7 @@ export function itemLine(i: SummaryItem): string {
 		const f = i.fit;
 		parts.push(`cropped to ${pct(f.w)}×${pct(f.h)} at ${pct(f.x)}, ${pct(f.y)}`);
 	}
+	if (i.speed != null && i.speed !== 1) parts.push(`at ${i.speed}× speed`);
 	parts.push(...rangeParts(i));
 	if (!i.hasVideo) parts.push('sound only');
 	if (!i.hasAudio) parts.push('no sound');

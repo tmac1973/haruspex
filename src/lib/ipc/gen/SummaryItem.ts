@@ -30,4 +30,8 @@ fit: Fit | null,
 /**
  * Gains Haruspex set over stretches of its sound, in its own time.
  */
-gainRanges: Array<SummaryRange>, };
+gainRanges: Array<SummaryRange>, 
+/**
+ * How fast it plays; 1 is its own speed.
+ */
+speed: number, };

@@ -57,7 +57,8 @@ const summary: ProjectSummary = {
 			gainDb: null,
 			limited: false,
 			fit: null,
-			gainRanges: []
+			gainRanges: [],
+			speed: 1
 		},
 		{
 			index: 2,
@@ -73,7 +74,8 @@ const summary: ProjectSummary = {
 			gainDb: 3.5,
 			limited: true,
 			fit: null,
-			gainRanges: []
+			gainRanges: [],
+			speed: 1
 		}
 	],
 	audio: [
@@ -259,6 +261,23 @@ describe('holds', () => {
 	});
 });
 
+describe('speed', () => {
+	it('takes 0.25 to 4, on an op or a cut item, and shows in the summary', () => {
+		expect(parseOp({ op: 'speed', index: 2, speed: 0.5 })).toEqual({
+			op: 'speed',
+			index: 2,
+			factor: 0.5
+		});
+		expect(parseOp({ op: 'speed', index: 2 })).toContain('"speed"');
+		expect(parseOp({ op: 'speed', index: 2, speed: 8 })).toContain('0.25 (a quarter) to 4');
+		expect(parseCut({ items: [{ path: 'a.mp4', speed: 2 }] })).toMatchObject({
+			items: [{ speed: 2 }]
+		});
+		expect(itemLine({ ...summary.items[0], speed: 0.5 })).toContain('at 0.5× speed');
+		expect(itemLine(summary.items[0])).not.toContain('speed');
+	});
+});
+
 describe('parseFit', () => {
 	it('takes letterbox, fill or a crop region inside the picture', () => {
 		expect(parseFit(undefined)).toBeNull();
@@ -386,7 +405,8 @@ describe('video_cut', () => {
 						crossfadeSecs: null,
 						fit: null,
 						gainRanges: null,
-						holdAfterSecs: null
+						holdAfterSecs: null,
+						speed: null
 					}
 				],
 				audio: null,

@@ -37,4 +37,8 @@ gainRanges: Array<RangeSpec> | null,
 /**
  * Hold its last frame this long after it.
  */
-holdAfterSecs: number | null, };
+holdAfterSecs: number | null, 
+/**
+ * How fast it plays, 0.25–4; none keeps its speed (1 for a new clip).
+ */
+speed: number | null, };

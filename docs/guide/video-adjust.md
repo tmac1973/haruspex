@@ -1,11 +1,21 @@
 ---
 title: Adjusting clips in a cut
-description: Muting or lowering part of a clip's sound, and holding a clip's first, last or any frame, in a Shotcut or Kdenlive project the assistant cut.
+description: Changing a clip's speed, muting or lowering part of its sound, and holding its first, last or any frame, in a Shotcut or Kdenlive project the assistant cut.
 ---
 
 # Adjusting clips in a cut
 
 These change one clip in a project the assistant cut (see the `video-cut` page). Each one is something you can see and change in Shotcut or Kdenlive afterwards.
+
+## Change a clip's speed
+
+Ask "play clip 2 at half speed" or "speed clip 4 up to twice as fast". A speed goes from 0.25 (a quarter) to 4, and 1 puts a clip back to its own speed.
+
+- It is the editor's own speed change (MLT's timewarp), so it shows in the clip's properties in Shotcut and Kdenlive and you can change it there.
+- The clip's sound plays at the same speed and keeps its pitch.
+- The clip's trim stays where it was in the clip: a clip showing 0:10–0:20 at half speed still shows 0:10–0:20, over 20 seconds of the video.
+- Later clips move up or back, and sound on the audio tracks moves with the clip it starts over. Captions and the cut's transcript follow the new timing.
+- A clip joined to the next by a crossfade you made in the editor can't change speed; remove the crossfade there first.
 
 ## Mute or lower part of a clip's sound
 
@@ -27,7 +37,8 @@ Ask "hold the last frame of clip 3 for 2 seconds", "hold the first frame of clip
 
 ## What it doesn't do
 
-- It doesn't change a clip's speed yet.
+- It doesn't change speed over a clip (a ramp): the whole clip plays at one speed.
+- It doesn't change the speed of sound on the audio tracks under the picture.
 - It doesn't fade a stretch of sound in or out over more than a frame; for a slower fade, set the gain in the editor.
 - It doesn't duck music under speech for you: set the music's level, or lower stretches of it.
 - A hold has no sound. The clip's sound stops while the frame is held.

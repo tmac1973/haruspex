@@ -148,6 +148,10 @@ export const GAIN_RANGE_PARAMS = {
 
 /** `video_cut` items' `gain_ranges` and `hold_after_secs`. */
 export const ITEM_RANGES_PARAM = {
+	speed: {
+		type: 'number',
+		description: 'How fast it plays, 0.25–4 (1 is its own speed); its sound keeps its pitch.'
+	},
 	hold_after_secs: {
 		type: 'number',
 		description: 'Hold its last frame this long after it, up to 60 s.'
@@ -233,6 +237,8 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 		if (typeof fit === 'string') return `items[${n}]: ${fit}`;
 		const gainRanges = parseRanges(o.gain_ranges, `items[${n}].`);
 		if (typeof gainRanges === 'string') return gainRanges;
+		const speed = speedArg(o.speed, `items[${n}].`);
+		if (typeof speed === 'string') return speed;
 		const holdAfterSecs = parsedFiniteOrNull(o.hold_after_secs);
 		if (holdAfterSecs !== null && (holdAfterSecs <= 0 || holdAfterSecs > 60)) {
 			return `items[${n}].hold_after_secs is more than 0 and at most 60.`;
@@ -246,7 +252,8 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs),
 			fit,
 			gainRanges,
-			holdAfterSecs
+			holdAfterSecs,
+			speed
 		});
 	}
 	return items;
@@ -343,6 +350,21 @@ function holdOp(args: Record<string, unknown>, index: number): ProjectOp | strin
 	return { op: 'hold', index, end, atSecs: at, secs };
 }
 
+/** A speed from 0.25 to 4, null for none, or what is wrong with it. */
+function speedArg(v: unknown, where: string): number | null | string {
+	if (v === undefined || v === null) return null;
+	const n = parsedFiniteOrNull(v);
+	if (n === null || n < 0.25 || n > 4) return `${where}speed is from 0.25 (a quarter) to 4.`;
+	return n;
+}
+
+function speedOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const factor = speedArg(args.speed, '');
+	if (factor === null) return 'A speed change needs "speed", from 0.25 to 4 (1 is its own).';
+	if (typeof factor === 'string') return factor;
+	return { op: 'speed', index, factor };
+}
+
 /** `video_edit`'s ops on one clip, by name. */
 const CLIP_OPS: Record<
 	string,
@@ -353,6 +375,7 @@ const CLIP_OPS: Record<
 	gain_range: (args, index) => rangeOp('gain_range', args, index),
 	clear_gain_ranges: (args, index) => rangeOp('clear_gain_ranges', args, index),
 	hold: holdOp,
+	speed: speedOp,
 	remove: (_, index) => ({ op: 'remove', index }),
 	move: moveOp,
 	remove_ranges: removeRangesOp

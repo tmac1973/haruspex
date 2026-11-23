@@ -366,6 +366,35 @@ impl Doc {
             .collect()
     }
 
+    /// How fast a chain plays: its `warp_speed` when it is a timewarp, else 1.
+    pub fn speed(&self, chain: &str) -> f64 {
+        let Some(c) = self.tree.by_id(chain) else {
+            return 1.0;
+        };
+        if self.tree.property(c, "mlt_service") != Some("timewarp") {
+            return 1.0;
+        }
+        self.tree
+            .property(c, "warp_speed")
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(1.0)
+    }
+
+    /// The file a chain plays; for one at another speed, the file it warps.
+    pub fn resource(&self, chain: &str) -> String {
+        let key = if self.speed(chain) != 1.0 {
+            "warp_resource"
+        } else {
+            "resource"
+        };
+        self.tree
+            .by_id(chain)
+            .and_then(|c| self.tree.property(c, key))
+            .unwrap_or("")
+            .to_string()
+    }
+
     /// Haruspex's sound filters on an entry: its Volume and Limiter.
     pub fn our_sound_filters(&self, entry: usize) -> Vec<usize> {
         self.our_filters(entry)

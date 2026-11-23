@@ -20,6 +20,11 @@ export const EDIT_PROPERTIES = {
 	...GAIN_RANGE_PARAMS,
 	to: { type: 'integer', description: 'move: its new position, from 1.' },
 	secs: { type: 'number', description: 'hold: how long to hold the frame, up to 60 s.' },
+	speed: {
+		type: 'number',
+		description:
+			'speed: how fast it plays, 0.25–4 (1 is its own); its sound keeps its pitch, and in and out stay in its own time.'
+	},
 	end: {
 		type: 'string',
 		enum: ['first', 'last'],

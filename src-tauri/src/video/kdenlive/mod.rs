@@ -99,11 +99,7 @@ fn shown_resource(doc: &Doc, working_dir: &str, resource: &str) -> String {
 }
 
 fn resource_of(doc: &Doc, chain: &str) -> String {
-    doc.tree
-        .by_id(chain)
-        .and_then(|c| doc.tree.property(c, "resource"))
-        .unwrap_or("")
-        .to_string()
+    doc.resource(chain)
 }
 
 pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
@@ -119,11 +115,15 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
             } else {
                 0
             };
+            let speed = doc.speed(&e.chain);
+            let (src_in, src_out) =
+                crate::video::mlt::warp::to_source(e.in_frame, e.out_frame, speed);
             SummaryItem {
                 index: i as u32 + 1,
                 path: shown_resource(doc, working_dir, &resource_of(doc, &e.chain)),
-                source_in_secs: fps.secs(e.in_frame),
-                source_out_secs: fps.secs(e.out_frame + 1),
+                source_in_secs: fps.secs(src_in),
+                source_out_secs: fps.secs(src_out + 1),
+                speed,
                 start_secs: fps.secs(e.start),
                 duration_secs: fps.secs(e.len()),
                 effects: item.filters() as u32,
@@ -205,20 +205,27 @@ pub fn clips(doc: &Doc) -> Vec<crate::video::timeline::Clip> {
         .iter()
         .map(|item| {
             let e = item.any();
+            let speed = doc.speed(&e.chain);
+            let to_src = |i, o| crate::video::mlt::warp::to_source(i, o, speed);
+            let (in_frame, out_frame) = to_src(e.in_frame, e.out_frame);
             Clip {
                 resource: resource_of(doc, &e.chain),
-                in_frame: e.in_frame,
-                out_frame: e.out_frame,
-                audio: item.audio.as_ref().map(|a| ClipAudio {
-                    stream: doc
-                        .tree
-                        .by_id(&a.chain)
-                        .and_then(|c| doc.tree.property(c, "audio_index"))
-                        .and_then(|v| v.parse::<u32>().ok())
-                        .unwrap_or(1),
-                    in_frame: a.in_frame,
-                    out_frame: a.out_frame,
+                in_frame,
+                out_frame,
+                audio: item.audio.as_ref().map(|a| {
+                    let (in_frame, out_frame) = to_src(a.in_frame, a.out_frame);
+                    ClipAudio {
+                        stream: doc
+                            .tree
+                            .by_id(&a.chain)
+                            .and_then(|c| doc.tree.property(c, "audio_index"))
+                            .and_then(|v| v.parse::<u32>().ok())
+                            .unwrap_or(1),
+                        in_frame,
+                        out_frame,
+                    }
                 }),
+                speed,
                 gain_ranges: item
                     .audio
                     .as_ref()
