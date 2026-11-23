@@ -200,6 +200,12 @@ on the website. It has to describe the app as it is.
   touching `docs/guide/`; label it `no-docs` when nothing a user sees changed.
 - Keyboard shortcuts live in `src/lib/shortcuts.ts`; the `shortcuts` page
   writes each key exactly as that list does, and a test holds them together.
+- A new thing users can do (a feature, tool, job type, integration or
+  shipped skill) also gets an example in `docs/showcase/` ("Things you can
+  do" on the website), in the same PR: a card under its subject's page, or a
+  new subject added to `ORDER` in `scripts/build-showcase.mjs`. A changed
+  setting or flow updates the cards that name it. The card format is at the
+  top of that script; `node scripts/build-showcase.mjs` checks it.
 - Writing: headings say what the user wants to do; Settings paths in full
   ("Settings → Shell → Memory limit"); plain words, no marketing; say what it
   doesn't do as well. Each page stands alone, since the model reads one at a
