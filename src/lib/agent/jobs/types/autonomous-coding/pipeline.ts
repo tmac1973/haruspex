@@ -1390,7 +1390,7 @@ async function runCheckCommand(
 		const output = [outOfMemoryNote(r), r.stdout, r.stderr].filter(Boolean).join('\n').trim();
 		return { passed: r.exit_code === 0, output: output || `(no output, exit ${r.exit_code})` };
 	} catch (e) {
-		return { passed: false, output: `Check command failed to run: ${String(e)}` };
+		return { passed: false, output: `Check command failed to run: ${errMessage(e)}` };
 	}
 }
 

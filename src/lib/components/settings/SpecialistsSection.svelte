@@ -9,10 +9,10 @@
 	import { specialistKind, specialistKinds } from '#lib/specialists/kinds.ts';
 	import '#lib/specialists/kinds/index.ts';
 	import type { SpecialistEntry } from '#lib/specialists/types.ts';
-	import { getSettings, setSpecialistEntries } from '#lib/stores/settings.ts';
+	import { getSettings, setSpecialistEntries, snapshot } from '#lib/stores/settings.ts';
 
 	/** The list as saved, read again after every change. */
-	let entries = $state<SpecialistEntry[]>(getSettings().specialists);
+	let entries = $state<SpecialistEntry[]>(snapshot(getSettings().specialists));
 	let openId = $state<string | null>(null);
 	/** An entry added but not yet saved: dropped if its editor is cancelled. */
 	let pending = $state<SpecialistEntry | null>(null);
@@ -21,8 +21,8 @@
 	const shown = $derived(pending ? [...entries, pending] : entries);
 
 	function save(list: SpecialistEntry[]) {
-		setSpecialistEntries($state.snapshot(list) as SpecialistEntry[]);
-		entries = getSettings().specialists;
+		setSpecialistEntries(list);
+		entries = snapshot(getSettings().specialists);
 	}
 
 	function where(e: SpecialistEntry): string {

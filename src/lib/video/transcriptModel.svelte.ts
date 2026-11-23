@@ -23,6 +23,7 @@ import {
 	wordsOf,
 	type SpeechEdits
 } from '#lib/video/edits.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export interface TranscriptIO {
 	find(workdir: string, relPath: string): Promise<TranscriptFound | null>;
@@ -111,7 +112,7 @@ export class TranscriptModel {
 			this.staleEdits = null;
 			if (found) await this.loadEdits(found.transcript, clipInEpisode(this.clip, found.episode));
 		} catch (e) {
-			this.error = String(e);
+			this.error = errMessage(e);
 		}
 		this.loading = false;
 	}
@@ -134,7 +135,7 @@ export class TranscriptModel {
 			});
 			await this.load();
 		} catch (e) {
-			this.error = String(e);
+			this.error = errMessage(e);
 		}
 		this.transcribing = null;
 	}

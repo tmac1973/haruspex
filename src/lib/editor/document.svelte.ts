@@ -10,6 +10,7 @@
 
 import type { EditorSave } from '#lib/ipc/gen/EditorSave.ts';
 import { basename } from '#lib/utils/basename.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** A file as read: `content` null when it isn't on disk. */
 export interface LoadedFile {
@@ -128,7 +129,7 @@ export class EditorDocument {
 			this.take(file);
 			if (file.content === null) this.disk = 'new';
 		} catch (e) {
-			this.error = `Could not open ${this.relPath}: ${String(e)}`;
+			this.error = `Could not open ${this.relPath}: ${errMessage(e)}`;
 			this.failed = true;
 			this.baseline = '';
 			this.draft = '';
@@ -153,7 +154,7 @@ export class EditorDocument {
 		try {
 			res = await this.io.write(this.workdir, this.relPath, content, this.hash, force);
 		} catch (e) {
-			this.error = `Could not save ${this.relPath}: ${String(e)}`;
+			this.error = `Could not save ${this.relPath}: ${errMessage(e)}`;
 			return false;
 		}
 		if (res.status === 'conflict') {
@@ -191,7 +192,7 @@ export class EditorDocument {
 		try {
 			file = await this.io.read(this.workdir, this.relPath);
 		} catch (e) {
-			this.error = `Could not reload ${this.relPath}: ${String(e)}`;
+			this.error = `Could not reload ${this.relPath}: ${errMessage(e)}`;
 			return;
 		}
 		// Typed into while the read was in flight: that is a dirty file now.
@@ -214,7 +215,7 @@ export class EditorDocument {
 			this.conflict = false;
 			this.error = '';
 		} catch (e) {
-			this.error = `Could not reload ${this.relPath}: ${String(e)}`;
+			this.error = `Could not reload ${this.relPath}: ${errMessage(e)}`;
 		}
 	}
 

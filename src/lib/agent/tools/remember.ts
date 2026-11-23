@@ -155,7 +155,7 @@ registerTool({
 				content: privateTextForLog(content),
 				error: errMessage(e)
 			});
-			return toolResult(toolError(`Could not save that memory: ${String(e)}`));
+			return toolResult(toolError(`Could not save that memory: ${errMessage(e)}`));
 		}
 	}
 });

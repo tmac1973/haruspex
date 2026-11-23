@@ -40,6 +40,7 @@ import {
 	parseCameraDigestConfig,
 	type CameraDigestConfig
 } from '#lib/agent/jobs/types/camera-digest/config.ts';
+import { dbQuery } from '#lib/stores/dbCall.ts';
 
 /** Entries read from each camera's log, newest first. */
 export const PER_CAMERA = 200;
@@ -132,13 +133,15 @@ export function resolveDigestCameras(
 
 /** When this job last finished a run, as epoch ms; null when it never has. */
 async function lastSucceededAt(jobId: number, runId: number): Promise<number | null> {
-	try {
-		const runs = await invoke<JobRunSummary[]>('db_list_job_runs', { jobId });
-		const last = runs.find((r) => r.id !== runId && r.status === 'succeeded');
-		return last ? (last.started_at ?? last.queued_at) : null;
-	} catch {
-		return null;
-	}
+	const runs = await dbQuery<JobRunSummary[]>({
+		cmd: 'db_list_job_runs',
+		args: { jobId },
+		fallback: [],
+		onError: 'camera digest: could not list earlier runs',
+		ctx: { jobId }
+	});
+	const last = runs.find((r) => r.id !== runId && r.status === 'succeeded');
+	return last ? (last.started_at ?? last.queued_at) : null;
 }
 
 /** The period's start, as epoch ms. */

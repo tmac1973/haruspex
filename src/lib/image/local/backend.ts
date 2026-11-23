@@ -132,7 +132,7 @@ async function ensureRunning(id: string): Promise<LocalFamily> {
 		// The command returns a typed reason; the ones the user can act on are
 		// configuration, the rest are the engine failing to come up.
 		const kind = (e as { kind?: string })?.kind;
-		const detail = (e as { detail?: string })?.detail ?? String(e);
+		const detail = (e as { detail?: string })?.detail ?? errMessage(e);
 		const setUp = engineSetupMessage(kind, detail);
 		if (setUp) throw new ImageBackendError('unconfigured', setUp);
 		throw new ImageBackendError('unreachable', detail || 'The image engine did not start.');

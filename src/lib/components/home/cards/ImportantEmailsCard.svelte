@@ -18,6 +18,7 @@
 	import { isTrashed, trashEmail } from '#lib/home/trashedEmails.svelte.ts';
 	import { emailCardAccountsOf } from '#lib/home/emailCard.ts';
 	import { getJobs } from '#lib/stores/jobs.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let { card }: { card: HomeCard } = $props();
 
@@ -73,7 +74,7 @@
 		try {
 			await trashEmail(account, item.id, item.source.messageId);
 		} catch (e) {
-			deleteError = `Couldn't delete "${item.source.subject}": ${String(e)}`;
+			deleteError = `Couldn't delete "${item.source.subject}": ${errMessage(e)}`;
 		}
 	}
 

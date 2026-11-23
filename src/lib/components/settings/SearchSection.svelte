@@ -20,6 +20,7 @@
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
 	let searchRecency = $state(getSettings().searchRecency);
@@ -87,7 +88,7 @@
 			braveDraft = '';
 			braveSaved = true;
 		} catch (e) {
-			braveError = `Could not save the key: ${String(e)}`;
+			braveError = `Could not save the key: ${errMessage(e)}`;
 		}
 	}
 

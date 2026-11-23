@@ -9,6 +9,7 @@ import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { getRunningCount } from '#lib/agent/inferenceQueue.svelte.ts';
 import { splitServerArgs } from '#lib/inference/serverArgs.ts';
 import { formatContextSize } from '#lib/utils/format.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -194,7 +195,7 @@ export async function startServer(
 		});
 	} catch (e) {
 		serverState.status = 'error';
-		serverState.errorMessage = String(e);
+		serverState.errorMessage = errMessage(e);
 	}
 }
 
@@ -204,7 +205,7 @@ export async function stopServer(): Promise<void> {
 		serverState.status = 'stopped';
 		serverState.errorMessage = undefined;
 	} catch (e) {
-		serverState.errorMessage = String(e);
+		serverState.errorMessage = errMessage(e);
 	}
 }
 

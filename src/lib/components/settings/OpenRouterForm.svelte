@@ -28,6 +28,7 @@
 	import OpenRouterModelPicker from '#lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ToggleField from '#lib/components/ToggleField.svelte';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -63,7 +64,7 @@
 				...autoModelFields(models.find((m) => m.id === modelId))
 			});
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		} finally {
 			loading = false;
 		}
@@ -107,7 +108,7 @@
 				openrouterKeyStatusAt: Date.now()
 			});
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		} finally {
 			keyLoading = false;
 		}

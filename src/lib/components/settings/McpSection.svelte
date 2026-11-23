@@ -26,6 +26,7 @@
 	import { loadInstalledManifests, probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
 	import { refreshUpdateStatuses } from '#lib/stores/mcpUpdate.svelte.ts';
 	import { newId } from '#lib/utils/id.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
 
@@ -107,7 +108,7 @@
 			void loadInstalledManifests([server]);
 			showCatalog = false;
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		} finally {
 			installingId = null;
 			progress = null;
@@ -180,7 +181,7 @@
 		try {
 			catalog = await invoke<CatalogEntry[]>('mcp_catalog');
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		}
 		// The row's tool defaults come from what was installed, including for
 		// servers that are not running.

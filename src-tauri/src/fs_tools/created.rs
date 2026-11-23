@@ -302,7 +302,7 @@ const SET_ASIDE: &str = ".haruspex/trash";
 /// Returns null when the system trash took it, or the working-folder path it
 /// was set aside at when the trash refused.
 #[tauri::command]
-pub fn fs_delete_created(
+pub fn fs_created_delete(
     state: tauri::State<'_, CreatedFiles>,
     workdir: String,
     rel_path: String,
@@ -330,7 +330,7 @@ pub fn fs_delete_created(
 
 /// Move or rename `from` to `to` inside the working folder, under the same rule.
 #[tauri::command]
-pub fn fs_move_created(
+pub fn fs_created_move(
     state: tauri::State<'_, CreatedFiles>,
     workdir: String,
     from: String,

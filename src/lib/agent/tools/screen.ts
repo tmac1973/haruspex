@@ -21,6 +21,7 @@ import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { askScreenCapture } from '#lib/stores/screenCaptureApproval.svelte.ts';
 import { hideSettled, withHaruspexHidden } from '#lib/shell/captureRegion.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Normalize whatever the model wrote into a target the backend knows.
@@ -113,7 +114,7 @@ registerTool({
 			// The backend's messages name the actual obstacle — a refused
 			// desktop permission, a missing macOS grant — so they are passed
 			// through rather than flattened into "capture failed".
-			return toolResult(toolError(String(e)));
+			return toolResult(toolError(errMessage(e)));
 		}
 	}
 });

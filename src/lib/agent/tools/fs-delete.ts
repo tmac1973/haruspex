@@ -39,7 +39,7 @@ registerTool({
 		if (rootErr) return toolResult(toolError(rootErr));
 		try {
 			// Null when the system trash took it; else where it was set aside.
-			const aside = await invoke<string | null>('fs_delete_created', {
+			const aside = await invoke<string | null>('fs_created_delete', {
 				workdir: fsWorkdir(ctx),
 				relPath: path,
 				scope: createdScope(ctx)

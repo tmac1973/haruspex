@@ -47,7 +47,7 @@ registerTool({
 		const rootErr = writeRootError(from, ctx) ?? writeRootError(to, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
 		try {
-			await invoke('fs_move_created', {
+			await invoke('fs_created_move', {
 				workdir: fsWorkdir(ctx),
 				from,
 				to,

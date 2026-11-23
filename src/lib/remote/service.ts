@@ -19,6 +19,7 @@ import {
 	type RemoteStatus
 } from '#lib/remote/api.ts';
 import { startRemoteDriver } from '#lib/remote/driver.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 	const settings = getSettings();
@@ -27,7 +28,7 @@ export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 		try {
 			return await stopRemoteServer();
 		} catch (error) {
-			logDebug('remote', `could not stop the remote server: ${String(error)}`);
+			logDebug('remote', `could not stop the remote server: ${errMessage(error)}`);
 			return null;
 		}
 	}
@@ -62,7 +63,7 @@ export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 	} catch (error) {
 		// A port already in use is the likely case, and it must not take the
 		// app down with it — remote access simply stays off until it is fixed.
-		logDebug('remote', `could not start the remote server: ${String(error)}`);
+		logDebug('remote', `could not start the remote server: ${errMessage(error)}`);
 		return null;
 	}
 }

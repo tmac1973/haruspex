@@ -10,6 +10,7 @@
 import { openInEditorWindows, describeOpens, type WindowOpen } from '#lib/editor/windows.ts';
 import { ioRoot } from '#lib/code/paths.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type EditorOpened =
 	{ ok: true; opens: WindowOpen[]; summary: string } | { ok: false; error: string };
@@ -29,7 +30,7 @@ export async function openInEditor(
 		const opens = await openInEditorWindows(io, files);
 		return { ok: true, opens, summary: describeOpens(io, opens) };
 	} catch (e) {
-		return { ok: false, error: `The editor window could not open: ${String(e)}` };
+		return { ok: false, error: `The editor window could not open: ${errMessage(e)}` };
 	}
 }
 

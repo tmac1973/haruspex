@@ -14,6 +14,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { resolveDavAccounts } from '#lib/agent/tools/calendar.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** `home: +44 …`, or just the value when the card said nothing about kind. */
 function typed(values: { kind: string | null; value: string }[]): string[] {
@@ -131,7 +132,7 @@ registerTool({
 				formatResult(result, `Nobody matching "${query}" in the address book.`, formatBrief)
 			);
 		} catch (e) {
-			return toolResult(toolError(`Could not search contacts: ${String(e)}`));
+			return toolResult(toolError(`Could not search contacts: ${errMessage(e)}`));
 		}
 	}
 });
@@ -184,7 +185,7 @@ registerTool({
 				)
 			);
 		} catch (e) {
-			return toolResult(toolError(`Could not read the contact: ${String(e)}`));
+			return toolResult(toolError(`Could not read the contact: ${errMessage(e)}`));
 		}
 	}
 });

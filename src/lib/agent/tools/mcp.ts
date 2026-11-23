@@ -57,6 +57,7 @@ import {
 	TOKEN_BYTES_RATIO,
 	TOOL_CUT_HINT
 } from '#lib/agent/contextBudget.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Maximum MRTR round trips for one tool call.
@@ -237,7 +238,7 @@ async function executeMcpTool(
 			});
 		} catch (e) {
 			onToolFailure?.(serverId);
-			return toolResult(toolError(`${descriptor.name} failed: ${String(e)}`));
+			return toolResult(toolError(`${descriptor.name} failed: ${errMessage(e)}`));
 		}
 
 		if (outcome.type === 'complete') {
