@@ -26,6 +26,13 @@ describe('assembly', () => {
 		expect(projectFormat({ width: 832, height: 480, fps: 16 }, {}, '1440p60').preset).toBe(
 			'1440p60'
 		);
+		// Wan's 832×480 at 24 fps: no size near it, so the preset at its frame rate.
+		expect(projectFormat({ width: 832, height: 480, fps: 24 }, {}, '1080p60').preset).toBe(
+			'720p24'
+		);
+		expect(projectFormat({ width: 832, height: 480, fps: 30 }, {}, '1080p30').preset).toBe(
+			'1080p30'
+		);
 	});
 
 	it('lays the fox out as 25 clips, continuations dropping their first frame', () => {
