@@ -1,6 +1,6 @@
 ---
 name: narrate
-description: Write and record spoken audio, such as a voiceover for a video, narration, or a game's character lines, with a script written to be heard and checked with the user before it is recorded. Use when the user wants something read aloud into an audio file, or spoken lines made.
+description: Write and record spoken audio, such as a voiceover for a video, narration, or a game's character lines, with a script written to be heard and checked with the user before it is recorded, in a Kokoro voice or a saved voice such as the user's own. Use when the user wants something read aloud into an audio file, or spoken lines made.
 metadata:
   haruspex-tools: generate_speech
 ---
@@ -39,13 +39,24 @@ go ahead without checking.
 
 ## 3. Pick the voice
 
-Use the voice the user named. Otherwise, match their description:
+Which voices there are depends on Settings → Audio → Speech engine. Your
+tools list says "Speech comes from a llama.cpp server" when it's a server,
+and names the saved voices.
+
+**Kokoro** (the default). Use the voice the user named. Otherwise, match
+their description:
 
 - `af_` voices are American women: `af_heart` (warm, the default), `af_bella`,
   `af_nicole` (soft), `af_sarah`, `af_sky`, `af_nova`, `af_alloy`, `af_river`.
 - `am_` voices are American men: `am_michael` (deep), `am_adam`, `am_eric`,
   `am_liam`, `am_echo`.
 - `ef_dora` and `em_alex` have a Spanish accent.
+
+**A llama.cpp server.** Use the saved voice the user named, by its name.
+"My voice" is the saved voice with their name; if it isn't clear which,
+ask. With no voice named, the server speaks in its own voice. Never use a
+saved voice for words the user didn't ask to be said in it. With no saved
+voices, the `save-my-voice` skill makes one.
 
 Give each character one voice and keep it for all their lines. Use `speed`
 for character: about 0.9 for slow and weighty, 1.1 for quick. Stay within
@@ -75,6 +86,19 @@ to the script instead, and show the user the change.
 
 If the tool says the audio is far shorter than the text, stop and tell the
 user. Don't retry.
+
+## 6. Another take (llama.cpp server)
+
+A server speaks a line differently each time, and the same `seed` doesn't
+bring a take back. So:
+
+- When the user asks for another take, record it again with a new `seed`
+  and a new `path` (`…-take2.wav`), and keep the first. Put both players
+  in your answer and ask which to keep.
+- Delete nothing. When they pick one, use that file from then on, such as
+  in the project's `audio` list.
+- If two takes have the same "take …" hash in the result, the server
+  ignores the seed: say so, and stop making takes.
 
 ## After
 
