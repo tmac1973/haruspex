@@ -12,6 +12,7 @@
 	import LeanModeSetting from '#lib/components/settings/LeanModeSetting.svelte';
 	import DeferToolsSetting from '#lib/components/settings/DeferToolsSetting.svelte';
 	import BackgroundSetting from '#lib/components/settings/BackgroundSetting.svelte';
+	import KeepAwakeSetting from '#lib/components/settings/KeepAwakeSetting.svelte';
 
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
@@ -68,6 +69,8 @@
 		</div>
 	</label>
 </section>
+
+<KeepAwakeSetting />
 
 <BackgroundSetting />
 

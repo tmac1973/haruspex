@@ -34,5 +34,5 @@ The switch adds an entry to your system's own startup list (an autostart file on
 
 - **GNOME on Linux** shows no tray icons unless you install the AppIndicator extension. KDE Plasma, Cinnamon, XFCE and most other desktops show them.
 - Some Linux trays open the menu on any click rather than showing the window. Use **Show Haruspex** from the menu.
-- Running in the tray doesn't keep your computer awake. A job that is running holds off sleep until it finishes, as it always does, but a scheduled job won't fire while the computer sleeps.
+- Running in the tray doesn't keep your computer awake. A job that is running holds off sleep until it finishes (Settings → General → Keep the computer awake picks which jobs do), but a scheduled job won't fire while the computer sleeps.
 - Both switches belong to this computer. Other computers you connect to keep their own.

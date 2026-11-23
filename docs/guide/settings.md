@@ -11,9 +11,10 @@ Click the gear in the header; **← Back** closes.
 
 ## General
 
-Appearance, Home, running in the background, replies, lean mode and tool loading.
+Appearance, Home, sleep during jobs, running in the background, replies, lean mode and tool loading.
 
 - **Show the Home tab**: on.
+- **Keep the computer awake** while a job runs: All jobs, Not Home cards (default) or Never (see `jobs`).
 - **Background**: **Keep running in the tray** and **Start at login**, both off (see `tray`).
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: Teal (default).
