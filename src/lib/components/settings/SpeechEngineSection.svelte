@@ -158,7 +158,7 @@
 		class="help"
 		title="Reading answers aloud always uses Kokoro. Qwen3-TTS Base copies a saved voice; llama-toolchest's Get speech models card downloads it."
 	>
-		Used for speech the assistant makes.
+		Used to make speech audio files and video narration.
 	</p>
 </section>
 
