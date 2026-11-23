@@ -104,3 +104,17 @@ Revert the commit. Projects written with these features contain standard
 MLT producers and filters, so they still open in the editors and render; the
 previous Haruspex reads a timewarp or qimage producer as an unknown clip and
 leaves it in place.
+
+## As built (#1175, #1176)
+
+- **Gain ranges** ramp over one frame at each edge, not 10 ms: MLT applies
+  gain once per frame. A range's filter `in`/`out` are source frames on a
+  Shotcut chain and on a Kdenlive entry alike (checked with melt), so trims
+  never move it.
+- **Holds** are new silent H.264 clips made by ffmpeg from the frame's PNG,
+  in `<episode>/.haruspex/stills/`, not `qimage` producers, so both editors
+  take them as ordinary clips.
+- **Speed** is on main-track clips only. Audio-track clips don't change
+  speed: phase 14 stretches a take with phase 11's `audio_stretch` instead.
+- The bundled melt has `timewarp`, `qimage`, `volume` and `crop`, so
+  `build-media.sh` did not change.

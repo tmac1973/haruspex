@@ -1,7 +1,7 @@
 # Phase 14 — The fix-speech skill
 
-**Depends on:** 02 (frame trims), 03 (speed, holds, gain ranges), 10 (word
-times, `transcribe_audio`), 11 (saved voices), 12 (the video tab), 13 (edit
+**Depends on:** 02 (frame trims), 03 (holds, gain ranges), 10 (word
+times, `transcribe_audio`), 11 (saved voices, `audio_stretch`), 12 (the video tab), 13 (edit
 lists) · **Enables:**
 the transcript-driven speech replacement end to end
 
@@ -57,8 +57,10 @@ never does time arithmetic by hand.
         edit and say so in the report.
       - Save the take to `<episode>/speech/<edit id>.wav`.
       - `planReplacement` (through the tool's result): **fit** → mute the
-        span with `video_edit` `gain_range` (−70 dB) and place the take on an
-        audio track at the span's cut time with `speed`; **cut** shorter →
+        span with `video_edit` `gain_range` (−70 dB), stretch the take to the
+        span's length with `audio_stretch` (phase 11; it keeps the pitch), and
+        place the stretched take on an audio track at the span's cut time;
+        **cut** shorter →
         `remove_ranges` the spare tail of the span, mute the rest, place the
         take; **cut** longer → mute the span, `video_edit` `hold` with `at_secs` =
         the span's end (splits the clip there and holds that frame) for the
