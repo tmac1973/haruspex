@@ -14,6 +14,7 @@ export const KINDS: { kind: ListKind; label: string }[] = [
 	{ kind: 'glb', label: '3D' },
 	{ kind: 'image', label: 'Images' },
 	{ kind: 'audio', label: 'Audio' },
+	{ kind: 'video', label: 'Video' },
 	{ kind: 'text', label: 'Text' }
 ];
 

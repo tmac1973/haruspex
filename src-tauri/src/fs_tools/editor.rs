@@ -550,7 +550,7 @@ const MAX_LISTED_DEPTH: usize = 8;
 /// What a viewer tab shows (`viewerFor` in `editor/document.svelte.ts`).
 const VIEWABLE_EXTS: &[&str] = &[
     "glb", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "wav", "mp3", "ogg", "oga", "opus",
-    "flac", "m4a", "aac",
+    "flac", "m4a", "aac", "mp4", "mov", "mkv", "webm", "m4v",
 ];
 /// How much of a file is read to tell text from binary.
 const SNIFF_BYTES: usize = 8192;
