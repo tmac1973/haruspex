@@ -1425,10 +1425,14 @@ mod tests {
 
     #[tokio::test]
     async fn two_sounds_join_into_one_a_crossfade_shorter() {
-        if crate::video::binaries::resolve(&Default::default())
-            .await
-            .ffmpeg
-            .is_none()
+        // The setup calls ffmpeg and ffprobe from PATH, which the app's own
+        // lookup can find elsewhere (the Windows runner has none on PATH).
+        if !crate::test_util::host_has("ffmpeg")
+            || !crate::test_util::host_has("ffprobe")
+            || crate::video::binaries::resolve(&Default::default())
+                .await
+                .ffmpeg
+                .is_none()
         {
             eprintln!("skipped: no ffmpeg");
             return;
@@ -1473,10 +1477,14 @@ mod tests {
     /// A sheet with a picture first, then the clip's frames, numbered on.
     #[tokio::test]
     async fn a_sheet_puts_pictures_before_the_frames() {
-        if crate::video::binaries::resolve(&Default::default())
-            .await
-            .ffmpeg
-            .is_none()
+        // The setup calls ffmpeg and ffprobe from PATH, which the app's own
+        // lookup can find elsewhere (the Windows runner has none on PATH).
+        if !crate::test_util::host_has("ffmpeg")
+            || !crate::test_util::host_has("ffprobe")
+            || crate::video::binaries::resolve(&Default::default())
+                .await
+                .ffmpeg
+                .is_none()
         {
             eprintln!("skipped: no ffmpeg");
             return;
