@@ -259,8 +259,9 @@
 
 	{#if companionHint}
 		<p class="companion">
-			<span class="companion-state">{entry?.companion?.app ?? 'The application'} not connected</span
-			>
+			<span class="companion-state">
+				{entry?.companion?.app ?? 'The application'} not connected
+			</span>
 			{companionHint}
 			<button type="button" class="link-button" disabled={reprobing} onclick={recheckCompanion}>
 				{reprobing ? 'Checking…' : 'Check again'}
@@ -317,8 +318,10 @@
 				onclick={() => {
 					confirmProjects = null;
 					pendingUpdate = null;
-				}}>Cancel</button
+				}}
 			>
+				Cancel
+			</button>
 		</div>
 	{/if}
 

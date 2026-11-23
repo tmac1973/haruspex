@@ -466,11 +466,11 @@
 					{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
 						{@const commands = watchNotificationCommands(messageText(msg.content))}
 						<details class="thread-note bg-notice">
-							<summary
-								>Background command finished{commands.length === 1
+							<summary>
+								Background command finished{commands.length === 1
 									? `: ${commands[0]}`
-									: ` (${commands.length})`}</summary
-							>
+									: ` (${commands.length})`}
+							</summary>
 							<pre>{messageText(msg.content)}</pre>
 						</details>
 					{:else if msg.role === 'user'}
@@ -571,8 +571,10 @@
 							<button
 								class="remove"
 								title="Remove image"
-								onclick={() => pendingImages.remove(img.id)}>×</button
+								onclick={() => pendingImages.remove(img.id)}
 							>
+								×
+							</button>
 						</div>
 					{/each}
 				</div>
@@ -639,8 +641,10 @@
 					class="send"
 					onclick={handleSend}
 					disabled={!composerText.trim() && pendingImages.length === 0}
-					title="Send (Enter)">Send</button
+					title="Send (Enter)"
 				>
+					Send
+				</button>
 			{/if}
 		</footer>
 	</aside>

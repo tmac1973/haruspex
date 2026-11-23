@@ -106,9 +106,11 @@
 					{/each}
 				</fieldset>
 				<fieldset>
-					<legend title="YouTube asks every uploader this; it limits comments and ads on the video."
-						>Made for kids?</legend
+					<legend
+						title="YouTube asks every uploader this; it limits comments and ads on the video."
 					>
+						Made for kids?
+					</legend>
 					<label class="choice">
 						<input type="radio" name="yt-kids" value={true} bind:group={madeForKids} /> Yes
 					</label>

@@ -32,8 +32,10 @@
 			class="btn btn-primary"
 			disabled={busy}
 			title={busy ? LEAN_BUSY_TITLE : undefined}
-			onclick={() => close(true)}>Turn on</button
+			onclick={() => close(true)}
 		>
+			Turn on
+		</button>
 	</div>
 	<button class="dismiss" aria-label="Close" onclick={() => close(false)}>×</button>
 </div>

@@ -22,9 +22,9 @@
 	<div class="what">
 		<span class="title">{chat?.title || 'New chat'}</span>
 		{#if chat?.workingDir}
-			<span class="folder" title="The working folder chosen on your computer; change it there."
-				>{chat.workingDir}</span
-			>
+			<span class="folder" title="The working folder chosen on your computer; change it there.">
+				{chat.workingDir}
+			</span>
 		{/if}
 	</div>
 	{#if chat && !chat.memoryEnabled}

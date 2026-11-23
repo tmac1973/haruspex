@@ -146,9 +146,9 @@
 	</div>
 	{#if kind === 'llama-server'}
 		<div class="actions">
-			<button onclick={probe} disabled={probing || !baseUrl.trim()}
-				>{probing ? 'Probing…' : 'Probe'}</button
-			>
+			<button onclick={probe} disabled={probing || !baseUrl.trim()}>
+				{probing ? 'Probing…' : 'Probe'}
+			</button>
 			{#if detail}
 				<span class="detail" class:bad={!detail.ok}>{detail.text}</span>
 			{/if}

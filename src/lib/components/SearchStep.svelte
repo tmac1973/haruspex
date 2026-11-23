@@ -231,8 +231,10 @@
 								type="button"
 								class="path-link"
 								title="Open {rel}"
-								onclick={(e) => openFile(rel, e)}>{step.query}</button
+								onclick={(e) => openFile(rel, e)}
 							>
+								{step.query}
+							</button>
 						{:else}
 							{stepLabel(step.toolName, step.query)}
 						{/if}

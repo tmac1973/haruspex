@@ -145,8 +145,10 @@
 					onclick={(e) => {
 						e.stopPropagation();
 						deleting = c;
-					}}>&times;</button
+					}}
 				>
+					&times;
+				</button>
 			{/if}
 		</div>
 	{/each}

@@ -103,8 +103,9 @@
 			class="btn"
 			onclick={() => (viewing = true)}
 			title="Read the reports with the tool calls behind them, and share them as a GitHub issue."
-			>View reports…</button
 		>
+			View reports…
+		</button>
 		<button class="btn" onclick={openReports}>Open reports folder</button>
 	</div>
 	{#if folderError}

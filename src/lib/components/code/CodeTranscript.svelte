@@ -238,15 +238,16 @@
 			class="earlier"
 			onclick={() => (turnsShown += TURNS_PER_PAGE)}
 			title="Older turns are saved; they are left out here to keep the tab quick."
-			>Show earlier ({earlier} more turn{earlier === 1 ? '' : 's'})</button
 		>
+			Show earlier ({earlier} more turn{earlier === 1 ? '' : 's'})
+		</button>
 	{/if}
 	{#each shown as { msg, i } (i)}
 		{#if session.compaction && i === session.compaction.at}
 			<details class="bg-notice summary" data-testid="compaction">
-				<summary title="The agent works from this summary and the turns below it."
-					>Earlier turns summarised</summary
-				>
+				<summary title="The agent works from this summary and the turns below it.">
+					Earlier turns summarised
+				</summary>
 				<pre>{session.compaction.summary}</pre>
 			</details>
 		{/if}
@@ -259,11 +260,11 @@
 			{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
 				{@const commands = watchNotificationCommands(messageText(msg.content))}
 				<details class="bg-notice">
-					<summary
-						>Background command finished{commands.length === 1
+					<summary>
+						Background command finished{commands.length === 1
 							? `: ${commands[0]}`
-							: ` (${commands.length})`}</summary
-					>
+							: ` (${commands.length})`}
+					</summary>
 					<pre>{messageText(msg.content)}</pre>
 				</details>
 			{:else if msg.role === 'user' && isSubtaskNotification(messageText(msg.content))}
@@ -274,8 +275,8 @@
 			{:else if msg.role === 'user' && isTaskNotice(messageText(msg.content))}
 				<details class="bg-notice" data-testid="task-notice">
 					<summary title="Haruspex sent this when the task ended.">
-						{taskNoticeTitle(messageText(msg.content))}</summary
-					>
+						{taskNoticeTitle(messageText(msg.content))}
+					</summary>
 					<pre>{messageText(msg.content)}</pre>
 				</details>
 			{:else if msg.role === 'user'}
@@ -377,8 +378,10 @@
 				class="drop"
 				onclick={() => removePending(k)}
 				title="Don't send this"
-				aria-label="Remove queued message">×</button
+				aria-label="Remove queued message"
 			>
+				×
+			</button>
 		</div>
 	{/each}
 	{#if session.status === 'queued'}
@@ -391,15 +394,18 @@
 				<button
 					class="link"
 					onclick={session.goToShell}
-					title="Show {session.shellWait.shellName} in the Shell tab">Go to shell</button
+					title="Show {session.shellWait.shellName} in the Shell tab"
 				>
+					Go to shell
+				</button>
 			{/if}
 			<button
 				class="link"
 				onclick={session.cancelShellWait}
 				title="Stop waiting. The agent carries on without the result; the shell tab stays open."
-				>Cancel</button
 			>
+				Cancel
+			</button>
 		</div>
 	{/if}
 	{#if ticket && ticket.state === 'waiting' && session.status !== 'queued'}

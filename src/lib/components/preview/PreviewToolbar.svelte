@@ -37,22 +37,28 @@
 	<span class="path" title={url}>{path}</span>
 	<button
 		title="Load the page again. It also reloads by itself when its files change."
-		onclick={onReload}>Reload</button
+		onclick={onReload}
 	>
+		Reload
+	</button>
 	<div class="widths" role="group" aria-label="Page width">
 		{#each PREVIEW_WIDTHS as w (w.id)}
 			<button
 				class:active={w.id === width}
 				aria-pressed={w.id === width}
 				title={w.tip}
-				onclick={() => onWidth(w.id)}>{w.label}</button
+				onclick={() => onWidth(w.id)}
 			>
+				{w.label}
+			</button>
 		{/each}
 	</div>
 	<button
 		title="Open this address in your web browser. It works while this window is open."
-		onclick={onOpenInBrowser}>Open in browser</button
+		onclick={onOpenInBrowser}
 	>
+		Open in browser
+	</button>
 </div>
 
 <style>

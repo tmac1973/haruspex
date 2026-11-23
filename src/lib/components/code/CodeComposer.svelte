@@ -180,9 +180,9 @@
 			{#each images.items as img (img.id)}
 				<div class="attachment">
 					<img src={img.url} alt="attachment" />
-					<button class="remove" title="Remove image" onclick={() => images.remove(img.id)}
-						>×</button
-					>
+					<button class="remove" title="Remove image" onclick={() => images.remove(img.id)}>
+						×
+					</button>
 				</div>
 			{/each}
 		</div>
@@ -231,8 +231,10 @@
 			class="send"
 			onclick={() => send(text)}
 			disabled={!!blocked || (!text.trim() && images.length === 0 && audio.length === 0)}
-			title={blocked ?? 'Send (Enter)'}>Send</button
+			title={blocked ?? 'Send (Enter)'}
 		>
+			Send
+		</button>
 	{/if}
 </footer>
 

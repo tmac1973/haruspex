@@ -75,8 +75,10 @@
 				<button
 					class="remove"
 					aria-label="Remove picture {i + 1}"
-					onclick={() => (pictures = pictures.filter((_, j) => j !== i))}>×</button
+					onclick={() => (pictures = pictures.filter((_, j) => j !== i))}
 				>
+					×
+				</button>
 			</div>
 		{/each}
 	</div>
@@ -98,8 +100,10 @@
 		aria-label="Attach a picture"
 		title="Attach a picture (or paste one)"
 		disabled={disabled || pictures.length >= MAX_PICTURES}
-		onclick={() => picker?.click()}>📎</button
+		onclick={() => picker?.click()}
 	>
+		📎
+	</button>
 	<textarea
 		aria-label="Message"
 		rows="2"
@@ -124,8 +128,9 @@
 			onclick={send}
 			title={why ?? undefined}
 			disabled={blocked || sending || (!text.trim() && pictures.length === 0)}
-			>{busy && steer ? 'Queue' : 'Send'}</button
 		>
+			{busy && steer ? 'Queue' : 'Send'}
+		</button>
 	</div>
 </div>
 

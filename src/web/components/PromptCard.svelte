@@ -108,9 +108,9 @@
 		<pre class="code-preview"><code>{d.command as string}</code></pre>
 		<div class="buttons">
 			<button class="btn btn-small" onclick={() => command('allow_once')}>Allow once</button>
-			<button class="btn btn-small" onclick={() => command('allow_session')}
-				>Allow for this session</button
-			>
+			<button class="btn btn-small" onclick={() => command('allow_session')}>
+				Allow for this session
+			</button>
 			<button class="btn btn-small btn-danger" onclick={() => command('deny')}>Deny</button>
 		</div>
 		{#if (d.queued as number) > 0}
@@ -124,8 +124,10 @@
 			<button
 				class="btn btn-small"
 				title="Don't ask again in this chat."
-				onclick={() => sandbox('allow_chat')}>Allow for this chat</button
+				onclick={() => sandbox('allow_chat')}
 			>
+				Allow for this chat
+			</button>
 			<button class="btn btn-small btn-danger" onclick={() => sandbox('deny')}>Deny</button>
 		</div>
 	{:else if prompt.kind === 'memory'}
@@ -136,8 +138,10 @@
 			<button
 				class="btn btn-small"
 				title="Don't ask again until Haruspex restarts."
-				onclick={() => memory('allow_session')}>Allow for this session</button
+				onclick={() => memory('allow_session')}
 			>
+				Allow for this session
+			</button>
 			<button class="btn btn-small btn-danger" onclick={() => memory('deny')}>Deny</button>
 		</div>
 	{:else if prompt.kind === 'question'}
@@ -149,16 +153,20 @@
 					class="btn btn-small option"
 					class:chosen={picked.includes(o.label)}
 					title={o.description}
-					onclick={() => toggle(o.label)}>{o.label}</button
+					onclick={() => toggle(o.label)}
 				>
+					{o.label}
+				</button>
 			{/each}
 		</div>
 		<input aria-label="Your own answer" placeholder="Or write your own answer" bind:value={own} />
 		<button
 			class="btn btn-primary btn-small"
 			disabled={!own.trim() && picked.length === 0}
-			onclick={submit}>Answer</button
+			onclick={submit}
 		>
+			Answer
+		</button>
 	{:else if prompt.kind === 'mcp'}
 		<p class="title">Allow {d.server as string} to run {d.tool as string}?</p>
 		{#if d.description}<p class="why">{d.description as string}</p>{/if}
@@ -169,8 +177,10 @@
 			<button
 				class="btn btn-small"
 				title="Don't ask again for this tool on this server."
-				onclick={() => mcp('allow_always')}>Always allow</button
+				onclick={() => mcp('allow_always')}
 			>
+				Always allow
+			</button>
 			<button class="btn btn-small btn-danger" onclick={() => mcp('deny')}>Deny</button>
 		</div>
 	{:else if prompt.kind === 'skill'}
@@ -193,14 +203,16 @@
 			bind:value={reason}
 		/>
 		<div class="buttons">
-			<button class="btn btn-small" onclick={() => skill(true)}
-				>{d.update ? 'Save changes' : 'Save'}</button
-			>
+			<button class="btn btn-small" onclick={() => skill(true)}>
+				{d.update ? 'Save changes' : 'Save'}
+			</button>
 			<button
 				class="btn btn-small btn-danger"
 				title="Nothing is written; the model is told why."
-				onclick={() => skill(false)}>Reject</button
+				onclick={() => skill(false)}
 			>
+				Reject
+			</button>
 		</div>
 	{:else if prompt.kind === 'repo-trust'}
 		<p class="title" title="You can change this in Settings → Skills.">
@@ -224,14 +236,16 @@
 			<button
 				class="btn btn-small"
 				onclick={() => onanswer(prompt.promptId, { kind: 'repo-trust', trust: true })}
-				>Use them</button
 			>
+				Use them
+			</button>
 			<button
 				class="btn btn-small btn-danger"
 				title="The assistant works here without them."
 				onclick={() => onanswer(prompt.promptId, { kind: 'repo-trust', trust: false })}
-				>Ignore them</button
 			>
+				Ignore them
+			</button>
 		</div>
 	{:else if prompt.kind === 'screen-capture'}
 		<p
@@ -244,14 +258,16 @@
 			<button
 				class="btn btn-small"
 				onclick={() => onanswer(prompt.promptId, { kind: 'screen-capture', choice: 'allow' })}
-				>Take it</button
 			>
+				Take it
+			</button>
 			<button
 				class="btn btn-small btn-danger"
 				title="Nothing is captured; the model is told you declined."
 				onclick={() => onanswer(prompt.promptId, { kind: 'screen-capture', choice: 'deny' })}
-				>Don't</button
 			>
+				Don't
+			</button>
 		</div>
 	{:else if prompt.kind === 'camera'}
 		<p class="title">
@@ -264,31 +280,39 @@
 			<button
 				class="btn btn-small"
 				title="This once; it asks again next time."
-				onclick={() => onanswer(prompt.promptId, { kind: 'camera', choice: 'allow' })}>Allow</button
+				onclick={() => onanswer(prompt.promptId, { kind: 'camera', choice: 'allow' })}
 			>
+				Allow
+			</button>
 			<button
 				class="btn btn-small btn-danger"
 				title="Nothing is taken; the model is told you declined."
-				onclick={() => onanswer(prompt.promptId, { kind: 'camera', choice: 'deny' })}>Deny</button
+				onclick={() => onanswer(prompt.promptId, { kind: 'camera', choice: 'deny' })}
 			>
+				Deny
+			</button>
 		</div>
 	{:else if prompt.kind === 'file-conflict'}
 		<p class="title">File already exists</p>
 		<p class="why path">{d.path as string}</p>
 		<div class="buttons">
-			<button class="btn btn-small btn-danger" onclick={() => conflict('overwrite')}
-				>Overwrite</button
-			>
+			<button class="btn btn-small btn-danger" onclick={() => conflict('overwrite')}>
+				Overwrite
+			</button>
 			<button
 				class="btn btn-small"
 				title="Save as a new name (e.g. -2)."
-				onclick={() => conflict('counter')}>Keep both</button
+				onclick={() => conflict('counter')}
 			>
+				Keep both
+			</button>
 			<button
 				class="btn btn-small"
 				title="Nothing is written; the model is told you stopped it."
-				onclick={() => conflict('cancel')}>Cancel</button
+				onclick={() => conflict('cancel')}
 			>
+				Cancel
+			</button>
 		</div>
 	{:else}
 		<p class="title">Something is waiting</p>

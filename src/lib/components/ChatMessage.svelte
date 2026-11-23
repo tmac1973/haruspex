@@ -172,9 +172,9 @@
 	{#if message.role === 'assistant' && message.content && !isStreaming}
 		<div class="message-footer">
 			{#if elapsedLabel}
-				<span class="elapsed" title="Total time for this turn, including any tools it ran"
-					>{elapsedLabel}</span
-				>
+				<span class="elapsed" title="Total time for this turn, including any tools it ran">
+					{elapsedLabel}
+				</span>
 			{/if}
 			{#if tokRateLabel}
 				<span class="tok-rate" title="Generation speed for this response">{tokRateLabel}</span>

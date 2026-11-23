@@ -63,8 +63,9 @@
 	<div class="head">
 		<span class="prompt">$</span>
 		<code class="cmd" title={command}>{command}</code>
-		<span class="status" class:bad={failed} class:running={step.status === 'running'}>{status}</span
-		>
+		<span class="status" class:bad={failed} class:running={step.status === 'running'}>
+			{status}
+		</span>
 		{#if view.durationMs !== null}
 			<span class="dur">{formatCommandDuration(view.durationMs)}</span>
 		{/if}
@@ -73,28 +74,31 @@
 				class="mini"
 				onclick={() => (outputOpen = !outputOpen)}
 				aria-expanded={outputOpen}
-				title={outputOpen ? 'Hide output' : 'Show output'}>{outputOpen ? '▾' : '▸'}</button
+				title={outputOpen ? 'Hide output' : 'Show output'}
 			>
+				{outputOpen ? '▾' : '▸'}
+			</button>
 		{/if}
 		{#if canOpenInShell}
 			<button
 				class="mini"
 				onclick={openInShell}
 				title="Type this command in a new Shell tab at the session's folder. It doesn't run until you press Enter."
-				>Open in Shell</button
 			>
+				Open in Shell
+			</button>
 		{/if}
-		<button class="mini" onclick={copy} title="Copy the command"
-			>{copied ? 'Copied' : 'Copy'}</button
-		>
+		<button class="mini" onclick={copy} title="Copy the command">
+			{copied ? 'Copied' : 'Copy'}
+		</button>
 	</div>
 	{#if view.error}
 		<div class="error">{view.error}</div>
 	{:else if view.output && outputOpen}
 		{#if clipped.hidden > 0 && !expanded}
-			<button class="more" onclick={() => (expanded = true)}
-				>Show all {clipped.hidden + PREVIEW_LINES} lines</button
-			>
+			<button class="more" onclick={() => (expanded = true)}>
+				Show all {clipped.hidden + PREVIEW_LINES} lines
+			</button>
 		{/if}
 		<pre class="out">{expanded ? view.output : clipped.shown}</pre>
 	{/if}

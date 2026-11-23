@@ -106,9 +106,9 @@
 			onchange={(e) => setReasoningEffort(e.currentTarget.value)}
 			disabled={!thinkingEnabled}
 		>
-			<option value=""
-				>Model default{effortCaps?.modelDefault ? ` (${effortCaps.modelDefault})` : ''}</option
-			>
+			<option value="">
+				Model default{effortCaps?.modelDefault ? ` (${effortCaps.modelDefault})` : ''}
+			</option>
 			{#each effortOptions as level (level)}
 				<option value={level}>{level}</option>
 			{/each}

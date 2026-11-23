@@ -64,14 +64,14 @@
 				<li>
 					<div class="text">
 						<span class="title">{m.summary || '(no title)'}</span>
-						<span class="when" class:now={group.name === 'Now'}
-							>{time(m)}{m.location && !m.joinUrl ? ` · ${m.location}` : ''}</span
-						>
+						<span class="when" class:now={group.name === 'Now'}>
+							{time(m)}{m.location && !m.joinUrl ? ` · ${m.location}` : ''}
+						</span>
 					</div>
 					{#if m.joinUrl}
-						<button class="join" onclick={() => void openInBrowser(m.joinUrl!)} title={m.joinUrl}
-							>Join</button
-						>
+						<button class="join" onclick={() => void openInBrowser(m.joinUrl!)} title={m.joinUrl}>
+							Join
+						</button>
 					{/if}
 					<ItemActions
 						label={m.summary}

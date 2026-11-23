@@ -106,8 +106,9 @@
 				class="btn btn-small"
 				onclick={test}
 				disabled={testing || !enabled || cleaned.length === 0 || !!toError}
-				>{testing ? 'Sending…' : 'Send test'}</button
 			>
+				{testing ? 'Sending…' : 'Send test'}
+			</button>
 			{#if testResult}<span class="help">{testResult}</span>{/if}
 		</div>
 		{#if testError}<p class="error">{testError}</p>{/if}

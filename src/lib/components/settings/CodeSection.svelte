@@ -148,9 +148,9 @@
 			<span>Run commands in a Windows folder with it instead of Windows PowerShell 5.1</span>
 		</label>
 		<p class="help">
-			Stop and the memory limit don't fully reach it. <code
-				>winget install Microsoft.PowerShell</code
-			>
+			Stop and the memory limit don't fully reach it. <code>
+				winget install Microsoft.PowerShell
+			</code>
 			gives you PowerShell 7 without that.
 		</p>
 	</section>

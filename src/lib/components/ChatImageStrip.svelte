@@ -58,8 +58,10 @@
 							{caption.text}{#if caption.linkHref}<a
 									href={caption.linkHref}
 									target="_blank"
-									rel="noreferrer noopener">{caption.linkLabel}</a
-								>{:else}{caption.linkLabel}{/if}
+									rel="noreferrer noopener"
+								>
+									{caption.linkLabel}
+								</a>{:else}{caption.linkLabel}{/if}
 						</figcaption>
 					{/if}
 				</figure>

@@ -270,8 +270,10 @@
 					class="btn probe-btn"
 					disabled={orLoading}
 					title="Fetch the OpenRouter model catalog."
-					onclick={loadOpenRouterModels}>{orLoading ? 'Loading…' : 'Load models'}</button
+					onclick={loadOpenRouterModels}
 				>
+					{orLoading ? 'Loading…' : 'Load models'}
+				</button>
 			</div>
 			{#if orCatalog}
 				<div class="model-row">
@@ -311,8 +313,10 @@
 					class="btn probe-btn"
 					disabled={probing || !form.baseUrl}
 					title="Connect to the selected server to list its models and detect context size + vision."
-					onclick={probeModel}>{probing ? 'Probing…' : 'Probe'}</button
+					onclick={probeModel}
 				>
+					{probing ? 'Probing…' : 'Probe'}
+				</button>
 			</div>
 			<div class="model-row">
 				<label class="model-field grow">
@@ -397,11 +401,11 @@
 					onchange={(e) => (form.effort = e.currentTarget.value || null)}
 					disabled={form.reasoning === 'off'}
 				>
-					<option value=""
-						>Inherit global setting{effortCaps?.modelDefault
+					<option value="">
+						Inherit global setting{effortCaps?.modelDefault
 							? ` (model default: ${effortCaps.modelDefault})`
-							: ''}</option
-					>
+							: ''}
+					</option>
 					{#each effortOptions as level (level)}
 						<option value={level}>{level}</option>
 					{/each}

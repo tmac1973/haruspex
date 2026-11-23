@@ -87,21 +87,25 @@
 			<button
 				type="button"
 				aria-label="Remove variable"
-				onclick={() => (rows = rows.filter((_, j) => j !== i))}>×</button
+				onclick={() => (rows = rows.filter((_, j) => j !== i))}
 			>
+				×
+			</button>
 		</div>
 	{/each}
-	<button type="button" class="add-var" onclick={() => (rows = [...rows, { name: '', value: '' }])}
-		>Add secret variable</button
-	>
+	<button type="button" class="add-var" onclick={() => (rows = [...rows, { name: '', value: '' }])}>
+		Add secret variable
+	</button>
 	{#if envError}
 		<p class="error">{envError}</p>
 	{/if}
 	<button
 		type="button"
 		disabled={saving || !programText.trim() || !!envError}
-		onclick={() => void save()}>{saveLabel}</button
+		onclick={() => void save()}
 	>
+		{saveLabel}
+	</button>
 </div>
 
 <style>

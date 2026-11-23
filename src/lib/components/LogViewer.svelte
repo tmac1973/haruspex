@@ -648,9 +648,9 @@
 							{/if}
 							{#if filtersActive}
 								<span class="filter-count">{filteredLines.length} / {logLines.length}</span>
-								<button class="filter-clear" onclick={clearFilters} title="Clear filters"
-									>Clear</button
-								>
+								<button class="filter-clear" onclick={clearFilters} title="Clear filters">
+									Clear
+								</button>
 							{/if}
 						</div>
 					{/if}
@@ -683,8 +683,9 @@
 														<td
 															class={okBand(c.successes, c.attempts)}
 															title={`${pct(c.successes, c.attempts)} working. Failed: ${c.fail_rate_limited} rate-limited, ${c.fail_empty} empty, ${c.fail_other} other.`}
-															>{c.successes}/{c.attempts}</td
 														>
+															{c.successes}/{c.attempts}
+														</td>
 													{:else}
 														<td class="zero">—</td>
 													{/if}

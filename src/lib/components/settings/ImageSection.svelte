@@ -94,14 +94,18 @@
 						aria-label={`Move ${e.name} up`}
 						title="Try it earlier"
 						disabled={i === 0}
-						onclick={() => (moveImageModel(e.id, -1), refresh())}>↑</button
+						onclick={() => (moveImageModel(e.id, -1), refresh())}
 					>
+						↑
+					</button>
 					<button
 						aria-label={`Move ${e.name} down`}
 						title="Try it later"
 						disabled={i === entries.length - 1}
-						onclick={() => (moveImageModel(e.id, 1), refresh())}>↓</button
+						onclick={() => (moveImageModel(e.id, 1), refresh())}
 					>
+						↓
+					</button>
 					<button aria-label={`Remove ${e.name}`} onclick={() => remove(e)}>Remove</button>
 				</div>
 				{#if e.caps}

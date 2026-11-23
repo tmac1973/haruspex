@@ -285,11 +285,9 @@
 									? 'The share of unified memory macOS lets the GPU use. The recommendation also allows for what other apps are using now.'
 									: undefined}
 						>
-							<span class="hw-label"
-								>{hardware.gpu_integrated || hardware.gpu_api === 'Metal'
-									? 'Shared memory'
-									: 'VRAM'}</span
-							>
+							<span class="hw-label">
+								{hardware.gpu_integrated || hardware.gpu_api === 'Metal' ? 'Shared memory' : 'VRAM'}
+							</span>
 							<span class="hw-value">
 								{formatBytes(hardware.gpu_vram_mb * 1048576)}
 							</span>
@@ -336,8 +334,9 @@
 								Using system RAM for the larger model: smarter, slower.
 							{:else}
 								Larger model using system RAM: smarter, slower.
-								<button class="link-btn" onclick={chooseOffloadAlternative}>Use this instead</button
-								>
+								<button class="link-btn" onclick={chooseOffloadAlternative}>
+									Use this instead
+								</button>
 							{/if}
 						</p>
 					{:else if offloadModel}
@@ -349,8 +348,9 @@
 								Using the larger model: smarter, about as fast here.
 							{:else}
 								Larger model: smarter, about as fast here, and a bigger download.
-								<button class="link-btn" onclick={chooseOffloadAlternative}>Use this instead</button
-								>
+								<button class="link-btn" onclick={chooseOffloadAlternative}>
+									Use this instead
+								</button>
 							{/if}
 						</p>
 					{/if}
@@ -481,9 +481,9 @@
 				</p>
 			{/if}
 			<div class="wizard-actions">
-				<button class="secondary-btn" onclick={() => setStep(isModeRemote() ? 'remote' : 'test')}
-					>Back</button
-				>
+				<button class="secondary-btn" onclick={() => setStep(isModeRemote() ? 'remote' : 'test')}>
+					Back
+				</button>
 				<button
 					class="primary-btn"
 					onclick={() => {

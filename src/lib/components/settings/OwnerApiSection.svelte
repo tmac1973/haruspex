@@ -266,12 +266,14 @@
 						class="label inline"
 						title="Open this in a browser on a computer allowed above. No token or link needed.{status?.hostname
 							? ` ${status.hostname}'s name may work in place of the address.`
-							: ''} {CERT_HINT}">Open on your other computer</span
+							: ''} {CERT_HINT}"
 					>
+						Open on your other computer
+					</span>
 					<code class="value">{pageUrl}</code>
-					<button class="btn btn-small" onclick={() => copy(pageUrl!, 'page')}
-						>{copied === 'page' ? 'Copied' : 'Copy'}</button
-					>
+					<button class="btn btn-small" onclick={() => copy(pageUrl!, 'page')}>
+						{copied === 'page' ? 'Copied' : 'Copy'}
+					</button>
 				</div>
 			{/if}
 		</WhoCanConnect>
@@ -281,28 +283,31 @@
 		<span
 			class="label"
 			title="Each device gets its own token and permissions, and can be revoked on its own. A browser signs in with a one-time link instead of the token."
-			>Devices with a token</span
 		>
+			Devices with a token
+		</span>
 		{#if devices.length > 0}
 			<ul class="list">
 				{#each devices as device (device.id)}
 					<li>
 						<span class="name">{device.name}</span>
-						<span class="meta"
-							>{device.scopes.map((s) => SCOPE_LABELS[s].label).join(', ')} · {seen(
-								device.lastSeen
-							)}</span
-						>
+						<span class="meta">
+							{device.scopes.map((s) => SCOPE_LABELS[s].label).join(', ')} · {seen(device.lastSeen)}
+						</span>
 						<button
 							class="btn btn-small"
 							title="A new one-time link for this device. It also gets a new token, so anything using the old one must use the new one."
-							onclick={() => newLink(device)}>New link</button
+							onclick={() => newLink(device)}
 						>
+							New link
+						</button>
 						<button
 							class="btn btn-small btn-danger"
 							title="Cut this device off now."
-							onclick={() => revoke(device)}>Revoke</button
+							onclick={() => revoke(device)}
 						>
+							Revoke
+						</button>
 					</li>
 				{/each}
 			</ul>
@@ -314,13 +319,14 @@
 					<span
 						class="label"
 						title="Open it in a browser on {shown.name}. It works once, within 10 minutes; after that the browser stays signed in."
-						>Open this link on {shown.name}</span
 					>
+						Open this link on {shown.name}
+					</span>
 					<div class="row">
 						<code class="value">{shown.link}</code>
-						<button class="btn btn-small" onclick={() => copy(shown!.link!, 'link')}
-							>{copied === 'link' ? 'Copied' : 'Copy'}</button
-						>
+						<button class="btn btn-small" onclick={() => copy(shown!.link!, 'link')}>
+							{copied === 'link' ? 'Copied' : 'Copy'}
+						</button>
 					</div>
 					{#if qr}
 						<svg
@@ -334,20 +340,21 @@
 						</svg>
 					{/if}
 				{:else}
-					<span class="label" title="The link needs an address to point at."
-						>Turn Remote control on to get a link</span
-					>
+					<span class="label" title="The link needs an address to point at.">
+						Turn Remote control on to get a link
+					</span>
 				{/if}
 				<details>
 					<summary
 						title="For a script or another program: send it as Authorization: Bearer <token>. Shown only now."
-						>Token for a script</summary
 					>
+						Token for a script
+					</summary>
 					<div class="row">
 						<code class="value">{shown.token}</code>
-						<button class="btn btn-small" onclick={() => copy(shown!.token, 'token')}
-							>{copied === 'token' ? 'Copied' : 'Copy'}</button
-						>
+						<button class="btn btn-small" onclick={() => copy(shown!.token, 'token')}>
+							{copied === 'token' ? 'Copied' : 'Copy'}
+						</button>
 					</div>
 				</details>
 				<button class="btn btn-small" onclick={() => ((shown = null), (qr = null))}>Done</button>
@@ -385,19 +392,23 @@
 					<button
 						class="btn btn-small btn-primary"
 						type="submit"
-						disabled={!newName.trim() || newScopes.length === 0}>Create link</button
+						disabled={!newName.trim() || newScopes.length === 0}
 					>
-					<button class="btn btn-small" type="button" onclick={() => (adding = false)}
-						>Cancel</button
-					>
+						Create link
+					</button>
+					<button class="btn btn-small" type="button" onclick={() => (adding = false)}>
+						Cancel
+					</button>
 				</div>
 			</form>
 		{:else}
 			<button
 				class="btn btn-small"
 				title="Make a one-time link (and a token) for a device that isn't trusted above."
-				onclick={() => (adding = true)}>Add a device…</button
+				onclick={() => (adding = true)}
 			>
+				Add a device…
+			</button>
 		{/if}
 	</div>
 
@@ -411,8 +422,9 @@
 			<label
 				for="owner-port"
 				title="The port the page and the API answer on. 8788 unless something else uses it."
-				>Port</label
 			>
+				Port
+			</label>
 			<input
 				id="owner-port"
 				class="short"
@@ -435,8 +447,9 @@
 			<label
 				for="owner-link-base"
 				title="The address other computers use to reach this one, if it isn't the one shown in links (for example a name your router gives it, or a proxy's address). Links and QR codes use it, and the page accepts it as this computer's name."
-				>Link address</label
 			>
+				Link address
+			</label>
 			<input
 				id="owner-link-base"
 				type="url"
@@ -450,16 +463,17 @@
 				<span class="label" title={CERT_HINT}>Certificate</span>
 				<div class="row">
 					<code class="value fingerprint" title="SHA-256 fingerprint">{status.fingerprint}</code>
-					<button class="btn btn-small" onclick={() => copy(status!.fingerprint!, 'cert')}
-						>{copied === 'cert' ? 'Copied' : 'Copy'}</button
-					>
+					<button class="btn btn-small" onclick={() => copy(status!.fingerprint!, 'cert')}>
+						{copied === 'cert' ? 'Copied' : 'Copy'}
+					</button>
 					{#if status.certificate}
 						<button
 							class="btn btn-small"
 							title="The certificate itself (PEM), for a script to trust: save it to a file and pass it to curl --cacert."
 							onclick={() => copy(status!.certificate!, 'pem')}
-							>{copied === 'pem' ? 'Copied' : 'Copy certificate'}</button
 						>
+							{copied === 'pem' ? 'Copied' : 'Copy certificate'}
+						</button>
 					{/if}
 				</div>
 			</div>

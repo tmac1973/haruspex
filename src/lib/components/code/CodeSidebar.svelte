@@ -242,18 +242,20 @@
 				onclick={() => openOne(s.id)}
 				oncontextmenu={(e) => openMenu(e, s)}
 			>
-				<span class="name"
-					>{#if s.forked_from}<span class="fork" data-testid="fork-glyph"
-							><BranchGlyph size={11} /></span
-						>{/if}{sessionLabel(s)}{#if elsewhereIds.has(s.id)}<span
+				<span class="name">
+					{#if s.forked_from}<span class="fork" data-testid="fork-glyph">
+							<BranchGlyph size={11} />
+						</span>{/if}{sessionLabel(s)}{#if elsewhereIds.has(s.id)}<span
 							class="window-mark"
 							data-testid="window-mark"
-							title="Open in its own window">⧉</span
-						>{/if}</span
-				>
-				<span class="meta"
-					>{grouped ? '' : `${folderName(s.root)} · `}{lastActive(s.updated_at, now)}</span
-				>
+							title="Open in its own window"
+						>
+							⧉
+						</span>{/if}
+				</span>
+				<span class="meta">
+					{grouped ? '' : `${folderName(s.root)} · `}{lastActive(s.updated_at, now)}
+				</span>
 			</button>
 		{/if}
 	</li>
@@ -282,11 +284,17 @@
 				aria-haspopup="menu"
 				aria-expanded={modelMenu !== null}
 				title="Open a file, or a folder of models, images and sounds, in an editor window"
-				>Open ▾</button
 			>
-			<button class="collapse" onclick={toggleOpen} title="Hide sessions" aria-label="Hide sessions"
-				>‹</button
+				Open ▾
+			</button>
+			<button
+				class="collapse"
+				onclick={toggleOpen}
+				title="Hide sessions"
+				aria-label="Hide sessions"
 			>
+				‹
+			</button>
 		</header>
 		<div class="filter-row">
 			<input
@@ -357,13 +365,17 @@
 		<button
 			role="menuitem"
 			title="A model, image or sound opens in its viewer, anything else as text"
-			onclick={() => void openFile()}>File…</button
+			onclick={() => void openFile()}
 		>
+			File…
+		</button>
 		<button
 			role="menuitem"
 			title="Opens the first model, image or sound, with the rest listed beside it"
-			onclick={() => void openFolder()}>Folder…</button
+			onclick={() => void openFolder()}
 		>
+			Folder…
+		</button>
 	</div>
 {/if}
 
@@ -377,8 +389,10 @@
 				deleting = menu?.session ?? null;
 				removeWorktree = true;
 				menu = null;
-			}}>Delete</button
+			}}
 		>
+			Delete
+		</button>
 	</div>
 {/if}
 

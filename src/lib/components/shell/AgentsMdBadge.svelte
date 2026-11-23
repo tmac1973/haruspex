@@ -34,8 +34,10 @@
 		class:warn={agentsMd.truncated}
 		aria-expanded={open}
 		title={describeAgentsMd(agentsMd)}
-		onclick={() => (open = !open)}>AGENTS.md</button
+		onclick={() => (open = !open)}
 	>
+		AGENTS.md
+	</button>
 	{#if open}
 		<div class="panel" role="dialog" aria-label="This repo's instructions">
 			<p>
@@ -47,8 +49,10 @@
 					onclick={() => {
 						open = false;
 						onIgnore();
-					}}>Stop using this repo's instructions</button
+					}}
 				>
+					Stop using this repo's instructions
+				</button>
 				<p class="hint">Settings → Skills → Repos turns them back on.</p>
 			{/if}
 		</div>

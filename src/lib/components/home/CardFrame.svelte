@@ -91,16 +91,20 @@
 					onclick={onrefresh}
 					disabled={refreshing}
 					aria-label="Refresh"
-					title="Refresh">↻</button
+					title="Refresh"
 				>
+					↻
+				</button>
 			{/if}
 			<button
 				class="menu-btn"
 				onclick={() => (menuOpen = !menuOpen)}
 				aria-label="Card options"
 				aria-haspopup="menu"
-				aria-expanded={menuOpen}>⋯</button
+				aria-expanded={menuOpen}
 			>
+				⋯
+			</button>
 			{#if menuOpen}
 				<div class="menu" role="menu" aria-label="Card options">
 					{#if arrangeable && canMoveUp}
@@ -113,16 +117,18 @@
 						<button
 							role="menuitem"
 							onclick={() => pick(() => onresize?.(size === 'wide' ? 'normal' : 'wide'))}
-							>{size === 'wide' ? 'Normal width' : 'Wide'}</button
 						>
+							{size === 'wide' ? 'Normal width' : 'Wide'}
+						</button>
 					{/if}
 					{#if arrangeable && notify !== null}
 						<button
 							role="menuitemcheckbox"
 							aria-checked={notify}
 							onclick={() => pick(() => onnotify?.(!notify))}
-							>{notify ? '✓ ' : ''}Notify on new items</button
 						>
+							{notify ? '✓ ' : ''}Notify on new items
+						</button>
 					{/if}
 					{#if arrangeable && onedit}
 						<button role="menuitem" onclick={() => pick(onedit)}>Edit job</button>

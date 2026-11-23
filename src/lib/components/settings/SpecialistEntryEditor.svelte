@@ -155,9 +155,9 @@
 	<div>
 		<div class="inline">
 			<input id="sp-model-{entry.id}" bind:value={model} list="sp-models-{entry.id}" />
-			<button type="button" class="btn btn-small" onclick={fetchModels} disabled={!url.trim()}
-				>Fetch</button
-			>
+			<button type="button" class="btn btn-small" onclick={fetchModels} disabled={!url.trim()}>
+				Fetch
+			</button>
 		</div>
 		<datalist id="sp-models-{entry.id}">
 			{#each models as m (m)}<option value={m}></option>{/each}
@@ -239,8 +239,10 @@
 		type="button"
 		class="btn btn-primary btn-small"
 		disabled={!!nameError}
-		onclick={() => onSave(draft())}>Save</button
+		onclick={() => onSave(draft())}
 	>
+		Save
+	</button>
 </div>
 
 <style>

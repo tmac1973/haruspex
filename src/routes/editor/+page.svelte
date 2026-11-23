@@ -181,8 +181,10 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							void split(doc.relPath);
-						}}>⤢</button
+						}}
 					>
+						⤢
+					</button>
 				{/if}
 				<button
 					class="icon"
@@ -191,8 +193,10 @@
 					onclick={(e) => {
 						e.stopPropagation();
 						ws.requestCloseTab(doc.relPath);
-					}}>×</button
+					}}
 				>
+					×
+				</button>
 			</div>
 		{/each}
 	</div>
@@ -270,15 +274,18 @@
 				<span
 					class="unwatched"
 					title="Changes made outside this window won't show until the file is reopened. Saving still checks for them."
-					>Live reload unavailable</span
 				>
+					Live reload unavailable
+				</span>
 			{/if}
 			{#if !active.viewer}
 				<button
 					disabled={!active.canSave}
 					onclick={() => void active.save()}
-					title={isMac ? '⌘+S' : 'Ctrl+S'}>Save</button
+					title={isMac ? '⌘+S' : 'Ctrl+S'}
 				>
+					Save
+				</button>
 			{/if}
 		</div>
 	{:else}

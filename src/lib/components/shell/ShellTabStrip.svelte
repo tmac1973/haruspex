@@ -100,22 +100,26 @@
 					class="detach"
 					title="Detach to its own window"
 					aria-label="Detach {session.name}"
-					onclick={(e) => detach(e, session)}>⤢</button
+					onclick={(e) => detach(e, session)}
 				>
+					⤢
+				</button>
 				{#if sessions.length > 1}
 					<button
 						class="close"
 						title="Close shell"
 						aria-label="Close {session.name}"
-						onclick={(e) => close(e, session.id)}>×</button
+						onclick={(e) => close(e, session.id)}
 					>
+						×
+					</button>
 				{/if}
 			</div>
 		{/each}
 	</div>
-	<button class="add" title="New shell" aria-label="New shell" onclick={() => createShellSession()}
-		>+</button
-	>
+	<button class="add" title="New shell" aria-label="New shell" onclick={() => createShellSession()}>
+		+
+	</button>
 	<ShellPicker onPick={() => void getActiveShellSession()?.restartActive()} />
 </div>
 

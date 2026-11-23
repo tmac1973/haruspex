@@ -25,8 +25,8 @@
 </script>
 
 <button type="button" class="image-save" {onclick} title="Save as…" aria-label="Save image as…">
-	<svg viewBox="0 0 24 24" aria-hidden="true"
-		><path d="M12 4v11"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 19h14"
-		></path></svg
-	>
+	<svg viewBox="0 0 24 24" aria-hidden="true">
+		<path d="M12 4v11"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 19h14"
+		></path>
+	</svg>
 </button>

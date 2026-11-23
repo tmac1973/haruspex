@@ -127,9 +127,9 @@
 									<span class="badge free">free</span>
 								{/if}
 								{#if m.expiration_date}
-									<span class="badge deprecated" title="Deprecated {m.expiration_date}"
-										>deprecated</span
-									>
+									<span class="badge deprecated" title="Deprecated {m.expiration_date}">
+										deprecated
+									</span>
 								{/if}
 							</span>
 						</button>

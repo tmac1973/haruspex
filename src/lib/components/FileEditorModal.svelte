@@ -131,9 +131,9 @@
 				<button type="button" onclick={() => (confirmingClose = false)}>Keep editing</button>
 			{:else}
 				{#if !pending.readOnly}
-					<button type="button" disabled={!dirty(current)} onclick={() => save()} title="Ctrl+S"
-						>Save</button
-					>
+					<button type="button" disabled={!dirty(current)} onclick={() => save()} title="Ctrl+S">
+						Save
+					</button>
 				{/if}
 				<button type="button" class="primary" onclick={close}>Done</button>
 			{/if}

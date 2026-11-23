@@ -466,8 +466,10 @@
 				<span
 					style="border-color: {peerColor(source.peer.id)}"
 					title="Its turns, model and memory are on {source.peer
-						.name}. Settings → Remote control → Other computers.">Runs on {source.peer.name}</span
+						.name}. Settings → Remote control → Other computers."
 				>
+					Runs on {source.peer.name}
+				</span>
 			</div>
 		{/if}
 		{#if showCpuFallbackBanner}
@@ -510,17 +512,17 @@
 					{#if isSummaryMessage(msg)}
 						<!-- A compaction's summary: the model works from it and what follows. -->
 						<details class="summary-divider" data-testid="chat-summary">
-							<summary title="The model works from this summary and the messages below it."
-								>Earlier messages summarised</summary
-							>
+							<summary title="The model works from this summary and the messages below it.">
+								Earlier messages summarised
+							</summary>
 							<pre>{summaryText(msg)}</pre>
 						</details>
 					{:else if msg.role === 'user' && isTaskNotice(messageText(msg.content))}
 						<!-- Sent by Haruspex when a background task ended, not typed. -->
 						<details class="summary-divider" data-testid="task-notice">
-							<summary title="Haruspex sent this when the task ended."
-								>{taskNoticeTitle(messageText(msg.content))}</summary
-							>
+							<summary title="Haruspex sent this when the task ended.">
+								{taskNoticeTitle(messageText(msg.content))}
+							</summary>
 							<pre>{messageText(msg.content)}</pre>
 						</details>
 					{:else if msg.role !== 'system'}
@@ -711,8 +713,10 @@
 								class="drop"
 								onclick={() => source.dropSteering(k)}
 								title="Don't send this"
-								aria-label="Remove queued message">×</button
+								aria-label="Remove queued message"
 							>
+								×
+							</button>
 						</div>
 					{/each}
 				</div>
@@ -728,8 +732,10 @@
 							<button
 								class="remove"
 								title="Remove image"
-								onclick={() => pendingImages.remove(img.id)}>×</button
+								onclick={() => pendingImages.remove(img.id)}
 							>
+								×
+							</button>
 						</div>
 					{/each}
 				</div>

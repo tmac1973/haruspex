@@ -99,9 +99,9 @@
 							/>
 							<span>On by default</span>
 						</label>
-						<button class="btn btn-small" aria-label={`Remove ${e.name}`} onclick={() => remove(e)}
-							>Remove</button
-						>
+						<button class="btn btn-small" aria-label={`Remove ${e.name}`} onclick={() => remove(e)}>
+							Remove
+						</button>
 					{/if}
 				</div>
 				{#if openId === e.id && specialistKind(e.kind)}

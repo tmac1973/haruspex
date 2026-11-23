@@ -155,14 +155,14 @@
 			aria-label={paused ? `Play ${title}` : `Pause ${title}`}
 		>
 			{#if paused}
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><polygon points="7 4 20 12 7 20 7 4"></polygon></svg
-				>
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<polygon points="7 4 20 12 7 20 7 4"></polygon>
+				</svg>
 			{:else}
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"
-					></rect></svg
-				>
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"
+					></rect>
+				</svg>
 			{/if}
 		</button>
 		<span class="time">{clock(currentTime)}</span>
@@ -214,11 +214,11 @@
 				aria-label={`Save ${title} as…`}
 				title="Save as…"
 			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><path d="M12 4v11"></path><polyline points="7 10 12 15 17 10"></polyline><path
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<path d="M12 4v11"></path><polyline points="7 10 12 15 17 10"></polyline><path
 						d="M5 19h14"
-					></path></svg
-				>
+					></path>
+				</svg>
 			</button>
 		{/if}
 	</div>

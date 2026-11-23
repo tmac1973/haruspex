@@ -125,9 +125,9 @@
 					<div class="row">
 						<div class="what">
 							<span class="label">{t.label}</span>
-							<button class="owner" type="button" onclick={() => void goTo(t.owner)}
-								>{ownerName(t.owner)}</button
-							>
+							<button class="owner" type="button" onclick={() => void goTo(t.owner)}>
+								{ownerName(t.owner)}
+							</button>
 						</div>
 						<span class="detail">{progressLine(t)}</span>
 						<button class="btn" type="button" onclick={() => void cancel(t)}>Cancel</button>
@@ -137,9 +137,9 @@
 					<div class="row">
 						<div class="what">
 							<span class="label" title={w.label}>{w.label}</span>
-							<button class="owner" type="button" onclick={() => void goTo(`code:${w.sessionId}`)}
-								>{ownerName(`code:${w.sessionId}`)}</button
-							>
+							<button class="owner" type="button" onclick={() => void goTo(`code:${w.sessionId}`)}>
+								{ownerName(`code:${w.sessionId}`)}
+							</button>
 						</div>
 						<span class="detail">{w.kind === 'process' ? 'Command' : 'Subtask'}</span>
 						<button class="btn" type="button" onclick={w.stop}>Stop</button>
@@ -151,13 +151,13 @@
 						<div class="row">
 							<div class="what">
 								<span class="label">{t.label}</span>
-								<button class="owner" type="button" onclick={() => void goTo(t.owner)}
-									>{ownerName(t.owner)}</button
-								>
+								<button class="owner" type="button" onclick={() => void goTo(t.owner)}>
+									{ownerName(t.owner)}
+								</button>
 							</div>
-							<span class="detail" class:bad={t.state === 'failed'}
-								>{t.state === 'done' ? 'Done' : t.state === 'failed' ? 'Failed' : 'Cancelled'}</span
-							>
+							<span class="detail" class:bad={t.state === 'failed'}>
+								{t.state === 'done' ? 'Done' : t.state === 'failed' ? 'Failed' : 'Cancelled'}
+							</span>
 						</div>
 					{/each}
 				{/if}

@@ -202,9 +202,11 @@
 								<td>{row.stats.calls}</td>
 								<td>{formatDuration(row.stats.totalMs)}</td>
 								<td>{rateCell(row.stats)}</td>
-								<td title={row.stats.pressureMax ? PRESSURE_NOTE[row.stats.pressureMax] : undefined}
-									>{phasePeakCell(row.stats)}</td
+								<td
+									title={row.stats.pressureMax ? PRESSURE_NOTE[row.stats.pressureMax] : undefined}
 								>
+									{phasePeakCell(row.stats)}
+								</td>
 							{:else}
 								<!-- A phase that ran no model calls (a checkpoint waiting
 								     on you) spent nothing and records nothing. -->

@@ -267,8 +267,9 @@
 		<label
 			for="remote-link-host"
 			title="The name devices use to reach this computer, if it isn't the address shown below (for example a VPN's name for it). Links and QR codes use it, and the page accepts it as this computer's name. IP addresses always work."
-			>Link address</label
 		>
+			Link address
+		</label>
 		<input
 			id="remote-link-host"
 			class="wide"
@@ -334,13 +335,14 @@
 				<span
 					class="label"
 					title="Open this in a browser on a device allowed above. No link needed. The browser warns about the certificate the first time; continue if the fingerprint matches Certificate below."
-					>Open on the other device</span
 				>
+					Open on the other device
+				</span>
 				{@render share(pageUrl, 'page', showLink ? null : pageQr)}
 				<details class="other" bind:open={showLink}>
-					<summary title="For a device not allowed above. It works in every mode."
-						>Link for other devices</summary
-					>
+					<summary title="For a device not allowed above. It works in every mode.">
+						Link for other devices
+					</summary>
 					{@render share(link, 'link', qr)}
 					{@render rotateButton()}
 				</details>
@@ -350,8 +352,9 @@
 					<span
 						class="label"
 						title="Haruspex made its own certificate, so a guest's browser warns the first time. They can continue if the fingerprint it shows matches this one."
-						>Certificate</span
 					>
+						Certificate
+					</span>
 					<code class="fingerprint" title="SHA-256 fingerprint">{status.fingerprint}</code>
 				</div>
 			{/if}

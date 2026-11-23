@@ -64,9 +64,9 @@
 	<ul>
 		{#each result.items as item (item.id)}
 			<li>
-				<button class="title" onclick={() => void openInBrowser(item.url)} title={item.url}
-					>{item.title}</button
-				>
+				<button class="title" onclick={() => void openInBrowser(item.url)} title={item.url}>
+					{item.title}
+				</button>
 				<div class="meta">
 					<span>
 						{item.repo}#{item.number} · {item.author} · 💬 {item.comments} · {age(item.updatedAt)}

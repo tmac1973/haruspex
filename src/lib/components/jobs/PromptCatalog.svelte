@@ -81,8 +81,10 @@
 						type="button"
 						class="catalog-item"
 						title={p.prompt}
-						onclick={() => insert(p.prompt)}>{p.name}</button
+						onclick={() => insert(p.prompt)}
 					>
+						{p.name}
+					</button>
 				{/each}
 			{/if}
 
@@ -92,8 +94,10 @@
 					type="button"
 					class="save-current"
 					disabled={!current.trim() || saving}
-					onclick={saveCurrent}>+ Save current</button
+					onclick={saveCurrent}
 				>
+					+ Save current
+				</button>
 			</div>
 			{#if saved.length === 0}
 				<div class="catalog-empty">Nothing saved yet.</div>
@@ -104,14 +108,18 @@
 							type="button"
 							class="catalog-item-name"
 							title={p.prompt}
-							onclick={() => insert(p.prompt)}>{p.name}</button
+							onclick={() => insert(p.prompt)}
 						>
+							{p.name}
+						</button>
 						<button
 							type="button"
 							class="catalog-del"
 							title="Delete saved prompt"
-							onclick={(e) => remove(p.id, e)}>×</button
+							onclick={(e) => remove(p.id, e)}
 						>
+							×
+						</button>
 					</div>
 				{/each}
 			{/if}

@@ -184,16 +184,17 @@
 		<span
 			class="sublabel"
 			title="Computers on this network whose Remote control listens on all networks."
-			>Found on your network</span
 		>
+			Found on your network
+		</span>
 		<ul class="list">
 			{#each offered as peer (peer.instanceId)}
 				<li>
 					<span class="name">{peer.name}</span>
 					<span class="meta">v{peer.version}</span>
-					<button class="btn btn-small" disabled={busy} onclick={() => connect(peer)}
-						>Connect…</button
-					>
+					<button class="btn btn-small" disabled={busy} onclick={() => connect(peer)}>
+						Connect…
+					</button>
 				</li>
 			{/each}
 		</ul>
@@ -206,29 +207,38 @@
 				{@const connection = enabled ? statuses[peer.instanceId]?.connection : undefined}
 				<li>
 					<span class="name" title="{peer.address}:{peer.port}">{peer.name}</span>
-					<span class="meta" title={connection === 'notLetIn' ? notLetInHint(peer.name) : undefined}
-						>{connection ? LABELS[connection] : ''}</span
+					<span
+						class="meta"
+						title={connection === 'notLetIn' ? notLetInHint(peer.name) : undefined}
 					>
+						{connection ? LABELS[connection] : ''}
+					</span>
 					{#if connection === 'notLetIn'}
 						<button
 							class="btn btn-small"
 							title={notLetInHint(peer.name)}
-							onclick={() => (tokenFor = peer)}>Use a token…</button
+							onclick={() => (tokenFor = peer)}
 						>
+							Use a token…
+						</button>
 					{:else if connection === 'certificateChanged'}
 						<button
 							class="btn btn-small"
 							title="A computer makes a new certificate when its old one nears expiry and when its names change. Check the new fingerprint before trusting it."
 							disabled={busy}
-							onclick={() => checkAgain(peer)}>Check again…</button
+							onclick={() => checkAgain(peer)}
 						>
+							Check again…
+						</button>
 					{/if}
 					<button
 						class="btn btn-small btn-danger"
 						title="Stop showing this computer here and forget its token."
 						disabled={busy}
-						onclick={() => remove(peer)}>Remove</button
+						onclick={() => remove(peer)}
 					>
+						Remove
+					</button>
 				</li>
 			{/each}
 		</ul>
@@ -246,8 +256,9 @@
 				<label
 					for="peer-address"
 					title="Its name on your network or its IP address, as you'd reach it from here."
-					>Name or address</label
 				>
+					Name or address
+				</label>
 				<input id="peer-address" placeholder="e.g. desk-pc" bind:value={address} />
 			</div>
 			<div class="field">
@@ -255,9 +266,9 @@
 				<input id="peer-port" class="short" type="number" min="1" max="65535" bind:value={port} />
 			</div>
 			<div class="row">
-				<button class="btn btn-small btn-primary" type="submit" disabled={busy || !address.trim()}
-					>Connect…</button
-				>
+				<button class="btn btn-small btn-primary" type="submit" disabled={busy || !address.trim()}>
+					Connect…
+				</button>
 				<button class="btn btn-small" type="button" onclick={() => (adding = false)}>Cancel</button>
 			</div>
 		</form>
@@ -265,8 +276,10 @@
 		<button
 			class="btn btn-small"
 			title="A computer that isn't found on your network, by its name or address."
-			onclick={() => (adding = true)}>Add a computer…</button
+			onclick={() => (adding = true)}
 		>
+			Add a computer…
+		</button>
 	{/if}
 </div>
 

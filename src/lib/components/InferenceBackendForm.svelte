@@ -397,9 +397,9 @@
 	{#if showCaps}
 		<div class="caps">
 			<div class="caps-title">
-				Detected capabilities <span
-					>{backendLabel(config.remoteBackendKind, config.remoteEngine ?? null)}</span
-				>
+				Detected capabilities <span>
+					{backendLabel(config.remoteBackendKind, config.remoteEngine ?? null)}
+				</span>
 			</div>
 			<dl class="caps-grid">
 				{#if config.remoteReasoning}

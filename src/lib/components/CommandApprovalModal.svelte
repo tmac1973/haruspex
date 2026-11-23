@@ -29,8 +29,9 @@
 		<h2 id="command-approval-title">Run this command?</h2>
 		{#if pending.requester || waiting > 0}
 			<p class="requester" data-testid="command-approval-requester">
-				{#if pending.requester}Asked by <strong>{pending.requester}</strong
-					>{/if}{#if pending.requester && waiting > 0}
+				{#if pending.requester}Asked by <strong>
+						{pending.requester}
+					</strong>{/if}{#if pending.requester && waiting > 0}
 					·
 				{/if}{#if waiting > 0}{waiting} more waiting{/if}
 			</p>

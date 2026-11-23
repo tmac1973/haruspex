@@ -54,9 +54,9 @@
 			</div>
 		</div>
 		{#if fullHeight > CLAMP_PX}
-			<button class="link" onclick={() => (expanded = !expanded)}
-				>{expanded ? 'Show less' : 'Show more'}</button
-			>
+			<button class="link" onclick={() => (expanded = !expanded)}>
+				{expanded ? 'Show less' : 'Show more'}
+			</button>
 		{/if}
 	{:else if latestRun?.latest === null && !live && !queued}
 		<p class="muted">No runs yet.</p>
@@ -65,8 +65,10 @@
 		<button
 			onclick={() => void enqueue(jobId, 'manual')}
 			disabled={live !== null || queued}
-			title={live || queued ? 'This job is already running or queued' : undefined}>Run now</button
+			title={live || queued ? 'This job is already running or queued' : undefined}
 		>
+			Run now
+		</button>
 		<button onclick={open}>Open</button>
 	</div>
 {/if}

@@ -62,8 +62,10 @@
 				type="button"
 				class="btn btn-primary"
 				onclick={() => void add()}
-				disabled={!valid || saving}>Add card</button
+				disabled={!valid || saving}
 			>
+				Add card
+			</button>
 		</div>
 	</div>
 </Modal>

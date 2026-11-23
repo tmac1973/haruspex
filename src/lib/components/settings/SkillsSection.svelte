@@ -170,9 +170,9 @@
 	<h2>Skills</h2>
 	<p class="help">
 		Folders with a <code>SKILL.md</code>, in the
-		<span title="The Agent Skills format (agentskills.io), shared with other AI tools."
-			>open format</span
-		>.
+		<span title="The Agent Skills format (agentskills.io), shared with other AI tools.">
+			open format
+		</span>.
 	</p>
 	<div class="actions">
 		<button class="btn btn-small" onclick={openUserFolder}>Open skills folder</button>
@@ -181,8 +181,10 @@
 			<button
 				class="btn btn-small"
 				onclick={() => restore(null)}
-				title="Brings back {deletedShipped.join(', ')}.">Restore deleted shipped skills</button
+				title="Brings back {deletedShipped.join(', ')}."
 			>
+				Restore deleted shipped skills
+			</button>
 		{/if}
 	</div>
 	{#if loadError}
@@ -211,14 +213,14 @@
 							<span class="badge">Written by the model</span>
 						{/if}
 						{#if shippedState(skill)}
-							<span class="badge" title="A newer release updates it unless you've edited it."
-								>Shipped with Haruspex{shippedState(skill) === 'edited' ? ', edited' : ''}</span
-							>
+							<span class="badge" title="A newer release updates it unless you've edited it.">
+								Shipped with Haruspex{shippedState(skill) === 'edited' ? ', edited' : ''}
+							</span>
 						{/if}
 						{#if skill.shadowed}
-							<span class="badge" title="Another skill with this name takes precedence."
-								>Overridden</span
-							>
+							<span class="badge" title="Another skill with this name takes precedence.">
+								Overridden
+							</span>
 						{/if}
 						<span class="spacer"></span>
 						{#if !skill.error && !skill.shadowed}
@@ -233,9 +235,9 @@
 							<button class="btn btn-small" onclick={() => restore(skill.name)}>Restore</button>
 						{/if}
 						{#if skill.source === 'user'}
-							<button class="btn btn-danger btn-small" onclick={() => remove(skill.name)}
-								>Delete</button
-							>
+							<button class="btn btn-danger btn-small" onclick={() => remove(skill.name)}>
+								Delete
+							</button>
 						{/if}
 					</div>
 					{#if skill.error}
@@ -280,8 +282,9 @@
 				class="btn btn-small"
 				onclick={() => addFolder(CLAUDE_SKILLS)}
 				title="Skills installed for Claude Code. Some may expect Claude Code's own tools."
-				>Add {CLAUDE_SKILLS}</button
 			>
+				Add {CLAUDE_SKILLS}
+			</button>
 		{/if}
 	</div>
 </section>
@@ -308,8 +311,10 @@
 					<button
 						class="btn btn-small"
 						onclick={() => setTrust(root, null)}
-						title="Ask again next time.">Forget</button
+						title="Ask again next time."
 					>
+						Forget
+					</button>
 				</li>
 			{/each}
 		</ul>

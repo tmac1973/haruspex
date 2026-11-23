@@ -118,15 +118,17 @@
 				<strong>{v.name}</strong>
 				<span class="detail">{v.secs.toFixed(1)} s</span>
 				<button class="btn btn-small" onclick={() => play(v)}>Play</button>
-				<button class="btn btn-small" onclick={() => remove(v)}
-					>{deleting === v.id ? 'Delete it' : 'Delete'}</button
-				>
+				<button class="btn btn-small" onclick={() => remove(v)}>
+					{deleting === v.id ? 'Delete it' : 'Delete'}
+				</button>
 			</div>
 			<label
 				class="detail"
 				for="ref-{v.id}"
-				title="What the clip says. Correct words copy the voice more closely.">Words:</label
+				title="What the clip says. Correct words copy the voice more closely."
 			>
+				Words:
+			</label>
 			<textarea
 				id="ref-{v.id}"
 				rows="2"
@@ -150,10 +152,12 @@
 					class="btn btn-small"
 					onclick={add}
 					disabled={!adding.consent || !adding.name.trim() || busy}
-					>{busy ? 'Adding…' : 'Add'}</button
 				>
-				<button class="btn btn-small" onclick={() => (adding = null)} disabled={busy}>Cancel</button
-				>
+					{busy ? 'Adding…' : 'Add'}
+				</button>
+				<button class="btn btn-small" onclick={() => (adding = null)} disabled={busy}>
+					Cancel
+				</button>
 			</div>
 		</div>
 	{:else}

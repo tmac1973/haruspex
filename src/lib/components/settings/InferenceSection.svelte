@@ -448,9 +448,9 @@
 					onclick={() => setContextSize(opt.value)}
 				>
 					<strong>{opt.label}</strong>
-					<span
-						>{overCeiling ? (allowSpill ? 'Needs more memory' : 'Needs more VRAM') : opt.desc}</span
-					>
+					<span>
+						{overCeiling ? (allowSpill ? 'Needs more memory' : 'Needs more VRAM') : opt.desc}
+					</span>
 				</button>
 			{/each}
 		</div>

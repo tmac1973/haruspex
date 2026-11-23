@@ -158,21 +158,23 @@
 							class="zoom"
 							aria-label={`Show the picture from ${stamp(new Date(e.startedAt))} larger`}
 							onclick={() => (viewer = { src: thumbs[e.id], alt: caption(e) })}
-							><img src={thumbs[e.id]} alt="" /></button
 						>
+							<img src={thumbs[e.id]} alt="" />
+						</button>
 					{:else}
 						<span class="no-thumb" aria-hidden="true"></span>
 					{/if}
 					<div class="text">
-						<span class="meta"
-							>{stamp(new Date(e.startedAt))} · {TRIGGERS[e.trigger] ?? e.trigger}
+						<span class="meta">
+							{stamp(new Date(e.startedAt))} · {TRIGGERS[e.trigger] ?? e.trigger}
 							{#if flagged(e)}<span
 									class="chip {e.alertLevel}"
 									class:dismissed={e.dismissedAt !== null}
 									title={e.dismissedAt !== null ? 'Dismissed' : undefined}
-									>{e.alertLevel === 'urgent' ? 'Urgent' : 'Unusual'}</span
-								>{/if}</span
-						>
+								>
+									{e.alertLevel === 'urgent' ? 'Urgent' : 'Unusual'}
+								</span>{/if}
+						</span>
 						<span class="caption">{caption(e)}</span>
 						{#if flagged(e) && e.alertReason}<span class="reason">{e.alertReason}</span>{/if}
 						{#if e.transcript.trim()}<span class="said">“{e.transcript.trim()}”</span>{/if}
@@ -184,16 +186,18 @@
 									placeholder="Me cooking late is normal"
 									aria-label="Why this is fine"
 								/>
-								<button type="button" class="btn btn-small" onclick={() => dismiss(e, false)}
-									>Dismiss</button
-								>
+								<button type="button" class="btn btn-small" onclick={() => dismiss(e, false)}>
+									Dismiss
+								</button>
 								<button
 									type="button"
 									class="btn btn-small"
 									disabled={!note.trim()}
 									title="Saves the note as one of this camera's watch rules, so later entries are judged with it."
-									onclick={() => dismiss(e, true)}>Dismiss and add rule</button
+									onclick={() => dismiss(e, true)}
 								>
+									Dismiss and add rule
+								</button>
 							</div>
 						{/if}
 					</div>
@@ -202,15 +206,19 @@
 							type="button"
 							class="btn btn-small"
 							aria-label={`Dismiss the alert from ${stamp(new Date(e.startedAt))}`}
-							onclick={() => openDismiss(e.id)}>Dismiss</button
+							onclick={() => openDismiss(e.id)}
 						>
+							Dismiss
+						</button>
 					{/if}
 					<button
 						type="button"
 						class="btn btn-small"
 						aria-label={`Delete the entry from ${stamp(new Date(e.startedAt))}`}
-						onclick={() => remove(e.id)}>Delete</button
+						onclick={() => remove(e.id)}
 					>
+						Delete
+					</button>
 				</li>
 			{/each}
 		</ul>
@@ -219,8 +227,10 @@
 				type="button"
 				class="btn btn-small"
 				title={`Deletes every entry in ${cameraName}'s log, with its pictures.`}
-				onclick={clearAll}>Clear all</button
+				onclick={clearAll}
 			>
+				Clear all
+			</button>
 		</div>
 	{/if}
 </div>

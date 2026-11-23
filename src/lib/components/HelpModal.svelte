@@ -32,8 +32,10 @@
 			type="button"
 			class="link"
 			title={GUIDE_URL}
-			onclick={() => void openInBrowser(GUIDE_URL)}>user guide</button
-		> explains every feature and setting. You can also ask the assistant about Haruspex.
+			onclick={() => void openInBrowser(GUIDE_URL)}
+		>
+			user guide
+		</button> explains every feature and setting. You can also ask the assistant about Haruspex.
 	</p>
 	{#each SHORTCUTS as section (section.title)}
 		<section>

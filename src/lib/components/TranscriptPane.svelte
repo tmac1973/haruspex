@@ -147,9 +147,9 @@
 	{:else if !model.transcript}
 		<div class="empty">
 			<p class="note">No transcript yet.</p>
-			<button disabled={model.transcribing !== null} onclick={() => void model.transcribe()}
-				>{model.transcribing ? `Transcribing… ${model.transcribing}` : 'Transcribe'}</button
-			>
+			<button disabled={model.transcribing !== null} onclick={() => void model.transcribe()}>
+				{model.transcribing ? `Transcribing… ${model.transcribing}` : 'Transcribe'}
+			</button>
 		</div>
 	{:else}
 		{#if model.staleEdits}
@@ -164,8 +164,10 @@
 					type="button"
 					class="word {classOf(i)}"
 					title={clock(w.start)}
-					onclick={(e) => clickWord(i, e)}>{w.text}</button
+					onclick={(e) => clickWord(i, e)}
 				>
+					{w.text}
+				</button>
 			{/each}
 		</div>
 		{#if replacing}
@@ -215,13 +217,16 @@
 				</select>
 			</label>
 			<span class="spacer"></span>
-			<button disabled={!model.dirty || !!model.staleEdits} onclick={() => void save()}>Save</button
-			>
+			<button disabled={!model.dirty || !!model.staleEdits} onclick={() => void save()}>
+				Save
+			</button>
 			<button
 				disabled={!model.edits?.edits.length || !!model.staleEdits}
 				title="Saves, then puts /fix-speech apply in this folder's chat"
-				onclick={() => void send()}>Send to chat</button
+				onclick={() => void send()}
 			>
+				Send to chat
+			</button>
 		</div>
 	{/if}
 	{#if model.error}<p class="note error">{model.error}</p>{/if}
