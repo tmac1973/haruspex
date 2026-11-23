@@ -51,6 +51,7 @@ const PAGES = [
 	'video-editing',
 	'video-cut',
 	'video-adjust',
+	'video-sequence',
 	'video-render',
 	'video-speech',
 	'textures',

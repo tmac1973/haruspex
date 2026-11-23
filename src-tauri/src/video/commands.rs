@@ -253,6 +253,81 @@ pub fn video_transcribe_cancel(job: String) -> bool {
         .is_some()
 }
 
+/// Sound files in the working folder joined end to end into one, each
+/// crossfading into the next over `crossfade_secs`: songs made one after
+/// another for a bed longer than one song. `out` is a `.wav` in the working
+/// folder.
+#[tauri::command]
+pub async fn audio_crossfade_join(
+    working_dir: String,
+    parts: Vec<String>,
+    crossfade_secs: f64,
+    out: String,
+    overrides: BinaryOverrides,
+) -> Result<(), String> {
+    if parts.len() < 2 {
+        return Err("Joining needs two files or more.".into());
+    }
+    if !out.to_ascii_lowercase().ends_with(".wav") {
+        return Err("The joined file must be a .wav.".into());
+    }
+    let found = binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
+    let files = parts
+        .iter()
+        .map(|p| paths::resolve_media(&working_dir, p, "", ""))
+        .collect::<Result<Vec<_>, _>>()?;
+    let target = paths::resolve_in_working(&working_dir, &out)?;
+    if let Some(dir) = target.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("can't make {}: {e}", dir.display()))?;
+    }
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-y"]);
+    for f in &files {
+        cmd.arg("-i").arg(f);
+    }
+    cmd.args([
+        "-filter_complex",
+        &crossfade_graph(files.len(), crossfade_secs),
+    ])
+    .args(["-map", "[out]", "-c:a", "pcm_s16le"])
+    .arg(&target)
+    .stdin(std::process::Stdio::null())
+    .kill_on_drop(true);
+    super::prepare_child(&mut cmd);
+    let done = cmd
+        .output()
+        .await
+        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    if !done.status.success() {
+        let err = String::from_utf8_lossy(&done.stderr);
+        return Err(format!(
+            "could not join the sound: {}",
+            err.lines().next().unwrap_or("ffmpeg failed").trim()
+        ));
+    }
+    Ok(())
+}
+
+/// `n` inputs chained through `acrossfade`, the last labelled `[out]`.
+fn crossfade_graph(n: usize, secs: f64) -> String {
+    let d = format!("{:.3}", secs.clamp(0.1, 10.0));
+    let mut graph = Vec::new();
+    let mut prev = "[0:a]".to_string();
+    for i in 1..n {
+        let label = if i == n - 1 {
+            "[out]".to_string()
+        } else {
+            format!("[x{i}]")
+        };
+        graph.push(format!(
+            "{prev}[{i}:a]acrossfade=d={d}:c1=tri:c2=tri{label}"
+        ));
+        prev = label;
+    }
+    graph.join(";")
+}
+
 /// Quiet stretches in a clip, in its own time.
 #[tauri::command]
 pub async fn video_silences(
@@ -948,6 +1023,61 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn crossfades_chain_one_input_into_the_next() {
+        assert_eq!(
+            crossfade_graph(3, 2.0),
+            "[0:a][1:a]acrossfade=d=2.000:c1=tri:c2=tri[x1];[x1][2:a]acrossfade=d=2.000:c1=tri:c2=tri[out]"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_sounds_join_into_one_a_crossfade_shorter() {
+        if crate::video::binaries::resolve(&Default::default())
+            .await
+            .ffmpeg
+            .is_none()
+        {
+            eprintln!("skipped: no ffmpeg");
+            return;
+        }
+        let dir = temp_dir("audio_join");
+        for (name, f) in [("a.wav", 220), ("b.wav", 440)] {
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+                .arg(format!("sine=f={f}:d=5"))
+                .arg(dir.join(name))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        }
+        let wd = dir.to_string_lossy().into_owned();
+        audio_crossfade_join(
+            wd,
+            vec!["a.wav".into(), "b.wav".into()],
+            2.0,
+            "music/bed.wav".into(),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let out = crate::test_util::host_command("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(dir.join("music/bed.wav"))
+            .output()
+            .unwrap();
+        let secs: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
+        assert!((secs - 8.0).abs() < 0.05, "{secs}");
+    }
 
     /// A sheet with a picture first, then the clip's frames, numbered on.
     #[tokio::test]
