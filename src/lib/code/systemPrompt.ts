@@ -4,6 +4,7 @@
  * shell assistant prompt instead, `#lib/shell/systemPrompt.ts`.)
  */
 
+import { savedVoicesNote } from '#lib/audio/savedVoices.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { imageEntries } from '#lib/image/entries.ts';
@@ -89,7 +90,7 @@ export function musicLine(readOnly: boolean | undefined): string {
 /** generate_speech: koko is bundled, so it is always there. */
 export function speechLine(readOnly: boolean | undefined): string {
 	const save = readOnly ? '' : ' Pass path (ending .wav) to also save it into the project.';
-	return `\n- generate_speech — speak text into an audio file with a voice on this computer: a voiceover or a game's lines. It takes seconds and plays in your answer.${save}`;
+	return `\n- generate_speech — speak text into an audio file with a voice on this computer: a voiceover or a game's lines. It takes seconds and plays in your answer.${save}${savedVoicesNote()}`;
 }
 
 /** The TOOLS lines for the media tools, less those of families the turn defers. */

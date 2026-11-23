@@ -80,6 +80,7 @@
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { refreshSavedVoices } from '#lib/audio/savedVoices.ts';
 	import { onMount, tick } from 'svelte';
 	import { syncRemoteServer } from '#lib/remote/service.ts';
 	import '#lib/styles/app.css';
@@ -182,6 +183,8 @@
 	// Whether ffmpeg and melt are here decides whether the video tools are
 	// offered; the registry asks synchronously, so look once now.
 	onMount(() => void refreshVideoBinaries().catch(() => {}));
+	// The saved voices, so the prompt can name them.
+	onMount(() => void refreshSavedVoices());
 	// The bundled ffmpeg, ffprobe and melt are on the model's PATH while the
 	// video tools are on, however the switch was changed (Settings, the
 	// remote API, another window).

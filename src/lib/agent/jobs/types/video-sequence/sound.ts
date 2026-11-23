@@ -5,8 +5,9 @@
  * song. Longer, where the music model can repaint, a 240 s song is extended
  * to length (240 s at a time, as `edit_music` does), up to 600 s a song;
  * past that, or where it can't, several songs with the bed's caption are
- * joined end to end with 2 s crossfades. Each narration line is spoken with
- * the line's voice or Settings → Speech's.
+ * joined end to end with 2 s crossfades. Each narration line is spoken by
+ * Settings → Audio → Speech engine: with Kokoro in the line's voice or
+ * Settings → Audio's, with a llama.cpp server in the line's saved voice.
  */
 import type { MusicRequest } from '#lib/music/types.ts';
 import { MAX_EXTEND_SECONDS, extendFields } from '#lib/music/extend.ts';

@@ -608,6 +608,94 @@ pub async fn tts_synthesize_to_cache(
     })
 }
 
+/// The `atempo` chain for `factor`: each step within 0.5–2, as ffmpeg's
+/// filter wants, so any pace is reached with the pitch kept.
+pub fn atempo_chain(factor: f64) -> Result<String, String> {
+    if !factor.is_finite() || !(0.1..=10.0).contains(&factor) {
+        return Err(format!("A speed of {factor} is out of reach; use 0.1–10."));
+    }
+    let mut left = factor;
+    let mut steps = Vec::new();
+    while left < 0.5 {
+        steps.push("atempo=0.5".to_string());
+        left /= 0.5;
+    }
+    while left > 2.0 {
+        steps.push("atempo=2.0".to_string());
+        left /= 2.0;
+    }
+    steps.push(format!("atempo={left:.6}"));
+    Ok(steps.join(","))
+}
+
+/// A cached WAV played `factor` times as fast (0.8 is slower and 1.25 times
+/// as long), pitch kept, into a new cache entry: the pace for an engine that
+/// can't speak at another speed itself.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn audio_stretch(
+    app: AppHandle,
+    db: tauri::State<'_, Database>,
+    hash: String,
+    factor: f64,
+    title: Option<String>,
+    conversation_id: Option<String>,
+    code_session_id: Option<String>,
+    overrides: crate::video::binaries::BinaryOverrides,
+) -> Result<StoredSpeech, String> {
+    let chain = atempo_chain(factor)?;
+    let dir = crate::audio_cache::cache_dir(&app)?;
+    let src = crate::audio_cache::commands::cached_path(&db, &dir, &hash)?;
+    let found = crate::video::binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(crate::video::binaries::Tool::Ffmpeg)?;
+    let temp = dir.join(crate::audio_cache::commands::temp_name());
+    stretch_file(ffmpeg, &src, &chain, &temp).await?;
+    let wav = std::fs::read(&temp).map_err(|e| format!("Can't read the audio: {e}"))?;
+    let seconds = crate::speech_server::wav_seconds(&wav);
+    let stored = crate::audio_cache::commands::store_file(
+        &db,
+        &dir,
+        &temp,
+        "audio/wav",
+        title,
+        Some((seconds * 1000.0).round() as i64),
+        conversation_id.as_deref(),
+        code_session_id.as_deref(),
+    )
+    .await?;
+    Ok(StoredSpeech {
+        hash: stored.hash,
+        mime: stored.mime,
+        bytes: stored.bytes,
+        seconds,
+    })
+}
+
+async fn stretch_file(ffmpeg: &str, src: &Path, chain: &str, out: &Path) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-y", "-i"])
+        .arg(src)
+        .args(["-af", chain, "-c:a", "pcm_s16le", "-map_metadata", "-1"])
+        .args(["-fflags", "+bitexact", "-f", "wav"])
+        .arg(out)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    crate::video::prepare_child(&mut cmd);
+    let done = tokio::time::timeout(Duration::from_secs(600), cmd.output())
+        .await
+        .map_err(|_| "Changing the pace took too long".to_string())?
+        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    if !done.status.success() {
+        let _ = std::fs::remove_file(out);
+        let err = String::from_utf8_lossy(&done.stderr);
+        return Err(format!(
+            "Changing the pace failed: {}",
+            err.lines().next().unwrap_or("ffmpeg failed")
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn tts_stop_playback(state: tauri::State<'_, TtsEngine>) -> Result<(), String> {
     state.stop_playback();
@@ -638,6 +726,52 @@ pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atempo_chains_stay_within_half_to_double() {
+        assert_eq!(atempo_chain(0.8).unwrap(), "atempo=0.800000");
+        assert_eq!(atempo_chain(0.3).unwrap(), "atempo=0.5,atempo=0.600000");
+        assert_eq!(
+            atempo_chain(5.0).unwrap(),
+            "atempo=2.0,atempo=2.0,atempo=1.250000"
+        );
+        assert!(atempo_chain(0.0).is_err());
+        assert!(atempo_chain(f64::NAN).is_err());
+    }
+
+    /// 0.8 makes a WAV 1.25 times as long, within 10 ms. Needs ffmpeg on PATH.
+    #[tokio::test]
+    #[ignore = "needs ffmpeg"]
+    async fn stretching_by_0_8_makes_it_a_quarter_longer() {
+        let dir = crate::test_util::temp_dir("tts_stretch");
+        let src = dir.join("in.wav");
+        let ok = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=f=300:d=4",
+                "-ar",
+                "24000",
+            ])
+            .args(["-ac", "1", "-c:a", "pcm_s16le", "-map_metadata", "-1"])
+            .args(["-fflags", "+bitexact"])
+            .arg(&src)
+            .status()
+            .await
+            .unwrap();
+        assert!(ok.success());
+        let out = dir.join("out.wav");
+        stretch_file("ffmpeg", &src, &atempo_chain(0.8).unwrap(), &out)
+            .await
+            .unwrap();
+        let before = crate::speech_server::wav_seconds(&std::fs::read(&src).unwrap());
+        let after = crate::speech_server::wav_seconds(&std::fs::read(&out).unwrap());
+        assert!((after - before * 1.25).abs() < 0.01, "{before} -> {after}");
+    }
     use crate::test_util::temp_dir;
 
     #[test]

@@ -55,6 +55,7 @@ mod shell;
 mod sidecar_process;
 mod sidecar_util;
 mod skills;
+mod speech_server;
 mod sync_util;
 mod tasks;
 #[cfg(test)]
@@ -65,6 +66,7 @@ mod toolchest;
 mod tts;
 mod video;
 mod voice_listen;
+mod voices;
 mod webview_store;
 mod whisper;
 
@@ -599,6 +601,15 @@ pub fn run() {
             tts::tts_initialize,
             tts::tts_synthesize_and_play,
             tts::tts_synthesize_to_cache,
+            tts::audio_stretch,
+            speech_server::speech_server_synthesize,
+            speech_server::speech_server_models,
+            voices::voices_list,
+            voices::voice_add_file,
+            voices::voice_add_clip,
+            voices::voice_set_ref_text,
+            voices::voice_delete,
+            voices::voice_read_bytes,
             tts::tts_stop_playback,
             tts::tts_is_playing,
             tts::tts_is_initialized,

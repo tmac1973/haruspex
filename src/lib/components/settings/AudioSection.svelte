@@ -3,6 +3,8 @@
 	import { onMount } from 'svelte';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { TTS_VOICES } from '#lib/audio/voices.ts';
+	import SpeechEngineSection from '#lib/components/settings/SpeechEngineSection.svelte';
+	import SavedVoicesSection from '#lib/components/settings/SavedVoicesSection.svelte';
 
 	const voiceOptions = TTS_VOICES;
 
@@ -84,6 +86,10 @@
 	</label>
 	<p class="hint">Click the speaker icon on any assistant message to hear it read aloud.</p>
 </section>
+
+<SpeechEngineSection />
+
+<SavedVoicesSection />
 
 <section class="settings-section">
 	<h2>Audio Devices</h2>

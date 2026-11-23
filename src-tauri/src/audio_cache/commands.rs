@@ -626,7 +626,7 @@ pub fn save_as(db: &Database, dir: &Path, hash: &str, to: &Path) -> Result<(), S
     blob_cache::save_as(&cached_path(db, dir, hash)?, to, "song")
 }
 
-fn cached_path(db: &Database, dir: &Path, hash: &str) -> Result<PathBuf, String> {
+pub(crate) fn cached_path(db: &Database, dir: &Path, hash: &str) -> Result<PathBuf, String> {
     blob_cache::find(dir, hash, |h| Ok(db.audio_by_hash(h)?.is_some()))?
         .ok_or_else(|| "Audio not found".to_string())
 }

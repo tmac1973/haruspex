@@ -14,7 +14,7 @@ import { videoSettings } from '#lib/video/args.ts';
 import { randomSeed } from '#lib/utils/random.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
 import type { RenderResult } from '#lib/ipc/gen/RenderResult.ts';
-import type { StoredSpeech } from '#lib/ipc/gen/StoredSpeech.ts';
+import { speak } from '#lib/audio/speak.ts';
 import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
 import { mergeProgress, progressKeys, type SequenceProgress } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
@@ -70,14 +70,8 @@ function soundDeps(
 			return { hash: made.hash, secs: made.durationSec };
 		},
 		speak: async (text, voice) => {
-			const made = await invoke<StoredSpeech>('tts_synthesize_to_cache', {
-				text,
-				voice: voice ?? getSettings().ttsVoice,
-				speed: null,
-				title: null,
-				conversationId: null,
-				codeSessionId: null
-			});
+			// Settings → Audio → Speech engine's: Kokoro, or a llama.cpp server in a saved voice.
+			const made = await speak({ text, voice: voice ?? null, speed: 1 });
 			return { hash: made.hash, secs: made.seconds };
 		},
 		save: (hash, rel) =>
