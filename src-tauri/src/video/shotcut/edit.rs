@@ -17,7 +17,7 @@
 use super::doc::{Doc, Slot, OURS, OURS_LUFS};
 use crate::video::mlt::fps::Fps;
 use crate::video::mlt::xml::{escape, Splices};
-use crate::video::timeline::{Edited, Fit, Media, Placement, Source};
+use crate::video::timeline::{Edited, Fit, GainRange, Media, Placement, Source};
 use std::collections::HashSet;
 
 /// The main track as placements: applying them changes nothing.
@@ -51,6 +51,7 @@ struct Laid {
     gain_db: Option<f64>,
     limiter: bool,
     fit: Option<Fit>,
+    gain_ranges: Option<Vec<GainRange>>,
 }
 
 impl Laid {
@@ -232,6 +233,7 @@ fn layout(
             gain_db: p.gain_db,
             limiter: p.limiter,
             fit: p.fit,
+            gain_ranges: p.gain_ranges.clone(),
         });
     }
     // A clip can't give more than its length to the crossfades at its sides.
@@ -296,6 +298,27 @@ pub(super) fn fit_filter(id: &str, fit: Fit, width: u32, height: u32) -> String 
     out.push_str("      <property name=\"shotcut:filter\">crop</property>\n");
     out.push_str(&format!("      <property name=\"{OURS}\">1</property>\n"));
     out.push_str("    </filter>\n");
+    out
+}
+
+/// Haruspex's gain-range filters, as Shotcut writes a keyframed Gain / Volume.
+pub(super) fn range_filters(next_filter: &mut i64, ranges: &[GainRange], fps: &Fps) -> String {
+    let mut out = String::new();
+    for r in ranges {
+        let (start, end, props) = crate::video::mlt::gain_range::filter(r, fps);
+        *next_filter += 1;
+        out.push_str(&format!(
+            "    <filter id=\"filter{next_filter}\" in=\"{}\" out=\"{}\">\n",
+            tc(fps, start),
+            tc(fps, end)
+        ));
+        for (k, v) in props {
+            out.push_str(&format!("      <property name=\"{k}\">{v}</property>\n"));
+        }
+        out.push_str("      <property name=\"shotcut:filter\">audioGain</property>\n");
+        out.push_str(&format!("      <property name=\"{OURS}\">1</property>\n"));
+        out.push_str("    </filter>\n");
+    }
     out
 }
 
@@ -463,6 +486,10 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     let f = fit_filter(&format!("filter{next_filter}"), fit, doc.width, doc.height);
                     c = c.replacen("  </chain>\n", &format!("{f}  </chain>\n"), 1);
                 }
+                if let Some(ranges) = &l.gain_ranges {
+                    let f = range_filters(&mut next_filter, ranges, &fps);
+                    c = c.replacen("  </chain>\n", &format!("{f}  </chain>\n"), 1);
+                }
                 chain_text.push_str(&c);
             }
             Source::Piece(i) => {
@@ -477,6 +504,9 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 }
                 if l.fit.is_some() {
                     dropped.extend(doc.our_fit_filter(old));
+                }
+                if l.gain_ranges.is_some() {
+                    dropped.extend(doc.our_range_filters(old));
                 }
                 if !dropped.is_empty() {
                     let mut s = Splices::default();
@@ -502,6 +532,12 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 if let Some(fit) = l.fit {
                     next_filter += 1;
                     let f = fit_filter(&format!("filter{next_filter}"), fit, doc.width, doc.height);
+                    let at = c.rfind("</chain>").unwrap_or(c.len());
+                    let line = c[..at].rfind('\n').map_or(at, |n| n + 1);
+                    c.insert_str(line, &f);
+                }
+                if let Some(ranges) = &l.gain_ranges {
+                    let f = range_filters(&mut next_filter, ranges, &fps);
                     let at = c.rfind("</chain>").unwrap_or(c.len());
                     let line = c[..at].rfind('\n').map_or(at, |n| n + 1);
                     c.insert_str(line, &f);
@@ -573,6 +609,30 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 line,
                 fit_filter(&format!("filter{next_filter}"), fit, doc.width, doc.height),
             );
+        }
+    }
+
+    // Gain ranges on kept clips' own chains.
+    for l in &laid {
+        let (Source::Existing(_), Some(ranges)) = (&l.source, &l.gain_ranges) else {
+            continue;
+        };
+        if doc.our_gain_ranges(&l.chain) == *ranges {
+            continue;
+        }
+        for f in doc.our_range_filters(&l.chain) {
+            splices.replace(
+                whole_line(text, doc.tree.node(f).span.clone()),
+                String::new(),
+            );
+        }
+        if !ranges.is_empty() {
+            let node = doc.chain(&l.chain).ok_or("a clip's chain is missing")?;
+            let n = doc.tree.node(node);
+            let line = text[..n.inner_end]
+                .rfind('\n')
+                .map_or(n.inner_end, |i| i + 1);
+            splices.insert(line, range_filters(&mut next_filter, ranges, &fps));
         }
     }
 

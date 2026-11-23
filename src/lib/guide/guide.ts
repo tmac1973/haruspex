@@ -47,6 +47,7 @@ const ORDER = [
 	'video-generation',
 	'video-editing',
 	'video-cut',
+	'video-adjust',
 	'video-render',
 	'video-speech',
 	'textures',

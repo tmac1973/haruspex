@@ -427,6 +427,31 @@ impl Doc {
         self.our_filters(chain)
             .into_iter()
             .filter(|&f| self.tree.property(f, "mlt_service") != Some("crop"))
+            .filter(|&f| !self.is_range(f))
+            .collect()
+    }
+
+    fn is_range(&self, f: usize) -> bool {
+        crate::video::mlt::gain_range::is_range(|k| self.tree.property(f, k).map(str::to_string))
+    }
+
+    /// Haruspex's gain-range filters on a chain.
+    pub fn our_range_filters(&self, chain: &str) -> Vec<usize> {
+        self.our_filters(chain)
+            .into_iter()
+            .filter(|&f| self.is_range(f))
+            .collect()
+    }
+
+    /// The gain ranges Haruspex set on a chain, in source frames.
+    pub fn our_gain_ranges(&self, chain: &str) -> Vec<crate::video::timeline::GainRange> {
+        self.our_range_filters(chain)
+            .into_iter()
+            .filter_map(|f| {
+                crate::video::mlt::gain_range::read(|k| {
+                    self.tree.property(f, k).map(str::to_string)
+                })
+            })
             .collect()
     }
 
@@ -449,7 +474,7 @@ impl Doc {
 
     /// The gain Haruspex set on a chain, in dB.
     pub fn our_gain(&self, chain: &str) -> Option<f64> {
-        self.our_filters(chain).into_iter().find_map(|f| {
+        self.our_sound_filters(chain).into_iter().find_map(|f| {
             (self.tree.property(f, "mlt_service") == Some("volume"))
                 .then(|| self.tree.property(f, "level"))
                 .flatten()
@@ -459,7 +484,7 @@ impl Doc {
 
     /// The loudness Haruspex's gain on a chain aims at, when it isn't -14 LUFS.
     pub fn our_lufs(&self, chain: &str) -> Option<f64> {
-        self.our_filters(chain)
+        self.our_sound_filters(chain)
             .into_iter()
             .find_map(|f| self.tree.property(f, OURS_LUFS)?.trim().parse().ok())
     }

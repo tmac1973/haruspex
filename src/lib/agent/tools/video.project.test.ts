@@ -56,7 +56,8 @@ const summary: ProjectSummary = {
 			crossfadeInSecs: null,
 			gainDb: null,
 			limited: false,
-			fit: null
+			fit: null,
+			gainRanges: []
 		},
 		{
 			index: 2,
@@ -71,7 +72,8 @@ const summary: ProjectSummary = {
 			crossfadeInSecs: 1,
 			gainDb: 3.5,
 			limited: true,
-			fit: null
+			fit: null,
+			gainRanges: []
 		}
 	],
 	audio: [
@@ -169,7 +171,7 @@ describe('parseOp', () => {
 		expect(parseOp({ op: 'trim', index: 2 })).toContain('in_secs, out_secs');
 		expect(parseOp({ op: 'move', index: 3, to: 1 })).toEqual({ op: 'move', from: 3, to: 1 });
 		expect(parseOp({ op: 'move', index: 3 })).toContain('"to"');
-		expect(parseOp({ op: 'split', index: 1 })).toContain('trim, fit, remove, move');
+		expect(parseOp({ op: 'split', index: 1 })).toContain('trim, fit, gain_range');
 	});
 
 	it('trims on exact frames', () => {
@@ -194,6 +196,66 @@ describe('parseOp', () => {
 			parseOp({ op: 'fit', index: 2, fit: 'crop', crop: { x: 0.25, y: 0, w: 0.5, h: 1 } })
 		).toMatchObject({ fit: { mode: 'crop', x: 0.25, w: 0.5 } });
 		expect(parseOp({ op: 'fit', index: 2 })).toContain('A fit needs');
+	});
+});
+
+describe('gain ranges', () => {
+	it('mute by default, with a gain when given', () => {
+		expect(parseOp({ op: 'gain_range', index: 2, range_from: '0:01', range_to: '0:01.5' })).toEqual(
+			{
+				op: 'gainRange',
+				index: 2,
+				fromSecs: 1,
+				toSecs: 1.5,
+				gainDb: -70
+			}
+		);
+		expect(parseOp({ op: 'gain_range', index: 2, range_from: 3, range_to: 2 })).toContain(
+			'to after from'
+		);
+		expect(
+			parseOp({ op: 'gain_range', index: 2, range_from: 1, range_to: 2, gain_db: 30 })
+		).toContain('+20');
+		expect(parseOp({ op: 'clear_gain_ranges', index: 2 })).toEqual({
+			op: 'clearGainRanges',
+			index: 2
+		});
+	});
+
+	it('go on cut items and show in the summary', () => {
+		expect(
+			parseCut({ items: [{ path: 'a.mp4', gain_ranges: [{ from: 1, to: 2, gain_db: -6 }] }] })
+		).toMatchObject({ items: [{ gainRanges: [{ fromSecs: 1, toSecs: 2, gainDb: -6 }] }] });
+		expect(parseCut({ items: [{ path: 'a.mp4', gain_ranges: [{ from: 1 }] }] })).toContain(
+			'items[0].gain_ranges[0]'
+		);
+		const line = itemLine({
+			...summary.items[0],
+			gainRanges: [{ fromSecs: 12.4, toSecs: 13, gainDb: -70 }]
+		});
+		expect(line).toContain('muted 0:12.4–0:13.0 of the clip');
+	});
+});
+
+describe('holds', () => {
+	it('hold the last frame by default, or the first, or one at a time', () => {
+		expect(parseOp({ op: 'hold', index: 1, secs: 1.5 })).toEqual({
+			op: 'hold',
+			index: 1,
+			end: 'last',
+			atSecs: null,
+			secs: 1.5
+		});
+		expect(parseOp({ op: 'hold', index: 1, secs: 1, end: 'first' })).toMatchObject({
+			end: 'first'
+		});
+		expect(parseOp({ op: 'hold', index: 1, secs: 1, at: '0:02' })).toMatchObject({ atSecs: 2 });
+		expect(parseOp({ op: 'hold', index: 1 })).toContain('"secs"');
+		expect(parseOp({ op: 'hold', index: 1, secs: 1, end: 'middle' })).toContain('first or last');
+		expect(parseCut({ items: [{ path: 'a.mp4', hold_after_secs: 2 }] })).toMatchObject({
+			items: [{ holdAfterSecs: 2 }]
+		});
+		expect(parseCut({ items: [{ path: 'a.mp4', hold_after_secs: 99 }] })).toContain('at most 60');
 	});
 });
 
@@ -322,7 +384,9 @@ describe('video_cut', () => {
 						inFrame: null,
 						outFrame: null,
 						crossfadeSecs: null,
-						fit: null
+						fit: null,
+						gainRanges: null,
+						holdAfterSecs: null
 					}
 				],
 				audio: null,

@@ -19,7 +19,7 @@
 
 use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS, OURS_LUFS};
 use crate::video::mlt::xml::{escape, Splices};
-use crate::video::timeline::{Edited, Fit, Media, Placement, Source};
+use crate::video::timeline::{Edited, Fit, GainRange, Media, Placement, Source};
 use std::collections::{HashMap, HashSet};
 
 /// A clip as laid out: where each of its entries goes.
@@ -36,6 +36,7 @@ struct Laid {
     gain_db: Option<f64>,
     limiter: bool,
     fit: Option<Fit>,
+    gain_ranges: Option<Vec<GainRange>>,
     /// Set for a new clip once its chains are named.
     video_chain: Option<String>,
     audio_chain: Option<String>,
@@ -220,6 +221,7 @@ fn layout(
             gain_db: p.gain_db,
             limiter: p.limiter,
             fit: p.fit,
+            gain_ranges: p.gain_ranges.clone(),
         });
     }
     assign_lanes(&mut laid, &mixes)?;
@@ -299,6 +301,28 @@ fn fit_filter(id: &str, fit: Fit, width: u32, height: u32) -> String {
     out.push_str("    <property name=\"kdenlive:collapsed\">0</property>\n");
     out.push_str(&format!("    <property name=\"{OURS}\">1</property>\n"));
     out.push_str("   </filter>\n");
+    out
+}
+
+/// Haruspex's gain-range filters, as Kdenlive writes a keyframed Volume.
+fn range_filters(next_filter: &mut i64, ranges: &[GainRange], fps: Fps) -> String {
+    let mut out = String::new();
+    for r in ranges {
+        let (start, end, props) = crate::video::mlt::gain_range::filter(r, &fps);
+        out.push_str(&format!(
+            "   <filter id=\"filter{next_filter}\" in=\"{}\" out=\"{}\">\n",
+            fps.timecode(start),
+            fps.timecode(end)
+        ));
+        *next_filter += 1;
+        for (k, v) in props {
+            out.push_str(&format!("    <property name=\"{k}\">{v}</property>\n"));
+        }
+        out.push_str("    <property name=\"kdenlive_id\">volume</property>\n");
+        out.push_str("    <property name=\"kdenlive:collapsed\">0</property>\n");
+        out.push_str(&format!("    <property name=\"{OURS}\">1</property>\n"));
+        out.push_str("   </filter>\n");
+    }
     out
 }
 
@@ -616,6 +640,7 @@ pub(super) fn entry_text(
     chain: &str,
     gain: Option<GainWrite>,
     fit: Option<(String, Fit)>,
+    ranges: Option<String>,
 ) -> String {
     let in_tc = fps.timecode(in_frame);
     let out_tc = fps.timecode(out_frame);
@@ -634,11 +659,11 @@ pub(super) fn entry_text(
         .as_ref()
         .map(|(id, f)| fit_filter(id, *f, doc.width, doc.height))
         .filter(|t| !t.is_empty());
-    let filter = match (filter, crop) {
-        (Some(a), Some(b)) => Some(a + &b),
-        (a, b) => a.or(b),
-    };
-    let replaces = gain.is_some() || fit.is_some();
+    let filter = [filter, crop, ranges.clone().filter(|r| !r.is_empty())]
+        .into_iter()
+        .flatten()
+        .reduce(|a, b| a + &b);
+    let replaces = gain.is_some() || fit.is_some() || ranges.is_some();
     match old {
         Some(e) => {
             let n = doc.tree.node(e.node);
@@ -663,6 +688,9 @@ pub(super) fn entry_text(
                 }
                 if fit.is_some() {
                     dropped.extend(doc.our_fit_filter(e.node));
+                }
+                if ranges.is_some() {
+                    dropped.extend(doc.our_range_filters(e.node));
                 }
                 for f in dropped {
                     let r = line_of(&doc.text, doc.tree.node(f).span.clone());
@@ -889,6 +917,12 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 next_filter += 1;
                 Some((format!("filter{}", next_filter - 1), f))
             });
+            let ranges = l
+                .gain_ranges
+                .as_ref()
+                .filter(|_| is_audio)
+                .filter(|r| old.is_none_or(|e| doc.our_gain_ranges(e.node) != **r))
+                .map(|r| range_filters(&mut next_filter, r, fps));
             let gain = l.gain_db.filter(|_| is_audio).map(|db| {
                 let volume_id = format!("filter{next_filter}");
                 next_filter += 1;
@@ -916,6 +950,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     &chain,
                     gain,
                     fit,
+                    ranges,
                 ),
                 old.map(|e| e.node),
                 l.in_frame,

@@ -167,6 +167,8 @@ pub fn clips(doc: &Doc) -> Vec<Clip> {
                     in_frame: item.in_frame,
                     out_frame: item.out_frame,
                 }),
+            gain_ranges: doc.our_gain_ranges(&item.chain),
+            fit: doc.our_fit(&item.chain),
         })
         .collect()
 }
@@ -203,6 +205,11 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
                 gain_db: doc.our_gain(&item.chain),
                 limited: doc.our_limiter(&item.chain),
                 fit: doc.our_fit(&item.chain),
+                gain_ranges: doc
+                    .our_gain_ranges(&item.chain)
+                    .iter()
+                    .map(|r| crate::video::format::SummaryRange::of(r, fps))
+                    .collect(),
             }
         })
         .collect();

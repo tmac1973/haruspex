@@ -2,7 +2,7 @@ use super::doc::{Doc, OURS};
 use super::edit::{apply, current};
 use super::*;
 use crate::video::mlt::fps::Fps;
-use crate::video::timeline::{Fit, Media, Placement, Source};
+use crate::video::timeline::{Fit, GainRange, Media, Placement, Source};
 use std::path::Path;
 
 fn fixture(name: &str) -> String {
@@ -543,4 +543,125 @@ async fn melt_fills_a_portrait_clip_without_bars() {
     // The left edge is the clip's red, not a bar.
     let edge = img.get_pixel(5, 540).0;
     assert!(edge[0] > 150 && edge[1] < 80, "edge {edge:?}");
+}
+
+const MUTE: GainRange = GainRange {
+    from_frame: 30,
+    to_frame: 44,
+    gain_db: -70.0,
+};
+
+#[test]
+fn gain_ranges_go_on_beside_the_gain_and_come_off_byte_for_byte() {
+    let doc = edited();
+    let mut wanted = current(&doc);
+    wanted[2].gain_db = Some(-2.0);
+    wanted[2].gain_ranges = Some(vec![MUTE]);
+    let out = apply(&doc, &wanted).unwrap();
+    let after = reparse(out.text.clone());
+    assert_eq!(after.our_gain_ranges("chain2"), vec![MUTE]);
+    assert_eq!(
+        after.our_gain("chain2"),
+        Some(-2.0),
+        "the range isn't the gain"
+    );
+    let s = summary(&after, "/videos", Path::new("/videos/ep12/ep12.mlt"));
+    assert_eq!(s.items[2].gain_ranges.len(), 1);
+    assert_eq!(s.items[2].gain_ranges[0].from_secs, 1.0);
+    assert_eq!(s.items[2].gain_ranges[0].to_secs, 1.5);
+    assert_eq!(s.items[2].effects, 1, "only the user's text filter");
+    // Unchanged ranges change nothing; a new gain keeps them; an empty list
+    // takes them off.
+    assert_eq!(apply(&after, &current(&after)).unwrap().text, out.text);
+    let mut regain = current(&after);
+    regain[2].gain_db = Some(1.0);
+    let regained = reparse(apply(&after, &regain).unwrap().text);
+    assert_eq!(regained.our_gain_ranges("chain2"), vec![MUTE]);
+    let mut off = current(&regained);
+    off[2].gain_ranges = Some(Vec::new());
+    off[2].gain_db = Some(0.0);
+    assert_eq!(apply(&regained, &off).unwrap().text, doc.text);
+}
+
+#[test]
+fn both_pieces_of_a_split_clip_keep_its_gain_ranges() {
+    let doc = edited();
+    let mut wanted = current(&doc);
+    wanted[2].gain_ranges = Some(vec![MUTE]);
+    let ranged = reparse(apply(&doc, &wanted).unwrap().text);
+    let mut split = current(&ranged);
+    split[2].out_frame = Some(59);
+    let mut piece = Placement::of(Source::Piece(2));
+    piece.in_frame = Some(120);
+    split.push(piece);
+    let after = reparse(apply(&ranged, &split).unwrap().text);
+    assert_eq!(after.our_gain_ranges(&after.items[2].chain), vec![MUTE]);
+    assert_eq!(after.our_gain_ranges(&after.items[3].chain), vec![MUTE]);
+}
+
+/// The mean loudness of `secs` of a sound file from `at`, in dB.
+fn mean_db(file: &Path, at: f64, secs: f64) -> f64 {
+    let out = crate::test_util::host_command("ffmpeg")
+        .args([
+            "-v",
+            "info",
+            "-ss",
+            &at.to_string(),
+            "-t",
+            &secs.to_string(),
+            "-i",
+        ])
+        .arg(file)
+        .args(["-af", "volumedetect", "-f", "null", "-"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stderr);
+    let at = text.find("mean_volume: ").unwrap() + 13;
+    text[at..]
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn melt_mutes_a_gain_range_and_keeps_the_rest() {
+    let Some(melt) = melt().await else {
+        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        return;
+    };
+    let dir = crate::test_util::temp_dir("shotcut_range");
+    let status = crate::test_util::host_command("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("color=c=gray:s=320x180:r=30:d=3")
+        .args(["-f", "lavfi", "-i", "sine=f=440:d=3", "-shortest"])
+        .args(["-c:v", "mpeg4", "-c:a", "pcm_s16le"])
+        .arg(dir.join("tone.mov"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let doc = Doc::parse(template_text("1080p30", &dir).unwrap(), None).unwrap();
+    let fps = doc.fps;
+    let mut clip = new(media("tone.mov", 3.0, fps));
+    clip.in_frame = Some(15);
+    // 1.0–1.5 s of the clip's own time: 0.5–1.0 s into the cut.
+    clip.gain_ranges = Some(vec![MUTE]);
+    let text = apply(&doc, &[clip]).unwrap().text;
+    let project = dir.join("range.mlt");
+    save(&project, &text, &melt).await.unwrap();
+    let out = dir.join("range.wav");
+    let mut cmd = tokio::process::Command::new(&melt);
+    cmd.arg(&project)
+        .arg("-consumer")
+        .arg(format!("avformat:{}", out.display()))
+        .args(["acodec=pcm_s16le", "vn=1"])
+        .env("QT_QPA_PLATFORM", "offscreen");
+    crate::video::prepare_child(&mut cmd);
+    assert!(cmd.status().await.unwrap().success());
+    let before = mean_db(&out, 0.1, 0.3);
+    let muted = mean_db(&out, 0.6, 0.3);
+    let after = mean_db(&out, 1.2, 0.3);
+    assert!(before > -40.0 && after > -40.0, "{before} {after}");
+    assert!(muted < -80.0, "muted stretch {muted}");
 }

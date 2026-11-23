@@ -7,6 +7,7 @@ use super::kdenlive;
 use super::mlt::{mlt_path, profile::profile};
 use super::paths::{display_path, resolve_episode, resolve_in_working, resolve_media};
 use super::probe;
+use super::timeline::GainRange;
 use super::timeline::{
     assign_audio_tracks, current_audio, AudioPlacement, AudioSource, Fit, Media, Placement, Source,
 };
@@ -57,6 +58,123 @@ pub struct CutItemSpec {
     /// How its picture fills the frame; none keeps what is there (letterbox
     /// for a new clip).
     pub fit: Option<Fit>,
+    /// Gains over stretches of its sound, in its own time, replacing those
+    /// Haruspex set; none keeps them.
+    pub gain_ranges: Option<Vec<RangeSpec>>,
+    /// Hold its last frame this long after it.
+    pub hold_after_secs: Option<f64>,
+}
+
+/// Which frame a hold shows, without `at_secs`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum HoldEnd {
+    First,
+    #[default]
+    Last,
+}
+
+/// A project resource as a file: relative ones are under the project's root.
+fn resolve_resource(root: &str, resource: &str) -> PathBuf {
+    let r = Path::new(resource);
+    if r.is_absolute() {
+        r.to_path_buf()
+    } else {
+        Path::new(root).join(r)
+    }
+}
+
+/// The longest hold, in seconds.
+const MAX_HOLD_SECS: f64 = 60.0;
+
+/// A hold of one frame of `file`, `frames` long, as new media for the cut: a
+/// silent clip in the episode's `.haruspex/stills/`, made from the frame's PNG
+/// beside it. A time past the clip's end takes its true last frame.
+#[allow(clippy::too_many_arguments)]
+async fn hold_media(
+    doc: &ProjectDoc,
+    working_dir: &str,
+    episode_dir: &Path,
+    file: &Path,
+    at: super::frames::StillAt,
+    frames: i64,
+    settings: &VideoSettings,
+    (ffmpeg, ffprobe): (&str, &str),
+) -> Result<Media, String> {
+    use super::frames::{extract_still, still_clip, StillAt};
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("clip");
+    let tag = match at {
+        StillAt::Secs(t) => format!("t{t:.2}"),
+        StillAt::First => "first".into(),
+        StillAt::Last => "last".into(),
+    };
+    let dir = super::paths::stills_dir(episode_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("can't make the stills folder: {e}"))?;
+    let png = dir.join(format!("{stem}-{tag}.png"));
+    if extract_still(ffmpeg, file, at, &png).await.is_err() {
+        extract_still(ffmpeg, file, StillAt::Last, &png).await?;
+    }
+    let clip = dir.join(format!("{stem}-{tag}-hold{frames}.mp4"));
+    let fps = doc.fps();
+    still_clip(ffmpeg, &png, (fps.num, fps.den), frames, &clip).await?;
+    media(
+        doc,
+        working_dir,
+        &display_path(working_dir, &clip),
+        settings,
+        ffprobe,
+    )
+    .await
+}
+
+/// A hold's length in frames, or why it can't be held.
+fn hold_frames(fps: &super::mlt::fps::Fps, secs: f64) -> Result<i64, String> {
+    if !secs.is_finite() || secs <= 0.0 || secs > MAX_HOLD_SECS {
+        return Err(format!(
+            "A hold is more than 0 and at most {MAX_HOLD_SECS} seconds."
+        ));
+    }
+    Ok(fps.frames(secs).max(1))
+}
+
+/// A gain over a stretch of a clip's sound, in seconds of the clip's own time.
+/// A gain of -60 dB or less mutes it.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct RangeSpec {
+    pub from_secs: f64,
+    pub to_secs: f64,
+    pub gain_db: f64,
+}
+
+impl RangeSpec {
+    /// In the clip's source frames, or what is wrong with it.
+    fn frames(&self, fps: &super::mlt::fps::Fps) -> Result<GainRange, String> {
+        let ok = [self.from_secs, self.to_secs, self.gain_db]
+            .iter()
+            .all(|v| v.is_finite());
+        if !ok || self.from_secs < 0.0 || self.to_secs <= self.from_secs {
+            return Err("A gain range needs from_secs before to_secs, both from 0.".into());
+        }
+        if self.gain_db > 20.0 {
+            return Err("A gain range adds at most 20 dB.".into());
+        }
+        Ok(GainRange {
+            from_frame: fps.frames(self.from_secs),
+            to_frame: (fps.frames(self.to_secs) - 1).max(fps.frames(self.from_secs)),
+            gain_db: self.gain_db.max(-70.0),
+        })
+    }
+}
+
+/// Add a range to a clip's ranges, replacing any it overlaps, in time order.
+fn with_range(mut ranges: Vec<GainRange>, r: GainRange) -> Vec<GainRange> {
+    ranges.retain(|o| o.to_frame < r.from_frame || o.from_frame > r.to_frame);
+    ranges.push(r);
+    ranges.sort_by_key(|o| o.from_frame);
+    ranges
 }
 
 /// A sound on an audio track under the picture: a voiceover or music bed.
@@ -119,6 +237,30 @@ pub enum ProjectOp {
     Fit {
         index: u32,
         fit: Fit,
+    },
+    /// A gain over a stretch of one clip's sound, in its own time; it replaces
+    /// any range of Haruspex's it overlaps.
+    #[serde(rename_all = "camelCase")]
+    GainRange {
+        index: u32,
+        from_secs: f64,
+        to_secs: f64,
+        gain_db: f64,
+    },
+    /// Take Haruspex's gain ranges off one clip.
+    ClearGainRanges {
+        index: u32,
+    },
+    /// Hold one frame of a clip for `secs`: its first frame before it, its
+    /// last after it, or, with `at_secs` (in its own time), the frame there,
+    /// splitting the clip around the hold.
+    #[serde(rename_all = "camelCase")]
+    Hold {
+        index: u32,
+        end: HoldEnd,
+        #[serde(default)]
+        at_secs: Option<f64>,
+        secs: f64,
     },
     Remove {
         index: u32,
@@ -550,6 +692,7 @@ fn cut_ranges(
     let gain = wanted[pos].gain_db;
     let limiter = wanted[pos].limiter;
     let fit = wanted[pos].fit;
+    let ranges = wanted[pos].gain_ranges.clone();
     let pieces: Vec<Placement> = keeps
         .iter()
         .enumerate()
@@ -565,6 +708,7 @@ fn cut_ranges(
             gain_db: gain,
             limiter,
             fit,
+            gain_ranges: ranges.clone(),
         })
         .collect();
     wanted.splice(pos..=pos, pieces);
@@ -931,13 +1075,62 @@ pub async fn cut(
             (item.in_frame, item.out_frame),
         )
         .map_err(|e| format!("Item {}: {e}", n + 1))?;
+        let gain_ranges = match &item.gain_ranges {
+            Some(list) => Some(
+                list.iter()
+                    .try_fold(Vec::new(), |acc, r| {
+                        r.frames(&doc.fps()).map(|g| with_range(acc, g))
+                    })
+                    .map_err(|e| format!("Item {}: {e}", n + 1))?,
+            ),
+            None => None,
+        };
+        let hold = match item.hold_after_secs {
+            Some(secs) => {
+                let frames =
+                    hold_frames(&doc.fps(), secs).map_err(|e| format!("Item {}: {e}", n + 1))?;
+                let (file, last) = match &source {
+                    Source::New(m) => (
+                        resolve_resource(doc.root_dir(), &m.resource),
+                        out_frame.unwrap_or(m.length - 1),
+                    ),
+                    Source::Existing(i) | Source::Piece(i) => (
+                        doc.spans()[*i].file.clone(),
+                        out_frame.unwrap_or(doc.clips()[*i].out_frame),
+                    ),
+                };
+                let episode_dir = resolve_episode(working_dir, episode)?;
+                let m = hold_media(
+                    &doc,
+                    working_dir,
+                    &episode_dir,
+                    &file,
+                    super::frames::StillAt::Secs(doc.fps().secs(last)),
+                    frames,
+                    settings,
+                    (&ffmpeg, &ffprobe),
+                )
+                .await?;
+                Some(Placement {
+                    fit: item.fit,
+                    ..Placement::of(Source::New(m))
+                })
+            }
+            None => None,
+        };
         wanted.push(Placement {
             in_frame,
             out_frame,
             fit: item.fit,
+            gain_ranges,
             ..Placement::of(source)
         });
         fades.push(item.crossfade_secs);
+        if let Some(h) = hold {
+            wanted.push(h);
+            // A hold follows its clip with a hard cut.
+            fades.push(Some(0.0));
+        }
     }
     // The intro and outro go at the ends, and are not listed twice.
     let mut paired: Vec<(Placement, Option<f64>)> = wanted.into_iter().zip(fades).collect();
@@ -1037,6 +1230,90 @@ pub async fn op(
             if b.is_some() {
                 wanted[i].out_frame = b;
             }
+        }
+        ProjectOp::GainRange {
+            index,
+            from_secs,
+            to_secs,
+            gain_db,
+        } => {
+            let i = check(index)?;
+            let r = RangeSpec {
+                from_secs,
+                to_secs,
+                gain_db,
+            }
+            .frames(&doc.fps())?;
+            wanted[i].gain_ranges = Some(with_range(items[i].gain_ranges.clone(), r));
+        }
+        ProjectOp::Hold {
+            index,
+            end,
+            at_secs,
+            secs,
+        } => {
+            use super::frames::StillAt;
+            let i = check(index)?;
+            let fps = doc.fps();
+            let frames = hold_frames(&fps, secs)?;
+            let spans = doc.spans();
+            let clip = &items[i];
+            let at = match (at_secs, end) {
+                (Some(t), _) => {
+                    let f = fps.frames(t.max(0.0));
+                    if f <= clip.in_frame || f > clip.out_frame {
+                        return Err(format!(
+                            "at_secs must be inside clip {index}'s shown part, {:.2}–{:.2} s.",
+                            fps.secs(clip.in_frame),
+                            fps.secs(clip.out_frame + 1)
+                        ));
+                    }
+                    StillAt::Secs(fps.secs(f))
+                }
+                (None, HoldEnd::First) => StillAt::Secs(fps.secs(clip.in_frame)),
+                (None, HoldEnd::Last) => StillAt::Secs(fps.secs(clip.out_frame)),
+            };
+            let episode_dir = resolve_episode(working_dir, episode)?;
+            let (ffprobe, _, _) = tools(settings).await?;
+            let m = hold_media(
+                &doc,
+                working_dir,
+                &episode_dir,
+                &spans[i].file,
+                at,
+                frames,
+                settings,
+                (&ffmpeg, &ffprobe),
+            )
+            .await?;
+            let hold = Placement {
+                fit: clip.fit,
+                ..Placement::of(Source::New(m))
+            };
+            match (at_secs, end) {
+                (Some(_), _) => {
+                    let StillAt::Secs(t) = at else { unreachable!() };
+                    let f = fps.frames(t);
+                    let piece = Placement {
+                        in_frame: Some(f),
+                        out_frame: Some(clip.out_frame),
+                        ..Placement::of(Source::Piece(i))
+                    };
+                    wanted[i].out_frame = Some(f - 1);
+                    wanted.insert(i + 1, hold);
+                    wanted.insert(i + 2, piece);
+                }
+                (None, HoldEnd::First) => wanted.insert(i, hold),
+                (None, HoldEnd::Last) => wanted.insert(i + 1, hold),
+            }
+            notes.push(format!(
+                "Held a frame of clip {index} for {:.2} s; the hold is a new clip.",
+                fps.secs(frames)
+            ));
+        }
+        ProjectOp::ClearGainRanges { index } => {
+            let i = check(index)?;
+            wanted[i].gain_ranges = Some(Vec::new());
         }
         ProjectOp::Fit { index, fit } => {
             let i = check(index)?;
@@ -1304,6 +1581,7 @@ mod tests {
                 gain_db: None,
                 limiter: false,
                 fit: None,
+                gain_ranges: None,
             },
             Placement {
                 source: Source::Existing(1),
@@ -1313,6 +1591,7 @@ mod tests {
                 gain_db: None,
                 limiter: false,
                 fit: None,
+                gain_ranges: None,
             },
         ];
         // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
@@ -1339,6 +1618,7 @@ mod tests {
             gain_db: None,
             limiter: false,
             fit: None,
+            gain_ranges: None,
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));
@@ -1609,6 +1889,104 @@ mod loudness_end_to_end {
 
     /// Clips at very different levels, cut with a crossfade and evened out,
     /// render at YouTube's loudness.
+    /// The red of the middle of a clip's frame at `at` seconds.
+    fn red_at(file: &Path, at: f64) -> u8 {
+        let png = file.with_extension(format!("{at}.png"));
+        let ok = crate::test_util::host_command("ffmpeg")
+            .args(["-v", "error", "-y", "-ss", &at.to_string(), "-i"])
+            .arg(file)
+            .args(["-frames:v", "1"])
+            .arg(&png)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let img = image::open(&png).unwrap().to_rgb8();
+        img.get_pixel(img.width() / 2, img.height() / 2).0[0]
+    }
+
+    /// `cargo test -- --ignored holds_are_new_clips_of_the_right_frame --nocapture`
+    #[tokio::test]
+    #[ignore = "needs ffmpeg, ffprobe and melt"]
+    async fn holds_are_new_clips_of_the_right_frame() {
+        for editor in [format::Format::Shotcut, format::Format::Kdenlive] {
+            let dir = crate::test_util::temp_dir("holds");
+            std::fs::create_dir_all(dir.join("ep1")).unwrap();
+            // 4 s at 24 fps; frame n is n*2 red, so frames tell apart.
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+                .arg("color=c=black:s=320x180:r=24:d=4,format=rgb24,geq=r='N*2':g=0:b=0")
+                .args(["-f", "lavfi", "-i", "sine=d=4", "-shortest"])
+                .args(["-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p"])
+                .arg(dir.join("ep1/ramp.mp4"))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+            let wd = dir.to_string_lossy().into_owned();
+            let settings = VideoSettings {
+                preset: "720p24".into(),
+                editor,
+                ..Default::default()
+            };
+            let spec = CutSpec {
+                items: vec![CutItemSpec {
+                    path: Some("ep1/ramp.mp4".into()),
+                    fit: Some(Fit::Fill),
+                    ..Default::default()
+                }],
+                normalize: Some(false),
+                ..Default::default()
+            };
+            cut(&wd, "ep1", spec, &settings).await.unwrap();
+            let last = ProjectOp::Hold {
+                index: 1,
+                end: HoldEnd::Last,
+                at_secs: None,
+                secs: 1.5,
+            };
+            let r = op(&wd, "ep1", None, last, &settings).await.unwrap();
+            assert_eq!(r.summary.items.len(), 2, "{editor:?}");
+            assert!(
+                (r.summary.total_secs - 5.5).abs() < 0.05,
+                "{}",
+                r.summary.total_secs
+            );
+            let hold = &r.summary.items[1];
+            assert!(
+                hold.path.starts_with("ep1/.haruspex/stills/"),
+                "{}",
+                hold.path
+            );
+            assert!(!hold.has_audio);
+            assert_eq!(hold.fit, Some(Fit::Fill));
+            // The held frame is the clip's last: frame 95, red 190.
+            let red = red_at(&dir.join(&hold.path), 0.5);
+            assert!((red as i32 - 190).abs() <= 6, "held red {red}");
+            // A hold at 2.0 s splits the clip around it.
+            let mid = ProjectOp::Hold {
+                index: 1,
+                end: HoldEnd::Last,
+                at_secs: Some(2.0),
+                secs: 1.0,
+            };
+            let r = op(&wd, "ep1", None, mid, &settings).await.unwrap();
+            let items = &r.summary.items;
+            assert_eq!(items.len(), 4, "{editor:?}");
+            assert!((items[0].source_out_secs - 2.0).abs() < 0.05);
+            assert!(items[1].path.contains("-t2.00-hold"), "{}", items[1].path);
+            assert!((items[2].source_in_secs - 2.0).abs() < 0.05);
+            assert!(items.iter().all(|i| i.fit == Some(Fit::Fill)), "{items:?}");
+            assert!(
+                (r.summary.total_secs - 6.5).abs() < 0.05,
+                "{}",
+                r.summary.total_secs
+            );
+            let red = red_at(&dir.join(&items[1].path), 0.5);
+            assert!((red as i32 - 96).abs() <= 6, "mid red {red}");
+        }
+    }
+
     /// `cargo test -- --ignored a_normalised_cut_renders_at_minus_14 --nocapture`
     #[tokio::test]
     #[ignore = "needs ffmpeg, ffprobe and melt"]

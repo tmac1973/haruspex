@@ -13,6 +13,7 @@ import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
 import type { VideoSettings } from '#lib/ipc/gen/VideoSettings.ts';
 import type { Chapter } from '#lib/ipc/gen/Chapter.ts';
 import type { Fit } from '#lib/ipc/gen/Fit.ts';
+import type { RangeSpec } from '#lib/ipc/gen/RangeSpec.ts';
 import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
 
 /** What the Rust side needs from Settings → Video editing. */
@@ -132,6 +133,65 @@ export function parseFit(fit: unknown, crop?: unknown): Fit | null | string {
 	return crop && typeof crop === 'object' ? cropRegion(crop) : 'fit crop needs crop: {x, y, w, h}.';
 }
 
+/** A gain range, as `video_cut` items and `video_edit` take one. */
+export const GAIN_RANGE_PARAMS = {
+	range_from: {
+		type: 'string',
+		description: 'gain_range: where it starts in the clip\'s own time, e.g. "0:12.4".'
+	},
+	range_to: { type: 'string', description: 'gain_range: where it ends.' },
+	gain_db: {
+		type: 'number',
+		description: 'gain_range: the gain over it, -70 (mute) to +20 dB. Default -70.'
+	}
+};
+
+/** `video_cut` items' `gain_ranges` and `hold_after_secs`. */
+export const ITEM_RANGES_PARAM = {
+	hold_after_secs: {
+		type: 'number',
+		description: 'Hold its last frame this long after it, up to 60 s.'
+	},
+	gain_ranges: {
+		type: 'array',
+		description:
+			'Gains over stretches of its sound, in its own time, replacing those set before: [{from, to, gain_db}]; gain_db -70 mutes.',
+		items: {
+			type: 'object',
+			properties: {
+				from: { type: 'string' },
+				to: { type: 'string' },
+				gain_db: { type: 'number' }
+			}
+		}
+	}
+};
+
+/** One range `{from, to, gain_db}`, or what is wrong with it. */
+export function parseRange(o: Record<string, unknown>, where: string): RangeSpec | string {
+	const fromSecs = parseTime(o.from ?? o.range_from ?? o.from_secs);
+	const toSecs = parseTime(o.to ?? o.range_to ?? o.to_secs);
+	if (fromSecs === null || toSecs === null || toSecs <= fromSecs) {
+		return `${where}needs from and to, times in the clip with to after from.`;
+	}
+	const gainDb = parsedFiniteOrNull(o.gain_db) ?? -70;
+	if (gainDb > 20 || gainDb < -70) return `${where}gain_db is -70 (mute) to +20.`;
+	return { fromSecs, toSecs, gainDb };
+}
+
+/** `gain_ranges`: a list of ranges, null when none was given. */
+function parseRanges(v: unknown, where: string): RangeSpec[] | null | string {
+	if (v === undefined || v === null) return null;
+	if (!Array.isArray(v)) return `${where}gain_ranges must be a list.`;
+	const out: RangeSpec[] = [];
+	for (const [n, r] of v.entries()) {
+		const one = parseRange((r ?? {}) as Record<string, unknown>, `${where}gain_ranges[${n}] `);
+		if (typeof one === 'string') return one;
+		out.push(one);
+	}
+	return out;
+}
+
 /** A whole frame number from 0, null for none, or what is wrong. */
 function frameArg(v: unknown, name: string): number | null | string {
 	if (v === undefined || v === null) return null;
@@ -171,6 +231,12 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 		if (typeof frames === 'string') return frames;
 		const fit = parseFit(o.fit, o.crop);
 		if (typeof fit === 'string') return `items[${n}]: ${fit}`;
+		const gainRanges = parseRanges(o.gain_ranges, `items[${n}].`);
+		if (typeof gainRanges === 'string') return gainRanges;
+		const holdAfterSecs = parsedFiniteOrNull(o.hold_after_secs);
+		if (holdAfterSecs !== null && (holdAfterSecs <= 0 || holdAfterSecs > 60)) {
+			return `items[${n}].hold_after_secs is more than 0 and at most 60.`;
+		}
 		items.push({
 			index: index === null ? null : Math.round(index),
 			path,
@@ -178,7 +244,9 @@ function parseItems(v: unknown): CutItemSpec[] | string {
 			outSecs: parsedFiniteOrNull(o.out_secs),
 			...frames,
 			crossfadeSecs: parsedFiniteOrNull(o.crossfade_secs),
-			fit
+			fit,
+			gainRanges,
+			holdAfterSecs
 		});
 	}
 	return items;
@@ -237,6 +305,62 @@ function fitOp(args: Record<string, unknown>, index: number): ProjectOp | string
 	return { op: 'fit', index, fit };
 }
 
+function rangeOp(op: string, args: Record<string, unknown>, index: number): ProjectOp | string {
+	if (op === 'clear_gain_ranges') return { op: 'clearGainRanges', index };
+	const r = parseRange(args, 'gain_range ');
+	return typeof r === 'string' ? r : { op: 'gainRange', index, ...r };
+}
+
+function removeRangesOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const raw = Array.isArray(args.ranges) ? args.ranges : [];
+	const ranges = raw.flatMap((r) => {
+		const o = (r ?? {}) as Record<string, unknown>;
+		const start = parseTime(o.from);
+		const end = parseTime(o.to);
+		return start !== null && end !== null && end > start ? [{ start, end }] : [];
+	});
+	if (ranges.length === 0)
+		return 'remove_ranges needs "ranges": [{from, to}] in the clip\'s own time.';
+	return { op: 'removeRanges', index, ranges };
+}
+
+function moveOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const to = parsedFiniteOrNull(args.to);
+	if (to === null) return 'A move needs "to", the position from 1.';
+	return { op: 'move', from: index, to };
+}
+
+function holdOp(args: Record<string, unknown>, index: number): ProjectOp | string {
+	const secs = parseTime(args.secs);
+	if (secs === null || secs <= 0 || secs > 60)
+		return 'A hold needs "secs", more than 0 and at most 60.';
+	const end = trimmedOrNull(args.end)?.toLowerCase() ?? 'last';
+	if (end !== 'first' && end !== 'last') return 'end is first or last.';
+	const at = args.at === undefined || args.at === null ? null : parseTime(args.at);
+	if (args.at !== undefined && args.at !== null && at === null) {
+		return 'at is a time in the clip\'s own time, like 2.5 or "0:02.5".';
+	}
+	return { op: 'hold', index, end, atSecs: at, secs };
+}
+
+/** `video_edit`'s ops on one clip, by name. */
+const CLIP_OPS: Record<
+	string,
+	(args: Record<string, unknown>, index: number) => ProjectOp | string
+> = {
+	trim: trimOp,
+	fit: fitOp,
+	gain_range: (args, index) => rangeOp('gain_range', args, index),
+	clear_gain_ranges: (args, index) => rangeOp('clear_gain_ranges', args, index),
+	hold: holdOp,
+	remove: (_, index) => ({ op: 'remove', index }),
+	move: moveOp,
+	remove_ranges: removeRangesOp
+};
+
+/** Every `video_edit` op, as its schema lists them. */
+export const EDIT_OPS = [...Object.keys(CLIP_OPS), 'remove_silences'];
+
 export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 	const op = trimmedOrNull(args.op);
 	if (op === 'remove_silences') {
@@ -248,29 +372,11 @@ export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 			padSecs: parsedFiniteOrNull(args.pad_secs) ?? 0.25
 		};
 	}
+	const parse = op ? CLIP_OPS[op] : undefined;
+	if (!parse) return `op must be ${EDIT_OPS.join(', ')}.`;
 	const index = parsedFiniteOrNull(args.index);
 	if (index === null) return 'video_edit needs "index", the clip number from 1.';
-	if (op === 'trim') return trimOp(args, index);
-	if (op === 'fit') return fitOp(args, index);
-	if (op === 'remove') return { op: 'remove', index };
-	if (op === 'remove_ranges') {
-		const raw = Array.isArray(args.ranges) ? args.ranges : [];
-		const ranges = raw.flatMap((r) => {
-			const o = (r ?? {}) as Record<string, unknown>;
-			const start = parseTime(o.from);
-			const end = parseTime(o.to);
-			return start !== null && end !== null && end > start ? [{ start, end }] : [];
-		});
-		if (ranges.length === 0)
-			return 'remove_ranges needs "ranges": [{from, to}] in the clip\'s own time.';
-		return { op: 'removeRanges', index, ranges };
-	}
-	if (op === 'move') {
-		const to = parsedFiniteOrNull(args.to);
-		if (to === null) return 'A move needs "to", the position from 1.';
-		return { op: 'move', from: index, to };
-	}
-	return 'op must be trim, fit, remove, move, remove_ranges or remove_silences.';
+	return parse(args, index);
 }
 
 /** `chapters: [{title, at}]` as the Rust side takes them, or what is wrong. */

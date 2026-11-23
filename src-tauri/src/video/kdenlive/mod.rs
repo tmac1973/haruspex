@@ -137,6 +137,14 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
                     .map(|(_, g)| g),
                 limited: item.audio.as_ref().is_some_and(|a| doc.our_limiter(a.node)),
                 fit: item.video.as_ref().and_then(|v| doc.our_fit(v.node)),
+                gain_ranges: item
+                    .audio
+                    .as_ref()
+                    .map(|a| doc.our_gain_ranges(a.node))
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|r| crate::video::format::SummaryRange::of(r, fps))
+                    .collect(),
             }
         })
         .collect();
@@ -211,6 +219,12 @@ pub fn clips(doc: &Doc) -> Vec<crate::video::timeline::Clip> {
                     in_frame: a.in_frame,
                     out_frame: a.out_frame,
                 }),
+                gain_ranges: item
+                    .audio
+                    .as_ref()
+                    .map(|a| doc.our_gain_ranges(a.node))
+                    .unwrap_or_default(),
+                fit: item.video.as_ref().and_then(|v| doc.our_fit(v.node)),
             }
         })
         .collect()
