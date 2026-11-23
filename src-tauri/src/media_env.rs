@@ -202,7 +202,7 @@ fn shell_env_for(dir: &Path, path: Option<&std::ffi::OsStr>) -> Vec<(&'static st
         dirs.extend(std::env::split_paths(p));
     }
     #[cfg(windows)]
-    let extra = {
+    let extra: Vec<(&'static str, OsString)> = {
         // The copies' DLLs: last on PATH, so no other program's are displaced.
         let media = crate::runtimes::resolve_binary("melt")
             .ok()
@@ -212,7 +212,7 @@ fn shell_env_for(dir: &Path, path: Option<&std::ffi::OsStr>) -> Vec<(&'static st
         }
         media
             .map(|m| vars(&m).into_iter().filter(|(k, _)| *k != "PATH").collect())
-            .unwrap_or_else(Vec::new)
+            .unwrap_or_default()
     };
     #[cfg(not(windows))]
     let extra: Vec<(&'static str, OsString)> = Vec::new();

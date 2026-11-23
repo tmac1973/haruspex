@@ -989,14 +989,22 @@ fn both_pieces_of_a_split_clip_keep_its_fit() {
     assert_eq!(out.our_fit(video_node(&out, 1)), Some(CROP));
 }
 
-#[tokio::test]
-async fn melt_loads_a_kdenlive_project_with_fits() {
-    let Some(melt) = crate::video::binaries::resolve(&Default::default())
+/// melt, when it and the ffmpeg and ffprobe these tests make clips with are
+/// all here.
+async fn melt() -> Option<String> {
+    if !crate::test_util::host_has("ffmpeg") || !crate::test_util::host_has("ffprobe") {
+        return None;
+    }
+    crate::video::binaries::resolve(&Default::default())
         .await
         .melt
         .map(|m| m.path)
-    else {
-        eprintln!("skipped: no melt");
+}
+
+#[tokio::test]
+async fn melt_loads_a_kdenlive_project_with_fits() {
+    let Some(melt) = melt().await else {
+        eprintln!("skipped: no melt, ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("kdenlive_fits");
@@ -1060,12 +1068,8 @@ fn gain_ranges_go_on_the_sound_beside_its_gain_and_come_off_again() {
 
 #[tokio::test]
 async fn melt_mutes_a_kdenlive_gain_range() {
-    let Some(melt) = crate::video::binaries::resolve(&Default::default())
-        .await
-        .melt
-        .map(|m| m.path)
-    else {
-        eprintln!("skipped: no melt");
+    let Some(melt) = melt().await else {
+        eprintln!("skipped: no melt, ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("kdenlive_range");
@@ -1153,12 +1157,8 @@ fn a_clip_at_half_speed_plays_twice_as_long_on_both_tracks() {
 
 #[tokio::test]
 async fn melt_plays_a_kdenlive_clip_at_half_speed_in_twice_the_time() {
-    let Some(melt) = crate::video::binaries::resolve(&Default::default())
-        .await
-        .melt
-        .map(|m| m.path)
-    else {
-        eprintln!("skipped: no melt");
+    let Some(melt) = melt().await else {
+        eprintln!("skipped: no melt, ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("kdenlive_speed");
