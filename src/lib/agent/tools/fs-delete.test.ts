@@ -32,8 +32,7 @@ beforeEach(() => {
 				disk.add(rel(a));
 				return null;
 			},
-			fs_created_delete: null,
-			fs_created_move: null
+			fs_created_delete: null
 		})
 	);
 });
@@ -130,23 +129,5 @@ describe('fs_delete', () => {
 		const out = await executeTool('fs_delete', { path: 'src/main.rs' }, ctx);
 		expect(out.result).toMatch(/may only write inside plan\/x\//);
 		expect(calls('fs_created_delete')).toEqual([]);
-	});
-});
-
-describe('fs_move', () => {
-	it('moves under the turn scope, and carries the turn record with it', async () => {
-		const ctx = job();
-		ctx.filesWrittenThisTurn.add('a.md');
-		const out = await executeTool('fs_move', { from: 'a.md', to: 'docs/b.md' }, ctx);
-		expect(out.result).toBe('Moved a.md to docs/b.md.');
-		expect(calls('fs_created_move')).toEqual([
-			['fs_created_move', { workdir: '/w', from: 'a.md', to: 'docs/b.md', scope: 'job:7' }]
-		]);
-		expect([...ctx.filesWrittenThisTurn]).toEqual(['docs/b.md']);
-	});
-
-	it('needs both paths', async () => {
-		const out = await executeTool('fs_move', { from: 'a.md' }, job());
-		expect(JSON.parse(out.result).error).toBe('fs_move needs "from" and "to".');
 	});
 });

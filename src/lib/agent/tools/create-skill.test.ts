@@ -16,6 +16,7 @@ vi.mock('#lib/skills/project.ts', () => project);
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const draft: SkillDraft = {
 	dir: '/data/skills/deploy-check',
@@ -24,14 +25,11 @@ const draft: SkillDraft = {
 };
 
 function ctx(over: Partial<ToolContext> = {}): ToolContext {
-	return {
-		workingDir: null,
-		pendingImages: [],
+	return makeToolContext({
 		interactive: true,
-		codeMode: false,
 		skills: { names: [], readable: [], projectRoot: '/code/repo', loaded: new Set() },
 		...over
-	} as unknown as ToolContext;
+	});
 }
 
 const createArgs = {

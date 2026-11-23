@@ -2,24 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 const state = vi.hoisted(() => ({
-	stored: new Map<string, string>(),
 	calls: [] as { cmd: string; args: Record<string, unknown> | undefined }[],
 	hostname: '',
 	/** Extra fields on the logged entry, such as a judgement. */
 	entry: {} as Record<string, unknown>
 }));
 
+const secrets = await vi.hoisted(async () =>
+	(await import('#lib/testing/invoke.ts')).fakeSecretStore()
+);
+
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore(
 		{
-			secret_set: (a) => {
-				state.stored.set(a!.key as string, a!.value as string);
-				return null;
-			},
-			secret_delete: (a) => {
-				state.stored.delete(a!.key as string);
-				return null;
-			},
+			...secrets.routes,
 			camera_probe: (a) => {
 				state.calls.push({ cmd: 'camera_probe', args: a });
 				return { hasAudio: true, width: 1920, height: 1080, videoCodec: 'h264' };
@@ -151,7 +147,7 @@ function input(id: RegExp): HTMLInputElement {
 }
 
 beforeEach(() => {
-	state.stored.clear();
+	secrets.reset();
 	state.hostname = '';
 	state.entry = {};
 	state.calls = [];
@@ -189,7 +185,7 @@ describe('adding a network camera', () => {
 			username: 'admin',
 			passwordRef: `camera:${cam.id}`
 		});
-		expect(state.stored.get(`camera:${cam.id}`)).toBe('p@ss');
+		expect(secrets.stored.get(`camera:${cam.id}`)).toBe('p@ss');
 		expect(JSON.stringify(getSettings())).not.toContain('p@ss');
 		expect(() => structuredClone(getSettings())).not.toThrow();
 	});
@@ -213,7 +209,7 @@ describe('adding a network camera', () => {
 		await waitFor(() => expect(getSettings().cameras).toHaveLength(1));
 		const [cam] = getSettings().cameras;
 		expect(cam.caps).toEqual({ hasAudio: true, width: 1920, height: 1080, videoCodec: 'h264' });
-		expect([...state.stored.keys()]).toEqual([`camera:${cam.id}`]);
+		expect([...secrets.stored.keys()]).toEqual([`camera:${cam.id}`]);
 	});
 
 	it('pairs a USB webcam with its own microphone', async () => {
@@ -280,7 +276,7 @@ describe('finding an ONVIF camera', () => {
 
 describe('calibrating pan/tilt', () => {
 	it('measures the camera and keeps the result on Save', async () => {
-		state.stored.set('camera:k1', 'pw');
+		secrets.stored.set('camera:k1', 'pw');
 		setCameras([
 			kitchen({
 				source: {
@@ -383,7 +379,7 @@ describe('a found camera with a network name', () => {
 
 describe('removing a camera', () => {
 	it('deletes its password from the secret store', async () => {
-		state.stored.set('camera:k1', 'pw');
+		secrets.stored.set('camera:k1', 'pw');
 		setCameras([
 			{
 				id: 'k1',
@@ -408,7 +404,7 @@ describe('removing a camera', () => {
 		await fireEvent.click(screen.getByLabelText('Remove Kitchen'));
 
 		expect(getSettings().cameras).toHaveLength(0);
-		await waitFor(() => expect(state.stored.has('camera:k1')).toBe(false));
+		await waitFor(() => expect(secrets.stored.has('camera:k1')).toBe(false));
 	});
 });
 

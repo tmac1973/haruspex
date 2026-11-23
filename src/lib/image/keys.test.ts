@@ -6,10 +6,11 @@ const state = vi.hoisted(() => ({
 	secrets: {} as Record<string, string>,
 	added: [] as [string, string][]
 }));
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: async (cmd: string, args: { key: string }) =>
-		cmd === 'secret_get' ? (state.secrets[args.key] ?? null) : null
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		secret_get: (a) => state.secrets[a!.key as string] ?? null
+	})
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => state.settings,

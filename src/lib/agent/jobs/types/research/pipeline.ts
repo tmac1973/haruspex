@@ -36,7 +36,7 @@ export function planResearchSteps(job: JobWithSteps): PlannedStep[] {
 const CHARS_PER_TOKEN = 4;
 const PROMPT_BUDGET_FRACTION = 0.8;
 
-function estimateSizeWarning(rendered: string, contextSize: number): string | null {
+export function estimateSizeWarning(rendered: string, contextSize: number): string | null {
 	if (contextSize <= 0) return null;
 	const estTokens = Math.ceil(rendered.length / CHARS_PER_TOKEN);
 	const budget = Math.floor(contextSize * PROMPT_BUDGET_FRACTION);
@@ -49,7 +49,7 @@ function estimateSizeWarning(rendered: string, contextSize: number): string | nu
 	);
 }
 
-function renderPrompt(stepIndex: number, authored: string, priorOutput: string): string {
+export function renderPrompt(stepIndex: number, authored: string, priorOutput: string): string {
 	if (stepIndex === 0) return authored;
 	if (!priorOutput) return authored;
 	return `${priorOutput}\n\n${authored}`;

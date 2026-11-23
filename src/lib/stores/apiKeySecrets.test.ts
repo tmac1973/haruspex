@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	stored: new Map<string, string>(),
 	jobs: [] as {
 		id: number;
 		name: string;
@@ -11,15 +10,16 @@ const state = vi.hoisted(() => ({
 	refs: [] as { id: number; keyId: string }[]
 }));
 
+const secrets = await vi.hoisted(async () =>
+	(await import('#lib/testing/invoke.ts')).fakeSecretStore()
+);
+
 const { unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore(
 		{
-			secret_available: true,
-			secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
-			secret_get: (a) => state.stored.get(a!.key as string) ?? null,
-			secret_delete: (a) => void state.stored.delete(a!.key as string),
+			...secrets.routes,
 			db_set_job_api_key_ref: (a) => void state.refs.push(a as never)
 		},
 		unexpectedInvoke
@@ -43,7 +43,7 @@ import {
 } from './apiKeySecrets';
 
 beforeEach(() => {
-	state.stored.clear();
+	secrets.reset();
 	state.jobs = [];
 	state.refs = [];
 	updateSettings({ apiKeys: [] });
@@ -52,7 +52,7 @@ beforeEach(() => {
 describe('inference API keys', () => {
 	it('live in the store, with the settings holding only the name', async () => {
 		const id = await addStoredApiKey('OpenRouter', 'sk-or-1');
-		expect(state.stored.get(`apikey:${id}`)).toBe('sk-or-1');
+		expect(secrets.stored.get(`apikey:${id}`)).toBe('sk-or-1');
 		expect(getApiKeys()[0]).toMatchObject({ name: 'OpenRouter', value: '', stored: true });
 		expect(getApiKeyValue(id)).toBe('sk-or-1');
 	});
@@ -62,7 +62,7 @@ describe('inference API keys', () => {
 		await setStoredApiKeyValue(id, 'new');
 		expect(getApiKeyValue(id)).toBe('new');
 		await deleteStoredApiKey(id);
-		expect(state.stored.has(`apikey:${id}`)).toBe(false);
+		expect(secrets.stored.has(`apikey:${id}`)).toBe(false);
 		expect(getApiKeyValue(id)).toBeUndefined();
 	});
 
@@ -76,7 +76,7 @@ describe('inference API keys', () => {
 			}
 		});
 		await migrateApiKeys();
-		expect(state.stored.get('apikey:k1')).toBe('sk-old');
+		expect(secrets.stored.get('apikey:k1')).toBe('sk-old');
 		expect(getApiKeys()[0]).toMatchObject({ value: '', stored: true });
 		expect(getSettings().inferenceBackend.remoteApiKey).toBe('');
 		expect(getApiKeyValue('k1')).toBe('sk-old');

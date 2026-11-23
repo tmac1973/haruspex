@@ -9,6 +9,7 @@ vi.mock('#lib/skills/client.ts', () => client);
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const doc: SkillDoc = {
 	name: 'deploy',
@@ -22,7 +23,7 @@ const doc: SkillDoc = {
 };
 
 function ctx(skills?: ToolContext['skills']): ToolContext {
-	return { workingDir: null, pendingImages: [], skills } as unknown as ToolContext;
+	return makeToolContext({ skills });
 }
 
 const turnSkills = (): NonNullable<ToolContext['skills']> => ({

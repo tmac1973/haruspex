@@ -14,10 +14,11 @@ vi.mock('#lib/stores/db.ts', () => ({
 }));
 const slash = vi.hoisted(() => ({ result: { kind: 'send' } as Record<string, unknown> }));
 const folders = vi.hoisted(() => ({ exist: new Set(['/home/me/notes']) }));
-vi.mock('@tauri-apps/api/core', () => ({
-	invoke: async (cmd: string, args: { path: string }) =>
-		cmd === 'code_folder_exists' ? folders.exist.has(args.path) : null
-}));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore({
+		code_folder_exists: (a) => folders.exist.has(a!.path as string)
+	})
+);
 vi.mock('#lib/engine/attach.ts', () => ({
 	attachImages: async (refs?: string[]) => (refs ?? []).map((r) => `data:image/png;base64,${r}`),
 	slashFor: async () => slash.result

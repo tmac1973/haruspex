@@ -1,35 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({
-	available: true,
-	refuseSet: false,
-	stored: new Map<string, string>()
-}));
+const secrets = await vi.hoisted(async () =>
+	(await import('#lib/testing/invoke.ts')).fakeSecretStore()
+);
 
 const { unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
 
 vi.mock('@tauri-apps/api/core', async () =>
-	(await import('#lib/testing/invoke.ts')).mockTauriCore(
-		{
-			secret_available: () => state.available,
-			secret_set: (a) => {
-				if (state.refuseSet) throw 'locked';
-				state.stored.set(a!.key as string, a!.value as string);
-			},
-			secret_get: (a) => state.stored.get(a!.key as string) ?? null,
-			secret_delete: (a) => void state.stored.delete(a!.key as string)
-		},
-		unexpectedInvoke
-	)
+	(await import('#lib/testing/invoke.ts')).mockTauriCore(secrets.routes, unexpectedInvoke)
 );
 
 import { getSettings, updateSettings } from './settings';
 import { getRemoteToken } from './remoteSecrets';
 
 beforeEach(() => {
-	state.available = true;
-	state.refuseSet = false;
-	state.stored.clear();
+	secrets.reset();
 	updateSettings({ remoteAccessToken: '', remoteAccessTokenSaved: false });
 });
 
@@ -39,7 +24,7 @@ describe('getRemoteToken', () => {
 	});
 
 	it('reads the stored token', async () => {
-		state.stored.set('remote:token', 'stored');
+		secrets.stored.set('remote:token', 'stored');
 		updateSettings({ remoteAccessTokenSaved: true });
 		expect(await getRemoteToken()).toBe('stored');
 	});
@@ -47,33 +32,33 @@ describe('getRemoteToken', () => {
 	it('moves an inline token into the store and blanks the setting', async () => {
 		updateSettings({ remoteAccessToken: 'old' });
 		expect(await getRemoteToken()).toBe('old');
-		expect(state.stored.get('remote:token')).toBe('old');
+		expect(secrets.stored.get('remote:token')).toBe('old');
 		expect(getSettings()).toMatchObject({ remoteAccessToken: '', remoteAccessTokenSaved: true });
 	});
 
 	it('keeps an inline token where no store lasts', async () => {
-		state.available = false;
+		secrets.available = false;
 		updateSettings({ remoteAccessToken: 'old' });
 		expect(await getRemoteToken()).toBe('old');
 		expect(getSettings().remoteAccessToken).toBe('old');
 	});
 
 	it('keeps an inline token the store refuses', async () => {
-		state.refuseSet = true;
+		secrets.refuseSet = true;
 		updateSettings({ remoteAccessToken: 'old' });
 		expect(await getRemoteToken()).toBe('old');
 		expect(getSettings().remoteAccessToken).toBe('old');
 	});
 
 	it('uses the inline token when the store has lost its copy', async () => {
-		state.refuseSet = true;
+		secrets.refuseSet = true;
 		updateSettings({ remoteAccessToken: 'old', remoteAccessTokenSaved: true });
 		expect(await getRemoteToken()).toBe('old');
 	});
 
 	it('prefers the store when it has a copy', async () => {
-		state.refuseSet = true;
-		state.stored.set('remote:token', 'stored');
+		secrets.refuseSet = true;
+		secrets.stored.set('remote:token', 'stored');
 		updateSettings({ remoteAccessToken: 'old', remoteAccessTokenSaved: true });
 		expect(await getRemoteToken()).toBe('stored');
 		expect(getSettings().remoteAccessToken).toBe('old');
