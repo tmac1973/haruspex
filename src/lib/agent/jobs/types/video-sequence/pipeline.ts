@@ -14,13 +14,15 @@ import { normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
-	markRunStepStarted,
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
+import { stepsOf, type Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import { runFiles } from '#lib/agent/jobs/types/video-sequence/files.ts';
+import { keyframesStage } from '#lib/agent/jobs/types/video-sequence/keyframesStage.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -51,19 +53,32 @@ import {
 	specSummary
 } from '#lib/agent/jobs/types/video-sequence/prompts.ts';
 
-export const INTERVIEW = 0;
-export const SPEC = 1;
-export const SPEECH = 2;
-export const KEYFRAMES = 3;
-export const GENERATE = 4;
-export const CHECK = 5;
-export const SOUND = 6;
-export const ASSEMBLE = 7;
-export const RENDER = 8;
-export const REPORT = 9;
+export {
+	INTERVIEW,
+	SPEC,
+	SPEECH,
+	KEYFRAMES,
+	GENERATE,
+	CHECK,
+	SOUND,
+	ASSEMBLE,
+	RENDER,
+	REPORT
+} from '#lib/agent/jobs/types/video-sequence/stages.ts';
+import {
+	INTERVIEW,
+	SPEC,
+	SPEECH,
+	GENERATE,
+	CHECK,
+	SOUND,
+	ASSEMBLE,
+	RENDER,
+	REPORT
+} from '#lib/agent/jobs/types/video-sequence/stages.ts';
 
 /** The stages after Spec, which later phases build. */
-const LATER = [SPEECH, KEYFRAMES, GENERATE, CHECK, SOUND, ASSEMBLE, RENDER, REPORT];
+const LATER = [GENERATE, CHECK, SOUND, ASSEMBLE, RENDER, REPORT];
 
 /** One try and two retries with the problems quoted, then the stage fails. */
 export const MAX_DERIVE_ATTEMPTS = 3;
@@ -103,28 +118,6 @@ async function readText(workdir: string, relPath: string): Promise<string | null
 		return null;
 	}
 }
-
-/** Start, finish and cancel checks for a run's steps. */
-function stepsOf(ctx: JobRunContext) {
-	return {
-		start(idx: number) {
-			const at = Date.now();
-			ctx.patchStep(idx, { status: 'running', startedAt: at });
-			ctx.setCurrentStepIndex(idx);
-			void markRunStepStarted(ctx.runId, idx, at, ctx.stepAuthored(idx));
-		},
-		finish(idx: number, output: string) {
-			const at = Date.now();
-			ctx.patchStep(idx, { status: 'succeeded', output, finishedAt: at });
-			void markRunStepFinished(ctx.runId, idx, 'succeeded', output, null, at);
-		},
-		abortIfCancelled() {
-			if (ctx.abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-		}
-	};
-}
-
-type Steps = ReturnType<typeof stepsOf>;
 
 /** What a run needs before it starts, or why it can't. */
 async function preflight(ctx: JobRunContext, cfg: VideoSequenceConfig): Promise<SpecContext> {
@@ -218,7 +211,14 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 		const existing = await readText(ctx.job.working_dir!, specPath);
 		const run = { attended, existing, specPath };
 		const answers = await interviewStage(ctx, steps, cfg, sc, run);
-		await specStage(ctx, steps, cfg, sc, { ...run, answers });
+		const { validated } = await specStage(ctx, steps, cfg, sc, { ...run, answers });
+		const spec = validated.spec;
+		steps.start(SPEECH);
+		steps.finish(SPEECH, 'No speaking sections.');
+		const draws = usesKeyframes(sc);
+		const plan = planClips(spec, sc.validate.limits, draws);
+		const files = runFiles(ctx, cfg);
+		await keyframesStage(ctx, steps, cfg, files, { spec, plan, draws, attended });
 		for (const idx of LATER) {
 			steps.abortIfCancelled();
 			steps.start(idx);

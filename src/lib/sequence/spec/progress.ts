@@ -81,6 +81,36 @@ function keyframeKeys(spec: SequenceSpec): Record<string, string> {
 	return out;
 }
 
+/** A re-anchor still's id in the progress file. */
+export const reanchorId = (section: string, n: number) => `${section}-r${n}`;
+
+/** An existing clip's first-frame still's id in the progress file. */
+export const firstFrameId = (section: string) => `${section}-first`;
+
+/**
+ * Every still's key: each section's keyframe, each re-anchor (which follows
+ * its section's keyframe), and the first frame of each existing clip a
+ * transition ends on.
+ */
+export function stillKeys(spec: SequenceSpec, plan: ClipPlan): Record<string, string> {
+	const out = keyframeKeys(spec);
+	for (const item of plan.items) {
+		if (item.kind !== 'generate' || !item.end) continue;
+		const end = item.end;
+		if (end.kind === 'reanchor') {
+			const base = out[end.section];
+			if (base)
+				out[reanchorId(end.section, end.n)] = hashOf({ base, n: end.n, prompt: item.prompt });
+		} else if (end.kind === 'firstFrameOf') {
+			const clip = plan.items.find((i) => i.id === end.id);
+			if (clip?.kind === 'existing') {
+				out[firstFrameId(clip.section)] = hashOf({ path: clip.path, in: clip.in_secs ?? 0 });
+			}
+		}
+	}
+	return out;
+}
+
 /** Each plan item's key, chained through what it starts and ends on. */
 export function itemKeys(spec: SequenceSpec, plan: ClipPlan): Record<string, string> {
 	const kf = keyframeKeys(spec);
@@ -149,7 +179,7 @@ export function mergeProgress(
 	const fresh = emptyProgress(specHash);
 	if (!old) return fresh;
 	fresh.clips = keep(old.clips, itemKeys(spec, plan));
-	fresh.keyframes = keep(old.keyframes, keyframeKeys(spec));
+	fresh.keyframes = keep(old.keyframes, stillKeys(spec, plan));
 	const musicKeys = Object.fromEntries(spec.sound.music.map((m) => [m.id, hashOf(m)]));
 	fresh.music = keep(old.music, musicKeys);
 	const lineKeys = Object.fromEntries(
@@ -163,7 +193,7 @@ export function mergeProgress(
 export function progressKeys(spec: SequenceSpec, plan: ClipPlan) {
 	return {
 		clips: itemKeys(spec, plan),
-		keyframes: keyframeKeys(spec),
+		keyframes: stillKeys(spec, plan),
 		music: Object.fromEntries(spec.sound.music.map((m) => [m.id, hashOf(m)])),
 		narration: Object.fromEntries(
 			spec.sound.narration.map((n, i) => [`${n.section}-${i + 1}`, hashOf(n)])
