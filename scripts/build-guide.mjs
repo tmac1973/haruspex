@@ -101,7 +101,10 @@ export function renderGuide(pages) {
 			<header>
 				<img src="${up}icon.png" alt="" />
 				<a href="${up}">Haruspex</a>
-				<span class="muted">User guide</span>
+				<nav class="section-tabs" aria-label="Site sections">
+					<a href="${up}showcase/">Things you can do</a>
+					<a class="on" aria-current="page" href="${href(FIRST)}">User guide</a>
+				</nav>
 			</header>
 			<nav class="guide-nav" aria-label="Guide pages">
 				${nav}

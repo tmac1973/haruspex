@@ -21,7 +21,11 @@ body {
 	margin: 0;
 	background: var(--bg);
 	color: var(--text);
-	font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+	font:
+		16px/1.6 system-ui,
+		-apple-system,
+		'Segoe UI',
+		sans-serif;
 }
 main {
 	max-width: 44rem;
@@ -92,8 +96,29 @@ footer a {
 }
 
 /* The user guide (site/guide/, built by scripts/build-guide.mjs). */
-.guide header .muted {
+.section-tabs {
+	display: flex;
+	gap: 1.25rem;
 	margin-left: auto;
+}
+header .section-tabs a {
+	font-size: 0.95rem;
+	font-weight: 500;
+	color: var(--muted);
+}
+header .section-tabs a.on {
+	color: var(--text);
+	font-weight: 600;
+	border-bottom: 2px solid var(--accent);
+}
+@media (max-width: 34rem) {
+	header {
+		flex-wrap: wrap;
+	}
+	.section-tabs {
+		margin-left: 0;
+		width: 100%;
+	}
 }
 .guide-nav {
 	display: flex;
@@ -110,7 +135,12 @@ footer a {
 	margin: 1.5rem 0 0.4rem;
 }
 .guide code {
-	font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font:
+		0.9em ui-monospace,
+		SFMono-Regular,
+		Menlo,
+		Consolas,
+		monospace;
 	padding: 0.1em 0.3em;
 	border-radius: 4px;
 	background: color-mix(in srgb, var(--rule) 45%, transparent);
@@ -139,4 +169,113 @@ footer a {
 	vertical-align: top;
 	padding: 0.4rem 0.6rem;
 	border-bottom: 1px solid var(--rule);
+}
+
+/* Things you can do (site/showcase/, built by scripts/build-showcase.mjs). */
+.subjects {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	padding: 0.75rem 0;
+	margin: 1.25rem 0 1.5rem;
+	border-top: 1px solid var(--rule);
+	border-bottom: 1px solid var(--rule);
+}
+.subjects a {
+	padding: 0.2rem 0.7rem;
+	border: 1px solid var(--rule);
+	border-radius: 999px;
+	font-size: 0.85rem;
+	text-decoration: none;
+	color: var(--text);
+}
+.subjects a.on {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--bg);
+	font-weight: 600;
+}
+.showcase h2 {
+	margin-top: 0;
+}
+.showcase .toc {
+	font-size: 0.9rem;
+	columns: 2;
+	padding-left: 1.1rem;
+	margin: 0.5rem 0 1.5rem;
+}
+.example {
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	padding: 1rem 1.1rem 0.9rem;
+	margin: 1.25rem 0;
+	scroll-margin-top: 1rem;
+}
+.showcase .example h3 {
+	margin: 0 0 0.25rem;
+	font-size: 1.1rem;
+}
+.example h3 a {
+	color: var(--text);
+	text-decoration: none;
+}
+.example > p {
+	margin: 0 0 0.75rem;
+}
+.example-meta {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 0.2rem 0.9rem;
+	font-size: 0.9rem;
+	margin: 0 0 0.9rem;
+}
+.example-meta dt {
+	color: var(--muted);
+}
+.example-meta dd {
+	margin: 0;
+}
+.example-label {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--muted);
+	margin: 0.8rem 0 0.3rem;
+	font-weight: 600;
+}
+.example-prompt {
+	border-left: 3px solid var(--accent);
+	padding: 0.5rem 0.8rem;
+	background: color-mix(in srgb, var(--accent) 8%, transparent);
+	border-radius: 0 6px 6px 0;
+	font-style: italic;
+}
+.example-output {
+	padding: 0.7rem 0.9rem;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--rule) 30%, transparent);
+	font-size: 0.93rem;
+	overflow-x: auto;
+}
+.example-prompt > :first-child,
+.example-output > :first-child {
+	margin-top: 0;
+}
+.example-prompt > :last-child,
+.example-output > :last-child {
+	margin-bottom: 0;
+}
+.example-output img,
+.example-output video {
+	max-width: 100%;
+	border-radius: 6px;
+}
+.example-more {
+	font-size: 0.9rem;
+	margin: 0.8rem 0 0;
+}
+@media (max-width: 34rem) {
+	.showcase .toc {
+		columns: 1;
+	}
 }
