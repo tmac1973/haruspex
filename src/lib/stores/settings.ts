@@ -396,7 +396,8 @@ export const defaultSkills: SkillsConfig = {
 };
 
 /** A backend a generation server runs, for the saved list. */
-export type GenerationServerKind = 'comfyui' | 'lemonade' | 'llama-toolchest' | 'ace-server';
+export type GenerationServerKind =
+	'comfyui' | 'lemonade' | 'llama-toolchest' | 'ace-server' | 'llama-server';
 
 /**
  * A saved generation server. `keyId` is a named key from Settings → Inference
@@ -488,6 +489,16 @@ export interface AppSettings {
 	/** Browser-style UI zoom factor (1 = 100%). One of UI_SCALE_STEPS. */
 	uiScale: number;
 	ttsVoice: string;
+	/**
+	 * What `generate_speech` and a video sequence's narration speak with:
+	 * the bundled Kokoro, or a llama.cpp `/tts` server (directly or through
+	 * llama-toolchest) that can copy a saved voice. Reading answers aloud
+	 * always uses Kokoro.
+	 */
+	speechBackendKind: 'kokoro' | 'llama-server';
+	speechServerBaseUrl: string;
+	speechServerApiKeyId: string | null;
+	speechServerModelId: string;
 	searchProvider: SearchProvider;
 	/** Inline only where no secret store works; otherwise empty, with the key
 	 *  kept under `brave:key` and `braveApiKeySaved` set. */
@@ -1237,6 +1248,10 @@ const defaults: AppSettings = {
 	accentColor: 'teal',
 	uiScale: 1,
 	ttsVoice: DEFAULT_TTS_VOICE,
+	speechBackendKind: 'kokoro',
+	speechServerBaseUrl: '',
+	speechServerApiKeyId: null,
+	speechServerModelId: '',
 	searchProvider: 'auto',
 	browserPath: '',
 	remoteAccessEnabled: false,

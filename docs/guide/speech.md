@@ -1,11 +1,11 @@
 ---
 title: Spoken audio
-description: Hearing answers read aloud, having the assistant speak text into an audio file for a voiceover or a game, the voices, and where the files are kept.
+description: Hearing answers read aloud, having the assistant speak text into an audio file for a voiceover or a game, the voices and speech engines, saving your own voice, and where the files are kept.
 ---
 
 # Spoken audio
 
-Haruspex speaks with Kokoro, a voice model that runs on your computer. Nothing you have read aloud or made into speech leaves it, and nothing needs setting up.
+Haruspex speaks with Kokoro, a voice model that runs on your computer. Nothing you have read aloud or made into speech leaves it, and nothing needs setting up. Speech the assistant makes can instead come from a llama.cpp server, which can speak in a voice you saved.
 
 ## Hear an answer read aloud
 
@@ -17,10 +17,25 @@ Settings → Audio → **Text-to-speech voice** picks the voice, and **Audio out
 
 Ask in Chat or the Code tab: "read this intro as a voiceover", "say these three lines in a man's voice for my game". The assistant writes the text for the ear, then the `generate_speech` tool speaks it into a WAV file that plays in the answer. A minute of speech takes a few seconds.
 
-- **Voice:** any of the voices in Settings → Audio. The assistant picks one when you describe it ("a deep male voice"); otherwise it uses yours.
+- **Voice:** any of the voices in Settings → Audio, or a saved voice with a llama.cpp server. The assistant picks one when you describe it ("a deep male voice"); otherwise it uses yours.
 - **Speed:** from half to twice the normal pace. Ask for "slower" or "a bit faster".
 - **Length:** up to about 15 minutes in one file (12,000 characters). For longer, ask for it in parts.
 - **Save it:** with a working folder in Chat, or in the Code tab, ask for it to be saved ("save it as audio/intro.wav"). In Chat you are asked before a file is replaced. `save_generated` saves one made earlier.
+
+## Use a llama.cpp speech server
+
+Settings → Audio → **Speech engine** → **llama.cpp server** sends the speech the assistant makes, and a video sequence's narration, to a llama-server v0.8.0 or newer that serves `/tts`, or to llama-toolchest. Give its address and key, press **Probe**, and pick the speech model. On llama-toolchest, Download Models → **Get speech models** has Qwen3-TTS 1.7B Base, which copies a saved voice. Reading answers aloud (`F3`, the speaker icon) stays on Kokoro.
+
+Each request makes a new take: ask again, or with another seed, for a different one. The same seed does not give the same take again, so keep one you like. The server can't change pace itself, so a slower or faster take is stretched afterwards with the pitch kept.
+
+## Save your own voice
+
+Only use your own voice, or a voice you have clear permission to use. Copying someone's voice without their consent is not allowed, can be illegal, and has led to lawsuits.
+
+- **From a file:** Settings → Audio → Saved voices → **Add from file…**, name it, tick the box, and press **Add**. **Add** stays off until the box is ticked.
+- **From your footage:** ask "save my voice from 0:41 to 0:55 of ep012/raw/cam.mp4". The assistant picks 10–20 s of you speaking with no music, from the transcript's word times, and asks you to confirm it is your voice first.
+
+A clean 5–10 s of one person speaking is enough; clips under 5 s or over 30 s are refused. Haruspex transcribes what the clip says, and Settings → Audio shows the words: correcting them copies the voice more closely. Then ask "say 'this is a test' in my voice". Saved voices stay on this computer in the app's data folder; **Delete** removes one.
 
 ## Have it write and record: the narrate skill
 
@@ -42,5 +57,6 @@ Spoken audio goes in the audio cache with songs. A file that belongs to a chat o
 - Only WAV files. Convert to MP3 yourself if you need one.
 - One voice per file: each character's lines are made separately.
 - Most voices are American English. Text in other languages is read with English sounds.
-- No copying a real person's voice.
+- No copying a voice without its owner's consent: Haruspex saves a voice only after you confirm it is yours or you may use it.
+- Kokoro can't speak in a saved voice; only a llama.cpp server can.
 - Not in the Shell tab, in subtasks, or in jobs.

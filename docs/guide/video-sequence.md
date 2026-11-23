@@ -42,7 +42,7 @@ A run says how many clips it will make. The time is unknown until the first clip
 - It doesn't make people speak on screen, and it doesn't upscale clips.
 - Clips chained by their last frame keep the subject, but motion can change at a seam.
 - It can't run on a schedule: it may need to ask.
-- Narration uses the voices in Settings → Speech.
+- Narration is spoken by Settings → Audio → Speech engine: a Kokoro voice, or with a llama.cpp server the saved voice a line names (see the `speech` page).
 
 ## What has been tested
 

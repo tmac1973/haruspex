@@ -1,6 +1,8 @@
 /**
- * `generate_speech`: text spoken into a WAV by the bundled koko, kept in the
- * audio cache and played in the answer, like `generate_music`'s songs.
+ * `generate_speech`: text spoken into a WAV, kept in the audio cache and
+ * played in the answer, like `generate_music`'s songs. Settings → Audio →
+ * Speech engine picks the bundled koko or a llama.cpp `/tts` server, which
+ * speaks in a saved voice (`#lib/audio/speak.ts`).
  *
  * Chat and the Code tab only, with someone there. koko streams the audio a
  * sentence at a time and Rust writes it to the file as it comes
@@ -10,6 +12,8 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
+import { speak, speechEngine, type SpeechEngine, type Spoken } from '#lib/audio/speak.ts';
+import { savedVoiceNames } from '#lib/audio/savedVoices.ts';
 import { getSettings, DEFAULT_TTS_VOICE } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import {
@@ -27,7 +31,6 @@ import {
 import { savedLineOf } from '#lib/agent/tools/_musicJob.ts';
 import { audioSrc } from '#lib/audio/url.ts';
 import { TTS_VOICES } from '#lib/audio/voices.ts';
-import type { StoredSpeech } from '#lib/ipc/gen/StoredSpeech.ts';
 import { trimmed } from '#lib/utils/coerce.ts';
 
 /** About 15 minutes of speech, under the audio cache's 50 MB a file. */
@@ -39,8 +42,11 @@ const VOICE_IDS = TTS_VOICES.map((v) => v.id);
 
 export interface SpeechArgs {
 	text: string;
-	voice: string;
+	/** A Kokoro voice id, or a saved voice's name; null for the server's own voice. */
+	voice: string | null;
 	speed: number;
+	/** Another take, on a llama.cpp server. */
+	seed: number | null;
 	title: string;
 	path: string;
 	overwrite: boolean;
@@ -57,10 +63,35 @@ function titleOf(text: string): string {
 	return words.length > 6 ? `${head}…` : head;
 }
 
+/** The voice for `asked` on `engine`, and a note when it is not the one asked for. */
+function voiceFor(
+	asked: string,
+	engine: SpeechEngine,
+	defaultVoice: string
+): { voice: string | null; note?: string } {
+	if (engine === 'kokoro') {
+		const voice = asked || defaultVoice;
+		if (VOICE_IDS.includes(voice)) return { voice };
+		return {
+			voice: DEFAULT_TTS_VOICE,
+			note: `There is no voice "${voice}", so it used ${DEFAULT_TTS_VOICE}.`
+		};
+	}
+	if (!asked) return { voice: null };
+	const saved = savedVoiceNames().find((n) => n.toLowerCase() === asked.toLowerCase());
+	if (saved) return { voice: saved };
+	// A Kokoro id means nothing to the server: its own voice it is.
+	if (VOICE_IDS.includes(asked)) {
+		return { voice: null, note: `${asked} is a Kokoro voice, so it used the server's own voice.` };
+	}
+	return { voice: asked };
+}
+
 /** Parse and clamp the arguments, or say what is wrong. */
 export function parseSpeechArgs(
 	args: Record<string, unknown>,
-	defaultVoice: string
+	defaultVoice: string,
+	engine: SpeechEngine = 'kokoro'
 ): SpeechArgs | string {
 	const text = trimmed(args.text);
 	if (!text) return 'generate_speech needs the "text" to speak.';
@@ -68,11 +99,13 @@ export function parseSpeechArgs(
 		return `The text is ${text.length} characters; the most is ${MAX_CHARS}. Split it into parts.`;
 	}
 	const notes: string[] = [];
-	let voice = trimmed(args.voice) || defaultVoice;
-	if (!VOICE_IDS.includes(voice)) {
-		notes.push(`There is no voice "${voice}", so it used ${DEFAULT_TTS_VOICE}.`);
-		voice = DEFAULT_TTS_VOICE;
-	}
+	const picked = voiceFor(trimmed(args.voice), engine, defaultVoice);
+	if (picked.note) notes.push(picked.note);
+	const voice = picked.voice;
+	const seed =
+		typeof args.seed === 'number' && Number.isInteger(args.seed) && args.seed >= 0
+			? args.seed
+			: null;
 	const asked = typeof args.speed === 'number' && Number.isFinite(args.speed) ? args.speed : 1;
 	const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, asked));
 	if (speed !== asked) notes.push(`Speed set to ${speed} (${MIN_SPEED}–${MAX_SPEED}).`);
@@ -82,6 +115,7 @@ export function parseSpeechArgs(
 		text,
 		voice,
 		speed,
+		seed,
 		title: trimmed(args.title) || titleOf(text),
 		path,
 		overwrite: args.overwrite === true,
@@ -117,12 +151,13 @@ export async function runSpeech(args: SpeechArgs, ctx: ToolContext): Promise<Too
 	}
 
 	ctx.onProgress?.('Speaking');
-	let made: StoredSpeech;
+	let made: Spoken;
 	try {
-		made = await invoke<StoredSpeech>('tts_synthesize_to_cache', {
+		made = await speak({
 			text: args.text,
 			voice: args.voice,
 			speed: args.speed,
+			seed: args.seed,
 			title: args.title,
 			conversationId: ctx.conversationId ?? null,
 			codeSessionId: ctx.codeSessionId ?? null
@@ -139,11 +174,18 @@ export async function runSpeech(args: SpeechArgs, ctx: ToolContext): Promise<Too
 		);
 		saved = savedLineOf(target.path, await writeSaved(target, bytes, ctx));
 	}
+	const voice = args.voice ?? "the server's own voice";
+	// The server makes a new take each time, so its hash tells two apart.
+	const take =
+		made.engine === 'llama-server'
+			? `, ${made.seconds.toFixed(2)} s, take ${made.hash.slice(0, 12)}`
+			: '';
 	const lines = [
-		`Made "${args.title}" (${minutesAndSeconds(made.seconds)}, voice ${args.voice}).`,
+		`Made "${args.title}" (${minutesAndSeconds(made.seconds)}, voice ${voice}${take}).`,
 		`Put ![${args.title}](${url}) in your answer.`,
 		...(saved ? [saved] : []),
 		...args.notes,
+		...(made.note ? [made.note] : []),
 		...[shortNote(args.text, args.speed, made.seconds)].filter((n) => n !== null)
 	];
 	return {
@@ -171,13 +213,16 @@ registerTool({
 					},
 					voice: {
 						type: 'string',
-						enum: VOICE_IDS,
-						description:
-							'af_/am_ are American female/male, ef_/em_ European. Default from Settings → Audio.'
+						description: `With Kokoro: ${VOICE_IDS.join(', ')} (af_/am_ American female/male, ef_/em_ European; default from Settings → Audio). With a llama.cpp speech server: a saved voice's name, or leave it out for the model's own voice.`
 					},
 					speed: {
 						type: 'number',
 						description: `${MIN_SPEED} to ${MAX_SPEED}; 1 is normal.`
+					},
+					seed: {
+						type: 'integer',
+						description:
+							'llama.cpp server only: a different seed makes another take. The same seed does not make the same take again, so keep a take you like.'
 					},
 					title: { type: 'string', description: 'A short title for the player and the file.' },
 					path: {
@@ -192,7 +237,11 @@ registerTool({
 	},
 	displayLabel: (args) => `speech: ${String(args.title ?? args.text ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
-		const parsed = parseSpeechArgs(args, getSettings().ttsVoice || DEFAULT_TTS_VOICE);
+		const parsed = parseSpeechArgs(
+			args,
+			getSettings().ttsVoice || DEFAULT_TTS_VOICE,
+			speechEngine()
+		);
 		if (typeof parsed === 'string') return toolResult(toolError(parsed));
 		return runSpeech(parsed, ctx);
 	}

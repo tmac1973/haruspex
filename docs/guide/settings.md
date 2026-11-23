@@ -77,10 +77,12 @@ See the `skills` page.
 Voice input and spoken replies.
 
 - **Text-to-speech voice**: Heart (Female). **Read tables by subject**: on.
+- **Speech engine**: Kokoro, on this computer. **llama.cpp server** speaks through a llama-server v0.8.0 or newer, or llama-toolchest, with an address, key and speech model; reading answers aloud stays on Kokoro.
+- **Saved voices**: none. **Add from file…** saves a reference clip once you tick that it is your voice or one you may use.
 - **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device.
 - **Speech model**: Fast (base.en, English only). Accurate (large-v3-turbo) understands more languages and long dictation better; it is a 1.6 GB download shared with the video tools.
 
-See the `chat` page.
+See the `chat` and `speech` pages.
 
 ## Search
 

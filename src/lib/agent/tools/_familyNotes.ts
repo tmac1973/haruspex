@@ -7,6 +7,7 @@
 import { documentsNotes, emailNotes } from '#lib/agent/systemPrompt.ts';
 import { imageModelsPrompt } from '#lib/image/modelsPrompt.ts';
 import { assetLine, musicLine, speechLine } from '#lib/code/systemPrompt.ts';
+import { savedVoicesNote } from '#lib/audio/savedVoices.ts';
 
 /** A family's notes, as its tools are offered in Chat or the Code tab. */
 export function familyNotes(id: string, codeTab: boolean, readOnly = false): string | undefined {
@@ -18,6 +19,7 @@ function chatNotes(id: string): string | undefined {
 	if (id === 'email') return emailNotes();
 	if (id === 'documents') return documentsNotes();
 	if (id === 'images') return imageModelsPrompt();
+	if (id === 'speech') return savedVoicesNote();
 	return undefined;
 }
 

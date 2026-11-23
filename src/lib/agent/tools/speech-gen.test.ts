@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
@@ -9,6 +9,8 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { MAX_CHARS, parseSpeechArgs, shortNote } from './speech-gen';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
+import { updateSettings } from '#lib/stores/settings.ts';
+import { _setSavedVoicesForTests } from '#lib/audio/savedVoices.ts';
 
 const HASH = 'a'.repeat(64);
 const URL = `haruspex-audio://localhost/${HASH}`;
@@ -137,5 +139,79 @@ describe('shortNote', () => {
 	it('leaves normal audio and short lines alone', () => {
 		expect(shortNote(text, 1, 18)).toBeNull();
 		expect(shortNote('Hi.', 1, 0.4)).toBeNull();
+	});
+});
+
+describe('generate_speech on a llama.cpp speech server', () => {
+	const take = { hash: 'b'.repeat(64), mime: 'audio/wav', bytes: 100, seconds: 2.5, note: null };
+
+	beforeEach(() => {
+		updateSettings({
+			speechBackendKind: 'llama-server',
+			speechServerBaseUrl: 'http://box:3000',
+			speechServerApiKeyId: null,
+			speechServerModelId: 'qwen3-tts'
+		});
+		_setSavedVoicesForTests([
+			{
+				id: 'tim-abc123',
+				name: 'Tim',
+				source: 'file',
+				sourcePath: null,
+				fromSecs: null,
+				toSecs: null,
+				refText: 'hello',
+				secs: 8,
+				consentedAt: 1
+			}
+		]);
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(
+				invokeRouter({
+					speech_server_synthesize: () => take,
+					audio_stretch: () => ({ ...take, hash: 'c'.repeat(64), seconds: 3.125 })
+				})
+			);
+	});
+
+	afterEach(() => updateSettings({ speechBackendKind: 'kokoro' }));
+
+	it('speaks in a saved voice with the seed, and never sends a speed', async () => {
+		const out = await executeTool(
+			'generate_speech',
+			{ text: 'This is a test.', voice: 'tim', seed: 4, title: 'Test' },
+			chat
+		);
+		expect(invoke).toHaveBeenCalledWith(
+			'speech_server_synthesize',
+			expect.objectContaining({
+				baseUrl: 'http://box:3000',
+				model: 'qwen3-tts',
+				voice: 'Tim',
+				seed: 4,
+				conversationId: 'chat-1'
+			})
+		);
+		expect(vi.mocked(invoke).mock.calls[0][1]).not.toHaveProperty('speed');
+		expect(invoke).not.toHaveBeenCalledWith('audio_stretch', expect.anything());
+		expect(invoke).not.toHaveBeenCalledWith('tts_synthesize_to_cache', expect.anything());
+		expect(out.result).toContain(`voice Tim, 2.50 s, take ${'b'.repeat(12)}`);
+	});
+
+	it('changes the pace after, with audio_stretch', async () => {
+		const out = await executeTool('generate_speech', { text: 'Slow down.', speed: 0.8 }, chat);
+		expect(invoke).toHaveBeenCalledWith(
+			'audio_stretch',
+			expect.objectContaining({ hash: 'b'.repeat(64), factor: 0.8 })
+		);
+		expect(out.result).toContain(`3.13 s, take ${'c'.repeat(12)}`);
+		expect(out.result).toContain("voice the server's own voice");
+	});
+
+	it('drops a Kokoro voice, saying so', () => {
+		const got = parseSpeechArgs({ text: 'Hi.', voice: 'af_heart' }, 'af_heart', 'llama-server');
+		expect(got).toMatchObject({ voice: null });
+		expect((got as { notes: string[] }).notes[0]).toContain('is a Kokoro voice');
 	});
 });

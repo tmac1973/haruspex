@@ -42,6 +42,7 @@ import '#lib/agent/tools/video-gen.ts';
 import '#lib/agent/tools/video.ts';
 import '#lib/agent/tools/tasks.ts';
 import '#lib/agent/tools/video-transcribe.ts';
+import '#lib/agent/tools/voice-from-clip.ts';
 import '#lib/agent/tools/video-frames.ts';
 import '#lib/agent/tools/video-thumbnail.ts';
 import '#lib/agent/tools/youtube-upload.ts';
