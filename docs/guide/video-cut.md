@@ -13,7 +13,7 @@ Ask "make ep012 from the clips in order, intro as usual" or "cut ep012: the firs
 
 A new project is `ep012/ep012.mlt` for Shotcut or `ep012/ep012.kdenlive` for Kdenlive, as Settings → Video editing → **Editor** says, in the size and frame rate of **Format**. Ask for "a Kdenlive project" or "a Shotcut project" to make one for the other editor. If the episode already has a project, that is used: one in the episode folder, or one in the working folder whose name ends in the episode's number, such as `show_012.mlt` for `ep012`. With both kinds in one folder, name the one to use.
 
-Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them. A trim can be exact to the frame too: "drop the first frame of clip 2".
+Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them. A trim can be exact to the frame too: "drop the first frame of clip 2". Muting part of a clip and holding a frame are on the `video-adjust` page.
 
 Before each change the project is copied to `.haruspex/backups/` next to it (the last 20 are kept), and the change is kept only if melt can still load the project.
 
@@ -49,5 +49,5 @@ Open the project, change it and save. The assistant reads the saved file before 
 
 - It doesn't turn a Kdenlive project into a Shotcut one or back. It can cut the same clips into a new project for the other editor, without your effects.
 - It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades, gains and crops.
-- It doesn't fade or duck music under speech: set the bed's level instead.
+- It doesn't fade music under speech: set the bed's level, or lower stretches of it (see the `video-adjust` page).
 - It doesn't control a running Shotcut or Kdenlive window.
