@@ -223,7 +223,7 @@ export async function generateVideo(
 	opts: VideoGenerateOptions = {}
 ): Promise<VideoResult> {
 	const cfg = await server.config();
-	const instance = await server.readyInstance(cfg, opts.signal);
+	const instance = await server.readyInstance(cfg, opts.signal, opts.instanceId);
 	const body = buildVideoBody(req, instance.id);
 	const files = videoFiles(req);
 	const created = readVideoJob(

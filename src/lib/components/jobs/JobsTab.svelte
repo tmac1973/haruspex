@@ -211,7 +211,7 @@
 				<JobRunDetail
 					runId={selectedRunId}
 					onclose={closeRunDetail}
-					onresume={(jobId) => void startRun(jobId, 'chained')}
+					onresume={(jobId, trigger) => void startRun(jobId, trigger)}
 				/>
 			{/key}
 		{:else if selectedId === null}

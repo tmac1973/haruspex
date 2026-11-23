@@ -99,6 +99,8 @@ export const videoSequenceJobType: JobTypeDefinition = {
 			problems: (text) => parseSequenceSpec(text).problems
 		}
 	},
+	// Every clip is on disk as soon as it is made: running again carries on.
+	canResume: (run) => run.status === 'failed' || run.status === 'cancelled',
 	planSteps: planSequenceSteps,
 	runPipeline: runVideoSequencePipeline
 };

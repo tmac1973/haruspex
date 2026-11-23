@@ -254,6 +254,12 @@ export interface JobTypeDefinition {
 	persistSteps?: (steps: JobStepInput[]) => JobStepInput[];
 	/** What a chat may fill in through `propose_job`. Absent = it can't propose this type. */
 	propose?: JobProposal;
+	/**
+	 * Whether a run that ended this way can be picked up by running the job
+	 * again: the run view then offers **Resume**, which starts a manual run.
+	 * For types whose runs keep their progress on disk. Absent = never.
+	 */
+	canResume?: (run: { status: string }, job: JobWithSteps) => boolean;
 	/** The display/execution step list a fresh run starts with. */
 	planSteps: (job: JobWithSteps) => PlannedStep[];
 	/** Execute one run. Must finalize the run and call ctx.onSettled() when done. */

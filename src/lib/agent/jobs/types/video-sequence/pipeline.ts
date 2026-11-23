@@ -23,6 +23,7 @@ import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { stepsOf, type Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
 import { runFiles } from '#lib/agent/jobs/types/video-sequence/files.ts';
 import { keyframesStage } from '#lib/agent/jobs/types/video-sequence/keyframesStage.ts';
+import { generateStage } from '#lib/agent/jobs/types/video-sequence/generateStage.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -69,7 +70,6 @@ import {
 	INTERVIEW,
 	SPEC,
 	SPEECH,
-	GENERATE,
 	CHECK,
 	SOUND,
 	ASSEMBLE,
@@ -78,7 +78,7 @@ import {
 } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 
 /** The stages after Spec, which later phases build. */
-const LATER = [GENERATE, CHECK, SOUND, ASSEMBLE, RENDER, REPORT];
+const LATER = [CHECK, SOUND, ASSEMBLE, RENDER, REPORT];
 
 /** One try and two retries with the problems quoted, then the stage fails. */
 export const MAX_DERIVE_ATTEMPTS = 3;
@@ -218,7 +218,16 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 		const draws = usesKeyframes(sc);
 		const plan = planClips(spec, sc.validate.limits, draws);
 		const files = runFiles(ctx, cfg);
-		await keyframesStage(ctx, steps, cfg, files, { spec, plan, draws, attended });
+		const stills = await keyframesStage(ctx, steps, cfg, files, { spec, plan, draws, attended });
+		await generateStage(ctx, steps, cfg, files, {
+			spec,
+			plan,
+			limits: sc.validate.limits,
+			keyframes: draws,
+			stills,
+			attended,
+			writeSpec: (next) => writeSpec(ctx, specPath, next)
+		});
 		for (const idx of LATER) {
 			steps.abortIfCancelled();
 			steps.start(idx);

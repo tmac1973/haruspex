@@ -50,4 +50,11 @@ describe('the Video sequence job type', () => {
 			'sections: the spec needs at least one section'
 		);
 	});
+
+	it('offers Resume on a run that failed or was stopped', () => {
+		const resume = videoSequenceJobType.canResume!;
+		expect(resume({ status: 'failed' }, {} as never)).toBe(true);
+		expect(resume({ status: 'cancelled' }, {} as never)).toBe(true);
+		expect(resume({ status: 'succeeded' }, {} as never)).toBe(false);
+	});
 });

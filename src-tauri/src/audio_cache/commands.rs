@@ -587,6 +587,29 @@ pub fn read_bytes(db: &Database, dir: &Path, hash: &str) -> Result<Vec<u8>, Stri
     std::fs::read(&path).map_err(|e| format!("Could not read the audio: {e}"))
 }
 
+/// Copy a cached file into the working folder at `rel_path`, making its
+/// folder, replacing a file there: a job keeping the clips it made. The path
+/// is checked to stay inside the working folder.
+#[tauri::command]
+pub async fn audio_save_in_folder(
+    app: AppHandle,
+    db: State<'_, Database>,
+    hash: String,
+    workdir: String,
+    rel_path: String,
+) -> Result<(), String> {
+    let to = crate::fs_tools::resolve_in_workdir(Path::new(&workdir), &rel_path)?;
+    save_in_folder(&db, &cache_dir(&app)?, &hash, &to)
+}
+
+pub fn save_in_folder(db: &Database, dir: &Path, hash: &str, to: &Path) -> Result<(), String> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Could not make {}: {e}", parent.display()))?;
+    }
+    blob_cache::save_as(&cached_path(db, dir, hash)?, to, "file")
+}
+
 /// Copy a cached song to `path`, the file the user chose in a save dialog
 /// (the player's Save as). The dialog asked about replacing a file already.
 #[tauri::command]
@@ -849,6 +872,24 @@ mod tests {
             save_as(&db, &dir, "../x", &out.join("y.mp3")).unwrap_err(),
             "Audio not found"
         );
+    }
+
+    #[tokio::test]
+    async fn save_in_folder_makes_the_folder_and_replaces_a_file() {
+        let base = serve().await;
+        let (db, dir) = setup("audio-save-in-folder");
+        let client = reqwest::Client::new();
+        let got = download(&client, &format!("{base}/song"), "", &dir)
+            .await
+            .unwrap();
+        let stored = store_download(&db, &dir, got, None, None, None, None).unwrap();
+        let out = temp_dir("audio-save-in-folder-out");
+        let to = out.join("ep1/generated/snow-01.webm");
+        save_in_folder(&db, &dir, &stored.hash, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), vec![7u8; 1024]);
+        std::fs::write(&to, b"old").unwrap();
+        save_in_folder(&db, &dir, &stored.hash, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap().len(), 1024);
     }
 
     #[test]
