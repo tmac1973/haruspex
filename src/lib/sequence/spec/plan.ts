@@ -1,0 +1,191 @@
+/**
+ * A validated spec as the ordered list of what the run makes and places:
+ * each generated section cut into clips of the instance's longest, chained
+ * last frame to first, with re-anchors and transition clips between, and
+ * existing clips as they are. Pure, so every stage plans the same way.
+ */
+import type { Fit } from '#lib/ipc/gen/Fit.ts';
+import type { VideoLimits } from '#lib/toolchest/models.ts';
+import { fitClip } from '#lib/videogen/fit.ts';
+import type { GeneratedSection, SequenceSpec } from '#lib/sequence/spec/types.ts';
+
+/** Where a generated clip starts. */
+export type StartRef =
+	/** The section's keyframe still, made by the image backend. */
+	| { kind: 'keyframe'; section: string }
+	/** A picture the user gave, in the episode folder. */
+	| { kind: 'userImage'; path: string }
+	/** The true last frame of an earlier clip. */
+	| { kind: 'lastFrameOf'; id: string }
+	/** Nothing: the prompt alone. */
+	| { kind: 'text' };
+
+/** What a generated clip ends on. */
+export type EndRef =
+	/** A fresh still of the section, so a long run doesn't drift. */
+	| { kind: 'reanchor'; section: string; n: number }
+	/** The picture a section's first clip starts from. */
+	| { kind: 'startOf'; start: StartRef }
+	/** The first frame of a clip, generated or existing. */
+	| { kind: 'firstFrameOf'; id: string };
+
+export interface GenerateItem {
+	kind: 'generate';
+	/** `<section>-NN`, or `join-K` for a transition. */
+	id: string;
+	section: string;
+	/** For a transition: the join it fills, from 1. */
+	join?: number;
+	prompt: string;
+	negative_prompt?: string;
+	frames: number;
+	seed?: number;
+	start: StartRef;
+	end?: EndRef;
+	/** It repeats the frame it starts from, so the cut drops its first. */
+	trimFirstFrame: boolean;
+}
+
+export interface ExistingItem {
+	kind: 'existing';
+	/** The section's id. */
+	id: string;
+	section: string;
+	path: string;
+	in_secs?: number;
+	out_secs?: number;
+	fit?: Fit;
+}
+
+export type PlanItem = GenerateItem | ExistingItem;
+
+export interface ClipPlan {
+	items: PlanItem[];
+	width: number;
+	height: number;
+	fps: number;
+	/** The longest clip the instance makes, in frames. */
+	clipFrames: number;
+}
+
+/** The smallest Wan frame count (4n + 1) of at least `n`. */
+function atLeast(n: number): number {
+	return Math.max(1, Math.ceil((n - 1) / 4) * 4 + 1);
+}
+
+/** `style. prompt`, or the prompt alone. */
+function withStyle(style: string, prompt: string): string {
+	return style ? `${style}. ${prompt}` : prompt;
+}
+
+/** The frame counts of one section's clips, each new frame counted once. */
+export function splitFrames(totalFrames: number, cap: number): number[] {
+	const out: number[] = [];
+	let left = Math.max(1, totalFrames);
+	while (left > 0) {
+		// A continuation's first frame is its predecessor's last, so it adds one fewer.
+		const extra = out.length === 0 ? 0 : 1;
+		const f = Math.min(cap, atLeast(left + extra));
+		out.push(f);
+		left -= f - extra;
+	}
+	return out;
+}
+
+function sectionStart(s: GeneratedSection, keyframes: boolean): StartRef {
+	if (s.start_image) return { kind: 'userImage', path: s.start_image };
+	return keyframes ? { kind: 'keyframe', section: s.id } : { kind: 'text' };
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * The plan for `spec` on an instance with `limits`. `keyframes` says the run
+ * makes a keyframe for each section without a start picture (an image
+ * backend is set up and the instance starts from pictures).
+ */
+export function planClips(spec: SequenceSpec, limits: VideoLimits, keyframes: boolean): ClipPlan {
+	const longest = fitClip(limits, '', { seconds: 1e6, portrait: false });
+	const { width, height, fps } = longest;
+	const cap = longest.frames;
+	const items: PlanItem[] = [];
+	// Each section's first item, for transitions that end on it.
+	const firsts = new Map<string, PlanItem>();
+	const lastIds = new Map<string, string>();
+	const pending: { k: number; join: SequenceSpec['joins'][number] }[] = [];
+	spec.sections.forEach((s, k) => {
+		if (s.kind === 'existing') {
+			const item: ExistingItem = { kind: 'existing', id: s.id, section: s.id, path: s.path };
+			if (s.in_secs !== undefined) item.in_secs = s.in_secs;
+			if (s.out_secs !== undefined) item.out_secs = s.out_secs;
+			if (s.fit) item.fit = s.fit;
+			items.push(item);
+			firsts.set(s.id, item);
+			lastIds.set(s.id, item.id);
+		} else {
+			const frames = splitFrames(Math.round(s.seconds * fps), cap);
+			let prev: string | null = null;
+			frames.forEach((f, i) => {
+				const n = i + 1;
+				const item: GenerateItem = {
+					kind: 'generate',
+					id: `${s.id}-${pad(n)}`,
+					section: s.id,
+					prompt: withStyle(spec.style, s.prompt),
+					frames: f,
+					start: prev ? { kind: 'lastFrameOf', id: prev } : sectionStart(s, keyframes),
+					trimFirstFrame: prev !== null
+				};
+				if (s.negative_prompt) item.negative_prompt = s.negative_prompt;
+				if (s.seed !== undefined) item.seed = s.seed + i;
+				if (spec.reanchor_every > 0 && n % spec.reanchor_every === 0) {
+					item.end = { kind: 'reanchor', section: s.id, n };
+				}
+				items.push(item);
+				if (!prev) firsts.set(s.id, item);
+				prev = item.id;
+			});
+			lastIds.set(s.id, prev ?? s.id);
+		}
+		// A transition into this section goes before it once both ends are known.
+		const before = pending.find((p) => p.k === k);
+		if (before) {
+			const at = items.indexOf(firsts.get(s.id)!);
+			items.splice(at, 0, transition(spec, before.k, before.join, firsts, lastIds, cap, fps));
+		}
+		const join = spec.joins[k];
+		if (join?.kind === 'transition') pending.push({ k: k + 1, join });
+	});
+	return { items, width, height, fps, clipFrames: cap };
+}
+
+function transition(
+	spec: SequenceSpec,
+	k: number,
+	join: SequenceSpec['joins'][number],
+	firsts: Map<string, PlanItem>,
+	lastIds: Map<string, string>,
+	cap: number,
+	fps: number
+): GenerateItem {
+	const a = spec.sections[k - 1];
+	const b = spec.sections[k];
+	const first = firsts.get(b.id)!;
+	const end: EndRef =
+		first.kind === 'generate' && first.start.kind !== 'text'
+			? { kind: 'startOf', start: first.start }
+			: { kind: 'firstFrameOf', id: first.id };
+	const what = (s: typeof a) => (s.kind === 'generated' ? s.prompt : 'the next clip');
+	const frames = join.secs ? Math.min(cap, atLeast(Math.round(join.secs * fps))) : cap;
+	return {
+		kind: 'generate',
+		id: `join-${k}`,
+		section: a.id,
+		join: k,
+		prompt: withStyle(spec.style, join.prompt ?? `${what(a)}, turning into ${what(b)}`),
+		frames,
+		start: { kind: 'lastFrameOf', id: lastIds.get(a.id)! },
+		end,
+		trimFirstFrame: true
+	};
+}

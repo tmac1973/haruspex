@@ -25,6 +25,7 @@ import type {
 	VideoResult
 } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
+import { clipSeconds } from '#lib/videogen/fit.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 
@@ -63,10 +64,7 @@ export interface VideoJobEnv {
 	onHandle?: (handle: VideoJobHandle) => void;
 }
 
-/** A clip's length in seconds, for a sentence. */
-export function clipSeconds(frames: number, fps: number): string {
-	return fps > 0 ? (Math.round((frames / fps) * 10) / 10).toString() : '?';
-}
+export { clipSeconds };
 
 /**
  * The answer for a finished clip, in the notice its task sends: what was

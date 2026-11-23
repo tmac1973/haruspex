@@ -21,9 +21,12 @@ import { isSaveTarget, prepareSave, type SaveTarget } from '#lib/agent/tools/_sa
 import { resolveImage } from '#lib/agent/tools/_imageSource.ts';
 import { hashedInput } from '#lib/agent/tools/_imageJob.ts';
 import { SEED_PARAM } from '#lib/agent/tools/music-gen.ts';
-import { clipSeconds, startVideoTask } from '#lib/agent/tools/_videoJob.ts';
+import { startVideoTask } from '#lib/agent/tools/_videoJob.ts';
+import { fitClip } from '#lib/videogen/fit.ts';
+
+export { fitClip };
 import { readyVideoInstance } from '#lib/videogen/toolchest.ts';
-import type { ToolchestInstance, VideoLimits } from '#lib/toolchest/models.ts';
+import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 import type { VideoRequest, VideoStartImage } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { trimmed } from '#lib/utils/coerce.ts';
@@ -35,57 +38,6 @@ function titleOf(prompt: string): string {
 		.filter(Boolean)
 		.slice(0, 5);
 	return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Clip';
-}
-
-function sizeOf(spec: string): { width: number; height: number } {
-	const [w, h] = spec.split('x').map(Number);
-	return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0
-		? { width: w, height: h }
-		: { width: 832, height: 480 };
-}
-
-/** The frame counts Wan takes: 4n + 1. */
-function wanFrames(n: number): number {
-	return Math.max(1, Math.floor((n - 1) / 4) * 4 + 1);
-}
-
-/**
- * The size and frame count for a request, within the instance's limits, with
- * a note when the length had to come down. Pure, so the arithmetic tests
- * without a server.
- */
-export function fitClip(
-	limits: VideoLimits,
-	instance: string,
-	asked: { seconds?: number; portrait: boolean }
-): { width: number; height: number; frames: number; fps: number; note: string | null } {
-	const base = sizeOf(limits.defaultSize);
-	const landscape = base.width >= base.height;
-	const turn = asked.portrait === landscape;
-	const width = turn ? base.height : base.width;
-	const height = turn ? base.width : base.height;
-	const fps = limits.defaultFps;
-	const want = wanFrames(
-		asked.seconds !== undefined ? Math.round(asked.seconds * fps) + 1 : limits.defaultFrames
-	);
-	const byMemory = limits.maxPixelFrames
-		? Math.floor(limits.maxPixelFrames / (width * height))
-		: Infinity;
-	const cap = Math.min(limits.maxFrames ?? Infinity, byMemory);
-	if (want <= cap) return { width, height, frames: want, fps, note: null };
-	const frames = wanFrames(cap);
-	const why =
-		byMemory <= (limits.maxFrames ?? Infinity)
-			? `${instance} is measured for no more at ${width}×${height}; measuring it larger on ` +
-				"llama-toolchest's Server page allows longer clips."
-			: `${instance} makes at most ${limits.maxFrames} frames.`;
-	return {
-		width,
-		height,
-		frames,
-		fps,
-		note: `Shortened to ${clipSeconds(frames, fps)} s (${frames} frames): ${why}`
-	};
 }
 
 /** The seed asked for, a random one for none, or what is wrong with it. */
