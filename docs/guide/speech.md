@@ -24,7 +24,7 @@ Ask in Chat or the Code tab: "read this intro as a voiceover", "say these three 
 
 ## Use a llama.cpp speech server
 
-Settings → Audio → **Speech engine** → **llama.cpp server** sends the speech the assistant makes, and a video sequence's narration, to a llama-server v0.8.0 or newer that serves `/tts`, or to llama-toolchest. Give its address and key, press **Probe**, and pick the speech model. On llama-toolchest, Download Models → **Get speech models** has Qwen3-TTS 1.7B Base, which copies a saved voice. Reading answers aloud (`F3`, the speaker icon) stays on Kokoro.
+Settings → Audio → **Speech engine** → **llama.cpp server** sends the speech audio files the assistant makes, and video narration, to a llama-server v0.8.0 or newer that serves `/tts`, or to llama-toolchest. Give its address and key, press **Probe**, and pick the speech model. On llama-toolchest, Download Models → **Get speech models** has Qwen3-TTS 1.7B Base, which copies a saved voice. Reading answers aloud (`F3`, the speaker icon) stays on Kokoro.
 
 Each request makes a new take: ask again, or with another seed, for a different one. The same seed does not give the same take again, so keep one you like. The server can't change pace itself, so a slower or faster take is stretched afterwards with the pitch kept.
 

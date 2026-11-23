@@ -110,7 +110,7 @@
 		class="help"
 		title="A clean 5–10 s of one person speaking is enough; up to 30 s. Used by a llama.cpp speech engine."
 	>
-		Voices the assistant can speak in.
+		Voices for speech audio files and video narration on a llama.cpp server.
 	</p>
 	{#each voices as v (v.id)}
 		<div class="voice">
