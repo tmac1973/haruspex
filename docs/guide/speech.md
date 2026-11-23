@@ -33,7 +33,7 @@ Each request makes a new take: ask again, or with another seed, for a different 
 Only use your own voice, or a voice you have clear permission to use. Copying someone's voice without their consent is not allowed, can be illegal, and has led to lawsuits.
 
 - **From a file:** Settings → Audio → Saved voices → **Add from file…**, name it, tick the box, and press **Add**. **Add** stays off until the box is ticked.
-- **From your footage:** ask "save my voice from 0:41 to 0:55 of ep012/raw/cam.mp4". The assistant picks 10–20 s of you speaking with no music, from the transcript's word times, and asks you to confirm it is your voice first.
+- **From your footage:** ask "save my voice from ep012/raw/cam.mp4", or run `/save-my-voice`. The assistant picks 10–20 s of you speaking with no music, from the transcript's word times, and asks you to confirm it is your voice first.
 
 A clean 5–10 s of one person speaking is enough; clips under 5 s or over 30 s are refused. Haruspex transcribes what the clip says, and Settings → Audio shows the words: correcting them copies the voice more closely. Then ask "say 'this is a test' in my voice". Saved voices stay on this computer in the app's data folder; **Delete** removes one.
 
@@ -44,9 +44,10 @@ The `narrate` skill can load by itself the first time the assistant makes speech
 - writes the script for listening (short sentences, numbers as they are said, no lists), shows it with the voice it picked, and **stops** for your OK. Give the exact words ("read this: …") to skip that;
 - keeps one voice for each character, and makes game lines one file each, named for what the code calls them and saved where it loads sounds;
 - for a set length ("a 30-second voiceover"), measures what it made and records it again faster or slower to fit;
+- with a llama.cpp server, speaks in the saved voice you name ("in my voice"), and for another take records again with a new seed into a second file, keeping both for you to pick;
 - saves a voiceover next to the video, and with the video tools on puts it under the picture in the Shotcut or Kdenlive project at the time you say (see the `video-cut` page).
 
-See the `media-skills` page for how skills are offered.
+See the `media-skills` page for how skills are offered, and the `video-skills` page for `save-my-voice`.
 
 ## Where the files are kept
 

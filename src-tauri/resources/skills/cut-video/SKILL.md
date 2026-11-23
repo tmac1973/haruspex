@@ -54,6 +54,8 @@ editor will save over it.
   "let me say that again". List each one you find, with its clip and times
   and the words, then **stop and ask** which to cut. Cut only the ones the
   user picks, with `op: "remove_ranges"`. Keep the last, complete take.
+- **Filler words and stumbles:** only when the user asks. The
+  `clean-up-talk` skill cuts them on word times: load it with `load_skill`.
 
 Read the project again after each change. Clip numbers move when a clip is
 split or removed.

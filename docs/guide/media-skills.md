@@ -16,8 +16,8 @@ Each works in certain tabs and needs something set up:
 | `fix-picture` | Chat | an image backend (Settings → Image) |
 | `game-assets` | the Code tab, or the Shell with Full access | nothing for textures; an image backend for sprites and icons |
 | `write-song` | Chat and the Code tab | a music backend (Settings → Music) |
-| `cut-video` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing) |
 | `narrate` | Chat and the Code tab | nothing (see the `speech` page) |
+| `cut-video`, `clean-up-talk`, `fix-speech`, `make-sequence`, `save-my-voice` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing); see the `video-skills` page |
 | `fix-speech` | Chat and the Code tab, with a working folder | the video tools, and a saved voice on a llama.cpp speech server |
 
 Until then, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Then the model can load the skill when a request matches, and the skill also loads by itself the first time the model uses one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
@@ -54,22 +54,6 @@ For more than about eight it suggests an Asset generation job (see the `job-type
 - **Music for a game or a video:** an instrumental loop with no intro or outro, 30 to 60 seconds. In the Code tab it's saved where the code loads its music.
 - **Changing a song:** it changes the part you name: redo a stretch, restyle, extend, or add or pull out an instrument, also on a file you drop on the message box (see the `music` page). For "the same but faster" it remakes a song it made from the same seed; not one it has already changed.
 - **Afterwards:** it says what it made, with the length and seed. It can't hear the song, so it doesn't say how it sounds.
-
-## Finish a video: cut-video
-
-`cut-video` takes an episode from raw clips to a finished video, in order, and stops where you need to decide:
-
-1. It lists the clips, saying which are mixed formats or have no sound, and transcribes them.
-2. It makes the cut, then **stops** for you to look. Close the project in Shotcut or Kdenlive before it goes on.
-3. It cuts out silences, and lists the retakes it finds in the transcript. It **asks** which to cut, and cuts only those.
-4. It writes chapters for a longer video, renders in the background, and checks the render's loudness, length and sound.
-5. It writes captions next to the render, and offers moments for a thumbnail.
-
-It never uploads. See the `video-editing`, `video-speech` and `video-render` pages for each step.
-
-## Fix what was said: fix-speech
-
-`fix-speech` applies the edits you mark in the transcript viewer: it cuts the struck words, and speaks each retyped phrase in your saved voice, keeping the take that says the words. **Send to chat** in the viewer starts it. See the `speech-replacement` page.
 
 ## What they don't do
 

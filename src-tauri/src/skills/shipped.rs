@@ -351,6 +351,10 @@ mod tests {
             "write-song",
             "cut-video",
             "narrate",
+            "fix-speech",
+            "save-my-voice",
+            "clean-up-talk",
+            "make-sequence",
         ] {
             assert!(skills.contains_key(name), "{name} isn't shipped");
         }
