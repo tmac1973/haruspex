@@ -30,6 +30,8 @@ Turn on Settings → General → Background → Start at login. The next time yo
 
 The switch adds an entry to your system's own startup list (an autostart file on Linux, a login item on macOS, a startup entry on Windows), so you can also remove it from there. Turning the switch off removes the entry.
 
+With the AppImage, the entry starts the AppImage file you last opened Haruspex from. After you download a new version, open it once so the next login starts it rather than the old file.
+
 ## Things to know
 
 - **GNOME on Linux** shows no tray icons unless you install the AppIndicator extension. KDE Plasma, Cinnamon, XFCE and most other desktops show them.
