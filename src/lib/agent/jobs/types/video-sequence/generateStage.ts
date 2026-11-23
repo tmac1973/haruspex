@@ -23,6 +23,7 @@ import {
 } from '#lib/agent/jobs/types/video-sequence/files.ts';
 import type { VideoSequenceConfig } from '#lib/agent/jobs/types/video-sequence/config.ts';
 import type { Still } from '#lib/agent/jobs/types/video-sequence/keyframes.ts';
+import { clipChecker } from '#lib/agent/jobs/types/video-sequence/check.ts';
 import {
 	runGenerate,
 	type GenerateDeps,
@@ -151,7 +152,10 @@ export async function generateStage(
 	for (let notes = 0; ; notes++) {
 		const progress = mergeProgress(await readProgress(files), spec, plan);
 		const save = () => writeProgress(files, progress);
-		const deps = depsFor(ctx, cfg, files, save, run.attended && notes < MAX_NOTES);
+		const deps = {
+			...depsFor(ctx, cfg, files, save, run.attended && notes < MAX_NOTES),
+			check: clipChecker(ctx, cfg, files, plan.fps)
+		};
 		const outcome = await runGenerate(
 			{ plan, keys: itemKeys(spec, plan), clips: progress.clips, stills },
 			deps

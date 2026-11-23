@@ -150,3 +150,43 @@ registerTool({
 	displayLabel: () => 'Writing the sequence spec',
 	execute: async () => toolResult('Spec received.')
 });
+
+export const SUBMIT_CLIP_CHECK_TOOL = 'submit_clip_check';
+
+export interface ClipCheck {
+	ok: boolean;
+	problem?: string;
+}
+
+/** A check's verdict from its arguments, or null when there is none. */
+export function parseClipCheck(args: unknown): ClipCheck | null {
+	if (!args || typeof args !== 'object') return null;
+	const o = args as Record<string, unknown>;
+	if (typeof o.ok !== 'boolean') return null;
+	const problem = typeof o.problem === 'string' ? o.problem.trim() : '';
+	return o.ok ? { ok: true } : { ok: false, problem: problem || 'It does not match.' };
+}
+
+registerTool({
+	category: 'planning',
+	schema: {
+		type: 'function',
+		function: {
+			name: SUBMIT_CLIP_CHECK_TOOL,
+			description: 'Report whether the clip passes. Call this exactly once.',
+			parameters: {
+				type: 'object',
+				properties: {
+					ok: { type: 'boolean', description: 'true when both answers are yes.' },
+					problem: {
+						type: 'string',
+						description: 'When ok is false: what is wrong, in one sentence.'
+					}
+				},
+				required: ['ok']
+			}
+		}
+	},
+	displayLabel: () => 'Checking a clip',
+	execute: async () => toolResult('Check received.')
+});

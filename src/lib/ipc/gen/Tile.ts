@@ -4,4 +4,8 @@ export type Tile = {
 /**
  * 1-based, as drawn on the sheet.
  */
-n: number, path: string, sourceSecs: number, timelineSecs: number | null, };
+n: number, path: string, sourceSecs: number, timelineSecs: number | null, 
+/**
+ * For a picture rather than a frame: what it is.
+ */
+label: string | null, };

@@ -122,3 +122,49 @@ function joinText(j: SequenceSpec['joins'][number] | undefined): string {
 	if (j.kind === 'crossfade') return `${j.secs ?? 1} s crossfade`;
 	return 'transition';
 }
+
+/**
+ * The check turn's message. Two questions and nothing else: a model asked
+ * whether a clip is "good" grades craft, which is not what a seam needs.
+ */
+export function checkPrompt(o: {
+	prompt: string;
+	/** Tile numbers on the sheet. */
+	start: number | null;
+	keyframe: number | null;
+	frames: [number, number, number];
+}): string {
+	const [first, mid, last] = o.frames;
+	const lines = [
+		'The sheet shows numbered tiles. ' +
+			[
+				o.start !== null ? `Tile ${o.start} is the picture the clip had to start from.` : '',
+				o.keyframe !== null ? `Tile ${o.keyframe} is the section's keyframe.` : '',
+				`Tiles ${first}, ${mid} and ${last} are the clip's first, middle and last frames.`
+			]
+				.filter(Boolean)
+				.join(' '),
+		'',
+		`The clip was asked for: ${o.prompt}`,
+		'',
+		'Answer two questions, nothing else:'
+	];
+	if (o.start !== null) {
+		lines.push(
+			`1. Does tile ${first} continue tile ${o.start}: the same subject, place and light, with no jump?`
+		);
+	} else {
+		lines.push(`1. Does tile ${first} show what the clip was asked for?`);
+	}
+	lines.push(
+		o.keyframe !== null
+			? `2. Do tiles ${mid} and ${last} still show tile ${o.keyframe}'s subject, with its look?`
+			: `2. Do tiles ${mid} and ${last} still show the same subject as tile ${first}?`
+	);
+	lines.push(
+		'',
+		'Small changes of pose, angle and lighting are fine. A different animal, person or place, a sudden cut, or a subject that has melted or vanished is not.',
+		'Call submit_clip_check with ok true when both answers are yes; else ok false and the problem.'
+	);
+	return lines.join('\n');
+}
