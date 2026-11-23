@@ -27,12 +27,12 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Build and deploy are separate jobs. In one job, deploy-pages ran a few
+# milliseconds after the upload and sometimes found no artifact yet ("No
+# artifacts named github-pages"), so the site silently stayed on an old build.
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,5 +49,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
