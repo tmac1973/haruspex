@@ -55,3 +55,15 @@ pub fn host_command(program: &str) -> std::process::Command {
     crate::env_util::sanitize_appimage_env(&mut cmd);
     cmd
 }
+
+/// Whether `program` is on PATH and answers `-version`, for a real-tool test
+/// to skip on a machine without it (the Windows and macOS runners have no
+/// ffmpeg).
+pub fn host_has(program: &str) -> bool {
+    host_command(program)
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}

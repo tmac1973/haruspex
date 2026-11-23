@@ -455,7 +455,12 @@ fn playlists_and_presets_saved_as_mlt_are_not_projects() {
 
 /// The melt to check written projects with: `HARUSPEX_MELT`, else the one
 /// Settings → Video editing would find (the bundled one, when fetched).
+/// melt, when it and the ffmpeg and ffprobe these tests make clips with are
+/// all here.
 async fn melt() -> Option<String> {
+    if !crate::test_util::host_has("ffmpeg") || !crate::test_util::host_has("ffprobe") {
+        return None;
+    }
     if let Ok(m) = std::env::var("HARUSPEX_MELT") {
         return Some(m);
     }
@@ -468,7 +473,7 @@ async fn melt() -> Option<String> {
 #[tokio::test]
 async fn melt_loads_and_renders_a_written_project() {
     let Some(melt) = melt().await else {
-        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        eprintln!("skipped: no melt (set HARUSPEX_MELT), ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("shotcut_melt");
@@ -510,7 +515,7 @@ async fn melt_loads_and_renders_a_written_project() {
 #[tokio::test]
 async fn melt_fills_a_portrait_clip_without_bars() {
     let Some(melt) = melt().await else {
-        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        eprintln!("skipped: no melt (set HARUSPEX_MELT), ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("shotcut_fill");
@@ -628,7 +633,7 @@ fn mean_db(file: &Path, at: f64, secs: f64) -> f64 {
 #[tokio::test]
 async fn melt_mutes_a_gain_range_and_keeps_the_rest() {
     let Some(melt) = melt().await else {
-        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        eprintln!("skipped: no melt (set HARUSPEX_MELT), ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("shotcut_range");
@@ -727,7 +732,7 @@ fn a_clip_at_twice_the_speed_keeps_its_source_frames_and_plays_half_as_long() {
 #[tokio::test]
 async fn melt_plays_a_clip_at_twice_the_speed_in_half_the_time() {
     let Some(melt) = melt().await else {
-        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        eprintln!("skipped: no melt (set HARUSPEX_MELT), ffmpeg or ffprobe");
         return;
     };
     let dir = crate::test_util::temp_dir("shotcut_speed");
