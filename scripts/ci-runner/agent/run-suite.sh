@@ -35,12 +35,12 @@ fi
 # tauri-build validates every externalBin path at compile time. Placeholders,
 # as CI uses, unless real sidecars were fetched.
 target=$(rustc --print host-tuple)
-mkdir -p src-tauri/binaries/{node-modules,libs,sd-libs,espeak-ng-data/lang/placeholder}
-for name in haruspex-{llama-server,whisper-server,koko,ruff,node,uv,sd-server,ffmpeg,ffprobe}; do
+mkdir -p src-tauri/binaries/{node-modules,libs,sd-libs,media,espeak-ng-data/lang/placeholder}
+for name in haruspex-{llama-server,whisper-server,koko,ruff,node,uv,sd-server,ffmpeg,ffprobe,melt}; do
     bin="src-tauri/binaries/${name}-${target}"
     [[ -e "$bin" ]] || { echo '#!/bin/sh' >"$bin" && chmod +x "$bin"; }
 done
-for f in node-modules libs sd-libs espeak-ng-data espeak-ng-data/lang espeak-ng-data/lang/placeholder; do
+for f in node-modules libs sd-libs media espeak-ng-data espeak-ng-data/lang espeak-ng-data/lang/placeholder; do
     touch "src-tauri/binaries/$f/.placeholder"
 done
 

@@ -49,7 +49,12 @@ fn load_or_create_id(path: &Path) -> String {
     }
     let id = new_id();
     let tmp = path.with_extension("tmp");
-    let written = std::fs::write(&tmp, format!("{id}\n")).and_then(|_| std::fs::rename(&tmp, path));
+    // On a first launch the app data folder may not exist yet (Windows).
+    let written = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|_| std::fs::write(&tmp, format!("{id}\n")))
+        .and_then(|_| std::fs::rename(&tmp, path));
     if let Err(e) = written {
         log::warn!("[owner] could not keep the instance id: {e}");
     }
@@ -90,9 +95,19 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_folder_is_made_and_the_id_kept() {
+        let dir = crate::test_util::temp_dir("identity_missing");
+        let path = dir.join("missing").join("instance-id");
+        let first = InstanceIdentity::load(Some(&path));
+        assert!(path.is_file());
+        assert_eq!(InstanceIdentity::load(Some(&path)).id, first.id);
+    }
+
+    #[test]
     fn an_unwritable_folder_still_gives_an_id() {
         let dir = crate::test_util::temp_dir("identity_unwritable");
-        let path = dir.join("missing").join("instance-id");
+        std::fs::write(dir.join("blocked"), "a file, not a folder").unwrap();
+        let path = dir.join("blocked").join("instance-id");
         let id = InstanceIdentity::load(Some(&path)).id;
         assert!(uuid::Uuid::parse_str(&id).is_ok());
         assert!(!path.exists());

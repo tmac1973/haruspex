@@ -43,15 +43,15 @@ if (-not (Test-Path node_modules) -or -not (Test-Path $stamp) -or (Get-Content $
 # tauri-build validates every externalBin path at compile time. Placeholders,
 # as CI uses, unless real sidecars were fetched.
 $target = (rustc --print host-tuple)
-foreach ($d in 'node-modules', 'libs', 'sd-libs', 'espeak-ng-data\lang\placeholder') {
+foreach ($d in 'node-modules', 'libs', 'sd-libs', 'media', 'espeak-ng-data\lang\placeholder') {
     New-Item -ItemType Directory -Force -Path "src-tauri\binaries\$d" | Out-Null
 }
-foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff', 'node', 'uv', 'sd-server', 'ffmpeg', 'ffprobe') {
+foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff', 'node', 'uv', 'sd-server', 'ffmpeg', 'ffprobe', 'melt') {
     $name = "haruspex-$name"
     $bin = "src-tauri\binaries\$name-$target.exe"
     if (-not (Test-Path $bin)) { Set-Content -Path $bin -Value '@echo off' }
 }
-foreach ($d in 'node-modules', 'libs', 'sd-libs', 'espeak-ng-data', 'espeak-ng-data\lang', 'espeak-ng-data\lang\placeholder') {
+foreach ($d in 'node-modules', 'libs', 'sd-libs', 'media', 'espeak-ng-data', 'espeak-ng-data\lang', 'espeak-ng-data\lang\placeholder') {
     Set-Content -Path "src-tauri\binaries\$d\.placeholder" -Value ''
 }
 
