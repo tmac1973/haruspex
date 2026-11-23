@@ -16,6 +16,11 @@ export interface VideoSequenceConfig {
 	run_mode: SequenceRunMode;
 	/** A video instance on the server in Settings → Video generation; '' is the one chosen there. */
 	video_instance_id: string;
+	/**
+	 * A video instance that makes someone speak (Wan2.2 S2V), on the same
+	 * server, for speaking sections; '' for none.
+	 */
+	speaking_instance_id: string;
 	/** Open each generated section on a keyframe from the image backend. */
 	image_keyframes: boolean;
 	/** Check each seam with a vision model, when the job's model can see. */
@@ -34,6 +39,7 @@ export function configDefaults(): VideoSequenceConfig {
 		brief: '',
 		run_mode: 'attended',
 		video_instance_id: '',
+		speaking_instance_id: '',
 		image_keyframes: true,
 		vision_checks: true,
 		reanchor_every: DEFAULT_REANCHOR,
@@ -64,6 +70,7 @@ export function parseConfig(typeConfig: string | null): VideoSequenceConfig {
 		brief: text(o.brief),
 		run_mode: o.run_mode === 'unattended' ? 'unattended' : 'attended',
 		video_instance_id: text(o.video_instance_id),
+		speaking_instance_id: text(o.speaking_instance_id),
 		image_keyframes: typeof o.image_keyframes === 'boolean' ? o.image_keyframes : d.image_keyframes,
 		vision_checks: typeof o.vision_checks === 'boolean' ? o.vision_checks : d.vision_checks,
 		reanchor_every:
@@ -80,6 +87,7 @@ export function configToJson(c: VideoSequenceConfig): string {
 		brief: c.brief.trim(),
 		run_mode: c.run_mode,
 		video_instance_id: c.video_instance_id.trim() || undefined,
+		speaking_instance_id: c.speaking_instance_id.trim() || undefined,
 		image_keyframes: c.image_keyframes,
 		vision_checks: c.vision_checks,
 		reanchor_every: c.reanchor_every,

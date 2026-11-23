@@ -34,12 +34,35 @@ export interface FileProgress {
 	file?: string;
 }
 
+/** A speaking section's line as spoken, kept so a re-run speaks it only when it changed. */
+export interface LineProgress {
+	/** Relative to the episode folder. */
+	file: string;
+	secs: number;
+	/** The WAV's hash. */
+	hash: string;
+	text: string;
+	voice: string;
+	/** Its pauses, in its own seconds. */
+	silences: { start: number; end: number }[];
+}
+
+/** A speaking window's WAV, and the key of the parts it was joined from. */
+export interface WindowProgress {
+	file: string;
+	parts_key: string;
+}
+
 export interface SequenceProgress {
 	specHash: string;
 	clips: Record<string, ClipProgress>;
 	keyframes: Record<string, FileProgress>;
 	music: Record<string, FileProgress>;
 	narration: Record<string, FileProgress>;
+	/** Speaking sections' lines, by line id; absent from files before them. */
+	speech?: Record<string, LineProgress>;
+	/** Speaking windows' WAVs, by window id. */
+	windows?: Record<string, WindowProgress>;
 	project?: string;
 	render?: string;
 }
@@ -75,14 +98,28 @@ export function emptyProgress(specHash: string): SequenceProgress {
 	return { specHash, clips: {}, keyframes: {}, music: {}, narration: {} };
 }
 
-/** Each section's keyframe key. */
+/**
+ * Each section's keyframe key, and each speaking section's portrait key
+ * (its own picture's path, or the portrait drawn for it).
+ */
 function keyframeKeys(spec: SequenceSpec): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const s of spec.sections) {
+		if (s.kind === 'speaking') {
+			out[s.id] = s.portrait
+				? hashOf({ portrait: s.portrait })
+				: hashOf({ style: spec.style, portrait: s.portrait_prompt ?? s.prompt });
+			continue;
+		}
 		if (s.kind !== 'generated' || s.start_image) continue;
 		out[s.id] = hashOf({ style: spec.style, prompt: s.keyframe_prompt ?? s.prompt });
 	}
 	return out;
+}
+
+/** The key of a window's parts: which lines, which takes of them, which stretches. */
+export function partsKey(parts: unknown): string {
+	return hashOf(parts);
 }
 
 /**
@@ -94,7 +131,9 @@ function musicKey(spec: SequenceSpec, bed: SequenceSpec['sound']['music'][number
 	const lengths = bed.sections.map((id) => {
 		const s = spec.sections.find((x) => x.id === id);
 		if (!s) return null;
-		return s.kind === 'generated' ? s.seconds : [s.path, s.in_secs, s.out_secs];
+		if (s.kind === 'generated') return s.seconds;
+		if (s.kind === 'speaking') return s.lines.map((l) => l.text);
+		return [s.path, s.in_secs, s.out_secs];
 	});
 	return hashOf({ bed, lengths });
 }
@@ -137,6 +176,7 @@ export function itemKeys(spec: SequenceSpec, plan: ClipPlan): Record<string, str
 		if (!r) return null;
 		switch (r.kind) {
 			case 'keyframe':
+			case 'portrait':
 				return kf[r.section] ?? null;
 			case 'reanchor':
 				return kf[r.section] ?? null;
@@ -196,6 +236,9 @@ export function mergeProgress(
 	if (old && old.specHash === specHash) return old;
 	const fresh = emptyProgress(specHash);
 	if (!old) return fresh;
+	// Spoken lines and joined windows are checked against what they were made from when used.
+	if (old.speech) fresh.speech = old.speech;
+	if (old.windows) fresh.windows = old.windows;
 	fresh.clips = keep(old.clips, itemKeys(spec, plan));
 	fresh.keyframes = keep(old.keyframes, stillKeys(spec, plan));
 	const musicKeys = Object.fromEntries(spec.sound.music.map((m) => [m.id, musicKey(spec, m)]));

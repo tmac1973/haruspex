@@ -14,44 +14,11 @@ import type { CutItemSpec } from '#lib/ipc/gen/CutItemSpec.ts';
 import type { CutSpec } from '#lib/ipc/gen/CutSpec.ts';
 import type { Fit } from '#lib/ipc/gen/Fit.ts';
 import type { Format } from '#lib/ipc/gen/Format.ts';
-import type { ClipPlan, PlanItem } from '#lib/sequence/spec/plan.ts';
+import type { ClipPlan, GenerateItem, PlanItem } from '#lib/sequence/spec/plan.ts';
+import type { SoundMade } from '#lib/agent/jobs/types/video-sequence/sound.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 
-/** The formats a project is made in, as `mlt/profile.rs` has them. */
-const PRESETS: { id: string; width: number; height: number; fps: number }[] = [
-	{ id: '720p24', width: 1280, height: 720, fps: 24 },
-	{ id: '1080p30', width: 1920, height: 1080, fps: 30 },
-	{ id: '1080p60', width: 1920, height: 1080, fps: 60 },
-	{ id: '1440p60', width: 2560, height: 1440, fps: 60 },
-	{ id: '2160p30', width: 3840, height: 2160, fps: 30 }
-];
-
-/**
- * The project format: the preset nearest the video model's own size at its
- * frame rate (720p24 for LTX-2.3's 1280×704), else the spec's, else the one
- * in Settings → Video editing when it has the model's frame rate, else the
- * first that does (720p24 for Wan's 832×480 at 24 fps), else Settings'. A
- * 24 fps video in a 60 fps project only repeats frames.
- */
-export function projectFormat(
-	plan: Pick<ClipPlan, 'width' | 'height' | 'fps'>,
-	spec: Pick<SequenceSpec, 'preset'>,
-	settingsPreset: string
-): { preset: string; width: number; height: number } {
-	const near = PRESETS.find(
-		(p) =>
-			p.fps === plan.fps &&
-			Math.abs(p.width - plan.width) <= 64 &&
-			Math.abs(p.height - plan.height) <= 32
-	);
-	const sameRate = (id: string) => PRESETS.find((p) => p.id === id)?.fps === plan.fps;
-	const byRate = sameRate(settingsPreset)
-		? settingsPreset
-		: PRESETS.find((p) => p.fps === plan.fps)?.id;
-	const id = near?.id ?? spec.preset ?? byRate ?? settingsPreset;
-	const p = PRESETS.find((x) => x.id === id) ?? PRESETS[2];
-	return { preset: p.id, width: p.width, height: p.height };
-}
+export { projectFormat } from '#lib/sequence/spec/format.ts';
 
 /** What Assemble knows of a clip on disk. */
 export interface ClipOnDisk {
@@ -78,10 +45,42 @@ export interface Placed {
 }
 
 /** One plan item's length in the cut. */
+/** A speaking window's speech, in seconds: its clip is cut to it. */
+export function speechSecs(item: GenerateItem): number {
+	return (item.audio?.parts ?? []).reduce((n, p) => n + p.to_secs - p.from_secs, 0);
+}
+
+/** Between a speaking section's windows, when it asks for a crossfade. */
+export const WINDOW_CROSSFADE = 0.3;
+
 function lengthOf(item: PlanItem, fps: number, existing: Record<string, ExistingClip>): number {
+	if (item.kind === 'generate' && item.audio) return speechSecs(item);
 	if (item.kind === 'generate') return (item.frames - (item.trimFirstFrame ? 1 : 0)) / fps;
 	const end = item.out_secs ?? existing[item.path]?.secs ?? 0;
 	return Math.max(0, end - (item.in_secs ?? 0));
+}
+
+/**
+ * How long `item` crossfades from what comes before it: a crossfade join
+ * into a new section, or a speaking section's windows asking for one.
+ */
+function crossfadeInto(
+	item: PlanItem,
+	spec: SequenceSpec,
+	lastSection: string | null,
+	secs: number
+): number {
+	if (lastSection === null) return 0;
+	if (item.section !== lastSection) {
+		const k = spec.sections.findIndex((s) => s.id === item.section);
+		const join = spec.joins[k - 1];
+		return join?.kind === 'crossfade' ? Math.min(join.secs ?? 1, secs / 2) : 0;
+	}
+	if (item.kind !== 'generate' || !item.audio) return 0;
+	const own = spec.sections.find((s) => s.id === item.section);
+	return own?.kind === 'speaking' && own.window_join === 'crossfade'
+		? Math.min(WINDOW_CROSSFADE, secs / 2)
+		: 0;
 }
 
 /** Every item's place in the cut, and each section's start and end. */
@@ -96,14 +95,8 @@ export function timeline(
 	let lastSection: string | null = null;
 	for (const item of plan.items) {
 		const secs = lengthOf(item, plan.fps, existing);
-		// A crossfade join: the first item of the section after it overlaps.
-		let crossfade = 0;
 		const isJoin = item.kind === 'generate' && item.join !== undefined;
-		if (!isJoin && lastSection !== null && item.section !== lastSection) {
-			const k = spec.sections.findIndex((s) => s.id === item.section);
-			const join = spec.joins[k - 1];
-			if (join?.kind === 'crossfade') crossfade = Math.min(join.secs ?? 1, secs / 2);
-		}
+		const crossfade = isJoin ? 0 : crossfadeInto(item, spec, lastSection, secs);
 		const start = Math.max(0, at - crossfade);
 		items.push({ id: item.id, section: item.section, start, secs, crossfade });
 		at = start + secs;
@@ -162,12 +155,84 @@ export interface CutInput {
 	sound: SoundPlaced[];
 }
 
+/**
+ * A speaking window on the main track: cut to its speech, with its own
+ * sound muted, since its speech goes on an audio track (`speechPlaced`).
+ */
+function windowItem(
+	item: GenerateItem,
+	file: string,
+	crossfade: number,
+	plan: ClipPlan,
+	format: { width: number; height: number }
+): CutItemSpec {
+	const fps = item.fps ?? plan.fps;
+	const size = plan.speakingSize ?? plan;
+	return {
+		...blankItem(),
+		path: file,
+		outFrame: Math.max(0, Math.round(speechSecs(item) * fps) - 1),
+		crossfadeSecs: crossfade || null,
+		fit: fitFor(size.width, size.height, format),
+		gainRanges: [{ fromSecs: 0, toSecs: item.frames / fps, gainDb: -70 }]
+	};
+}
+
+/** A generated clip on the main track, its own sound muted unless the spec keeps it. */
+function generatedItem(
+	item: GenerateItem,
+	clip: ClipOnDisk,
+	crossfade: number,
+	input: CutInput
+): CutItemSpec {
+	const mute = !input.spec.sound.clip_sound && clip.hasAudio;
+	const secs = item.frames / input.plan.fps;
+	return {
+		...blankItem(),
+		path: clip.file,
+		inFrame: item.trimFirstFrame ? 1 : null,
+		crossfadeSecs: crossfade || null,
+		fit: fitFor(input.plan.width, input.plan.height, input.format),
+		gainRanges: mute ? [{ fromSecs: 0, toSecs: secs, gainDb: -70 }] : null
+	};
+}
+
+/**
+ * Where each sound goes, and how loud: music under speech (narration, or a
+ * speaking section) or under clip sound sits at -30 LUFS.
+ */
+export function placeSound(spec: SequenceSpec, sound: SoundMade): SoundPlaced[] {
+	const speaks = spec.sections.some((s) => s.kind === 'speaking');
+	const under = spec.sound.narration.length > 0 || spec.sound.clip_sound || speaks;
+	return [
+		...sound.beds.map((b) => ({
+			file: b.file,
+			atSecs: b.start,
+			lufs: spec.sound.music.find((m) => m.id === b.id)?.lufs ?? (under ? -30 : -14)
+		})),
+		...sound.lines.map((l) => ({ file: l.file, atSecs: l.at, lufs: -14 }))
+	];
+}
+
+/** Each speaking window's speech, at the window's time in the cut, at -14 LUFS as speech. */
+export function speechPlaced(
+	spec: SequenceSpec,
+	plan: ClipPlan,
+	existing: Record<string, ExistingClip>
+): SoundPlaced[] {
+	const placed = timeline(spec, plan, existing).items;
+	return plan.items.flatMap((item, k) =>
+		item.kind === 'generate' && item.audio
+			? [{ file: item.audio.out, atSecs: placed[k].start, lufs: -14 }]
+			: []
+	);
+}
+
 /** The cut for `video_project_cut`, and notes for the report. */
 export function buildCut(input: CutInput): { cut: CutSpec; notes: string[] } {
 	const { spec, plan, clips, existing, path, format } = input;
 	const placed = timeline(spec, plan, existing).items;
 	const notes: string[] = [];
-	const generatedFit = fitFor(plan.width, plan.height, format);
 	const items = plan.items.map((item, k): CutItemSpec => {
 		const crossfade = placed[k].crossfade;
 		if (item.kind === 'existing') {
@@ -183,16 +248,8 @@ export function buildCut(input: CutInput): { cut: CutSpec; notes: string[] } {
 		}
 		const clip = clips[item.id];
 		if (!clip) throw new Error(`Clip ${item.id} was not made; run the job again to make it.`);
-		const mute = !spec.sound.clip_sound && clip.hasAudio;
-		const secs = item.frames / plan.fps;
-		return {
-			...blankItem(),
-			path: path(clip.file),
-			inFrame: item.trimFirstFrame ? 1 : null,
-			crossfadeSecs: crossfade || null,
-			fit: generatedFit,
-			gainRanges: mute ? [{ fromSecs: 0, toSecs: secs, gainDb: -70 }] : null
-		};
+		if (item.audio) return windowItem(item, path(clip.file), crossfade, plan, format);
+		return generatedItem(item, { ...clip, file: path(clip.file) }, crossfade, input);
 	});
 	const generated = plan.items.filter((i) => i.kind === 'generate');
 	if (spec.sound.clip_sound && !generated.some((i) => clips[i.id]?.hasAudio)) {

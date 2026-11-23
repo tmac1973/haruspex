@@ -46,18 +46,20 @@ export const SUBMIT_SEQUENCE_SPEC_SCHEMA = {
 				},
 				sections: {
 					type: 'array',
-					description: 'The video in order: generated stretches and existing clips.',
+					description:
+						'The video in order: generated stretches, existing clips, and speaking sections (a person in a portrait saying lines, when there is a speaking model).',
 					items: {
 						type: 'object',
 						properties: {
-							kind: { type: 'string', enum: ['generated', 'existing'] },
+							kind: { type: 'string', enum: ['generated', 'existing', 'speaking'] },
 							id: {
 								type: 'string',
 								description: 'A short lowercase slug, unique: "snow", "forest-2".'
 							},
 							prompt: {
 								type: 'string',
-								description: 'generated: what happens, the subject and the camera.'
+								description:
+									'generated: what happens, the subject and the camera. speaking: the setting and how the person moves.'
 							},
 							seconds: { type: 'number', description: 'generated: how long it lasts.' },
 							start_image: {
@@ -75,7 +77,40 @@ export const SUBMIT_SEQUENCE_SPEC_SCHEMA = {
 							},
 							in_secs: { type: 'number', description: 'existing: where to start in it.' },
 							out_secs: { type: 'number', description: 'existing: where to stop.' },
-							fit: FIT
+							fit: FIT,
+							portrait: {
+								type: 'string',
+								description:
+									'speaking: a picture of the person in the episode folder; one is drawn when omitted.'
+							},
+							portrait_prompt: {
+								type: 'string',
+								description: 'speaking: who the drawn portrait shows, when not the prompt.'
+							},
+							lines: {
+								type: 'array',
+								description: 'speaking: what the person says, in order.',
+								items: {
+									type: 'object',
+									properties: {
+										id: {
+											type: 'string',
+											description: 'A short lowercase slug, unique in the spec.'
+										},
+										text: { type: 'string', description: 'The words, written to be heard.' },
+										voice: {
+											type: 'string',
+											description: 'A saved voice; the default when omitted.'
+										}
+									},
+									required: ['id', 'text']
+								}
+							},
+							window_join: {
+								type: 'string',
+								enum: ['cut', 'crossfade'],
+								description: 'speaking: between its clips. Default cut.'
+							}
 						},
 						required: ['kind', 'id']
 					}

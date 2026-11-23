@@ -16,7 +16,9 @@ import {
 	type Narration,
 	type Section,
 	type SequenceSpec,
-	type Sound
+	type Sound,
+	type SpeakingSection,
+	type SpokenLine
 } from '#lib/sequence/spec/types.ts';
 
 export interface Parsed {
@@ -134,8 +136,9 @@ function sectionOf(v: unknown, at: string, problems: string[]): Section | null {
 		if (fit) s.fit = fit;
 		return s;
 	}
+	if (v.kind === 'speaking') return speakingOf(v, at, problems);
 	if (v.kind !== 'generated') {
-		problems.push(`${at}.kind: must be "generated" or "existing"`);
+		problems.push(`${at}.kind: must be "generated", "existing" or "speaking"`);
 		return null;
 	}
 	const f = new Fields(v, at, problems, [
@@ -160,6 +163,48 @@ function sectionOf(v: unknown, at: string, problems: string[]): Section | null {
 	}
 	const seed = f.num('seed');
 	if (seed !== undefined) s.seed = seed;
+	return s;
+}
+
+function lineOf(v: unknown, at: string, problems: string[]): SpokenLine | null {
+	if (!isObj(v)) {
+		problems.push(`${at}: must be an object`);
+		return null;
+	}
+	const f = new Fields(v, at, problems, ['id', 'text', 'voice']);
+	const line: SpokenLine = { id: f.str('id', true), text: f.str('text', true) };
+	const voice = f.str('voice');
+	if (voice) line.voice = voice;
+	return line;
+}
+
+function speakingOf(v: Json, at: string, problems: string[]): SpeakingSection {
+	const f = new Fields(v, at, problems, [
+		'kind',
+		'id',
+		'portrait',
+		'portrait_prompt',
+		'prompt',
+		'lines',
+		'window_join'
+	]);
+	const s: SpeakingSection = {
+		kind: 'speaking',
+		id: f.str('id', true),
+		prompt: f.str('prompt', true),
+		lines: (f.list('lines') ?? [])
+			.map((l, i) => lineOf(l, f.where(`lines[${i}]`), problems))
+			.filter((l): l is SpokenLine => l !== null)
+	};
+	if (!s.lines.length) f.wrong('lines', 'needs at least one line');
+	for (const k of ['portrait', 'portrait_prompt'] as const) {
+		const t = f.str(k);
+		if (t) s[k] = t;
+	}
+	const join = v.window_join;
+	if (join === 'cut' || join === 'crossfade') s.window_join = join;
+	else if (join !== undefined && join !== null)
+		f.wrong('window_join', 'must be "cut" or "crossfade"');
 	return s;
 }
 

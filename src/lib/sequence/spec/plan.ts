@@ -7,7 +7,14 @@
 import type { Fit } from '#lib/ipc/gen/Fit.ts';
 import type { VideoLimits } from '#lib/toolchest/models.ts';
 import { fitClip } from '#lib/videogen/fit.ts';
-import type { GeneratedSection, SequenceSpec } from '#lib/sequence/spec/types.ts';
+import type { GeneratedSection, SequenceSpec, SpeakingSection } from '#lib/sequence/spec/types.ts';
+import {
+	speakingFormat,
+	windowFile,
+	windowsOf,
+	type Speaking,
+	type WindowAudio
+} from '#lib/sequence/spec/speaking.ts';
 
 /** Where a generated clip starts. */
 export type StartRef =
@@ -18,7 +25,9 @@ export type StartRef =
 	/** The true last frame of an earlier clip. */
 	| { kind: 'lastFrameOf'; id: string }
 	/** Nothing: the prompt alone. */
-	| { kind: 'text' };
+	| { kind: 'text' }
+	/** A speaking section's portrait: its own, or the keyframe drawn of it. */
+	| { kind: 'portrait'; section: string };
 
 /** What a generated clip ends on. */
 export type EndRef =
@@ -44,6 +53,12 @@ export interface GenerateItem {
 	end?: EndRef;
 	/** It repeats the frame it starts from, so the cut drops its first. */
 	trimFirstFrame: boolean;
+	/** A speaking window's own frame rate, when it isn't the plan's. */
+	fps?: number;
+	/** A speaking window's sound: its slices of the spoken lines. */
+	audio?: WindowAudio;
+	/** A speaking window planned from estimated line lengths, before the lines are spoken. */
+	estimated?: boolean;
 }
 
 export interface ExistingItem {
@@ -66,6 +81,8 @@ export interface ClipPlan {
 	fps: number;
 	/** The longest clip the instance makes, in frames. */
 	clipFrames: number;
+	/** The speaking instance's clip size, when the plan has speaking windows. */
+	speakingSize?: { width: number; height: number };
 }
 
 /** The smallest Wan frame count (4n + 1) of at least `n`. */
@@ -99,12 +116,38 @@ function sectionStart(s: GeneratedSection, keyframes: boolean): StartRef {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+/** A speaking section's windows, each one S2V clip from its portrait. */
+function windowItems(spec: SequenceSpec, s: SpeakingSection, speaking: Speaking): GenerateItem[] {
+	const f = speakingFormat(speaking.limits);
+	return windowsOf(s, speaking, f.secs).map((w, i) => {
+		const item: GenerateItem = {
+			kind: 'generate',
+			id: `${s.id}-${pad(i + 1)}`,
+			section: s.id,
+			prompt: withStyle(spec.style, s.prompt),
+			frames: Math.min(f.frames, atLeast(Math.ceil(w.secs * f.fps))),
+			fps: f.fps,
+			start: { kind: 'portrait', section: s.id },
+			trimFirstFrame: false,
+			audio: { parts: w.parts, out: windowFile(s.id, i + 1) }
+		};
+		if (!speaking.speech) item.estimated = true;
+		return item;
+	});
+}
+
 /**
  * The plan for `spec` on an instance with `limits`. `keyframes` says the run
  * makes a keyframe for each section without a start picture (an image
- * backend is set up and the instance starts from pictures).
+ * backend is set up and the instance starts from pictures). `speaking` is
+ * the speaking instance and the lines spoken so far, for speaking sections.
  */
-export function planClips(spec: SequenceSpec, limits: VideoLimits, keyframes: boolean): ClipPlan {
+export function planClips(
+	spec: SequenceSpec,
+	limits: VideoLimits,
+	keyframes: boolean,
+	speaking?: Speaking
+): ClipPlan {
 	const longest = fitClip(limits, '', { seconds: 1e6, portrait: false });
 	const { width, height, fps } = longest;
 	const cap = longest.frames;
@@ -122,6 +165,13 @@ export function planClips(spec: SequenceSpec, limits: VideoLimits, keyframes: bo
 			items.push(item);
 			firsts.set(s.id, item);
 			lastIds.set(s.id, item.id);
+		} else if (s.kind === 'speaking') {
+			const windows = speaking ? windowItems(spec, s, speaking) : [];
+			items.push(...windows);
+			if (windows.length) {
+				firsts.set(s.id, windows[0]);
+				lastIds.set(s.id, windows[windows.length - 1].id);
+			}
 		} else {
 			const frames = splitFrames(Math.round(s.seconds * fps), cap);
 			let prev: string | null = null;
@@ -149,14 +199,20 @@ export function planClips(spec: SequenceSpec, limits: VideoLimits, keyframes: bo
 		}
 		// A transition into this section goes before it once both ends are known.
 		const before = pending.find((p) => p.k === k);
-		if (before) {
+		// A speaking section with no speaking instance plans nothing; validation says why.
+		if (before && firsts.has(s.id) && lastIds.has(spec.sections[k - 1].id)) {
 			const at = items.indexOf(firsts.get(s.id)!);
 			items.splice(at, 0, transition(spec, before.k, before.join, firsts, lastIds, cap, fps));
 		}
 		const join = spec.joins[k];
 		if (join?.kind === 'transition') pending.push({ k: k + 1, join });
 	});
-	return { items, width, height, fps, clipFrames: cap };
+	const plan: ClipPlan = { items, width, height, fps, clipFrames: cap };
+	if (speaking && items.some((i) => i.kind === 'generate' && i.audio)) {
+		const f = speakingFormat(speaking.limits);
+		plan.speakingSize = { width: f.width, height: f.height };
+	}
+	return plan;
 }
 
 function transition(
@@ -175,7 +231,7 @@ function transition(
 		first.kind === 'generate' && first.start.kind !== 'text'
 			? { kind: 'startOf', start: first.start }
 			: { kind: 'firstFrameOf', id: first.id };
-	const what = (s: typeof a) => (s.kind === 'generated' ? s.prompt : 'the next clip');
+	const what = (s: typeof a) => (s.kind === 'existing' ? 'the next clip' : s.prompt);
 	const frames = join.secs ? Math.min(cap, atLeast(Math.round(join.secs * fps))) : cap;
 	return {
 		kind: 'generate',

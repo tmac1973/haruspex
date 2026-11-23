@@ -57,7 +57,8 @@ import {
 } from '#lib/agent/jobs/types/video-sequence/prompts.ts';
 
 export * from '#lib/agent/jobs/types/video-sequence/stages.ts';
-import { INTERVIEW, SPEC, SPEECH } from '#lib/agent/jobs/types/video-sequence/stages.ts';
+import { INTERVIEW, SPEC } from '#lib/agent/jobs/types/video-sequence/stages.ts';
+import { speechStage } from '#lib/agent/jobs/types/video-sequence/speechStage.ts';
 
 /** One try and two retries with the problems quoted, then the stage fails. */
 export const MAX_DERIVE_ATTEMPTS = 3;
@@ -79,7 +80,8 @@ function check(json: unknown, sc: SpecContext, keyframes: boolean): Checked | st
 	const validated = validateSequenceSpec(parsed.spec, sc.validate);
 	const problems = [...parsed.problems, ...validated.errors];
 	if (problems.length) return problems;
-	const plan = planClips(validated.spec, sc.validate.limits, keyframes);
+	const speaking = sc.speaking?.video ? { limits: sc.speaking.video } : undefined;
+	const plan = planClips(validated.spec, sc.validate.limits, keyframes, speaking);
 	const estimate = estimateRun(plan, null, validated.spec);
 	return { validated, summary: specSummary(validated.spec, plan, estimate, validated.notes) };
 }
@@ -192,11 +194,14 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 		const answers = await interviewStage(ctx, steps, cfg, sc, run);
 		const { validated } = await specStage(ctx, steps, cfg, sc, { ...run, answers });
 		const spec = validated.spec;
-		steps.start(SPEECH);
-		steps.finish(SPEECH, 'No speaking sections.');
 		const draws = usesKeyframes(sc);
-		const plan = planClips(spec, sc.validate.limits, draws);
 		const files = runFiles(ctx, cfg);
+		const plan = await speechStage(ctx, steps, files, {
+			spec,
+			limits: sc.validate.limits,
+			draws,
+			speaking: sc.speaking
+		});
 		const stills = await keyframesStage(ctx, steps, cfg, files, { spec, plan, draws, attended });
 		const genRun = {
 			spec,

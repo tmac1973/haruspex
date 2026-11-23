@@ -49,7 +49,7 @@ describe('parseSequenceSpec', () => {
 			expect.arrayContaining([
 				'colour: unknown key',
 				'sections[0].seconds: must be a number',
-				'sections[1].kind: must be "generated" or "existing"',
+				'sections[1].kind: must be "generated", "existing" or "speaking"',
 				'sound.music[0].tempo: unknown key',
 				'sound.music[0].sections: names no section'
 			])

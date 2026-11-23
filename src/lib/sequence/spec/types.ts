@@ -54,7 +54,34 @@ export interface ExistingSection {
 	fit?: Fit;
 }
 
-export type Section = GeneratedSection | ExistingSection;
+/** One line a speaking section's person says. */
+export interface SpokenLine {
+	/** A short slug, unique in the spec: its WAV is named after it. */
+	id: string;
+	text: string;
+	/** A saved voice (Settings → Audio); the default voice when none. */
+	voice?: string;
+}
+
+/**
+ * A person speaking to the camera (Wan2.2 S2V): one portrait and the lines
+ * they say, spoken first and made into a clip per stretch of speech.
+ */
+export interface SpeakingSection {
+	kind: 'speaking';
+	id: string;
+	/** A picture of the person in the episode folder; a keyframe is drawn when none. */
+	portrait?: string;
+	/** What the drawn portrait shows, when it should differ from the prompt. */
+	portrait_prompt?: string;
+	/** The setting and how they move. */
+	prompt: string;
+	lines: SpokenLine[];
+	/** Between this section's clips: a cut (default) or a 0.3 s crossfade. */
+	window_join?: 'cut' | 'crossfade';
+}
+
+export type Section = GeneratedSection | ExistingSection | SpeakingSection;
 
 export interface Join {
 	/** A hard cut, a crossfade, or a generated clip from A's end to B's start. */

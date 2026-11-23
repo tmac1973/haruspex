@@ -23,13 +23,18 @@
 	const cfg = config as unknown as VideoSequenceConfig;
 	const hasImageBackend = resolveImageBackend().kind !== 'none';
 	let instances: string[] = $state([]);
+	/** Instances that make someone speak (the `audio` capability). */
+	let speakers: string[] = $state([]);
 	let listError = $state('');
 	const chosen = chosenVideoInstanceId();
 
 	onMount(() => {
 		if (getSettings().videoGenBackendKind === 'none') return;
 		void listVideoInstances()
-			.then((list) => (instances = list.map((i) => i.id)))
+			.then((list) => {
+				instances = list.map((i) => i.id);
+				speakers = list.filter((i) => i.capabilities.includes('audio')).map((i) => i.id);
+			})
 			.catch((e: unknown) => (listError = String(e)));
 	});
 
@@ -91,6 +96,27 @@
 	</select>
 	{#if listError}<p class="hint">Could not list the server's models: {listError}</p>{/if}
 </div>
+
+{#if speakers.length || cfg.speaking_instance_id}
+	<div class="field">
+		<span class="label">
+			Speaking model
+			<Tooltip
+				label="About the speaking model"
+				text="A video instance that makes a person in a portrait say lines (Wan2.2 S2V), for speaking sections. None leaves them out."
+			/>
+		</span>
+		<select bind:value={cfg.speaking_instance_id} aria-label="Speaking model">
+			<option value="">None</option>
+			{#each speakers as id (id)}
+				<option value={id}>{id}</option>
+			{/each}
+			{#if cfg.speaking_instance_id && !speakers.includes(cfg.speaking_instance_id)}
+				<option value={cfg.speaking_instance_id}>{cfg.speaking_instance_id}</option>
+			{/if}
+		</select>
+	</div>
+{/if}
 
 {#if hasImageBackend}
 	<label class="check">

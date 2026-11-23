@@ -354,6 +354,106 @@ pub fn video_transcribe_cancel(job: String) -> bool {
         .is_some()
 }
 
+/// One stretch of a sound file, for `audio_join`.
+#[derive(Clone, Debug, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioSlice {
+    /// Relative to the working folder.
+    pub path: String,
+    pub from_secs: f64,
+    pub to_secs: f64,
+}
+
+/// The filter graph that cuts each input to its stretch and joins them, mono 24 kHz.
+pub fn join_graph(slices: &[(f64, f64)]) -> String {
+    let mut g = String::new();
+    for (i, (from, to)) in slices.iter().enumerate() {
+        g.push_str(&format!(
+            "[{i}:a]atrim=start={from:.4}:end={to:.4},asetpts=PTS-STARTPTS,\
+             aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono[p{i}];"
+        ));
+    }
+    for i in 0..slices.len() {
+        g.push_str(&format!("[p{i}]"));
+    }
+    g.push_str(&format!("concat=n={}:v=0:a=1[out]", slices.len()));
+    g
+}
+
+/// Stretches of sound files in the working folder joined end to end into
+/// one WAV: a speaking window's slices of its spoken lines.
+#[tauri::command]
+pub async fn audio_join(
+    working_dir: String,
+    parts: Vec<AudioSlice>,
+    out: String,
+    overrides: BinaryOverrides,
+) -> Result<f64, String> {
+    if parts.is_empty() {
+        return Err("Joining needs at least one stretch.".into());
+    }
+    if !out.to_ascii_lowercase().ends_with(".wav") {
+        return Err("The joined file must be a .wav.".into());
+    }
+    let bad = |p: &AudioSlice| {
+        !p.from_secs.is_finite() || !p.to_secs.is_finite() || p.to_secs <= p.from_secs
+    };
+    if parts.iter().any(bad) {
+        return Err("Each stretch must end after it starts.".into());
+    }
+    let found = binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
+    let files = parts
+        .iter()
+        .map(|p| paths::resolve_media(&working_dir, &p.path, "", ""))
+        .collect::<Result<Vec<_>, _>>()?;
+    let target = paths::resolve_in_working(&working_dir, &out)?;
+    if let Some(dir) = target.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("can't make {}: {e}", dir.display()))?;
+    }
+    let graph = join_graph(
+        &parts
+            .iter()
+            .map(|p| (p.from_secs, p.to_secs))
+            .collect::<Vec<_>>(),
+    );
+    let mut args: Vec<std::ffi::OsString> = Vec::new();
+    for f in &files {
+        args.push("-i".into());
+        args.push(f.into());
+    }
+    for a in [
+        "-filter_complex",
+        &graph,
+        "-map",
+        "[out]",
+        "-c:a",
+        "pcm_s16le",
+    ] {
+        args.push(a.into());
+    }
+    args.push(target.clone().into());
+    ffmpeg_run(ffmpeg, &args, "Joining the speech").await?;
+    let wav = std::fs::read(&target).map_err(|e| format!("Can't read the joined speech: {e}"))?;
+    Ok(crate::speech_server::wav_seconds(&wav))
+}
+
+/// The pauses in a sound file in the working folder, quieter than -35 dB
+/// for at least `min_secs`.
+#[tauri::command]
+pub async fn audio_silences(
+    working_dir: String,
+    path: String,
+    min_secs: f64,
+    overrides: BinaryOverrides,
+) -> Result<Vec<super::silence::SilenceRange>, String> {
+    let file = paths::resolve_media(&working_dir, &path, "", "")?;
+    let found = binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
+    super::silence::detect(ffmpeg, &file, -35.0, min_secs.max(0.1), None).await
+}
+
 /// Sound files in the working folder joined end to end into one, each
 /// crossfading into the next over `crossfade_secs`: songs made one after
 /// another for a bed longer than one song. `out` is a `.wav` in the working
@@ -1217,6 +1317,51 @@ mod tests {
     use crate::test_util::{temp_dir, TestDir};
     use std::fs;
     use std::path::Path;
+
+    /// Two slices joined last as long as both, and a 0.5 s pause is found.
+    /// Needs ffmpeg on PATH.
+    #[tokio::test]
+    #[ignore = "needs ffmpeg"]
+    async fn speech_slices_join_and_pauses_are_found() {
+        let dir = temp_dir("audio_join");
+        let wd = dir.to_string_lossy().into_owned();
+        let make = |graph: &str, out: &str| {
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args([
+                    "-v", "error", "-y", "-f", "lavfi", "-i", graph, "-ar", "24000", "-ac", "1",
+                ])
+                .arg(dir.join(out))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        make("sine=f=300:d=4", "a.wav");
+        // 1.5 s of tone, 0.5 s of quiet, 1.5 s of tone.
+        make(
+            "sine=f=300:d=3.5,volume='if(between(t,1.5,2),0,1)':eval=frame",
+            "b.wav",
+        );
+        let slice = |p: &str, a: f64, b: f64| AudioSlice {
+            path: p.into(),
+            from_secs: a,
+            to_secs: b,
+        };
+        let secs = audio_join(
+            wd.clone(),
+            vec![slice("a.wav", 0.5, 3.0), slice("b.wav", 0.0, 1.25)],
+            "out/win.wav".into(),
+            BinaryOverrides::default(),
+        )
+        .await
+        .unwrap();
+        assert!((secs - 3.75).abs() < 0.01, "{secs}");
+        let gaps = audio_silences(wd, "b.wav".into(), 0.3, BinaryOverrides::default())
+            .await
+            .unwrap();
+        assert_eq!(gaps.len(), 1, "{gaps:?}");
+        assert!((gaps[0].start - 1.5).abs() < 0.05 && (gaps[0].end - 2.0).abs() < 0.05);
+    }
 
     /// A silent WebM clip and a WAV muxed: one video and one Opus audio
     /// stream, as long as the shorter. Needs ffmpeg and ffprobe on PATH.

@@ -35,10 +35,11 @@ import {
 } from '#lib/agent/jobs/types/video-sequence/sound.ts';
 import {
 	buildCut,
+	placeSound,
 	projectFormat,
+	speechPlaced,
 	timeline,
-	type ExistingClip,
-	type SoundPlaced
+	type ExistingClip
 } from '#lib/agent/jobs/types/video-sequence/assemble.ts';
 import { renderAndWait, tauriRenderDeps } from '#lib/agent/jobs/types/video-sequence/render.ts';
 import { renderSequenceReport } from '#lib/agent/jobs/types/video-sequence/report.ts';
@@ -138,19 +139,6 @@ async function soundStage(sh: Shared): Promise<SoundMade> {
 	return sound;
 }
 
-/** Where each sound goes, and how loud: music under speech or clip sound sits at -30 LUFS. */
-function placeSound(spec: SequenceSpec, sound: SoundMade): SoundPlaced[] {
-	const under = spec.sound.narration.length > 0 || spec.sound.clip_sound;
-	return [
-		...sound.beds.map((b) => ({
-			file: b.file,
-			atSecs: b.start,
-			lufs: spec.sound.music.find((m) => m.id === b.id)?.lufs ?? (under ? -30 : -14)
-		})),
-		...sound.lines.map((l) => ({ file: l.file, atSecs: l.at, lufs: -14 }))
-	];
-}
-
 async function assembleStage(
 	sh: Shared,
 	sound: SoundMade
@@ -173,7 +161,7 @@ async function assembleStage(
 		path: files.path,
 		format,
 		editor: cfg.editor || null,
-		sound: placeSound(spec, sound)
+		sound: [...placeSound(spec, sound), ...speechPlaced(spec, plan, existing)]
 	});
 	const made = await invoke<CutResult>('video_project_cut', {
 		workingDir: ctx.job.working_dir,

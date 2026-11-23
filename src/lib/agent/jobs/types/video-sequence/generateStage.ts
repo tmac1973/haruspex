@@ -4,6 +4,8 @@
  * where it is, and, in Attended runs, a stop after each section's first clip.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { videoOverrides } from '#lib/video/binaries.ts';
+import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { generateVideo, resumeVideo } from '#lib/videogen/toolchest.ts';
@@ -55,7 +57,23 @@ function depsFor(
 	const signal = ctx.abort.signal;
 	const instanceId = cfg.video_instance_id || undefined;
 	return {
-		generate: (req, opts) => generateVideo(req, { ...opts, signal, instanceId }),
+		// A speaking window goes to the speaking instance.
+		generate: (req, opts) =>
+			generateVideo(req, {
+				...opts,
+				signal,
+				instanceId: req.audio ? cfg.speaking_instance_id || undefined : instanceId
+			}),
+		cacheAudio: async (rel) => {
+			const stored = await invoke<StoredAudio>('audio_cache_import', {
+				workingDir: ctx.job.working_dir,
+				path: files.path(rel),
+				conversationId: null,
+				codeSessionId: null,
+				overrides: videoOverrides()
+			});
+			return { name: rel.split('/').pop() ?? 'speech.wav', hash: stored.hash };
+		},
 		resume: (handle, req, opts) => resumeVideo(handle, req, { ...opts, signal }),
 		cacheImage: async (rel) => {
 			const bytes = await files.readBytes(rel);
