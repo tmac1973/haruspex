@@ -38,12 +38,26 @@ export class ToolchestError extends Error {
 	}
 }
 
+/** Toolchest's refusals of a speaking clip, said plainly. */
+const SPEAKING_CODES: Record<string, string> = {
+	audio_required: 'This video model makes someone speak, so it needs the speech: give audio.',
+	start_image_required:
+		'This video model makes someone speak, so it needs a picture of them: give start_image.',
+	bad_audio: "llama-toolchest couldn't read the speech; give a WAV, MP3, FLAC or OGG file.",
+	over_limit:
+		'The clip would be longer than this video model makes; split the speech at a pause and make one clip per part.'
+};
+
 /** A refusal in a sentence: the key, a full queue, or toolchest's own message. */
 function fromRefusal(status: number, body: string, path: string): ToolchestError {
 	const { message, code } = errorBody(body);
 	const opts = { status, code: code ?? undefined };
 	if (status === 401) {
 		return new ToolchestError('rejected', 'llama-toolchest refused the API key.', opts);
+	}
+	if (code && code in SPEAKING_CODES) {
+		const why = message ? ` (${message})` : '';
+		return new ToolchestError('rejected', `${SPEAKING_CODES[code]}${why}`, opts);
 	}
 	if (code === 'queue_full') {
 		return new ToolchestError(

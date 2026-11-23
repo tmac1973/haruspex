@@ -507,6 +507,8 @@ pub fn run() {
             video::commands::video_transcribe,
             video::commands::audio_transcribe,
             video::commands::video_transcript_for,
+            video::commands::video_mux_audio,
+            audio_cache::commands::audio_cache_import,
             video::commands::video_transcribe_cancel,
             video::commands::video_silences,
             video::commands::video_project_transcript,

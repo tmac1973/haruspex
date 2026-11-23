@@ -532,6 +532,69 @@ pub fn store_dropped(
     store_bytes(db, dir, &bytes, mime, conversation_id, code_session_id)
 }
 
+/// A sound or video file in the working folder, kept in the audio cache and
+/// linked to the chat or Code session: what `generate_video` sends as a
+/// speaking clip's speech. A format the cache doesn't keep (`.m4a`, a
+/// video's sound) is converted to WAV first.
+#[tauri::command]
+pub async fn audio_cache_import(
+    app: AppHandle,
+    db: State<'_, Database>,
+    working_dir: String,
+    path: String,
+    conversation_id: Option<String>,
+    code_session_id: Option<String>,
+    overrides: crate::video::binaries::BinaryOverrides,
+) -> Result<StoredAudio, String> {
+    let file = crate::fs_tools::resolve_in_workdir(Path::new(&working_dir), &path)?;
+    if !file.is_file() {
+        return Err(format!(
+            "No file named {} in the working folder.",
+            path.trim()
+        ));
+    }
+    let dir = cache_dir(&app)?;
+    if dropped_mime(&file).is_some() {
+        return store_dropped(
+            &db,
+            &dir,
+            &file,
+            conversation_id.as_deref(),
+            code_session_id.as_deref(),
+        );
+    }
+    let found = crate::video::binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(crate::video::binaries::Tool::Ffmpeg)?;
+    let temp = dir.join(temp_name());
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-y", "-i"])
+        .arg(&file)
+        .args(["-vn", "-map", "0:a:0", "-c:a", "pcm_s16le", "-f", "wav"])
+        .arg(&temp)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    crate::video::prepare_child(&mut cmd);
+    let out = cmd
+        .output()
+        .await
+        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    if !out.status.success() {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("{} has no sound Haruspex can read.", path.trim()));
+    }
+    store_file(
+        &db,
+        &dir,
+        &temp,
+        "audio/wav",
+        None,
+        None,
+        conversation_id.as_deref(),
+        code_session_id.as_deref(),
+    )
+    .await
+}
+
 /// The audio a chat's or Code session's messages show by hash, linked to it
 /// so the sweep keeps it. Unknown and malformed hashes are skipped.
 #[tauri::command]

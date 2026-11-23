@@ -25,6 +25,13 @@ export interface VideoRequest {
 	startImage?: VideoStartImage;
 	/** A picture the clip ends on, on an instance with `end_image`. */
 	endImage?: VideoStartImage;
+	/**
+	 * Speech the clip's person says, in the audio cache, on an instance with
+	 * the `audio` capability (Wan2.2 S2V).
+	 */
+	audio?: { name: string; hash: string };
+	/** Send no length: the server makes the clip as long as `audio`. */
+	followAudio?: boolean;
 }
 
 export interface VideoProgress {

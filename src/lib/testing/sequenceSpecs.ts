@@ -9,7 +9,8 @@ export const LTX: VideoLimits = {
 	defaultSize: '1280x704',
 	maxFrames: 121,
 	maxSize: '1280x704',
-	maxPixelFrames: null
+	maxPixelFrames: null,
+	fixedFps: null
 };
 
 export const LTX_CAPS = ['text', 'start_image', 'end_image'];
