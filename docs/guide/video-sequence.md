@@ -27,11 +27,11 @@ Open Settings → Video editing and turn on **Let the assistant edit videos**, a
 5. Makes the music beds in `music/` and the narration in `narration/`.
 6. Cuts everything into `<episode>.mlt` or `.kdenlive`, renders it to `renders/`, and writes `REPORT-sequence.md`: what was made, what was flagged, and the render's check.
 
-The project's format follows the video model: LTX-2.3's 1280×704 at 24 fps becomes a 720p, 24 fps project. A clip's own sound is kept when the spec says so; otherwise it is muted in the project, where you can bring it back.
+The project's format follows the video model: LTX-2.3's 1280×704 at 24 fps becomes a 720p, 24 fps project, and a model at another size gets a project at its own frame rate. A clip's own sound is kept when the spec says so; otherwise it is muted in the project, where you can bring it back.
 
 ## Stop and carry on
 
-Everything is saved as it is made. A run that failed or was stopped has **Resume** in its run view: it carries on from the next thing not made, and follows a clip the video server was still making when Haruspex closed. Changing a section's prompt in `sequence.json` makes that section again and keeps the rest.
+Everything is saved as it is made. A run that failed or was stopped has **Resume** in its run view: it carries on from the next thing not made, and follows a clip the video server was still making when Haruspex closed. Changing a section's prompt in `sequence.json` makes that section again and keeps the rest. When the video server can't load its model because another one holds the GPU, the run waits a minute and tries again, up to three times, before it stops.
 
 ## How long it takes
 
@@ -46,4 +46,4 @@ A run says how many clips it will make. The time is unknown until the first clip
 
 ## What has been tested
 
-Each stage is covered by automated tests with stand-in models. The spec turn was tried with the fox brief on Qwen3.8-Flash. A full run against a video server has not been done yet.
+Each stage is covered by automated tests with stand-in models. A 10-second fox brief has run end to end, Unattended, on llama-toolchest's Wan 2.2 TI2V 5B with FLUX.2 klein stills and ACE-Step music, with Qwen3.8-Flash writing the spec: two stills (the second an edit of the first), eight chained clips, a crossfade, a piano bed, a Shotcut project and its render. Resume kept the stills after a failed run. LTX-2.3, transitions on a model with end pictures, seam checks and narration have not been tried on real servers yet.

@@ -29,7 +29,9 @@ const PRESETS: { id: string; width: number; height: number; fps: number }[] = [
 /**
  * The project format: the preset nearest the video model's own size at its
  * frame rate (720p24 for LTX-2.3's 1280×704), else the spec's, else the one
- * in Settings → Video editing.
+ * in Settings → Video editing when it has the model's frame rate, else the
+ * first that does (720p24 for Wan's 832×480 at 24 fps), else Settings'. A
+ * 24 fps video in a 60 fps project only repeats frames.
  */
 export function projectFormat(
 	plan: Pick<ClipPlan, 'width' | 'height' | 'fps'>,
@@ -42,7 +44,11 @@ export function projectFormat(
 			Math.abs(p.width - plan.width) <= 64 &&
 			Math.abs(p.height - plan.height) <= 32
 	);
-	const id = near?.id ?? spec.preset ?? settingsPreset;
+	const sameRate = (id: string) => PRESETS.find((p) => p.id === id)?.fps === plan.fps;
+	const byRate = sameRate(settingsPreset)
+		? settingsPreset
+		: PRESETS.find((p) => p.fps === plan.fps)?.id;
+	const id = near?.id ?? spec.preset ?? byRate ?? settingsPreset;
 	const p = PRESETS.find((x) => x.id === id) ?? PRESETS[2];
 	return { preset: p.id, width: p.width, height: p.height };
 }

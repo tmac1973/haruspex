@@ -13,6 +13,7 @@ let saved: string[];
 let disk: Set<string>;
 let failures: number;
 let clock: number;
+let paused: number[];
 
 const result = (req: VideoRequest): VideoResult => ({
 	hash: req.title.padEnd(64, '0').slice(0, 64),
@@ -62,6 +63,7 @@ function deps(over: Partial<GenerateDeps> = {}): GenerateDeps {
 		status: () => {},
 		seed: () => 4242,
 		now: () => clock,
+		pause: async (ms) => void paused.push(ms),
 		...over
 	};
 }
@@ -101,6 +103,7 @@ beforeEach(() => {
 	disk = new Set();
 	failures = 0;
 	clock = 0;
+	paused = [];
 });
 
 describe('runGenerate', () => {
@@ -316,5 +319,42 @@ describe('runGenerate', () => {
 		await runGenerate(run, deps());
 		expect(requests).toHaveLength(4);
 		expect(run.clips['snow-01'].check).toBeUndefined();
+	});
+
+	it('waits for a model the server could not start, with the same seed, before failing', async () => {
+		const vram = 'llama-toolchest: starting the backend: not enough VRAM on GPU 0';
+		let refusals = 2;
+		const run = runOf(shortFox());
+		await runGenerate(
+			run,
+			deps({
+				seed: () => 4242,
+				generate: async (req, opts) => {
+					if (refusals-- > 0) throw new Error(vram);
+					requests.push(req);
+					return deps().generate(req, opts);
+				}
+			})
+		);
+		expect(paused).toEqual([60_000, 60_000]);
+		// The clip was made on the seed it started with: waits are not retries.
+		expect(requests[0]).toMatchObject({ title: 'snow-01', seed: 4242 });
+		expect(run.clips['snow-01'].status).toBe('done');
+	});
+
+	it('gives up on a model that never starts, leaving the clip to make next time', async () => {
+		const run = runOf(shortFox());
+		await expect(
+			runGenerate(
+				run,
+				deps({
+					generate: async () => {
+						throw new Error('llama-toolchest: starting the backend: not enough VRAM on GPU 0');
+					}
+				})
+			)
+		).rejects.toThrow(/could not start the model for clip snow-01 after 4 tries/);
+		expect(paused).toHaveLength(3);
+		expect(run.clips['snow-01'].status).toBe('pending');
 	});
 });

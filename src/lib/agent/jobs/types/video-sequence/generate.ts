@@ -64,6 +64,8 @@ export interface GenerateDeps {
 	): Promise<{ ok: boolean; problem?: string } | null>;
 	seed(): number;
 	now(): number;
+	/** Wait, as when the server could not start the model; rejects when the run is cancelled. */
+	pause(ms: number): Promise<void>;
 	signal?: AbortSignal;
 }
 
@@ -91,6 +93,19 @@ export function clipPath(id: string, mime = 'video/webm'): string {
 }
 
 const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
+
+/** How many times a clip waits for a model the server could not start. */
+export const START_WAITS = 3;
+const START_WAIT_MS = 60_000;
+
+/**
+ * Whether a failure is the server not starting the model (another model holds
+ * the GPU) rather than the clip itself. Running out of memory while making a
+ * clip is the clip's: it fails as one.
+ */
+export function couldNotStart(message: string): boolean {
+	return /starting the backend|not enough VRAM|failed to load the model/i.test(message);
+}
 
 /**
  * The order clips are made in: the plan's, except a transition that ends on
@@ -201,15 +216,33 @@ async function makeClip(
 		}
 	}
 	let seed = job.seed;
+	let waits = 0;
 	for (let attempt = 0; ; attempt++) {
 		try {
 			return { result: await deps.generate(job.request(seed), opts(seed)), seed };
 		} catch (e) {
 			if (isAbort(e)) throw e;
+			const why = e instanceof Error ? e.message : String(e);
+			// The model couldn't load (another holds the GPU): a new seed won't
+			// help. Wait and send the same request again, a few times.
+			if (couldNotStart(why)) {
+				if (waits >= START_WAITS) {
+					run.clips[item.id] = { key, status: 'pending', seed };
+					await deps.saveProgress();
+					throw new Error(
+						`The video server could not start the model for clip ${item.id} after ${START_WAITS + 1} tries: ${why}`,
+						{ cause: e }
+					);
+				}
+				waits++;
+				attempt--;
+				deps.status(`${where} — the server could not start the model; trying again in a minute`);
+				await deps.pause(START_WAIT_MS);
+				continue;
+			}
 			if (attempt >= 1) {
 				run.clips[item.id] = { key, status: 'failed', seed };
 				await deps.saveProgress();
-				const why = e instanceof Error ? e.message : String(e);
 				throw new Error(`Clip ${item.id} failed twice: ${why}`, { cause: e });
 			}
 			seed = deps.seed();
