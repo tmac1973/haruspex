@@ -33,6 +33,7 @@ mod lemonade;
 mod links;
 mod lint;
 mod media_env;
+mod media_http;
 mod memory;
 mod models;
 mod net_util;
@@ -154,6 +155,11 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            // Loopback streaming for the video players (`media_http.rs`).
+            app.manage(media_http::MediaServer::start().unwrap_or_else(|e| {
+                log::error!("{e}");
+                media_http::MediaServer::disabled()
+            }));
             // A failure here ends startup with the reason in the log, rather
             // than a panic backtrace.
             if let Ok(dir) = app.path().app_data_dir() {
@@ -602,6 +608,9 @@ pub fn run() {
             tts::tts_synthesize_and_play,
             tts::tts_synthesize_to_cache,
             tts::audio_stretch,
+            media_http::media_root_register,
+            media_http::media_root_release,
+            media_http::media_url,
             speech_server::speech_server_synthesize,
             speech_server::speech_server_models,
             voices::voices_list,

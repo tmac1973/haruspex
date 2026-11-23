@@ -13,6 +13,7 @@
 	import GlbViewer from '#lib/components/GlbViewer.svelte';
 	import AudioViewer from '#lib/components/AudioViewer.svelte';
 	import ImageViewer from '#lib/components/ImageViewer.svelte';
+	import VideoViewer from '#lib/components/VideoViewer.svelte';
 	import FileTree from '#lib/components/FileTree.svelte';
 	import { EditorWorkspace } from '#lib/editor/workspace.svelte.ts';
 	import type { EditorDocument } from '#lib/editor/document.svelte.ts';
@@ -247,6 +248,10 @@
 					<ImageViewer workdir={root} relPath={active.relPath} />
 				{:else if active.viewer === 'audio'}
 					<AudioViewer workdir={root} relPath={active.relPath} />
+				{:else if active.viewer === 'video'}
+					{#key active.relPath}
+						<VideoViewer workdir={root} relPath={active.relPath} />
+					{/key}
 				{:else if active.loaded && !active.failed}
 					<CodeEditor
 						value={active.draft}

@@ -52,12 +52,13 @@ export type DiskState = 'same' | 'changed' | 'deleted' | 'new';
  * step with `VIEWABLE_EXTS` in `fs_tools/editor.rs`, which lists them
  * apart from text files.
  */
-export type FileViewer = 'glb' | 'image' | 'audio';
+export type FileViewer = 'glb' | 'image' | 'audio' | 'video';
 
 export function viewerFor(relPath: string): FileViewer | null {
 	if (/\.glb$/i.test(relPath)) return 'glb';
 	if (/\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(relPath)) return 'image';
 	if (/\.(wav|mp3|ogg|oga|opus|flac|m4a|aac)$/i.test(relPath)) return 'audio';
+	if (/\.(mp4|mov|mkv|webm|m4v)$/i.test(relPath)) return 'video';
 	return null;
 }
 

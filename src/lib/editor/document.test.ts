@@ -169,6 +169,10 @@ describe('viewerFor', () => {
 		expect(viewerFor('sheet.PNG')).toBe('image');
 		expect(viewerFor('a.svg')).toBe('image');
 		expect(viewerFor('song.Flac')).toBe('audio');
+		expect(viewerFor('renders/ep012-v2.MP4')).toBe('video');
+		expect(viewerFor('raw/obs.mkv')).toBe('video');
+		expect(viewerFor('clip.webm')).toBe('video');
+		expect(viewerFor('a.mp4.txt')).toBeNull();
 		expect(viewerFor('a.ts')).toBeNull();
 	});
 });

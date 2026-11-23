@@ -1,7 +1,7 @@
 /**
- * Code → Open: any file, in its folder's editor window (a model, image or
- * sound in its viewer, anything else as text), or a folder, which opens on
- * its first model, image or sound, else its first text file, with the rest
+ * Code → Open: any file, in its folder's editor window (a model, image,
+ * sound or video in its viewer, anything else as text), or a folder, which
+ * opens on its first model, image, sound or video, else its first text file, with the rest
  * listed beside it.
  */
 
