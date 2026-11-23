@@ -9,6 +9,12 @@
 //! OS's own entry (an XDG autostart file, a LaunchAgent, a Run key), so the
 //! switch reads that rather than keeping a copy that could drift.
 //!
+//! On Linux we write the autostart file ourselves, at the path
+//! `tauri-plugin-autostart` uses, because the plugin leaves `Exec=` unquoted
+//! and a path with a space in it then starts nothing. An AppImage launch also
+//! points an existing entry at itself, since an update is usually a new file
+//! with a new name and the old one may be gone.
+//!
 //! Hiding is the point: the job scheduler and the Home cards run in the main
 //! webview, so the window stays alive, only out of sight. Quit from the tray
 //! closes it the ordinary way, so the quit path is the one closing the window
@@ -21,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime, State};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_autostart::ManagerExt;
 
 const FILE_NAME: &str = "background.json";
@@ -187,12 +194,145 @@ pub fn on_startup<R: Runtime>(app: &AppHandle<R>, hidden: bool) {
     if !(hidden && tray) {
         show_main(app);
     }
+    #[cfg(target_os = "linux")]
+    if let Some(appimage) = app.env().appimage.map(PathBuf::from) {
+        if let Some(file) = xdg::entry_file(&app.package_info().name) {
+            match xdg::resync(&file, &appimage) {
+                Ok(true) => log::info!("login entry now starts this AppImage"),
+                Ok(false) => {}
+                Err(e) => log::warn!("login entry not updated: {e}"),
+            }
+        }
+    }
+}
+
+/// Whether the OS starts Haruspex at login.
+#[cfg(target_os = "linux")]
+fn login_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+    xdg::entry_file(&app.package_info().name).is_some_and(|f| f.exists())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn login_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn set_login<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
+    let file = xdg::entry_file(&app.package_info().name)
+        .ok_or_else(|| "No home directory for the autostart file".to_string())?;
+    if on {
+        // An AppImage's own path, not the mount it runs from, which is gone
+        // after a reboot.
+        let exe = match app.env().appimage {
+            Some(p) => PathBuf::from(p),
+            None => std::env::current_exe().map_err(|e| e.to_string())?,
+        };
+        xdg::write(&file, &exe)
+    } else {
+        match std::fs::remove_file(&file) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_login<R: Runtime>(app: &AppHandle<R>, on: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    let result = if on {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    result.map_err(|e| e.to_string())
+}
+
+/// The XDG autostart file: `$XDG_CONFIG_HOME/autostart/<name>.desktop`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod xdg {
+    use std::path::{Path, PathBuf};
+
+    use super::HIDDEN_ARG;
+
+    pub fn entry_file(app_name: &str) -> Option<PathBuf> {
+        let config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .filter(|h| !h.is_empty())
+                    .map(|h| PathBuf::from(h).join(".config"))
+            })?;
+        Some(config.join("autostart").join(format!("{app_name}.desktop")))
+    }
+
+    /// One `Exec=` argument, quoted by the Desktop Entry rules: `"`, `` ` ``,
+    /// `$` and `\` take a backslash inside the quotes, then the value's own
+    /// string escapes apply on top (so a literal backslash is four), and `%`
+    /// is doubled so it isn't read as a field code.
+    pub fn quote_arg(arg: &str) -> String {
+        let mut quoted = String::from("\"");
+        for c in arg.chars() {
+            if matches!(c, '"' | '`' | '$' | '\\') {
+                quoted.push('\\');
+            }
+            quoted.push(c);
+        }
+        quoted.push('"');
+        let mut out = String::new();
+        for c in quoted.chars() {
+            match c {
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\t' => out.push_str("\\t"),
+                '\r' => out.push_str("\\r"),
+                '%' => out.push_str("%%"),
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    pub fn contents(exe: &Path) -> String {
+        format!(
+            "[Desktop Entry]\n\
+             Type=Application\n\
+             Version=1.0\n\
+             Name=Haruspex\n\
+             Comment=Start Haruspex at login\n\
+             Exec={} {HIDDEN_ARG}\n\
+             StartupNotify=false\n\
+             Terminal=false\n",
+            quote_arg(&exe.to_string_lossy())
+        )
+    }
+
+    pub fn write(file: &Path, exe: &Path) -> Result<(), String> {
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(file, contents(exe)).map_err(|e| e.to_string())
+    }
+
+    /// Rewrite an existing entry that doesn't start `exe` the way we would.
+    /// No entry stays no entry. True when it was rewritten.
+    pub fn resync(file: &Path, exe: &Path) -> Result<bool, String> {
+        let Ok(current) = std::fs::read_to_string(file) else {
+            return Ok(false);
+        };
+        if current == contents(exe) {
+            return Ok(false);
+        }
+        write(file, exe)?;
+        Ok(true)
+    }
 }
 
 fn state<R: Runtime>(app: &AppHandle<R>) -> BackgroundState {
     BackgroundState {
         tray: app.state::<Background>().tray_enabled(),
-        start_at_login: app.autolaunch().is_enabled().unwrap_or(false),
+        start_at_login: login_enabled(app),
     }
 }
 
@@ -220,13 +360,7 @@ pub fn background_set_tray(
 
 #[tauri::command]
 pub fn background_set_start_at_login(app: AppHandle, on: bool) -> Result<BackgroundState, String> {
-    let launcher = app.autolaunch();
-    let result = if on {
-        launcher.enable()
-    } else {
-        launcher.disable()
-    };
-    result.map_err(|e| e.to_string())?;
+    set_login(&app, on)?;
     Ok(state(&app))
 }
 
@@ -268,5 +402,53 @@ mod tests {
         assert!(started_hidden(args(&["haruspex", HIDDEN_ARG])));
         assert!(!started_hidden(args(&["haruspex"])));
         assert!(!started_hidden(args(&["haruspex", "--hiddenx"])));
+    }
+
+    #[test]
+    fn exec_quotes_the_path() {
+        assert_eq!(
+            xdg::quote_arg("/usr/bin/haruspex"),
+            r#""/usr/bin/haruspex""#
+        );
+        assert_eq!(
+            xdg::quote_arg("/home/me/My Apps/Haruspex.AppImage"),
+            r#""/home/me/My Apps/Haruspex.AppImage""#
+        );
+        // Shell-special characters take a backslash, which the string
+        // escape then doubles; a literal backslash ends up as four.
+        assert_eq!(xdg::quote_arg(r#"/a"b$c`d"#), r#""/a\\"b\\$c\\`d""#);
+        assert_eq!(xdg::quote_arg(r"/a\b"), r#""/a\\\\b""#);
+        assert_eq!(xdg::quote_arg("/100%"), r#""/100%%""#);
+    }
+
+    #[test]
+    fn the_entry_starts_hidden() {
+        let entry = xdg::contents(Path::new("/opt/Haruspex 1.AppImage"));
+        assert!(entry.contains("\nExec=\"/opt/Haruspex 1.AppImage\" --hidden\n"));
+        assert!(entry.starts_with("[Desktop Entry]\n"));
+    }
+
+    #[test]
+    fn resync_points_an_entry_at_the_new_appimage() {
+        let dir = temp_dir("background-resync");
+        let file = dir.join("autostart").join("Haruspex.desktop");
+        let new = Path::new("/home/me/Haruspex_0.3.0.AppImage");
+
+        // No entry: the user never turned it on, so none appears.
+        assert!(!xdg::resync(&file, new).unwrap());
+        assert!(!file.exists());
+
+        // The plugin's old unquoted entry for an older AppImage.
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file,
+            "[Desktop Entry]\nExec=/home/me/Haruspex_0.2.9.AppImage --hidden\n",
+        )
+        .unwrap();
+        assert!(xdg::resync(&file, new).unwrap());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), xdg::contents(new));
+
+        // Already right: left alone.
+        assert!(!xdg::resync(&file, new).unwrap());
     }
 }
