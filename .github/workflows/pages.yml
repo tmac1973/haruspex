@@ -1,7 +1,8 @@
 name: pages
 
 # The public site in site/: home page, privacy policy, terms of service, and
-# the user guide, rendered from docs/guide/ into site/guide/ at publish time.
+# the user guide, rendered from docs/guide/ into site/guide/ at publish time,
+# and Things you can do, from docs/showcase/ into site/showcase/.
 # Google's OAuth consent screen links to these, so they must stay reachable
 # at https://haruspex.spronglehump.com/. See docs/google-sign-in.md.
 
@@ -11,7 +12,9 @@ on:
     paths:
       - 'site/**'
       - 'docs/guide/**'
+      - 'docs/showcase/**'
       - 'scripts/build-guide.mjs'
+      - 'scripts/build-showcase.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -40,6 +43,8 @@ jobs:
       - run: npm ci --ignore-scripts
       # The user guide: docs/guide/*.md rendered into site/guide/.
       - run: node scripts/build-guide.mjs
+      # Things you can do: docs/showcase/*.md rendered into site/showcase/.
+      - run: node scripts/build-showcase.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
