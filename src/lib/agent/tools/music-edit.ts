@@ -31,6 +31,7 @@ import { resolveMusicBackend, MUSIC_TRACKS, type MusicTask } from '#lib/music/in
 import { BACKGROUND_PARAM } from '#lib/agent/tools/_musicJob.ts';
 import { MAX_TRIM_SECONDS, trimSong } from '#lib/agent/tools/_musicTrim.ts';
 import { finiteOrUndefined, trimmed } from '#lib/utils/coerce.ts';
+import { MAX_EXTEND_SECONDS, extendFields } from '#lib/music/extend.ts';
 
 export const ACTIONS = {
 	restyle: 'cover',
@@ -46,7 +47,6 @@ export type EditAction = keyof typeof ACTIONS;
 /** Every action the tool takes: the server's, and `trim`, which runs here. */
 const ALL_ACTIONS = [...Object.keys(ACTIONS), 'trim'];
 
-const MAX_EXTEND_SECONDS = 240;
 const DEFAULT_EXTEND_SECONDS = 30;
 
 const round = (s: number) => Math.round(s * 10) / 10;
@@ -95,12 +95,7 @@ function extend(args: Record<string, unknown>, len: number): Partial<Req> | stri
 	if (len + add > MAX_SOURCE_SECONDS) {
 		return `The song would be ${Math.round(len + add)} s; songs can be up to ${MAX_SOURCE_SECONDS} s.`;
 	}
-	const durationSec = round(len + add);
-	// A window past the end adds music there; one before the start adds an
-	// intro, and an end of -1 then means the source's start.
-	return trimmed(args.at) === 'start'
-		? { repaintStart: -add, repaintEnd: -1, durationSec }
-		: { repaintStart: round(len), repaintEnd: durationSec, durationSec };
+	return extendFields(len, add, trimmed(args.at) === 'start' ? 'start' : 'end');
 }
 
 function oneInstrument(action: string): ActionFields {

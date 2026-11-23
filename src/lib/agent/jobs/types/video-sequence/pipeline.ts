@@ -24,6 +24,7 @@ import { stepsOf, type Steps } from '#lib/agent/jobs/types/video-sequence/steps.
 import { keyframesStage } from '#lib/agent/jobs/types/video-sequence/keyframesStage.ts';
 import { generateStage } from '#lib/agent/jobs/types/video-sequence/generateStage.ts';
 import { checkStage } from '#lib/agent/jobs/types/video-sequence/checkStage.ts';
+import { finishStages } from '#lib/agent/jobs/types/video-sequence/finishStages.ts';
 import { runFiles } from '#lib/agent/jobs/types/video-sequence/files.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
@@ -56,18 +57,7 @@ import {
 } from '#lib/agent/jobs/types/video-sequence/prompts.ts';
 
 export * from '#lib/agent/jobs/types/video-sequence/stages.ts';
-import {
-	INTERVIEW,
-	SPEC,
-	SPEECH,
-	SOUND,
-	ASSEMBLE,
-	RENDER,
-	REPORT
-} from '#lib/agent/jobs/types/video-sequence/stages.ts';
-
-/** The stages after Spec, which later phases build. */
-const LATER = [SOUND, ASSEMBLE, RENDER, REPORT];
+import { INTERVIEW, SPEC, SPEECH } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 
 /** One try and two retries with the problems quoted, then the stage fails. */
 export const MAX_DERIVE_ATTEMPTS = 3;
@@ -193,7 +183,8 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 	// A chained or scheduled run has nobody to ask, whatever the config says.
 	const attended = ctx.trigger === 'manual' && cfg.run_mode === 'attended';
 	const steps = stepsOf(ctx);
-	void markRunStarted(ctx.runId, Date.now());
+	const startedMs = Date.now();
+	void markRunStarted(ctx.runId, startedMs);
 	try {
 		const sc = await preflight(ctx, cfg);
 		const existing = await readText(ctx.job.working_dir!, specPath);
@@ -218,11 +209,13 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 		};
 		const made = await generateStage(ctx, steps, cfg, files, genRun);
 		await checkStage(ctx, steps, cfg, files, { ...genRun, spec: made.spec, plan: made.plan });
-		for (const idx of LATER) {
-			steps.abortIfCancelled();
-			steps.start(idx);
-			steps.finish(idx, 'Not built yet.');
-		}
+		await finishStages(ctx, steps, cfg, files, {
+			spec: made.spec,
+			plan: made.plan,
+			episodeClips: sc.clips,
+			notes: validated.notes,
+			startedMs
+		});
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {
 		const { aborted, msg } = normalizeAbort(e);

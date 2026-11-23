@@ -78,4 +78,14 @@ describe('hashOf', () => {
 		expect(hashOf({ a: 1 })).not.toBe(hashOf({ a: 2 }));
 		expect(hashOf('x')).toMatch(/^[0-9a-f]{16}$/);
 	});
+
+	it('makes the music again when a section under it changes length, not its prompt', () => {
+		const old = finished(foxSpec());
+		const longer = foxSpec();
+		(longer.sections[1] as { seconds: number }).seconds = 90;
+		expect(mergeProgress(old, longer, planClips(longer, LTX, true)).music.piano).toBeUndefined();
+		const reworded = foxSpec();
+		(reworded.sections[1] as { prompt: string }).prompt = 'a fox among ferns';
+		expect(mergeProgress(old, reworded, planClips(reworded, LTX, true)).music.piano).toBeDefined();
+	});
 });

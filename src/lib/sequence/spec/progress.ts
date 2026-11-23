@@ -85,6 +85,20 @@ function keyframeKeys(spec: SequenceSpec): Record<string, string> {
 	return out;
 }
 
+/**
+ * A music bed's key: the bed and how long the sections under it are, so a
+ * section that gets longer or shorter makes its music again.
+ */
+function musicKey(spec: SequenceSpec, bed: SequenceSpec['sound']['music'][number]): string {
+	// Only how long they are: a new prompt doesn't change the music.
+	const lengths = bed.sections.map((id) => {
+		const s = spec.sections.find((x) => x.id === id);
+		if (!s) return null;
+		return s.kind === 'generated' ? s.seconds : [s.path, s.in_secs, s.out_secs];
+	});
+	return hashOf({ bed, lengths });
+}
+
 /** A re-anchor still's id in the progress file. */
 export const reanchorId = (section: string, n: number) => `${section}-r${n}`;
 
@@ -184,7 +198,7 @@ export function mergeProgress(
 	if (!old) return fresh;
 	fresh.clips = keep(old.clips, itemKeys(spec, plan));
 	fresh.keyframes = keep(old.keyframes, stillKeys(spec, plan));
-	const musicKeys = Object.fromEntries(spec.sound.music.map((m) => [m.id, hashOf(m)]));
+	const musicKeys = Object.fromEntries(spec.sound.music.map((m) => [m.id, musicKey(spec, m)]));
 	fresh.music = keep(old.music, musicKeys);
 	const lineKeys = Object.fromEntries(
 		spec.sound.narration.map((n, i) => [`${n.section}-${i + 1}`, hashOf(n)])
@@ -198,7 +212,7 @@ export function progressKeys(spec: SequenceSpec, plan: ClipPlan) {
 	return {
 		clips: itemKeys(spec, plan),
 		keyframes: stillKeys(spec, plan),
-		music: Object.fromEntries(spec.sound.music.map((m) => [m.id, hashOf(m)])),
+		music: Object.fromEntries(spec.sound.music.map((m) => [m.id, musicKey(spec, m)])),
 		narration: Object.fromEntries(
 			spec.sound.narration.map((n, i) => [`${n.section}-${i + 1}`, hashOf(n)])
 		)

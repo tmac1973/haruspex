@@ -14,8 +14,10 @@ import type { RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts'
 import type { EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import type { UserAnswer, UserQuestionRequest } from '#lib/stores/userQuestion.svelte.ts';
 import {
+	ASSEMBLE,
 	GENERATE,
 	INTERVIEW,
+	RENDER,
 	KEYFRAMES,
 	MAX_DERIVE_ATTEMPTS,
 	REPORT,
@@ -73,7 +75,17 @@ vi.mock('#lib/image/route.ts', () => ({
 vi.mock('#lib/images/resolve.svelte.ts', () => ({
 	registerLocalImage: (hash: string) => `haruspex-img://localhost/${hash}`
 }));
-vi.mock('#lib/music/backend.ts', () => ({ resolveMusicBackend: () => ({ kind: 'toolchest' }) }));
+vi.mock('#lib/music/backend.ts', () => ({
+	resolveMusicBackend: () => ({ kind: 'toolchest', tasks: async () => ['text2music', 'repaint'] })
+}));
+const music = vi.hoisted(() => ({ made: [] as { durationSec: number; task?: string }[] }));
+vi.mock('#lib/agent/tools/_musicJob.ts', () => ({
+	runMusicJob: async (spec: { request: { durationSec: number; task?: string } }) => {
+		music.made.push(spec.request);
+		return { hash: 'b'.repeat(64), durationSec: spec.request.durationSec };
+	}
+}));
+vi.mock('#lib/utils/async.ts', () => ({ sleep: async () => {} }));
 const asked = vi.hoisted(() => ({
 	questions: [] as UserQuestionRequest[],
 	answers: [] as UserAnswer[]
@@ -100,6 +112,7 @@ vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 }));
 
 let files: Map<string, string>;
+let cuts: unknown[];
 let bytes: Map<string, Uint8Array>;
 
 function routes() {
@@ -123,6 +136,20 @@ function routes() {
 		},
 		fs_path_exists: (a) => bytes.has(a!.relPath as string) || files.has(a!.relPath as string),
 		image_fit_cover: (a) => a!.bytes,
+		video_project_cut: (a) => {
+			cuts.push(a!.spec);
+			return { summary: { project: 'ep1/ep1.mlt' }, notes: [], created: true };
+		},
+		video_render_start: () => ({ id: 'r1', state: 'running', percent: 0 }),
+		task_list: () => [
+			{
+				id: 'r1',
+				state: 'done',
+				percent: 100,
+				result: { path: 'ep1/renders/ep1.mp4', absPath: '/videos/ep1/renders/ep1.mp4', check: null }
+			}
+		],
+		task_take_notices: () => [],
 		audio_save_in_folder: (a) => {
 			bytes.set(a!.relPath as string, new Uint8Array([1]));
 		},
@@ -208,6 +235,8 @@ function foxArgs(): Record<string, unknown> {
 
 beforeEach(() => {
 	files = new Map();
+	cuts = [];
+	music.made = [];
 	bytes = new Map();
 	image.requests = [];
 	video.made = [];
@@ -231,7 +260,7 @@ describe('the Video sequence run', () => {
 		expect(h.steps[INTERVIEW].output).toMatch(/Skipped: the run is unattended/);
 		expect(h.steps[SPEC].output).toMatch(/^Wrote ep1\/sequence.json/);
 		expect(h.steps[SPEC].output).toContain('unknown until the first clip');
-		expect(h.steps[REPORT].output).toBe('Not built yet.');
+		expect(h.steps[REPORT].output).toMatch(/^Wrote ep1\/REPORT-sequence.md/);
 		expect(asked.questions).toEqual([]);
 	});
 
@@ -324,10 +353,12 @@ describe('the Video sequence run', () => {
 			invokeRouter(
 				{
 					fs_write_text: (a) => {
+						const rel = a!.relPath as string;
+						if (!rel.endsWith('sequence.json')) return void files.set(rel, a!.content as string);
 						// The user's editor saves the forest at 45 s.
 						const spec = JSON.parse(a!.content as string);
-						if (spec.sections) spec.sections[1].seconds = 45;
-						files.set(a!.relPath as string, JSON.stringify(spec));
+						spec.sections[1].seconds = 45;
+						files.set(rel, JSON.stringify(spec));
 					}
 				},
 				(cmd: string, args?: Record<string, unknown>) => plain(cmd, args)
@@ -430,5 +461,31 @@ describe('the Video sequence run', () => {
 		expect(spec.sections[0].keyframe_prompt).toBe('a fox walking through deep snow');
 		expect(video.made.filter((t) => t === 'snow-01')).toHaveLength(2);
 		expect(image.requests).toHaveLength(6);
+	});
+
+	it('makes the music, assembles the project, renders it and writes the report', async () => {
+		const h = harness({ run_mode: 'unattended' }, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(h.finished).toEqual({ status: 'succeeded', error: null });
+		// The piano bed under the whole ~2 minutes: one song.
+		expect(music.made).toHaveLength(1);
+		expect(bytes.has('ep1/music/piano.mp3')).toBe(true);
+		const cut = cuts[0] as {
+			items: unknown[];
+			audio: { path: string; lufs: number }[];
+			preset: string;
+		};
+		expect(cut.items).toHaveLength(25);
+		expect(cut.preset).toBe('720p24');
+		expect(cut.audio).toEqual([
+			expect.objectContaining({ path: 'ep1/music/piano.mp3', lufs: -30 })
+		]);
+		expect(h.steps[ASSEMBLE].output).toMatch(/^Made ep1\/ep1.mlt: 25 clips, 720p24/);
+		expect(h.steps[RENDER].output).toBe('Rendered ep1/renders/ep1.mp4.');
+		const report = files.get('ep1/REPORT-sequence.md')!;
+		expect(report).toContain('# Fox seasons');
+		expect(report).toContain('The project is ep1/ep1.mlt.');
+		const progress = JSON.parse(files.get('ep1/.haruspex/sequence-progress.json')!);
+		expect(progress).toMatchObject({ project: 'ep1/ep1.mlt', render: 'ep1/renders/ep1.mp4' });
 	});
 });

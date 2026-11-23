@@ -21,6 +21,7 @@ export const IPC = {
 	artifact_register: 'artifact_register',
 	audio_cache_clear: 'audio_cache_clear',
 	audio_cache_size: 'audio_cache_size',
+	audio_crossfade_join: 'audio_crossfade_join',
 	audio_read_bytes: 'audio_read_bytes',
 	audio_rehydrate: 'audio_rehydrate',
 	audio_save_as: 'audio_save_as',
