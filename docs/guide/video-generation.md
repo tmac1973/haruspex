@@ -1,6 +1,6 @@
 ---
 title: Video generation
-description: Turning on llama-toolchest video generation, making a short clip, start and end pictures, continuing a clip, sound, clip length, and where clips are kept.
+description: Turning on llama-toolchest video generation, making a short clip, start and end pictures, making someone in a picture speak, continuing a clip, sound, clip length, and where clips are kept.
 ---
 
 # Video generation
@@ -31,13 +31,23 @@ With a working folder set in Chat, or in a Code session's project, the assistant
 
 If Haruspex closes first, the clip is picked up when it reopens, as long as the server still has it.
 
+## Make someone speak
+
+With a speaking model, such as Wan2.2 S2V (llama-toolchest's **s2v** set), a picture of a person and some speech make a clip of them saying it. Choose that instance in Settings → Video generation, then ask "make this portrait say 'hello, welcome to the channel'". The speech can be made in the conversation first (see the `speech` page), or be a sound file in the working folder.
+
+- The clip is as long as the speech. S2V makes at most about 5 seconds (81 frames at 16 fps), less where the instance was measured for fewer; longer speech is refused before anything is sent, so split it at its pauses and make one clip per part.
+- The picture sets who speaks; the clip doesn't keep it as its first frame.
+- The finished clip plays with the speech under it.
+
+A speaking model needs both the picture and the speech; other models can't take speech.
+
 ## Continue a clip
 
 With the video tools on (see the `video-editing` page), ask "continue that clip: the fox walks into the trees". The assistant saves the clip's true last frame as a picture and starts the next clip from it. You get two clips; joining them is a cut in a video project.
 
 ## Sound
 
-A clip has sound when the model makes it, such as LTX-2.3. The assistant says whether a clip has sound when it arrives. Wan models make silent clips.
+A clip has sound when the model makes it, such as LTX-2.3, or when it is a speaking clip. The assistant says whether a clip has sound when it arrives. Other Wan models make silent clips.
 
 ## How long a clip can be
 

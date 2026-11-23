@@ -26,9 +26,10 @@ import { fitClip } from '#lib/videogen/fit.ts';
 
 export { fitClip };
 import { readyVideoInstance } from '#lib/videogen/toolchest.ts';
-import type { ToolchestInstance } from '#lib/toolchest/models.ts';
+import type { ToolchestInstance, VideoLimits } from '#lib/toolchest/models.ts';
 import type { VideoRequest, VideoStartImage } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
+import { keptSpeech, speechRefusal, speechTooLong } from '#lib/agent/tools/_videoSpeech.ts';
 import { trimmed } from '#lib/utils/coerce.ts';
 
 /** A title from the prompt when none was given: its first five words. */
@@ -117,6 +118,26 @@ export async function picturesFrom(
 	};
 }
 
+/**
+ * The clip's size and length, and its speech when it has some: as long as
+ * the speech unless a length was asked for, and refused when the speech is
+ * longer than one clip. Or why not.
+ */
+async function shapeClip(
+	args: Record<string, unknown>,
+	instance: ToolchestInstance,
+	limits: VideoLimits,
+	portrait: boolean,
+	ctx: ToolContext
+) {
+	const speech = trimmed(args.audio) ? await keptSpeech(args, ctx) : null;
+	if (typeof speech === 'string') return speech;
+	const given = typeof args.seconds === 'number' && args.seconds > 0 ? args.seconds : undefined;
+	const fit = fitClip(limits, instance.id, { seconds: given ?? speech?.secs, portrait });
+	const tooLong = speech && !given ? speechTooLong(speech, instance, fit) : null;
+	return tooLong ?? { fit, speech, given };
+}
+
 registerTool({
 	category: 'video-gen',
 	schema: {
@@ -126,7 +147,8 @@ registerTool({
 			description:
 				'Make a short video clip from a description, optionally starting from a picture and ' +
 				'ending on another, with the ' +
-				'video generation set up in Settings → Video generation. It takes minutes and always runs ' +
+				'video generation set up in Settings → Video generation, or a person in a picture saying ' +
+				'some speech (audio) on a model that makes someone speak. It takes minutes and always runs ' +
 				'in the background: the answer says it started, and the clip arrives later as a ' +
 				'notification. Use it when the user asks for a video, clip or animation.',
 			parameters: {
@@ -151,6 +173,13 @@ registerTool({
 						description:
 							'A picture to start from: a haruspex-img:// URL from this conversation, or an image ' +
 							'file in the working folder.'
+					},
+					audio: {
+						type: 'string',
+						description:
+							'Speech for the person in start_image to say, on a model that makes someone speak: ' +
+							'speech or a song made in this conversation (its haruspex-audio:// URL), or a sound ' +
+							'file in the working folder. The clip is as long as the speech.'
 					},
 					end_image: {
 						type: 'string',
@@ -183,11 +212,13 @@ registerTool({
 		if (!instance.video) {
 			return toolResult(toolError(`${instance.id} says nothing of the clips it makes.`));
 		}
+		const refusedSpeech = speechRefusal(args, instance);
+		if (refusedSpeech) return toolResult(toolError(refusedSpeech));
 		const start = await picturesFrom(args, instance, ctx);
 		if (typeof start === 'string') return toolResult(toolError(start));
-
-		const asked = typeof args.seconds === 'number' && args.seconds > 0 ? args.seconds : undefined;
-		const fit = fitClip(instance.video, instance.id, { seconds: asked, portrait: start.portrait });
+		const shaped = await shapeClip(args, instance, instance.video, start.portrait, ctx);
+		if (typeof shaped === 'string') return toolResult(toolError(shaped));
+		const { fit, speech, given } = shaped;
 
 		let save: SaveTarget | null = null;
 		if (trimmed(args.path)) {
@@ -212,7 +243,8 @@ registerTool({
 			fps: fit.fps,
 			seed: seedOf(args.seed) as number,
 			...(start.image ? { startImage: start.image } : {}),
-			...(start.endImage ? { endImage: start.endImage } : {})
+			...(start.endImage ? { endImage: start.endImage } : {}),
+			...(speech ? { audio: { name: speech.name, hash: speech.hash }, followAudio: !given } : {})
 		};
 		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx);
 	}

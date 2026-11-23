@@ -24,6 +24,14 @@ export function wanFrames(n: number): number {
 	return Math.max(1, Math.floor((n - 1) / 4) * 4 + 1);
 }
 
+/** The most frames the instance makes at `width`×`height`: its limit, or what its memory was measured for. */
+export function maxClipFrames(limits: VideoLimits, width: number, height: number): number {
+	const byMemory = limits.maxPixelFrames
+		? Math.floor(limits.maxPixelFrames / (width * height))
+		: Infinity;
+	return Math.min(limits.maxFrames ?? Infinity, byMemory);
+}
+
 /**
  * The size and frame count for a request, within the instance's limits, with
  * a note when the length had to come down. Pure, so the arithmetic tests
@@ -39,7 +47,7 @@ export function fitClip(
 	const turn = asked.portrait === landscape;
 	const width = turn ? base.height : base.width;
 	const height = turn ? base.width : base.height;
-	const fps = limits.defaultFps;
+	const fps = limits.fixedFps ?? limits.defaultFps;
 	const want = wanFrames(
 		asked.seconds !== undefined ? Math.round(asked.seconds * fps) + 1 : limits.defaultFrames
 	);

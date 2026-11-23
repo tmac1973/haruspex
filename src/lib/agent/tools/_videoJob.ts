@@ -27,6 +27,9 @@ import type {
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { clipSeconds } from '#lib/videogen/fit.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
+import { videoOverrides } from '#lib/video/binaries.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 
 /** A `video` task's spec. */
@@ -95,6 +98,44 @@ export function clipUrl(r: VideoTaskResult): string {
 }
 
 /**
+ * A speaking clip with its speech under it, as Opus: the server's own file
+ * may carry the speech as PCM, which the webview may not play, or no sound
+ * at all. Kept as made, with a note, when that fails.
+ */
+async function withSpeech(
+	made: VideoResult,
+	spec: VideoTaskSpec
+): Promise<{ made: VideoResult; notes: string[] }> {
+	const audio = spec.request.audio;
+	if (!audio) return { made, notes: spec.notes };
+	try {
+		const stored = await invoke<StoredAudio>('video_mux_audio', {
+			videoHash: made.hash,
+			audioHash: audio.hash,
+			title: spec.request.title,
+			conversationId: spec.conversationId,
+			codeSessionId: spec.codeSessionId,
+			overrides: videoOverrides()
+		});
+		return {
+			made: {
+				...made,
+				hash: stored.hash,
+				url: videoSrc(stored.hash) ?? '',
+				mime: stored.mime,
+				hasAudio: true
+			},
+			notes: spec.notes
+		};
+	} catch (e) {
+		return {
+			made,
+			notes: [...spec.notes, `The speech could not be put under the clip: ${errMessage(e)}`]
+		};
+	}
+}
+
+/**
  * Make the clip the spec asks for, or follow the job `handle` names to its
  * end; keep it, save it, and say what was made.
  */
@@ -108,9 +149,10 @@ export async function runVideoJob(
 		conversationId: spec.conversationId ?? undefined,
 		codeSessionId: spec.codeSessionId ?? undefined
 	};
-	const made = handle
+	const generated = handle
 		? await resumeVideo(handle, spec.request, opts)
 		: await generateVideo(spec.request, opts);
+	const { made, notes } = await withSpeech(generated, spec);
 	return {
 		hash: made.hash,
 		mime: made.mime,
@@ -122,7 +164,7 @@ export async function runVideoJob(
 		seed: made.seed,
 		model: made.model,
 		hasAudio: made.hasAudio,
-		notes: spec.notes,
+		notes,
 		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null
 	};
 }

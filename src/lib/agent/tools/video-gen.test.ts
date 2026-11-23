@@ -48,7 +48,8 @@ const limits: VideoLimits = {
 	defaultSize: '832x480',
 	maxFrames: 121,
 	maxSize: '1280x704',
-	maxPixelFrames: 832 * 480 * 33
+	maxPixelFrames: 832 * 480 * 33,
+	fixedFps: null
 };
 
 const ti2v = {

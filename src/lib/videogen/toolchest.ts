@@ -109,11 +109,12 @@ export function buildVideoBody(req: VideoRequest, model: string): Json {
 		model,
 		prompt: req.prompt.trim(),
 		size: `${req.width}x${req.height}`,
-		frames: req.frames,
 		fps: req.fps,
 		seed: req.seed,
 		output_format: 'webm'
 	};
+	// With speech and no length asked for, the server follows the speech.
+	if (!(req.audio && req.followAudio)) body.frames = req.frames;
 	if (req.negativePrompt?.trim()) body.negative_prompt = req.negativePrompt.trim();
 	return body;
 }
@@ -160,7 +161,7 @@ export async function clipHasAudio(hash: string): Promise<boolean> {
 	}
 }
 
-/** The pictures a request sends as form parts, from the image cache. */
+/** The pictures (from the image cache) and speech (from the audio cache) a request sends as form parts. */
 export function videoFiles(req: VideoRequest) {
 	const files = [];
 	for (const [field, image] of [
@@ -176,6 +177,15 @@ export function videoFiles(req: VideoRequest) {
 				bytes: null
 			});
 		}
+	}
+	if (req.audio) {
+		files.push({
+			field: 'audio',
+			filename: req.audio.name,
+			hash: req.audio.hash,
+			cache: 'audio' as const,
+			bytes: null
+		});
 	}
 	return files;
 }
@@ -226,6 +236,9 @@ export async function generateVideo(
 	const instance = await server.readyInstance(cfg, opts.signal, opts.instanceId);
 	const body = buildVideoBody(req, instance.id);
 	const files = videoFiles(req);
+	if (req.audio && !instance.capabilities.includes('audio')) {
+		throw new ToolchestError('unconfigured', `${instance.id} can't make someone speak.`);
+	}
 	const created = readVideoJob(
 		files.length > 0
 			? await toolchestUpload(cfg, { path: ROUTES.jobs, body }, files, opts.signal, true)

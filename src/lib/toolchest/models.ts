@@ -58,6 +58,11 @@ export interface VideoLimits {
 	 * covers no more. Null from a build that doesn't say.
 	 */
 	maxPixelFrames: number | null;
+	/**
+	 * The one frame rate the instance makes, when it can make no other
+	 * (Wan2.2 S2V: 16). Null when it follows the request.
+	 */
+	fixedFps: number | null;
 }
 
 /** The two families Haruspex knows, by toolchest recipe, as `image_models.rs` has them. */
@@ -99,7 +104,8 @@ function videoLimits(v: unknown): VideoLimits | null {
 		defaultSize: str(o.default_size) || '832x480',
 		maxFrames: num(o.max_frames),
 		maxSize: str(o.max_size) || null,
-		maxPixelFrames: num(o.measured_pixel_frames)
+		maxPixelFrames: num(o.measured_pixel_frames),
+		fixedFps: num(o.fixed_fps)
 	};
 }
 

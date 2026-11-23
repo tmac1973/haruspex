@@ -3,6 +3,7 @@
 use super::binaries::{self, BinaryOverrides, Tool, VideoBinariesStatus};
 use super::paths;
 use super::probe::{self, EpisodeProbe};
+use std::path::Path;
 
 /// Find ffmpeg, ffprobe and melt, honouring the paths set in Settings → Video editing.
 #[tauri::command]
@@ -794,6 +795,100 @@ fn cached_clip(app: &tauri::AppHandle, hash: &str) -> Result<std::path::PathBuf,
         .map_err(|_| "That clip is no longer in the cache.".to_string())
 }
 
+/// Run ffmpeg to the end, or say why it failed.
+async fn ffmpeg_run(ffmpeg: &str, args: &[std::ffi::OsString], what: &str) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-y"])
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    super::prepare_child(&mut cmd);
+    let out = tokio::time::timeout(std::time::Duration::from_secs(600), cmd.output())
+        .await
+        .map_err(|_| format!("{what} took too long"))?
+        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "{what} failed: {}",
+            err.lines().next().unwrap_or("ffmpeg failed")
+        ));
+    }
+    Ok(())
+}
+
+/// The ffmpeg arguments that put `audio`'s sound under `video`'s picture,
+/// as Opus, ending with the shorter of the two.
+pub fn mux_args(video: &Path, audio: &Path, out: &Path, webm: bool) -> Vec<std::ffi::OsString> {
+    let mut a: Vec<std::ffi::OsString> = vec!["-i".into(), video.into(), "-i".into(), audio.into()];
+    for s in [
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "96k",
+        "-shortest",
+        "-f",
+    ] {
+        a.push(s.into());
+    }
+    a.push(if webm { "webm" } else { "mp4" }.into());
+    a.push(out.into());
+    a
+}
+
+/// A generated clip with a sound from the audio cache under it, as a new
+/// cache entry: a speaking clip (Wan2.2 S2V) with its speech, which plays
+/// in the webview whatever sound, if any, the server put in the file.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn video_mux_audio(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    video_hash: String,
+    audio_hash: String,
+    title: Option<String>,
+    conversation_id: Option<String>,
+    code_session_id: Option<String>,
+    overrides: BinaryOverrides,
+) -> Result<crate::audio_cache::commands::StoredAudio, String> {
+    let video = cached_clip(&app, &video_hash)?;
+    let audio = cached_clip(&app, &audio_hash)?;
+    let (mime, _) = crate::audio_cache::protocol::locate(&app, &video_hash)
+        .map_err(|_| "That clip is no longer in the cache.".to_string())?;
+    let webm = mime != "video/mp4";
+    let found = binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
+    let dir = crate::audio_cache::cache_dir(&app)?;
+    let temp = dir.join(crate::audio_cache::commands::temp_name());
+    if let Err(e) = ffmpeg_run(
+        ffmpeg,
+        &mux_args(&video, &audio, &temp, webm),
+        "Adding the sound",
+    )
+    .await
+    {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e);
+    }
+    crate::audio_cache::commands::store_file(
+        &db,
+        &dir,
+        &temp,
+        if webm { "video/webm" } else { "video/mp4" },
+        title,
+        None,
+        conversation_id.as_deref(),
+        code_session_id.as_deref(),
+    )
+    .await
+}
+
 /// Take one full-size frame of a clip (the true last frame, the first, or one
 /// at a time) as a PNG in the episode folder.
 #[tauri::command]
@@ -1122,6 +1217,57 @@ mod tests {
     use crate::test_util::{temp_dir, TestDir};
     use std::fs;
     use std::path::Path;
+
+    /// A silent WebM clip and a WAV muxed: one video and one Opus audio
+    /// stream, as long as the shorter. Needs ffmpeg and ffprobe on PATH.
+    #[tokio::test]
+    #[ignore = "needs ffmpeg and ffprobe"]
+    async fn muxing_puts_the_speech_under_the_clip() {
+        let dir = temp_dir("mux_audio");
+        let video = dir.join("clip.webm");
+        let audio = dir.join("speech.wav");
+        let make = |args: &[&str], out: &Path| {
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args(["-v", "error", "-y"])
+                .args(args)
+                .arg(out)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        make(
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=320x240:r=16:d=3",
+                "-c:v",
+                "libvpx",
+            ],
+            &video,
+        );
+        make(&["-f", "lavfi", "-i", "sine=f=300:d=5"], &audio);
+        let out = dir.join("out.webm");
+        ffmpeg_run(
+            "ffmpeg",
+            &mux_args(&video, &audio, &out, true),
+            "Adding the sound",
+        )
+        .await
+        .unwrap();
+        let info = probe::probe_file("ffprobe", &out, "out".into())
+            .await
+            .unwrap();
+        assert!(info.video.is_some());
+        assert_eq!(info.audio.len(), 1);
+        assert_eq!(info.audio[0].codec, "opus");
+        assert!(
+            (info.duration_secs - 3.0).abs() < 0.15,
+            "{}",
+            info.duration_secs
+        );
+    }
     use std::time::{Duration, SystemTime};
 
     #[test]

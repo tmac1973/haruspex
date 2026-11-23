@@ -74,6 +74,24 @@ describe('toolchestJson', () => {
 		expect(e.message).toContain('queue is full');
 	});
 
+	it('says plainly why a speaking clip was refused', async () => {
+		failWith({
+			kind: 'rejected',
+			status: 400,
+			body: '{"error":{"message":"81 frames at most","code":"over_limit"}}'
+		});
+		let e = await caught(toolchestJson(cfg, { path: '/v1/videos/jobs' }));
+		expect(e).toMatchObject({ kind: 'rejected', code: 'over_limit' });
+		expect(e.message).toBe(
+			'The clip would be longer than this video model makes; split the speech at a pause and make one clip per part. (81 frames at most)'
+		);
+		failWith({ kind: 'rejected', status: 400, body: '{"error":{"code":"bad_audio"}}' });
+		e = await caught(toolchestJson(cfg, { path: '/v1/videos/jobs' }));
+		expect(e.message).toBe(
+			"llama-toolchest couldn't read the speech; give a WAV, MP3, FLAC or OGG file."
+		);
+	});
+
 	it('takes a backend that cannot take jobs yet as one to pass over', async () => {
 		failWith({
 			kind: 'rejected',
