@@ -27,6 +27,7 @@ import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import { getSettings, startableMcpServers } from '#lib/stores/settings.ts';
 import { forgetMcpSecrets } from '#lib/stores/mcpSecrets.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { sleep } from '#lib/utils/async.ts';
 
 /** Everything the UI knows about one server right now. */
 export interface McpRuntimeState {
@@ -255,7 +256,7 @@ async function isAlreadyRunning(serverId: string): Promise<boolean> {
 		if (!status) return false;
 		// Stopped or failed: the supervisor takes a new start from either.
 		if (status.type !== 'Starting' || Date.now() >= deadline) return status.type === 'Ready';
-		await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+		await sleep(SETTLE_POLL_MS);
 	}
 }
 

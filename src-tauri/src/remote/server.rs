@@ -7,9 +7,7 @@
 //! a reason to build a duplex channel.
 
 use std::convert::Infallible;
-use std::future::Future;
 use std::net::IpAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -127,9 +125,7 @@ pub trait Host: Send + Sync + 'static {
     fn answer(&self, turn_id: &str, answer: &Answer);
 }
 
-/// A boxed future, because [`Host`] is a trait object and this crate has no
-/// async-trait dependency.
-pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+pub use crate::server_util::BoxFuture;
 
 #[derive(Clone)]
 struct AppState {
@@ -152,11 +148,6 @@ struct AppState {
     tts_port: u16,
 }
 
-/// How long a stopping server may wait for its connections to finish before
-/// they are cut. Guest streams end when the relay is cleared, so this is only
-/// for a request still in flight.
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
-
 pub struct Running {
     pub port: u16,
     pub bind_all: bool,
@@ -178,13 +169,7 @@ impl Running {
     /// with "address already in use".
     pub async fn shutdown(mut self) {
         self.stop();
-        if tokio::time::timeout(SHUTDOWN_GRACE, &mut self.serve)
-            .await
-            .is_err()
-        {
-            self.serve.abort();
-            let _ = (&mut self.serve).await;
-        }
+        crate::server_util::join_or_abort(&mut self.serve).await;
         // The reaper exits on the same signal; it holds no socket, so it is
         // only awaited so nothing of this server outlives the call.
         let _ = self.reaper.await;
@@ -383,7 +368,10 @@ async fn index(
 }
 
 fn client_page() -> Response {
-    let page = CLIENT_HTML.replace("{{host}}", &html_escape(&host_name()));
+    // The hostname comes from the OS rather than from a request, but it is
+    // still interpolated into a page, and "trusted enough" is how injection
+    // happens.
+    let page = CLIENT_HTML.replace("{{host}}", &crate::text_util::escape_xml(&host_name()));
     no_cache(Html(page).into_response())
 }
 
@@ -432,15 +420,6 @@ fn host_name() -> String {
         .map(|name| name.trim().to_string())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "this computer".to_string())
-}
-
-/// The hostname comes from the OS rather than from a request, but it is still
-/// interpolated into a page, and "trusted enough" is how injection happens.
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 #[derive(Debug, Deserialize)]
@@ -663,28 +642,7 @@ async fn speak(
 /// The sidecar returns signed 16-bit mono at 24kHz — the same assumption the
 /// desktop playback path makes — and `<audio>` will not touch headerless PCM.
 fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
-    const CHANNELS: u16 = 1;
-    const SAMPLE_RATE: u32 = 24_000;
-    const BITS: u16 = 16;
-    let byte_rate = SAMPLE_RATE * CHANNELS as u32 * (BITS / 8) as u32;
-    let block_align = CHANNELS * (BITS / 8);
-    let data_len = pcm.len() as u32;
-
-    let mut out = Vec::with_capacity(44 + pcm.len());
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes()); // PCM header size
-    out.extend_from_slice(&1u16.to_le_bytes()); // uncompressed
-    out.extend_from_slice(&CHANNELS.to_le_bytes());
-    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    out.extend_from_slice(&byte_rate.to_le_bytes());
-    out.extend_from_slice(&block_align.to_le_bytes());
-    out.extend_from_slice(&BITS.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    out.extend_from_slice(pcm);
-    out
+    crate::audio::wav_from_pcm16(pcm, crate::tts::KOKO_SAMPLE_RATE)
 }
 
 async fn stream(

@@ -32,6 +32,7 @@ import {
 	type GenerateDeps,
 	type GenerateOutcome
 } from '#lib/agent/jobs/types/video-sequence/generate.ts';
+import { basename } from '#lib/utils/basename.ts';
 
 /** How many times the first-clip stop lets the user send a note before it stops offering. */
 const MAX_NOTES = 5;
@@ -72,7 +73,7 @@ function depsFor(
 				codeSessionId: null,
 				overrides: videoOverrides()
 			});
-			return { name: rel.split('/').pop() ?? 'speech.wav', hash: stored.hash };
+			return { name: basename(rel) || 'speech.wav', hash: stored.hash };
 		},
 		resume: (handle, req, opts) => resumeVideo(handle, req, { ...opts, signal }),
 		cacheImage: async (rel) => {
@@ -84,7 +85,7 @@ function depsFor(
 				width: 0,
 				height: 0
 			});
-			return { name: rel.split('/').pop() ?? 'frame.png', hash };
+			return { name: basename(rel) || 'frame.png', hash };
 		},
 		still: async (clip, out, at) => {
 			await invoke('video_still_extract', {

@@ -13,8 +13,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use ring::rand::{SecureRandom, SystemRandom};
-
 use crate::sync_util::LockExt;
 
 pub const CODE_LIFETIME: Duration = Duration::from_secs(10 * 60);
@@ -36,11 +34,7 @@ impl PairingCodes {
     }
 
     fn issue_for(&self, token: &str, lifetime: Duration) -> Result<String, String> {
-        let mut bytes = [0u8; 24];
-        SystemRandom::new()
-            .fill(&mut bytes)
-            .map_err(|_| "the system random number generator failed".to_string())?;
-        let code: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let code = crate::hash_util::random_hex(24)?;
         let mut codes = self.codes.lock_or_recover();
         codes.retain(|_, p| p.expires > Instant::now());
         codes.insert(

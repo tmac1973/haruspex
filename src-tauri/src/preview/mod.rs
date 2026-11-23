@@ -209,12 +209,7 @@ impl PreviewServer {
 }
 
 fn new_token() -> String {
-    use ring::rand::{SecureRandom, SystemRandom};
-    let mut b = [0u8; 16];
-    SystemRandom::new()
-        .fill(&mut b)
-        .expect("the system's random source");
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    crate::hash_util::random_hex(16).expect("the system's random source")
 }
 
 /// The session id a preview window's label names: `preview-<id>`.

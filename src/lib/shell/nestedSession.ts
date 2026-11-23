@@ -20,6 +20,8 @@
  * friends change user but not filesystem, so they are not nested sessions.
  */
 
+import { basename } from '#lib/utils/basename.ts';
+
 export type NestedSessionKind = 'remote' | 'container';
 
 export interface NestedSession {
@@ -145,11 +147,6 @@ export function unwrap(tokens: string[]): string[] {
 		break;
 	}
 	return tokens.slice(i);
-}
-
-export function basename(path: string): string {
-	const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-	return cut >= 0 ? path.slice(cut + 1) : path;
 }
 
 /** First non-flag token, skipping flags and the values they consume. */

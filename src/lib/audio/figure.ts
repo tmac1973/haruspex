@@ -6,15 +6,8 @@
  */
 
 import { audioHashFromUrl } from '#lib/audio/url.ts';
+import { escapeHtml as esc } from '#lib/utils/escapeHtml.ts';
 import { videoHashFromUrl } from '#lib/videogen/url.ts';
-
-function esc(s: string): string {
-	return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;');
-}
 
 /**
  * The placeholder for `url`'s player, or `null` when it is not one of our

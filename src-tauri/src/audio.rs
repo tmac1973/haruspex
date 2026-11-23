@@ -368,6 +368,61 @@ pub(crate) fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, S
     Ok(cursor.into_inner())
 }
 
+/// The 44-byte header of a 16-bit mono PCM WAV holding `data_len` bytes.
+pub(crate) fn wav_header(sample_rate: u32, data_len: u32) -> [u8; 44] {
+    let mut h = [0u8; 44];
+    h[0..4].copy_from_slice(b"RIFF");
+    h[4..8].copy_from_slice(&36u32.saturating_add(data_len).to_le_bytes());
+    h[8..16].copy_from_slice(b"WAVEfmt ");
+    h[16..20].copy_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+    h[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM
+    h[22..24].copy_from_slice(&1u16.to_le_bytes()); // mono
+    h[24..28].copy_from_slice(&sample_rate.to_le_bytes());
+    h[28..32].copy_from_slice(&(sample_rate * 2).to_le_bytes()); // bytes per second
+    h[32..34].copy_from_slice(&2u16.to_le_bytes()); // bytes per frame
+    h[34..36].copy_from_slice(&16u16.to_le_bytes()); // bits per sample
+    h[36..40].copy_from_slice(b"data");
+    h[40..44].copy_from_slice(&data_len.to_le_bytes());
+    h
+}
+
+/// 16-bit mono PCM bytes as a WAV file.
+pub(crate) fn wav_from_pcm16(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+    wav.extend_from_slice(&wav_header(sample_rate, pcm.len() as u32));
+    wav.extend_from_slice(pcm);
+    wav
+}
+
+/// Where a WAV's `data` chunk starts (after its header) in `wav`, or None
+/// when it is not a RIFF/WAVE file or has no `data` chunk.
+pub(crate) fn wav_data_start(wav: &[u8]) -> Option<usize> {
+    if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut at = 12;
+    while at + 8 <= wav.len() {
+        let id = &wav[at..at + 4];
+        let size = u32::from_le_bytes(wav[at + 4..at + 8].try_into().ok()?) as usize;
+        if id == b"data" {
+            return Some(at + 8);
+        }
+        at = at.checked_add(8 + size + (size & 1))?;
+    }
+    None
+}
+
+/// Make a WAV's RIFF and `data` sizes match its bytes: a pipe or a streamed
+/// answer leaves them as placeholders. None when it has no `data` chunk.
+pub(crate) fn wav_fix_sizes(wav: &mut [u8]) -> Option<()> {
+    let data = wav_data_start(wav)?;
+    let riff = (wav.len() - 8) as u32;
+    let len = (wav.len() - data) as u32;
+    wav[4..8].copy_from_slice(&riff.to_le_bytes());
+    wav[data - 4..data].copy_from_slice(&len.to_le_bytes());
+    Some(())
+}
+
 // Tauri commands
 
 #[tauri::command]
@@ -429,6 +484,25 @@ mod tests {
         );
         drop(listening);
         assert!(lock.try_take(MicUser::PushToTalk).is_ok());
+    }
+
+    #[test]
+    fn wav_from_pcm16_matches_hound() {
+        // The hand-written header is what hound writes for the same samples.
+        let samples = [0.0f32, 0.5, -0.5, 0.25];
+        let from_hound = encode_wav(&samples, 24_000).unwrap();
+        assert_eq!(wav_from_pcm16(&from_hound[44..], 24_000), from_hound);
+    }
+
+    #[test]
+    fn wav_fix_sizes_fills_in_placeholders() {
+        let mut wav = wav_from_pcm16(&[1, 0, 2, 0], 16_000);
+        wav[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+        wav[40..44].copy_from_slice(&0u32.to_le_bytes());
+        wav_fix_sizes(&mut wav).unwrap();
+        assert_eq!(wav, wav_from_pcm16(&[1, 0, 2, 0], 16_000));
+        assert_eq!(wav_data_start(&wav), Some(44));
+        assert!(wav_fix_sizes(&mut b"not a wav file".to_vec()).is_none());
     }
 
     #[test]

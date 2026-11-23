@@ -14,15 +14,7 @@ import { captionFor } from '#lib/images/caption.ts';
 import { imageUrlsInText, stripCandidates } from '#lib/images/eligible.ts';
 import { getResolvedImages } from '#lib/images/resolve.svelte.ts';
 import { imageSrc } from '#lib/images/url.ts';
-
-/** Minimal HTML escape for text going into an attribute or text node. */
-function esc(s: string): string {
-	return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;');
-}
+import { escapeHtml as esc } from '#lib/utils/escapeHtml.ts';
 
 /** The download arrow `ImageSaveButton.svelte` draws. */
 const SAVE_ICON =

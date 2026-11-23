@@ -22,6 +22,7 @@ import { stamp } from '#lib/camera/log.ts';
 import { onCannotJudge, onJudged } from '#lib/camera/alertEvents.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { sleep } from '#lib/utils/async.ts';
 
 /** How long after an urgent email further ones on that camera are held for one follow-up. */
 export const FOLLOW_UP_WINDOW_MS = 10 * 60_000;
@@ -77,7 +78,7 @@ async function sendWithRetry(alert: CameraAlert): Promise<string | null> {
 				kind: alert.kind,
 				error: errMessage(e)
 			});
-			await new Promise((r) => setTimeout(r, RETRY_MS));
+			await sleep(RETRY_MS);
 		}
 	}
 }

@@ -13,6 +13,7 @@
 import type { BackendOverride } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import type { FetchedPage } from '#lib/ipc/gen/FetchedPage.ts';
+import { clampInt } from '#lib/utils/clampInt.ts';
 
 /** Characters per token, on the low side so a budget doesn't overrun. */
 const CHARS_PER_TOKEN = 3;
@@ -40,13 +41,9 @@ function contextTokens(backend?: BackendOverride | null): number {
 	}
 }
 
-function clamp(n: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, Math.floor(n)));
-}
-
 /** Characters of page text `fetch_url` returns on this turn's model. */
 export function fetchUrlBudget(backend?: BackendOverride | null): number {
-	return clamp(
+	return clampInt(
 		contextTokens(backend) * FETCH_SHARE * CHARS_PER_TOKEN,
 		FETCH_MIN_CHARS,
 		FETCH_MAX_CHARS
@@ -59,7 +56,7 @@ export function fetchUrlBudget(backend?: BackendOverride | null): number {
  */
 export function researchBudget(replyTokens: number, backend?: BackendOverride | null): number {
 	const room = (contextTokens(backend) - replyTokens - 1_000) * CHARS_PER_TOKEN * RESEARCH_SHARE;
-	return clamp(room, RESEARCH_MIN_CHARS, RESEARCH_MAX_CHARS);
+	return clampInt(room, RESEARCH_MIN_CHARS, RESEARCH_MAX_CHARS);
 }
 
 export interface CutPage {

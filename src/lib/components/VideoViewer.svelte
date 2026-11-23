@@ -15,6 +15,7 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import { clock } from '#lib/editor/waveform.ts';
 	import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';
+	import { basename } from '#lib/utils/basename.ts';
 
 	let { workdir, relPath }: { workdir: string; relPath: string } = $props();
 
@@ -48,7 +49,7 @@
 		if (video.paused) void video.play().catch(() => {});
 		else video.pause();
 	}
-	const name = $derived(relPath.split('/').pop() ?? relPath);
+	const name = $derived(basename(relPath) || relPath);
 
 	async function load(): Promise<void> {
 		error = '';

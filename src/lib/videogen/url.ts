@@ -5,23 +5,15 @@
  * control's server, whose audio route serves any cached file.
  */
 
-import { isWebClient } from '#lib/buildFlags.ts';
-import { customSchemeBase } from '#lib/utils/customScheme.ts';
+import { mediaUrls } from '#lib/utils/mediaUrl.ts';
 
-const BASE = isWebClient ? '/api/v1/audio/' : customSchemeBase('haruspex-video');
-
-const HASH_RE = /^[0-9a-f]{64}$/;
+const urls = mediaUrls('haruspex-video', '/api/v1/audio/');
 
 /** Either platform's form of a clip's URL, with the hash captured. */
-export const LOCAL_VIDEO_URL =
-	/^(?:haruspex-video:\/\/localhost\/|http:\/\/haruspex-video\.localhost\/)([0-9a-f]{64})$/;
+export const LOCAL_VIDEO_URL = urls.pattern;
 
 /** URL for a cached clip, or `null` if the hash is not the shape Rust accepts. */
-export function videoSrc(hash: string): string | null {
-	return HASH_RE.test(hash) ? `${BASE}${hash}` : null;
-}
+export const videoSrc = urls.src;
 
 /** The hash in one of our clip URLs, or `null` for any other URL. */
-export function videoHashFromUrl(url: string): string | null {
-	return url.trim().match(LOCAL_VIDEO_URL)?.[1] ?? null;
-}
+export const videoHashFromUrl = urls.hashFromUrl;

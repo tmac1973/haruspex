@@ -510,37 +510,16 @@ pub(crate) fn parse_probe(json: &str) -> Result<CameraCaps, String> {
     })
 }
 
-/// Where a WAV's `data` chunk starts (after its header) in `wav`.
-pub(crate) fn data_chunk(wav: &[u8]) -> Option<usize> {
-    if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
-        return None;
-    }
-    let mut at = 12;
-    while at + 8 <= wav.len() {
-        let id = &wav[at..at + 4];
-        let size = u32::from_le_bytes(wav[at + 4..at + 8].try_into().ok()?) as usize;
-        if id == b"data" {
-            return Some(at + 8);
-        }
-        at = at.checked_add(8 + size + (size & 1))?;
-    }
-    None
-}
-
 /// Fill in the RIFF and data sizes, which ffmpeg can't go back and write on a
 /// pipe.
 pub(crate) fn fix_wav_sizes(wav: &mut [u8]) -> Result<(), String> {
-    let data = data_chunk(wav).ok_or("The sound from the camera was not a WAV file.")?;
-    let riff = (wav.len() - 8) as u32;
-    let len = (wav.len() - data) as u32;
-    wav[4..8].copy_from_slice(&riff.to_le_bytes());
-    wav[data - 4..data].copy_from_slice(&len.to_le_bytes());
-    Ok(())
+    crate::audio::wav_fix_sizes(wav)
+        .ok_or_else(|| "The sound from the camera was not a WAV file.".to_string())
 }
 
 /// How loud 16-bit PCM WAV is overall, in dBFS (RMS). Silence is -120.
 pub(crate) fn level_db(wav: &[u8]) -> f64 {
-    let Some(data) = data_chunk(wav) else {
+    let Some(data) = crate::audio::wav_data_start(wav) else {
         return -120.0;
     };
     let samples: Vec<f64> = wav[data..]
@@ -809,7 +788,7 @@ mod tests {
         };
         let wav = record_audio("/no/ffmpeg", &cfg, 1).await.unwrap();
         writer.await.unwrap();
-        assert_eq!(data_chunk(&wav), Some(44));
+        assert_eq!(crate::audio::wav_data_start(&wav), Some(44));
         assert_eq!(wav.len(), 44 + 32_000);
         let no_mic = CameraConfig {
             id: "watched-usb".into(),
@@ -908,7 +887,7 @@ mod tests {
         )
         .await;
         fix_wav_sizes(&mut wav).unwrap();
-        let data = data_chunk(&wav).unwrap();
+        let data = crate::audio::wav_data_start(&wav).unwrap();
         // fmt: mono, 16 kHz, 16-bit.
         assert_eq!(u16::from_le_bytes([wav[22], wav[23]]), 1);
         assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 16_000);

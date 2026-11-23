@@ -57,3 +57,8 @@ export function formatTokens(n: number): string {
 	if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
 	return n.toString();
 }
+
+/** `1 file`, `2 files`: the count with the word it takes. */
+export function plural(n: number, one: string, many = `${one}s`): string {
+	return `${n} ${n === 1 ? one : many}`;
+}

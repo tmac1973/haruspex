@@ -93,9 +93,7 @@ pub(crate) fn envelope(body: &str, token: Option<&UsernameToken>) -> String {
 }
 
 /// Escape text for element content or an attribute value.
-pub(crate) fn escape(s: &str) -> String {
-    quick_xml::escape::escape(s).into_owned()
-}
+pub(crate) use crate::text_util::escape_xml as escape;
 
 /// An `Authorization: Digest …` value answering `challenge` (a
 /// `WWW-Authenticate` header), or `None` when it isn't a digest challenge

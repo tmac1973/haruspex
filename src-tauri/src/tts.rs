@@ -280,8 +280,9 @@ impl TtsEngine {
     }
 }
 
-/// koko's PCM: 16-bit signed little-endian, mono, 24 kHz.
-const SAMPLE_RATE: std::num::NonZeroU32 = std::num::NonZeroU32::new(24_000).unwrap();
+/// koko's PCM: 16-bit signed little-endian, mono, at this rate.
+pub(crate) const KOKO_SAMPLE_RATE: u32 = 24_000;
+const SAMPLE_RATE: std::num::NonZeroU32 = std::num::NonZeroU32::new(KOKO_SAMPLE_RATE).unwrap();
 
 /// Turns koko's streamed PCM into samples. A network chunk can end halfway
 /// through a sample, so its odd byte waits for the next chunk.
@@ -412,19 +413,7 @@ impl WavWriter {
         use std::io::Write;
         let rate = SAMPLE_RATE.get();
         let data = u32::try_from(self.data_bytes).unwrap_or(u32::MAX);
-        let mut h = Vec::with_capacity(WAV_HEADER_BYTES as usize);
-        h.extend(b"RIFF");
-        h.extend((36 + data).to_le_bytes());
-        h.extend(b"WAVEfmt ");
-        h.extend(16u32.to_le_bytes()); // fmt chunk size
-        h.extend(1u16.to_le_bytes()); // PCM
-        h.extend(1u16.to_le_bytes()); // mono
-        h.extend(rate.to_le_bytes());
-        h.extend((rate * 2).to_le_bytes()); // bytes per second
-        h.extend(2u16.to_le_bytes()); // bytes per frame
-        h.extend(16u16.to_le_bytes()); // bits per sample
-        h.extend(b"data");
-        h.extend(data.to_le_bytes());
+        let h = crate::audio::wav_header(rate, data);
         self.file
             .write_all(&h)
             .map_err(|e| format!("Failed to write audio: {}", e))

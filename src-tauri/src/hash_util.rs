@@ -36,8 +36,29 @@ pub fn hex(bytes: &[u8]) -> String {
         })
 }
 
+/// `bytes` bytes from the system's random source, as lower-case hex: the
+/// ids, tokens and keys the app hands out.
+pub fn random_hex(bytes: usize) -> Result<String, String> {
+    use ring::rand::{SecureRandom, SystemRandom};
+    let mut buf = vec![0u8; bytes];
+    SystemRandom::new()
+        .fill(&mut buf)
+        .map_err(|_| "the system random number generator failed".to_string())?;
+    Ok(hex(&buf))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn random_hex_is_two_digits_a_byte_and_differs_each_time() {
+        let a = super::random_hex(16).unwrap();
+        assert_eq!(a.len(), 32);
+        assert!(a
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_ne!(a, super::random_hex(16).unwrap());
+    }
+
     use super::*;
     use crate::test_util::temp_dir;
 

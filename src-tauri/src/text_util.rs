@@ -252,6 +252,12 @@ fn redact_userinfo(text: &str) -> String {
     out
 }
 
+/// Escape `&`, `<`, `>`, `"` and `'` for XML or HTML, in element text or a
+/// quoted attribute. Every writer of XML and HTML here goes through this.
+pub fn escape_xml(s: &str) -> String {
+    quick_xml::escape::escape(s).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

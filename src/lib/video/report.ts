@@ -11,6 +11,7 @@ import type { SummaryItem } from '#lib/ipc/gen/SummaryItem.ts';
 import type { AudioItem } from '#lib/ipc/gen/AudioItem.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
+import { plural } from '#lib/utils/format.ts';
 
 /** `12:03`, or `1:02:03` past an hour. */
 export function formatDuration(secs: number): string {
@@ -102,10 +103,6 @@ export function formatTime(secs: number): string {
 
 /** The most gain loudness evening adds, as `MAX_GAIN` in `loudness.rs`. */
 const MAX_GAIN_DB = 20;
-
-function plural(n: number, word: string): string {
-	return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
 
 /** A clip's gain ranges, as the summary line says them. */
 function rangeParts(i: SummaryItem): string[] {

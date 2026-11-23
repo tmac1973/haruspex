@@ -17,6 +17,7 @@ import rust from 'highlight.js/lib/languages/rust';
 import sql from 'highlight.js/lib/languages/sql';
 import yaml from 'highlight.js/lib/languages/yaml';
 import powershell from 'highlight.js/lib/languages/powershell';
+import { escapeHtml } from '#lib/utils/escapeHtml.ts';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('js', javascript);
@@ -307,14 +308,6 @@ export function splitShellCommands(text: string): string[] | null {
 	}
 
 	return segments.length > 1 ? segments : null;
-}
-
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;');
 }
 
 /**

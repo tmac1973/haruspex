@@ -110,12 +110,9 @@ impl ArtifactFrames {
 }
 
 fn new_id() -> String {
-    use ring::rand::{SecureRandom, SystemRandom};
-    let mut b = [0u8; 16];
     // An unguessable id is not what keeps a document private (the frame's
     // origin is opaque and nothing lists ids), but it costs nothing.
-    let _ = SystemRandom::new().fill(&mut b);
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    crate::hash_util::random_hex(16).expect("the system's random source")
 }
 
 /// Keep an artifact document for its iframe and return the id to load it by.

@@ -162,21 +162,8 @@ pub fn fix_wav(mut wav: Vec<u8>) -> Result<Vec<u8>, String> {
     if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
         return Err("The speech server did not send a WAV.".into());
     }
-    let mut at = 12;
-    while at + 8 <= wav.len() {
-        let size = u32_at(&wav, at + 4).unwrap_or(0) as usize;
-        if &wav[at..at + 4] == b"data" {
-            let real = wav.len() - at - 8;
-            if size != real {
-                wav[at + 4..at + 8].copy_from_slice(&(real as u32).to_le_bytes());
-            }
-            let riff = (wav.len() - 8) as u32;
-            wav[4..8].copy_from_slice(&riff.to_le_bytes());
-            return Ok(wav);
-        }
-        at += 8 + size + (size & 1);
-    }
-    Err("The speech server's WAV has no sound in it.".into())
+    crate::audio::wav_fix_sizes(&mut wav).ok_or("The speech server's WAV has no sound in it.")?;
+    Ok(wav)
 }
 
 /// A PCM WAV's length in seconds.

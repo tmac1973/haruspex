@@ -167,9 +167,7 @@ impl Tree {
 }
 
 /// Escape text for an attribute value or element content.
-pub fn escape(s: &str) -> String {
-    quick_xml::escape::escape(s).into_owned()
-}
+pub use crate::text_util::escape_xml as escape;
 
 /// Replacements over the original text, applied together.
 #[derive(Default)]
