@@ -43,7 +43,7 @@ import {
 	injectMessageHints
 } from '#lib/agent/systemPrompt.ts';
 import { diagnoseEmptyResponse } from '#lib/agent/diagnostics.ts';
-import { beginTurn, logDebug } from '#lib/debugLog.ts';
+import { beginTurn, logDebug, privateTextForLog } from '#lib/debugLog.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 import { noteConversationLeft, noteTurnFinished } from '#lib/agent/memory/scheduler.ts';
 import {
@@ -352,9 +352,11 @@ export async function initChatStore(): Promise<void> {
 	}
 	setChatTaskHandler(onTaskEnded);
 	// Notices left from before a reload or a restart.
-	void initTasks().then(() => {
-		for (const owner of ownersWithNotices('chat:')) void deliverNotices(owner.slice(5));
-	});
+	void initTasks()
+		.then(() => {
+			for (const owner of ownersWithNotices('chat:')) void deliverNotices(owner.slice(5));
+		})
+		.catch((e: unknown) => console.warn('chat: could not deliver waiting notices:', e));
 }
 
 /** The toast for a task that finished in a conversation that isn't open. */
@@ -992,7 +994,7 @@ async function replaySandboxCall(chatId: string, call: SandboxCallToReplay): Pro
 	} else if (call.name === 'run_python' && call.args.code) {
 		if (isLongRunningLaunch(call.args.code)) {
 			logDebug('sandbox', 'session restore: skipping long-running launch', {
-				preview: call.args.code.slice(0, 60)
+				preview: privateTextForLog(call.args.code)
 			});
 			return;
 		}

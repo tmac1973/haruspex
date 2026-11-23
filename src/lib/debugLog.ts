@@ -56,6 +56,14 @@ export function previewPayload(s: string | null | undefined, max = 800): string 
 }
 
 /**
+ * Text the user or the model wrote, for the log: its first `max` characters
+ * when verbose payloads are on, otherwise only its length (`string(2431)`).
+ */
+export function privateTextForLog(s: string, max = 60): string {
+	return verbosePayloads ? s.slice(0, max) : `string(${s.length})`;
+}
+
+/**
  * Tool arguments for the log without their content: each value's type and
  * size (`string(2431)`, `array(3)`, `object(2)`). A blank string is shown as
  * it is, since it holds nothing and an empty argument is a common model

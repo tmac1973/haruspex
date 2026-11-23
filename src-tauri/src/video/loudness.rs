@@ -102,12 +102,8 @@ fn load(episode_dir: &Path) -> HashMap<String, Measured> {
 }
 
 fn save(episode_dir: &Path, cache: &HashMap<String, Measured>) {
-    let path = cache_path(episode_dir);
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    if let Ok(text) = serde_json::to_string(cache) {
-        let _ = std::fs::write(path, text);
+    if let Err(e) = crate::file_util::save_json(&cache_path(episode_dir), cache, false) {
+        log::warn!("could not save the loudness cache: {e}");
     }
 }
 

@@ -16,6 +16,7 @@ import type { ProtectedTargets } from '#lib/ipc/gen/ProtectedTargets.ts';
 import type { ProtectedPort } from '#lib/ipc/gen/ProtectedPort.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { imageEntries } from '#lib/image/entries.ts';
+import { isLoopbackHost } from '#lib/utils/loopback.ts';
 
 export interface BoundaryCheck {
 	matched: boolean;
@@ -128,7 +129,8 @@ function localPort(url: string): ProtectedPort[] {
 	if (!url.trim()) return [];
 	try {
 		const u = new URL(url.trim());
-		if (!['localhost', '127.0.0.1', '[::1]', '0.0.0.0'].includes(u.hostname)) return [];
+		// 0.0.0.0 is how a server bound to every interface is often written.
+		if (!isLoopbackHost(u.hostname) && u.hostname !== '0.0.0.0') return [];
 		const port = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
 		return [{ port, label: 'image backend' }];
 	} catch {

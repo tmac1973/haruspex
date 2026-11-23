@@ -12,6 +12,7 @@
  * catalog entry, so a Playwright server added by hand behaves the same.
  */
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+import { isLoopbackHost } from '#lib/utils/loopback.ts';
 
 const NAVIGATE_TOOL = 'browser_navigate';
 
@@ -33,14 +34,4 @@ export function isLocalNavigation(
 	}
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
 	return isLoopbackHost(url.hostname);
-}
-
-/** `localhost`, a `.localhost` name, 127.0.0.0/8 or `[::1]`, as `URL` spells them. */
-function isLoopbackHost(host: string): boolean {
-	return (
-		host === 'localhost' ||
-		host.endsWith('.localhost') ||
-		host === '[::1]' ||
-		/^127(\.\d{1,3}){3}$/.test(host)
-	);
 }

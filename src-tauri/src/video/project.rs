@@ -811,15 +811,11 @@ fn read_state(episode_dir: &Path) -> EpisodeState {
 }
 
 fn write_state(episode_dir: &Path, project: &str) {
-    let path = state_path(episode_dir);
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
     let state = EpisodeState {
         project: Some(project.to_string()),
     };
-    if let Ok(text) = serde_json::to_string_pretty(&state) {
-        let _ = std::fs::write(path, text);
+    if let Err(e) = crate::file_util::save_json(&state_path(episode_dir), &state, true) {
+        log::warn!("could not save the episode's project choice: {e}");
     }
 }
 

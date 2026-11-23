@@ -99,14 +99,10 @@ impl CreatedFiles {
 
     fn save(&self, store: &Store) {
         let Some(file) = &self.file else { return };
-        if let Some(dir) = file.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(text) = serde_json::to_string(store) {
-            let tmp = file.with_extension("json.tmp");
-            if std::fs::write(&tmp, text).is_ok() {
-                let _ = std::fs::rename(&tmp, file);
-            }
+        // A lost record takes away delete and move on the files it lists, so
+        // say when it can't be kept.
+        if let Err(e) = crate::file_util::save_json(file, store, false) {
+            log::warn!("could not save the created-files record: {e}");
         }
     }
 

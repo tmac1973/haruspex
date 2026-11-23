@@ -6,6 +6,7 @@
  * and any id the model made up is dropped.
  */
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** One item of a card result's `{ items: [...] }`. */
 export interface ResultSchema {
@@ -70,7 +71,7 @@ export function parseModelJson(text: string): unknown {
 			try {
 				return JSON.parse(unfenced.slice(start, i + 1));
 			} catch (e) {
-				throw new Error(`The JSON doesn't parse: ${(e as Error).message}`, { cause: e });
+				throw new Error(`The JSON doesn't parse: ${errMessage(e)}`, { cause: e });
 			}
 		}
 	}
@@ -90,26 +91,36 @@ export function keepKnownIds(
 type PickTurn = Parameters<JobRunContext['runJobTurn']>[0];
 
 /**
- * One model turn that picks items, parsed, checked and limited to known ids.
- * A reply that doesn't parse or fit the schema gets one more turn, told what
- * was wrong; when that fails too this throws its error, for the step to fail
- * with.
+ * One model turn whose reply `parse` turns into a result. A reply that
+ * doesn't parse gets one more turn, told what was wrong; when that fails too
+ * this throws its error, for the step to fail with.
  */
-export async function pickWithRetry(
+export async function turnWithRetry<T>(
+	ctx: Pick<JobRunContext, 'runJobTurn'>,
+	turn: PickTurn,
+	parse: (finalText: string) => T
+): Promise<T> {
+	let message = turn.userMessage;
+	for (let attempt = 0; ; attempt++) {
+		const { finalText } = await ctx.runJobTurn({ ...turn, userMessage: message });
+		try {
+			return parse(finalText);
+		} catch (e) {
+			if (attempt > 0) throw e;
+			message = `${turn.userMessage}\n\nYour last reply could not be used: ${errMessage(e)} Reply again with only the JSON object.`;
+		}
+	}
+}
+
+/** One model turn that picks items, parsed, checked and limited to known ids. */
+export function pickWithRetry(
 	ctx: Pick<JobRunContext, 'runJobTurn'>,
 	turn: PickTurn,
 	schema: ResultSchema,
 	knownIds: ReadonlySet<string>
 ): Promise<{ items: ResultItem[]; dropped: number }> {
-	let message = turn.userMessage;
-	for (let attempt = 0; ; attempt++) {
-		const { finalText } = await ctx.runJobTurn({ ...turn, userMessage: message });
-		try {
-			const result = validate(parseModelJson(finalText), schema);
-			return keepKnownIds(result.items, schema.idField, knownIds);
-		} catch (e) {
-			if (attempt > 0) throw e;
-			message = `${turn.userMessage}\n\nYour last reply could not be used: ${(e as Error).message} Reply again with only the JSON object.`;
-		}
-	}
+	return turnWithRetry(ctx, turn, (finalText) => {
+		const result = validate(parseModelJson(finalText), schema);
+		return keepKnownIds(result.items, schema.idField, knownIds);
+	});
 }

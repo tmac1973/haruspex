@@ -18,6 +18,7 @@ mod desktop;
 mod engine;
 mod env_util;
 mod feedback;
+mod file_util;
 mod fs_tools;
 mod hardware;
 mod hash_util;

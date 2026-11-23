@@ -10,6 +10,7 @@ import type { InferenceBackendConfig } from '#lib/stores/settings.ts';
 import { setRemoteProblem } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { openSettings } from '#lib/stores/settingsNav.svelte.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type RemoteModelCheck =
 	| { kind: 'ok' }
@@ -52,7 +53,7 @@ export async function checkRemoteModel(backend: RemoteBackend): Promise<RemoteMo
 			ids = probe.models.map((m) => m.id);
 		}
 	} catch (e) {
-		return { kind: 'unreachable', error: e instanceof Error ? e.message : String(e) };
+		return { kind: 'unreachable', error: errMessage(e) };
 	}
 	return ids.includes(modelId) ? { kind: 'ok' } : { kind: 'missing', modelId };
 }
