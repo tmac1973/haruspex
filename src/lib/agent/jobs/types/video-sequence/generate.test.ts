@@ -258,4 +258,63 @@ describe('runGenerate', () => {
 		).rejects.toThrow('keyframes/snow.png is missing.');
 		expect(requests).toEqual([]);
 	});
+
+	it('checks each clip, making a failing one again before the next chains from it', async () => {
+		const checked: Array<[string, string | null, string | null]> = [];
+		const verdicts = [{ ok: false, problem: 'a wolf, not a fox' }, { ok: true }];
+		const run = runOf(shortFox());
+		await runGenerate(
+			run,
+			deps({
+				seed: () => 900 + requests.length,
+				check: async (item, _clip, against) => {
+					checked.push([item.id, against.start, against.keyframe]);
+					return verdicts.shift() ?? { ok: true };
+				}
+			})
+		);
+		// snow-01 twice (fail, then pass), then the rest once each.
+		expect(requests.map((r) => r.title)).toEqual([
+			'snow-01',
+			'snow-01',
+			'snow-02',
+			'join-1',
+			'forest-01'
+		]);
+		expect(requests[1].seed).toBe(901);
+		expect(checked[0]).toEqual(['snow-01', 'keyframes/snow.png', null]);
+		expect(checked[2]).toEqual([
+			'snow-02',
+			'.haruspex/stills/snow-01-last.png',
+			'keyframes/snow.png'
+		]);
+		// A transition is checked against where it started, not a section keyframe.
+		expect(checked[3]).toEqual(['join-1', '.haruspex/stills/snow-02-last.png', null]);
+		expect(run.clips['snow-01'].check).toEqual({ ok: true });
+	});
+
+	it('keeps a clip that fails twice, flagged, and goes on', async () => {
+		const run = runOf(shortFox());
+		const out = await runGenerate(
+			run,
+			deps({
+				check: async (item) =>
+					item.id === 'snow-02' ? { ok: false, problem: 'a jump' } : { ok: true }
+			})
+		);
+		expect(out.kind).toBe('done');
+		expect(requests.filter((r) => r.title === 'snow-02')).toHaveLength(2);
+		expect(run.clips['snow-02']).toMatchObject({
+			status: 'done',
+			check: { ok: false, problem: 'a jump' }
+		});
+		expect(run.clips['forest-01'].status).toBe('done');
+	});
+
+	it('makes each clip once when there is no check', async () => {
+		const run = runOf(shortFox());
+		await runGenerate(run, deps());
+		expect(requests).toHaveLength(4);
+		expect(run.clips['snow-01'].check).toBeUndefined();
+	});
 });

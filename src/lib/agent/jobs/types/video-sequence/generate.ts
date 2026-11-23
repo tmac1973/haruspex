@@ -53,6 +53,15 @@ export interface GenerateDeps {
 	 * again (with a note for the prompt, which the caller writes into the spec).
 	 */
 	ask?(item: GenerateItem, made: VideoResult): Promise<'continue' | 'stop' | { redo: string }>;
+	/**
+	 * With a vision model: does the clip continue the picture it started
+	 * from, and keep its section's look? Null when it could not tell.
+	 */
+	check?(
+		item: GenerateItem,
+		clip: string,
+		against: { start: string | null; keyframe: string | null }
+	): Promise<{ ok: boolean; problem?: string } | null>;
 	seed(): number;
 	now(): number;
 	signal?: AbortSignal;
@@ -163,6 +172,8 @@ interface Job {
 	/** A job an earlier run left in flight on the server. */
 	resume?: VideoJobHandle;
 	request: (seed: number) => VideoRequest;
+	/** The picture it starts from, for the check. */
+	start: string | null;
 }
 
 /** Make one clip: follow its job if one is in flight, else make it, once more on a new seed. */
@@ -206,6 +217,29 @@ async function makeClip(
 	}
 }
 
+/**
+ * Make a clip and keep it; with a check, a clip that fails is made once more
+ * on a new seed and checked again. A second failure keeps the newer clip,
+ * flagged: a long run never stalls on a judgement.
+ */
+async function makeChecked(job: Job, run: GenerateRun, deps: GenerateDeps) {
+	const keyframe = job.item.join ? null : (run.stills[job.item.section] ?? null);
+	const against = { start: job.start, keyframe: keyframe === job.start ? null : keyframe };
+	let made = await makeClip(job, run, deps);
+	let file = clipPath(job.item.id, made.result.mime);
+	await deps.saveClip(made.result.hash, file);
+	if (!deps.check) return { ...made, file, check: null };
+	let check = await deps.check(job.item, file, against);
+	if (check && !check.ok) {
+		deps.status(`${job.where} — the check failed (${check.problem}); making it again`);
+		made = await makeClip({ ...job, seed: deps.seed(), resume: undefined }, run, deps);
+		file = clipPath(job.item.id, made.result.mime);
+		await deps.saveClip(made.result.hash, file);
+		check = await deps.check(job.item, file, against);
+	}
+	return { ...made, file, check: check ?? null };
+}
+
 /** The seed a clip starts with: a redo's new one, the one it had, the spec's, or a new one. */
 function seedFor(
 	item: GenerateItem,
@@ -247,9 +281,7 @@ export async function runGenerate(run: GenerateRun, deps: GenerateDeps): Promise
 			pictureOf
 		);
 		const began = deps.now();
-		const { result, seed } = await makeClip(job, run, deps);
-		const file = clipPath(item.id, result.mime);
-		await deps.saveClip(result.hash, file);
+		const { result, seed, file, check } = await makeChecked(job, run, deps);
 		const secs = (deps.now() - began) / 1000;
 		run.clips[item.id] = {
 			key,
@@ -257,7 +289,8 @@ export async function runGenerate(run: GenerateRun, deps: GenerateDeps): Promise
 			file,
 			seed: result.seed ?? seed,
 			hasAudio: result.hasAudio,
-			secs
+			secs,
+			...(check ? { check } : {})
 		};
 		await deps.saveProgress();
 		counts.made++;
@@ -295,6 +328,7 @@ async function prepare(
 		key: at.key,
 		where: at.where,
 		seed: seedFor(item, at.was, fresh, at.redo, deps),
+		start,
 		...(inFlight ? { resume: inFlight } : {}),
 		request: (seed) => ({
 			title: item.id,

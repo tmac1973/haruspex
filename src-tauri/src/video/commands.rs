@@ -436,6 +436,20 @@ pub struct FrameRequest {
     /// Or times in the cut of a project (`project` or the episode's).
     pub timeline_times: Option<Vec<f64>>,
     pub project: Option<String>,
+    /// Pictures in the working folder, put on the sheet before the frames:
+    /// what a clip is checked against.
+    #[serde(default)]
+    #[ts(optional)]
+    pub images: Option<Vec<SheetImage>>,
+}
+
+/// A picture on a contact sheet, with what it is.
+#[derive(serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetImage {
+    pub path: String,
+    pub label: String,
 }
 
 #[derive(serde::Serialize, ts_rs::TS)]
@@ -447,6 +461,8 @@ pub struct Tile {
     pub path: String,
     pub source_secs: f64,
     pub timeline_secs: Option<f64>,
+    /// For a picture rather than a frame: what it is.
+    pub label: Option<String>,
 }
 
 #[derive(serde::Serialize, ts_rs::TS)]
@@ -516,13 +532,27 @@ pub async fn video_frames(
         }
         _ => return Err("Give a path (with times or every_secs), or timeline_times.".into()),
     }
-    if wanted.len() > frames::MAX_FRAMES {
+    let images = request.images.unwrap_or_default();
+    if wanted.len() + images.len() > frames::MAX_FRAMES {
         return Err(format!(
             "At most {} frames fit on a sheet.",
             frames::MAX_FRAMES
         ));
     }
     let mut pngs = Vec::new();
+    let mut tiles = Vec::new();
+    for image in &images {
+        let file =
+            paths::resolve_media(&working_dir, &image.path, &settings.intro, &settings.outro)?;
+        pngs.push(std::fs::read(&file).map_err(|e| format!("can't read {}: {e}", image.path))?);
+        tiles.push(Tile {
+            n: tiles.len() as u32 + 1,
+            path: paths::display_path(&working_dir, &file),
+            source_secs: 0.0,
+            timeline_secs: None,
+            label: Some(image.label.clone()),
+        });
+    }
     for (file, _, at, _) in &wanted {
         pngs.push(frames::extract_frame(&ffmpeg, file, *at, 960).await?);
     }
@@ -532,16 +562,22 @@ pub async fn video_frames(
             "data:image/jpeg;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(jpeg)
         ),
-        tiles: wanted
-            .into_iter()
-            .enumerate()
-            .map(|(i, (_, path, at, tl))| Tile {
-                n: i as u32 + 1,
-                path,
-                source_secs: at,
-                timeline_secs: tl,
-            })
-            .collect(),
+        tiles: {
+            let first = tiles.len();
+            tiles.extend(
+                wanted
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (_, path, at, tl))| Tile {
+                        n: (first + i) as u32 + 1,
+                        path,
+                        source_secs: at,
+                        timeline_secs: tl,
+                        label: None,
+                    }),
+            );
+            tiles
+        },
     })
 }
 
@@ -912,6 +948,69 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, SystemTime};
+
+    /// A sheet with a picture first, then the clip's frames, numbered on.
+    #[tokio::test]
+    async fn a_sheet_puts_pictures_before_the_frames() {
+        if crate::video::binaries::resolve(&Default::default())
+            .await
+            .ffmpeg
+            .is_none()
+        {
+            eprintln!("skipped: no ffmpeg");
+            return;
+        }
+        let dir = temp_dir("video_frames_images");
+        let ok = crate::test_util::host_command("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=s=320x180:r=24:d=2",
+            ])
+            .arg(dir.join("clip.mp4"))
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let png = image::RgbaImage::from_pixel(64, 36, image::Rgba([200, 30, 30, 255]));
+        png.save(dir.join("key.png")).unwrap();
+        let sheet = video_frames(
+            dir.to_string_lossy().into_owned(),
+            String::new(),
+            FrameRequest {
+                path: Some("clip.mp4".into()),
+                times: Some(vec![0.0, 1.0]),
+                every_secs: None,
+                timeline_times: None,
+                project: None,
+                images: Some(vec![SheetImage {
+                    path: "key.png".into(),
+                    label: "the start image".into(),
+                }]),
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let tiles: Vec<(u32, Option<&str>, &str)> = sheet
+            .tiles
+            .iter()
+            .map(|t| (t.n, t.label.as_deref(), t.path.as_str()))
+            .collect();
+        assert_eq!(
+            tiles,
+            [
+                (1, Some("the start image"), "key.png"),
+                (2, None, "clip.mp4"),
+                (3, None, "clip.mp4")
+            ]
+        );
+        assert!(sheet.data_url.starts_with("data:image/jpeg;base64,"));
+    }
 
     /// A working folder with episode `ep010` holding `cut.kdenlive`.
     fn episode() -> (TestDir, std::path::PathBuf, std::path::PathBuf) {
