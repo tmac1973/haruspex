@@ -99,7 +99,12 @@ pub async fn fs_download_url(
         .header("User-Agent", crate::proxy::USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Download failed: {}", crate::proxy::with_cause(&e)))?;
+        .map_err(|e| {
+            format!(
+                "Download failed: {}",
+                crate::proxy::with_cause(&e.without_url())
+            )
+        })?;
 
     if !response.status().is_success() {
         return Err(format!(

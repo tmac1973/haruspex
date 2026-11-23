@@ -27,7 +27,7 @@ import {
 } from '#lib/stores/jobRuns.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
-import { parseModelJson } from '#lib/agent/jobs/cardResult.ts';
+import { parseModelJson, turnWithRetry } from '#lib/agent/jobs/cardResult.ts';
 import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 import { NOT_LOCAL } from '#lib/agent/tools/_cameraGate.ts';
 import { cameraDataAllowed } from '#lib/camera/trust.ts';
@@ -317,16 +317,7 @@ async function summarise(
 		turnKind: 'camera_digest.summarise',
 		...ctx.buildStreamCallbacks(SUMMARISE)
 	};
-	let message = prompt;
-	for (let attempt = 0; ; attempt++) {
-		const { finalText } = await ctx.runJobTurn({ ...turn, userMessage: message });
-		try {
-			return parseDigest(finalText);
-		} catch (e) {
-			if (attempt > 0) throw e;
-			message = `${prompt}\n\nYour last reply could not be used: ${(e as Error).message} Reply again with only the JSON object.`;
-		}
-	}
+	return turnWithRetry(ctx, { ...turn, userMessage: prompt }, parseDigest);
 }
 
 /** The digest as lines of text: the summary, flagged entries, then highlights. */

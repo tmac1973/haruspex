@@ -1053,7 +1053,10 @@ impl LlamaServer {
                     let _ = app.emit("server-status-changed", &ServerStatus::Ready);
                 }
             } else if state.status == ServerStatus::Starting {
-                let msg = "Health check timed out after 60 seconds".to_string();
+                let msg = format!(
+                    "Health check timed out after {} seconds",
+                    sidecar_util::timing::HEALTH_POLL_TIMEOUT_SLOW.as_secs()
+                );
                 error!("{}", msg);
                 state.status = ServerStatus::Error(msg.clone());
                 let _ = app.emit("server-status-changed", &ServerStatus::Error(msg));

@@ -29,6 +29,7 @@ import type { ClipProgress } from '#lib/sequence/spec/progress.ts';
 import { GENERATED_DIR } from '#lib/sequence/spec/paths.ts';
 import { estimateRun } from '#lib/sequence/spec/estimate.ts';
 import { firstFrameId, reanchorId } from '#lib/sequence/spec/progress.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 type ClipOpts = Pick<VideoGenerateOptions, 'onHandle' | 'onProgress'>;
 
@@ -225,7 +226,7 @@ async function makeClip(
 			return { result: await deps.generate(job.request(seed), opts(seed)), seed };
 		} catch (e) {
 			if (isAbort(e)) throw e;
-			const why = e instanceof Error ? e.message : String(e);
+			const why = errMessage(e);
 			// The model couldn't load (another holds the GPU): a new seed won't
 			// help. Wait and send the same request again, a few times.
 			if (couldNotStart(why)) {

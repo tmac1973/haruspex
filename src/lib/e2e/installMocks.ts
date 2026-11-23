@@ -184,6 +184,8 @@ const TABLE: Record<string, Handler> = {
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
 	// Nothing bundled to put on the shell's PATH.
 	media_shims_set: () => false,
+	// Settings → Music: no songs kept yet.
+	audio_cache_size: () => 0,
 	// No cameras: none is watching.
 	camera_watch_status: () => ({ running: [], errors: {} }),
 	task_list: empty,

@@ -37,7 +37,7 @@ import {
 import { getSettings } from '#lib/stores/settings.ts';
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
-import { logDebug } from '#lib/debugLog.ts';
+import { logDebug, privateTextForLog } from '#lib/debugLog.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -152,7 +152,7 @@ registerTool({
 			);
 		} catch (e) {
 			logDebug('memory', 'remember_this failed', {
-				content: content.slice(0, 60),
+				content: privateTextForLog(content),
 				error: errMessage(e)
 			});
 			return toolResult(toolError(`Could not save that memory: ${String(e)}`));

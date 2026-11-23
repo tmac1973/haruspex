@@ -10,6 +10,7 @@
 import { createJob, getJob, updateJob } from '#lib/stores/jobs.svelte.ts';
 import { modelColumnsOf, type ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export interface CodingHandoff {
 	/** The coding job's `type_config`, as the planning run built it. Null = no chain. */
@@ -92,7 +93,7 @@ export async function handoffToCoding(ctx: JobRunContext, opts: CodingHandoff): 
 		}
 		return `Started coding job ${codingJobId} (run ${codingRunId}) against ${opts.specPath}.${note}`;
 	} catch (e) {
-		return `Could not hand off to coding — ${e instanceof Error ? e.message : String(e)}`;
+		return `Could not hand off to coding — ${errMessage(e)}`;
 	}
 }
 

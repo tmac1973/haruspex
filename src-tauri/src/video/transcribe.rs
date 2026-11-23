@@ -121,18 +121,14 @@ pub fn cached(episode_dir: &Path, file: &Path) -> Option<Transcript> {
 }
 
 fn save_cache(episode_dir: &Path, file: &Path, t: &Transcript) {
-    let path = cache_path(episode_dir, file);
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
     let (size, mtime) = stamp(file);
     let c = Cached {
         size,
         mtime,
         transcript: t.clone(),
     };
-    if let Ok(text) = serde_json::to_string(&c) {
-        let _ = std::fs::write(path, text);
+    if let Err(e) = crate::file_util::save_json(&cache_path(episode_dir, file), &c, false) {
+        log::warn!("could not save the transcript cache: {e}");
     }
 }
 

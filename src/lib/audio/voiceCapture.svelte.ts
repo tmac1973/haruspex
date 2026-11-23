@@ -9,6 +9,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import type { IpcCommand } from '#lib/ipc/commands.ts';
 import { listen } from '@tauri-apps/api/event';
 import { sleep } from '#lib/utils/async.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -322,14 +323,16 @@ export async function stopAndTranscribe(): Promise<string | null> {
  */
 async function speechModelPath(): Promise<string> {
 	const turbo = getSettings().speechModel === 'large-v3-turbo';
-	const existing = await invoke<string | null>(
-		turbo ? 'whisper_video_model_path' : 'get_whisper_model_path'
-	);
+	const pathCommand: IpcCommand = turbo ? 'whisper_video_model_path' : 'get_whisper_model_path';
+	const downloadCommand: IpcCommand = turbo
+		? 'whisper_video_model_download'
+		: 'download_whisper_model';
+	const existing = await invoke<string | null>(pathCommand);
 	if (existing) return existing;
 	const before = status;
 	status = 'downloading';
 	try {
-		return await invoke<string>(turbo ? 'whisper_video_model_download' : 'download_whisper_model');
+		return await invoke<string>(downloadCommand);
 	} finally {
 		status = before;
 	}

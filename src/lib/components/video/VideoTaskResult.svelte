@@ -8,6 +8,7 @@
 	import { cannotPlay, openMediaRoot } from '#lib/media/mediaRoot.ts';
 	import { splitFilePath } from '#lib/editor/openFiles.ts';
 	import { invoke } from '@tauri-apps/api/core';
+	import type { IpcCommand } from '#lib/ipc/commands.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { describeCheck } from '#lib/tasks/noticeText.ts';
 	import { renderResult, uploadResult, type BackgroundTask } from '#lib/tasks/types.ts';
@@ -43,7 +44,7 @@
 		};
 	});
 
-	async function run(command: string, args: Record<string, unknown>) {
+	async function run(command: IpcCommand, args: Record<string, unknown>) {
 		error = '';
 		try {
 			await invoke(command, args);
@@ -71,25 +72,29 @@
 		<button
 			class="btn"
 			type="button"
-			onclick={() => run('task_open', { id: task.id, folder: false })}>Open</button
+			onclick={() => run('task_open', { id: task.id, folder: false })}
 		>
+			Open
+		</button>
 		<button
 			class="btn"
 			type="button"
-			onclick={() => run('task_open', { id: task.id, folder: true })}>Show in folder</button
+			onclick={() => run('task_open', { id: task.id, folder: true })}
 		>
+			Show in folder
+		</button>
 	</div>
 {:else if upload}
 	<p class="detail">
 		Uploaded, {upload.visibility}.{upload.problems.length ? ` ${upload.problems.join(' ')}` : ''}
 	</p>
 	<div class="actions">
-		<button class="btn" type="button" onclick={() => run('open_url', { url: upload.url })}
-			>Open on YouTube</button
-		>
-		<button class="btn" type="button" onclick={() => run('open_url', { url: upload.studioUrl })}
-			>Open in Studio</button
-		>
+		<button class="btn" type="button" onclick={() => run('open_url', { url: upload.url })}>
+			Open on YouTube
+		</button>
+		<button class="btn" type="button" onclick={() => run('open_url', { url: upload.studioUrl })}>
+			Open in Studio
+		</button>
 	</div>
 {/if}
 {#if error}<p class="detail bad">{error}</p>{/if}

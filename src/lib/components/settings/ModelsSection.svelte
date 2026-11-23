@@ -31,6 +31,7 @@
 		updateSettings
 	} from '#lib/stores/settings.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
+	import { loggedFallback } from '#lib/debugLog.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
 
@@ -145,14 +146,18 @@
 	let wasDownloading = false;
 	$effect(() => {
 		const now = downloading !== null;
-		if (wasDownloading && !now) void refreshModels();
+		if (wasDownloading && !now) void refreshModels().catch(couldNotList);
 		wasDownloading = now;
 	});
 
-	onMount(async () => {
+	const couldNotList = loggedFallback(undefined, 'settings', 'could not list the models');
+
+	onMount(() => {
 		void syncDownloads();
-		await refreshModels();
-		modelsDir = await invoke<string>('get_models_dir');
+		void refreshModels().catch(couldNotList);
+		void invoke<string>('get_models_dir')
+			.then((dir) => (modelsDir = dir))
+			.catch(loggedFallback(undefined, 'settings', 'could not read the models folder'));
 	});
 </script>
 

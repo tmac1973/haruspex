@@ -7,6 +7,7 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import type { BackgroundState } from '#lib/ipc/gen/BackgroundState.ts';
+	import type { IpcCommand } from '#lib/ipc/commands.ts';
 
 	let bg = $state<BackgroundState | null>(null);
 	let error = $state('');
@@ -18,7 +19,7 @@
 	});
 
 	async function set(
-		command: 'background_set_tray' | 'background_set_start_at_login',
+		command: Extract<IpcCommand, 'background_set_tray' | 'background_set_start_at_login'>,
 		on: boolean
 	) {
 		error = '';

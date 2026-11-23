@@ -27,7 +27,7 @@ import {
 	type SubmittedMemory
 } from '#lib/agent/tools/memory.ts';
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
-import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
+import { logDebug, privateTextForLog } from '#lib/debugLog.ts';
 import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 import { typedText } from '#lib/skills/content.ts';
 import {
@@ -259,9 +259,7 @@ async function storeCandidates(
  * are on, its length otherwise, since it is something the user said.
  */
 function candidateForLog(candidate: SubmittedMemory): string {
-	return isVerbosePayloads()
-		? candidate.content.slice(0, 60)
-		: `string(${candidate.content.length})`;
+	return privateTextForLog(candidate.content);
 }
 
 async function addCandidate(

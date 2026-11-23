@@ -385,7 +385,7 @@ pub(super) async fn fetch_ok(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Fetch failed: {}", with_cause(&e)))?;
+        .map_err(|e| format!("Fetch failed: {}", with_cause(&e.without_url())))?;
 
     if !response.status().is_success() {
         return Err(format!("Fetch failed with status: {}", response.status()));

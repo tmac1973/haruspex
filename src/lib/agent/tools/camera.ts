@@ -38,6 +38,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { withCameraActivity } from '#lib/stores/cameraActivity.svelte.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
 import { redactCameraError } from '#lib/camera/credentials.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** Longest clip `camera_listen` records, matching the Rust command's cap. */
 export const MAX_LISTEN_SECONDS = 30;
@@ -71,7 +72,7 @@ export function canAim(camera: CameraConfig): boolean {
 
 /** A command's error as the model may see it: no address with a user name in it. */
 export function errorText(e: unknown): string {
-	return redactCameraError(e instanceof Error ? e.message : String(e), '');
+	return redactCameraError(errMessage(e), '');
 }
 
 registerTool({

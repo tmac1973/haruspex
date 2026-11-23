@@ -4,6 +4,7 @@
  * level, so it stays in a chunk of its own until the first GLB loads.
  */
 import type { AnimationClip, Material, Mesh, Object3D, Texture } from 'three';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type Three = typeof import('three');
 
@@ -29,7 +30,7 @@ export async function loadGlb(
 		const gltf = await new GLTFLoader().parseAsync(buffer as ArrayBuffer, '');
 		return { gltf: { scene: gltf.scene, animations: gltf.animations }, THREE };
 	} catch (e) {
-		const message = e instanceof Error ? e.message : String(e);
+		const message = errMessage(e);
 		return { error: `The GLB did not load: ${message}` };
 	}
 }

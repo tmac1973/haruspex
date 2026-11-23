@@ -367,7 +367,9 @@ export class CodeSession implements CodeSessionView {
 			void this.flushWatchNotifications();
 		});
 		// Notices that waited while the session wasn't loaded.
-		void initTasks().then(() => this.flushWatchNotifications());
+		void initTasks()
+			.then(() => this.flushWatchNotifications())
+			.catch((e: unknown) => console.warn('code: could not deliver waiting notices:', e));
 	}
 
 	/** `open_in_shell` started or stopped waiting on a Shell tab. */

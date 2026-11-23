@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { logDebug } from '#lib/debugLog.ts';
+import { logDebug, privateTextForLog } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 interface RuffLocation {
@@ -40,7 +40,7 @@ export async function lintPythonIfApplicable(
 	try {
 		diags = JSON.parse(raw) as RuffDiagnostic[];
 	} catch {
-		logDebug('lint', 'ruff output was not valid JSON', { rawPreview: raw.slice(0, 200) });
+		logDebug('lint', 'ruff output was not valid JSON', { rawPreview: privateTextForLog(raw, 200) });
 		return '';
 	}
 

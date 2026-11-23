@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '#lib/ipc/commands.ts';
+import { IPC, type IpcCommand } from '#lib/ipc/commands.ts';
 import {
 	ensureUrlScheme,
 	fsWorkdir,
@@ -286,7 +286,7 @@ type RawWrite = (relPath: string, overwrite: boolean) => Promise<unknown>;
 
 async function fsWriteWithConflictCheck(
 	tool: string,
-	command: string | RawWrite,
+	command: IpcCommand | RawWrite,
 	workdir: string,
 	relPath: string,
 	payload: Record<string, unknown>,
@@ -333,7 +333,7 @@ async function fsWriteWithConflictCheck(
  * The Rust command a write runs and the path it writes (trimmed), or why the
  * path can't be written by this tool.
  */
-type CommandChoice = { command: string; path: string } | { error: string };
+type CommandChoice = { command: IpcCommand; path: string } | { error: string };
 
 /**
  * The merged writers take several formats, and the path's extension picks
@@ -342,7 +342,7 @@ type CommandChoice = { command: string; path: string } | { error: string };
  */
 function byExtension(
 	tool: string,
-	formats: Record<string, string>,
+	formats: Record<string, IpcCommand>,
 	hint = ''
 ): (path: unknown) => CommandChoice {
 	const list = Object.keys(formats)
