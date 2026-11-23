@@ -396,6 +396,26 @@ describe('JobsTab — a selection made from Home', () => {
 		await screen.findByText('Unsaved changes');
 	});
 
+	it('replaces an untouched draft with a newer one without asking', async () => {
+		render(JobsTab);
+		newJobDraft({ jobType: 'research', name: 'First draft', workingDir: '', config: {} });
+		await showName('First draft');
+		newJobDraft({ jobType: 'research', name: 'Second draft', workingDir: '', config: {} });
+		await waitFor(() => expect(screen.queryByDisplayValue('First draft')).toBeNull());
+		await showName('Second draft');
+		expect(screen.queryByText('Unsaved changes')).toBeNull();
+	});
+
+	it('asks before a newer draft replaces an edited one', async () => {
+		render(JobsTab);
+		newJobDraft({ jobType: 'research', name: 'First draft', workingDir: '', config: {} });
+		const nameInput = await showName('First draft');
+		await fireEvent.input(nameInput, { target: { value: 'First draft, edited' } });
+		newJobDraft({ jobType: 'research', name: 'Second draft', workingDir: '', config: {} });
+		await screen.findByText('Unsaved changes');
+		screen.getByDisplayValue('First draft, edited');
+	});
+
 	it('keeps only the last thing asked for', () => {
 		newJobDraft({ jobType: 'research', name: 'x', workingDir: '', config: {} });
 		selectJob(7);

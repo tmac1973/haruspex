@@ -25,7 +25,7 @@ A job another job's run started sits under it. **Filter jobs** matches names, de
 
 ## Turn a chat into a job
 
-In Chat or the Code tab, ask the model to make a job from the conversation ("make that a planning job"). It drafts one and opens it in the Jobs tab, filled in and not saved: the type, a name, the working directory, the type's settings, and a brief of what the chat settled. Nothing runs until you save it and press Run.
+In Chat or the Code tab, ask the model to make a job from the conversation ("make that a planning job"). It drafts one and opens it in the Jobs tab, filled in and not saved: the type, a name, the working directory, the type's settings, and a brief of what the chat settled. Nothing runs until you save it and press Run. A newer draft replaces one you haven't touched; once you've edited a draft, you're asked before it's replaced.
 
 The model can draft research, audit, guided planning, autonomous coding, asset generation, 3D models and video sequence jobs. A guided-planning job starts from the brief, so its interview asks only what the chat left open. An asset, 3D or video sequence job can carry a spec the chat wrote; Save writes it into the working directory, and stops if a different file is already at that path.
 
