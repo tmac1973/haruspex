@@ -40,7 +40,8 @@ describe('mergeProgress', () => {
 		expect(kept.some((id) => id.startsWith('forest-'))).toBe(false);
 		// The transition ends on the forest's keyframe, which changed too.
 		expect(kept).not.toContain('join-1');
-		expect(Object.keys(merged.keyframes)).toEqual(['snow']);
+		// The snow keyframe and its re-anchors stay; the forest's go.
+		expect(Object.keys(merged.keyframes).sort()).toEqual(['snow', 'snow-r12', 'snow-r6']);
 		expect(merged.music.piano).toBeDefined();
 		expect(merged.project).toBeUndefined();
 	});

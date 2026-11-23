@@ -13,7 +13,14 @@ import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts';
 import type { EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import type { UserAnswer, UserQuestionRequest } from '#lib/stores/userQuestion.svelte.ts';
-import { INTERVIEW, MAX_DERIVE_ATTEMPTS, REPORT, SPEC, runVideoSequencePipeline } from './pipeline';
+import {
+	INTERVIEW,
+	KEYFRAMES,
+	MAX_DERIVE_ATTEMPTS,
+	REPORT,
+	SPEC,
+	runVideoSequencePipeline
+} from './pipeline';
 import { SUBMIT_SEQUENCE_SPEC_TOOL } from './tools';
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -40,6 +47,23 @@ vi.mock('#lib/videogen/toolchest.ts', () => ({
 	})
 }));
 vi.mock('#lib/image/backend.ts', () => ({ resolveImageBackend: () => ({ kind: 'comfyui' }) }));
+const image = vi.hoisted(() => ({ requests: [] as { prompt: string; edit?: unknown }[] }));
+vi.mock('#lib/image/route.ts', () => ({
+	needOf: () => ({}),
+	capableEntries: () => [{}],
+	routedImageBackend: () => ({
+		generate: async (req: { prompt: string; edit?: unknown }) => {
+			image.requests.push(req);
+			return {
+				images: [{ bytes: new Uint8Array([7]), mimeType: 'image/png', width: 1, height: 1 }],
+				meta: {}
+			};
+		}
+	})
+}));
+vi.mock('#lib/images/resolve.svelte.ts', () => ({
+	registerLocalImage: (hash: string) => `haruspex-img://localhost/${hash}`
+}));
 vi.mock('#lib/music/backend.ts', () => ({ resolveMusicBackend: () => ({ kind: 'toolchest' }) }));
 const asked = vi.hoisted(() => ({
 	questions: [] as UserQuestionRequest[],
@@ -67,6 +91,7 @@ vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 }));
 
 let files: Map<string, string>;
+let bytes: Map<string, Uint8Array>;
 
 function routes() {
 	return invokeRouter({
@@ -79,6 +104,17 @@ function routes() {
 			files.set(a!.relPath as string, a!.content as string);
 		},
 		fs_list_dir: () => ({ entries: [] }),
+		fs_write_bytes: (a) => {
+			bytes.set(a!.relPath as string, new Uint8Array(a!.bytes as number[]));
+		},
+		fs_read_bytes: (a) => {
+			const v = bytes.get(a!.relPath as string);
+			if (!v) throw 'missing';
+			return Array.from(v);
+		},
+		fs_path_exists: (a) => bytes.has(a!.relPath as string) || files.has(a!.relPath as string),
+		image_fit_cover: (a) => a!.bytes,
+		image_store_bytes: () => 'f'.repeat(64),
 		video_probe_folder: () => ({ clips: [], unreadable: [], introCandidates: [] })
 	});
 }
@@ -155,6 +191,8 @@ function foxArgs(): Record<string, unknown> {
 
 beforeEach(() => {
 	files = new Map();
+	bytes = new Map();
+	image.requests = [];
 	asked.questions = [];
 	asked.answers = [];
 	opened.files = [];
@@ -237,6 +275,7 @@ describe('the Video sequence run', () => {
 	it('changes the spec as asked at the checkpoint, then writes it on Approve', async () => {
 		asked.answers = [
 			{ kind: 'freeText', text: 'make the forest 30 seconds' },
+			{ kind: 'selected', labels: ['Approve'] },
 			{ kind: 'selected', labels: ['Approve'] }
 		];
 		const shorter = foxArgs();
@@ -254,24 +293,23 @@ describe('the Video sequence run', () => {
 		asked.answers = [
 			{ kind: 'selected', labels: ['Edit the file'] },
 			{ kind: 'selected', labels: ['Done'] },
+			{ kind: 'selected', labels: ['Approve'] },
 			{ kind: 'selected', labels: ['Approve'] }
 		];
 		const h = harness({}, () => foxArgs());
+		const plain = routes();
 		vi.mocked(invoke).mockImplementation(
-			invokeRouter({
-				...Object.fromEntries(
-					['fs_read_text_full', 'fs_list_dir', 'video_probe_folder'].map((k) => [
-						k,
-						(a: Record<string, unknown> | undefined) => routes()(k, a)
-					])
-				),
-				fs_write_text: (a) => {
-					// The user's editor saves the forest at 45 s.
-					const spec = JSON.parse(a!.content as string);
-					spec.sections[1].seconds = 45;
-					files.set(a!.relPath as string, JSON.stringify(spec));
-				}
-			})
+			invokeRouter(
+				{
+					fs_write_text: (a) => {
+						// The user's editor saves the forest at 45 s.
+						const spec = JSON.parse(a!.content as string);
+						if (spec.sections) spec.sections[1].seconds = 45;
+						files.set(a!.relPath as string, JSON.stringify(spec));
+					}
+				},
+				(cmd: string, args?: Record<string, unknown>) => plain(cmd, args)
+			)
 		);
 		await runVideoSequencePipeline(h.ctx);
 		expect(opened.files).toEqual(['ep1/sequence.json']);
@@ -292,5 +330,46 @@ describe('the Video sequence run', () => {
 		expect(h.finished?.status).toBe('succeeded');
 		expect(asked.questions).toEqual([]);
 		expect(h.turns).toHaveLength(1);
+	});
+
+	it('makes the keyframes and records them, then a rerun makes none', async () => {
+		const h = harness({ run_mode: 'unattended' }, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(h.finished?.status).toBe('succeeded');
+		// Two keyframes and four re-anchors, all from the image backend.
+		expect(image.requests).toHaveLength(6);
+		expect(image.requests[1].edit).toBeTruthy();
+		expect(bytes.has('ep1/keyframes/snow.png')).toBe(true);
+		expect(bytes.has('ep1/keyframes/forest-r12.png')).toBe(true);
+		const progress = JSON.parse(files.get('ep1/.haruspex/sequence-progress.json')!);
+		expect(progress.keyframes.snow.status).toBe('done');
+		expect(h.steps[KEYFRAMES].output).toContain(
+			'- forest: keyframes/forest.png (an edit of the first keyframe)'
+		);
+		expect(h.steps[KEYFRAMES].output).toContain('![snow](haruspex-img://localhost/');
+		const again = harness({ run_mode: 'unattended' }, () => {
+			throw new Error('the spec is on disk');
+		});
+		await runVideoSequencePipeline(again.ctx);
+		expect(image.requests).toHaveLength(6);
+		expect(again.steps[KEYFRAMES].output).toContain('(kept from the last run)');
+	});
+
+	it('stops at the stills when attended, and redoes one asked for', async () => {
+		asked.answers = [
+			{ kind: 'selected', labels: ['Approve'] },
+			{ kind: 'selected', labels: ['Redo one'] },
+			{ kind: 'selected', labels: ['forest'], note: 'at dusk' },
+			{ kind: 'selected', labels: ['Stop'] }
+		];
+		const h = harness({}, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(asked.questions[1].question).toBe('Every clip starts from these stills. Approve them?');
+		expect(asked.questions[1].body).toContain('![snow]');
+		expect(asked.questions[2].options.map((o) => o.label)).toEqual(['snow', 'forest']);
+		const redone = image.requests.slice(6);
+		expect(redone).toHaveLength(3);
+		expect(redone[0].prompt).toContain('at dusk');
+		expect(h.finished).toEqual({ status: 'cancelled', error: null });
 	});
 });

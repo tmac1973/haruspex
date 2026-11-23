@@ -215,6 +215,63 @@ pub fn image_contact_sheet(images: Vec<Vec<u8>>, cell: u32) -> Result<Vec<u8>, S
     encode(&contact_sheet(&decoded, cell))
 }
 
+/// A picture at exactly `width` × `height`: cut to that shape around its
+/// centre, then scaled. What a video model's start image has to be, since an
+/// image model draws only at sizes of its own.
+#[tauri::command]
+pub fn image_fit_cover(bytes: Vec<u8>, width: u32, height: u32) -> Result<Vec<u8>, String> {
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        return Err("The size must be 1 to 8192 pixels each way.".into());
+    }
+    encode(&fit_cover(&decode(&bytes)?, width, height))
+}
+
+fn fit_cover(img: &RgbaImage, width: u32, height: u32) -> RgbaImage {
+    let (w, h) = (img.width().max(1), img.height().max(1));
+    // The largest centred piece of the wanted shape.
+    let (cw, ch) = if (w as u64) * (height as u64) > (h as u64) * (width as u64) {
+        (((h as u64 * width as u64) / height as u64).max(1) as u32, h)
+    } else {
+        (w, ((w as u64 * height as u64) / width as u64).max(1) as u32)
+    };
+    let piece = image::imageops::crop_imm(img, (w - cw) / 2, (h - ch) / 2, cw, ch).to_image();
+    if (cw, ch) == (width, height) {
+        return piece;
+    }
+    image::imageops::resize(&piece, width, height, image::imageops::FilterType::Lanczos3)
+}
+
+#[cfg(test)]
+mod fit_cover_tests {
+    use super::*;
+
+    #[test]
+    fn a_square_picture_is_cut_to_a_wide_one_around_its_centre() {
+        // Left third red, middle green, right third blue.
+        let img = RgbaImage::from_fn(300, 300, |x, _| match x {
+            0..=99 => Rgba([255, 0, 0, 255]),
+            100..=199 => Rgba([0, 255, 0, 255]),
+            _ => Rgba([0, 0, 255, 255]),
+        });
+        let out = fit_cover(&img, 200, 100);
+        assert_eq!(out.dimensions(), (200, 100));
+        assert_eq!(out.get_pixel(100, 50).0, [0, 255, 0, 255]);
+        // A tall picture loses its top and bottom instead.
+        let tall = fit_cover(&img, 100, 300);
+        assert_eq!(tall.dimensions(), (100, 300));
+        assert_eq!(tall.get_pixel(50, 150).0, [0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn the_same_shape_is_only_scaled() {
+        let img = RgbaImage::from_pixel(64, 36, Rgba([10, 20, 30, 255]));
+        let out = fit_cover(&img, 1280, 720);
+        assert_eq!(out.dimensions(), (1280, 720));
+        assert!(image_fit_cover(vec![1, 2, 3], 10, 10).is_err());
+        assert!(image_fit_cover(encode(&img).unwrap(), 0, 10).is_err());
+    }
+}
+
 #[tauri::command]
 pub fn image_extract_palette(
     bytes: Vec<u8>,
