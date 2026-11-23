@@ -136,6 +136,7 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
                     .and_then(|a| doc.our_gain(a.node))
                     .map(|(_, g)| g),
                 limited: item.audio.as_ref().is_some_and(|a| doc.our_limiter(a.node)),
+                fit: item.video.as_ref().and_then(|v| doc.our_fit(v.node)),
             }
         })
         .collect();

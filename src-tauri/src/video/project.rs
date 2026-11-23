@@ -8,7 +8,7 @@ use super::mlt::{mlt_path, profile::profile};
 use super::paths::{display_path, resolve_episode, resolve_in_working, resolve_media};
 use super::probe;
 use super::timeline::{
-    assign_audio_tracks, current_audio, AudioPlacement, AudioSource, Media, Placement, Source,
+    assign_audio_tracks, current_audio, AudioPlacement, AudioSource, Fit, Media, Placement, Source,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -46,8 +46,17 @@ pub struct CutItemSpec {
     /// Where to start and stop in the clip.
     pub in_secs: Option<f64>,
     pub out_secs: Option<f64>,
+    /// Or exact frames of the clip, at the project's rate, overriding the
+    /// seconds: the first shown and the last shown.
+    #[ts(type = "number | null")]
+    pub in_frame: Option<i64>,
+    #[ts(type = "number | null")]
+    pub out_frame: Option<i64>,
     /// A crossfade into this clip, overriding the cut's.
     pub crossfade_secs: Option<f64>,
+    /// How its picture fills the frame; none keeps what is there (letterbox
+    /// for a new clip).
+    pub fit: Option<Fit>,
 }
 
 /// A sound on an audio track under the picture: a voiceover or music bed.
@@ -98,6 +107,18 @@ pub enum ProjectOp {
         index: u32,
         in_secs: Option<f64>,
         out_secs: Option<f64>,
+        /// Exact frames, overriding the seconds: the first and last shown.
+        #[serde(default)]
+        #[ts(type = "number | null")]
+        in_frame: Option<i64>,
+        #[serde(default)]
+        #[ts(type = "number | null")]
+        out_frame: Option<i64>,
+    },
+    /// How one clip's picture fills the frame.
+    Fit {
+        index: u32,
+        fit: Fit,
     },
     Remove {
         index: u32,
@@ -528,6 +549,7 @@ fn cut_ranges(
     let first_mix = wanted[pos].mix_in;
     let gain = wanted[pos].gain_db;
     let limiter = wanted[pos].limiter;
+    let fit = wanted[pos].fit;
     let pieces: Vec<Placement> = keeps
         .iter()
         .enumerate()
@@ -542,10 +564,32 @@ fn cut_ranges(
             mix_in: if n == 0 { first_mix } else { None },
             gain_db: gain,
             limiter,
+            fit,
         })
         .collect();
     wanted.splice(pos..=pos, pieces);
     (out_f - in_f + 1) - kept
+}
+
+/// A trim's first and last shown frames: the frames when given, else the
+/// seconds at the project's rate.
+fn trim_frames(
+    fps: &super::mlt::fps::Fps,
+    (in_secs, out_secs): (Option<f64>, Option<f64>),
+    (in_frame, out_frame): (Option<i64>, Option<i64>),
+) -> Result<(Option<i64>, Option<i64>), String> {
+    if in_frame.is_some_and(|f| f < 0) || out_frame.is_some_and(|f| f < 0) {
+        return Err("Frames count from 0.".into());
+    }
+    if let (Some(a), Some(b)) = (in_frame, out_frame) {
+        if b < a {
+            return Err("out_frame comes before in_frame.".into());
+        }
+    }
+    Ok((
+        in_frame.or_else(|| in_secs.map(|s| fps.frames(s.max(0.0)))),
+        out_frame.or_else(|| out_secs.map(|s| fps.frames(s) - 1)),
+    ))
 }
 
 fn format_secs(secs: f64) -> String {
@@ -862,22 +906,8 @@ pub async fn cut(
             continue;
         }
         let placement = match resources.iter().position(|r| *r == m.resource) {
-            Some(i) => Placement {
-                source: Source::Existing(i),
-                in_frame: None,
-                out_frame: None,
-                mix_in: None,
-                gain_db: None,
-                limiter: false,
-            },
-            None => Placement {
-                source: Source::New(m),
-                in_frame: None,
-                out_frame: None,
-                mix_in: None,
-                gain_db: None,
-                limiter: false,
-            },
+            Some(i) => Placement::of(Source::Existing(i)),
+            None => Placement::of(Source::New(m)),
         };
         ends.push((if which == "intro" { 0 } else { 1 }, placement));
     }
@@ -892,13 +922,20 @@ pub async fn cut(
             ))
             }
         };
+        if let Some(problem) = item.fit.as_ref().and_then(Fit::problem) {
+            return Err(format!("Item {}: {problem}", n + 1));
+        }
+        let (in_frame, out_frame) = trim_frames(
+            &doc.fps(),
+            (item.in_secs, item.out_secs),
+            (item.in_frame, item.out_frame),
+        )
+        .map_err(|e| format!("Item {}: {e}", n + 1))?;
         wanted.push(Placement {
-            source,
-            in_frame: item.in_secs.map(|s| doc.fps().frames(s.max(0.0))),
-            out_frame: item.out_secs.map(|s| doc.fps().frames(s) - 1),
-            mix_in: None,
-            gain_db: None,
-            limiter: false,
+            in_frame,
+            out_frame,
+            fit: item.fit,
+            ..Placement::of(source)
         });
         fades.push(item.crossfade_secs);
     }
@@ -989,14 +1026,24 @@ pub async fn op(
             index,
             in_secs,
             out_secs,
+            in_frame,
+            out_frame,
         } => {
             let i = check(index)?;
-            if let Some(s) = in_secs {
-                wanted[i].in_frame = Some(doc.fps().frames(s.max(0.0)));
+            let (a, b) = trim_frames(&doc.fps(), (in_secs, out_secs), (in_frame, out_frame))?;
+            if a.is_some() {
+                wanted[i].in_frame = a;
             }
-            if let Some(s) = out_secs {
-                wanted[i].out_frame = Some(doc.fps().frames(s) - 1);
+            if b.is_some() {
+                wanted[i].out_frame = b;
             }
+        }
+        ProjectOp::Fit { index, fit } => {
+            let i = check(index)?;
+            if let Some(problem) = fit.problem() {
+                return Err(problem);
+            }
+            wanted[i].fit = Some(fit);
         }
         ProjectOp::Remove { index } => {
             wanted.remove(check(index)?);
@@ -1135,6 +1182,22 @@ mod tests {
     }
 
     #[test]
+    fn frame_trims_win_over_seconds_and_are_checked() {
+        let fps = super::super::mlt::fps::Fps { num: 24, den: 1 };
+        // One frame off the start; the end stays as the seconds say.
+        assert_eq!(
+            trim_frames(&fps, (Some(0.0), Some(2.0)), (Some(1), None)).unwrap(),
+            (Some(1), Some(47))
+        );
+        assert_eq!(
+            trim_frames(&fps, (None, None), (None, Some(95))).unwrap(),
+            (None, Some(95))
+        );
+        assert!(trim_frames(&fps, (None, None), (Some(-1), None)).is_err());
+        assert!(trim_frames(&fps, (None, None), (Some(10), Some(9))).is_err());
+    }
+
+    #[test]
     fn the_series_project_named_by_number_is_found() {
         let dir = series();
         fs::write(dir.join("spronglehump_010.kdenlive"), "").unwrap();
@@ -1240,6 +1303,7 @@ mod tests {
                 mix_in: None,
                 gain_db: None,
                 limiter: false,
+                fit: None,
             },
             Placement {
                 source: Source::Existing(1),
@@ -1248,6 +1312,7 @@ mod tests {
                 mix_in: None,
                 gain_db: None,
                 limiter: false,
+                fit: None,
             },
         ];
         // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
@@ -1273,6 +1338,7 @@ mod tests {
             mix_in: None,
             gain_db: None,
             limiter: false,
+            fit: None,
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));

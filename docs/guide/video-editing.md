@@ -30,7 +30,7 @@ Clips are found in the episode folder and one level of subfolders. Folders start
 
 Settings → Video editing → **New videos** has **Intro** and **Outro**: a clip to put at the start or end of a video when you ask for it. They may be anywhere on disk; they are the only files outside the working folder the video tools may read. An intro inside a series folder (a file or folder whose name starts with "intro" or "outro") works too: the assistant lists those it sees.
 
-**Editor** is the editor new projects are made for: Shotcut (the default) or Kdenlive. **Format** is the size and frame rate they are made in: 1080p at 30 or 60 fps, 1440p at 60 fps, or 4K at 30 fps.
+**Editor** is the editor new projects are made for: Shotcut (the default) or Kdenlive. **Format** is the size and frame rate they are made in: 720p at 24 fps (the size generated clips come in), 1080p at 30 or 60 fps, 1440p at 60 fps, or 4K at 30 fps.
 
 ## Ask about your clips
 
@@ -51,6 +51,6 @@ Ask "make ep012 from the clips in order". The assistant writes a Shotcut or Kden
 ## What it doesn't do
 
 - It doesn't control a running Shotcut or Kdenlive window.
-- It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades and gains.
+- It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades, gains and crops.
 - It doesn't run in Shell tabs, jobs or subtasks.
 - It doesn't read files outside the working folder, except the intro and outro set in Settings → Video editing.

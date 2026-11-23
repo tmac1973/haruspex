@@ -202,6 +202,7 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
                 crossfade_in_secs: item.fade_in.map(|f| fps.secs(doc.fades[f].len)),
                 gain_db: doc.our_gain(&item.chain),
                 limited: doc.our_limiter(&item.chain),
+                fit: doc.our_fit(&item.chain),
             }
         })
         .collect();

@@ -1,6 +1,6 @@
 ---
 title: Cutting a video
-description: Having the assistant cut a Shotcut or Kdenlive project from your clips, with crossfades, even sound and a voiceover or music under the picture, and editing the same project in Shotcut or Kdenlive.
+description: Having the assistant cut a Shotcut or Kdenlive project from your clips, with crossfades, even sound, fill or crop, and sound under the picture, and editing it in Shotcut or Kdenlive.
 ---
 
 # Cutting a video
@@ -13,7 +13,7 @@ Ask "make ep012 from the clips in order, intro as usual" or "cut ep012: the firs
 
 A new project is `ep012/ep012.mlt` for Shotcut or `ep012/ep012.kdenlive` for Kdenlive, as Settings → Video editing → **Editor** says, in the size and frame rate of **Format**. Ask for "a Kdenlive project" or "a Shotcut project" to make one for the other editor. If the episode already has a project, that is used: one in the episode folder, or one in the working folder whose name ends in the episode's number, such as `show_012.mlt` for `ep012`. With both kinds in one folder, name the one to use.
 
-Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them.
+Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them. A trim can be exact to the frame too: "drop the first frame of clip 2".
 
 Before each change the project is copied to `.haruspex/backups/` next to it (the last 20 are kept), and the change is kept only if melt can still load the project.
 
@@ -22,6 +22,10 @@ Before each change the project is copied to `.haruspex/backups/` next to it (the
 Ask for "1 second crossfades between the clips", or a crossfade into one clip (not the first). Each is the editor's own kind: a Shotcut transition, or a Kdenlive mix. It dissolves the picture and crossfades the sound, up to 3 seconds, never more than half the shorter clip. Without one the clips join with a hard cut.
 
 Each clip's sound is measured and given a gain that brings it to YouTube's loudness (-14 LUFS) without clipping, so a quiet phone clip and a loud recording sound alike. The gain is the editor's Gain / Volume effect on the clip, and a Limiter follows it when the gain would push the loudest moments past -1.5 dB. In Kdenlive you can see and change both; Shotcut shows the gain but not the Limiter, which still plays. Ask to "leave the volume alone" to skip it. A gain adds at most 20 dB, and the assistant says when a clip stays quieter.
+
+## Fill, letterbox or crop a clip
+
+A clip of another shape, such as a phone clip in a landscape video, is letterboxed: the whole picture, with black bars. Ask to "fill the frame with clip 3" to cut off the spare around the centre instead, or to "crop clip 3 to its middle half" for a region you name. It is the editor's own Crop effect on the clip (Crop: Source in Shotcut), so you can change it there. Ask to "letterbox clip 3" to take it off.
 
 ## Put a voiceover or music under the picture
 
@@ -44,6 +48,6 @@ Open the project, change it and save. The assistant reads the saved file before 
 ## What it doesn't do
 
 - It doesn't turn a Kdenlive project into a Shotcut one or back. It can cut the same clips into a new project for the other editor, without your effects.
-- It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades and gains.
+- It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades, gains and crops.
 - It doesn't fade or duck music under speech: set the bed's level instead.
 - It doesn't control a running Shotcut or Kdenlive window.

@@ -178,11 +178,11 @@ pub fn apply(doc: &Doc, wanted: &[AudioPlacement]) -> Result<Edited, String> {
                 let unchanged = doc.our_gain(&l.chain) == Some(g)
                     && doc.our_limiter(&l.chain) == l.limiter
                     && doc.our_lufs(&l.chain) == l.lufs
-                    || g == 0.0 && doc.our_filters(&l.chain).is_empty();
+                    || g == 0.0 && doc.our_sound_filters(&l.chain).is_empty();
                 if unchanged {
                     continue;
                 }
-                for f in doc.our_filters(&l.chain) {
+                for f in doc.our_sound_filters(&l.chain) {
                     splices.replace(
                         whole_line(text, doc.tree.node(f).span.clone()),
                         String::new(),

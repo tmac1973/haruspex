@@ -3,7 +3,7 @@ use super::edit::{apply, current};
 use super::*;
 use crate::video::mlt::mlt_path;
 use crate::video::mlt::project_file::melt_loads;
-use crate::video::timeline::{Media, Placement, Source};
+use crate::video::timeline::{Fit, Media, Placement, Source};
 use std::path::Path;
 
 fn fixture(name: &str) -> String {
@@ -210,6 +210,7 @@ fn trimming_the_start_keeps_the_leading_gap_and_the_groups() {
         mix_in: None,
         gain_db: None,
         limiter: false,
+        fit: None,
     };
     let out = apply(&doc, &[trimmed]).unwrap();
     let after = reparse(out.text.clone());
@@ -263,6 +264,7 @@ fn an_effect_on_a_kept_clip_survives_a_trim() {
         mix_in: None,
         gain_db: None,
         limiter: false,
+        fit: None,
     };
     let out = reparse(apply(&doc, &[keep(0), trimmed]).unwrap().text);
     assert_eq!(out.items()[1].filters(), 1);
@@ -361,6 +363,7 @@ fn a_crossfade_made_in_kdenlive_keeps_its_clips_together() {
         mix_in: None,
         gain_db: None,
         limiter: false,
+        fit: None,
     };
     let out = reparse(apply(&doc, &[trimmed, keep(1), keep(2)]).unwrap().text);
     let m = &out.mixes(out.main_video)[0];
@@ -381,6 +384,7 @@ fn an_end_past_the_clip_is_clamped_and_said() {
         mix_in: None,
         gain_db: None,
         limiter: false,
+        fit: None,
     };
     let out = apply(&doc, &[p]).unwrap();
     assert!(out.notes.iter().any(|n| n.contains("past the clip's end")));
@@ -558,6 +562,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         mix_in: None,
         gain_db: None,
         limiter: false,
+        fit: None,
     };
     let second = Placement {
         source: Source::Piece(0),
@@ -566,6 +571,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         mix_in: None,
         gain_db: None,
         limiter: false,
+        fit: None,
     };
     let out = reparse(apply(&doc, &[first, second]).unwrap().text);
     let items = out.items();
@@ -895,4 +901,113 @@ fn a_limiter_follows_the_gain_and_goes_with_it() {
     let a = after.items()[0].audio.as_ref().unwrap().node;
     assert!(!after.our_limiter(a));
     assert_eq!(after.our_gain(a).map(|(_, g)| g), Some(3.0));
+}
+
+const CROP: Fit = Fit::Crop {
+    x: 0.25,
+    y: 0.0,
+    w: 0.5,
+    h: 1.0,
+};
+
+fn video_node(doc: &Doc, i: usize) -> usize {
+    doc.items()[i].video.as_ref().unwrap().node
+}
+
+#[test]
+fn a_fit_is_one_tagged_crop_on_the_picture_and_comes_off_again() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mut a = new(media("a.mp4", 4.0, fps));
+    a.fit = Some(Fit::Fill);
+    a.gain_db = Some(2.0);
+    let b = new(media("b.mp4", 4.0, fps));
+    let once = reparse(apply(&doc, &[a, b]).unwrap().text);
+    let v0 = video_node(&once, 0);
+    assert_eq!(once.our_fit(v0), Some(Fit::Fill));
+    assert!(once.our_fit(video_node(&once, 1)).is_none());
+    // On the picture only: the sound keeps just its gain.
+    let a0 = once.items()[0].audio.as_ref().unwrap().node;
+    assert!(once.our_fit_filter(a0).is_none());
+    assert_eq!(once.our_gain(a0).map(|(_, g)| g), Some(2.0));
+    assert!(once
+        .text
+        .contains("<property name=\"kdenlive_id\">crop</property>"));
+    assert_eq!(once.items()[0].filters(), 0, "the crop isn't the user's");
+    let s = summary(&once, "/videos", Path::new("/videos/p.kdenlive"));
+    assert_eq!(s.items[0].fit, Some(Fit::Fill));
+    assert_eq!(s.items[1].fit, None);
+    // Leaving it alone changes nothing; a crop replaces it; a new gain keeps it.
+    assert_eq!(apply(&once, &current(&once)).unwrap().text, once.text);
+    let mut again = current(&once);
+    again[0].fit = Some(CROP);
+    again[0].gain_db = Some(-1.0);
+    let twice = reparse(apply(&once, &again).unwrap().text);
+    let v0 = video_node(&twice, 0);
+    assert_eq!(twice.our_fit(v0), Some(CROP));
+    assert_eq!(twice.our_filters(v0).len(), 1, "replaced, not added");
+    let mut regain = current(&twice);
+    regain[0].gain_db = Some(3.0);
+    let regained = reparse(apply(&twice, &regain).unwrap().text);
+    assert_eq!(regained.our_fit(video_node(&regained, 0)), Some(CROP));
+    // Letterbox removes it.
+    let mut off = current(&regained);
+    off[0].fit = Some(Fit::Letterbox);
+    let gone = reparse(apply(&regained, &off).unwrap().text);
+    assert!(gone.our_fit_filter(video_node(&gone, 0)).is_none());
+}
+
+#[test]
+fn both_pieces_of_a_split_clip_keep_its_fit() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mut a = new(media("a.mp4", 10.0, fps));
+    a.fit = Some(CROP);
+    let doc = reparse(apply(&doc, &[a]).unwrap().text);
+    let first = Placement {
+        out_frame: Some(119),
+        ..keep(0)
+    };
+    let second = Placement {
+        in_frame: Some(300),
+        ..Placement::of(Source::Piece(0))
+    };
+    let out = reparse(apply(&doc, &[first, second]).unwrap().text);
+    assert_eq!(out.our_fit(video_node(&out, 0)), Some(CROP));
+    assert_eq!(out.our_fit(video_node(&out, 1)), Some(CROP));
+}
+
+#[tokio::test]
+async fn melt_loads_a_kdenlive_project_with_fits() {
+    let Some(melt) = crate::video::binaries::resolve(&Default::default())
+        .await
+        .melt
+        .map(|m| m.path)
+    else {
+        eprintln!("skipped: no melt");
+        return;
+    };
+    let dir = crate::test_util::temp_dir("kdenlive_fits");
+    let status = crate::test_util::host_command("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("color=c=red:s=360x640:r=60:d=1")
+        .args(["-c:v", "mpeg4"])
+        .arg(dir.join("tall.mp4"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let doc = Doc::parse(template_text("1080p60", &dir).unwrap()).unwrap();
+    let fps = doc.fps;
+    let clips: Vec<Placement> = [Some(Fit::Fill), Some(CROP), None]
+        .into_iter()
+        .map(|fit| {
+            let mut m = media("tall.mp4", 1.0, fps);
+            m.audio_index = None;
+            Placement { fit, ..new(m) }
+        })
+        .collect();
+    let text = apply(&doc, &clips).unwrap().text;
+    let project = dir.join("fits.kdenlive");
+    std::fs::write(&project, &text).unwrap();
+    melt_loads(&melt, &project).await.unwrap();
 }

@@ -266,6 +266,8 @@ pub struct SummaryItem {
     pub gain_db: Option<f64>,
     /// Haruspex put a Limiter after the gain to hold its peaks.
     pub limited: bool,
+    /// The fit Haruspex set on its picture; `None` is letterbox.
+    pub fit: Option<crate::video::timeline::Fit>,
 }
 
 /// A sound on an audio track under the picture.

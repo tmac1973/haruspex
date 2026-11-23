@@ -1,6 +1,7 @@
 //! What Kdenlive and Shotcut projects share: both are MLT XML, read and spliced
 //! the same way, with times at the profile's frame rate.
 
+pub mod fit;
 pub mod fps;
 pub mod profile;
 pub mod project_file;

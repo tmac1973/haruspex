@@ -19,7 +19,7 @@
 
 use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS, OURS_LUFS};
 use crate::video::mlt::xml::{escape, Splices};
-use crate::video::timeline::{Edited, Media, Placement, Source};
+use crate::video::timeline::{Edited, Fit, Media, Placement, Source};
 use std::collections::{HashMap, HashSet};
 
 /// A clip as laid out: where each of its entries goes.
@@ -35,6 +35,7 @@ struct Laid {
     mix_in: Option<i64>,
     gain_db: Option<f64>,
     limiter: bool,
+    fit: Option<Fit>,
     /// Set for a new clip once its chains are named.
     video_chain: Option<String>,
     audio_chain: Option<String>,
@@ -218,6 +219,7 @@ fn layout(
             mix_in,
             gain_db: p.gain_db,
             limiter: p.limiter,
+            fit: p.fit,
         });
     }
     assign_lanes(&mut laid, &mixes)?;
@@ -281,6 +283,23 @@ fn gain_filter(id: &str, gain_db: f64, lufs: Option<f64>) -> String {
          {target}\
          \x20  </filter>\n"
     )
+}
+
+/// Haruspex's crop for a fit, as Kdenlive writes its Crop effect; nothing for
+/// letterbox.
+fn fit_filter(id: &str, fit: Fit, width: u32, height: u32) -> String {
+    let Some(props) = crate::video::mlt::fit::properties(fit, width, height) else {
+        return String::new();
+    };
+    let mut out = format!("   <filter id=\"{id}\">\n");
+    for (k, v) in props {
+        out.push_str(&format!("    <property name=\"{k}\">{v}</property>\n"));
+    }
+    out.push_str("    <property name=\"kdenlive_id\">crop</property>\n");
+    out.push_str("    <property name=\"kdenlive:collapsed\">0</property>\n");
+    out.push_str(&format!("    <property name=\"{OURS}\">1</property>\n"));
+    out.push_str("   </filter>\n");
+    out
 }
 
 /// Haruspex's Limiter, as Kdenlive writes its Limiter effect
@@ -584,6 +603,8 @@ pub(super) fn rewrite_playlist(
 
 /// The entry text for a laid clip on one track. `gain` (on the sound only)
 /// replaces Haruspex's Volume filter: `Some(0)` removes it, `None` leaves it.
+/// `fit` (on the picture only, with its filter's id) replaces Haruspex's crop
+/// the same way: letterbox removes it.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn entry_text(
     doc: &Doc,
@@ -594,6 +615,7 @@ pub(super) fn entry_text(
     old: Option<&Entry>,
     chain: &str,
     gain: Option<GainWrite>,
+    fit: Option<(String, Fit)>,
 ) -> String {
     let in_tc = fps.timecode(in_frame);
     let out_tc = fps.timecode(out_frame);
@@ -608,6 +630,15 @@ pub(super) fn entry_text(
         }
         (!text.is_empty()).then_some(text)
     });
+    let crop = fit
+        .as_ref()
+        .map(|(id, f)| fit_filter(id, *f, doc.width, doc.height))
+        .filter(|t| !t.is_empty());
+    let filter = match (filter, crop) {
+        (Some(a), Some(b)) => Some(a + &b),
+        (a, b) => a.or(b),
+    };
+    let replaces = gain.is_some() || fit.is_some();
     match old {
         Some(e) => {
             let n = doc.tree.node(e.node);
@@ -623,10 +654,17 @@ pub(super) fn entry_text(
                 };
             }
             let mut body = doc.text[n.inner_start..n.span.end].to_string();
-            if gain.is_some() {
+            if replaces {
                 // Positions inside `body`, applied from the end so neither moves the other.
                 let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-                for f in doc.our_filters(e.node) {
+                let mut dropped = Vec::new();
+                if gain.is_some() {
+                    dropped.extend(doc.our_sound_filters(e.node));
+                }
+                if fit.is_some() {
+                    dropped.extend(doc.our_fit_filter(e.node));
+                }
+                for f in dropped {
                     let r = line_of(&doc.text, doc.tree.node(f).span.clone());
                     edits.push((r.start - n.inner_start..r.end - n.inner_start, String::new()));
                 }
@@ -840,6 +878,17 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             };
             let _ = lane;
             let lane = if is_audio { l.audio_lane } else { l.video_lane }.min(lanes.len() - 1);
+            let fit = l.fit.filter(|_| !is_audio).and_then(|f| {
+                // A kept entry with this fit already stays as it is.
+                let now = old
+                    .and_then(|e| doc.our_fit(e.node))
+                    .unwrap_or(Fit::Letterbox);
+                if old.is_some() && now == f {
+                    return None;
+                }
+                next_filter += 1;
+                Some((format!("filter{}", next_filter - 1), f))
+            });
             let gain = l.gain_db.filter(|_| is_audio).map(|db| {
                 let volume_id = format!("filter{next_filter}");
                 next_filter += 1;
@@ -866,6 +915,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     old,
                     &chain,
                     gain,
+                    fit,
                 ),
                 old.map(|e| e.node),
                 l.in_frame,

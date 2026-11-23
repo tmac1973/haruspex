@@ -21,7 +21,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { allInvokeArgs } from '#lib/testing/invoke.ts';
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
-import { endClip, parseCut, parseOp } from '#lib/video/args.ts';
+import { endClip, parseCut, parseFit, parseOp } from '#lib/video/args.ts';
 import {
 	formatTime,
 	itemLine,
@@ -55,7 +55,8 @@ const summary: ProjectSummary = {
 			hasAudio: true,
 			crossfadeInSecs: null,
 			gainDb: null,
-			limited: false
+			limited: false,
+			fit: null
 		},
 		{
 			index: 2,
@@ -69,7 +70,8 @@ const summary: ProjectSummary = {
 			hasAudio: true,
 			crossfadeInSecs: 1,
 			gainDb: 3.5,
-			limited: true
+			limited: true,
+			fit: null
 		}
 	],
 	audio: [
@@ -145,6 +147,7 @@ describe('parseCut', () => {
 
 	it('checks the preset and reads intro choices', () => {
 		expect(parseCut({ items: [], preset: '720p' })).toContain('preset must be one of');
+		expect(parseCut({ items: [], preset: '720p24' })).toMatchObject({ preset: '720p24' });
 		expect(endClip('settings')).toBe(true);
 		expect(endClip(true)).toBe(true);
 		expect(endClip('none')).toBe(false);
@@ -159,12 +162,62 @@ describe('parseOp', () => {
 			op: 'trim',
 			index: 2,
 			inSecs: 3,
-			outSecs: null
+			outSecs: null,
+			inFrame: null,
+			outFrame: null
 		});
 		expect(parseOp({ op: 'trim', index: 2 })).toContain('in_secs, out_secs');
 		expect(parseOp({ op: 'move', index: 3, to: 1 })).toEqual({ op: 'move', from: 3, to: 1 });
 		expect(parseOp({ op: 'move', index: 3 })).toContain('"to"');
-		expect(parseOp({ op: 'split', index: 1 })).toContain('trim, remove, move');
+		expect(parseOp({ op: 'split', index: 1 })).toContain('trim, fit, remove, move');
+	});
+
+	it('trims on exact frames', () => {
+		expect(parseOp({ op: 'trim', index: 1, in_frame: 1 })).toMatchObject({
+			op: 'trim',
+			inFrame: 1,
+			outFrame: null
+		});
+		expect(parseOp({ op: 'trim', index: 1, in_frame: 1.5 })).toContain('whole frame number');
+		expect(parseOp({ op: 'trim', index: 1, in_frame: 9, out_frame: 3 })).toContain(
+			'out_frame comes before in_frame'
+		);
+	});
+
+	it('sets a fit', () => {
+		expect(parseOp({ op: 'fit', index: 2, fit: 'fill' })).toEqual({
+			op: 'fit',
+			index: 2,
+			fit: { mode: 'fill' }
+		});
+		expect(
+			parseOp({ op: 'fit', index: 2, fit: 'crop', crop: { x: 0.25, y: 0, w: 0.5, h: 1 } })
+		).toMatchObject({ fit: { mode: 'crop', x: 0.25, w: 0.5 } });
+		expect(parseOp({ op: 'fit', index: 2 })).toContain('A fit needs');
+	});
+});
+
+describe('parseFit', () => {
+	it('takes letterbox, fill or a crop region inside the picture', () => {
+		expect(parseFit(undefined)).toBeNull();
+		expect(parseFit('Letterbox')).toEqual({ mode: 'letterbox' });
+		expect(parseFit({ x: 0, y: 0.1, w: 1, h: 0.8 })).toEqual({
+			mode: 'crop',
+			x: 0,
+			y: 0.1,
+			w: 1,
+			h: 0.8
+		});
+		expect(parseFit('crop')).toContain('needs crop');
+		expect(parseFit('crop', { x: 0.6, y: 0, w: 0.5, h: 1 })).toContain('inside the picture');
+		expect(parseFit('stretch')).toContain('letterbox, fill or crop');
+	});
+
+	it('goes on cut items with frames', () => {
+		expect(
+			parseCut({ items: [{ path: 'a.webm', fit: 'fill', in_frame: 1, out_frame: 96 }] })
+		).toMatchObject({ items: [{ fit: { mode: 'fill' }, inFrame: 1, outFrame: 96 }] });
+		expect(parseCut({ items: [{ path: 'a.webm', fit: 'wide' }] })).toContain('items[0]: fit');
 	});
 });
 
@@ -261,7 +314,16 @@ describe('video_cut', () => {
 				intro: true,
 				outro: null,
 				items: [
-					{ index: null, path: 'ep010/raw/obs.mp4', inSecs: 10, outSecs: null, crossfadeSecs: null }
+					{
+						index: null,
+						path: 'ep010/raw/obs.mp4',
+						inSecs: 10,
+						outSecs: null,
+						inFrame: null,
+						outFrame: null,
+						crossfadeSecs: null,
+						fit: null
+					}
 				],
 				audio: null,
 				crossfadeSecs: null,

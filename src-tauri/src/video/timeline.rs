@@ -28,6 +28,38 @@ pub enum Source {
     New(Media),
 }
 
+/// How a clip's picture fills the frame when its shape differs.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase", tag = "mode")]
+pub enum Fit {
+    /// The whole picture, with bars where the shapes differ (MLT's own way).
+    Letterbox,
+    /// Filled edge to edge, the centre kept and the spare cut off.
+    Fill,
+    /// This region of the source, as fractions 0–1 of its frame.
+    Crop { x: f64, y: f64, w: f64, h: f64 },
+}
+
+impl Fit {
+    /// What is wrong with a crop region, or `None`.
+    pub fn problem(&self) -> Option<String> {
+        let Fit::Crop { x, y, w, h } = *self else {
+            return None;
+        };
+        let ok = |v: f64| v.is_finite() && (0.0..=1.0).contains(&v);
+        if ![x, y, w, h].into_iter().all(ok) || w <= 0.0 || h <= 0.0 {
+            return Some(
+                "A crop's x, y, w and h are fractions from 0 to 1, w and h above 0.".into(),
+            );
+        }
+        if x + w > 1.0 + 1e-9 || y + h > 1.0 + 1e-9 {
+            return Some("A crop must stay inside the picture: x + w and y + h at most 1.".into());
+        }
+        None
+    }
+}
+
 /// One clip of the wanted main track. `None` keeps an existing item's point,
 /// or is the start / end of new media.
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +74,9 @@ pub struct Placement {
     pub gain_db: Option<f64>,
     /// With `gain_db`: a Limiter after the gain, holding peaks at -1.5 dB.
     pub limiter: bool,
+    /// How its picture fills the frame; `None` leaves what is there, and
+    /// `Letterbox` removes Haruspex's crop.
+    pub fit: Option<Fit>,
 }
 
 impl Placement {
@@ -53,6 +88,7 @@ impl Placement {
             mix_in: None,
             gain_db: None,
             limiter: false,
+            fit: None,
         }
     }
 }
