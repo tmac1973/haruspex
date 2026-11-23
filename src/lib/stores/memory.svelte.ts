@@ -74,6 +74,22 @@ export async function refreshModelStatus(): Promise<void> {
 	}
 }
 
+/**
+ * Look for the model once at startup, in every window.
+ *
+ * `memoryActive()` needs the status to be `ready`, and it starts `unknown`.
+ * Without this check memory stayed off after every launch — no recall, no
+ * extraction, no `remember` — until Settings → Memory happened to be opened.
+ * Only a file check: it never downloads.
+ */
+export async function initMemory(): Promise<void> {
+	await refreshModelStatus();
+	logDebug('memory', 'startup', {
+		enabled: getSettings().memoryEnabled,
+		model: state.status
+	});
+}
+
 export async function refreshMemoryCount(): Promise<void> {
 	try {
 		state.count = await invoke<number>('memory_count');

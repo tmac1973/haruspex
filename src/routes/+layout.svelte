@@ -40,6 +40,7 @@
 		toggleLogViewer
 	} from '#lib/stores/logViewer.svelte.ts';
 	import { initChatStore } from '#lib/stores/chat.svelte.ts';
+	import { initMemory } from '#lib/stores/memory.svelte.ts';
 	import { migrateEmailSecrets } from '#lib/stores/emailSecrets.ts';
 	import { migrateDavSecrets } from '#lib/stores/davSecrets.ts';
 	import { migrateBraveApiKey } from '#lib/stores/searchSecrets.ts';
@@ -199,6 +200,8 @@
 	});
 	// Likewise whether the Python runtime is here decides run_python.
 	onMount(() => void probePythonRuntime());
+	// Memory does nothing until it knows the embedding model is on disk.
+	onMount(() => void initMemory());
 	// Background tasks report progress and their end as events; every window
 	// listens, and the one holding the conversation or session that started a
 	// task tells it.
