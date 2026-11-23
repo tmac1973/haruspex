@@ -70,11 +70,18 @@ features for one workflow.
     replacements in a saved voice, makes several takes, transcribes them to
     pick the one that said the words, mutes the original span and places the
     take.
+- **Speaking clips and sections** with llama-toolchest's Wan2.2 S2V set:
+  `generate_video` takes an `audio` input (with a portrait), and the sequence
+  spec gets a speaking section whose lines are spoken first. One S2V window is
+  made per stretch of speech, each from the same portrait, with the same audio
+  placed under the picture.
 - Guide pages updated in the same PRs as each user-visible change.
 
 ## Non-goals
 
-- Lip sync inside a replaced span.
+- Lip sync inside a replaced span. That includes remaking the span's picture
+  with S2V: a generated face cut into real footage is unlikely to match, so
+  it waits until S2V has been tried on real footage.
 - Voice fine-tuning (XTTS-style training) or speaker-similarity scoring.
 - Getting a voice from the web, or any reference clip without the user's
   consent checkbox.
@@ -82,10 +89,13 @@ features for one workflow.
   keeps the job's options and spec as plain data so that tool is a small
   addition later.
 - A generic OpenAI `/v1/audio/speech` backend.
-- Changes to llama-toolchest. The asks (expose `/tts` seed, speed and
-  temperature; a Qwen3-TTS catalog entry; research multi-frame conditioning)
-  are filed as issues on `tmac1973/llama-toolchest`, and Haruspex uses them by
-  capability when they land.
+- Changes to llama-toolchest. The speech asks are done
+  (tmac1973/llama-toolchest#683: the Qwen3-TTS card, and the `/tts` fields
+  documented). Multi-frame continuation is not available
+  (tmac1973/llama-toolchest#681): for LTX-2.3 it needs a toolchest route that
+  runs a DGL script in sd-server, which is not scheduled; for S2V it needs
+  model code in sd.cpp (leejet/stable-diffusion.cpp#2399). Haruspex uses it
+  by capability when it lands.
 - Applying transcript edits from the viewer without the assistant.
 - Video upscaling of generated clips.
 - Running the speech replacement as a job; it stays a chat / Code skill.
@@ -142,6 +152,12 @@ features for one workflow.
   copying a person's voice without their consent is not allowed.
 - Changing a Tauri command or `#[ts(export)]` struct means
   `./scripts/export-ipc-types.sh`; user-visible changes update `docs/guide/`.
+- Speaking sections need llama-toolchest v2.64.0 or newer with the Wan2.2
+  S2V set (tmac1973/llama-toolchest#686). S2V runs at a fixed 16 fps, makes
+  at most 81 frames (about 5.1 s) a clip, and takes about 11 minutes for a
+  3 s clip on an R9700. Its start image is an identity reference, so seams
+  between windows show. Its clip carries the driving audio as PCM on newer
+  sd.cpp builds and is silent on older ones.
 - Run time: about 2–4 hours for 2 minutes on LTX-2.3 Full; the job must report
   progress and resume.
 
@@ -195,3 +211,16 @@ features for one workflow.
   Kokoro stays the default and the read-aloud voice.
 - **Jobs from Chat/Code** → not in v1; job options and spec stay plain data
   so a `propose_job` tool can come later.
+- **Wan2.2 S2V** → added after the speech phases as phase 15: an `audio`
+  input on `generate_video` and a speaking section kind, with windows made
+  from the same portrait rather than chained by last frame. Windows are cut
+  along the speech at pauses, and the visible seams are accepted until
+  upstream adds motion frames.
+- **The `audio` capability** → toolchest's `audio` means an audio input. A
+  set's sound output is not in its meta, so Haruspex finds it by probing the
+  clip.
+- **Qwen3-TTS on llama-toolchest** (from tmac1973/llama-toolchest#683) →
+  never send `speed` (it answers 400 for anything but 1.0); stretch takes in
+  Haruspex instead. A seed gives another take but does not reproduce one on
+  a GPU, so takes are kept as audio. Saved voices keep the reference clip's
+  text and send it as `speaker_ref_text` for a closer voice.

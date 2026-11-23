@@ -22,8 +22,10 @@ confirm and report a generated clip's own sound so later phases can keep it.
 - `src-tauri/src/lib.rs` — register the command.
 - `src/lib/agent/tools/video-frames.ts` — register tool `video_still` (category `'video'`):
   path, `at` time or `"first"`/`"last"`, optional `save_as` (PNG in the episode folder).
-- `src/lib/toolchest/models.ts` — parse `end_image` and `audio` from the instance's
-  video capability meta into `instance.capabilities` / `VideoLimits.sound`.
+- `src/lib/toolchest/models.ts` — parse `end_image` from the instance's video
+  capability meta into `instance.capabilities`. Toolchest's meta does not say
+  whether a set makes sound, and its `audio` capability means an audio
+  *input* (Wan2.2 S2V, phase 15), so sound is found only by probing the clip.
 - `src/lib/videogen/types.ts` — `VideoRequest.endImage?: {name, hash}`;
   `VideoResult.hasAudio: boolean`.
 - `src/lib/videogen/toolchest.ts` — send `end_image` as a second multipart part
@@ -55,9 +57,9 @@ confirm and report a generated clip's own sound so later phases can keep it.
 4. Register `video_still` in `video-frames.ts`. Its result names the PNG path,
    its size, and shows the image in the chat (same `registerLocalImage` path
    `video_frames` uses for its sheet).
-5. In `toolchest/models.ts`, read `end_image` and audio output from the video
-   instance meta (`meta.video`, `meta.api`) into capabilities; unknown keys are
-   ignored so older servers still parse.
+5. In `toolchest/models.ts`, read `end_image` from the video instance meta
+   (`meta.video`, `meta.api`) into capabilities; unknown keys are ignored so
+   older servers still parse. Do not read `audio` as sound output.
 6. In `videogen/toolchest.ts`, include `end_image` in the multipart body when
    `request.endImage` is set. A request with only `endImage` still uses
    multipart.
@@ -83,8 +85,11 @@ confirm and report a generated clip's own sound so later phases can keep it.
 - TS: `buildVideoBody`/multipart includes `end_image` only when set; the tool
   refuses `end_image` on an instance without the capability; capability
   parsing keeps working on a meta without the new keys.
-- Hand: against toolchest LTX-2.3, make a clip with start and end pictures;
-  the result says it has sound and the player plays it.
+- Hand:
+  - Against toolchest LTX-2.3, make a clip with start and end pictures; the
+    result says it has sound and the player plays it.
+  - Where no LTX-2.3 instance runs: `end_image` on a Wan2.2 I2V instance
+    (`lightning1116` on asmodean), whose result says it has no sound.
 
 ## Commit
 

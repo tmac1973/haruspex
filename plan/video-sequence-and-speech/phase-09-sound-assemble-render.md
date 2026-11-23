@@ -60,7 +60,8 @@ existing render path, check it, and write `REPORT-sequence.md`. Add the
    - Joins: `cut` → nothing; `crossfade` → `crossfade_secs` on the next item
      (default 1 s); `transition` → the transition clip sits between, with hard
      cuts on both sides.
-   - Clip sound: kept when `clip_sound` is true (normalised as today);
+   - Clip sound: kept when `clip_sound` is true (normalised as today); when
+     no generated clip has sound (`hasAudio` false on all), the report says so;
      otherwise `gain_ranges: [{ from_secs: 0, to_secs: <clip length>,
      gain_db: -70 }]` on each generated clip's `CutItemSpec` (phase 03).
    - Audio: music beds at their first section's start (`lufs` default −30
