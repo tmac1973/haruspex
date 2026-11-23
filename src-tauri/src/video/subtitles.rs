@@ -148,6 +148,7 @@ mod tests {
             text: text.into(),
             index: 1,
             audio: false,
+            words: vec![],
         }
     }
 

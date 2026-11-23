@@ -15,6 +15,7 @@ import type { TranscribeProgress } from '#lib/ipc/gen/TranscribeProgress.ts';
 import type { SilenceRange } from '#lib/ipc/gen/SilenceRange.ts';
 import type { ChaptersWritten } from '#lib/ipc/gen/ChaptersWritten.ts';
 import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
+import { parseWordStretch, wordsReport } from '#lib/video/words.ts';
 
 /** A transcript longer than this is cut, pointing at the rest. */
 export const TRANSCRIPT_CAP = 12_000;
@@ -63,8 +64,14 @@ export function transcriptReport(list: Transcript[], cap = TRANSCRIPT_CAP, from 
 
 let jobs = 0;
 
-async function transcribe(args: Record<string, unknown>, ctx: ToolContext) {
-	const clips = Array.isArray(args.paths) ? args.paths.filter((p) => typeof p === 'string') : [];
+/**
+ * Run a transcription command with progress and cancel: `run` gets the job
+ * id and the progress channel.
+ */
+async function withProgress<T>(
+	ctx: ToolContext,
+	run: (job: string, onProgress: Channel<TranscribeProgress>) => Promise<T>
+): Promise<T> {
 	const job = `transcribe-${Date.now()}-${++jobs}`;
 	const channel = new Channel<TranscribeProgress>();
 	channel.onmessage = (p) => {
@@ -76,21 +83,63 @@ async function transcribe(args: Record<string, unknown>, ctx: ToolContext) {
 	const abort = () => void invoke('video_transcribe_cancel', { job }).catch(() => {});
 	ctx.signal?.addEventListener('abort', abort, { once: true });
 	try {
-		const list = await invoke<Transcript[]>('video_transcribe', {
-			workingDir: ctx.workingDir,
-			episode: episodeArg(args),
-			clips,
-			refresh: args.refresh === true,
-			settings: videoSettings(),
-			job,
-			onProgress: channel
-		});
-		return toolResult(transcriptReport(list, TRANSCRIPT_CAP, parseTime(args.from) ?? 0));
+		return await run(job, channel);
+	} finally {
+		ctx.signal?.removeEventListener('abort', abort);
+	}
+}
+
+/** The answer for `list`: the word stretch asked for, else the segment lines. */
+function report(list: Transcript[], args: Record<string, unknown>): string {
+	const stretch = parseWordStretch(args.words);
+	if (stretch && typeof stretch !== 'string') return wordsReport(list, stretch);
+	return transcriptReport(list, TRANSCRIPT_CAP, parseTime(args.from) ?? 0);
+}
+
+async function transcribe(args: Record<string, unknown>, ctx: ToolContext) {
+	const clips = Array.isArray(args.paths) ? args.paths.filter((p) => typeof p === 'string') : [];
+	const stretch = parseWordStretch(args.words);
+	if (typeof stretch === 'string') return toolResult(toolError(stretch));
+	try {
+		const list = await withProgress(ctx, (job, onProgress) =>
+			invoke<Transcript[]>('video_transcribe', {
+				workingDir: ctx.workingDir,
+				episode: episodeArg(args),
+				clips,
+				refresh: args.refresh === true,
+				settings: videoSettings(),
+				job,
+				onProgress
+			})
+		);
+		return toolResult(report(list, args));
 	} catch (e) {
 		if (ctx.signal?.aborted || isAbortError(e)) throw e;
 		return toolResult(toolError(errMessage(e)));
-	} finally {
-		ctx.signal?.removeEventListener('abort', abort);
+	}
+}
+
+async function transcribeAudio(args: Record<string, unknown>, ctx: ToolContext) {
+	const path = trimmedOrNull(args.path);
+	if (!path) return toolResult(toolError('transcribe_audio needs "path", a sound or video file.'));
+	const stretch = parseWordStretch(args.words);
+	if (typeof stretch === 'string') return toolResult(toolError(stretch));
+	try {
+		const t = await withProgress(ctx, (job, onProgress) =>
+			invoke<Transcript>('audio_transcribe', {
+				workingDir: ctx.workingDir,
+				path,
+				language: trimmedOrNull(args.language),
+				refresh: args.refresh === true,
+				overrides: videoSettings().overrides,
+				job,
+				onProgress
+			})
+		);
+		return toolResult(report([t], args));
+	} catch (e) {
+		if (ctx.signal?.aborted || isAbortError(e)) throw e;
+		return toolResult(toolError(errMessage(e)));
 	}
 }
 
@@ -154,6 +203,15 @@ async function chapters(args: Record<string, unknown>, ctx: ToolContext) {
 	}
 }
 
+const WORDS_PARAM = {
+	type: 'object',
+	description:
+		'List each word with its start and end instead, for this stretch (e.g. { "from": "0:40", "to": "0:50" }), to cut on a word.',
+	properties: {
+		from: { type: 'string', description: 'In the clip’s own time, e.g. "0:40".' },
+		to: { type: 'string', description: 'Default: the end.' }
+	}
+};
 const EPISODE_PARAM = {
 	type: 'string',
 	description:
@@ -190,13 +248,45 @@ registerTool({
 						type: 'string',
 						description:
 							'Start each clip\'s transcript here, in its own time (e.g. "13:01.6"), to read on where a long one was cut.'
-					}
+					},
+					words: WORDS_PARAM
 				}
 			}
 		}
 	},
 	displayLabel: (args) => `Transcribing ${episodeArg(args) || 'the clips'}`,
 	execute: transcribe
+});
+
+registerTool({
+	category: 'video',
+	schema: {
+		type: 'function',
+		function: {
+			name: 'transcribe_audio',
+			description:
+				'Transcribe any sound or video file in the working folder, with timestamps. Kept, so asking again is instant until the file changes.',
+			parameters: {
+				type: 'object',
+				properties: {
+					path: { type: 'string', description: 'The file, relative to the working folder.' },
+					language: {
+						type: 'string',
+						description:
+							'A language code such as "en" or "de". Default: detected (English only until Settings → Video editing has the larger model).'
+					},
+					refresh: {
+						type: 'boolean',
+						description: 'Transcribe again with the best model even if a transcript is kept.'
+					},
+					words: WORDS_PARAM
+				},
+				required: ['path']
+			}
+		}
+	},
+	displayLabel: (args) => `Transcribing ${trimmedOrNull(args.path) ?? 'a file'}`,
+	execute: transcribeAudio
 });
 
 registerTool({

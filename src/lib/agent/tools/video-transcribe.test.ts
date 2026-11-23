@@ -38,8 +38,19 @@ const transcript: Transcript = {
 	language: 'en',
 	durationSecs: 1943,
 	segments: [
-		{ start: 0, end: 8.9, text: 'So I have set up image generation.' },
-		{ start: 65.2, end: 70, text: 'Um, let me start again.' }
+		{ start: 0, end: 8.9, text: 'So I have set up image generation.', words: [] },
+		{
+			start: 65.2,
+			end: 70,
+			text: 'Um, let me start again.',
+			words: [
+				{ start: 65.2, end: 65.5, text: 'Um,' },
+				{ start: 65.9, end: 66.1, text: 'let' },
+				{ start: 66.1, end: 66.3, text: 'me' },
+				{ start: 66.3, end: 66.8, text: 'start' },
+				{ start: 66.8, end: 67.4, text: 'again.' }
+			]
+		}
 	]
 };
 
@@ -103,7 +114,8 @@ describe('the transcript report', () => {
 			segments: Array.from({ length: 2000 }, (_, i) => ({
 				start: i,
 				end: i + 1,
-				text: 'words '.repeat(5)
+				text: 'words '.repeat(5),
+				words: []
 			}))
 		};
 		const text = transcriptReport([long], 2000);
@@ -231,5 +243,69 @@ describe('when Rust refuses', () => {
 				await executeTool('video_chapters', { chapters: [{ title: 'Intro', at: '0:05' }] }, ctx())
 			)
 		).toBe('the first chapter must be at 0:00');
+	});
+});
+
+describe('word times', () => {
+	const ctx = () => makeToolContext({ interactive: true, workingDir: '/videos' });
+
+	it('video_transcribe lists only the words in the stretch asked for', async () => {
+		state.invoke.mockImplementation(invokeRouter({ video_transcribe: [transcript] }, true));
+		const out = await executeTool(
+			'video_transcribe',
+			{ episode: 'ep010', words: { from: '1:05.8', to: '1:06.5' } },
+			ctx()
+		);
+		expect(out.result).toBe(
+			[
+				'ep010/raw/obs.mp4, words from 1:05.80 to 1:06.50 (start–end, text):',
+				'1:05.90–1:06.10 let',
+				'1:06.10–1:06.30 me',
+				'1:06.30–1:06.80 start'
+			].join('\n')
+		);
+	});
+
+	it('refuses a stretch that ends before it starts', async () => {
+		const out = await executeTool(
+			'transcribe_audio',
+			{ path: 'vo/take1.wav', words: { from: '1:00', to: '0:30' } },
+			ctx()
+		);
+		expect((JSON.parse(out.result) as { error: string }).error).toContain(
+			'"words" needs "to" after "from"'
+		);
+		expect(state.invoke).not.toHaveBeenCalledWith('audio_transcribe', expect.anything());
+	});
+
+	it('transcribe_audio sends the file and language, and reports the transcript', async () => {
+		state.invoke.mockImplementation(
+			invokeRouter({ audio_transcribe: { ...transcript, path: 'vo/take1.wav' } }, true)
+		);
+		const out = await executeTool(
+			'transcribe_audio',
+			{ path: ' vo/take1.wav ', language: 'en' },
+			ctx()
+		);
+		expect(state.invoke).toHaveBeenCalledWith(
+			'audio_transcribe',
+			expect.objectContaining({ workingDir: '/videos', path: 'vo/take1.wav', language: 'en' })
+		);
+		expect(out.result).toContain('[1:05] Um, let me start again.');
+	});
+
+	it('transcribe_audio needs a path, and reports a path outside the working folder', async () => {
+		const errorOf = (o: { result: string }) => (JSON.parse(o.result) as { error: string }).error;
+		expect(errorOf(await executeTool('transcribe_audio', {}, ctx()))).toContain('needs "path"');
+		state.invoke.mockImplementation(
+			invokeRouter({
+				audio_transcribe: () => {
+					throw 'That path is outside the working folder.';
+				}
+			})
+		);
+		expect(errorOf(await executeTool('transcribe_audio', { path: '../x.wav' }, ctx()))).toBe(
+			'That path is outside the working folder.'
+		);
 	});
 });

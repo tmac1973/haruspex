@@ -497,6 +497,7 @@ pub fn run() {
             tasks::commands::task_open,
             video::commands::video_encoders_test,
             video::commands::video_transcribe,
+            video::commands::audio_transcribe,
             video::commands::video_transcribe_cancel,
             video::commands::video_silences,
             video::commands::video_project_transcript,

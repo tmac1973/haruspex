@@ -338,7 +338,8 @@ describe("the cut's transcript", () => {
 		end: 6 + i,
 		text: 'words '.repeat(5),
 		index: 2,
-		audio: false
+		audio: false,
+		words: []
 	}));
 	const t = {
 		project: 'ep010/ep010.kdenlive',
@@ -351,7 +352,7 @@ describe("the cut's transcript", () => {
 	it('marks speech from the audio tracks and names sound with no transcript', () => {
 		const text = timelineTranscriptReport({
 			...t,
-			lines: [{ start: 12.5, end: 14, text: 'Hello there.', index: 1, audio: true }],
+			lines: [{ start: 12.5, end: 14, text: 'Hello there.', index: 1, audio: true, words: [] }],
 			untranscribedAudio: [2]
 		});
 		expect(text).toContain('[0:13] (audio 1) Hello there.');

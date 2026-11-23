@@ -162,10 +162,7 @@ pub async fn video_transcribe(
 ) -> Result<Vec<super::transcribe::Transcript>, String> {
     use super::transcribe;
     let found = binaries::resolve(&settings.overrides).await;
-    let ffmpeg = found.require(Tool::Ffmpeg)?.to_string();
     let ffprobe = found.require(Tool::Ffprobe)?.to_string();
-    let model = transcribe::model_for(models.models_dir())
-        .ok_or("No speech model is installed. Settings → Audio downloads one.")?;
     let episode_dir = paths::resolve_episode(&working_dir, &episode)?;
     let list = transcribe::clips_to_transcribe(
         &ffprobe,
@@ -179,67 +176,158 @@ pub async fn video_transcribe(
     if list.is_empty() {
         return Err("There is no clip with sound to transcribe.".into());
     }
-    let cancel = transcribe::Cancel::default();
-    if let Ok(mut m) = TRANSCRIBING.lock() {
-        m.insert(job.clone(), cancel.clone());
-    }
-    let count = list.len() as u32;
-    let mut out = Vec::new();
-    let mut result = Ok(());
-    let needed = list
-        .iter()
-        .any(|(file, _)| transcribe::needs_whisper(&episode_dir, file, &model, refresh));
-    // Held to the end of the command; dropping it schedules the idle stop.
-    let _lease = if needed {
-        match transcribe::lease_server(&app, &model).await {
-            Ok(lease) => Some(lease),
-            Err(e) => {
-                if let Ok(mut m) = TRANSCRIBING.lock() {
-                    m.remove(&job);
-                }
-                return Err(e);
-            }
-        }
-    } else {
-        None
+    let run = Transcription {
+        app: &app,
+        whisper: &whisper,
+        models: &models,
+        ffmpeg: found.require(Tool::Ffmpeg)?,
+        dir: &episode_dir,
+        refresh,
+        language: None,
     };
-    for (i, (file, info)) in list.iter().enumerate() {
-        let channel = on_progress.clone();
-        let (clip, total) = (info.path.clone(), info.duration_secs);
-        let progress = move |done: f64| {
-            let _ = channel.send(transcribe::TranscribeProgress {
-                clip: clip.clone(),
-                done_secs: done,
-                total_secs: total,
-                index: i as u32 + 1,
-                count,
-            });
-        };
-        progress(0.0);
-        match transcribe::transcribe_clip(
-            &whisper,
-            &ffmpeg,
-            &model,
-            &episode_dir,
-            file,
-            info,
-            refresh,
-            &cancel,
-            &progress,
-        )
-        .await
-        {
-            Ok(t) => out.push(t),
-            Err(e) => {
-                result = Err(e);
-                break;
-            }
+    run.all(&list, job, on_progress).await
+}
+
+/// Transcribe any sound or video file in the working folder, with each
+/// word's time. Kept in `<working folder>/.haruspex/transcripts/`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn audio_transcribe(
+    app: tauri::AppHandle,
+    whisper: tauri::State<'_, crate::whisper::VideoWhisper>,
+    models: tauri::State<'_, crate::models::ModelManager>,
+    working_dir: String,
+    path: String,
+    language: Option<String>,
+    refresh: bool,
+    overrides: BinaryOverrides,
+    job: String,
+    on_progress: tauri::ipc::Channel<super::transcribe::TranscribeProgress>,
+) -> Result<super::transcribe::Transcript, String> {
+    let file = paths::resolve_media(&working_dir, &path, "", "")?;
+    if !file.is_file() {
+        return Err(format!(
+            "No file named {} in the working folder.",
+            path.trim()
+        ));
+    }
+    let found = binaries::resolve(&overrides).await;
+    let ffprobe = found.require(Tool::Ffprobe)?;
+    let info = probe::probe_file(ffprobe, &file, paths::display_path(&working_dir, &file)).await?;
+    if info.audio.is_empty() {
+        return Err(format!("{} has no sound to transcribe.", info.path));
+    }
+    let root = paths::resolve_episode(&working_dir, "")?;
+    let language = language
+        .map(|l| l.trim().to_lowercase())
+        .filter(|l| !l.is_empty() && l != "auto");
+    let run = Transcription {
+        app: &app,
+        whisper: &whisper,
+        models: &models,
+        ffmpeg: found.require(Tool::Ffmpeg)?,
+        dir: &root,
+        refresh,
+        language: language.as_deref(),
+    };
+    let mut out = run.all(&[(file, info)], job, on_progress).await?;
+    out.pop().ok_or_else(|| "Nothing was transcribed.".into())
+}
+
+/// One transcription command's run: where its transcripts are kept, and how.
+struct Transcription<'a> {
+    app: &'a tauri::AppHandle,
+    whisper: &'a crate::whisper::VideoWhisper,
+    models: &'a crate::models::ModelManager,
+    ffmpeg: &'a str,
+    /// The folder whose `.haruspex/` keeps the sound and the transcripts.
+    dir: &'a std::path::Path,
+    refresh: bool,
+    language: Option<&'a str>,
+}
+
+impl Transcription<'_> {
+    /// Transcribe each file in turn, holding the server while any needs it.
+    async fn all(
+        &self,
+        list: &[(std::path::PathBuf, probe::ClipInfo)],
+        job: String,
+        on_progress: tauri::ipc::Channel<super::transcribe::TranscribeProgress>,
+    ) -> Result<Vec<super::transcribe::Transcript>, String> {
+        use super::transcribe;
+        let model = transcribe::model_for(self.models.models_dir())
+            .ok_or("No speech model is installed. Settings → Audio downloads one.")?;
+        if self.language.is_some_and(|l| l != "en") && transcribe::language_for(&model) == "en" {
+            return Err(
+                "The speech model knows only English. Settings → Video editing → \
+                 Transcription downloads one that knows more languages."
+                    .into(),
+            );
         }
+        let cancel = transcribe::Cancel::default();
+        if let Ok(mut m) = TRANSCRIBING.lock() {
+            m.insert(job.clone(), cancel.clone());
+        }
+        let result = self.each(list, &model, &cancel, &on_progress).await;
+        if let Ok(mut m) = TRANSCRIBING.lock() {
+            m.remove(&job);
+        }
+        result
     }
-    if let Ok(mut m) = TRANSCRIBING.lock() {
-        m.remove(&job);
+
+    async fn each(
+        &self,
+        list: &[(std::path::PathBuf, probe::ClipInfo)],
+        model: &std::path::Path,
+        cancel: &super::transcribe::Cancel,
+        on_progress: &tauri::ipc::Channel<super::transcribe::TranscribeProgress>,
+    ) -> Result<Vec<super::transcribe::Transcript>, String> {
+        use super::transcribe;
+        let needed = list.iter().any(|(file, _)| {
+            transcribe::needs_whisper(self.dir, file, model, self.refresh, self.language)
+        });
+        // Held to the end; dropping it schedules the idle stop.
+        let _lease = if needed {
+            Some(transcribe::lease_server(self.app, model).await?)
+        } else {
+            None
+        };
+        let count = list.len() as u32;
+        let mut out = Vec::new();
+        for (i, (file, info)) in list.iter().enumerate() {
+            let channel = on_progress.clone();
+            let (clip, total) = (info.path.clone(), info.duration_secs);
+            let progress = move |done: f64| {
+                let _ = channel.send(transcribe::TranscribeProgress {
+                    clip: clip.clone(),
+                    done_secs: done,
+                    total_secs: total,
+                    index: i as u32 + 1,
+                    count,
+                });
+            };
+            progress(0.0);
+            let how = transcribe::How {
+                refresh: self.refresh,
+                language: self.language,
+                cancel,
+                progress: &progress,
+            };
+            out.push(
+                transcribe::transcribe_clip(
+                    self.whisper,
+                    self.ffmpeg,
+                    model,
+                    self.dir,
+                    file,
+                    info,
+                    &how,
+                )
+                .await?,
+            );
+        }
+        Ok(out)
     }
-    result.map(|()| out)
 }
 
 /// Stop a running transcription.

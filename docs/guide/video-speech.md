@@ -1,6 +1,6 @@
 ---
 title: Transcripts, chapters and captions
-description: Transcribing video footage, cutting silences and retakes by what was said, writing YouTube chapters and an SRT caption file, and the transcription model.
+description: Transcribing video footage and any audio file with word times, cutting silences and retakes by what was said, writing YouTube chapters and an SRT caption file, and the transcription model.
 ---
 
 # Transcripts, chapters and captions
@@ -13,7 +13,13 @@ Ask "transcribe ep012". Each clip with sound, and each voiceover on an audio tra
 
 Transcripts are kept in the episode's `.haruspex/transcripts/` folder, so asking again is instant until a clip changes. The sound is extracted once to `.haruspex/audio/`.
 
+Every word has its own time too. Ask for the words of a stretch ("the words between 0:40 and 0:50 in clip 2") when a cut has to land on a word, such as an "um". Transcripts kept by an older version have no word times, so each clip is transcribed again once.
+
 A long transcript reaches the assistant in parts: each part says where the next one starts, in the clip's time or the cut's, and the assistant asks for it from there.
+
+## Transcribe any audio file
+
+Ask "transcribe vo/take3.wav". Any sound or video file in the working folder works, not only an episode's clips: a voiceover take, a podcast, generated speech. You can name the language ("transcribe it as German"); otherwise it is detected, or English with base.en. The transcript is kept in the working folder's `.haruspex/transcripts/` folder.
 
 ### The transcription model
 
@@ -42,5 +48,6 @@ Haruspex doesn't upload captions. Add the file in YouTube Studio → Subtitles.
 ## What it doesn't do
 
 - It doesn't tell speakers apart.
+- It doesn't transcribe files outside the working folder.
 - It doesn't fix the transcript's mistakes: edit the captions file to correct them.
 - It doesn't caption clips that weren't transcribed; the assistant says which.
