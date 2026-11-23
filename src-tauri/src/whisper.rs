@@ -65,8 +65,9 @@ pub struct Segment {
     pub words: Vec<Word>,
 }
 
-/// One spoken word, in the same seconds as its segment. Punctuation whisper
-/// gives as a word of its own is joined to the word before it.
+/// One spoken word, in the same seconds as its segment. Whisper gives a word
+/// in pieces: punctuation, and the rest of a word ("isel" after " ch"), come
+/// with no space before them and are joined to the word before.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct Word {
@@ -75,17 +76,28 @@ pub struct Word {
     pub text: String,
 }
 
-/// A segment's words: trimmed, empty ones dropped, punctuation joined on.
+/// A segment's words: whitespace-only pieces dropped, and a piece with no
+/// space before it joined to the word before. Joined punctuation keeps the
+/// word's times; the rest of a word extends its end.
 fn words_of(raw: Vec<RawWord>) -> Vec<Word> {
     let mut out: Vec<Word> = Vec::new();
+    // A whitespace-only piece ends the word before it.
+    let mut after_space = true;
     for w in raw {
         let text = w.word.trim();
         if text.is_empty() {
+            after_space = true;
             continue;
         }
+        let spaced = after_space || w.word.starts_with(char::is_whitespace);
+        after_space = w.word.ends_with(char::is_whitespace);
         let punct = text.chars().all(|c| !c.is_alphanumeric());
         match out.last_mut() {
             Some(last) if punct => last.text.push_str(text),
+            Some(last) if !spaced => {
+                last.text.push_str(text);
+                last.end = last.end.max(w.end);
+            }
             _ => out.push(Word {
                 start: w.start,
                 end: w.end.max(w.start),
@@ -400,6 +412,38 @@ mod tests {
             .all(|w| w.start >= s[0].start && w.end <= s[0].end));
         // A joined mark keeps the word's own times.
         assert_eq!(s[0].words[2].end, 1.34);
+    }
+
+    /// Pieces as whisper-server gave them for "sharpen a chisel. Today we're".
+    #[test]
+    fn verbose_words_join_pieces_of_a_word() {
+        let body = r#"{"language":"en","segments":[{"id":0,"text":" a chisel. Today we're",
+            "start":0.0,"end":4.0,"words":[
+              {"word":" a","start":0.1,"end":0.2},
+              {"word":" ch","start":0.2,"end":0.5},
+              {"word":"isel","start":0.55,"end":0.9},
+              {"word":".","start":0.9,"end":0.95},
+              {"word":" Today","start":1.5,"end":1.7},
+              {"word":" we","start":1.7,"end":1.8},
+              {"word":"'re","start":1.9,"end":2.0},
+              {"word":" ","start":2.0,"end":2.0},
+              {"word":"h","start":2.1,"end":2.2}]}]}"#;
+        let (s, _) = parse_verbose(body).unwrap();
+        let words: Vec<(&str, f64, f64)> = s[0]
+            .words
+            .iter()
+            .map(|w| (w.text.as_str(), w.start, w.end))
+            .collect();
+        assert_eq!(
+            words,
+            [
+                ("a", 0.1, 0.2),
+                ("chisel.", 0.2, 0.9),
+                ("Today", 1.5, 1.7),
+                ("we're", 1.7, 2.0),
+                ("h", 2.1, 2.2)
+            ]
+        );
     }
 }
 

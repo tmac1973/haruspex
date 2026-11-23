@@ -20,7 +20,7 @@ const found = {
 		segments: [{ start: 0, end: 4, text: 'So um we start', words }]
 	},
 	episode: '',
-	cachePath: '/v/.haruspex/transcripts/obs-1.v2.json',
+	cachePath: '/v/.haruspex/transcripts/obs-1.v3.json',
 	editsPath: '.haruspex/edits/obs.edits.json'
 };
 

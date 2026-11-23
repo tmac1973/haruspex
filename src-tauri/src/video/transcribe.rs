@@ -27,9 +27,9 @@ use std::time::Duration;
 const CHUNK_SECS: f64 = 300.0;
 /// How far from a chunk mark a silence may be to cut there instead.
 const CHUNK_REACH: f64 = 30.0;
-/// The transcript cache's format: `v2` added word times, so older files
-/// (named without it) are transcribed again once.
-const CACHE_FORMAT: &str = "v2";
+/// The transcript cache's format: `v2` added word times, and `v3` joins a
+/// word whisper gives in pieces, so older files are transcribed again once.
+const CACHE_FORMAT: &str = "v3";
 /// The video whisper-server stops this long after its last use.
 const IDLE_STOP: Duration = Duration::from_secs(300);
 
