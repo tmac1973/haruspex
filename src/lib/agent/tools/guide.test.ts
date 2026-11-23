@@ -7,10 +7,9 @@ vi.mock('#lib/guide/status.ts', () => ({
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { GUIDE_PAGES } from '#lib/guide/guide.ts';
 import { REMOTE_TOOLS } from '#lib/remote/driver.ts';
-import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const ctx = (interactive: boolean) =>
-	({ workingDir: null, pendingImages: [], interactive }) as unknown as ToolContext;
+const ctx = (interactive: boolean) => makeToolContext({ interactive });
 
 describe('haruspex_docs', () => {
 	const offered = (opts: Parameters<typeof getToolSchemas>[0]) =>

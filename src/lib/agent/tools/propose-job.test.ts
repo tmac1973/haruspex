@@ -8,20 +8,14 @@ vi.mock('@tauri-apps/api/core', () => tauri);
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { PROPOSABLE_TYPES } from './propose-job';
 import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 beforeAll(async () => {
 	await import('#lib/agent/jobs/types/index.ts');
 }, 60_000);
 
 function ctx(over: Partial<ToolContext> = {}): ToolContext {
-	return {
-		workingDir: null,
-		pendingImages: [],
-		interactive: true,
-		codeMode: false,
-		shellMode: false,
-		...over
-	} as unknown as ToolContext;
+	return makeToolContext({ interactive: true, ...over });
 }
 
 const offered = (opts: Parameters<typeof getToolSchemas>[0]) =>

@@ -7,6 +7,7 @@ vi.mock('#lib/skills/client.ts', () => client);
 import { gateNote, skillGate } from './_skillGate';
 import { coveredTools } from '#lib/skills/turn.ts';
 import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const doc: SkillDoc = {
 	name: 'fix-picture',
@@ -20,7 +21,7 @@ const doc: SkillDoc = {
 };
 
 function ctx(loaded: string[] = [], names = ['fix-picture']): ToolContext {
-	return {
+	return makeToolContext({
 		skills: {
 			names,
 			readable: names,
@@ -30,7 +31,7 @@ function ctx(loaded: string[] = [], names = ['fix-picture']): ToolContext {
 				{ name: 'fix-picture', description: '', tools: ['edit_image', 'upscale_image'] }
 			])
 		}
-	} as unknown as ToolContext;
+	});
 }
 
 beforeEach(() => client.readSkillForTurn.mockReset().mockResolvedValue(doc));

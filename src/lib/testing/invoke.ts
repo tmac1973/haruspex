@@ -169,3 +169,58 @@ export function httpCalls<C extends HttpCall = HttpCall>(invoke: Mock, ...cmds: 
 		.filter((c) => cmds.includes(c[0] as string))
 		.map((c) => (c[1] as { call: C }).call);
 }
+
+/**
+ * A secret store for a test: the `secret_*` routes over a Map. Make it in
+ * `vi.hoisted` so the `vi.mock` factory can use its routes:
+ *
+ *   const secrets = await vi.hoisted(async () =>
+ *     (await import('#lib/testing/invoke.ts')).fakeSecretStore()
+ *   );
+ *   vi.mock('@tauri-apps/api/core', async () =>
+ *     (await import('#lib/testing/invoke.ts')).mockTauriCore(secrets.routes, unexpectedInvoke)
+ *   );
+ *
+ * `available` is what `secret_available` says; `refuseSet` makes `secret_set`
+ * throw as a locked keychain does. `reset()` puts both back and empties it.
+ */
+/** What `fakeSecretStore` gives a test. */
+export interface FakeSecretStore {
+	available: boolean;
+	refuseSet: boolean;
+	stored: Map<string, string>;
+	reset(): void;
+	routes: {
+		secret_available: () => boolean;
+		secret_set: (a: Args) => null;
+		secret_get: (a: Args) => string | null;
+		secret_delete: (a: Args) => null;
+	};
+}
+
+export function fakeSecretStore(): FakeSecretStore {
+	const store: FakeSecretStore = {
+		available: true,
+		refuseSet: false,
+		stored: new Map<string, string>(),
+		reset() {
+			store.available = true;
+			store.refuseSet = false;
+			store.stored.clear();
+		},
+		routes: {
+			secret_available: () => store.available,
+			secret_set: (a) => {
+				if (store.refuseSet) throw 'the keychain is locked';
+				store.stored.set(a!.key as string, a!.value as string);
+				return null;
+			},
+			secret_get: (a) => store.stored.get(a!.key as string) ?? null,
+			secret_delete: (a) => {
+				store.stored.delete(a!.key as string);
+				return null;
+			}
+		}
+	};
+	return store;
+}
