@@ -206,15 +206,19 @@ export function toolchestServer(kind: GenerationKind, source: () => ToolchestSou
 		return lastInstances.find((i) => i.id === id);
 	}
 
-	/** The chosen instance, running, or why it can't make anything now. */
+	/**
+	 * The chosen instance (or the one `wanted` names, on the same server),
+	 * running, or why it can't make anything now.
+	 */
 	async function readyInstance(
 		cfg: ToolchestConfig,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+		wanted?: string
 	): Promise<ToolchestInstance> {
 		if (!cfg.baseUrl) {
 			throw new ToolchestError('unconfigured', `No llama-toolchest server is set — ${k.section}.`);
 		}
-		const id = chosenId();
+		const id = wanted?.trim() || chosenId();
 		if (!id) throw new ToolchestError('unconfigured', `No ${kind} model is chosen — ${k.section}.`);
 		const instance = (await instances(cfg, signal)).find((i) => i.id === id);
 		if (!instance) {

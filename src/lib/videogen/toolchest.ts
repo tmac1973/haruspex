@@ -123,9 +123,25 @@ const server = toolchestKind('video');
 /** Every video instance the last probe saw. */
 export const seenVideoInstances = server.seen;
 
-/** The chosen instance, running, or why it can't make a clip now. */
-export async function readyVideoInstance(signal?: AbortSignal): Promise<ToolchestInstance> {
-	return server.readyInstance(await server.config(), signal);
+/**
+ * The chosen instance (or `id`, on the same server), running, or why it
+ * can't make a clip now.
+ */
+export async function readyVideoInstance(
+	signal?: AbortSignal,
+	id?: string
+): Promise<ToolchestInstance> {
+	return server.readyInstance(await server.config(), signal, id);
+}
+
+/** The video instances on the server in Settings → Video generation. */
+export async function listVideoInstances(signal?: AbortSignal): Promise<ToolchestInstance[]> {
+	return server.instances(await server.config(), signal);
+}
+
+/** The instance Settings → Video generation names. */
+export function chosenVideoInstanceId(): string {
+	return server.chosenId();
 }
 
 /** Settings → Video generation's Probe: reachable, and the chosen instance running. */

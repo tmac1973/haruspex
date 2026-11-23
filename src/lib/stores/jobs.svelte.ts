@@ -23,7 +23,8 @@ export type JobType =
 	| 'autonomous_coding'
 	| 'asset_generation'
 	| 'model_generation'
-	| 'email_research';
+	| 'email_research'
+	| 'video_sequence';
 
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
