@@ -39,6 +39,8 @@ export interface GenerateDeps {
 	resume(handle: VideoJobHandle, req: VideoRequest, opts: ClipOpts): Promise<VideoResult>;
 	/** A picture in the episode folder, put in the image cache for a request. */
 	cacheImage(rel: string): Promise<VideoStartImage>;
+	/** A sound in the episode folder, put in the audio cache for a speaking window. */
+	cacheAudio(rel: string): Promise<{ name: string; hash: string }>;
 	/** A frame of a clip as a PNG: its last, or the one at `atSecs`. */
 	still(clip: string, out: string, at: 'first' | 'last' | number): Promise<void>;
 	/** A finished clip, from the cache into the episode folder. */
@@ -160,6 +162,7 @@ function pictures(run: GenerateRun, deps: GenerateDeps) {
 			case 'text':
 				return null;
 			case 'keyframe':
+			case 'portrait':
 				return run.stills[ref.section] ?? null;
 			case 'userImage':
 				return ref.path;
@@ -354,6 +357,9 @@ async function prepare(
 	const end = await pictureOf(item.end);
 	const startImage = start ? await deps.cacheImage(start) : null;
 	const endImage = end ? await deps.cacheImage(end) : null;
+	// A speaking window: its speech, and the speaking instance's size and rate.
+	const audio = item.audio ? await deps.cacheAudio(item.audio.out) : null;
+	const size = audio && run.plan.speakingSize ? run.plan.speakingSize : run.plan;
 	const fresh = at.redo || at.was?.key !== at.key;
 	const inFlight = !fresh && at.was?.status === 'running' ? at.was.handle : undefined;
 	return {
@@ -367,13 +373,14 @@ async function prepare(
 			title: item.id,
 			prompt: item.prompt,
 			...(item.negative_prompt ? { negativePrompt: item.negative_prompt } : {}),
-			width: run.plan.width,
-			height: run.plan.height,
+			width: size.width,
+			height: size.height,
 			frames: item.frames,
-			fps: run.plan.fps,
+			fps: item.fps ?? run.plan.fps,
 			seed,
 			...(startImage ? { startImage } : {}),
-			...(endImage ? { endImage } : {})
+			...(endImage ? { endImage } : {}),
+			...(audio ? { audio, followAudio: true } : {})
 		})
 	};
 }

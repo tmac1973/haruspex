@@ -6,7 +6,7 @@
 import { SUBMIT_SEQUENCE_SPEC_TOOL } from '#lib/agent/jobs/types/video-sequence/tools.ts';
 import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
 import type { RunEstimate } from '#lib/sequence/spec/estimate.ts';
-import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
+import type { SequenceSpec, SpeakingSection } from '#lib/sequence/spec/types.ts';
 
 export const INTERVIEW_DONE = 'INTERVIEW DONE';
 
@@ -84,6 +84,14 @@ export function reviseUserMessage(spec: SequenceSpec, change: string): string {
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
+/** A speaking section in one line: its lines, and its windows (about so many until spoken). */
+function speakingText(s: SpeakingSection, plan: ClipPlan): string {
+	const windows = plan.items.filter((i) => i.section === s.id && i.kind === 'generate');
+	const estimated = windows.some((w) => w.kind === 'generate' && w.estimated);
+	const count = `${estimated ? 'about ' : ''}${plural(windows.length, 'window')}`;
+	return `speaking, ${plural(s.lines.length, 'line')} (${count}): ${s.prompt}`;
+}
+
 /** The spec in a few lines, for the checkpoint and the step output. */
 export function specSummary(
 	spec: SequenceSpec,
@@ -96,7 +104,9 @@ export function specSummary(
 		const what =
 			s.kind === 'generated'
 				? `${s.seconds} s, generated: ${s.prompt}`
-				: `existing clip ${s.path}${s.in_secs !== undefined ? ` from ${s.in_secs} s` : ''}`;
+				: s.kind === 'speaking'
+					? speakingText(s, plan)
+					: `existing clip ${s.path}${s.in_secs !== undefined ? ` from ${s.in_secs} s` : ''}`;
 		return `${i + 1}. ${join}**${s.id}** — ${what}`;
 	});
 	const sound = [

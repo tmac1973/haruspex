@@ -16,7 +16,7 @@
  */
 import type { ImageInput, ImageRequest, ImageResult } from '#lib/image/types.ts';
 import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
-import type { GeneratedSection, SequenceSpec } from '#lib/sequence/spec/types.ts';
+import type { GeneratedSection, SequenceSpec, SpeakingSection } from '#lib/sequence/spec/types.ts';
 import type { FileProgress } from '#lib/sequence/spec/progress.ts';
 import { firstFrameId, reanchorId } from '#lib/sequence/spec/progress.ts';
 import { KEYFRAMES_DIR } from '#lib/sequence/spec/paths.ts';
@@ -87,6 +87,31 @@ function subjectOf(s: GeneratedSection, note?: string): string {
 	return note ? `${what}. ${note}` : what;
 }
 
+/**
+ * A speaking section's portrait: the user's picture as it is, else one
+ * drawn of the person facing the camera. Drawn fresh, not edited from the
+ * first keyframe: the speaker is someone else.
+ */
+async function portrait(
+	s: SpeakingSection,
+	style: string,
+	size: { width: number; height: number },
+	h: {
+		isDone: (id: string) => Promise<boolean>;
+		save: (id: string, r: ImageResult) => Promise<void>;
+		deps: KeyframeDeps;
+	}
+): Promise<Still[]> {
+	if (s.portrait) return [{ id: s.id, section: s.id, file: s.portrait, how: 'user' }];
+	if (!h.deps.draws) return [];
+	const file = stillPath(s.id);
+	if (await h.isDone(s.id)) return [{ id: s.id, section: s.id, file, how: 'kept' }];
+	const who = s.portrait_prompt ?? s.prompt;
+	const prompt = withStyle(`Portrait of ${who}, facing the camera, head and shoulders`, style);
+	await h.save(s.id, await h.deps.generate({ prompt, ...size, seed: null }));
+	return [{ id: s.id, section: s.id, file, how: 'drawn' }];
+}
+
 /** Make the stills the plan needs; what each is, in plan order. */
 export async function makeKeyframes(run: KeyframeRun, deps: KeyframeDeps): Promise<Still[]> {
 	const { spec, plan } = run;
@@ -113,6 +138,10 @@ export async function makeKeyframes(run: KeyframeRun, deps: KeyframeDeps): Promi
 
 	for (const s of spec.sections) {
 		if (deps.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (s.kind === 'speaking') {
+			stills.push(...(await portrait(s, spec.style, size, { isDone, save, deps })));
+			continue;
+		}
 		if (s.kind !== 'generated') continue;
 		if (s.start_image) {
 			stills.push({ id: s.id, section: s.id, file: s.start_image, how: 'user' });

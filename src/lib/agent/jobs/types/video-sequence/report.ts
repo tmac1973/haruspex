@@ -48,7 +48,9 @@ function sectionLines(input: ReportInput): string[] {
 			return;
 		}
 		const items = plan.items.filter((i) => i.section === s.id && i.kind === 'generate' && !i.join);
-		out.push(`### ${s.id}: ${s.seconds} s, ${plural(items.length, 'clip')}`, '', s.prompt, '');
+		const head =
+			s.kind === 'speaking' ? `${plural(s.lines.length, 'line')} spoken` : `${s.seconds} s`;
+		out.push(`### ${s.id}: ${head}, ${plural(items.length, 'clip')}`, '', s.prompt, '');
 		for (const item of items) {
 			const c = clips[item.id];
 			const flag = c?.check && !c.check.ok ? ` — **flagged:** ${c.check.problem}` : '';

@@ -10,7 +10,12 @@
  */
 import type { VideoLimits } from '#lib/toolchest/models.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
-import type { ExistingSection, Section, SequenceSpec } from '#lib/sequence/spec/types.ts';
+import type {
+	ExistingSection,
+	Section,
+	SequenceSpec,
+	SpeakingSection
+} from '#lib/sequence/spec/types.ts';
 
 export interface ValidateContext {
 	/** The video instance's id, for messages. */
@@ -25,6 +30,10 @@ export interface ValidateContext {
 	files: Set<string>;
 	/** Whether the instance's clips have sound; null until a clip says. */
 	clipSound?: boolean | null;
+	/** The instance speaking sections use (Wan2.2 S2V), when the job names one. */
+	speaking?: { instance: string; limits: VideoLimits; capabilities: string[] };
+	/** The project's frame rate, for the note when the speaking instance's differs. */
+	projectFps?: number;
 }
 
 export interface Validated {
@@ -41,8 +50,38 @@ const clean = (p: string) => p.replace(/\\/g, '/').replace(/^\.\//, '');
 /** A section's length in seconds, when the spec says it. */
 function sectionSecs(s: Section): number | null {
 	if (s.kind === 'generated') return s.seconds;
+	if (s.kind === 'speaking') return null;
 	if (s.out_secs !== undefined) return s.out_secs - (s.in_secs ?? 0);
 	return null;
+}
+
+function checkSpeaking(
+	s: SpeakingSection,
+	ctx: ValidateContext,
+	errors: string[],
+	notes: string[]
+) {
+	const name = `Section ${s.id}`;
+	const sp = ctx.speaking;
+	if (!sp || !sp.capabilities.includes('audio')) {
+		errors.push(
+			`${name}: a speaking section needs a speaking video instance (Wan2.2 S2V); choose one as the job's speaking model.`
+		);
+	}
+	if (s.portrait && !ctx.files.has(clean(s.portrait))) {
+		errors.push(`${name}: ${s.portrait} is not in the episode folder.`);
+	} else if (!s.portrait && !ctx.imageBackend) {
+		errors.push(
+			`${name}: give a portrait of the person, or set up an image backend in Settings → Image to draw one.`
+		);
+	}
+	for (const l of s.lines) {
+		if (!SLUG.test(l.id)) errors.push(`${name}: line id ${l.id} must be a short lowercase slug.`);
+	}
+	const fixed = sp?.limits.fixedFps;
+	if (fixed && ctx.projectFps && fixed !== ctx.projectFps) {
+		notes.push(`${name}: ${sp.instance} makes ${fixed} fps; the project is ${ctx.projectFps} fps.`);
+	}
 }
 
 function checkExisting(s: ExistingSection, ctx: ValidateContext, errors: string[]): void {
@@ -58,6 +97,7 @@ function checkExisting(s: ExistingSection, ctx: ValidateContext, errors: string[
 
 function checkSection(s: Section, ctx: ValidateContext, errors: string[], notes: string[]): void {
 	if (s.kind === 'existing') return checkExisting(s, ctx, errors);
+	if (s.kind === 'speaking') return checkSpeaking(s, ctx, errors, notes);
 	const name = `Section ${s.id}`;
 	if (!(s.seconds > 0)) errors.push(`${name}: seconds must be more than 0.`);
 	const can = (c: string) => ctx.capabilities.includes(c);
@@ -157,6 +197,12 @@ export function validateSequenceSpec(spec: SequenceSpec, ctx: ValidateContext): 
 		if (seen.has(s.id)) errors.push(`Section ${s.id}: two sections have this id.`);
 		seen.add(s.id);
 		checkSection(s, ctx, errors, notes);
+	}
+	const lineIds = out.sections.flatMap((s) =>
+		s.kind === 'speaking' ? s.lines.map((l) => l.id) : []
+	);
+	for (const id of new Set(lineIds.filter((id, i) => lineIds.indexOf(id) !== i))) {
+		errors.push(`Line ${id}: two lines have this id.`);
 	}
 	checkJoins(out, ctx, errors, notes);
 	checkSound(out, ctx, errors, notes);

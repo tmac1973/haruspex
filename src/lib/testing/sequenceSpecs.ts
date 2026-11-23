@@ -39,3 +39,33 @@ export function foxSpec(): SequenceSpec {
 		reanchor_every: 6
 	};
 }
+
+/** A speaking instance whose longest clip is 10 s: 160 frames at 16 fps. */
+export const S2V_10S: VideoLimits = {
+	defaultFps: 16,
+	defaultFrames: 33,
+	defaultSize: '832x480',
+	maxFrames: 160,
+	maxSize: '1280x720',
+	maxPixelFrames: null,
+	fixedFps: 16
+};
+
+export const S2V_CAPS = ['start_image', 'audio'];
+
+/** The fox spec with a presenter between the snow and the forest. */
+export function presenterSpec(): SequenceSpec {
+	const spec = foxSpec();
+	spec.sections.splice(1, 0, {
+		kind: 'speaking',
+		id: 'host',
+		prompt: 'a presenter in a winter coat, talking to the camera',
+		lines: [
+			{ id: 'l1', text: 'Foxes hunt by sound.' },
+			{ id: 'l2', text: 'They hear a mouse under a metre of snow.', voice: 'Tim' },
+			{ id: 'l3', text: 'Then they jump.' }
+		]
+	});
+	spec.joins.splice(1, 0, { kind: 'cut' });
+	return spec;
+}

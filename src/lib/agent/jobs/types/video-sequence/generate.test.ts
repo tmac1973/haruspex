@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { clipPath, makeOrder, runGenerate, type GenerateDeps, type GenerateRun } from './generate';
 import { planClips } from '#lib/sequence/spec/plan.ts';
 import { itemKeys, type ClipProgress } from '#lib/sequence/spec/progress.ts';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX, S2V_10S, foxSpec, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { VideoRequest, VideoResult } from '#lib/videogen/types.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 
@@ -51,6 +51,7 @@ function deps(over: Partial<GenerateDeps> = {}): GenerateDeps {
 			return result(req);
 		},
 		cacheImage: async (rel) => ({ name: rel, hash: `hash:${rel}` }),
+		cacheAudio: async (rel) => ({ name: rel, hash: `audio:${rel}` }),
 		still: async (clip, out, at) => {
 			stills.push([clip, out, at]);
 		},
@@ -107,6 +108,38 @@ beforeEach(() => {
 });
 
 describe('runGenerate', () => {
+	it('makes each speaking window from the portrait, with its speech and no length', async () => {
+		const spec = presenterSpec();
+		(spec.sections[0] as { seconds: number }).seconds = 5;
+		(spec.sections[2] as { seconds: number }).seconds = 5;
+		const plan = planClips(spec, LTX, true, { limits: S2V_10S });
+		const run: GenerateRun = {
+			plan,
+			keys: itemKeys(spec, plan),
+			clips: {},
+			stills: {
+				snow: 'keyframes/snow.png',
+				host: 'keyframes/host.png',
+				forest: 'keyframes/forest.png'
+			}
+		};
+		await runGenerate(run, deps());
+		const win = requests.find((r) => r.title === 'host-01')!;
+		expect(win).toMatchObject({
+			width: 832,
+			height: 480,
+			fps: 16,
+			followAudio: true,
+			audio: { name: 'narration/host-win-01.wav', hash: 'audio:narration/host-win-01.wav' }
+		});
+		expect(win.startImage?.name).toBe('keyframes/host.png');
+		expect(win.endImage).toBeUndefined();
+		// The forest after it isn't chained from the window: it opens on its keyframe.
+		expect(requests.find((r) => r.title === 'forest-01')?.startImage?.name).toBe(
+			'keyframes/forest.png'
+		);
+	});
+
 	it('chains each clip from the last frame of the one before, with end pictures', async () => {
 		const run = runOf(shortFox());
 		const out = await runGenerate(run, deps());

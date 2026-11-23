@@ -37,7 +37,10 @@ export function clipChecker(
 	fps: number
 ): GenerateDeps['check'] {
 	if (!cfg.vision_checks || !ctx.visionSupported()) return undefined;
-	return async (item, clip, against) => {
+	return async (item, clip, given) => {
+		// A speaking window doesn't start on its portrait (S2V takes it as the
+		// person, not a frame), so it is checked against it as the section's look only.
+		const against = item.audio ? { start: null, keyframe: given.start ?? given.keyframe } : given;
 		const images: SheetImage[] = [];
 		if (against.start) images.push({ path: files.path(against.start), label: 'start' });
 		if (against.keyframe) images.push({ path: files.path(against.keyframe), label: 'keyframe' });
@@ -46,7 +49,7 @@ export function clipChecker(
 			episode: cfg.episode_dir,
 			request: {
 				path: files.path(clip),
-				times: checkTimes(item.frames, fps),
+				times: checkTimes(item.frames, item.fps ?? fps),
 				everySecs: null,
 				timelineTimes: null,
 				project: null,
