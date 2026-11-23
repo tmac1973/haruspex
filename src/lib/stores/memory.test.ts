@@ -31,6 +31,7 @@ import {
 	getMemoryCount,
 	getModelError,
 	getModelStatus,
+	initMemory,
 	memoryActive,
 	refreshMemoryCount,
 	refreshModelStatus
@@ -68,6 +69,28 @@ describe('model status', () => {
 
 		await refreshModelStatus();
 		expect(getModelStatus()).toBe('downloading');
+	});
+});
+
+describe('startup', () => {
+	it('turns memory on at launch when the model is on disk', async () => {
+		// The bug this guards: status started `unknown` and only Settings →
+		// Memory ever checked it, so memory was off after every restart.
+		mocks.settings.memoryEnabled = true;
+		expect(memoryActive()).toBe(false);
+		vi.mocked(invoke).mockResolvedValueOnce(true);
+		await initMemory();
+		expect(memoryActive()).toBe(true);
+	});
+
+	it('stays off and downloads nothing when the model is missing', async () => {
+		mocks.settings.memoryEnabled = true;
+		vi.mocked(invoke).mockResolvedValueOnce(false);
+		await initMemory();
+		expect(memoryActive()).toBe(false);
+		expect(getModelStatus()).toBe('absent');
+		expect(invoke).toHaveBeenCalledTimes(1);
+		expect(invoke).toHaveBeenCalledWith('memory_model_present');
 	});
 });
 
