@@ -21,6 +21,10 @@ export interface ClipProgress {
 	/** The clip, relative to the episode folder. */
 	file?: string;
 	seed?: number;
+	/** The clip has a sound track. */
+	hasAudio?: boolean;
+	/** How long it took to make, in seconds. */
+	secs?: number;
 	check?: { ok: boolean; problem?: string };
 }
 

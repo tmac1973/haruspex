@@ -14,12 +14,17 @@
 		stepStatsFromWire
 	} from '#lib/agent/jobs/runner.svelte.ts';
 	import { canResumeChain } from '#lib/agent/jobs/chainResume.ts';
+	import { getJobType } from '#lib/agent/jobs/types/index.ts';
 
 	interface Props {
 		runId: number;
 		onclose: () => void;
-		/** Run the job again as its chain would, so the chain carries on. */
-		onresume?: (jobId: number) => void;
+		/**
+		 * Run the job again: as its chain would (`chained`), so the chain
+		 * carries on, or by hand (`manual`) for a type that picks up where a
+		 * run stopped.
+		 */
+		onresume?: (jobId: number, trigger: 'manual' | 'chained') => void;
 	}
 
 	const { runId, onclose, onresume }: Props = $props();
@@ -43,6 +48,13 @@
 				},
 				fullJob
 			)
+	);
+	/** A type that keeps its progress on disk: running it again carries on. */
+	const typeResumable = $derived(
+		!resumable &&
+			!!run &&
+			!!fullJob &&
+			(getJobType(fullJob.job_type)?.canResume?.({ status: run.status }, fullJob) ?? false)
 	);
 	/** Already running or waiting: a second copy would only run it twice. */
 	const jobBusy = $derived(
@@ -146,9 +158,23 @@
 					title={jobBusy
 						? 'This job is already running or queued'
 						: 'Run this stage again unattended, then start the next stage. Finished work is kept.'}
-					onclick={() => onresume(jobId)}
+					onclick={() => onresume(jobId, 'chained')}
 				>
 					Resume chain
+				</button>
+			{/if}
+			{#if typeResumable && onresume && run}
+				{@const jobId = run.job_id}
+				<button
+					type="button"
+					class="secondary"
+					disabled={jobBusy}
+					title={jobBusy
+						? 'This job is already running or queued'
+						: 'Run the job again from where this run stopped. What it made is kept.'}
+					onclick={() => onresume(jobId, 'manual')}
+				>
+					Resume
 				</button>
 			{/if}
 			<button type="button" class="secondary" onclick={onclose}>Close</button>

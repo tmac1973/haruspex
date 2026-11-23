@@ -14,6 +14,7 @@ import type { RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts'
 import type { EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import type { UserAnswer, UserQuestionRequest } from '#lib/stores/userQuestion.svelte.ts';
 import {
+	GENERATE,
 	INTERVIEW,
 	KEYFRAMES,
 	MAX_DERIVE_ATTEMPTS,
@@ -38,13 +39,21 @@ vi.mock('#lib/video/binaries.ts', () => ({
 	videoToolsOn: () => env.videoTools,
 	videoOverrides: () => ({})
 }));
+const video = vi.hoisted(() => ({ made: [] as string[] }));
 vi.mock('#lib/videogen/toolchest.ts', () => ({
 	readyVideoInstance: async () => ({
 		id: 'ltx',
 		capabilities: LTX_CAPS,
 		state: 'running',
 		video: LTX
-	})
+	}),
+	generateVideo: async (req: { title: string; seed: number }) => {
+		video.made.push(req.title);
+		return { hash: 'a'.repeat(64), mime: 'video/webm', seed: req.seed, hasAudio: false };
+	},
+	resumeVideo: async () => {
+		throw new Error('not in these tests');
+	}
 }));
 vi.mock('#lib/image/backend.ts', () => ({ resolveImageBackend: () => ({ kind: 'comfyui' }) }));
 const image = vi.hoisted(() => ({ requests: [] as { prompt: string; edit?: unknown }[] }));
@@ -114,6 +123,14 @@ function routes() {
 		},
 		fs_path_exists: (a) => bytes.has(a!.relPath as string) || files.has(a!.relPath as string),
 		image_fit_cover: (a) => a!.bytes,
+		audio_save_in_folder: (a) => {
+			bytes.set(a!.relPath as string, new Uint8Array([1]));
+		},
+		video_still_extract: (a) => {
+			const req = a!.request as { out: string };
+			bytes.set(req.out, new Uint8Array([2]));
+			return { path: req.out, width: 1, height: 1, previewDataUrl: '' };
+		},
 		image_store_bytes: () => 'f'.repeat(64),
 		video_probe_folder: () => ({ clips: [], unreadable: [], introCandidates: [] })
 	});
@@ -193,6 +210,7 @@ beforeEach(() => {
 	files = new Map();
 	bytes = new Map();
 	image.requests = [];
+	video.made = [];
 	asked.questions = [];
 	asked.answers = [];
 	opened.files = [];
@@ -276,7 +294,9 @@ describe('the Video sequence run', () => {
 		asked.answers = [
 			{ kind: 'freeText', text: 'make the forest 30 seconds' },
 			{ kind: 'selected', labels: ['Approve'] },
-			{ kind: 'selected', labels: ['Approve'] }
+			{ kind: 'selected', labels: ['Approve'] },
+			{ kind: 'selected', labels: ['Continue'] },
+			{ kind: 'selected', labels: ['Continue'] }
 		];
 		const shorter = foxArgs();
 		(shorter.sections as { seconds: number }[])[1].seconds = 30;
@@ -294,7 +314,9 @@ describe('the Video sequence run', () => {
 			{ kind: 'selected', labels: ['Edit the file'] },
 			{ kind: 'selected', labels: ['Done'] },
 			{ kind: 'selected', labels: ['Approve'] },
-			{ kind: 'selected', labels: ['Approve'] }
+			{ kind: 'selected', labels: ['Approve'] },
+			{ kind: 'selected', labels: ['Continue'] },
+			{ kind: 'selected', labels: ['Continue'] }
 		];
 		const h = harness({}, () => foxArgs());
 		const plain = routes();
@@ -371,5 +393,42 @@ describe('the Video sequence run', () => {
 		expect(redone).toHaveLength(3);
 		expect(redone[0].prompt).toContain('at dusk');
 		expect(h.finished).toEqual({ status: 'cancelled', error: null });
+	});
+
+	it('makes every clip into the episode folder, and a rerun makes none', async () => {
+		const h = harness({ run_mode: 'unattended' }, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(h.finished?.error ?? null).toBeNull();
+		expect(video.made).toHaveLength(25);
+		expect(bytes.has('ep1/generated/snow-01.webm')).toBe(true);
+		expect(bytes.has('ep1/generated/join-1.webm')).toBe(true);
+		expect(h.steps[GENERATE].output).toMatch(
+			/^25 clips made, 0 kept from before, in ep1\/generated/
+		);
+		const progress = JSON.parse(files.get('ep1/.haruspex/sequence-progress.json')!);
+		expect(progress.clips['forest-12'].status).toBe('done');
+		const again = harness({ run_mode: 'unattended' }, () => null);
+		await runVideoSequencePipeline(again.ctx);
+		expect(video.made).toHaveLength(25);
+		expect(again.steps[GENERATE].output).toMatch(/^0 clips made, 25 kept/);
+	});
+
+	it('writes a note on a first clip into the spec and makes the section again', async () => {
+		asked.answers = [
+			{ kind: 'selected', labels: ['Approve'] },
+			{ kind: 'selected', labels: ['Approve'] },
+			{ kind: 'freeText', text: 'the fox walks slower' },
+			{ kind: 'selected', labels: ['Continue'] },
+			{ kind: 'selected', labels: ['Continue'] }
+		];
+		const h = harness({}, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(h.finished?.status).toBe('succeeded');
+		const spec = JSON.parse(files.get('ep1/sequence.json')!);
+		expect(spec.sections[0].prompt).toBe('a fox walking through deep snow. the fox walks slower');
+		// The approved keyframe stays: its prompt is kept as the keyframe's.
+		expect(spec.sections[0].keyframe_prompt).toBe('a fox walking through deep snow');
+		expect(video.made.filter((t) => t === 'snow-01')).toHaveLength(2);
+		expect(image.requests).toHaveLength(6);
 	});
 });
