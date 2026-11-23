@@ -13,7 +13,15 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 const refresh = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('#lib/image/refreshCaps.ts', () => ({ refreshMissingImageCaps: refresh }));
 
-import { mergePatch, patchSettings, readSettings, redactSecrets } from './settings.ts';
+import {
+	mergePatch,
+	NOT_SECRETS,
+	patchSettings,
+	readSettings,
+	redactSecrets,
+	SECRET_FIELDS,
+	SECRET_LOOKING
+} from './settings.ts';
 
 beforeEach(() => {
 	store.settings = {
@@ -213,5 +221,65 @@ describe('settings.patch', () => {
 	it('takes an object only', () => {
 		expect(() => patchSettings('theme=dark')).toThrow('takes an object');
 		expect(() => patchSettings(['theme'])).toThrow('takes an object');
+	});
+});
+
+describe('which fields are secrets', () => {
+	/** Every field name the settings' types declare: the store's own and the Rust structs it holds. */
+	const declaredFields = (() => {
+		const sources = Object.values(
+			import.meta.glob<string>(['../stores/settings.ts', '../ipc/gen/*.ts'], {
+				query: '?raw',
+				import: 'default',
+				eager: true
+			})
+		);
+		const names = new Set<string>();
+		for (const src of sources) {
+			for (const m of src.matchAll(/(?:^|[{,;])\s*(?:readonly\s+)?"?([A-Za-z_]\w*)"?\??\s*:/gm)) {
+				names.add(m[1]);
+			}
+		}
+		return names;
+	})();
+
+	it('reads the types', () => {
+		// The store's fields and the Rust structs': a glob that matched
+		// nothing would pass everything below.
+		expect(declaredFields.has('braveApiKey')).toBe(true);
+		expect(declaredFields.has('imapHost')).toBe(true);
+	});
+
+	it('knows every field whose name looks like a secret', () => {
+		const unclassified = [...declaredFields].filter(
+			(n) => SECRET_LOOKING.test(n) && !SECRET_FIELDS.has(n) && !NOT_SECRETS.has(n)
+		);
+		// A new one: add it to SECRET_FIELDS, or to NOT_SECRETS with why.
+		expect(unclassified).toEqual([]);
+	});
+
+	it('lists only fields that still exist', () => {
+		const gone = [...SECRET_FIELDS, ...NOT_SECRETS].filter((n) => !declaredFields.has(n));
+		expect(gone).toEqual([]);
+	});
+
+	it('still blanks a secret-looking name the types do not declare', () => {
+		const { value, redacted } = redactSecrets({
+			codeHelperConfig: {
+				search: { api_key: 'k', clientSecret: 's', sessionCookie: 'c', passphrase: 'p', depth: 'x' }
+			}
+		});
+		expect(value).toEqual({
+			codeHelperConfig: {
+				search: { api_key: '', clientSecret: '', sessionCookie: '', passphrase: '', depth: 'x' }
+			}
+		});
+		expect(redacted).toHaveLength(4);
+	});
+
+	it("leaves a name that only looks like one, such as an ONVIF profile's token", () => {
+		expect(redactSecrets({ onvif: { profileToken: 'profile_1' } }).value).toEqual({
+			onvif: { profileToken: 'profile_1' }
+		});
 	});
 });

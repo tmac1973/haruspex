@@ -16,8 +16,55 @@
 import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 
-/** A field holding a secret, wherever it sits: `braveApiKey`, `remoteAccessToken`, a password. */
-const SECRET_KEY = /(api_?key|token|password)$/i;
+/**
+ * Every field that holds a secret, wherever it sits. A new one goes here:
+ * `settings.test.ts` reads every field name the settings' types declare and
+ * fails on one that looks like a secret but is in neither this list nor
+ * `NOT_SECRETS`.
+ */
+export const SECRET_FIELDS = new Set([
+	'braveApiKey',
+	'imageBackendApiKey',
+	'imageLemonadeApiKey',
+	'remoteApiKey',
+	'remoteAccessToken',
+	'password',
+	// A ComfyUI call's key.
+	'api_key',
+	// A paired client's token. An ONVIF preset's `token` is only its id, but
+	// it shares the name, and blanking it hides nothing anyone needs.
+	'token'
+]);
+
+/** Names that look like a secret's but aren't one, or are handled apart. */
+export const NOT_SECRETS = new Set([
+	// The API-key store: each entry's `value` is blanked below.
+	'apiKeys',
+	// A number.
+	'maxResponseTokens',
+	// Names an ONVIF media profile.
+	'profileToken',
+	// An MCP server's secrets map (`SECRET_MAPS`), and the names of the ones
+	// kept in the store.
+	'secrets',
+	'storedSecrets',
+	// How a peer or a mail was authenticated, not with what.
+	'auth'
+]);
+
+/**
+ * What a secret's name looks like. A field that matches and is in neither
+ * list is still blanked: a helper's free-form config (`codeHelperConfig`)
+ * isn't in the types the test reads, and a wrong guess there hides a value
+ * rather than showing a key.
+ */
+export const SECRET_LOOKING =
+	/(api_?key|token|password|passphrase|secret|cookie|credential|bearer|auth|private_?key)s?$/i;
+
+/** Whether the field `key` holds a secret. */
+function isSecretKey(key: string): boolean {
+	return SECRET_FIELDS.has(key) || (SECRET_LOOKING.test(key) && !NOT_SECRETS.has(key));
+}
 
 /** Objects whose every value is a secret: an MCP server's `secrets`. */
 const SECRET_MAPS = new Set(['secrets']);
@@ -57,7 +104,7 @@ const isObject = (v: unknown): v is Record<string, Json> =>
 /** `v` as `settings.get` shows it, given the key it sits under. */
 function redactString(v: string, key: string, inApiKeys: boolean): string {
 	if (v === '') return v;
-	if (SECRET_KEY.test(key) || SECRET_LISTS.has(key) || (inApiKeys && key === 'value')) return '';
+	if (isSecretKey(key) || SECRET_LISTS.has(key) || (inApiKeys && key === 'value')) return '';
 	// A base URL, a remote MCP server or a proxy can hold its credential in
 	// the URL: keep where it points, drop the rest.
 	return URL_WITH_CREDENTIAL.test(v) ? urlForReport(v) : v;
@@ -140,7 +187,7 @@ function refuseSecrets(value: Json, path: string): void {
 	if (!isObject(value)) return;
 	for (const [k, v] of Object.entries(value)) {
 		const at = `${path}.${k}`;
-		if (SECRET_KEY.test(k) || SECRET_MAPS.has(k)) {
+		if (isSecretKey(k) || SECRET_MAPS.has(k)) {
 			throw new Error(`${at} is a secret: set it in Settings on the computer`);
 		}
 		refuseSecrets(v, at);
@@ -163,7 +210,7 @@ export function mergePatch(current: Json, patch: Json, path: string): Json {
 	const out: Record<string, Json> = { ...current };
 	for (const [k, v] of Object.entries(patch)) {
 		const at = path ? `${path}.${k}` : k;
-		if (SECRET_KEY.test(k) || SECRET_MAPS.has(k)) {
+		if (isSecretKey(k) || SECRET_MAPS.has(k)) {
 			throw new Error(`${at} is a secret: set it in Settings on the computer`);
 		}
 		if (!(k in current)) throw new Error(`no such setting: ${at}`);
