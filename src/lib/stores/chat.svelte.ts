@@ -856,6 +856,11 @@ export function newConversationWithDraft(text: string): string {
 	return id;
 }
 
+/** Put `text` in an existing conversation's input box, unsent, when it is next shown. */
+export function setConversationDraft(conversationId: string, text: string): void {
+	pendingDraft = { conversationId, text };
+}
+
 /** The draft waiting for a conversation's input box, taken: it is handed out once. */
 export function takeConversationDraft(conversationId: string): string | null {
 	if (pendingDraft?.conversationId !== conversationId) return null;

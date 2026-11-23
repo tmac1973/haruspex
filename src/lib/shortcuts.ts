@@ -86,6 +86,16 @@ export const SHORTCUTS: ShortcutSection[] = [
 		]
 	},
 	{
+		title: 'Video transcript',
+		items: [
+			{ keys: 'Space', action: 'Play or pause the video' },
+			{ keys: '← / →', action: 'Previous / next word' },
+			{ keys: 'Shift + click', action: 'Select the words up to here' },
+			{ keys: 'Delete', action: 'Cut the selected words' },
+			{ keys: 'Enter', action: 'Replace the selected words' }
+		]
+	},
+	{
 		title: 'Dialogs',
 		items: [{ keys: 'Esc', action: 'Close logs, the image viewer, or this help' }]
 	}

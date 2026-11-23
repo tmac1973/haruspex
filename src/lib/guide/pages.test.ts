@@ -34,6 +34,7 @@ const PAGES = [
 	'3d-helper',
 	'web-preview',
 	'viewers',
+	'transcript-viewer',
 	'skills',
 	'write-skills',
 	'media-skills',

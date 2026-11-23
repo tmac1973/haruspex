@@ -12,9 +12,11 @@
 		/** Fill the space it is given (a viewer tab) rather than a card's width. */
 		fill?: boolean;
 		onerror?: () => void;
+		/** The `<video>`, for a caller that follows or moves the playhead. */
+		video?: HTMLVideoElement;
 	}
 
-	let { src, title, loop = false, fill = false, onerror }: Props = $props();
+	let { src, title, loop = false, fill = false, onerror, video = $bindable() }: Props = $props();
 
 	let frame = $state<HTMLDivElement | undefined>(undefined);
 	let fullscreen = $state(false);
@@ -32,7 +34,16 @@
 	onfullscreenchange={() => (fullscreen = document.fullscreenElement === frame)}
 >
 	<!-- svelte-ignore a11y_media_has_caption -->
-	<video {src} controls {loop} playsinline preload="metadata" aria-label={title} {onerror}></video>
+	<video
+		bind:this={video}
+		{src}
+		controls
+		{loop}
+		playsinline
+		preload="metadata"
+		aria-label={title}
+		{onerror}
+	></video>
 	<button
 		class="fullscreen"
 		type="button"
