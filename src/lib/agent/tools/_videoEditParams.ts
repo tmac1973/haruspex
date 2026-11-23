@@ -49,6 +49,19 @@ export const EDIT_PROPERTIES = {
 		type: 'number',
 		description: 'remove_silences: shortest silence to cut. Default 1.5.'
 	},
+	path: {
+		type: 'string',
+		description:
+			'add_audio: a sound file, relative to the working folder, to put on the audio tracks.'
+	},
+	start: {
+		type: 'string',
+		description: 'add_audio: where it starts in the video (the cut\'s time), e.g. "1:04.2".'
+	},
+	lufs: {
+		type: 'number',
+		description: 'add_audio: how loud to make it, -40 to -10. Default -14, for speech.'
+	},
 	pad_secs: {
 		type: 'number',
 		description: 'remove_silences: quiet kept at each side of a cut. Default 0.25.'

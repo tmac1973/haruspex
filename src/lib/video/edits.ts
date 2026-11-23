@@ -42,7 +42,10 @@ export type Edit = CutEdit | ReplaceEdit;
 
 export interface SpeechEdits {
 	version: 1;
-	/** The clip, relative to the working folder. */
+	/**
+	 * The clip, relative to the episode folder whose `.haruspex/edits/` holds
+	 * this list, so it is found from wherever the list is read.
+	 */
 	clip: string;
 	/** `transcriptHash` of the transcript the edits were made on. */
 	transcript_hash: string;
@@ -194,4 +197,77 @@ export function editAt(list: Edit[], words: Word[], i: number): Edit | undefined
 	const w = words[i];
 	const mid = (w.start + w.end) / 2;
 	return list.find((e) => mid >= e.from - 1e-6 && mid <= e.to + 1e-6);
+}
+
+/** Where an edit sits in the project now. */
+export type MappedEdit =
+	| {
+			edit: Edit;
+			ok: true;
+			/** The main-track clip that plays it, from 1. */
+			index: number;
+			/** In the clip's own time. */
+			clipFrom: number;
+			clipTo: number;
+			/** In the cut's time. */
+			cutFrom: number;
+			cutTo: number;
+			/** How long it lasts in the cut. */
+			secs: number;
+	  }
+	| { edit: Edit; ok: false; problem: string };
+
+/** The fields of a project's main-track clip `mapEdits` reads. */
+export interface PlacedClip {
+	index: number;
+	path: string;
+	sourceInSecs: number;
+	sourceOutSecs: number;
+	startSecs: number;
+	speed: number;
+}
+
+const samePath = (a: string, b: string) =>
+	a.replace(/\\/g, '/').replace(/^\.\//, '') === b.replace(/\\/g, '/').replace(/^\.\//, '');
+
+/**
+ * Each edit not done yet, on the project's main track: the clip of `clip`
+ * (relative to the working folder) that plays all of it. One that two
+ * pieces share, or that is cut out already, is a problem, said so.
+ */
+export function mapEdits(edits: SpeechEdits, clip: string, items: PlacedClip[]): MappedEdit[] {
+	const pieces = items.filter((i) => samePath(i.path, clip));
+	return edits.edits
+		.filter((e) => !edits.done.includes(e.id))
+		.map((edit): MappedEdit => {
+			const eps = 0.02;
+			const holds = pieces.find(
+				(p) => p.sourceInSecs <= edit.from + eps && edit.to <= p.sourceOutSecs + eps
+			);
+			if (holds) {
+				const clipFrom = Math.max(edit.from, holds.sourceInSecs);
+				const clipTo = Math.min(edit.to, holds.sourceOutSecs);
+				const cut = (t: number) => holds.startSecs + (t - holds.sourceInSecs) / holds.speed;
+				return {
+					edit,
+					ok: true,
+					index: holds.index,
+					clipFrom,
+					clipTo,
+					cutFrom: cut(clipFrom),
+					cutTo: cut(clipTo),
+					secs: (clipTo - clipFrom) / holds.speed
+				};
+			}
+			const touched = pieces.filter((p) => p.sourceInSecs < edit.to && edit.from < p.sourceOutSecs);
+			const problem =
+				pieces.length === 0
+					? `${clip} is not on the project's main track.`
+					: touched.length > 1
+						? `It spans clips ${touched.map((p) => p.index).join(' and ')}; edit each part in the viewer apart.`
+						: touched.length === 1
+							? `Part of it is cut out of clip ${touched[0].index} already.`
+							: 'Those words are cut out of the project already.';
+			return { edit, ok: false, problem };
+		});
 }

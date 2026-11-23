@@ -671,6 +671,34 @@ pub async fn audio_stretch(
     })
 }
 
+/// A sound file in the working folder played `factor` times as fast, pitch
+/// kept, into another there: a replacement take fitted to the gap it fills.
+/// Returns the new file's length in seconds.
+#[tauri::command]
+pub async fn audio_stretch_file(
+    working_dir: String,
+    from: String,
+    to: String,
+    factor: f64,
+    overrides: crate::video::binaries::BinaryOverrides,
+) -> Result<f64, String> {
+    let chain = atempo_chain(factor)?;
+    let root = std::path::Path::new(&working_dir);
+    let src = crate::fs_tools::resolve_in_workdir(root, &from)?;
+    let out = crate::fs_tools::resolve_in_workdir(root, &to)?;
+    if !out.to_string_lossy().to_ascii_lowercase().ends_with(".wav") {
+        return Err("The stretched file must be a .wav.".into());
+    }
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("Can't make {}: {e}", dir.display()))?;
+    }
+    let found = crate::video::binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(crate::video::binaries::Tool::Ffmpeg)?;
+    stretch_file(ffmpeg, &src, &chain, &out).await?;
+    let wav = std::fs::read(&out).map_err(|e| format!("Can't read the audio: {e}"))?;
+    Ok(crate::speech_server::wav_seconds(&wav))
+}
+
 async fn stretch_file(ffmpeg: &str, src: &Path, chain: &str, out: &Path) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new(ffmpeg);
     cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-y", "-i"])

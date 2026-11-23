@@ -609,6 +609,7 @@ pub fn run() {
             tts::tts_synthesize_and_play,
             tts::tts_synthesize_to_cache,
             tts::audio_stretch,
+            tts::audio_stretch_file,
             media_http::media_root_register,
             media_http::media_root_release,
             media_http::media_url,

@@ -30,6 +30,7 @@ export const IPC = {
 	audio_store_dropped: 'audio_store_dropped',
 	audio_store_url: 'audio_store_url',
 	audio_stretch: 'audio_stretch',
+	audio_stretch_file: 'audio_stretch_file',
 	audio_sweep: 'audio_sweep',
 	audio_transcribe: 'audio_transcribe',
 	background_get: 'background_get',
