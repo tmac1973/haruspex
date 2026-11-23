@@ -30,6 +30,7 @@ import { getJob, type JobWithSteps, type JobType } from '#lib/stores/jobs.svelte
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	getActiveLocalModelFilename,
+	getJobKeepAwake,
 	getLiveSettings,
 	getSettings,
 	updateSettings,
@@ -607,9 +608,16 @@ const admitted = new Map<number, Admitted>();
 // through startRun / finalizeRun / drain, so no path can forget one.
 // Batching is a bonus: a finish that immediately drains the next queued run
 // settles as a single no-op instead of a release/acquire round trip.
+// Settings → General → Keep the computer awake picks which runs count.
 $effect.root(() => {
 	$effect(() => {
-		setKeepAwake(runs.some((r) => r.status === 'running') || pending.length > 0);
+		const mode = getJobKeepAwake();
+		const holds = (type: JobType) =>
+			mode === 'all' || (mode === 'except-home' && !getJobType(type)?.background);
+		setKeepAwake(
+			runs.some((r) => r.status === 'running' && holds(r.jobType)) ||
+				pending.some((q) => holds(q.job.job_type))
+		);
 	});
 });
 

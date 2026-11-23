@@ -674,6 +674,12 @@ export interface AppSettings {
 	 */
 	homeTab: boolean;
 	/**
+	 * Which job runs hold the computer awake (`agent/jobs/keepAwake.ts`).
+	 * `except-home` leaves out Home card jobs (job types marked `background`).
+	 * Settings → General → Keep the computer awake.
+	 */
+	jobKeepAwake: JobKeepAwake;
+	/**
 	 * Lean mode also offers Chat `fs_write_text` and `fs_write_document`
 	 * (`LEAN_WRITE_TOOLS`), so research can end in a file. Read only while
 	 * `leanMode` is on. Settings → General → Lean mode → Lean + files.
@@ -1294,6 +1300,7 @@ const defaults: AppSettings = {
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
 	homeTab: true,
+	jobKeepAwake: 'except-home',
 	leanFileWrites: false,
 	deferTools: 'auto',
 	leanNoticeShown: false,
@@ -2290,6 +2297,14 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 	if (settings.legacyModelNoticeDismissed !== dismissed) {
 		commit({ ...settings, legacyModelNoticeDismissed: dismissed });
 	}
+}
+
+export type JobKeepAwake = 'all' | 'except-home' | 'never';
+
+/** Settings → General → Keep the computer awake; an unknown value reads as the default. */
+export function getJobKeepAwake(): JobKeepAwake {
+	const v = getLiveSettings().jobKeepAwake;
+	return v === 'all' || v === 'never' ? v : 'except-home';
 }
 
 export type DeferTools = 'auto' | 'on' | 'off';

@@ -18,6 +18,8 @@ import {
 	setMcpServers,
 	hasEnabledMcpServer,
 	startableMcpServers,
+	getJobKeepAwake,
+	type JobKeepAwake,
 	type SamplingOptions
 } from '#lib/stores/settings.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
@@ -1600,5 +1602,25 @@ describe('camera settings', () => {
 		fresh.setCameraEventRetentionDays(Number.NaN);
 		expect(fresh.getSettings().cameraEventRetentionDays).toBe(1);
 		expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).cameras[0].permission).toBe('allow');
+	});
+});
+
+describe('job keep-awake setting', () => {
+	afterEach(() => updateSettings({ jobKeepAwake: 'except-home' }));
+
+	it('defaults to leaving out Home card jobs', () => {
+		expect(getJobKeepAwake()).toBe('except-home');
+	});
+
+	it('reads back each choice', () => {
+		for (const v of ['all', 'never', 'except-home'] as const) {
+			updateSettings({ jobKeepAwake: v });
+			expect(getJobKeepAwake()).toBe(v);
+		}
+	});
+
+	it('reads an unknown stored value as the default', () => {
+		updateSettings({ jobKeepAwake: 'sometimes' as JobKeepAwake });
+		expect(getJobKeepAwake()).toBe('except-home');
 	});
 });

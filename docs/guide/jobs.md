@@ -9,7 +9,7 @@ The Jobs tab runs saved prompts without you watching, on a schedule or when you 
 
 ## Run a job by hand or on a schedule
 
-Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run missed while it is closed runs once at the next launch. While a job runs, Haruspex keeps your machine from going to sleep.
+Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run missed while it is closed runs once at the next launch. While a job runs or waits in the queue, Haruspex keeps your machine from going to sleep. Settings → General → **Keep the computer awake** picks which jobs do: All jobs, Not Home cards (the default, which leaves out Email digest, News digest, Research by email and Camera digest jobs), or Never. A sleeping machine doesn't wake for a scheduled job.
 
 Guided planning, autonomous coding, asset generation and 3D models can't be scheduled, because they stop to ask you things.
 
