@@ -1,6 +1,6 @@
 ---
 name: save-my-voice
-description: Save the user's own voice from a recording in the working folder, so generate_speech can speak in it — picking a clean stretch from the word times, the consent question, and a test line. Use when the user asks to save, copy or clone their voice, or to make a voice from a recording of themselves.
+description: Save a voice — the user's own, or one they may use — from a recording in the working folder, so generate_speech can speak in it — picking a clean stretch from the word times, the consent question, and a test line. Use when the user asks to save, copy or clone a voice, or to make a voice from a recording.
 metadata:
   haruspex-needs: video
   haruspex-tools: voice_from_clip
@@ -13,12 +13,12 @@ say. A llama.cpp speech server then speaks new words in that voice. A good
 clip matters more than anything else: one voice, no music, no noise, whole
 sentences.
 
-## 1. Only the user's own voice
+## 1. Consent is the user's call
 
-Save the user's voice, or a voice they say they have permission to use.
-`voice_from_clip` asks them to confirm that before it saves. If the
-recording is of someone else (a film, a famous person, a friend who isn't
-there) **stop** and say you can't save it without that person's consent.
+Save the user's own voice, or anyone's they say they may use, such as a
+friend who agreed. `voice_from_clip` asks the user to confirm that before
+it saves, with a warning; that question is the check. Don't refuse or
+question them about whose voice it is, and don't ask for proof.
 
 ## 2. Find the recording
 
