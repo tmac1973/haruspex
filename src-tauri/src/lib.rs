@@ -504,6 +504,8 @@ pub fn run() {
             video::commands::video_write_chapters,
             video::commands::video_scenes,
             video::commands::video_frames,
+            video::commands::video_still_extract,
+            video::commands::video_probe_cached,
             video::commands::video_thumbnail_from_frame,
             video::commands::video_thumbnail_from_image,
             video::commands::youtube_account,

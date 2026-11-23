@@ -8,8 +8,9 @@
  * Cancelling sends `DELETE`. The job's id is reported (`onHandle`) as soon as
  * it is queued, so `resumeVideo` can follow it again after a restart.
  *
- * A starting picture goes as a file part from the image cache, so it never
- * crosses the bridge.
+ * A starting or ending picture goes as a file part from the image cache, so
+ * it never crosses the bridge. A finished clip is probed for a sound track,
+ * since toolchest's meta doesn't say which sets make one.
  */
 
 import type { ToolchestInstance } from '#lib/toolchest/models.ts';
@@ -23,6 +24,9 @@ import { followJob, removeJob, type JobLike } from '#lib/toolchest/jobs.ts';
 import { settleJob, storeJobFile, toolchestKind } from '#lib/toolchest/kind.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
 import type { ProbeResult } from '#lib/image/backend.ts';
+import { invoke } from '@tauri-apps/api/core';
+import { videoSettings } from '#lib/video/args.ts';
+import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';
 import type {
 	VideoGenerateOptions,
 	VideoJobHandle,
@@ -129,6 +133,37 @@ export function probeVideo(): Promise<ProbeResult> {
 	return server.probe();
 }
 
+/** Whether a cached clip has a sound track; false when it can't be probed. */
+export async function clipHasAudio(hash: string): Promise<boolean> {
+	try {
+		const info = await invoke<ClipInfo>('video_probe_cached', { hash, settings: videoSettings() });
+		return info.audio.length > 0;
+	} catch (e) {
+		console.warn('could not probe a generated clip for sound', e);
+		return false;
+	}
+}
+
+/** The pictures a request sends as form parts, from the image cache. */
+export function videoFiles(req: VideoRequest) {
+	const files = [];
+	for (const [field, image] of [
+		['start_image', req.startImage],
+		['end_image', req.endImage]
+	] as const) {
+		if (image) {
+			files.push({
+				field,
+				filename: image.name,
+				hash: image.hash,
+				cache: 'image' as const,
+				bytes: null
+			});
+		}
+	}
+	return files;
+}
+
 /** Follow a job to its end and keep the clip. */
 async function finish(
 	cfg: ToolchestConfig,
@@ -151,6 +186,7 @@ async function finish(
 		codeSessionId: opts.codeSessionId
 	});
 	removeJob(cfg, ROUTES.job(job.id));
+	const hasAudio = await clipHasAudio(stored.hash);
 	return {
 		hash: stored.hash,
 		url: videoSrc(stored.hash) ?? '',
@@ -160,7 +196,8 @@ async function finish(
 		frames: job.frames || req.frames,
 		fps: job.fps || req.fps,
 		seed: req.seed,
-		model
+		model,
+		hasAudio
 	};
 }
 
@@ -172,23 +209,10 @@ export async function generateVideo(
 	const cfg = await server.config();
 	const instance = await server.readyInstance(cfg, opts.signal);
 	const body = buildVideoBody(req, instance.id);
+	const files = videoFiles(req);
 	const created = readVideoJob(
-		req.startImage
-			? await toolchestUpload(
-					cfg,
-					{ path: ROUTES.jobs, body },
-					[
-						{
-							field: 'start_image',
-							filename: req.startImage.name,
-							hash: req.startImage.hash,
-							cache: 'image',
-							bytes: null
-						}
-					],
-					opts.signal,
-					true
-				)
+		files.length > 0
+			? await toolchestUpload(cfg, { path: ROUTES.jobs, body }, files, opts.signal, true)
 			: await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
 	);
 	if (!created) throw new ToolchestError('rejected', 'llama-toolchest made no job.');

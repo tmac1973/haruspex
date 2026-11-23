@@ -1,6 +1,6 @@
 ---
 title: Video editing
-description: Setting up video editing, picking a series or episode folder, setting an intro and outro, and asking about and looking at your clips.
+description: Setting up video editing, picking a series or episode folder, setting an intro and outro, asking about and looking at your clips, and taking a still from a clip.
 ---
 
 # Video editing
@@ -39,6 +39,10 @@ Ask "what clips are in ep012?" or "how long is the footage for ep012?". The assi
 ## Let it look at the footage
 
 With a model that can see images, ask "look at ep012 every two minutes" or "show me the cut at 4:10 and 9:30". The assistant gets one sheet of up to 16 numbered frames, and the sheet shows in the chat too. It can also list where a clip changes shot ("where are the scene changes in the phone clip?"), with any model.
+
+## Take a still from a clip
+
+Ask "save the last frame of ep012/raw/phone.mp4" or "take a still at 0:42". The assistant saves the frame at full size as a PNG in the episode's `.haruspex/stills/` folder, or where you name, and shows it in the chat. The last frame is the clip's true last frame. It works on a generated clip in the conversation too, so a new clip can start from it (see the `video-generation` page).
 
 ## Make a cut
 

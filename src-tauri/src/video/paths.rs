@@ -58,6 +58,46 @@ pub fn resolve_media(
     Ok(resolved)
 }
 
+/// Where stills taken from clips go by default: `<episode>/.haruspex/stills/`.
+pub fn stills_dir(episode: &Path) -> PathBuf {
+    episode.join(".haruspex").join("stills")
+}
+
+/// A still's file: `out` when given (a `.png` inside the episode folder), else
+/// `<stills_dir>/<default_name>`. Its folder is made.
+pub fn still_target(
+    working_dir: &str,
+    episode_dir: &Path,
+    out: Option<&str>,
+    default_name: &str,
+) -> Result<PathBuf, String> {
+    let target = match out.map(str::trim).filter(|o| !o.is_empty()) {
+        Some(o) => {
+            if !o.to_ascii_lowercase().ends_with(".png") {
+                return Err("save_as must end in .png.".into());
+            }
+            let t = resolve_in_working(working_dir, o)?;
+            let root = episode_dir
+                .canonicalize()
+                .unwrap_or_else(|_| episode_dir.to_path_buf());
+            let parent = t.parent().map(Path::to_path_buf).unwrap_or_default();
+            std::fs::create_dir_all(&parent)
+                .map_err(|e| format!("can't make {o}'s folder: {e}"))?;
+            let parent = plain(parent.canonicalize().unwrap_or(parent));
+            if !parent.starts_with(plain(root)) {
+                return Err(format!("{o} is outside the episode folder."));
+            }
+            t
+        }
+        None => stills_dir(episode_dir).join(default_name),
+    };
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("can't make the stills folder: {e}"))?;
+    }
+    Ok(target)
+}
+
 fn same_file(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
@@ -153,6 +193,24 @@ mod tests {
         ] {
             assert!(!p.to_string_lossy().starts_with(r"\\?\"), "{}", p.display());
         }
+    }
+
+    #[test]
+    fn stills_stay_in_the_episode() {
+        let dir = series();
+        let wd = dir.to_string_lossy();
+        let ep = resolve_episode(&wd, "ep010").unwrap();
+        let d = still_target(&wd, &ep, None, "obs-last.png").unwrap();
+        assert!(
+            d.ends_with("ep010/.haruspex/stills/obs-last.png"),
+            "{}",
+            d.display()
+        );
+        let given = still_target(&wd, &ep, Some("ep010/stills/a.png"), "x.png").unwrap();
+        assert!(given.ends_with("ep010/stills/a.png"));
+        assert!(still_target(&wd, &ep, Some("intro001/a.png"), "x.png").is_err());
+        assert!(still_target(&wd, &ep, Some("ep010/a.jpg"), "x.png").is_err());
+        assert!(still_target(&wd, &ep, Some("/tmp/a.png"), "x.png").is_err());
     }
 
     #[test]

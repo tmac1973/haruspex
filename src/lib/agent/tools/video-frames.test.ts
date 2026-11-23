@@ -13,7 +13,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 );
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
-import { parseFrames } from './video-frames';
+import { parseFrames, parseStill } from './video-frames';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
@@ -72,5 +72,63 @@ describe('video_frames', () => {
 			dataUrl: 'data:image/jpeg;base64,AAAA'
 		});
 		expect(out.result).toContain('1: 1:05.0 in the cut, ep010/raw/obs.mp4 at 1:10.0');
+	});
+});
+
+describe('video_still', () => {
+	const hash = 'b'.repeat(64);
+
+	it('takes the last frame of a clip or a generated clip by default', () => {
+		expect(parseStill({ path: 'ep1/a.mp4' })).toEqual({
+			path: 'ep1/a.mp4',
+			videoHash: null,
+			out: null,
+			which: 'last',
+			atSecs: null
+		});
+		expect(parseStill({ video: `haruspex-video://localhost/${hash}`, at: 'first' })).toMatchObject({
+			path: null,
+			videoHash: hash,
+			which: 'first'
+		});
+		expect(parseStill({ path: 'a.mp4', at: '0:04.5' })).toMatchObject({
+			which: 'time',
+			atSecs: 4.5
+		});
+	});
+
+	it('refuses two clips, no clip, a foreign URL and a bad time', () => {
+		expect(parseStill({})).toMatch(/either path/);
+		expect(parseStill({ path: 'a.mp4', video: `haruspex-video://localhost/${hash}` })).toMatch(
+			/either path/
+		);
+		expect(parseStill({ video: 'https://example.com/a.webm' })).toMatch(/haruspex-video/);
+		expect(parseStill({ path: 'a.mp4', at: 'soon' })).toMatch(/"first", "last"/);
+	});
+
+	it('saves the still and shows a preview a vision model sees', async () => {
+		vi.mocked(invoke).mockImplementation(async (cmd) => {
+			if (cmd === 'video_still_extract') {
+				return {
+					path: 'ep1/.haruspex/stills/a-last.png',
+					width: 1280,
+					height: 720,
+					previewDataUrl: 'data:image/jpeg;base64,AAAA'
+				};
+			}
+			return undefined;
+		});
+		const ctx = makeToolContext({
+			interactive: true,
+			workingDir: '/videos',
+			visionSupported: true
+		});
+		const out = await executeTool('video_still', { path: 'ep1/a.mp4', episode: 'ep1' }, ctx);
+		expect(out.result).toContain(
+			'Saved the last frame as ep1/.haruspex/stills/a-last.png (1280×720).'
+		);
+		expect(out.result).toContain('start_image');
+		expect(ctx.pendingImages).toHaveLength(1);
+		expect(out.artifacts?.[0]).toMatchObject({ kind: 'image', mime: 'image/jpeg' });
 	});
 });

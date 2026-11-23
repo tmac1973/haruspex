@@ -1,6 +1,6 @@
 ---
 title: Video generation
-description: Turning on video generation with a llama-toolchest video model, asking for a short clip in Chat or the Code tab, how long a clip can be, and where clips are kept.
+description: Turning on llama-toolchest video generation, making a short clip, start and end pictures, continuing a clip, sound, clip length, and where clips are kept.
 ---
 
 # Video generation
@@ -23,11 +23,21 @@ Under the model, Settings says the size and frame rate it makes, and how many fr
 
 Ask for one in Chat or the Code tab: "a five-second clip of a red fox running through snow". You can ask for portrait instead of landscape, a seed to repeat one, or give a picture from the conversation (or an image file in the working folder) to start from, if the model can.
 
+Some models can also end on a picture, such as Wan 2.2 I2V A14B; with a start picture too, the clip moves from one to the other. On a model that can't, the assistant says so.
+
 A clip takes minutes, so it always runs in the background. The assistant starts it and carries on, so you can keep chatting. The clip gets a card with its place in the queue, its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation, where it plays; the button in its top-left corner, shown when you point at it, plays it full screen (Esc leaves), and **Save as…** under the player saves a copy anywhere.
 
 With a working folder set in Chat, or in a Code session's project, the assistant can also save it there as a `.webm` file: ask "save it as fox.webm". If that file exists in Chat, you're asked before it is replaced.
 
 If Haruspex closes first, the clip is picked up when it reopens, as long as the server still has it.
+
+## Continue a clip
+
+With the video tools on (see the `video-editing` page), ask "continue that clip: the fox walks into the trees". The assistant saves the clip's true last frame as a picture and starts the next clip from it. You get two clips; joining them is a cut in a video project.
+
+## Sound
+
+A clip has sound when the model makes it, such as LTX-2.3. The assistant says whether a clip has sound when it arrives. Wan models make silent clips.
 
 ## How long a clip can be
 
@@ -43,7 +53,7 @@ The server keeps a clip for a day, so Haruspex downloads each one, keeps its own
 
 - Only llama-toolchest can make clips.
 - It can't change a clip once made: ask for a new one, perhaps with the same seed.
-- Clips have no sound.
+- It can't add sound to a silent clip.
 - Clips are saved as WebM; to edit one with your footage, see the `video-editing` page.
 - The Shell assistant and scheduled jobs don't make clips.
 

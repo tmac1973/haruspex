@@ -1,8 +1,9 @@
 /**
- * Looking at footage: `video_scenes` lists where a clip changes shot, and
+ * Looking at footage: `video_scenes` lists where a clip changes shot,
  * `video_frames` hands a vision model one numbered sheet of up to 16 frames,
- * from a clip or from the cut. Same gate as the other video tools; see
- * `video.ts`.
+ * from a clip or from the cut, and `video_still` keeps one frame at full size
+ * as a PNG (the true last frame, to start the next generated clip from). Same
+ * gate as the other video tools; see `video.ts`.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
@@ -14,6 +15,9 @@ import { formatTime } from '#lib/video/report.ts';
 import type { SceneCuts } from '#lib/ipc/gen/SceneCuts.ts';
 import type { ContactSheet } from '#lib/ipc/gen/ContactSheet.ts';
 import type { FrameRequest } from '#lib/ipc/gen/FrameRequest.ts';
+import type { StillRequest } from '#lib/ipc/gen/StillRequest.ts';
+import type { StillWritten } from '#lib/ipc/gen/StillWritten.ts';
+import { videoHashFromUrl } from '#lib/videogen/url.ts';
 import { parsedFiniteOrNull, trimmedOrNull } from '#lib/utils/coerce.ts';
 
 const MAX_FRAMES = 16;
@@ -48,6 +52,56 @@ export function parseFrames(args: Record<string, unknown>): FrameRequest | strin
 		};
 	}
 	return 'Give path with times or every_secs, or timeline_times for the cut (and only one of those).';
+}
+
+/** The tool's arguments as a still request, or what is wrong with them. */
+export function parseStill(args: Record<string, unknown>): StillRequest | string {
+	const path = trimmedOrNull(args.path);
+	const video = trimmedOrNull(args.video);
+	if (!path === !video)
+		return 'Give either path (a clip in the working folder) or video, not both.';
+	const hash = video ? videoHashFromUrl(video) : null;
+	if (video && !hash) return 'video must be a haruspex-video:// URL from this conversation.';
+	const at = trimmedOrNull(args.at) ?? 'last';
+	const out = trimmedOrNull(args.save_as);
+	const base = { path, videoHash: hash, out };
+	if (at === 'last' || at === 'first') return { ...base, which: at, atSecs: null };
+	const secs = parseTime(at);
+	if (secs === null) return 'at is "first", "last" or a time such as "0:04.5".';
+	return { ...base, which: 'time', atSecs: secs };
+}
+
+async function still(args: Record<string, unknown>, ctx: ToolContext) {
+	const request = parseStill(args);
+	if (typeof request === 'string') return toolResult(toolError(request));
+	try {
+		const made = await invoke<StillWritten>('video_still_extract', {
+			workingDir: ctx.workingDir,
+			episode: episodeArg(args),
+			request,
+			settings: videoSettings()
+		});
+		const which =
+			request.which === 'time' ? `at ${formatTime(request.atSecs ?? 0)}` : request.which;
+		const shows = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
+		if (shows) ctx.pendingImages.push({ path: made.path, dataUrl: made.previewDataUrl });
+		return {
+			result:
+				`Saved the ${which} frame as ${made.path} (${made.width}×${made.height}).` +
+				` Use it as start_image or end_image in generate_video.` +
+				(shows ? ' A preview follows.' : ''),
+			artifacts: [
+				{
+					kind: 'image' as const,
+					mime: 'image/jpeg',
+					dataUrl: made.previewDataUrl,
+					alt: `${which} frame of ${request.path ?? 'the clip'}`
+				}
+			]
+		};
+	} catch (e) {
+		return toolResult(toolError(errMessage(e)));
+	}
 }
 
 async function scenes(args: Record<string, unknown>, ctx: ToolContext) {
@@ -179,4 +233,42 @@ registerTool({
 	},
 	displayLabel: (args) => `Looking at ${trimmedOrNull(args.path) ?? 'the cut'}`,
 	execute: frames
+});
+
+registerTool({
+	category: 'video',
+	schema: {
+		type: 'function',
+		function: {
+			name: 'video_still',
+			description:
+				'Save one frame of a clip at full size as a PNG: the true last frame (default), the first, ' +
+				'or one at a time. Use the last frame as start_image to continue a generated clip.',
+			parameters: {
+				type: 'object',
+				properties: {
+					episode: {
+						type: 'string',
+						description:
+							'The episode folder the still is saved in. Empty when the working folder is the episode.'
+					},
+					path: { type: 'string', description: 'A clip, relative to the working folder.' },
+					video: {
+						type: 'string',
+						description: 'Instead of path: a generated clip’s haruspex-video:// URL.'
+					},
+					at: {
+						type: 'string',
+						description: '"last" (default), "first", or a time in the clip such as "0:04.5".'
+					},
+					save_as: {
+						type: 'string',
+						description: 'A .png path in the episode folder. Default <episode>/.haruspex/stills/.'
+					}
+				}
+			}
+		}
+	},
+	displayLabel: (args) => `Taking a still of ${trimmedOrNull(args.path) ?? 'a generated clip'}`,
+	execute: still
 });

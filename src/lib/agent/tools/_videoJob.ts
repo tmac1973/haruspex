@@ -50,6 +50,8 @@ export interface VideoTaskResult {
 	fps: number;
 	seed: number;
 	model: string;
+	/** Missing in results saved before clips were probed for sound. */
+	hasAudio?: boolean;
 	notes: string[];
 	/** How saving went, as the answer says it; null when nothing was saved. */
 	saved: string | null;
@@ -72,14 +74,17 @@ export function clipSeconds(frames: number, fps: number): string {
  * the way.
  */
 export function videoAnswerText(o: {
-	made: Pick<VideoResult, 'width' | 'height' | 'frames' | 'fps' | 'model' | 'seed' | 'url'>;
+	made: Pick<VideoResult, 'width' | 'height' | 'frames' | 'fps' | 'model' | 'seed' | 'url'> & {
+		hasAudio?: boolean;
+	};
 	title: string;
 	saved: string | null;
 	notes: string[];
 }): string {
 	const m = o.made;
+	const sound = m.hasAudio === undefined ? '' : m.hasAudio ? ', with sound' : ', no sound';
 	const lines = [
-		`Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}).`,
+		`Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}${sound}).`,
 		`Put ![${o.title}](${m.url}) in your answer.`
 	];
 	if (o.saved) lines.push(o.saved);
@@ -118,6 +123,7 @@ export async function runVideoJob(
 		fps: made.fps,
 		seed: made.seed,
 		model: made.model,
+		hasAudio: made.hasAudio,
 		notes: spec.notes,
 		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null
 	};
