@@ -212,6 +212,7 @@ fn trimming_the_start_keeps_the_leading_gap_and_the_groups() {
         limiter: false,
         fit: None,
         gain_ranges: None,
+        speed: None,
     };
     let out = apply(&doc, &[trimmed]).unwrap();
     let after = reparse(out.text.clone());
@@ -267,6 +268,7 @@ fn an_effect_on_a_kept_clip_survives_a_trim() {
         limiter: false,
         fit: None,
         gain_ranges: None,
+        speed: None,
     };
     let out = reparse(apply(&doc, &[keep(0), trimmed]).unwrap().text);
     assert_eq!(out.items()[1].filters(), 1);
@@ -367,6 +369,7 @@ fn a_crossfade_made_in_kdenlive_keeps_its_clips_together() {
         limiter: false,
         fit: None,
         gain_ranges: None,
+        speed: None,
     };
     let out = reparse(apply(&doc, &[trimmed, keep(1), keep(2)]).unwrap().text);
     let m = &out.mixes(out.main_video)[0];
@@ -389,6 +392,7 @@ fn an_end_past_the_clip_is_clamped_and_said() {
         limiter: false,
         fit: None,
         gain_ranges: None,
+        speed: None,
     };
     let out = apply(&doc, &[p]).unwrap();
     assert!(out.notes.iter().any(|n| n.contains("past the clip's end")));
@@ -568,6 +572,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         limiter: false,
         fit: None,
         gain_ranges: None,
+        speed: None,
     };
     let second = Placement {
         source: Source::Piece(0),
@@ -578,6 +583,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         limiter: false,
         fit: None,
         gain_ranges: None,
+        speed: None,
     };
     let out = reparse(apply(&doc, &[first, second]).unwrap().text);
     let items = out.items();
@@ -1113,4 +1119,89 @@ async fn melt_mutes_a_kdenlive_gain_range() {
     let (before, muted, after) = (db(0.1), db(0.6), db(1.2));
     assert!(before > -40.0 && after > -40.0, "{before} {after}");
     assert!(muted < -80.0, "muted stretch {muted}");
+}
+
+#[test]
+fn a_clip_at_half_speed_plays_twice_as_long_on_both_tracks() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mut a = new(media("a.mp4", 4.0, fps));
+    a.speed = Some(0.5);
+    let b = new(media("b.mp4", 2.0, fps));
+    let once = reparse(apply(&doc, &[a, b]).unwrap().text);
+    let c = clips(&once);
+    assert_eq!(c[0].speed, 0.5);
+    assert_eq!((c[0].in_frame, c[0].out_frame), (0, 239));
+    assert_eq!(c[0].resource, "a.mp4");
+    let items = once.items();
+    assert_eq!(items[0].end() - items[0].start(), 480, "8 s at 60 fps");
+    assert_eq!(items[1].start(), 480, "the next clip follows it");
+    for e in [
+        items[0].video.as_ref().unwrap(),
+        items[0].audio.as_ref().unwrap(),
+    ] {
+        assert_eq!(once.speed(&e.chain), 0.5);
+    }
+    assert_eq!(apply(&once, &current(&once)).unwrap().text, once.text);
+    // Back to its own speed: chains without the warp.
+    let mut back = current(&once);
+    back[0].speed = Some(1.0);
+    let plain = reparse(apply(&once, &back).unwrap().text);
+    assert_eq!(plain.items()[0].end() - plain.items()[0].start(), 240);
+    assert_eq!(clips(&plain)[0].speed, 1.0);
+}
+
+#[tokio::test]
+async fn melt_plays_a_kdenlive_clip_at_half_speed_in_twice_the_time() {
+    let Some(melt) = crate::video::binaries::resolve(&Default::default())
+        .await
+        .melt
+        .map(|m| m.path)
+    else {
+        eprintln!("skipped: no melt");
+        return;
+    };
+    let dir = crate::test_util::temp_dir("kdenlive_speed");
+    let status = crate::test_util::host_command("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("color=c=gray:s=320x180:r=60:d=2")
+        .args(["-f", "lavfi", "-i", "sine=f=440:d=2", "-shortest"])
+        .args(["-c:v", "mpeg4", "-c:a", "pcm_s16le"])
+        .arg(dir.join("tone.mov"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let doc = Doc::parse(template_text("1080p60", &dir).unwrap()).unwrap();
+    let fps = doc.fps;
+    let mut clip = new(media("tone.mov", 2.0, fps));
+    clip.speed = Some(0.5);
+    let text = apply(&doc, &[clip]).unwrap().text;
+    let project = dir.join("speed.kdenlive");
+    std::fs::write(&project, &text).unwrap();
+    melt_loads(&melt, &project).await.unwrap();
+    let out = dir.join("speed.mov");
+    let mut cmd = tokio::process::Command::new(&melt);
+    cmd.arg(&project)
+        .arg("-consumer")
+        .arg(format!("avformat:{}", out.display()))
+        .args(["vcodec=mjpeg", "acodec=pcm_s16le"]);
+    crate::video::prepare_child(&mut cmd);
+    assert!(cmd.status().await.unwrap().success());
+    let probe = crate::test_util::host_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&out)
+        .output()
+        .unwrap();
+    let secs: f64 = String::from_utf8_lossy(&probe.stdout)
+        .trim()
+        .parse()
+        .unwrap();
+    assert!((secs - 4.0).abs() <= 1.0 / 60.0 + 0.01, "rendered {secs} s");
 }

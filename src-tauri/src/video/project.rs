@@ -63,6 +63,8 @@ pub struct CutItemSpec {
     pub gain_ranges: Option<Vec<RangeSpec>>,
     /// Hold its last frame this long after it.
     pub hold_after_secs: Option<f64>,
+    /// How fast it plays, 0.25–4; none keeps its speed (1 for a new clip).
+    pub speed: Option<f64>,
 }
 
 /// Which frame a hold shows, without `at_secs`.
@@ -83,6 +85,17 @@ fn resolve_resource(root: &str, resource: &str) -> PathBuf {
     } else {
         Path::new(root).join(r)
     }
+}
+
+/// A speed that can be set, or why not.
+fn check_speed(factor: f64) -> Result<f64, String> {
+    use super::mlt::warp::{MAX, MIN};
+    if !factor.is_finite() || !(MIN..=MAX).contains(&factor) {
+        return Err(format!(
+            "A speed is from {MIN} (a quarter) to {MAX} (four times)."
+        ));
+    }
+    Ok(factor)
 }
 
 /// The longest hold, in seconds.
@@ -246,6 +259,12 @@ pub enum ProjectOp {
         from_secs: f64,
         to_secs: f64,
         gain_db: f64,
+    },
+    /// Play one clip faster or slower, 0.25–4 (1 is its own speed); its
+    /// sound keeps its pitch.
+    Speed {
+        index: u32,
+        factor: f64,
     },
     /// Take Haruspex's gain ranges off one clip.
     ClearGainRanges {
@@ -466,12 +485,23 @@ async fn normalize_audio(
     Ok(Some(note))
 }
 
+/// A main-track item's (start, in, out, speed): where it starts in the cut,
+/// in timeline frames, and the stretch of its source it shows, in source
+/// frames, at its speed.
+type ItemFrames = (i64, i64, i64, f64);
+
+/// How long an item lasts in the cut, in timeline frames.
+fn placed_len(&(_, i, o, speed): &ItemFrames) -> i64 {
+    (((o - i + 1) as f64 / speed).round() as i64).max(1)
+}
+
 /// Where an audio-track item that started at `s` (old timeline frames)
 /// starts after the main track became `wanted`: with the main-track clip it
 /// started over, at the same moment of that clip; when that moment was cut
 /// out, at the next piece kept. `old` and `new` are each main-track item's
-/// (start, in, out) frames, `new` in `wanted`'s order.
-fn follow(s: i64, old: &[(i64, i64, i64)], new: &[(i64, i64, i64)], wanted: &[Placement]) -> i64 {
+/// frames, `new` in `wanted`'s order. A clip that plays faster or slower
+/// takes the moment with it.
+fn follow(s: i64, old: &[ItemFrames], new: &[ItemFrames], wanted: &[Placement]) -> i64 {
     let from_item = |k: usize| -> Vec<usize> {
         let mut js: Vec<usize> = (0..new.len())
             .filter(
@@ -481,10 +511,10 @@ fn follow(s: i64, old: &[(i64, i64, i64)], new: &[(i64, i64, i64)], wanted: &[Pl
         js.sort_by_key(|&j| new[j].1);
         js
     };
-    let end = |items: &[(i64, i64, i64)]| {
+    let end = |items: &[ItemFrames]| {
         items
             .iter()
-            .map(|&(st, i, o)| st + o - i + 1)
+            .map(|it| it.0 + placed_len(it))
             .max()
             .unwrap_or(0)
     };
@@ -493,13 +523,14 @@ fn follow(s: i64, old: &[(i64, i64, i64)], new: &[(i64, i64, i64)], wanted: &[Pl
     };
     let inside = old
         .iter()
-        .rposition(|&(st, i, o)| s >= st && s < st + o - i + 1);
+        .rposition(|it| s >= it.0 && s < it.0 + placed_len(it));
     if let Some(k) = inside {
-        let (st, i, _) = old[k];
-        let f = i + (s - st);
+        let (st, i, _, speed) = old[k];
+        let f = i + ((s - st) as f64 * speed).round() as i64;
         let hit = from_item(k).into_iter().find(|&j| new[j].2 >= f);
         if let Some(j) = hit {
-            return new[j].0 + (f - new[j].1).max(0);
+            let (nst, ni, _, nspeed) = new[j];
+            return nst + (((f - ni).max(0)) as f64 / nspeed).round() as i64;
         }
         return next_kept(k + 1).unwrap_or(s);
     }
@@ -508,19 +539,18 @@ fn follow(s: i64, old: &[(i64, i64, i64)], new: &[(i64, i64, i64)], wanted: &[Pl
         return (s + end(new) - old_end).max(0);
     }
     // In a gap: as far before the next clip as it was.
-    match old.iter().position(|&(st, _, _)| st > s) {
+    match old.iter().position(|it| it.0 > s) {
         Some(k) => next_kept(k).map_or(s, |n| (n - (old[k].0 - s)).max(0)),
         None => s,
     }
 }
 
-/// Each main-track item's (start, in, out) frames.
-fn item_frames(doc: &ProjectDoc) -> Vec<(i64, i64, i64)> {
+fn item_frames(doc: &ProjectDoc) -> Vec<ItemFrames> {
     let fps = doc.fps();
     doc.spans()
         .iter()
         .zip(doc.clips())
-        .map(|(s, c)| (fps.frames(s.start), c.in_frame, c.out_frame))
+        .map(|(s, c)| (fps.frames(s.start), c.in_frame, c.out_frame, c.speed))
         .collect()
 }
 
@@ -693,6 +723,7 @@ fn cut_ranges(
     let limiter = wanted[pos].limiter;
     let fit = wanted[pos].fit;
     let ranges = wanted[pos].gain_ranges.clone();
+    let speed = wanted[pos].speed;
     let pieces: Vec<Placement> = keeps
         .iter()
         .enumerate()
@@ -709,6 +740,7 @@ fn cut_ranges(
             limiter,
             fit,
             gain_ranges: ranges.clone(),
+            speed,
         })
         .collect();
     wanted.splice(pos..=pos, pieces);
@@ -1118,11 +1150,17 @@ pub async fn cut(
             }
             None => None,
         };
+        let speed = item
+            .speed
+            .map(check_speed)
+            .transpose()
+            .map_err(|e| format!("Item {}: {e}", n + 1))?;
         wanted.push(Placement {
             in_frame,
             out_frame,
             fit: item.fit,
             gain_ranges,
+            speed,
             ..Placement::of(source)
         });
         fades.push(item.crossfade_secs);
@@ -1310,6 +1348,10 @@ pub async fn op(
                 "Held a frame of clip {index} for {:.2} s; the hold is a new clip.",
                 fps.secs(frames)
             ));
+        }
+        ProjectOp::Speed { index, factor } => {
+            let i = check(index)?;
+            wanted[i].speed = Some(check_speed(factor)?);
         }
         ProjectOp::ClearGainRanges { index } => {
             let i = check(index)?;
@@ -1582,6 +1624,7 @@ mod tests {
                 limiter: false,
                 fit: None,
                 gain_ranges: None,
+                speed: None,
             },
             Placement {
                 source: Source::Existing(1),
@@ -1592,6 +1635,7 @@ mod tests {
                 limiter: false,
                 fit: None,
                 gain_ranges: None,
+                speed: None,
             },
         ];
         // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
@@ -1619,6 +1663,7 @@ mod tests {
             limiter: false,
             fit: None,
             gain_ranges: None,
+            speed: None,
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));
@@ -1779,9 +1824,9 @@ mod tests {
 
     #[test]
     fn a_moment_cut_out_lands_on_the_next_piece_and_the_end_keeps_its_distance() {
-        let old = [(0, 0, 299), (300, 0, 239)];
+        let old = [(0, 0, 299, 1.0), (300, 0, 239, 1.0)];
         // Clip 1 lost 30–59; clip 2 follows.
-        let new = [(0, 0, 29), (30, 60, 299), (270, 0, 239)];
+        let new = [(0, 0, 29, 1.0), (30, 60, 299, 1.0), (270, 0, 239, 1.0)];
         let wanted = [
             Placement::of(Source::Existing(0)),
             Placement::of(Source::Piece(0)),
@@ -1793,6 +1838,22 @@ mod tests {
         assert_eq!(follow(330, &old, &new, &wanted), 300);
         // Past the end: as far past the new end.
         assert_eq!(follow(600, &old, &new, &wanted), 570);
+    }
+
+    #[test]
+    fn a_voiceover_after_a_slowed_clip_moves_later_by_its_extra_length() {
+        let old = [(0, 0, 299, 1.0), (300, 0, 239, 1.0)];
+        // Clip 1 at half speed lasts 600 frames.
+        let new = [(0, 0, 299, 0.5), (600, 0, 239, 1.0)];
+        let wanted = [
+            Placement::of(Source::Existing(0)),
+            Placement::of(Source::Existing(1)),
+        ];
+        // Over clip 1, at the same moment of it.
+        assert_eq!(follow(100, &old, &new, &wanted), 200);
+        // Over clip 2, 300 frames later.
+        assert_eq!(follow(330, &old, &new, &wanted), 630);
+        assert_eq!(follow(600, &old, &new, &wanted), 900);
     }
 
     /// A cut from generated clips into a new project, then an op, end to end
@@ -1903,6 +1964,77 @@ mod loudness_end_to_end {
         assert!(ok);
         let img = image::open(&png).unwrap().to_rgb8();
         img.get_pixel(img.width() / 2, img.height() / 2).0[0]
+    }
+
+    /// `cargo test -- --ignored a_slowed_clip_takes_the_sound_after_it_along --nocapture`
+    #[tokio::test]
+    #[ignore = "needs ffmpeg, ffprobe and melt"]
+    async fn a_slowed_clip_takes_the_sound_after_it_along() {
+        for editor in [format::Format::Shotcut, format::Format::Kdenlive] {
+            let dir = crate::test_util::temp_dir("speed_follow");
+            std::fs::create_dir_all(dir.join("ep1")).unwrap();
+            for (name, color) in [("a.mp4", "red"), ("b.mp4", "blue")] {
+                let ok = crate::test_util::host_command("ffmpeg")
+                    .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+                    .arg(format!("color=c={color}:s=320x180:r=24:d=3"))
+                    .args(["-f", "lavfi", "-i", "sine=d=3", "-shortest"])
+                    .arg(dir.join("ep1").join(name))
+                    .status()
+                    .unwrap()
+                    .success();
+                assert!(ok);
+            }
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=220:d=1"])
+                .arg(dir.join("ep1/voice.wav"))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+            let wd = dir.to_string_lossy().into_owned();
+            let settings = VideoSettings {
+                preset: "720p24".into(),
+                editor,
+                ..Default::default()
+            };
+            let spec = CutSpec {
+                items: vec![
+                    CutItemSpec {
+                        path: Some("ep1/a.mp4".into()),
+                        ..Default::default()
+                    },
+                    CutItemSpec {
+                        path: Some("ep1/b.mp4".into()),
+                        ..Default::default()
+                    },
+                ],
+                audio: Some(vec![CutAudioSpec {
+                    path: Some("ep1/voice.wav".into()),
+                    at_secs: Some(4.0),
+                    ..Default::default()
+                }]),
+                normalize: Some(false),
+                ..Default::default()
+            };
+            cut(&wd, "ep1", spec, &settings).await.unwrap();
+            let slow = ProjectOp::Speed {
+                index: 1,
+                factor: 0.5,
+            };
+            let r = op(&wd, "ep1", None, slow, &settings).await.unwrap();
+            let s = &r.summary;
+            assert_eq!(s.items[0].speed, 0.5, "{editor:?}");
+            assert!((s.items[0].duration_secs - 6.0).abs() < 0.05, "{editor:?}");
+            assert!((s.items[0].source_out_secs - 3.0).abs() < 0.05);
+            assert!((s.items[1].start_secs - 6.0).abs() < 0.05);
+            assert!((s.total_secs - 9.0).abs() < 0.05, "{}", s.total_secs);
+            // The voice was 1 s into b; it still is.
+            assert!(
+                (s.audio[0].start_secs - 7.0).abs() < 0.05,
+                "{editor:?} {:?}",
+                s.audio
+            );
+        }
     }
 
     /// `cargo test -- --ignored holds_are_new_clips_of_the_right_frame --nocapture`

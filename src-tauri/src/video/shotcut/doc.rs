@@ -384,11 +384,44 @@ impl Doc {
         self.tree.by_id(id)
     }
 
+    /// The file a chain plays; for one at another speed, the file it warps.
     pub fn resource(&self, chain: &str) -> String {
-        self.chain(chain)
-            .and_then(|c| self.tree.property(c, "resource"))
-            .unwrap_or("")
-            .to_string()
+        let Some(c) = self.chain(chain) else {
+            return String::new();
+        };
+        let key = if self.speed(chain) != 1.0 {
+            "warp_resource"
+        } else {
+            "resource"
+        };
+        self.tree.property(c, key).unwrap_or("").to_string()
+    }
+
+    /// How fast a chain plays: its `warp_speed` when it is a timewarp, else 1.
+    pub fn speed(&self, chain: &str) -> f64 {
+        let Some(c) = self.chain(chain) else {
+            return 1.0;
+        };
+        if self.tree.property(c, "mlt_service") != Some("timewarp") {
+            return 1.0;
+        }
+        self.tree
+            .property(c, "warp_speed")
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(1.0)
+    }
+
+    /// The service a chain plays its file with, without its speed.
+    pub fn plain_service(&self, chain: &str) -> String {
+        let c = self.chain(chain);
+        let prop = |k: &str| c.and_then(|c| self.tree.property(c, k));
+        if self.speed(chain) != 1.0 {
+            prop("shotcut:producer").unwrap_or("avformat-novalidate")
+        } else {
+            prop("mlt_service").unwrap_or("avformat-novalidate")
+        }
+        .to_string()
     }
 
     /// A chain's stream index for `audio_index` / `video_index`; `None` when

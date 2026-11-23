@@ -270,6 +270,8 @@ pub struct SummaryItem {
     pub fit: Option<crate::video::timeline::Fit>,
     /// Gains Haruspex set over stretches of its sound, in its own time.
     pub gain_ranges: Vec<SummaryRange>,
+    /// How fast it plays; 1 is its own speed.
+    pub speed: f64,
 }
 
 /// A gain range as the summary shows it: seconds in the clip's own time.

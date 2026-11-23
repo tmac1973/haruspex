@@ -6,6 +6,7 @@ pub mod fps;
 pub mod gain_range;
 pub mod profile;
 pub mod project_file;
+pub mod warp;
 pub mod xml;
 
 use std::path::Path;

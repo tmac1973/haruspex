@@ -93,6 +93,9 @@ pub struct Placement {
     /// Gains over stretches of its sound; `None` leaves what is there, and an
     /// empty list removes Haruspex's.
     pub gain_ranges: Option<Vec<GainRange>>,
+    /// How fast it plays, 0.25–4; `None` leaves it as it is. Its in and out
+    /// stay in source frames whatever the speed.
+    pub speed: Option<f64>,
 }
 
 impl Placement {
@@ -106,6 +109,7 @@ impl Placement {
             limiter: false,
             fit: None,
             gain_ranges: None,
+            speed: None,
         }
     }
 }
@@ -233,6 +237,8 @@ pub struct Clip {
     pub gain_ranges: Vec<GainRange>,
     /// The fit Haruspex set on its picture; `None` is letterbox.
     pub fit: Option<Fit>,
+    /// How fast it plays; its in and out are source frames all the same.
+    pub speed: f64,
 }
 
 /// The sound of a clip, when it has any on the main track.
@@ -254,6 +260,8 @@ pub struct Span {
     pub start: f64,
     pub source_in: f64,
     pub source_out: f64,
+    /// How fast it plays: a second of the cut shows this many of the source.
+    pub speed: f64,
     /// On an audio track under the picture; `index` then counts those items.
     pub audio: bool,
 }
@@ -282,6 +290,7 @@ pub fn audio_spans(
                 start: fps.secs(c.start),
                 source_in: fps.secs(c.in_frame),
                 source_out: fps.secs(c.out_frame + 1),
+                speed: 1.0,
                 audio: true,
             }
         })
@@ -293,8 +302,8 @@ pub fn source_at(spans: &[Span], t: f64) -> Option<(&Span, f64)> {
     spans
         .iter()
         .rev()
-        .find(|s| t >= s.start && t < s.start + (s.source_out - s.source_in))
-        .map(|s| (s, s.source_in + t - s.start))
+        .find(|s| t >= s.start && t < s.start + (s.source_out - s.source_in) / s.speed)
+        .map(|s| (s, s.source_in + (t - s.start) * s.speed))
 }
 
 /// A stretch of speech in the cut's time.
@@ -353,8 +362,8 @@ pub fn lines(
                 let from = s.start.max(span.source_in);
                 let to = s.end.min(span.source_out);
                 out.push(Line {
-                    start: span.start + from - span.source_in,
-                    end: span.start + to - span.source_in,
+                    start: span.start + (from - span.source_in) / span.speed,
+                    end: span.start + (to - span.source_in) / span.speed,
                     text: s.text.clone(),
                     index: span.index,
                     audio,
@@ -406,6 +415,16 @@ mod tests {
     }
     use crate::whisper::Segment;
 
+    #[test]
+    fn a_fast_clip_maps_the_cut_to_more_of_its_source() {
+        let mut fast = span(1, "a.mp4", 10.0, 4.0, 12.0);
+        fast.speed = 2.0;
+        // 8 s of source at 2× is 4 s of the cut, 10–14 s.
+        let (_, at) = source_at(std::slice::from_ref(&fast), 11.0).unwrap();
+        assert_eq!(at, 6.0);
+        assert!(source_at(std::slice::from_ref(&fast), 14.5).is_none());
+    }
+
     fn span(index: usize, file: &str, start: f64, source_in: f64, source_out: f64) -> Span {
         Span {
             index,
@@ -413,6 +432,7 @@ mod tests {
             start,
             source_in,
             source_out,
+            speed: 1.0,
             audio: false,
         }
     }

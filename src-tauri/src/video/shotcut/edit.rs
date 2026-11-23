@@ -16,6 +16,7 @@
 
 use super::doc::{Doc, Slot, OURS, OURS_LUFS};
 use crate::video::mlt::fps::Fps;
+use crate::video::mlt::warp;
 use crate::video::mlt::xml::{escape, Splices};
 use crate::video::timeline::{Edited, Fit, GainRange, Media, Placement, Source};
 use std::collections::HashSet;
@@ -52,6 +53,11 @@ struct Laid {
     limiter: bool,
     fit: Option<Fit>,
     gain_ranges: Option<Vec<GainRange>>,
+    /// The speed a new chain or a copy is made at, when it isn't the one it
+    /// has: 1 takes a copy's speed off.
+    warp: Option<f64>,
+    /// Its source's whole length, in source frames.
+    src_len: Option<i64>,
 }
 
 impl Laid {
@@ -123,11 +129,20 @@ fn layout(
         let pa = wanted.iter().position(|p| p.source == Source::Existing(a));
         let pb = wanted.iter().position(|p| p.source == Source::Existing(b));
         let together = matches!((pa, pb), (Some(x), Some(y)) if y == x + 1);
-        let a_trimmed_end =
-            pa.is_some_and(|x| wanted[x].out_frame.is_some_and(|o| o != items[a].out_frame));
-        let b_trimmed_start =
-            pb.is_some_and(|y| wanted[y].in_frame.is_some_and(|i| i != items[b].in_frame));
-        if !together || a_trimmed_end || b_trimmed_start {
+        let src = |k: usize| {
+            let it = &items[k];
+            warp::to_source(it.in_frame, it.out_frame, doc.speed(&it.chain))
+        };
+        let a_trimmed_end = pa.is_some_and(|x| wanted[x].out_frame.is_some_and(|o| o != src(a).1));
+        let b_trimmed_start = pb.is_some_and(|y| wanted[y].in_frame.is_some_and(|i| i != src(b).0));
+        let respeeds = |k: Option<usize>, i: usize| {
+            k.is_some_and(|k| {
+                wanted[k]
+                    .speed
+                    .is_some_and(|s| !warp::same(s, doc.speed(&items[i].chain)))
+            })
+        };
+        if !together || a_trimmed_end || b_trimmed_start || respeeds(pa, a) || respeeds(pb, b) {
             return Err(format!(
                 "Clips {} and {} are joined by a crossfade made in Shotcut; remove it there first, \
                  or keep them together.",
@@ -139,31 +154,45 @@ fn layout(
 
     let mut laid: Vec<Laid> = Vec::new();
     for (pos, p) in wanted.iter().enumerate() {
-        let (default_in, default_out, max_out, chain) = match &p.source {
-            Source::Existing(i) => {
+        // The speed it has now, and the one it will have.
+        let old_speed = match &p.source {
+            Source::Existing(i) | Source::Piece(i) => doc.speed(&items[*i].chain),
+            Source::New(_) => 1.0,
+        };
+        let speed = p.speed.unwrap_or(old_speed);
+        // A clip whose speed changes plays a new chain, as a piece does.
+        let source = match &p.source {
+            Source::Existing(i) if !warp::same(speed, old_speed) => Source::Piece(*i),
+            s => s.clone(),
+        };
+        // In source frames, as placements say them.
+        let (default_in, default_out, src_len, chain) = match &source {
+            Source::Existing(i) | Source::Piece(i) => {
                 let it = &items[*i];
-                let max = chain_length(doc, &it.chain).map(|l| l - 1);
-                (it.in_frame, it.out_frame, max, it.chain.clone())
-            }
-            Source::Piece(i) => {
-                let it = &items[*i];
-                let max = chain_length(doc, &it.chain).map(|l| l - 1);
-                *next_chain += 1;
-                (it.in_frame, it.out_frame, max, format!("chain{next_chain}"))
+                let (a, b) = warp::to_source(it.in_frame, it.out_frame, old_speed);
+                let len =
+                    chain_length(doc, &it.chain).map(|l| (l as f64 * old_speed).round() as i64);
+                let chain = if matches!(source, Source::Existing(_)) {
+                    it.chain.clone()
+                } else {
+                    *next_chain += 1;
+                    format!("chain{next_chain}")
+                };
+                (a, b, len, chain)
             }
             Source::New(m) => {
                 *next_chain += 1;
                 (
                     0,
                     m.length - 1,
-                    Some(m.length - 1),
+                    Some(m.length),
                     format!("chain{next_chain}"),
                 )
             }
         };
         let mut in_frame = p.in_frame.unwrap_or(default_in).max(0);
         let mut out_frame = p.out_frame.unwrap_or(default_out);
-        if let Some(max) = max_out {
+        if let Some(max) = src_len.map(|l| l - 1) {
             if out_frame > max {
                 notes.push(format!(
                     "Clip {}: the end was past the clip's end, so it ends there.",
@@ -178,8 +207,20 @@ fn layout(
         if in_frame > out_frame {
             in_frame = out_frame;
         }
+        // From here on, the chain's own frames.
+        let (mut in_frame, mut out_frame) = warp::to_chain(in_frame, out_frame, speed);
+        if let Some(most) = src_len.map(|l| warp::chain_length(l, speed) - 1) {
+            out_frame = out_frame.min(most);
+            in_frame = in_frame.min(out_frame);
+        }
+        // A new chain is made at its speed; a copy is changed to it.
+        let warp = match &source {
+            Source::New(_) => (!warp::same(speed, 1.0)).then_some(speed),
+            Source::Piece(_) => (!warp::same(speed, old_speed)).then_some(speed),
+            Source::Existing(_) => None,
+        };
         let prev = laid.last();
-        let users = match (prev, &p.source) {
+        let users = match (prev, &source) {
             (Some(prev), Source::Existing(i)) => match prev.source {
                 Source::Existing(pi) => fades
                     .iter()
@@ -208,7 +249,7 @@ fn layout(
         };
         // The gap the user left before it, when it follows the clip it
         // followed before (or leads the track, as it did).
-        let gap = match (&p.source, prev) {
+        let gap = match (&source, prev) {
             _ if fade.is_some() => 0,
             (Source::Existing(i), None) if *i == 0 => {
                 if items[0].fade_in.is_none() {
@@ -224,7 +265,9 @@ fn layout(
             _ => 0,
         };
         laid.push(Laid {
-            source: p.source.clone(),
+            source: source.clone(),
+            warp,
+            src_len,
             chain,
             in_frame,
             out_frame,
@@ -490,6 +533,14 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     let f = range_filters(&mut next_filter, ranges, &fps);
                     c = c.replacen("  </chain>\n", &format!("{f}  </chain>\n"), 1);
                 }
+                if let Some(speed) = l.warp {
+                    let plain = warp::Plain {
+                        resource: &m.resource,
+                        service: "avformat-novalidate",
+                        length: m.length,
+                    };
+                    c = warp::rewrite(&c, &plain, speed, &fps, true);
+                }
                 chain_text.push_str(&c);
             }
             Source::Piece(i) => {
@@ -541,6 +592,16 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     let at = c.rfind("</chain>").unwrap_or(c.len());
                     let line = c[..at].rfind('\n').map_or(at, |n| n + 1);
                     c.insert_str(line, &f);
+                }
+                if let (Some(speed), Some(length)) = (l.warp, l.src_len) {
+                    let resource = doc.resource(old);
+                    let service = doc.plain_service(old);
+                    let plain = warp::Plain {
+                        resource: &resource,
+                        service: &service,
+                        length,
+                    };
+                    c = warp::rewrite(&c, &plain, speed, &fps, true);
                 }
                 chain_text.push_str("  ");
                 chain_text.push_str(&c);

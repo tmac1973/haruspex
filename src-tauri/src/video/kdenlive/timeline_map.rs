@@ -12,12 +12,11 @@ pub fn spans(doc: &Doc) -> Vec<Span> {
         .enumerate()
         .map(|(i, item)| {
             let e = item.any();
-            let resource = doc
-                .tree
-                .by_id(&e.chain)
-                .and_then(|c| doc.tree.property(c, "resource"))
-                .unwrap_or("");
-            let p = Path::new(resource);
+            let speed = doc.speed(&e.chain);
+            let (src_in, src_out) =
+                crate::video::mlt::warp::to_source(e.in_frame, e.out_frame, speed);
+            let resource = doc.resource(&e.chain);
+            let p = Path::new(&resource);
             let file = if p.is_absolute() {
                 p.to_path_buf()
             } else {
@@ -27,8 +26,9 @@ pub fn spans(doc: &Doc) -> Vec<Span> {
                 index: i + 1,
                 file,
                 start: fps.secs(e.start),
-                source_in: fps.secs(e.in_frame),
-                source_out: fps.secs(e.out_frame + 1),
+                source_in: fps.secs(src_in),
+                source_out: fps.secs(src_out + 1),
+                speed,
                 audio: false,
             }
         })

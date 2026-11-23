@@ -25,6 +25,7 @@ mod tests;
 use crate::video::format::{OtherClip, ProjectSummary, SummaryItem};
 use crate::video::mlt::profile::{profile, profile_tag};
 pub use crate::video::mlt::project_file::save;
+use crate::video::mlt::warp;
 use crate::video::mlt::{mlt_path, xml};
 use crate::video::timeline::{Clip, ClipAudio};
 use doc::Doc;
@@ -156,19 +157,24 @@ fn shown_resource(doc: &Doc, working_dir: &str, resource: &str) -> String {
 pub fn clips(doc: &Doc) -> Vec<Clip> {
     doc.items
         .iter()
-        .map(|item| Clip {
-            resource: doc.resource(&item.chain),
-            in_frame: item.in_frame,
-            out_frame: item.out_frame,
-            audio: doc
-                .stream(&item.chain, "audio_index")
-                .map(|stream| ClipAudio {
-                    stream,
-                    in_frame: item.in_frame,
-                    out_frame: item.out_frame,
-                }),
-            gain_ranges: doc.our_gain_ranges(&item.chain),
-            fit: doc.our_fit(&item.chain),
+        .map(|item| {
+            let speed = doc.speed(&item.chain);
+            let (in_frame, out_frame) = warp::to_source(item.in_frame, item.out_frame, speed);
+            Clip {
+                resource: doc.resource(&item.chain),
+                in_frame,
+                out_frame,
+                audio: doc
+                    .stream(&item.chain, "audio_index")
+                    .map(|stream| ClipAudio {
+                        stream,
+                        in_frame,
+                        out_frame,
+                    }),
+                gain_ranges: doc.our_gain_ranges(&item.chain),
+                fit: doc.our_fit(&item.chain),
+                speed,
+            }
         })
         .collect()
 }
@@ -191,11 +197,14 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         .enumerate()
         .map(|(i, item)| {
             let ours = doc.our_filters(&item.chain);
+            let speed = doc.speed(&item.chain);
+            let (src_in, src_out) = warp::to_source(item.in_frame, item.out_frame, speed);
             SummaryItem {
                 index: i as u32 + 1,
                 path: shown_resource(doc, working_dir, &doc.resource(&item.chain)),
-                source_in_secs: fps.secs(item.in_frame),
-                source_out_secs: fps.secs(item.out_frame + 1),
+                source_in_secs: fps.secs(src_in),
+                source_out_secs: fps.secs(src_out + 1),
+                speed,
                 start_secs: fps.secs(item.start),
                 duration_secs: fps.secs(item.len()),
                 effects: (doc.filters(&item.chain).len() - ours.len()) as u32,

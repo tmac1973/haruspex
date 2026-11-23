@@ -19,12 +19,16 @@ pub fn spans(doc: &Doc) -> Vec<Span> {
             } else {
                 Path::new(&doc.root_dir).join(p)
             };
+            let speed = doc.speed(&item.chain);
+            let (src_in, src_out) =
+                crate::video::mlt::warp::to_source(item.in_frame, item.out_frame, speed);
             Span {
                 index: i + 1,
                 file,
                 start: fps.secs(item.start),
-                source_in: fps.secs(item.in_frame),
-                source_out: fps.secs(item.out_frame + 1),
+                source_in: fps.secs(src_in),
+                source_out: fps.secs(src_out + 1),
+                speed,
                 audio: false,
             }
         })

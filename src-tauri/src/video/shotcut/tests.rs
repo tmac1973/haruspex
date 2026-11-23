@@ -665,3 +665,112 @@ async fn melt_mutes_a_gain_range_and_keeps_the_rest() {
     assert!(before > -40.0 && after > -40.0, "{before} {after}");
     assert!(muted < -80.0, "muted stretch {muted}");
 }
+
+#[test]
+fn a_clip_at_twice_the_speed_keeps_its_source_frames_and_plays_half_as_long() {
+    let doc = edited();
+    let before = clips(&doc);
+    let s0 = summary(&doc, "/videos", Path::new("/videos/ep12/ep12.mlt"));
+    let mut wanted = current(&doc);
+    wanted[2].speed = Some(2.0);
+    let out = apply(&doc, &wanted).unwrap();
+    let after = reparse(out.text.clone());
+    let got = clips(&after);
+    assert_eq!(got[2].speed, 2.0);
+    assert_eq!(
+        (got[2].in_frame, got[2].out_frame),
+        (before[2].in_frame, before[2].out_frame)
+    );
+    assert_eq!(got[2].resource, "c.mp4", "the file it warps");
+    let chain = &after.items[2].chain;
+    assert_ne!(chain, "chain2", "a new chain");
+    assert!(after.chain("chain2").is_none(), "the old one went");
+    assert_eq!(
+        after.filters(chain).len(),
+        1,
+        "the user's text filter came along"
+    );
+    assert!(out
+        .text
+        .contains("<property name=\"mlt_service\">timewarp</property>"));
+    assert!(out
+        .text
+        .contains("<property name=\"warp_pitch\">1</property>"));
+    let s = summary(&after, "/videos", Path::new("/videos/ep12/ep12.mlt"));
+    assert_eq!(s.items[2].speed, 2.0);
+    assert!((s.items[2].duration_secs - s0.items[2].duration_secs / 2.0).abs() < 0.05);
+    assert_eq!(s.items[2].source_in_secs, s0.items[2].source_in_secs);
+    // Leaving it alone changes nothing; a piece of it keeps its speed.
+    assert_eq!(apply(&after, &current(&after)).unwrap().text, out.text);
+    let mut split = current(&after);
+    split[2].out_frame = Some(59);
+    let mut piece = Placement::of(Source::Piece(2));
+    piece.in_frame = Some(120);
+    split.push(piece);
+    let pieces = reparse(apply(&after, &split).unwrap().text);
+    let c = clips(&pieces);
+    assert_eq!((c[2].speed, c[3].speed), (2.0, 2.0));
+    assert_eq!((c[2].out_frame, c[3].in_frame), (59, 120));
+    // Back to its own speed.
+    let mut back = current(&after);
+    back[2].speed = Some(1.0);
+    let plain = reparse(apply(&after, &back).unwrap().text);
+    let c = clips(&plain);
+    assert_eq!(c[2].speed, 1.0);
+    assert_eq!(
+        (c[2].in_frame, c[2].out_frame),
+        (before[2].in_frame, before[2].out_frame)
+    );
+    assert!(!apply(&after, &back).unwrap().text.contains("timewarp"));
+}
+
+#[tokio::test]
+async fn melt_plays_a_clip_at_twice_the_speed_in_half_the_time() {
+    let Some(melt) = melt().await else {
+        eprintln!("skipped: no melt (set HARUSPEX_MELT)");
+        return;
+    };
+    let dir = crate::test_util::temp_dir("shotcut_speed");
+    let status = crate::test_util::host_command("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("color=c=gray:s=320x180:r=30:d=4")
+        .args(["-f", "lavfi", "-i", "sine=f=440:d=4", "-shortest"])
+        .args(["-c:v", "mpeg4", "-c:a", "pcm_s16le"])
+        .arg(dir.join("tone.mov"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let doc = Doc::parse(template_text("1080p30", &dir).unwrap(), None).unwrap();
+    let fps = doc.fps;
+    let mut clip = new(media("tone.mov", 4.0, fps));
+    clip.speed = Some(2.0);
+    let text = apply(&doc, &[clip]).unwrap().text;
+    let project = dir.join("speed.mlt");
+    save(&project, &text, &melt).await.unwrap();
+    let out = dir.join("speed.mov");
+    let mut cmd = tokio::process::Command::new(&melt);
+    cmd.arg(&project)
+        .arg("-consumer")
+        .arg(format!("avformat:{}", out.display()))
+        .args(["vcodec=mjpeg", "acodec=pcm_s16le"])
+        .env("QT_QPA_PLATFORM", "offscreen");
+    crate::video::prepare_child(&mut cmd);
+    assert!(cmd.status().await.unwrap().success());
+    let probe = crate::test_util::host_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&out)
+        .output()
+        .unwrap();
+    let secs: f64 = String::from_utf8_lossy(&probe.stdout)
+        .trim()
+        .parse()
+        .unwrap();
+    assert!((secs - 2.0).abs() <= 1.0 / 30.0 + 0.01, "rendered {secs} s");
+}
