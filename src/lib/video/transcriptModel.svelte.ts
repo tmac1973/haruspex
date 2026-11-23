@@ -67,6 +67,12 @@ export const appTranscriptIO: TranscriptIO = {
 	}
 };
 
+/** `relPath` (from the window's folder) as seen from `episode`, the folder above it. */
+export function clipInEpisode(relPath: string, episode: string): string {
+	const ep = episode.replace(/\/+$/, '');
+	return ep && relPath.startsWith(`${ep}/`) ? relPath.slice(ep.length + 1) : relPath;
+}
+
 export class TranscriptModel {
 	readonly workdir: string;
 	readonly clip: string;
@@ -103,19 +109,19 @@ export class TranscriptModel {
 			this.editsPath = found?.editsPath ?? '';
 			this.edits = null;
 			this.staleEdits = null;
-			if (found) await this.loadEdits(found.transcript);
+			if (found) await this.loadEdits(found.transcript, clipInEpisode(this.clip, found.episode));
 		} catch (e) {
 			this.error = String(e);
 		}
 		this.loading = false;
 	}
 
-	private async loadEdits(t: Transcript): Promise<void> {
+	private async loadEdits(t: Transcript, clip: string): Promise<void> {
 		this.hash = await transcriptHash(t);
 		const text = await this.io.readText(this.workdir, this.editsPath).catch(() => null);
 		const saved = text ? parseEdits(text) : null;
 		if (saved && stale(saved, this.hash)) this.staleEdits = saved;
-		this.edits = saved && !stale(saved, this.hash) ? saved : emptyEdits(this.clip, this.hash);
+		this.edits = saved && !stale(saved, this.hash) ? saved : emptyEdits(clip, this.hash);
 		this.dirty = false;
 	}
 

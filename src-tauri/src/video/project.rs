@@ -288,6 +288,16 @@ pub enum ProjectOp {
         from: u32,
         to: u32,
     },
+    /// Put one sound on the audio tracks, starting `at_secs` into the cut,
+    /// keeping everything already there: a replacement line, a sound effect.
+    /// Its loudness is set to `lufs` (-14 when none).
+    #[serde(rename_all = "camelCase")]
+    AddAudio {
+        path: String,
+        at_secs: f64,
+        #[serde(default)]
+        lufs: Option<f64>,
+    },
     /// Cut stretches out of one clip, in its own time; it becomes pieces.
     RemoveRanges {
         index: u32,
@@ -1236,10 +1246,12 @@ pub async fn op(
     op: ProjectOp,
     settings: &VideoSettings,
 ) -> Result<CutResult, String> {
-    let (_, melt, ffmpeg) = tools(settings).await?;
+    let (ffprobe, melt, ffmpeg) = tools(settings).await?;
     let path = default_project(working_dir, episode, project, None)?;
     let doc = ProjectDoc::open(&path)?;
     let mut wanted = doc.current();
+    // The audio tracks as they should be, when the op changes them.
+    let mut audio_after: Option<Vec<AudioPlacement>> = None;
     let items = doc.clips();
     let min_piece = doc.fps().frames(MIN_PIECE_SECS).max(1);
     let mut notes = Vec::new();
@@ -1394,6 +1406,30 @@ pub async fn op(
                 format_secs(doc.fps().secs(removed))
             ));
         }
+        ProjectOp::AddAudio {
+            path: file,
+            at_secs,
+            lufs,
+        } => {
+            let episode_dir = resolve_episode(working_dir, episode)?;
+            let spec = CutAudioSpec {
+                index: None,
+                path: Some(file.clone()),
+                at_secs: Some(at_secs),
+                in_secs: None,
+                out_secs: None,
+                lufs,
+            };
+            let mut new = audio_placements(&doc, working_dir, &[spec], settings, &ffprobe).await?;
+            normalize_audio(&doc, &mut new, &ffmpeg, &episode_dir).await?;
+            let mut all = current_audio(&doc.audio_clips());
+            all.extend(new);
+            audio_after = Some(all);
+            notes.push(format!(
+                "Put {file} on the audio tracks at {}.",
+                format_secs(at_secs.max(0.0))
+            ));
+        }
         ProjectOp::Normalize => {
             let episode_dir = resolve_episode(working_dir, episode)?;
             notes.push(normalize_gains(&doc, &mut wanted, &ffmpeg, &episode_dir).await?);
@@ -1465,7 +1501,7 @@ pub async fn op(
             Some((ffmpeg.as_str(), episode_dir.as_path())),
         )
     } else {
-        (None, None)
+        (audio_after, None)
     };
     let text = edit_text(&doc, &wanted, audio, measure, &mut notes).await?;
     format::save(&path, &text, &melt).await?;
@@ -1854,6 +1890,87 @@ mod tests {
         // Over clip 2, 300 frames later.
         assert_eq!(follow(330, &old, &new, &wanted), 630);
         assert_eq!(follow(600, &old, &new, &wanted), 900);
+    }
+
+    /// `add_audio` puts a sound on the audio tracks at a time in the cut and
+    /// keeps what is there, measured to its loudness.
+    #[tokio::test]
+    #[ignore = "needs ffmpeg, ffprobe and melt"]
+    async fn add_audio_places_a_take_and_keeps_the_rest() {
+        let dir = series();
+        let make = |name: &str, lavfi: &str| {
+            let p = dir.join(name);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", lavfi])
+                .args(["-f", "lavfi", "-i", "sine=d=6", "-shortest"])
+                .arg(&p)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        make("ep010/raw/a.mp4", "color=c=red:s=640x360:r=30:d=6");
+        let tone = |name: &str, secs: u32| {
+            let ok = crate::test_util::host_command("ffmpeg")
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+                .arg(format!("sine=f=300:d={secs}"))
+                .arg(dir.join(name))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        fs::create_dir_all(dir.join("ep010/speech")).unwrap();
+        tone("ep010/speech/e1.wav", 2);
+        tone("ep010/speech/e2.wav", 2);
+        let wd = dir.to_string_lossy().into_owned();
+        for editor in format::Format::ALL {
+            let settings = VideoSettings {
+                preset: "1080p30".into(),
+                ..Default::default()
+            };
+            let spec = CutSpec {
+                editor: Some(editor),
+                project: Some(format!("ep010/add-audio.{}", editor.extension())),
+                items: vec![CutItemSpec {
+                    path: Some("ep010/raw/a.mp4".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let made = cut(&wd, "ep010", spec, &settings).await.unwrap();
+            let project = Some(made.summary.project.as_str());
+            let add = |p: &str, at: f64| ProjectOp::AddAudio {
+                path: p.into(),
+                at_secs: at,
+                lufs: None,
+            };
+            op(
+                &wd,
+                "ep010",
+                project,
+                add("ep010/speech/e1.wav", 2.0),
+                &settings,
+            )
+            .await
+            .unwrap();
+            let r = op(
+                &wd,
+                "ep010",
+                project,
+                add("ep010/speech/e2.wav", 4.5),
+                &settings,
+            )
+            .await
+            .unwrap();
+            let a = &r.summary.audio;
+            assert_eq!(a.len(), 2, "{editor:?}: {a:?}");
+            assert!((a[0].start_secs - 2.0).abs() < 0.05, "{editor:?}: {a:?}");
+            assert!((a[1].start_secs - 4.5).abs() < 0.05, "{editor:?}: {a:?}");
+            assert!(a.iter().all(|x| x.gain_db.is_some()), "{editor:?}: {a:?}");
+            assert_eq!(r.summary.items.len(), 1);
+        }
     }
 
     /// A cut from generated clips into a new project, then an op, end to end

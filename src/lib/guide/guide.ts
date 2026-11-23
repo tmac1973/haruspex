@@ -32,6 +32,7 @@ const ORDER = [
 	'web-preview',
 	'viewers',
 	'transcript-viewer',
+	'speech-replacement',
 	'skills',
 	'write-skills',
 	'media-skills',

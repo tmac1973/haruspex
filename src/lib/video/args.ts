@@ -382,7 +382,7 @@ const CLIP_OPS: Record<
 };
 
 /** Every `video_edit` op, as its schema lists them. */
-export const EDIT_OPS = [...Object.keys(CLIP_OPS), 'remove_silences'];
+export const EDIT_OPS = [...Object.keys(CLIP_OPS), 'remove_silences', 'add_audio'];
 
 export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 	const op = trimmedOrNull(args.op);
@@ -394,6 +394,13 @@ export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 			minSecs: parsedFiniteOrNull(args.min_secs) ?? 1.5,
 			padSecs: parsedFiniteOrNull(args.pad_secs) ?? 0.25
 		};
+	}
+	if (op === 'add_audio') {
+		const path = trimmedOrNull(args.path);
+		const at = parseTime(args.start);
+		if (!path || at === null)
+			return 'add_audio needs "path", a sound file, and "start", where it starts in the video.';
+		return { op: 'addAudio', path, atSecs: at, lufs: parsedFiniteOrNull(args.lufs) };
 	}
 	const parse = op ? CLIP_OPS[op] : undefined;
 	if (!parse) return `op must be ${EDIT_OPS.join(', ')}.`;
