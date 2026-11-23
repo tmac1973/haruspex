@@ -157,6 +157,7 @@ const TABLE: Record<string, Handler> = {
 	memory_model_present: () => false,
 	memory_count: () => 0,
 	list_audio_output_devices: empty,
+	voices_list: empty,
 	list_audio_input_devices: empty,
 	email_list_providers: empty,
 	secret_available: () => true,
