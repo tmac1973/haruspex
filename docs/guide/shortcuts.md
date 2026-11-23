@@ -69,6 +69,18 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 
 ⌥ is Alt on Windows and Linux. Ctrl / ⌘ + click adds a cursor; ⌥ + drag selects a rectangle. Ctrl / ⌘ + Z undoes, Ctrl / ⌘ + Shift + Z redoes. The same keys work wherever this editor appears, such as a skill under review.
 
+## Video transcript
+
+While the transcript beside a video has the focus (click in it); see the `viewers` page.
+
+| Keys | What it does |
+|---|---|
+| Space | Play or pause the video |
+| ← / → | Previous / next word, playing from it |
+| Shift + click | Select the words up to here |
+| Delete | Cut the selected words |
+| Enter | Replace the selected words |
+
 ## Recall what you sent
 
 Up recalls your last message when the cursor is on the first line of the input box, and each press goes one further back; Down goes forward again, and past the newest brings back whatever you had typed. In a message with several lines, the arrows move the cursor until it reaches the first or last line. In the Shell tab, only your question comes back, not the shell output sent with it. Edit a recalled message and press Enter to send it as a new one.

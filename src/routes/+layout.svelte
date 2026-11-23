@@ -122,6 +122,7 @@
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
 	import { listenForJobDrafts } from '#lib/agent/jobs/openDraft.ts';
+	import { listenForSendToChat } from '#lib/editor/chatBridge.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import { isDetachedRoute, rendersAgentModals } from '#lib/windowRoutes.ts';
@@ -306,9 +307,12 @@
 		const stop = listenForCodeWindows(() => setActiveTab('code'));
 		// A job a detached Code window's turn drafted (`propose_job`).
 		const stopDrafts = listenForJobDrafts();
+		// A command an editor window's transcript viewer hands to the chat.
+		const stopSend = listenForSendToChat();
 		return () => {
 			void stop.then((f) => f()).catch(() => {});
 			void stopDrafts.then((f) => f()).catch(() => {});
+			void stopSend.then((f) => f()).catch(() => {});
 		};
 	});
 

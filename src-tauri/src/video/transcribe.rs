@@ -434,6 +434,57 @@ fn offset(s: Segment, from: f64, to: f64) -> Segment {
     }
 }
 
+/// A clip's kept transcript, wherever it was made: `video_transcribe` keeps
+/// it under the episode folder it was asked about, `transcribe_audio` under
+/// the working folder, so each folder from the clip's up to `root` is tried.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptFound {
+    pub transcript: Transcript,
+    /// The folder it is kept under, relative to `root` ("" for `root`).
+    pub episode: String,
+    /// The cache file, absolute.
+    pub cache_path: String,
+    /// Where the transcript viewer keeps the clip's edit list, relative to
+    /// `root`: `<episode>/.haruspex/edits/<clip stem>.edits.json`.
+    pub edits_path: String,
+}
+
+/// The edit list's path for `file`'s transcript kept under `episode_dir`.
+pub fn edits_path(episode_dir: &Path, file: &Path) -> PathBuf {
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("clip");
+    haruspex_dir(episode_dir)
+        .join("edits")
+        .join(format!("{stem}.edits.json"))
+}
+
+/// The kept transcript of `file` (inside `root`), looked for in each folder
+/// from the clip's up to `root`.
+pub fn find_cached(root: &Path, file: &Path) -> Option<TranscriptFound> {
+    let mut dir = file.parent()?;
+    loop {
+        if let Some(t) = cached(dir, file) {
+            let rel = |p: &Path| {
+                p.strip_prefix(root)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            };
+            return Some(TranscriptFound {
+                transcript: t,
+                episode: rel(dir),
+                cache_path: cache_path(dir, file).to_string_lossy().into_owned(),
+                edits_path: rel(&edits_path(dir, file)),
+            });
+        }
+        if dir == root {
+            return None;
+        }
+        dir = dir.parent().filter(|d| d.starts_with(root))?;
+    }
+}
+
 /// The episode's clips to transcribe: those named, or every one with sound.
 pub async fn clips_to_transcribe(
     ffprobe: &str,
@@ -510,6 +561,33 @@ mod tests {
         assert_eq!(cached(&dir, &clip), Some(t));
         std::fs::write(&clip, b"different").unwrap();
         assert_eq!(cached(&dir, &clip), None);
+    }
+
+    #[test]
+    fn a_transcript_is_found_under_any_folder_up_to_the_root() {
+        let root = temp_dir("transcript_find");
+        let ep = root.join("ep012");
+        std::fs::create_dir_all(ep.join("raw")).unwrap();
+        let clip = ep.join("raw/obs.mp4");
+        std::fs::write(&clip, b"x").unwrap();
+        assert!(find_cached(&root, &clip).is_none());
+        let t = Transcript {
+            path: "ep012/raw/obs.mp4".into(),
+            model: "m".into(),
+            language: None,
+            duration_secs: 1.0,
+            segments: vec![],
+        };
+        save_cache(&ep, &clip, &t);
+        let found = find_cached(&root, &clip).unwrap();
+        assert_eq!(found.episode, "ep012");
+        assert_eq!(found.edits_path, "ep012/.haruspex/edits/obs.edits.json");
+        assert_eq!(found.transcript, t);
+        // Kept under the root, as transcribe_audio does.
+        let other = root.join("vo.wav");
+        std::fs::write(&other, b"y").unwrap();
+        save_cache(&root, &other, &t);
+        assert_eq!(find_cached(&root, &other).unwrap().episode, "");
     }
 
     #[test]

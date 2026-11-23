@@ -57,6 +57,7 @@ When the window's folder holds more than one file of a kind, a tree of them sits
 - The bar gives its length, size in pixels, frame rate, codecs and size on disk, when ffmpeg is there (Settings → Video editing).
 - Formats come from your system's media codecs. On Linux, `.mp4` and `.mov` need GStreamer's `gst-libav`; `.webm` plays without it. Without a codec the viewer says it can't play the file.
 - Only this window's folder is played from, and only while the tab is open.
+- **Transcript** shows the clip's words beside it, to follow and mark for cuts; see the `transcript-viewer` page.
 
 **Reload** reads the file again, after something rewrote it. The viewers don't reload by themselves.
 

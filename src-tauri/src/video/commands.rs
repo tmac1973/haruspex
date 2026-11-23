@@ -330,6 +330,18 @@ impl Transcription<'_> {
     }
 }
 
+/// A clip's kept transcript, without transcribing: for the transcript
+/// viewer, which also learns where to keep the clip's edit list.
+#[tauri::command]
+pub fn video_transcript_for(
+    working_dir: String,
+    path: String,
+) -> Result<Option<super::transcribe::TranscriptFound>, String> {
+    let root = paths::resolve_episode(&working_dir, "")?;
+    let file = paths::resolve_media(&working_dir, &path, "", "")?;
+    Ok(super::transcribe::find_cached(&root, &file))
+}
+
 /// Stop a running transcription.
 #[tauri::command]
 pub fn video_transcribe_cancel(job: String) -> bool {

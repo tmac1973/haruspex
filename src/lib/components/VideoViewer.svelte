@@ -8,6 +8,7 @@
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import VideoFrame from '#lib/components/VideoFrame.svelte';
+	import TranscriptPane from '#lib/components/TranscriptPane.svelte';
 	import { cannotPlay, openMediaRoot, type MediaRoot } from '#lib/media/mediaRoot.ts';
 	import { videoSettings } from '#lib/video/args.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -21,6 +22,32 @@
 	let error = $state('');
 	let info = $state<ClipInfo | null>(null);
 	let root: MediaRoot | null = null;
+	let video = $state<HTMLVideoElement | undefined>(undefined);
+	let time = $state(0);
+	let showTranscript = $state(false);
+
+	$effect(() => {
+		const v = video;
+		if (!v) return;
+		const follow = () => (time = v.currentTime);
+		v.addEventListener('timeupdate', follow);
+		v.addEventListener('seeked', follow);
+		return () => {
+			v.removeEventListener('timeupdate', follow);
+			v.removeEventListener('seeked', follow);
+		};
+	});
+
+	function seek(secs: number): void {
+		if (video) video.currentTime = secs;
+		time = secs;
+	}
+
+	function togglePlay(): void {
+		if (!video) return;
+		if (video.paused) void video.play().catch(() => {});
+		else video.pause();
+	}
 	const name = $derived(relPath.split('/').pop() ?? relPath);
 
 	async function load(): Promise<void> {
@@ -68,15 +95,32 @@
 </script>
 
 <div class="video-viewer" data-testid="video-viewer">
-	<div class="stage">
-		{#if url && !error}
-			<VideoFrame src={url} title={name} fill onerror={() => (error = cannotPlay(name))} />
+	<div class="body">
+		<div class="stage">
+			{#if url && !error}
+				<VideoFrame
+					src={url}
+					title={name}
+					fill
+					bind:video
+					onerror={() => (error = cannotPlay(name))}
+				/>
+			{/if}
+			{#if !url && !error}<p class="note">Loading…</p>{/if}
+			{#if error}<p class="note error">{error}</p>{/if}
+		</div>
+		{#if showTranscript}
+			<div class="side">
+				<TranscriptPane {workdir} {relPath} {time} onseek={seek} ontoggleplay={togglePlay} />
+			</div>
 		{/if}
-		{#if !url && !error}<p class="note">Loading…</p>{/if}
-		{#if error}<p class="note error">{error}</p>{/if}
 	</div>
 	<div class="bar">
 		<span class="summary">{summary}</span>
+		<label title="Read the clip's words beside it, and mark words to cut or replace">
+			<input type="checkbox" bind:checked={showTranscript} />
+			Transcript
+		</label>
 		<button onclick={() => void load()}>Reload</button>
 	</div>
 </div>
@@ -89,12 +133,37 @@
 		min-width: 0;
 		min-height: 0;
 	}
-	.stage {
-		position: relative;
+	.body {
 		flex: 1;
 		min-height: 0;
 		display: flex;
+		gap: 8px;
+	}
+	.stage {
+		position: relative;
+		flex: 3;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
 		flex-direction: column;
+	}
+	.side {
+		flex: 2;
+		min-width: 16rem;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.side > :global(*) {
+		flex: 1;
+	}
+	label {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		cursor: pointer;
 	}
 	.note {
 		position: absolute;
