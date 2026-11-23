@@ -1,12 +1,6 @@
 //! XML escaping for the deck (ODP) and spreadsheet (XLSX) writers.
 
-pub(super) fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
+pub(super) use crate::text_util::escape_xml;
 
 #[cfg(test)]
 mod tests {

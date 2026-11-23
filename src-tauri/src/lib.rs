@@ -53,6 +53,7 @@ mod sandbox_save;
 mod sandbox_sync;
 mod secrets;
 mod server;
+mod server_util;
 mod shell;
 mod sidecar_process;
 mod sidecar_util;

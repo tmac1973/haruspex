@@ -153,7 +153,7 @@ pub(crate) fn concat_pcm(paths: &[PathBuf]) -> Vec<u8> {
         let Ok(wav) = std::fs::read(path) else {
             continue;
         };
-        if let Some(at) = super::capture::data_chunk(&wav) {
+        if let Some(at) = crate::audio::wav_data_start(&wav) {
             let samples = &wav[at..];
             // A half-written last sample is dropped.
             pcm.extend_from_slice(&samples[..samples.len() & !1]);
@@ -164,22 +164,7 @@ pub(crate) fn concat_pcm(paths: &[PathBuf]) -> Vec<u8> {
 
 /// 16 kHz mono 16-bit PCM as a WAV file.
 pub(crate) fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
-    let len = pcm.len() as u32;
-    let mut wav = Vec::with_capacity(44 + pcm.len());
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + len).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
-    wav.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    wav.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&len.to_le_bytes());
-    wav.extend_from_slice(pcm);
-    wav
+    crate::audio::wav_from_pcm16(pcm, SAMPLE_RATE)
 }
 
 /// The last `seconds` of sound in the segments written since `since`.

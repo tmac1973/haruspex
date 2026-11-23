@@ -237,14 +237,7 @@ const API_KEY_ENV: &str = "LLAMA_API_KEY";
 /// would still run. Only the webview (through `get_llama_api_key`) knows it.
 pub fn api_key() -> &'static str {
     static KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    KEY.get_or_init(|| {
-        use ring::rand::{SecureRandom, SystemRandom};
-        let mut b = [0u8; 32];
-        SystemRandom::new()
-            .fill(&mut b)
-            .expect("the OS random source failed");
-        b.iter().map(|x| format!("{x:02x}")).collect()
-    })
+    KEY.get_or_init(|| crate::hash_util::random_hex(32).expect("the OS random source failed"))
 }
 
 /// llama-server's CORS flags (llama.cpp#25655), which by default let every

@@ -16,10 +16,8 @@
 
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::future::Future;
 use std::net::IpAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -65,7 +63,7 @@ const CSRF_HEADER: &str = "x-haruspex";
 const WEB_CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; \
                        connect-src 'self'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'";
 
-pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+pub use crate::server_util::BoxFuture;
 
 /// What the server needs from the engine. The app's is `engine::request` and
 /// `EngineHub::subscribe`; the tests' is a stub.
@@ -145,11 +143,6 @@ struct AppState {
     stopping: watch::Receiver<bool>,
 }
 
-/// How long a stopping server may wait for its connections to finish before
-/// they are cut. Event streams end by themselves on shutdown, so this is only
-/// for a request still in flight.
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
-
 pub struct Running {
     pub port: u16,
     pub bind_all: bool,
@@ -168,13 +161,7 @@ impl Running {
     /// old one let go failed with "address already in use".
     pub async fn shutdown(mut self) {
         self.stop();
-        if tokio::time::timeout(SHUTDOWN_GRACE, &mut self.task)
-            .await
-            .is_err()
-        {
-            self.task.abort();
-            let _ = (&mut self.task).await;
-        }
+        crate::server_util::join_or_abort(&mut self.task).await;
     }
 }
 

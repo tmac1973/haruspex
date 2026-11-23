@@ -2,6 +2,7 @@ import type { SlideImage } from '#lib/slides/types.ts';
 import type { Block } from '#lib/documents/model.ts';
 import { runText } from '#lib/documents/model.ts';
 import { LOOKS, PAGE_POINTS, type DocumentOptions } from '#lib/documents/looks.ts';
+import { escapeHtml } from '#lib/utils/escapeHtml.ts';
 
 /**
  * What the Word and LibreOffice writers share: the page, the title and
@@ -10,11 +11,7 @@ import { LOOKS, PAGE_POINTS, type DocumentOptions } from '#lib/documents/looks.t
 
 export function escapeXml(text: string): string {
 	return (
-		text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
+		escapeHtml(text)
 			// XML 1.0 can't hold most control characters; a model's text may.
 			// eslint-disable-next-line no-control-regex -- stripping them is the point
 			.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, '')

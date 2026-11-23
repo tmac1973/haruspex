@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatContextSize, formatGigabytes } from './format';
+import { formatBytes, formatContextSize, formatGigabytes, plural } from './format';
 
 describe('formatContextSize', () => {
 	it.each([
@@ -27,5 +27,13 @@ describe('formatBytes', () => {
 describe('formatGigabytes', () => {
 	it('uses decimal gigabytes, as model hosts do', () => {
 		expect(formatGigabytes(5_700_000_000)).toBe('5.7 GB');
+	});
+});
+
+describe('plural', () => {
+	it('adds an s unless told the plural', () => {
+		expect(plural(1, 'clip')).toBe('1 clip');
+		expect(plural(2, 'clip')).toBe('2 clips');
+		expect(plural(0, 'was', 'were')).toBe('0 were');
 	});
 });

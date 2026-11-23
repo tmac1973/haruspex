@@ -12,6 +12,7 @@
  */
 import type { Transcript } from '#lib/ipc/gen/Transcript.ts';
 import type { Word } from '#lib/ipc/gen/Word.ts';
+import { sha256Hex } from '#lib/utils/sha256.ts';
 
 export interface CutEdit {
 	id: string;
@@ -64,8 +65,7 @@ export function wordsOf(t: Transcript): Word[] {
 /** The SHA-256 of the transcript's words (text, start, end) as JSON, in hex. */
 export async function transcriptHash(t: Transcript): Promise<string> {
 	const json = JSON.stringify(wordsOf(t).map((w) => [w.text, w.start, w.end]));
-	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json));
-	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	return sha256Hex(json);
 }
 
 /** Whether the edits were made on another version of the transcript. */

@@ -21,6 +21,7 @@
 	import { blobUrlOf, readViewerBytes, viewerError } from '#lib/editor/viewerFile.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import { extOf } from '#lib/utils/mime.ts';
+	import { basename } from '#lib/utils/basename.ts';
 
 	let { workdir, relPath }: { workdir: string; relPath: string } = $props();
 
@@ -50,7 +51,7 @@
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let audio: HTMLAudioElement | null = null;
 	let gone = false;
-	const name = $derived(relPath.split('/').pop() ?? relPath);
+	const name = $derived(basename(relPath) || relPath);
 
 	function release(): void {
 		if (url) URL.revokeObjectURL(url);

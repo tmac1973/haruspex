@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { CaptureRect } from '#lib/ipc/gen/CaptureRect.ts';
 import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
+import { sleep } from '#lib/utils/async.ts';
 
 /**
  * How long to wait after hiding the window before reading the screen. The
@@ -75,7 +76,7 @@ export async function withHaruspexHidden<T>(work: () => Promise<T>): Promise<T> 
 
 /** Wait, Haruspex just hidden, for the compositor to repaint what was behind it. */
 export function hideSettled(): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, HIDE_SETTLE_MS));
+	return sleep(HIDE_SETTLE_MS);
 }
 
 /**

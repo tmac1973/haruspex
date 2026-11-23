@@ -11,11 +11,10 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::hash_util::hex;
+use crate::hash_util::{hex, random_hex};
 use crate::remote::auth::token_matches;
 use crate::sync_util::LockExt;
 use crate::time_util::now_secs;
@@ -151,14 +150,6 @@ struct Inner {
 
 fn hash(token: &str) -> String {
     hex(&Sha256::digest(token.as_bytes()))
-}
-
-fn random_hex(bytes: usize) -> Result<String, String> {
-    let mut buf = vec![0u8; bytes];
-    SystemRandom::new()
-        .fill(&mut buf)
-        .map_err(|_| "the system random number generator failed".to_string())?;
-    Ok(hex(&buf))
 }
 
 impl Clients {

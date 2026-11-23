@@ -11,6 +11,7 @@
 	import { getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
 	import { EditorDocument, type EditorIO } from '#lib/editor/document.svelte.ts';
 	import { plainIO } from '#lib/editor/io.ts';
+	import { basename } from '#lib/utils/basename.ts';
 
 	const pending = $derived(getPendingEdit());
 
@@ -74,7 +75,7 @@
 	}
 
 	function fileName(path: string): string {
-		return path.split('/').pop() || path;
+		return basename(path) || path;
 	}
 </script>
 

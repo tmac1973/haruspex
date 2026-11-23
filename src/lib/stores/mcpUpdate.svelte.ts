@@ -31,6 +31,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { openSettings } from '#lib/stores/settingsNav.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { plural } from '#lib/utils/format.ts';
 
 const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
 
@@ -195,10 +196,6 @@ export async function existingAddonProjects(config: McpServerConfig): Promise<st
 		// is there.
 		return projects;
 	}
-}
-
-function plural(n: number, one: string, many: string): string {
-	return `${n} ${n === 1 ? one : many}`;
 }
 
 /** "Updated to X. 2 tools added, 1 removed. Approvals were reset." */

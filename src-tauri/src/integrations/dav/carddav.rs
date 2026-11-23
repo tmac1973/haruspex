@@ -63,17 +63,11 @@ fn multiget_body(hrefs: &[String]) -> String {
     );
     for href in hrefs {
         body.push_str("  <d:href>");
-        body.push_str(&xml_escape(href));
+        body.push_str(&crate::text_util::escape_xml(href));
         body.push_str("</d:href>\n");
     }
     body.push_str("</c:addressbook-multiget>");
     body
-}
-
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 /// The card hrefs in a listing: everything but the address book itself.

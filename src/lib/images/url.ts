@@ -14,13 +14,9 @@
  * control's server for the same image by hash.
  */
 
-import { isWebClient } from '#lib/buildFlags.ts';
-import { customSchemeBase } from '#lib/utils/customScheme.ts';
+import { mediaUrls } from '#lib/utils/mediaUrl.ts';
 
-const BASE = isWebClient ? '/api/v1/image/' : customSchemeBase('haruspex-img');
-
-/** Exactly 64 lowercase hex characters — mirrors `image_cache::is_valid_hash`. */
-const HASH_RE = /^[0-9a-f]{64}$/;
+const urls = mediaUrls('haruspex-img', '/api/v1/image/', { acceptWebRoute: true });
 
 /**
  * URL for a cached image, or `null` if the hash is not the shape the protocol
@@ -30,20 +26,10 @@ const HASH_RE = /^[0-9a-f]{64}$/;
  * an `<img src>`, where it would surface as a broken image rather than as the
  * programming error it is.
  */
-export function imageSrc(hash: string): string | null {
-	if (!HASH_RE.test(hash)) return null;
-	return `${BASE}${hash}`;
-}
+export const imageSrc = urls.src;
 
 /**
  * The hash in one of our cached-image URLs, or `null` for any other: either
  * platform's scheme form, or the web client's route.
  */
-export function imageHashFromUrl(url: string): string | null {
-	const m = url
-		.trim()
-		.match(
-			/^(?:haruspex-img:\/\/localhost\/|http:\/\/haruspex-img\.localhost\/|\/api\/v1\/image\/)([0-9a-f]{64})$/
-		);
-	return m ? m[1] : null;
-}
+export const imageHashFromUrl = urls.hashFromUrl;

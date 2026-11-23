@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { FetchedPage } from '#lib/ipc/gen/FetchedPage.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { sha256Hex } from '#lib/utils/sha256.ts';
 
 /** A few general and tech feeds to start from, each checked to serve XML. */
 export const PRESET_FEEDS: { name: string; url: string }[] = [
@@ -33,11 +34,7 @@ const SUMMARY_CHARS = 300;
 
 /** The first 16 hex characters of SHA-256 over the text. */
 async function shortHash(text: string): Promise<string> {
-	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-	return [...new Uint8Array(digest)]
-		.slice(0, 8)
-		.map((b) => b.toString(16).padStart(2, '0'))
-		.join('');
+	return (await sha256Hex(text)).slice(0, 16);
 }
 
 /** Text without HTML tags or runs of white space. */

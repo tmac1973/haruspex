@@ -9,6 +9,7 @@
  */
 
 import type { EditorSave } from '#lib/ipc/gen/EditorSave.ts';
+import { basename } from '#lib/utils/basename.ts';
 
 /** A file as read: `content` null when it isn't on disk. */
 export interface LoadedFile {
@@ -112,7 +113,7 @@ export class EditorDocument {
 	}
 
 	get name(): string {
-		return this.relPath.split('/').pop() || this.relPath;
+		return basename(this.relPath) || this.relPath;
 	}
 
 	async load(): Promise<void> {

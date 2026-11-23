@@ -5,6 +5,7 @@
  */
 
 import { viewerFor, type FileViewer } from '#lib/editor/document.svelte.ts';
+import { basename } from '#lib/utils/basename.ts';
 
 /** What the list shows at once: one viewer's files, or the text files. */
 export type ListKind = FileViewer | 'text';
@@ -109,11 +110,11 @@ export function treeRows(files: string[], collapsed: ReadonlySet<string>): TreeR
 		for (let depth = shared; depth < dirs.length; depth++) {
 			if (dirs.slice(0, depth).some((d) => collapsed.has(d))) break;
 			const path = dirs[depth];
-			rows.push({ dir: true, path, name: path.slice(0, -1).split('/').pop()!, depth });
+			rows.push({ dir: true, path, name: basename(path.slice(0, -1)), depth });
 		}
 		open = dirs;
 		if (dirs.some((d) => collapsed.has(d))) continue;
-		rows.push({ dir: false, path: file, name: file.split('/').pop()!, depth: dirs.length });
+		rows.push({ dir: false, path: file, name: basename(file), depth: dirs.length });
 	}
 	return rows;
 }
