@@ -33,6 +33,7 @@ export const PROPOSABLE_TYPES = [
 	'guided_planning',
 	'asset_generation',
 	'model_generation',
+	'video_sequence',
 	'autonomous_coding'
 ] as const;
 
@@ -118,7 +119,7 @@ registerTool({
 		function: {
 			name: PROPOSE_JOB_TOOL,
 			description:
-				'Draft a job from this conversation and open it in the Jobs tab for the user to review. The user saves and runs it; nothing runs, and there is no schedule, until they do. Use it when the user asks for a job, or agrees to one, for work too long for this chat: research with several steps (research), planning a project (guided_planning), auditing code (audit), game art (asset_generation), 3D models (model_generation), or building from plan files (autonomous_coding). A wrong setting or a draft the job type rejects comes back with what to fix.',
+				'Draft a job from this conversation and open it in the Jobs tab for the user to review. The user saves and runs it; nothing runs, and there is no schedule, until they do. Use it when the user asks for a job, or agrees to one, for work too long for this chat: research with several steps (research), planning a project (guided_planning), auditing code (audit), game art (asset_generation), 3D models (model_generation), a long generated video (video_sequence), or building from plan files (autonomous_coding). A wrong setting or a draft the job type rejects comes back with what to fix.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -132,7 +133,7 @@ registerTool({
 					brief: {
 						type: 'string',
 						description:
-							'What this conversation settled: the goal, and every decision and answer the user gave, so the job does not ask again. For guided_planning it is what to plan, for audit what to look for, for asset_generation and model_generation what to make.'
+							'What this conversation settled: the goal, and every decision and answer the user gave, so the job does not ask again. For guided_planning it is what to plan, for audit what to look for, for asset_generation and model_generation what to make, for video_sequence what the video is.'
 					},
 					steps: {
 						type: 'array',
@@ -148,7 +149,7 @@ registerTool({
 					spec: {
 						type: 'string',
 						description:
-							"asset_generation and model_generation only: the spec file's JSON, when this conversation wrote one. It is written when the user saves. Leave it out and the run writes the spec from the brief."
+							"asset_generation, model_generation and video_sequence only: the spec file's JSON, when this conversation wrote one. It is written when the user saves. Leave it out and the run writes the spec from the brief."
 					}
 				},
 				required: ['job_type', 'name']
