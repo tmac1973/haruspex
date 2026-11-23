@@ -315,6 +315,8 @@ pub struct Line {
     pub index: usize,
     /// From an audio-track item, as `Span::audio`.
     pub audio: bool,
+    /// The words of it this piece plays, in the cut's time.
+    pub words: Vec<crate::whisper::Word>,
 }
 
 /// Shorter than this, a stretch of speech left by a cut is a sliver, not a line.
@@ -361,12 +363,25 @@ pub fn lines(
                 }
                 let from = s.start.max(span.source_in);
                 let to = s.end.min(span.source_out);
+                let cut = |t: f64| span.start + (t.clamp(from, to) - span.source_in) / span.speed;
+                // A word belongs to this piece when its middle plays in it.
+                let words = s
+                    .words
+                    .iter()
+                    .filter(|w| (from..=to).contains(&((w.start + w.end) / 2.0)))
+                    .map(|w| crate::whisper::Word {
+                        start: cut(w.start),
+                        end: cut(w.end),
+                        text: w.text.clone(),
+                    })
+                    .collect();
                 out.push(Line {
-                    start: span.start + (from - span.source_in) / span.speed,
-                    end: span.start + (to - span.source_in) / span.speed,
+                    start: cut(from),
+                    end: cut(to),
                     text: s.text.clone(),
                     index: span.index,
                     audio,
+                    words,
                 });
             }
         }
@@ -463,21 +478,25 @@ mod tests {
                 start: 1.0,
                 end: 3.0,
                 text: "one".into(),
+                words: vec![],
             },
             Segment {
                 start: 9.0,
                 end: 12.0,
                 text: "across the cut".into(),
+                words: vec![],
             },
             Segment {
                 start: 14.0,
                 end: 16.0,
                 text: "cut out".into(),
+                words: vec![],
             },
             Segment {
                 start: 21.0,
                 end: 24.0,
                 text: "two".into(),
+                words: vec![],
             },
         ];
         let (lines, missing) = lines(&spans, |f| (f == Path::new("/a.mp4")).then(|| segs.clone()));
@@ -497,6 +516,39 @@ mod tests {
     }
 
     #[test]
+    fn words_go_with_the_piece_that_plays_them_in_the_cuts_time() {
+        // 2–4 s of the source cut out; the second piece plays at double speed.
+        let mut second = span(2, "/a.mp4", 2.0, 4.0, 10.0);
+        second.speed = 2.0;
+        let spans = [span(1, "/a.mp4", 0.0, 0.0, 2.0), second];
+        let w = |start: f64, end: f64, text: &str| crate::whisper::Word {
+            start,
+            end,
+            text: text.into(),
+        };
+        let segs = vec![Segment {
+            start: 0.5,
+            end: 8.0,
+            text: "one two three four".into(),
+            words: vec![
+                w(0.5, 1.0, "one"),
+                w(2.5, 3.0, "two"),
+                w(5.0, 6.0, "three"),
+                w(7.0, 8.0, "four"),
+            ],
+        }];
+        let (lines, _) = lines(&spans, |_| Some(segs.clone()));
+        assert_eq!(lines.len(), 1);
+        let got: Vec<(f64, f64, &str)> = lines[0]
+            .words
+            .iter()
+            .map(|w| (w.start, w.end, w.text.as_str()))
+            .collect();
+        // "one" plays in the first piece and "two" was cut out with 2–4 s.
+        assert_eq!(got, [(2.5, 3.0, "three"), (3.5, 4.0, "four")]);
+    }
+
+    #[test]
     fn a_sentence_split_by_a_cut_shows_once_and_slivers_go() {
         // A silence cut 1.7–3.8 s out of a sentence that runs 0–8.9 s.
         let spans = [
@@ -508,11 +560,13 @@ mod tests {
                 start: 0.0,
                 end: 8.9,
                 text: "the sentence".into(),
+                words: vec![],
             },
             Segment {
                 start: 1.6,
                 end: 1.75,
                 text: "know,".into(),
+                words: vec![],
             },
         ];
         let (lines, _) = lines(&spans, |_| Some(segs.clone()));

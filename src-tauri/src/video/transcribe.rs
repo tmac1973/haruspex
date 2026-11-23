@@ -15,7 +15,7 @@
 
 use super::silence::{self, SilenceRange};
 use super::{paths, probe};
-use crate::whisper::{Segment, VideoWhisper};
+use crate::whisper::{Segment, VideoWhisper, Word};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -27,6 +27,9 @@ use std::time::Duration;
 const CHUNK_SECS: f64 = 300.0;
 /// How far from a chunk mark a silence may be to cut there instead.
 const CHUNK_REACH: f64 = 30.0;
+/// The transcript cache's format: `v2` added word times, so older files
+/// (named without it) are transcribed again once.
+const CACHE_FORMAT: &str = "v2";
 /// The video whisper-server stops this long after its last use.
 const IDLE_STOP: Duration = Duration::from_secs(300);
 
@@ -104,9 +107,10 @@ fn haruspex_dir(episode_dir: &Path) -> PathBuf {
 
 pub fn cache_path(episode_dir: &Path, file: &Path) -> PathBuf {
     let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("clip");
-    haruspex_dir(episode_dir)
-        .join("transcripts")
-        .join(format!("{stem}-{}.json", &clip_key(file)[..8]))
+    haruspex_dir(episode_dir).join("transcripts").join(format!(
+        "{stem}-{}.{CACHE_FORMAT}.json",
+        &clip_key(file)[..8]
+    ))
 }
 
 /// The cached transcript of a clip, if it is still current.
@@ -300,19 +304,38 @@ fn schedule_idle_stop(app: tauri::AppHandle) {
     });
 }
 
-/// Whether a clip needs whisper, or its kept transcript will do.
-pub fn needs_whisper(episode_dir: &Path, file: &Path, model: &Path, refresh: bool) -> bool {
+/// Whether a kept transcript will do: a base.en one is kept until turbo is
+/// there and `refresh` asks for it, and one in another language than the one
+/// asked for is redone.
+fn kept_will_do(t: &Transcript, model: &Path, refresh: bool, language: Option<&str>) -> bool {
     let model_name = model.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    match cached(episode_dir, file) {
-        Some(t) => refresh && t.model != model_name,
-        None => true,
-    }
+    let same_language = language.is_none_or(|l| t.language.as_deref() == Some(l));
+    same_language && (!refresh || t.model == model_name)
 }
 
-/// Transcribe one clip, from the cache when it is current and `refresh` is off.
+/// Whether a clip needs whisper, or its kept transcript will do.
+pub fn needs_whisper(
+    episode_dir: &Path,
+    file: &Path,
+    model: &Path,
+    refresh: bool,
+    language: Option<&str>,
+) -> bool {
+    cached(episode_dir, file).is_none_or(|t| !kept_will_do(&t, model, refresh, language))
+}
+
+/// How to transcribe a clip: past a kept transcript or not, in which
+/// language (the model's default when none), and what to tell on the way.
+pub struct How<'a> {
+    pub refresh: bool,
+    pub language: Option<&'a str>,
+    pub cancel: &'a Cancel,
+    pub progress: &'a (dyn Fn(f64) + Send + Sync),
+}
+
+/// Transcribe one clip, from the cache when it will do (`kept_will_do`).
 /// The video whisper-server must be running (`lease_server`) unless the
 /// transcript is kept.
-#[allow(clippy::too_many_arguments)]
 pub async fn transcribe_clip(
     whisper: &VideoWhisper,
     ffmpeg: &str,
@@ -320,18 +343,16 @@ pub async fn transcribe_clip(
     episode_dir: &Path,
     file: &Path,
     info: &probe::ClipInfo,
-    refresh: bool,
-    cancel: &Cancel,
-    progress: &(dyn Fn(f64) + Send + Sync),
+    how: &How<'_>,
 ) -> Result<Transcript, String> {
+    let (cancel, progress) = (how.cancel, how.progress);
     let model_name = model
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("")
         .to_string();
     if let Some(t) = cached(episode_dir, file) {
-        // A base.en transcript is kept until turbo is there and asked for.
-        if !refresh || t.model == model_name {
+        if kept_will_do(&t, model, how.refresh, how.language) {
             return Ok(t);
         }
     }
@@ -351,7 +372,7 @@ pub async fn transcribe_clip(
         Vec::new()
     };
     let points = silence::chunk_points(duration, &silences, CHUNK_SECS, CHUNK_REACH);
-    let language = language_for(model);
+    let language = how.language.unwrap_or(language_for(model));
     let mut segments = Vec::new();
     let mut detected = None;
     for pair in points.windows(2) {
@@ -377,11 +398,7 @@ pub async fn transcribe_clip(
             _ = cancel.wait() => return Err(CANCELLED.into()),
         };
         detected = detected.or(answer.1);
-        segments.extend(answer.0.into_iter().map(|s| Segment {
-            start: s.start + from,
-            end: (s.end + from).min(to),
-            text: s.text,
-        }));
+        segments.extend(answer.0.into_iter().map(|s| offset(s, from, to)));
         progress(to);
         if cancel.cancelled() {
             return Err(CANCELLED.into());
@@ -396,6 +413,25 @@ pub async fn transcribe_clip(
     };
     save_cache(episode_dir, file, &t);
     Ok(t)
+}
+
+/// A chunk's segment in the clip's time: moved by `from`, ending by `to`.
+fn offset(s: Segment, from: f64, to: f64) -> Segment {
+    let at = |t: f64| (t + from).min(to);
+    Segment {
+        start: s.start + from,
+        end: at(s.end),
+        text: s.text,
+        words: s
+            .words
+            .into_iter()
+            .map(|w| Word {
+                start: at(w.start),
+                end: at(w.end),
+                text: w.text,
+            })
+            .collect(),
+    }
 }
 
 /// The episode's clips to transcribe: those named, or every one with sound.
@@ -463,12 +499,59 @@ mod tests {
                 start: 0.0,
                 end: 1.0,
                 text: "hi".into(),
+                words: vec![Word {
+                    start: 0.1,
+                    end: 0.4,
+                    text: "hi".into(),
+                }],
             }],
         };
         save_cache(&dir, &clip, &t);
         assert_eq!(cached(&dir, &clip), Some(t));
         std::fs::write(&clip, b"different").unwrap();
         assert_eq!(cached(&dir, &clip), None);
+    }
+
+    #[test]
+    fn a_v1_cache_without_words_is_not_used() {
+        let dir = temp_dir("transcript_cache_v1");
+        let clip = dir.join("a.mp4");
+        std::fs::write(&clip, b"one").unwrap();
+        let (size, mtime) = stamp(&clip);
+        let v1 =
+            cache_path(&dir, &clip).with_file_name(format!("a-{}.json", &clip_key(&clip)[..8]));
+        std::fs::create_dir_all(v1.parent().unwrap()).unwrap();
+        let old = serde_json::json!({"size": size, "mtime": mtime, "transcript": {
+            "path": "a.mp4", "model": "ggml-base.en.bin", "language": "en", "durationSecs": 3.0,
+            "segments": [{"start": 0.0, "end": 1.0, "text": "hi"}]}});
+        std::fs::write(&v1, old.to_string()).unwrap();
+        assert_ne!(v1, cache_path(&dir, &clip));
+        assert_eq!(cached(&dir, &clip), None);
+    }
+
+    #[test]
+    fn a_chunks_words_move_into_the_clips_time() {
+        let s = Segment {
+            start: 1.0,
+            end: 4.0,
+            text: "a b".into(),
+            words: vec![
+                Word {
+                    start: 1.0,
+                    end: 1.5,
+                    text: "a".into(),
+                },
+                Word {
+                    start: 3.5,
+                    end: 4.5,
+                    text: "b".into(),
+                },
+            ],
+        };
+        let moved = offset(s, 300.0, 303.8);
+        assert_eq!((moved.start, moved.end), (301.0, 303.8));
+        assert_eq!((moved.words[0].start, moved.words[0].end), (301.0, 301.5));
+        assert_eq!(moved.words[1].end, 303.8);
     }
 
     /// Where the OS looks for the sidecar's shared libraries.
@@ -558,9 +641,12 @@ mod tests {
             &dir,
             &clip,
             &info,
-            false,
-            &Cancel::default(),
-            &progress,
+            &How {
+                refresh: false,
+                language: None,
+                cancel: &Cancel::default(),
+                progress: &progress,
+            },
         )
         .await
         .unwrap();
@@ -574,6 +660,16 @@ mod tests {
         assert!(!t.segments.is_empty());
         assert!(t.segments.windows(2).all(|w| w[0].start <= w[1].start));
         assert!(t.segments.last().unwrap().end <= info.duration_secs + 1.0);
+        // Each segment has its words, in order and inside it.
+        for s in &t.segments {
+            println!("{:?}", s.words.iter().map(|w| &w.text).collect::<Vec<_>>());
+            assert!(!s.words.is_empty(), "no words in {s:?}");
+            assert!(s.words.windows(2).all(|w| w[0].start <= w[1].start));
+            assert!(s
+                .words
+                .iter()
+                .all(|w| w.start >= s.start - 0.05 && w.end <= s.end + 0.05));
+        }
         assert!(cached(&dir, &clip).is_some());
     }
 
@@ -610,6 +706,8 @@ pub struct TimelineLine {
     /// From an item on the audio tracks under the picture (a voiceover):
     /// `index` then numbers those.
     pub audio: bool,
+    /// Each word's time in the video, where the transcript has them.
+    pub words: Vec<Word>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -652,6 +750,7 @@ pub fn timeline_transcript(
                 text: l.text.clone(),
                 index: l.index as u32,
                 audio: l.audio,
+                words: l.words.clone(),
             })
             .collect(),
         untranscribed: missing

@@ -60,6 +60,47 @@ pub struct Segment {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    /// Each word's time, inside the segment; empty when whisper gave none.
+    #[serde(default)]
+    pub words: Vec<Word>,
+}
+
+/// One spoken word, in the same seconds as its segment. Punctuation whisper
+/// gives as a word of its own is joined to the word before it.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct Word {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+}
+
+/// A segment's words: trimmed, empty ones dropped, punctuation joined on.
+fn words_of(raw: Vec<RawWord>) -> Vec<Word> {
+    let mut out: Vec<Word> = Vec::new();
+    for w in raw {
+        let text = w.word.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let punct = text.chars().all(|c| !c.is_alphanumeric());
+        match out.last_mut() {
+            Some(last) if punct => last.text.push_str(text),
+            _ => out.push(Word {
+                start: w.start,
+                end: w.end.max(w.start),
+                text: text.to_string(),
+            }),
+        }
+    }
+    out
+}
+
+#[derive(serde::Deserialize)]
+struct RawWord {
+    word: String,
+    start: f64,
+    end: f64,
 }
 
 /// The segments of a `response_format=verbose_json` answer.
@@ -75,6 +116,8 @@ pub fn parse_verbose(body: &str) -> Result<(Vec<Segment>, Option<String>), Strin
         start: f64,
         end: f64,
         text: String,
+        #[serde(default)]
+        words: Vec<RawWord>,
     }
     let raw: Raw =
         serde_json::from_str(body).map_err(|e| format!("whisper-server's answer: {e}"))?;
@@ -85,6 +128,7 @@ pub fn parse_verbose(body: &str) -> Result<(Vec<Segment>, Option<String>), Strin
             start: s.start,
             end: s.end,
             text: s.text.trim().to_string(),
+            words: words_of(s.words),
         })
         .filter(|s| !s.text.is_empty())
         .collect();
@@ -269,6 +313,8 @@ impl WhisperServer {
             .part("file", part)
             .text("response_format", "verbose_json")
             .text("temperature", "0")
+            .text("split_on_word", "true")
+            .text("token_timestamps", "true")
             .text("language", language.to_string());
         let resp = client
             .post(format!("{}/inference", base_url(self.port)))
@@ -324,10 +370,36 @@ mod tests {
             Segment {
                 start: 0.0,
                 end: 2.5,
-                text: "Hello there.".into()
+                text: "Hello there.".into(),
+                words: vec![]
             }
         );
         assert_eq!(s[1].end, 5.25);
+        assert!(s[1].words.is_empty());
+    }
+
+    /// Part of a real whisper-server answer (split_on_word, token_timestamps).
+    #[test]
+    fn verbose_words_parse_and_join_punctuation() {
+        let body = r#"{"language":"en","segments":[{"id":0,"text":" The quick fox, then.",
+            "start":0.0,"end":3.6,"words":[
+              {"word":" The","start":0.25,"end":0.25,"t_dtw":-1,"probability":0.9},
+              {"word":" quick","start":0.31,"end":0.66,"t_dtw":-1,"probability":0.8},
+              {"word":" fox","start":1.09,"end":1.34,"t_dtw":-1,"probability":0.9},
+              {"word":",","start":3.08,"end":3.12,"t_dtw":-1,"probability":0.4},
+              {"word":" ","start":3.12,"end":3.12,"t_dtw":-1,"probability":0.4},
+              {"word":" then","start":3.12,"end":3.36,"t_dtw":-1,"probability":0.8},
+              {"word":".","start":3.5,"end":3.6,"t_dtw":-1,"probability":0.9}]}]}"#;
+        let (s, _) = parse_verbose(body).unwrap();
+        let words: Vec<&str> = s[0].words.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(words, ["The", "quick", "fox,", "then."]);
+        assert!(s[0].words.windows(2).all(|w| w[0].start <= w[1].start));
+        assert!(s[0]
+            .words
+            .iter()
+            .all(|w| w.start >= s[0].start && w.end <= s[0].end));
+        // A joined mark keeps the word's own times.
+        assert_eq!(s[0].words[2].end, 1.34);
     }
 }
 
