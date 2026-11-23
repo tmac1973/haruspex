@@ -17,8 +17,10 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 		getApiKeys: () => [],
 		setSpecialistEntries: vi.fn((list: SpecialistEntry[]) => {
 			saved.calls.push(list);
-			// What commit() does: keep a plain copy.
-			settings.specialists = structuredClone(list);
+			// What commit() does: keep a plain copy. snapshot()'s JSON round
+			// trip, not structuredClone, which throws on the $state proxy the
+			// section hands over.
+			settings.specialists = JSON.parse(JSON.stringify(list)) as SpecialistEntry[];
 		})
 	})
 );
