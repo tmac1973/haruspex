@@ -47,7 +47,7 @@ It needs a video model in Settings → Video generation as well.
 
 Ask "save my voice from ep012/raw/cam.mp4". It transcribes the recording, picks 10–20 s of you speaking in whole sentences with no music, and saves the voice once you confirm it is yours or one you may use. It checks the words the voice was saved with, and with a llama.cpp speech server it speaks a test line in the new voice. With Kokoro it saves the voice and says to switch Settings → Audio → Speech engine. See the `speech` page.
 
-It refuses to save someone else's voice without their consent.
+It saves anyone's voice you say you may use, such as a friend who agreed: you confirm that when it asks, and it doesn't check further.
 
 ## What they don't do
 
