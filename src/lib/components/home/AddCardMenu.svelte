@@ -60,9 +60,9 @@
 />
 
 <div class="add-host">
-	<button class="add-btn" onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open}
-		>Add card</button
-	>
+	<button class="add-btn" onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open}>
+		Add card
+	</button>
 	{#if open}
 		<div class="menu" role="menu" aria-label="Add card">
 			{#each options as { type, reason } (type.id)}
@@ -73,8 +73,10 @@
 					title={reason ?? undefined}
 					onclick={() => {
 						if (reason === null) choose(type);
-					}}>{type.label}{type.kind === 'pinned' || type.form ? '…' : ''}</button
+					}}
 				>
+					{type.label}{type.kind === 'pinned' || type.form ? '…' : ''}
+				</button>
 			{/each}
 		</div>
 	{/if}

@@ -170,8 +170,10 @@
 					type="button"
 					class="btn btn-small"
 					aria-label="Remove watch rule {i + 1}"
-					onclick={() => removeRule(i)}>Remove</button
+					onclick={() => removeRule(i)}
 				>
+					Remove
+				</button>
 			</div>
 		{/each}
 		<button
@@ -180,8 +182,9 @@
 			onclick={addRule}
 			disabled={alerts.watchRules.length >= MAX_WATCH_RULES}
 			title="Something to be told about, or something that is normal here. A match is urgent unless the rule says otherwise."
-			>Add rule</button
 		>
+			Add rule
+		</button>
 	</div>
 
 	<span class="label">Room</span>
@@ -199,15 +202,18 @@
 								class="zoom"
 								aria-label="Show the {r.label.toLowerCase()} reference larger"
 								onclick={() => (viewer = { src: ref.dataUrl, alt: `${r.label} reference` })}
-								><img src={ref.dataUrl} alt="{r.label} reference" /></button
 							>
+								<img src={ref.dataUrl} alt="{r.label} reference" />
+							</button>
 							<span class="hint">{r.label} · {stamp(new Date(ref.setAt)).slice(0, 16)}</span>
 							<button
 								type="button"
 								class="btn btn-small"
 								aria-label="Clear the {r.label.toLowerCase()} reference"
-								onclick={() => clearRef(r.light as Light)}>Clear</button
+								onclick={() => clearRef(r.light as Light)}
 							>
+								Clear
+							</button>
 						{:else}
 							<span class="no-ref" aria-hidden="true"></span>
 							<span class="hint">{r.label}: none</span>
@@ -221,8 +227,9 @@
 				onclick={setNormal}
 				disabled={shooting}
 				title="Takes a picture at the camera's home as the room normally looks. Day and night (infrared) are kept apart; press it again at night, or the first night check sets it. Room checks compare against it a minute after activity and hourly."
-				>{shooting ? 'Taking…' : 'This is normal'}</button
 			>
+				{shooting ? 'Taking…' : 'This is normal'}
+			</button>
 			{#if saved.ptz !== 'none'}
 				<p class="hint">Taken from the camera's home; Set home here changes it.</p>
 			{/if}
@@ -261,8 +268,9 @@
 					aria-label="Edit quiet hours"
 					onclick={editHours}
 					title="Learned from the last 14 days of this camera's log, once it has a week of entries. Anyone about in a quiet hour is unusual."
-					>Edit</button
 				>
+					Edit
+				</button>
 			{/if}
 		</div>
 	</div>

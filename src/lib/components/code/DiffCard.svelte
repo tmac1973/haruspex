@@ -28,15 +28,16 @@
 	<div class="head">
 		<span class="verb">{verb}</span>
 		{#if onOpen}
-			<button class="path open" title="Open {diff.path}" onclick={onOpen}
-				><code>{diff.path}</code></button
-			>
+			<button class="path open" title="Open {diff.path}" onclick={onOpen}>
+				<code>{diff.path}</code>
+			</button>
 		{:else}
 			<code class="path" title={diff.path}>{diff.path}</code>
 		{/if}
 		{#if onPreview}
-			<button class="preview" title="Open in the preview window" onclick={onPreview}>Preview</button
-			>
+			<button class="preview" title="Open in the preview window" onclick={onPreview}>
+				Preview
+			</button>
 		{/if}
 		<span class="add">+{diff.added}</span>
 		<span class="del">−{diff.removed}</span>
@@ -57,9 +58,9 @@
 			{/each}
 		</div>
 		{#if hidden > 0}
-			<button class="more" onclick={() => (expanded = true)}
-				>Show all {diff.rows.length} lines</button
-			>
+			<button class="more" onclick={() => (expanded = true)}>
+				Show all {diff.rows.length} lines
+			</button>
 		{:else if diff.truncated}
 			<div class="gap">The rest of this diff isn't kept.</div>
 		{/if}

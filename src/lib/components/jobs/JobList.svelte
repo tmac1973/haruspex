@@ -240,16 +240,17 @@
 							{job.name}
 							<span class="badge {def?.badgeTone ?? ''}">{def?.badgeLabel ?? job.job_type}</span>
 							{#if homeJobs.has(job.id)}
-								<span class="badge" title="A Home card made this job and shows its results"
-									>Home</span
-								>
+								<span class="badge" title="A Home card made this job and shows its results">
+									Home
+								</span>
 							{/if}
 							{#if paused}
 								<span
 									class="paused-tag"
 									title="Lean mode runs research jobs alone. Turn it off in Settings → General to run this."
-									>Paused by lean mode</span
 								>
+									Paused by lean mode
+								</span>
 							{/if}
 						</span>
 						<span class="meta">

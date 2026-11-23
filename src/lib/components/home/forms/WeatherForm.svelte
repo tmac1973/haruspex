@@ -99,8 +99,10 @@
 				class="btn btn-primary"
 				onclick={() => void add()}
 				disabled={!picked || saving}
-				title={picked ? undefined : 'Find and pick a place first'}>Add card</button
+				title={picked ? undefined : 'Find and pick a place first'}
 			>
+				Add card
+			</button>
 		</div>
 	</div>
 </Modal>

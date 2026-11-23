@@ -196,8 +196,9 @@
 			</div>
 
 			<div class="actions">
-				<button type="button" class="cancel" onclick={() => cancelUserQuestion()}>Cancel run</button
-				>
+				<button type="button" class="cancel" onclick={() => cancelUserQuestion()}>
+					Cancel run
+				</button>
 				<button type="button" class="submit" disabled={!canSubmit} onclick={submit}>Submit</button>
 			</div>
 		</div>

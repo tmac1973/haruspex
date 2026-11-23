@@ -131,15 +131,19 @@
 						aria-disabled={!!blocked}
 						title={blocked ?? 'Detach to its own window'}
 						aria-label="Detach {sessionLabel(session)}"
-						onclick={(e) => detach(e, session)}>⤢</button
+						onclick={(e) => detach(e, session)}
 					>
+						⤢
+					</button>
 				{/if}
 				<button
 					class="close"
 					title="Close session (it stays in the list)"
 					aria-label="Close {sessionLabel(session)}"
-					onclick={(e) => close(e, session)}>×</button
+					onclick={(e) => close(e, session)}
 				>
+					×
+				</button>
 			</div>
 		{/each}
 	</div>

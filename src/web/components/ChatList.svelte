@@ -16,8 +16,10 @@
 <button
 	class="btn btn-small new-btn"
 	title="Start a new chat on your computer."
-	onclick={() => store.newChat()}>New chat</button
+	onclick={() => store.newChat()}
 >
+	New chat
+</button>
 
 <ul>
 	{#each store.chats as c (c.id)}
@@ -32,9 +34,9 @@
 					<span>{when(c.updatedAt)}</span>
 					{#if c.waiting}
 						<span class="sep">·</span>
-						<span class="status" title="Waiting for the model, or for another reply to finish."
-							>Waiting</span
-						>
+						<span class="status" title="Waiting for the model, or for another reply to finish.">
+							Waiting
+						</span>
 					{:else if c.busy}
 						<span class="sep">·</span>
 						<span class="status" title="A reply is being written.">Writing</span>

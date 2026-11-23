@@ -79,9 +79,9 @@
 			stroke-linecap="round"
 			stroke-linejoin="round"
 			aria-hidden="true"
-			><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-			></path></svg
 		>
+			<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+		</svg>
 		<span>{folderName(session.root)}</span>
 	</button>
 
@@ -95,8 +95,10 @@
 			data-testid="runs-on-badge"
 			style="border-color: {peerColor(session.peer.id)}"
 			title="Its turns, files and models are on {session.peer
-				.name}. Settings → Remote control → Other computers.">Runs on {session.peer.name}</span
+				.name}. Settings → Remote control → Other computers."
 		>
+			Runs on {session.peer.name}
+		</span>
 	{/if}
 
 	{#if session.readOnly}
@@ -104,8 +106,9 @@
 			class="read-only"
 			data-testid="read-only-badge"
 			title="This fork shares its folder with the session it came from, so it only reads: it can't write or edit files, every command asks first, and nothing runs in the background. Fork into a new worktree to make changes."
-			>Read-only</span
 		>
+			Read-only
+		</span>
 	{/if}
 
 	{#if remote}

@@ -125,8 +125,10 @@
 			bind:this={popover}
 			style:top={place ? `${place.top}px` : '0px'}
 			style:left={place ? `${place.left}px` : '0px'}
-			style:visibility={place ? 'visible' : 'hidden'}>{text}</span
+			style:visibility={place ? 'visible' : 'hidden'}
 		>
+			{text}
+		</span>
 	{/if}
 </span>
 

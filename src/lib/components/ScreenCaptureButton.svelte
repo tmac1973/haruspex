@@ -118,8 +118,9 @@
 				role="menuitem"
 				onclick={region}
 				title="Haruspex hides while the screen is taken, then you drag out the part to attach"
-				>Region…</button
 			>
+				Region…
+			</button>
 		</div>
 	{/if}
 	<button

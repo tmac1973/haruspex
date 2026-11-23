@@ -64,9 +64,9 @@
 		<div class="banner">
 			Waiting for <code>{session.shellWait.command}</code> to be run in {session.shellWait
 				.shellName} on your computer.
-			<button class="btn btn-small" onclick={() => store.cancelShellWait(id)}
-				>Carry on without it</button
-			>
+			<button class="btn btn-small" onclick={() => store.cancelShellWait(id)}>
+				Carry on without it
+			</button>
 		</div>
 	{/if}
 	{#each prompts as p (p.promptId)}

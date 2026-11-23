@@ -45,9 +45,9 @@
 <span class="label">Who can connect</span>
 <div class="segmented">
 	{#each modes as m (m.value)}
-		<button class:active={mode === m.value} title={m.title} onclick={() => onmode(m.value)}
-			>{m.label}</button
-		>
+		<button class:active={mode === m.value} title={m.title} onclick={() => onmode(m.value)}>
+			{m.label}
+		</button>
 	{/each}
 </div>
 
@@ -63,14 +63,17 @@
 					title={at.ok
 						? 'Where this name points on your network right now.'
 						: 'Nothing on your network answers to this name. Check the spelling, or use its IP address.'}
-					>{at.text}</span
 				>
+					{at.text}
+				</span>
 				<button
 					class="icon"
 					title="Stop trusting this computer"
 					aria-label="Remove {host}"
-					onclick={() => onhosts(hosts.filter((h) => h !== host))}>×</button
+					onclick={() => onhosts(hosts.filter((h) => h !== host))}
 				>
+					×
+				</button>
 			</li>
 		{/each}
 	</ul>

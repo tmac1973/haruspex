@@ -64,22 +64,24 @@
 </script>
 
 <div class="banner" role="alert">
-	<span class="text"
-		>Folder not found: <code title="It was deleted, moved, or is on a drive that isn't mounted."
-			>{locationLabel({ root: session.root, wsl_distro: session.wslDistro })}</code
-		></span
-	>
+	<span class="text">
+		Folder not found: <code title="It was deleted, moved, or is on a drive that isn't mounted.">
+			{locationLabel({ root: session.root, wsl_distro: session.wslDistro })}
+		</code>
+	</span>
 	<span class="actions">
 		{#if session.capabilities.localFiles && session.moveTo}
 			<button
 				class="btn"
 				disabled={session.busy}
 				title="Point this session at another folder; its conversation stays"
-				onclick={() => void choose()}>Choose folder…</button
+				onclick={() => void choose()}
 			>
-			<button class="btn danger" disabled={session.busy} onclick={() => (deleting = true)}
-				>Delete session</button
-			>
+				Choose folder…
+			</button>
+			<button class="btn danger" disabled={session.busy} onclick={() => (deleting = true)}>
+				Delete session
+			</button>
 		{/if}
 	</span>
 </div>

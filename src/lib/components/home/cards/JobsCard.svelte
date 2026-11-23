@@ -49,9 +49,9 @@
 	{@const progress = runProgress(current)}
 	<button class="row current" onclick={() => open(current.jobId, current.id)}>
 		<span class="name">{current.jobName}</span>
-		<span class="detail"
-			>{currentRunLine(current, getJobType(current.jobType)?.background ?? false)}</span
-		>
+		<span class="detail">
+			{currentRunLine(current, getJobType(current.jobType)?.background ?? false)}
+		</span>
 	</button>
 	{#if progress !== null}
 		<div class="bar"><span style:width="{Math.round(progress * 100)}%"></span></div>

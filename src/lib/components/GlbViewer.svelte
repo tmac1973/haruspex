@@ -88,8 +88,9 @@
 		<span
 			class="summary"
 			title="Drag to orbit, scroll to zoom, right-drag to pan. Skinned: a skeleton bends the mesh. Rigid: clips turn whole parts on their nodes."
-			>{summary}</span
 		>
+			{summary}
+		</span>
 		{#if view && view.clips.length}
 			<select
 				aria-label="Animation"
@@ -108,8 +109,10 @@
 			disabled={loading}
 			onclick={() => {
 				void load();
-			}}>Reload</button
+			}}
 		>
+			Reload
+		</button>
 	</div>
 </div>
 

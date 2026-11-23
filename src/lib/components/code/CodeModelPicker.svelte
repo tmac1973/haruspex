@@ -60,8 +60,10 @@
 		fill="none"
 		stroke="currentColor"
 		stroke-width="2.5"
-		aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg
+		aria-hidden="true"
 	>
+		<path d="m6 9 6 6 6-6"></path>
+	</svg>
 </button>
 
 {#if open}

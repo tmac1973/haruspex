@@ -89,8 +89,10 @@
 					type="button"
 					class="btn btn-small"
 					onclick={() => merge(group)}
-					disabled={!group.draft.trim()}>Merge</button
+					disabled={!group.draft.trim()}
 				>
+					Merge
+				</button>
 				<button type="button" class="btn btn-small" onclick={() => drop(group)}>Skip</button>
 			</div>
 		</div>

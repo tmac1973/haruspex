@@ -127,8 +127,9 @@
 		<label
 			for="speech-model"
 			title="Fast is base.en: about 140 MB, English only. Accurate is large-v3-turbo: about 1.6 GB, many languages, shared with the video tools. Used from the next voice input."
-			>Speech model:</label
 		>
+			Speech model:
+		</label>
 		<div class="device-row">
 			<select
 				id="speech-model"

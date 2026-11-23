@@ -48,8 +48,10 @@
 					<span
 						class="chip"
 						class:attention={chip === 'attention'}
-						class:running={chip === 'running'}>{CHIPS[chip] ?? chip}</span
+						class:running={chip === 'running'}
 					>
+						{CHIPS[chip] ?? chip}
+					</span>
 				</button>
 			</li>
 		{/each}

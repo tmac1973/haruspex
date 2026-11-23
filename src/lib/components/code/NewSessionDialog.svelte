@@ -283,12 +283,13 @@
 			class="btn btn-primary"
 			disabled={(peer ? !peerRoot.trim() : !root) || starting}
 			onclick={start}
-			>{starting
+		>
+			{starting
 				? (peer ? peerWorktree : inRepo && worktree)
 					? 'Creating the worktree…'
 					: 'Starting…'
-				: 'Start session'}</button
-		>
+				: 'Start session'}
+		</button>
 	</div>
 </Modal>
 

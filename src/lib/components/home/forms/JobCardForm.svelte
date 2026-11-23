@@ -67,8 +67,10 @@
 					type="button"
 					class:active={using}
 					title="Show a {jobType.label} job you already have. It keeps its own settings and schedule."
-					onclick={() => (using = true)}>Use a job</button
+					onclick={() => (using = true)}
 				>
+					Use a job
+				</button>
 			</div>
 		{/if}
 		{#if canUse && using}
@@ -94,8 +96,10 @@
 				class="btn btn-primary"
 				onclick={() => void add()}
 				disabled={blocker !== null || saving}
-				title={blocker ?? undefined}>Add card</button
+				title={blocker ?? undefined}
 			>
+				Add card
+			</button>
 		</div>
 	</div>
 </Modal>

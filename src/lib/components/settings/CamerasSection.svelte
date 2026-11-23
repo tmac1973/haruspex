@@ -144,24 +144,29 @@
 							title={c.permission === 'ask'
 								? 'Asks before each use.'
 								: 'Used without asking, and by jobs.'}
-							>{c.permission === 'ask' ? 'Ask' : 'Allow'}</span
 						>
+							{c.permission === 'ask' ? 'Ask' : 'Allow'}
+						</span>
 						<button
 							class="btn btn-small"
 							aria-expanded={logId === c.id}
 							aria-label={`${c.name} activity`}
 							title="Entries from the ambient log, newest first."
-							onclick={() => toggleLog(c.id)}>Activity</button
+							onclick={() => toggleLog(c.id)}
 						>
+							Activity
+						</button>
 						<button
 							class="btn btn-small"
 							aria-expanded={openId === c.id}
 							aria-label={`Edit ${c.name}`}
-							onclick={() => toggle(c.id)}>Edit</button
+							onclick={() => toggle(c.id)}
 						>
-						<button class="btn btn-small" aria-label={`Remove ${c.name}`} onclick={() => remove(c)}
-							>Remove</button
-						>
+							Edit
+						</button>
+						<button class="btn btn-small" aria-label={`Remove ${c.name}`} onclick={() => remove(c)}>
+							Remove
+						</button>
 					{/if}
 				</div>
 				{#if c !== pending && c.watcher.enabled && watchErrors[c.id]}

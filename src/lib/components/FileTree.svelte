@@ -154,8 +154,11 @@
 					<button
 						class:on={k.kind === kind}
 						aria-pressed={k.kind === kind}
-						onclick={() => switchTo(k.kind)}>{k.label} {counts.get(k.kind) ?? 0}</button
+						onclick={() => switchTo(k.kind)}
 					>
+						{k.label}
+						{counts.get(k.kind) ?? 0}
+					</button>
 				{/each}
 			</div>
 		{/if}
@@ -165,8 +168,9 @@
 			<span
 				class="count"
 				title={listing?.truncated ? 'Only the first 2,000 of each sort are listed' : undefined}
-				>{files.length}{listing?.truncated ? '+' : ''}</span
 			>
+				{files.length}{listing?.truncated ? '+' : ''}
+			</span>
 			{#if hasAttempts}
 				<label title="List the earlier tries the 3D models job keeps in attempts/">
 					<input
@@ -181,8 +185,10 @@
 				class="refresh"
 				onclick={() => void refresh()}
 				title="Look again for new files"
-				aria-label="Refresh">↻</button
+				aria-label="Refresh"
 			>
+				↻
+			</button>
 		</div>
 		<ul>
 			{#each rows as row (row.path)}

@@ -173,9 +173,9 @@
 						disabled={!!blocked || working || name === git.branch}
 						title={name === git.branch ? 'Checked out' : (blocked ?? `Switch to ${name}`)}
 						onclick={() => switchTo(name)}
-						><span class="check" aria-hidden="true">{name === git.branch ? '✓' : ''}</span
-						>{name}</button
 					>
+						<span class="check" aria-hidden="true">{name === git.branch ? '✓' : ''}</span>{name}
+					</button>
 				{/each}
 				<div class="sep"></div>
 				{#if creating}
@@ -193,9 +193,9 @@
 							placeholder="branch-name"
 							aria-label="New branch name"
 						/>
-						<button type="submit" disabled={!newName.trim() || working || session.busy}
-							>Create</button
-						>
+						<button type="submit" disabled={!newName.trim() || working || session.busy}>
+							Create
+						</button>
 					</form>
 				{:else}
 					<button
@@ -205,8 +205,9 @@
 							? 'Wait for the turn to finish.'
 							: 'Create a branch at the current commit and switch to it. Uncommitted changes come along.'}
 						onclick={() => startCreate(null)}
-						><span class="check" aria-hidden="true"></span>Branch from current…</button
 					>
+						<span class="check" aria-hidden="true"></span>Branch from current…
+					</button>
 					{#if fromDefault}
 						<button
 							role="menuitem"
@@ -215,8 +216,9 @@
 								? 'Wait for the turn to finish.'
 								: `Create a branch at the tip of ${fromDefault} and switch to it. Uncommitted changes come along if git allows it.`}
 							onclick={() => startCreate(fromDefault)}
-							><span class="check" aria-hidden="true"></span>Branch from {fromDefault}…</button
 						>
+							<span class="check" aria-hidden="true"></span>Branch from {fromDefault}…
+						</button>
 					{/if}
 				{/if}
 			</div>

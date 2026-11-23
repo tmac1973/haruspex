@@ -132,8 +132,10 @@
 					class="defaults"
 					disabled={session.busy || !custom}
 					title="The specialists marked On by default and the helpers switched on, in Settings → Code."
-					onclick={() => void useDefaults()}>Use defaults</button
+					onclick={() => void useDefaults()}
 				>
+					Use defaults
+				</button>
 			</div>
 		{/if}
 	</span>

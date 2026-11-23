@@ -30,10 +30,10 @@
 		tab, and in the Shell assistant with <strong>Full access</strong>, the agent runs commands
 		itself: ones the risk classifier flags (sudo, deletes, pipes to a shell) ask for approval first,
 		but others run automatically — and that prompt can be turned off in Settings.
-		<strong
-			>You are the last line of defense — only give it that access on machines and projects you're
-			willing to let it act on, and read what it runs.</strong
-		>
+		<strong>
+			You are the last line of defense — only give it that access on machines and projects you're
+			willing to let it act on, and read what it runs.
+		</strong>
 	</p>
 	<h3>GPU usage</h3>
 	<p>

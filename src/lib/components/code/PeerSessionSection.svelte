@@ -80,18 +80,18 @@
 					title="{label(s)} — {s.root} on {peer.config.name}"
 					onclick={() => void open(s)}
 				>
-					<span class="name"
-						>{label(s)}{#if !s.offline && sessionWaiting(peer, s.id)}<span
+					<span class="name">
+						{label(s)}{#if !s.offline && sessionWaiting(peer, s.id)}<span
 								class="waiting"
 								data-testid="peer-waiting"
-								title="Waiting for you: answer it here or on {peer.config.name}">●</span
-							>{/if}</span
-					>
-					<span class="meta"
-						>{folderName(s.root)}{s.updatedAt != null
-							? ` · ${lastActive(s.updatedAt, now)}`
-							: ''}</span
-					>
+								title="Waiting for you: answer it here or on {peer.config.name}"
+							>
+								●
+							</span>{/if}
+					</span>
+					<span class="meta">
+						{folderName(s.root)}{s.updatedAt != null ? ` · ${lastActive(s.updatedAt, now)}` : ''}
+					</span>
 				</button>
 			</li>
 		{/each}

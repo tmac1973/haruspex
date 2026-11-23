@@ -87,21 +87,22 @@
 
 <div class="card {subtask.status}" data-testid="subtask-card">
 	<div class="head">
-		<span class="kind"
-			>{subtask.background ? 'Background ' : ''}{subtask.mode === 'write'
+		<span class="kind">
+			{subtask.background ? 'Background ' : ''}{subtask.mode === 'write'
 				? subtask.background
 					? 'writing subtask'
 					: 'Writing subtask'
 				: subtask.background
 					? 'subtask'
-					: 'Subtask'}</span
-		>
+					: 'Subtask'}
+		</span>
 		<span class="label" title={subtask.task}>{subtask.label}</span>
 		<span class="status" data-testid="subtask-status">{STATUS[subtask.status]}</span>
 		{#if elapsed}<span class="time">{elapsed}</span>{/if}
 		{#if active && onStop && !compact}
-			<button class="stop" title="Stop this subtask" onclick={() => onStop(subtask.id)}>Stop</button
-			>
+			<button class="stop" title="Stop this subtask" onclick={() => onStop(subtask.id)}>
+				Stop
+			</button>
 		{/if}
 	</div>
 	{#if !compact && calls > 0}
@@ -129,8 +130,9 @@
 						class="toggle copy"
 						title="Copy the path of its copy of the project"
 						onclick={() => void copyPath(subtask.apply?.worktree ?? '')}
-						>{copied ? 'Copied' : 'Copy path'}</button
 					>
+						{copied ? 'Copied' : 'Copy path'}
+					</button>
 				{/if}
 			{/if}
 		</div>

@@ -110,8 +110,9 @@
 			disabled={!url || !!error}
 			onclick={() => (actual = !actual)}
 			title={actual ? 'Fit the image to the window' : 'Show the image at its real size'}
-			>{actual ? 'Fit' : '1:1'}</button
 		>
+			{actual ? 'Fit' : '1:1'}
+		</button>
 		<button disabled={loading} onclick={() => void load()}>Reload</button>
 	</div>
 </div>

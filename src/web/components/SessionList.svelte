@@ -66,14 +66,18 @@
 				<button
 					class:active={store.tab === 'home'}
 					title="Your computer's Home cards, read-only."
-					onclick={() => store.showHome()}>Home</button
+					onclick={() => store.showHome()}
 				>
+					Home
+				</button>
 			{/if}
 			<button
 				class:active={store.tab === 'code'}
 				title="Your Code sessions."
-				onclick={() => (store.tab = 'code')}>Code</button
+				onclick={() => (store.tab = 'code')}
 			>
+				Code
+			</button>
 		{/if}
 		<button
 			class:active={store.tab === 'chat'}
@@ -81,13 +85,15 @@
 			onclick={() => {
 				store.tab = 'chat';
 				void store.refreshChats();
-			}}>Chat</button
+			}}
 		>
+			Chat
+		</button>
 	</div>
 	{#if store.lean}
-		<span class="lean" title="Turn it off on the computer running Haruspex, in Settings → General."
-			>Lean mode</span
-		>
+		<span class="lean" title="Turn it off on the computer running Haruspex, in Settings → General.">
+			Lean mode
+		</span>
 	{/if}
 	<span class="conn {store.connection}" title="Connection to your computer">
 		{store.connection === 'open'
@@ -139,12 +145,12 @@
 				<span>Work in a new worktree</span>
 			</label>
 			<div class="row">
-				<button class="btn btn-primary btn-small" type="submit" disabled={!folder.trim()}
-					>Start session</button
-				>
-				<button class="btn btn-small" type="button" onclick={() => (creating = false)}
-					>Cancel</button
-				>
+				<button class="btn btn-primary btn-small" type="submit" disabled={!folder.trim()}>
+					Start session
+				</button>
+				<button class="btn btn-small" type="button" onclick={() => (creating = false)}>
+					Cancel
+				</button>
 			</div>
 		</form>
 	{:else}

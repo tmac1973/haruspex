@@ -117,9 +117,9 @@
 					<div class="head">
 						<strong>{toolLabel(r.tool)}</strong>
 						<span class="kind">{kindLabel(r.kind)}</span>
-						<span class="muted"
-							>{r.origin === 'reflection' ? 'job review' : r.mode} · {when(r.recorded_at)}</span
-						>
+						<span class="muted">
+							{r.origin === 'reflection' ? 'job review' : r.mode} · {when(r.recorded_at)}
+						</span>
 					</div>
 					<p><span class="label">What happened</span> {r.what_happened}</p>
 					<p><span class="label">Expected</span> {r.expected}</p>
@@ -127,9 +127,9 @@
 						<p><span class="label">Suggestion</span> {r.suggestion}</p>
 					{/if}
 					<details>
-						<summary
-							>{r.trace?.length ?? 0} calls · {r.model}{r.source ? ` · ${r.source}` : ''}</summary
-						>
+						<summary>
+							{r.trace?.length ?? 0} calls · {r.model}{r.source ? ` · ${r.source}` : ''}
+						</summary>
 						{#each r.trace ?? [] as c, i (i)}
 							<div class="call" class:failed={c.error}>
 								<div class="call-name">{c.tool}{c.error ? ' (failed)' : ''}</div>

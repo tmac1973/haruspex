@@ -53,17 +53,19 @@
 						<button
 							class="headline"
 							onclick={() => void openInBrowser(item.source.link)}
-							title={item.source.link}>{item.source.title}</button
+							title={item.source.link}
 						>
+							{item.source.title}
+						</button>
 					{:else}
 						<span class="headline">{item.source.title}</span>
 					{/if}
 					<div class="meta">
-						<span
-							>{item.source.source}{item.source.published
+						<span>
+							{item.source.source}{item.source.published
 								? ` · ${lastActive(item.source.published)}`
-								: ''}</span
-						>
+								: ''}
+						</span>
 						<ItemActions
 							label={item.source.title}
 							actions={[

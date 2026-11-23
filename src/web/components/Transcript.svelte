@@ -66,9 +66,9 @@
 	{#each shown as { msg, i } (i)}
 		{#if i === cutAt && session.compaction}
 			<details class="summary" data-testid="compaction">
-				<summary title="The agent works from this summary and the turns below it."
-					>Earlier turns summarised</summary
-				>
+				<summary title="The agent works from this summary and the turns below it.">
+					Earlier turns summarised
+				</summary>
 				<pre>{session.compaction.summary}</pre>
 			</details>
 		{/if}

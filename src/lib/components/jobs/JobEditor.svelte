@@ -559,8 +559,9 @@
 						>
 							<span class="label">
 								Working directory
-								{#if typeDef.workingDirPlaceholder}<span class="required">(required)</span
-									>{:else}<span class="optional">(optional)</span>{/if}
+								{#if typeDef.workingDirPlaceholder}<span class="required">
+										(required)
+									</span>{:else}<span class="optional">(optional)</span>{/if}
 							</span>
 							<div class="workdir-row">
 								<input

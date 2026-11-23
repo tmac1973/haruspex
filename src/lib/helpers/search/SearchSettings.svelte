@@ -93,9 +93,9 @@
 					<option value="">None</option>
 					{#each choices as m (m)}<option value={m}>{m}</option>{/each}
 				</select>
-				<button type="button" class="btn btn-small" onclick={fetchModels} disabled={!url.trim()}
-					>Fetch</button
-				>
+				<button type="button" class="btn btn-small" onclick={fetchModels} disabled={!url.trim()}>
+					Fetch
+				</button>
 				<button type="button" class="btn btn-small" onclick={clear}>Clear</button>
 			</div>
 			{#if fetchNote}<p class="help">{fetchNote}</p>{/if}

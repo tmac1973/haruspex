@@ -94,8 +94,9 @@
 		<div class="row">
 			<input type="file" accept=".html,text/html" onchange={loadFile} />
 			<label><input type="checkbox" bind:checked={doExport} /> Export GLB</label>
-			<button type="button" class="run" onclick={run} disabled={running || !html.trim()}>Run</button
-			>
+			<button type="button" class="run" onclick={run} disabled={running || !html.trim()}>
+				Run
+			</button>
 			<button type="button" onclick={() => controller?.abort()} disabled={!running}>Cancel</button>
 			{#if running}<span>Running…</span>{/if}
 			{#if elapsed !== null}<span class="elapsed">{elapsed} ms</span>{/if}
@@ -110,8 +111,10 @@
 				type="button"
 				class="run"
 				onclick={runModule}
-				disabled={moduleRunning || !moduleSource.trim()}>Run module</button
+				disabled={moduleRunning || !moduleSource.trim()}
 			>
+				Run module
+			</button>
 			{#if moduleRunning}<span>Running…</span>{/if}
 		</div>
 		<textarea
@@ -131,12 +134,12 @@
 				</ul>
 			{:else if moduleChecked}
 				{#if moduleClips.length}
-					<label
-						>Clip <select value={moduleClip} onchange={(e) => void showClip(e.currentTarget.value)}>
+					<label>
+						Clip <select value={moduleClip} onchange={(e) => void showClip(e.currentTarget.value)}>
 							<option value="">Still sheet</option>
 							{#each moduleClips as name (name)}<option value={name}>{name}</option>{/each}
-						</select></label
-					>
+						</select>
+					</label>
 				{/if}
 				<pre class="stats">{moduleChecked.text}</pre>
 				{#if moduleChecked.png}<img

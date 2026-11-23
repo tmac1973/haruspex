@@ -117,8 +117,10 @@
 								type="button"
 								class="other"
 								title="Show this run"
-								onclick={() => focusRun(other.id)}>{other.jobName}</button
+								onclick={() => focusRun(other.id)}
 							>
+								{other.jobName}
+							</button>
 						{/each}
 					</span>
 				{/if}
@@ -130,8 +132,10 @@
 							type="button"
 							class="secondary"
 							title="Keep it running and go back to your jobs"
-							onclick={onhide}>Hide</button
+							onclick={onhide}
 						>
+							Hide
+						</button>
 					{/if}
 					<button type="button" class="danger" onclick={() => cancel(run.id)}>Cancel</button>
 				{:else}

@@ -155,9 +155,9 @@
 			<div class="previewed" data-testid="previewed">
 				<span class="icon">🌐</span>
 				<span class="label">Previewed <code>{rel}</code></span>
-				<button class="preview" title="Open in the preview window" onclick={() => onPreview?.(rel)}
-					>Preview</button
-				>
+				<button class="preview" title="Open in the preview window" onclick={() => onPreview?.(rel)}>
+					Preview
+				</button>
 			</div>
 		{:else if block.kind === 'subtask'}
 			<SubtaskCard subtask={block.subtask} {compact} onStop={onStopSubtask}>

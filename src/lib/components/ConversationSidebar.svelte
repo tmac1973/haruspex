@@ -289,8 +289,10 @@
 				onclick={() => {
 					closeRemoteChat();
 					createConversation();
-				}}>+ New Chat</button
+				}}
 			>
+				+ New Chat
+			</button>
 		{/if}
 		{#if !collapsed}
 			<button
@@ -298,8 +300,10 @@
 				class:active={selecting}
 				aria-pressed={selecting}
 				title="Pick several chats to delete at once (shift-click for a range)"
-				onclick={() => (selecting ? stopSelecting() : (selecting = true))}>Select</button
+				onclick={() => (selecting ? stopSelecting() : (selecting = true))}
 			>
+				Select
+			</button>
 		{/if}
 		<button
 			class="collapse-btn"
@@ -370,9 +374,9 @@
 								aria-label={mark.title}
 							></span>
 						{/if}
-						<span class="conv-title" class:unread={mark?.kind === 'unread'} title={conv.title}
-							>{conv.title}</span
-						>
+						<span class="conv-title" class:unread={mark?.kind === 'unread'} title={conv.title}>
+							{conv.title}
+						</span>
 						{#if !selecting}
 							<button
 								class="rename-btn"
@@ -418,8 +422,9 @@
 					class="delete-selected-btn"
 					disabled={selectedKeys.length === 0}
 					onclick={() => (pendingDelete = { kind: 'selected' })}
-					>Delete {selectedKeys.length}</button
 				>
+					Delete {selectedKeys.length}
+				</button>
 				<button class="link-btn" onclick={stopSelecting}>Cancel</button>
 			</div>
 		{:else if conversations.length > 0}

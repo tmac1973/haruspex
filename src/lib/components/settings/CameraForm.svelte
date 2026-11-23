@@ -524,9 +524,9 @@
 <div class="form">
 	<span class="label">Kind</span>
 	<div class="segmented" role="group" aria-label="Kind">
-		<button type="button" class:active={kind === 'rtsp'} onclick={() => setKind('rtsp')}
-			>Network</button
-		>
+		<button type="button" class:active={kind === 'rtsp'} onclick={() => setKind('rtsp')}>
+			Network
+		</button>
 		<button type="button" class:active={kind === 'usb'} onclick={() => setKind('usb')}>USB</button>
 	</div>
 
@@ -573,8 +573,10 @@
 							<button
 								type="button"
 								class:active={picked?.xaddr === c.xaddr}
-								onclick={() => pickFound(c)}>{foundLabel(c)}</button
+								onclick={() => pickFound(c)}
 							>
+								{foundLabel(c)}
+							</button>
 						</li>
 					{/each}
 				</ul>
@@ -727,14 +729,16 @@
 		aria-label="Permission"
 		title="Ask shows an approval prompt each time the assistant uses this camera. Jobs only use cameras set to Allow."
 	>
-		<button type="button" class:active={permission === 'ask'} onclick={() => (permission = 'ask')}
-			>Ask</button
-		>
+		<button type="button" class:active={permission === 'ask'} onclick={() => (permission = 'ask')}>
+			Ask
+		</button>
 		<button
 			type="button"
 			class:active={permission === 'allow'}
-			onclick={() => (permission = 'allow')}>Allow</button
+			onclick={() => (permission = 'allow')}
 		>
+			Allow
+		</button>
 	</div>
 
 	<span class="label">Ambient log</span>
@@ -806,8 +810,10 @@
 				type="button"
 				class="zoom"
 				aria-label="Show the picture larger"
-				onclick={() => (viewer = { src: frame, alt })}><img src={frame} {alt} /></button
+				onclick={() => (viewer = { src: frame, alt })}
 			>
+				<img src={frame} {alt} />
+			</button>
 		{/if}
 		<div class="test-notes">
 			{#if caps && frame}
@@ -846,8 +852,10 @@
 					class="btn btn-small"
 					onclick={() => aimTest(a.direction)}
 					disabled={aiming || testing || !!sourceError}
-					title={a.title}>{a.label}</button
+					title={a.title}
 				>
+					{a.label}
+				</button>
 			{/each}
 			{#if calibration}
 				<button
@@ -858,15 +866,18 @@
 					title={panAt === null
 						? UNKNOWN_AT
 						: 'Home (and where a look-around ends) becomes where the camera points now, tilt included. Save keeps it.'}
-					>Set home here</button
 				>
+					Set home here
+				</button>
 				{#if calibration.homeOffset}
 					<button
 						type="button"
 						class="btn btn-small"
 						onclick={clearHome}
-						title="Home goes back to the one saved on the camera. Save keeps it.">Reset home</button
+						title="Home goes back to the one saved on the camera. Save keeps it."
 					>
+						Reset home
+					</button>
 				{/if}
 				<button
 					type="button"
@@ -876,8 +887,9 @@
 					title={panAt === null
 						? UNKNOWN_AT
 						: 'Look around starts where the camera points now. Save keeps it.'}
-					>Set left edge</button
 				>
+					Set left edge
+				</button>
 				<button
 					type="button"
 					class="btn btn-small"
@@ -885,8 +897,10 @@
 					disabled={aiming || panAt === null}
 					title={panAt === null
 						? UNKNOWN_AT
-						: 'Look around ends where the camera points now. Save keeps it.'}>Set right edge</button
+						: 'Look around ends where the camera points now. Save keeps it.'}
 				>
+					Set right edge
+				</button>
 				{#if calibration.sweep}
 					<button type="button" class="btn btn-small" onclick={clearEdges}>Whole range</button>
 				{/if}
@@ -900,8 +914,10 @@
 		type="button"
 		class="btn btn-primary btn-small"
 		disabled={saving || !!nameError || !!sourceError || !!hoursError}
-		onclick={save}>Save</button
+		onclick={save}
 	>
+		Save
+	</button>
 </div>
 
 <ImageViewerModal src={viewer?.src ?? null} alt={viewer?.alt} onClose={() => (viewer = null)} />

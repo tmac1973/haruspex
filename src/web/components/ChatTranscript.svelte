@@ -40,9 +40,9 @@
 	{#each shown as { msg, i } (i)}
 		{#if isSummaryMessage(msg)}
 			<details class="summary" data-testid="chat-summary">
-				<summary title="The model works from this summary and the messages below it."
-					>Earlier messages summarised</summary
-				>
+				<summary title="The model works from this summary and the messages below it.">
+					Earlier messages summarised
+				</summary>
 				<pre>{summaryText(msg)}</pre>
 			</details>
 		{:else}
@@ -77,8 +77,10 @@
 					class="btn btn-small"
 					title="Send the last message again."
 					disabled={chat.busy}
-					onclick={onretry}>Retry</button
+					onclick={onretry}
 				>
+					Retry
+				</button>
 			{/if}
 		</div>
 	{/if}

@@ -86,9 +86,9 @@
 		{#if streaming}
 			<button type="button" class="btn btn-small" onclick={stop}>Stop</button>
 		{:else}
-			<button type="button" class="btn btn-small" onclick={() => void generate()}
-				>{draft ? 'Regenerate' : 'Draft'}</button
-			>
+			<button type="button" class="btn btn-small" onclick={() => void generate()}>
+				{draft ? 'Regenerate' : 'Draft'}
+			</button>
 		{/if}
 	</div>
 	{#if streaming || draft}
@@ -105,8 +105,9 @@
 			onclick={() => void review()}
 			disabled={!draft || streaming || !body.trim()}
 			title="Opens the Review email window; nothing is sent until you press Send there"
-			>Review & send</button
 		>
+			Review & send
+		</button>
 	</div>
 </div>
 

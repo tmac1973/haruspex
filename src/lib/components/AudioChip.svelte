@@ -6,9 +6,9 @@
 <div class="audio-chip" title="Music tools can use this file as a source.">
 	<span class="note" aria-hidden="true">♪</span>
 	<span class="name">{name}</span>
-	<button class="remove" title="Remove audio" aria-label="Remove {name}" onclick={onRemove}
-		>×</button
-	>
+	<button class="remove" title="Remove audio" aria-label="Remove {name}" onclick={onRemove}>
+		×
+	</button>
 </div>
 
 <style>

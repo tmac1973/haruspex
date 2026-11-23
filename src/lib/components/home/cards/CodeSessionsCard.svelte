@@ -62,8 +62,10 @@
 					<span
 						class="chip"
 						class:attention={row.chip === 'attention'}
-						class:running={row.chip === 'running'}>{CHIP_LABELS[row.chip]}</span
+						class:running={row.chip === 'running'}
 					>
+						{CHIP_LABELS[row.chip]}
+					</span>
 				</button>
 			</li>
 		{/each}

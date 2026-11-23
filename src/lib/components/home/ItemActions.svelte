@@ -54,8 +54,10 @@
 		onclick={toggle}
 		aria-label={`Actions for ${label}`}
 		aria-haspopup="menu"
-		aria-expanded={open}>⋯</button
+		aria-expanded={open}
 	>
+		⋯
+	</button>
 	{#if open}
 		<div
 			class="menu"
@@ -70,8 +72,10 @@
 					role="menuitem"
 					onclick={() => pick(action)}
 					disabled={action.disabledReason !== undefined}
-					title={action.disabledReason}>{action.label}</button
+					title={action.disabledReason}
 				>
+					{action.label}
+				</button>
 			{/each}
 		</div>
 	{/if}
