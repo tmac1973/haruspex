@@ -18,6 +18,7 @@
 	} from '#lib/stores/emailReview.svelte.ts';
 	import type { OutgoingMessage } from '#lib/ipc/gen/OutgoingMessage.ts';
 	import type { SendOutcome } from '#lib/ipc/gen/SendOutcome.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	const pending = $derived(getPendingEmailReview());
 
@@ -82,7 +83,7 @@
 				sentCopyError: out.sentCopyError
 			});
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		} finally {
 			sending = false;
 		}

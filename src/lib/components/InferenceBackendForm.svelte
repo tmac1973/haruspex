@@ -23,6 +23,7 @@
 	import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ToggleField from '#lib/components/ToggleField.svelte';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	interface Props {
 		config: InferenceBackendConfig;
@@ -206,7 +207,7 @@
 				...capabilityCommit(selectedModel, result.kind)
 			});
 		} catch (e) {
-			probeError = String(e);
+			probeError = errMessage(e);
 			probeResult = null;
 		} finally {
 			probing = false;

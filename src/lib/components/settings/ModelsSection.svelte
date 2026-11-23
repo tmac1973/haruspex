@@ -34,6 +34,7 @@
 	import { loggedFallback } from '#lib/debugLog.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let models = $state<ModelInfo[]>([]);
 	let activeModelPath = $state<string | null>(null);
@@ -96,7 +97,7 @@
 			// Auto-start server with the newly downloaded model
 			await switchModel(modelPath.split(/[\\/]/).pop()!);
 		} catch (e) {
-			downloadError = String(e);
+			downloadError = errMessage(e);
 		}
 	}
 

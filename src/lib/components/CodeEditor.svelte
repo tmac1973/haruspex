@@ -8,6 +8,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import type { EditorHandle } from '#lib/editor/codemirror.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	interface Props {
 		value: string;
@@ -48,7 +49,7 @@
 				});
 				if (autofocus) editor.focus();
 			})
-			.catch((e) => (failed = String(e)));
+			.catch((e) => (failed = errMessage(e)));
 		return () => {
 			gone = true;
 			editor?.destroy();

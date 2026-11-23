@@ -35,6 +35,7 @@
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
 	import { newId } from '#lib/utils/id.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let accounts = $state<DavAccount[]>(snapshot(getSettings().integrations.dav.accounts));
 	let checking = $state<string | null>(null);
@@ -85,8 +86,8 @@
 			persist(existing ? accounts.map((a) => (a.id === id ? account : a)) : [...accounts, account]);
 			await check(account);
 		} catch (e) {
-			if (existing) errors = { ...errors, [id]: String(e) };
-			else googleError = String(e);
+			if (existing) errors = { ...errors, [id]: errMessage(e) };
+			else googleError = errMessage(e);
 		} finally {
 			signingIn = null;
 		}
@@ -102,7 +103,7 @@
 			drafts = { ...drafts, [id]: '' };
 		} catch (e) {
 			const what = account.kind === 'ics' ? 'link' : 'password';
-			errors = { ...errors, [id]: `Could not save the ${what}: ${String(e)}` };
+			errors = { ...errors, [id]: `Could not save the ${what}: ${errMessage(e)}` };
 		}
 	}
 
@@ -166,7 +167,7 @@
 				enabled: true
 			});
 		} catch (e) {
-			errors = { ...errors, [account.id]: String(e) };
+			errors = { ...errors, [account.id]: errMessage(e) };
 			found = { ...found, [account.id]: undefined as unknown as DavCollections };
 		} finally {
 			checking = null;

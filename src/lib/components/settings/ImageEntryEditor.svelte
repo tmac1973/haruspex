@@ -394,7 +394,7 @@
 		try {
 			await invoke('image_engine_start', { modelId: model.trim() });
 		} catch (e) {
-			probeResult = { ok: false, detail: (e as { detail?: string })?.detail ?? String(e) };
+			probeResult = { ok: false, detail: (e as { detail?: string })?.detail ?? errMessage(e) };
 		} finally {
 			engineBusy = false;
 			await refreshEngine();

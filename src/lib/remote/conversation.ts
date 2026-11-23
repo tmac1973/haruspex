@@ -14,6 +14,7 @@ import type { ChatMessage } from '#lib/api.ts';
 import { SUMMARY_PREFIX, compactConversation, shouldCompact } from '#lib/agent/compaction.ts';
 import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/contextBudget.ts';
 import { logDebug } from '#lib/debugLog.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Turns kept verbatim when a session is summarised. Matches the local chat
@@ -99,7 +100,7 @@ export async function prepareHistory(
 			return { messages: withSummary(history, summary), rewritten: true };
 		}
 	} catch (error) {
-		logDebug('remote', `could not summarise a guest's history: ${String(error)}`);
+		logDebug('remote', `could not summarise a guest's history: ${errMessage(error)}`);
 	}
 
 	return { messages: trimmed(history), rewritten: true };

@@ -18,6 +18,7 @@ import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import { enabledDavAccounts, getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Which accounts a call should reach.
@@ -149,7 +150,7 @@ registerTool({
 			});
 			return toolResult(formatResult(result, 'No events in that range.'));
 		} catch (e) {
-			return toolResult(toolError(`Could not read the calendar: ${String(e)}`));
+			return toolResult(toolError(`Could not read the calendar: ${errMessage(e)}`));
 		}
 	}
 });
@@ -204,7 +205,7 @@ registerTool({
 				)
 			);
 		} catch (e) {
-			return toolResult(toolError(`Could not search the calendar: ${String(e)}`));
+			return toolResult(toolError(`Could not search the calendar: ${errMessage(e)}`));
 		}
 	}
 });

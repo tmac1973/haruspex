@@ -292,7 +292,7 @@ function reportStep(turnId: string, call: ResolvedToolCall, status: 'running' | 
 		turnId,
 		step: { id: call.id, label: describeToolCall(call), status }
 	}).catch((error) => {
-		logDebug('remote', `could not report a tool call: ${String(error)}`);
+		logDebug('remote', `could not report a tool call: ${errMessage(error)}`);
 	});
 }
 
@@ -343,7 +343,7 @@ function askGuest(turnId: string, signal: AbortSignal): ToolContext['askUser'] {
 		const event = await answered;
 		pendingQuestions.delete(questionId);
 		void invoke('remote_turn_question_cleared', { turnId }).catch((error) => {
-			logDebug('remote', `could not clear a question: ${String(error)}`);
+			logDebug('remote', `could not clear a question: ${errMessage(error)}`);
 		});
 
 		if (!event) {

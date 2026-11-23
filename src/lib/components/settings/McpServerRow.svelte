@@ -40,6 +40,7 @@
 		customServerLabel,
 		type CustomServerForm
 	} from '#lib/components/settings/McpCustomServerForm.svelte';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	interface Props {
 		config: McpServerConfig;
@@ -90,7 +91,7 @@
 			onchange(done.next);
 			addonAdded = done.installedAt;
 		} catch (e) {
-			addonError = String(e);
+			addonError = errMessage(e);
 		} finally {
 			addingAddon = false;
 		}

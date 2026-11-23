@@ -6,6 +6,7 @@
 	import { chosenVideoInstanceId, listVideoInstances } from '#lib/videogen/toolchest.ts';
 	import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 	import type { VideoSequenceConfig } from '#lib/agent/jobs/types/video-sequence/config.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	// The Video sequence section of the job editor (see JobTypeEditorProps).
 	let {
@@ -35,7 +36,7 @@
 				instances = list.map((i) => i.id);
 				speakers = list.filter((i) => i.capabilities.includes('audio')).map((i) => i.id);
 			})
-			.catch((e: unknown) => (listError = String(e)));
+			.catch((e: unknown) => (listError = errMessage(e)));
 	});
 
 	// Vision checks need a model that can see; the job's own, unless it says otherwise.

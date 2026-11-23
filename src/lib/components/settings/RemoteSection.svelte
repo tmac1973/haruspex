@@ -28,6 +28,7 @@
 	import type { AccessMode } from '#lib/ipc/gen/AccessMode.ts';
 	import type { TrustedHost } from '#lib/ipc/gen/TrustedHost.ts';
 	import WhoCanConnect from '#lib/components/settings/WhoCanConnect.svelte';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	const MODES: { value: AccessMode; label: string; title: string }[] = [
 		{
@@ -101,7 +102,7 @@
 			sessions = status.running ? await listRemoteSessions() : [];
 			found = mode === 'trusted' ? await remoteTrustedHosts() : [];
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		}
 	}
 

@@ -200,7 +200,7 @@ export async function startMcpServer(
 		// should watch it come up and *then* be told what is still missing.
 		await probeCompanion(config);
 	} catch (e) {
-		const message = String(e);
+		const message = errMessage(e);
 		// Withdraw anything a previous run left registered: a half-started
 		// server must not leave callable tools behind.
 		unregisterMcpServer(config.id);
@@ -328,7 +328,7 @@ export async function stopMcpServer(serverId: string): Promise<void> {
 	} catch (e) {
 		// The tools are already withdrawn, so the agent is safe either way; the
 		// row still has to say the stop did not go cleanly.
-		patch(serverId, { status: { type: 'Error', message: String(e) }, busy: false });
+		patch(serverId, { status: { type: 'Error', message: errMessage(e) }, busy: false });
 	}
 }
 

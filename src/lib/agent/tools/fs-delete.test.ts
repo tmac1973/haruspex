@@ -32,8 +32,8 @@ beforeEach(() => {
 				disk.add(rel(a));
 				return null;
 			},
-			fs_delete_created: null,
-			fs_move_created: null
+			fs_created_delete: null,
+			fs_created_move: null
 		})
 	);
 });
@@ -84,14 +84,14 @@ describe('fs_delete', () => {
 	it('sends the file to the trash under the turn scope', async () => {
 		const out = await executeTool('fs_delete', { path: 'plan/phase-01-x.md' }, job());
 		expect(out.result).toBe('Moved plan/phase-01-x.md to the trash.');
-		expect(calls('fs_delete_created')).toEqual([
-			['fs_delete_created', { workdir: '/w', relPath: 'plan/phase-01-x.md', scope: 'job:7' }]
+		expect(calls('fs_created_delete')).toEqual([
+			['fs_created_delete', { workdir: '/w', relPath: 'plan/phase-01-x.md', scope: 'job:7' }]
 		]);
 	});
 
 	it('says where the file went when the system trash refused it', async () => {
 		vi.mocked(invoke).mockImplementation(
-			invokeRouter({ fs_delete_created: '.haruspex/trash/20261107T180000-draft.md' })
+			invokeRouter({ fs_created_delete: '.haruspex/trash/20261107T180000-draft.md' })
 		);
 		const out = await executeTool('fs_delete', { path: 'draft.md' }, job());
 		expect(out.result).toBe(
@@ -102,7 +102,7 @@ describe('fs_delete', () => {
 	it("passes on Rust's refusal", async () => {
 		vi.mocked(invoke).mockImplementation(
 			invokeRouter({
-				fs_delete_created: () => {
+				fs_created_delete: () => {
 					throw "You didn't make notes.md in this conversation, so you can't remove or move it. Ask the user to.";
 				}
 			})
@@ -122,14 +122,14 @@ describe('fs_delete', () => {
 		expect((await executeTool('fs_delete', { path: 'a' }, none)).result).toContain(
 			'No working directory set'
 		);
-		expect(calls('fs_delete_created')).toEqual([]);
+		expect(calls('fs_created_delete')).toEqual([]);
 	});
 
 	it('stays inside a write root', async () => {
 		const ctx = makeToolContext({ workingDir: '/w', jobRunId: 7, writeRoot: 'plan/x/' });
 		const out = await executeTool('fs_delete', { path: 'src/main.rs' }, ctx);
 		expect(out.result).toMatch(/may only write inside plan\/x\//);
-		expect(calls('fs_delete_created')).toEqual([]);
+		expect(calls('fs_created_delete')).toEqual([]);
 	});
 });
 
@@ -139,8 +139,8 @@ describe('fs_move', () => {
 		ctx.filesWrittenThisTurn.add('a.md');
 		const out = await executeTool('fs_move', { from: 'a.md', to: 'docs/b.md' }, ctx);
 		expect(out.result).toBe('Moved a.md to docs/b.md.');
-		expect(calls('fs_move_created')).toEqual([
-			['fs_move_created', { workdir: '/w', from: 'a.md', to: 'docs/b.md', scope: 'job:7' }]
+		expect(calls('fs_created_move')).toEqual([
+			['fs_created_move', { workdir: '/w', from: 'a.md', to: 'docs/b.md', scope: 'job:7' }]
 		]);
 		expect([...ctx.filesWrittenThisTurn]).toEqual(['docs/b.md']);
 	});

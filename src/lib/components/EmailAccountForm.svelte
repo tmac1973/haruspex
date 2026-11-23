@@ -27,6 +27,7 @@
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	type ProviderPreset = EmailProviderPreset;
 
@@ -136,7 +137,7 @@
 			await checkLogins();
 			testOk = true;
 		} catch (e) {
-			testError = String(e);
+			testError = errMessage(e);
 		} finally {
 			testing = false;
 		}
@@ -153,7 +154,7 @@
 			password = '';
 			testOk = true;
 		} catch (e) {
-			testError = String(e);
+			testError = errMessage(e);
 		} finally {
 			saving = false;
 		}

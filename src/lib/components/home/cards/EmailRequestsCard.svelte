@@ -27,6 +27,7 @@
 		watchLine
 	} from '#lib/home/emailRequests.ts';
 	import { emailWatchState } from '#lib/agent/jobs/types/email-research/watch.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	/** Rows the card lists. */
 	const LIMIT = 20;
@@ -75,7 +76,7 @@
 				readError = null;
 			})
 			.catch((e: unknown) => {
-				if (live) readError = String(e);
+				if (live) readError = errMessage(e);
 			});
 		return () => {
 			live = false;

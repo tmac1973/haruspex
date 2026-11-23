@@ -18,13 +18,14 @@
 		getSettings,
 		setCameraEventRetentionDays,
 		setCameraTrustedServers,
-		setCameras
+		setCameras,
+		snapshot
 	} from '#lib/stores/settings.ts';
 	import { newId } from '#lib/utils/id.ts';
 	import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 
 	/** The list as saved, read again after every change. */
-	let cameras = $state<CameraConfig[]>(getSettings().cameras);
+	let cameras = $state<CameraConfig[]>(snapshot(getSettings().cameras));
 	let openId = $state<string | null>(null);
 	/** The camera whose Activity is shown. */
 	let logId = $state<string | null>(null);
@@ -41,8 +42,8 @@
 	let trusted = $state<string[]>(getSettings().cameraTrustedServers.map(trustedServerKey));
 
 	function save(list: CameraConfig[]) {
-		setCameras($state.snapshot(list) as CameraConfig[]);
-		cameras = getSettings().cameras;
+		setCameras(list);
+		cameras = snapshot(getSettings().cameras);
 		// The Camera digest job type needs a camera set to Allow.
 		invalidateTypeAvailability();
 	}

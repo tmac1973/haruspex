@@ -26,6 +26,7 @@
 	} from '#lib/stores/mcpSetup.ts';
 	import { pickAndInstallAddon } from '#lib/stores/mcpAddon.ts';
 	import { hasMcpSecret, storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	interface Props {
 		config: McpServerConfig;
@@ -65,7 +66,7 @@
 			onchange(await storeMcpSecret(config, key, value));
 			drafts = { ...drafts, [key]: '' };
 		} catch (e) {
-			error = `Could not save it: ${String(e)}`;
+			error = `Could not save it: ${errMessage(e)}`;
 		}
 	}
 
@@ -104,7 +105,7 @@
 			});
 			filesPlaced = [...filesPlaced, filename];
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		}
 	}
 
@@ -118,7 +119,7 @@
 			onchange(done.next);
 			commandOutput = `Added to ${done.installedAt}`;
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 		} finally {
 			running = false;
 		}
@@ -137,8 +138,8 @@
 			});
 			commandsRun = [...commandsRun, index];
 		} catch (e) {
-			error = String(e);
-			commandOutput = String(e);
+			error = errMessage(e);
+			commandOutput = errMessage(e);
 		} finally {
 			running = false;
 		}

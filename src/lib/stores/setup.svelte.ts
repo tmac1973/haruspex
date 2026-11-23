@@ -212,7 +212,7 @@ export async function startDownload(): Promise<void> {
 		step = 'test';
 		void runTestQuery();
 	} catch (e) {
-		const msg = String(e);
+		const msg = errMessage(e);
 		if (msg.includes('cancelled')) {
 			downloadProgress = null;
 		} else {
@@ -248,7 +248,7 @@ export async function importModel(path: string): Promise<boolean> {
 		await invoke('import_model', { path });
 		return true;
 	} catch (e) {
-		downloadError = String(e);
+		downloadError = errMessage(e);
 		return false;
 	}
 }

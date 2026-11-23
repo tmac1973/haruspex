@@ -27,6 +27,7 @@
 		refreshOpenRouterCatalog
 	} from '#lib/stores/openrouterCatalog.svelte.ts';
 	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	// Where a job's model calls go, and how it behaves: the server, model,
 	// context and vision, plus reasoning and sampling. Used for a job's own
@@ -206,7 +207,7 @@
 					? `, ${form.contextSize.toLocaleString()}-token context.`
 					: '. No context size reported — enter it manually.');
 		} catch (e) {
-			probeError = String(e);
+			probeError = errMessage(e);
 		} finally {
 			probing = false;
 		}
@@ -239,7 +240,7 @@
 			// A still-valid selection keeps the user's manual context/vision edits.
 			if (pick !== form.modelId) onOpenRouterModelSelect(pick);
 		} catch (e) {
-			orError = String(e);
+			orError = errMessage(e);
 		} finally {
 			orLoading = false;
 		}

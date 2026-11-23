@@ -21,7 +21,7 @@
 	import { listSkills, readSkill, repoLabel } from '#lib/skills/client.ts';
 	import { unmetFor } from '#lib/skills/needs.ts';
 	import { setRepoTrust, setRepoTrusted } from '#lib/skills/project.ts';
-	import { getSettings, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
+	import { getSettings, snapshot, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	const CLAUDE_SKILLS = '~/.claude/skills';
@@ -34,7 +34,7 @@
 		project: 'Project'
 	};
 
-	let config = $state<SkillsConfig>(structuredClone(getSettings().skills));
+	let config = $state<SkillsConfig>(snapshot(getSettings().skills));
 	let skills = $state<SkillSummary[]>([]);
 	let shipped = $state<ShippedSkill[]>([]);
 	let loadError = $state<string | null>(null);
@@ -60,7 +60,7 @@
 
 	function save(partial: Partial<SkillsConfig>) {
 		updateSkills(partial);
-		config = structuredClone(getSettings().skills);
+		config = snapshot(getSettings().skills);
 	}
 
 	function setEnabled(name: string, enabled: boolean) {
@@ -144,7 +144,7 @@
 	function setTrust(root: string, trusted: boolean | null) {
 		if (trusted === null) setRepoTrust(root, null);
 		else setRepoTrusted(root, trusted);
-		config = structuredClone(getSettings().skills);
+		config = snapshot(getSettings().skills);
 	}
 
 	const repos = $derived(

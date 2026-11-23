@@ -8,6 +8,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import type { BackgroundState } from '#lib/ipc/gen/BackgroundState.ts';
 	import type { IpcCommand } from '#lib/ipc/commands.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let bg = $state<BackgroundState | null>(null);
 	let error = $state('');
@@ -26,7 +27,7 @@
 		try {
 			bg = await invoke<BackgroundState>(command, { on });
 		} catch (e) {
-			error = String(e);
+			error = errMessage(e);
 			// Put the box back as it was.
 			bg = await invoke<BackgroundState>('background_get').catch(() => bg);
 		}

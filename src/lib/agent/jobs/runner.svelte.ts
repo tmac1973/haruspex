@@ -64,6 +64,7 @@ import {
 	takeRunTrace,
 	REFLECTION_SYSTEM_PROMPT
 } from '#lib/harnessFeedback/reflection.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -1149,7 +1150,7 @@ async function reflectOnRun(
 				})
 		);
 	} catch (e) {
-		console.warn('tool feedback: the reflection after a job run failed', String(e));
+		console.warn('tool feedback: the reflection after a job run failed', errMessage(e));
 	}
 }
 
