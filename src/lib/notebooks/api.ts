@@ -218,10 +218,10 @@ export const saveFileAs = (hash: string, path: string) =>
 
 /**
  * Notebook files by hash. The web client reads them from the owner server's
- * `/image/` route, which falls back to notebook files (Settings → Remote
+ * `/api/v1/image/` route, which falls back to notebook files (Settings → Remote
  * control).
  */
-const fileUrls = mediaUrls('haruspex-notebook-file', '/image/');
+const fileUrls = mediaUrls('haruspex-notebook-file', '/api/v1/image/');
 
 /** The URL a notebook file is shown from, or '' for a malformed hash. */
 export function fileUrl(hash: string): string {

@@ -14,6 +14,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
+/// The largest notebook file another computer or the web client may read.
+pub const MAX_SHARED_BYTES: usize = 25 * 1_048_576;
+
 /// The largest file a notebook keeps.
 pub const MAX_FILE_BYTES: u64 = 200 * 1_048_576;
 

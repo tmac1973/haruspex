@@ -925,3 +925,69 @@ describe('the transcript and compaction', () => {
 		screen.getByText('Summarising earlier turns…');
 	});
 });
+
+describe('notebooks on the web', () => {
+	const detail = (price: number, version = 1) => ({
+		notebook: { id: 'n1', title: 'Speakers', tags: [], pinned: false, card_count: 1 },
+		cards: [
+			{
+				id: 'c1',
+				notebook_id: 'n1',
+				position: 1,
+				kind: 'table',
+				title: 'Models',
+				body: '',
+				meta: JSON.stringify({
+					columns: [
+						{ id: 'name', name: 'Name', type: 'text' },
+						{ id: 'price', name: 'Price', type: 'number' }
+					]
+				}),
+				version,
+				source: '{"kind":"user"}',
+				created_at: 0,
+				updated_at: 0,
+				deleted_at: null,
+				row_count: 1,
+				rows: [{ id: 'r1', position: 1, cells: JSON.stringify({ name: 'JBL', price }) }]
+			}
+		]
+	});
+
+	it('shows the tab only when the desktop has notebooks on', async () => {
+		const off = new WebStore(fakeDesktop({ 'app.mode': { lean: false } }).transport);
+		await off.refreshMode();
+		expect(off.notebooksOff).toBe(true);
+		const on = new WebStore(
+			fakeDesktop({ 'app.mode': { lean: false, notebooks: true } }).transport
+		);
+		await on.refreshMode();
+		expect(on.notebooksOff).toBe(false);
+	});
+
+	it('opens a notebook, changes one cell, and reads it again on an event', async () => {
+		const d = fakeDesktop({
+			'notebooks.get': detail(129),
+			'notebooks.rows.apply': detail(99, 2).cards[0],
+			'notebooks.chat.get': { messages: [], busy: false, streaming: '', step: null, error: null }
+		});
+		const store = new WebStore(d.transport);
+		store.start();
+		await store.notebooks.openNotebook('n1');
+		expect(store.notebooks.open?.notebook.title).toBe('Speakers');
+		const card = store.notebooks.open!.cards[0];
+		await store.notebooks.applyRows(card, [
+			{ op: 'update', row_id: 'r1', cells: '{"name":"JBL","price":99}' }
+		]);
+		expect(d.ops.find((o) => o.type === 'notebooks.rows.apply')).toMatchObject({
+			cardId: 'c1',
+			expectedVersion: 1
+		});
+		expect(store.notebooks.open!.cards[0].version).toBe(2);
+		const reads = d.ops.filter((o) => o.type === 'notebooks.get').length;
+		d.push({ type: 'notebook-changed', seq: 1, notebookId: 'n1' });
+		await Promise.resolve();
+		expect(d.ops.filter((o) => o.type === 'notebooks.get').length).toBe(reads + 1);
+		store.stop();
+	});
+});

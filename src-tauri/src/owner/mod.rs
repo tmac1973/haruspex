@@ -181,8 +181,14 @@ impl Images for AppImages {
             .collect()
     }
 
+    /// A cached picture, or else a notebook's kept file (its pictures and
+    /// attachments) up to 25 MB.
     fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)> {
-        protocol::load(&self.0, hash).ok()
+        protocol::load(&self.0, hash).ok().or_else(|| {
+            crate::notebook_files::protocol::load(&self.0, hash)
+                .ok()
+                .filter(|(_, b)| b.len() <= crate::notebook_files::MAX_SHARED_BYTES)
+        })
     }
 
     /// Kept as the app keeps a picture it drew: nothing was borrowed, and the

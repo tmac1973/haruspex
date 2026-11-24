@@ -57,6 +57,10 @@ A card an agent changed shows where the change came from, such as "From Chat: Bl
 
 If a card changed somewhere else while you were editing it, Haruspex reloads it and says so. What you typed stays in the editor, so you can copy it back in.
 
+## Use them from your phone
+
+Settings → Remote control's page has a **Notebooks** tab: search and read every notebook, edit text, tables and checklists, and use a notebook's chat (**Ask**). Python, files and pictures are shown there but changed only here.
+
 ## What notebooks don't do
 
 - They aren't one long document: each card is edited on its own.

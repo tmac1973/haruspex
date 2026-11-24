@@ -11,6 +11,9 @@ import type { NotebookCard } from '#lib/notebooks/api.ts';
 import { columnsOf } from '#lib/notebooks/columns.ts';
 import { runPython } from '#lib/sandbox/sandbox.ts';
 import type { Artifact, ToolResult } from '#lib/sandbox/protocol.ts';
+import { outputOf, type PythonOutput } from '#lib/notebooks/pythonOutput.ts';
+
+export { outputOf, type PythonOutput };
 import { getSettings } from '#lib/stores/settings.ts';
 import { pythonRuntimeMissing } from '#lib/sandbox/availability.ts';
 
@@ -19,24 +22,6 @@ export const RESULT_ROWS = 5000;
 /** A picture bigger than this isn't kept with the card; nor anything past the total. */
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 5 * 1024 * 1024;
-
-/** What a run leaves on the card (`meta.output`). */
-export interface PythonOutput {
-	stdout: string;
-	stderr: string;
-	/** The last expression's value, as Python shows it. */
-	result: string;
-	error: string | null;
-	artifacts: Artifact[];
-	duration_ms: number;
-	ran_at: number;
-	/** Each table read, and its version then: newer means the output is stale. */
-	read_versions: Record<string, number>;
-	/** `result` as CSV, when it was a DataFrame. */
-	result_csv?: string;
-	/** Notes on what was left out (pictures too big to keep). */
-	notes: string[];
-}
 
 export function sandboxIdFor(notebookId: string): string {
 	return `notebook-${notebookId}`;
@@ -48,11 +33,6 @@ export function pythonUnavailable(): string | null {
 		return 'Python is off in Settings → Chat → Enable Python sandbox.';
 	if (pythonRuntimeMissing()) return 'The Python runtime is missing from this build.';
 	return null;
-}
-
-export function outputOf(card: NotebookCard): PythonOutput | null {
-	const out = api.parseMeta<{ output?: PythonOutput }>(card.meta).output;
-	return out && typeof out === 'object' ? out : null;
 }
 
 /** Whether a table the output read has changed since. */

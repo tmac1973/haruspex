@@ -45,11 +45,35 @@ impl Scope {
 /// doesn't exist.
 pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
-        "sessions.list" | "session.get" | "session.resync" | "session.readFile" | "chats.list"
-        | "chats.search" | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros"
-        | "jobs.types" | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current"
-        | "runs.resync" | "debug.tail" | "inference.queue" | "tasks.list" | "models.list"
-        | "app.mode" | "home.cards" => Scope::Read,
+        "sessions.list"
+        | "session.get"
+        | "session.resync"
+        | "session.readFile"
+        | "chats.list"
+        | "chats.search"
+        | "chat.get"
+        | "chat.resync"
+        | "prompts.list"
+        | "wsl.distros"
+        | "jobs.types"
+        | "jobs.list"
+        | "jobs.get"
+        | "runs.list"
+        | "runs.get"
+        | "runs.current"
+        | "runs.resync"
+        | "debug.tail"
+        | "inference.queue"
+        | "tasks.list"
+        | "models.list"
+        | "app.mode"
+        | "home.cards"
+        | "notebooks.list"
+        | "notebooks.get"
+        | "notebooks.rows"
+        | "notebooks.search"
+        | "notebooks.card.history"
+        | "notebooks.chat.get" => Scope::Read,
         "session.open"
         | "session.new"
         | "session.send"
@@ -78,7 +102,15 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         | "session.effort"
         | "session.model"
         | "session.stopBackground"
-        | "models.probe" => Scope::Drive,
+        | "models.probe"
+        | "notebooks.create"
+        | "notebooks.card.add"
+        | "notebooks.card.update"
+        | "notebooks.rows.apply"
+        | "notebooks.card.delete"
+        | "notebooks.card.rollback"
+        | "notebooks.chat.send"
+        | "notebooks.chat.stop" => Scope::Drive,
         "prompts.answer" | "jobs.create" | "jobs.update" => Scope::Approve,
         "settings.get" | "settings.patch" => Scope::Settings,
         _ => return None,
@@ -410,6 +442,8 @@ mod tests {
         assert_eq!(required_scope("models.list"), Some(Scope::Read));
         assert_eq!(required_scope("app.mode"), Some(Scope::Read));
         assert_eq!(required_scope("home.cards"), Some(Scope::Read));
+        assert_eq!(required_scope("notebooks.get"), Some(Scope::Read));
+        assert_eq!(required_scope("notebooks.rows.apply"), Some(Scope::Drive));
         assert_eq!(required_scope("models.probe"), Some(Scope::Drive));
         assert_eq!(required_scope("session.delete"), Some(Scope::Drive));
         assert_eq!(required_scope("chat.folder"), Some(Scope::Drive));

@@ -10,6 +10,7 @@
 	import SessionList from './components/SessionList.svelte';
 	import SessionView from './components/SessionView.svelte';
 	import ChatView from './components/ChatView.svelte';
+	import NotebookPage from './components/notebooks/NotebookPage.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -57,7 +58,9 @@
 	class:home={store.tab === 'home'}
 	class:has-session={store.tab === 'code'
 		? !!store.selected
-		: store.tab === 'chat' && !!store.selectedChat}
+		: store.tab === 'notebooks'
+			? !!store.notebooks.open
+			: store.tab === 'chat' && !!store.selectedChat}
 >
 	{#if store.connection === 'unauthorised'}
 		<PairScreen error={pairError} onpair={pairWith} />
@@ -66,13 +69,19 @@
 			<SessionList {store} />
 		</aside>
 		<main class="session">
-			{#if store.tab === 'chat' && store.selectedChat}
+			{#if store.tab === 'notebooks' && store.notebooks.open}
+				<NotebookPage nb={store.notebooks} />
+			{:else if store.tab === 'chat' && store.selectedChat}
 				<ChatView {store} />
 			{:else if store.tab === 'code' && store.selected}
 				<SessionView {store} />
 			{:else}
 				<p class="empty">
-					{store.tab === 'chat' ? 'Pick a chat, or start one.' : 'Pick a session, or start one.'}
+					{store.tab === 'chat'
+						? 'Pick a chat, or start one.'
+						: store.tab === 'notebooks'
+							? 'Pick a notebook, or make one.'
+							: 'Pick a session, or start one.'}
 				</p>
 			{/if}
 		</main>

@@ -5,6 +5,7 @@
  * and to every window for the listings. Each answers at once; `session.send` answers when the turn has
  * started, and its progress arrives as events.
  */
+import { SvelteSet } from 'svelte/reactivity';
 import { invoke } from '@tauri-apps/api/core';
 import { ioRoot, relativeToRoot } from '#lib/code/paths.ts';
 import { listCodeSessions, wslDistros } from '#lib/code/db.ts';
@@ -135,6 +136,15 @@ const LEAN_REFUSED: ReadonlySet<EngineOp['type']> = new Set([
 	'session.fork',
 	'session.cancelShellWait'
 ]);
+
+/** Notebook chats a client has looked at: their progress is sent as events. */
+const followedChats = new SvelteSet<string>();
+export function followNotebookChat(notebookId: string): void {
+	followedChats.add(notebookId);
+}
+export function followedNotebookChats(): string[] {
+	return [...followedChats];
+}
 
 export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 	if (LEAN_REFUSED.has(op.type) && getSettings().leanMode) throw new Error(LEAN_SESSION_REFUSAL);
@@ -271,6 +281,25 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'home.cards':
 			if (label !== MAIN_WINDOW) throw new Error('the main window answers for Home');
 			return (await import('#lib/engine/home.ts')).homeCards();
+		case 'notebooks.list':
+		case 'notebooks.get':
+		case 'notebooks.rows':
+		case 'notebooks.search':
+		case 'notebooks.create':
+		case 'notebooks.card.add':
+		case 'notebooks.card.update':
+		case 'notebooks.rows.apply':
+		case 'notebooks.card.delete':
+		case 'notebooks.card.history':
+		case 'notebooks.card.rollback':
+		case 'notebooks.chat.get':
+		case 'notebooks.chat.send':
+		case 'notebooks.chat.stop': {
+			if (label !== MAIN_WINDOW) throw new Error('the main window answers for notebooks');
+			const nb = await import('#lib/engine/notebooks.ts');
+			if (op.type === 'notebooks.chat.get') followNotebookChat(op.notebookId);
+			return nb.dispatchNotebooks(op);
+		}
 		case 'prompts.list':
 			return currentPrompts(label);
 		case 'prompts.answer':

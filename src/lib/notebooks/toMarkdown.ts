@@ -8,7 +8,7 @@
 import * as api from '#lib/notebooks/api.ts';
 import type { NotebookCard, NotebookDetail, NotebookRow } from '#lib/notebooks/api.ts';
 import { columnsOf, formatCell, type Column } from '#lib/notebooks/columns.ts';
-import { outputOf } from '#lib/notebooks/pythonRun.ts';
+import { outputOf } from '#lib/notebooks/pythonOutput.ts';
 
 /** A file the Markdown refers to: a kept file, or a Python card's plot. */
 export interface ExportFile {
