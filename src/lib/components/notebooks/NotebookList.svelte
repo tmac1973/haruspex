@@ -4,6 +4,7 @@
 	 * filter, a New button, and Trash at the bottom.
 	 */
 	import type { Snippet } from 'svelte';
+	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
 	import {
 		allTags,
 		getNotebookList,
@@ -59,13 +60,12 @@
 		<button class="new" onclick={() => (creating = true)} title="New notebook">+ New</button>
 	</div>
 	{#if creating}
-		<!-- svelte-ignore a11y_autofocus -->
 		<input
 			class="new-title"
+			use:focusOnMount
 			bind:value={newTitle}
 			placeholder="Notebook title"
 			aria-label="New notebook title"
-			autofocus
 			onblur={() => void create()}
 			onkeydown={(e) => {
 				if (e.key === 'Enter') void create();

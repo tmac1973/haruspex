@@ -6,6 +6,8 @@
 import type { Component } from 'svelte';
 import type { NewCard, NotebookCard } from '#lib/notebooks/api.ts';
 import TextCard from '#lib/components/notebooks/cards/TextCard.svelte';
+import TableCard from '#lib/components/notebooks/cards/TableCard.svelte';
+import ChecklistCard from '#lib/components/notebooks/cards/ChecklistCard.svelte';
 
 export interface CardViewProps {
 	card: NotebookCard;
@@ -28,6 +30,35 @@ const KINDS: CardKindDef[] = [
 		label: 'Text',
 		component: TextCard,
 		create: () => ({ kind: 'text', title: '', body: '', meta: '{}', rows: null })
+	},
+	{
+		kind: 'table',
+		label: 'Table',
+		component: TableCard,
+		create: () => ({
+			kind: 'table',
+			title: '',
+			body: '',
+			meta: JSON.stringify({
+				columns: [
+					{ id: 'name', name: 'Name', type: 'text' },
+					{ id: 'notes', name: 'Notes', type: 'text' }
+				]
+			}),
+			rows: ['{}']
+		})
+	},
+	{
+		kind: 'checklist',
+		label: 'Checklist',
+		component: ChecklistCard,
+		create: () => ({
+			kind: 'checklist',
+			title: '',
+			body: '',
+			meta: '{}',
+			rows: [JSON.stringify({ text: '', done: false })]
+		})
 	}
 ];
 

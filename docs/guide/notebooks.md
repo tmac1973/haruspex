@@ -19,6 +19,16 @@ Tags go in the line under the title, separated by commas. The tag chips above th
 
 Each card has its own title; click it to rename. Drag a card by its ⋮⋮ handle, or use **⋯ → Move up / Move down**, to reorder.
 
+## Keep a table
+
+**+ Add card → Table** starts a table with two columns. Click a cell to type in it; Enter moves down, Tab moves right, Esc cancels. Each column has a type, set from the menu on its name: Text, Number, Currency, Link, Date, Checkbox or Status. Number and Currency columns get a total under the table. A value that doesn't fit its column's type is kept and tinted, so nothing is lost. The same menu renames, sorts, moves and deletes columns; **+** at the end adds one, and **+ Row** adds a row.
+
+Pasting several lines copied from a spreadsheet into a cell adds them as rows. Tables with more than eight rows get a filter box. A table holds up to 5,000 rows.
+
+## Tick off a checklist
+
+**+ Add card → Checklist** adds a list of items to tick. Enter starts the next item; Backspace in an empty item removes it. Drag items by their ⋮⋮ to reorder, and **Hide done** hides the ticked ones.
+
 ## Link to a notebook
 
 A link written `[speakers](notebook:<id>)` opens that notebook in this tab, and `notebook:<id>#<card>` scrolls to one of its cards. Agents use these links when they tell you about a notebook they made.
