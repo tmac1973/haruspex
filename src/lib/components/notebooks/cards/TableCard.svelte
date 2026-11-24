@@ -479,6 +479,10 @@
 
 	th,
 	td {
+		/* Narrow columns stay wide enough for a word; long text wraps
+		   rather than taking the whole table. */
+		min-width: 6rem;
+		max-width: 40rem;
 		border: 1px solid var(--border);
 		padding: 0;
 		text-align: left;
@@ -540,7 +544,8 @@
 		padding: 5px 8px;
 		cursor: text;
 		white-space: pre-wrap;
-		word-break: break-word;
+		/* Wrap between words; a single over-long word may still break. */
+		overflow-wrap: break-word;
 	}
 
 	.cell.check {

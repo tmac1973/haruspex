@@ -230,8 +230,7 @@
 
 	.broken-banner {
 		display: block;
-		max-width: 860px;
-		margin: 0 auto 8px;
+		margin: 0 0 8px;
 		border: 1px solid var(--warning);
 		border-radius: 6px;
 		background: none;

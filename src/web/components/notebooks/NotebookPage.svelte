@@ -2,6 +2,7 @@
 	/** One notebook on the web: its cards, and its chat in a drawer. */
 	import { tick } from 'svelte';
 	import { renderMarkdown } from '#lib/markdown.ts';
+	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import WebCard from './WebCard.svelte';
 	import type { WebNotebooks } from '../../notebooks.svelte.ts';
 
@@ -49,7 +50,7 @@
 					{#if nb.chat.streaming}<div class="markdown">
 							{@html renderMarkdown(nb.chat.streaming)}
 						</div>{/if}
-					<p class="hint">{nb.chat.step ?? 'Thinking…'}</p>
+					<ThinkingIndicator bare caption={nb.chat.step ?? 'Working…'} />
 				</div>
 			{/if}
 			{#if nb.chat?.error}<p class="error">{nb.chat.error}</p>{/if}

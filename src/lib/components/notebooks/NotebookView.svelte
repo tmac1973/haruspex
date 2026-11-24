@@ -249,8 +249,7 @@
 	}
 
 	header {
-		max-width: 860px;
-		margin: 0 auto 12px;
+		margin: 0 0 12px;
 	}
 
 	.title-row {
@@ -345,8 +344,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-		max-width: 860px;
-		margin: 0 auto;
+		margin: 0;
 	}
 
 	.slot.drop {

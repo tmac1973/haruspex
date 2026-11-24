@@ -5,6 +5,9 @@
 	 * dropped here are read into the message and kept for the agent to attach.
 	 */
 	import { renderMarkdown } from '#lib/markdown.ts';
+	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
+	import { startDragResize } from '#lib/utils/dragResize.ts';
+	import { persistItem } from '#lib/persist.ts';
 	import { fileDropTarget } from '#lib/utils/fileDrop.ts';
 	import { attachDocument, readerFor, splitPath } from '#lib/notebooks/droppedFiles.ts';
 	import {
@@ -35,6 +38,37 @@
 	let reading = $state(0);
 	let fileOver = $state(false);
 	let log = $state<HTMLDivElement | null>(null);
+
+	// The panel's width: dragged at its left edge, kept for next time.
+	const WIDTH_KEY = 'haruspex.notebookChatWidth';
+	const MIN_WIDTH = 300;
+	const maxWidth = () => Math.max(MIN_WIDTH, window.innerWidth - 560);
+	function savedWidth(): number {
+		try {
+			const w = Number(localStorage.getItem(WIDTH_KEY));
+			return Number.isFinite(w) && w > 0 ? Math.min(Math.max(w, MIN_WIDTH), maxWidth()) : 380;
+		} catch {
+			return 380;
+		}
+	}
+	let width = $state(savedWidth());
+
+	function startResize(event: MouseEvent) {
+		// On the right: dragging its edge left widens it.
+		startDragResize(event, {
+			width,
+			widens: 'left',
+			clamp: (w) => Math.max(MIN_WIDTH, Math.min(maxWidth(), w)),
+			onResize: (w) => (width = w),
+			onDone: (w) => {
+				try {
+					persistItem(WIDTH_KEY, String(Math.round(w)));
+				} catch {
+					// a convenience only
+				}
+			}
+		});
+	}
 
 	$effect(() => {
 		if (!peer) void loadNotebookChat(notebookId);
@@ -92,11 +126,18 @@
 </script>
 
 <aside
+	style="width: {width}px"
 	class="panel"
 	class:file-over={fileOver}
 	aria-label="Notebook chat"
 	use:fileDropTarget={{ onFiles: (p) => void onFiles(p), onDragChange: (o) => (fileOver = o) }}
 >
+	<button
+		class="resize-handle"
+		onmousedown={startResize}
+		aria-label="Drag to resize the chat"
+		title="Drag to resize"
+	></button>
 	<header>
 		<h3 title="Ask about {title}">Ask about this notebook</h3>
 		<div class="tools">
@@ -135,7 +176,7 @@
 				{#if chat.streaming}
 					<div class="markdown">{@html renderMarkdown(chat.streaming)}</div>
 				{/if}
-				<p class="step">{chat.step ?? 'Thinking…'}</p>
+				<ThinkingIndicator bare caption={chat.step ?? 'Working…'} />
 			</div>
 		{/if}
 		{#if chat.error}
@@ -185,9 +226,9 @@
 
 <style>
 	.panel {
+		position: relative;
 		display: flex;
 		flex-direction: column;
-		width: 360px;
 		flex-shrink: 0;
 		border-left: 1px solid var(--border);
 		background: var(--bg-secondary);
@@ -258,13 +299,6 @@
 		word-break: break-word;
 	}
 
-	.step {
-		margin: 4px 0 0;
-		color: var(--text-muted);
-		font-size: 0.8rem;
-		font-style: italic;
-	}
-
 	.error {
 		color: var(--error-text);
 		font-size: 0.85rem;
@@ -329,5 +363,23 @@
 		background: var(--bg-raised);
 		color: var(--text-primary);
 		border: 1px solid var(--border);
+	}
+
+	.resize-handle {
+		position: absolute;
+		left: -3px;
+		top: 0;
+		bottom: 0;
+		z-index: 5;
+		width: 6px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		cursor: col-resize;
+	}
+
+	.resize-handle:hover,
+	.resize-handle:active {
+		background: color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 </style>
