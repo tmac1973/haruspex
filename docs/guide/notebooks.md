@@ -13,6 +13,10 @@ Click **+ New** in the list, type a title and press Enter. The list puts pinned 
 
 Tags go in the line under the title, separated by commas. The tag chips above the list show only the notebooks with that tag; click the chip again to show all of them.
 
+## Find something
+
+**Search notebooks** above the list looks through every notebook's titles, text, table cells, Python code and file names; click a result to open it at that card, with the row highlighted. Settings → Notebooks → **Semantic search** also finds cards by meaning ("how long it plays unplugged" finds "battery life"); it downloads the model Memory uses and indexes notebooks on this computer.
+
 ## Write in a text card
 
 **+ Add card → Text** adds a card at the end; the **+** that appears between two cards adds one there. Click **Edit** (or double-click the text) to write. Text cards use Markdown: `**bold**`, `- lists`, `[a link](https://example.com)`, `## headings`. Links open in your browser. Changes save a second after you stop typing, and when you click **Done** or press Esc.

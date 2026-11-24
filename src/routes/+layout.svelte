@@ -54,6 +54,7 @@
 	import { recoverOrphanRuns } from '#lib/stores/jobRuns.svelte.ts';
 	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
 	import { startCardWatch } from '#lib/home/cardWatch.svelte.ts';
+	import { startNotebookIndexer } from '#lib/notebooks/indexer.svelte.ts';
 	import { startFetchedCards } from '#lib/home/fetchedCards.svelte.ts';
 	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
 	import {
@@ -453,6 +454,8 @@
 		startEmailWatch();
 		// Home's meetings and weather cards, read on their interval.
 		startFetchedCards();
+		// Notebook semantic search's index, when Settings → Notebooks has it on.
+		startNotebookIndexer();
 		// Remote web chat, if Settings has it on. Only the main window does
 		// this: the driver answers a process-wide event, so a second listener
 		// in a detached shell would race it for every guest prompt.

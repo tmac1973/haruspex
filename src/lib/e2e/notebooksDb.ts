@@ -220,6 +220,8 @@ export const NOTEBOOKS_DB: Record<string, (a: Args) => unknown> = {
 		messages: []
 	}),
 	db_replace_messages: () => null,
+	notebook_search: (a) => NOTEBOOKS_DB.notebook_search_keyword(a),
+	notebook_semantic_status: () => ({ model_present: false, pending: 0 }),
 	notebook_search_keyword: (a) => {
 		const q = String(a?.query).toLowerCase();
 		return cards

@@ -50,3 +50,18 @@ test("a notebook's chat adds a table through the notebook tools", async ({ app }
 	);
 	expect(names).toContain('notebook_table_rows');
 });
+
+test('search finds a card and opens its notebook', async ({ app }) => {
+	await newNotebook(app, 'Trips');
+	await app.getByRole('button', { name: '+ Add card' }).click();
+	await app.getByRole('menuitem', { name: 'Text' }).click();
+	await app.getByRole('button', { name: 'Write something…' }).click();
+	await app.keyboard.type('Pack the snorkel for Crete');
+	await app.keyboard.press('Escape');
+	await expect(app.getByText('Pack the snorkel for Crete')).toBeVisible();
+
+	await newNotebook(app, 'Other');
+	await app.getByLabel('Search notebooks').fill('snorkel');
+	await app.getByRole('list', { name: 'Search results' }).getByRole('button').first().click();
+	await expect(app.getByLabel('Notebook title')).toHaveValue('Trips');
+});

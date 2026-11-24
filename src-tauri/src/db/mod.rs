@@ -1258,6 +1258,7 @@ mod notebook_commands;
 mod notebook_revisions;
 mod notebook_rows;
 mod notebook_search;
+mod notebook_semantic;
 mod notebooks;
 mod peer_lists;
 mod prompts;

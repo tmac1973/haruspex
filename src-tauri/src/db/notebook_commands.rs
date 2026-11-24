@@ -247,3 +247,107 @@ pub async fn notebook_trash_list(state: Db<'_>) -> Result<NotebookTrash, String>
     let db = state.inner().clone();
     on_pool(db, move |db| db.notebook_trash_list()).await
 }
+
+/// Where the embedding model lives (shared with Memory).
+fn embed_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let data = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    Ok(crate::memory::embedder::cache_dir(&data))
+}
+
+/// Notebook search: keyword hits, merged with meaning-based ones when
+/// `semantic` is on and the model is there. Semantic trouble falls back to
+/// keyword alone.
+#[tauri::command]
+pub async fn notebook_search(
+    app: tauri::AppHandle,
+    state: Db<'_>,
+    query: String,
+    limit: i64,
+    semantic: bool,
+) -> Result<Vec<NotebookSearchHit>, String> {
+    let db = state.inner().clone();
+    let dir = embed_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = limit.clamp(1, 200);
+        let keyword = db.notebook_search_keyword(&query, limit)?;
+        if !semantic || !crate::memory::embedder::model_present(&dir) {
+            return Ok(keyword);
+        }
+        let embed = |t: &[String]| crate::memory::embedder::embed(&dir, t);
+        match db.notebook_search_semantic(
+            &embed,
+            crate::memory::embedder::EMBEDDING_MODEL_NAME,
+            &query,
+            limit as usize,
+        ) {
+            Ok(sem) => Ok(super::notebook_semantic::merge_hits(
+                keyword,
+                sem,
+                limit as usize,
+            )),
+            Err(e) => {
+                log::warn!("notebook semantic search failed: {e}");
+                Ok(keyword)
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("search task panicked: {e}"))?
+}
+
+/// Embed up to `limit` changed cards; returns how many still wait.
+#[tauri::command]
+pub async fn notebook_embed_pending(
+    app: tauri::AppHandle,
+    state: Db<'_>,
+    limit: i64,
+) -> Result<i64, String> {
+    let db = state.inner().clone();
+    let dir = embed_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        if !crate::memory::embedder::model_present(&dir) {
+            return Err("The embedding model isn't downloaded.".to_string());
+        }
+        let embed = |t: &[String]| crate::memory::embedder::embed(&dir, t);
+        db.notebook_embed_pending(
+            &embed,
+            crate::memory::embedder::EMBEDDING_MODEL_NAME,
+            limit.clamp(1, 64) as usize,
+        )
+        .map(|n| n as i64)
+    })
+    .await
+    .map_err(|e| format!("embed task panicked: {e}"))?
+}
+
+/// Semantic search's state, for Settings → Notebooks.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct NotebookSemanticStatus {
+    pub model_present: bool,
+    #[ts(type = "number")]
+    pub pending: i64,
+}
+
+#[tauri::command]
+pub async fn notebook_semantic_status(
+    app: tauri::AppHandle,
+    state: Db<'_>,
+) -> Result<NotebookSemanticStatus, String> {
+    let db = state.inner().clone();
+    let dir = embed_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(NotebookSemanticStatus {
+            model_present: crate::memory::embedder::model_present(&dir),
+            pending: db
+                .notebook_embed_pending_count(crate::memory::embedder::EMBEDDING_MODEL_NAME)?
+                as i64,
+        })
+    })
+    .await
+    .map_err(|e| format!("status task panicked: {e}"))?
+}

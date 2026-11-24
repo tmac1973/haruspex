@@ -1034,7 +1034,11 @@ mod tests {
         let nb = db.notebook_create("N", &[]).unwrap();
         let id = db.conversation_for_notebook(&nb.id).unwrap();
         assert_eq!(id, format!("notebook-{}", nb.id));
-        assert_eq!(db.conversation_for_notebook(&nb.id).unwrap(), id, "made once");
+        assert_eq!(
+            db.conversation_for_notebook(&nb.id).unwrap(),
+            id,
+            "made once"
+        );
         let listed: Vec<String> = db
             .list_conversations()
             .unwrap()

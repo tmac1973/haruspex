@@ -4,6 +4,7 @@
 	import GeneralSection from '#lib/components/settings/GeneralSection.svelte';
 	import InferenceSection from '#lib/components/settings/InferenceSection.svelte';
 	import ChatSection from '#lib/components/settings/ChatSection.svelte';
+	import NotebooksSection from '#lib/components/settings/NotebooksSection.svelte';
 	import MemorySection from '#lib/components/settings/MemorySection.svelte';
 	import SkillsSection from '#lib/components/settings/SkillsSection.svelte';
 	import AudioSection from '#lib/components/settings/AudioSection.svelte';
@@ -76,6 +77,12 @@
 					label: 'Memory',
 					subtitle: 'What the assistant remembers between chats.',
 					icon: '<path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0 0 8v1a4 4 0 0 0 8 0"></path><path d="M12 2a5 5 0 0 1 5 5v1a4 4 0 0 1 0 8v1a4 4 0 0 1-8 0"></path><line x1="12" y1="7" x2="12" y2="17"></line>'
+				},
+				{
+					id: 'notebooks',
+					label: 'Notebooks',
+					subtitle: 'Searching your notebooks.',
+					icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>'
 				},
 				{
 					id: 'skills',
@@ -297,6 +304,8 @@
 				<ChatSection />
 			{:else if activeCategory === 'memory'}
 				<MemorySection />
+			{:else if activeCategory === 'notebooks'}
+				<NotebooksSection />
 			{:else if activeCategory === 'skills'}
 				<SkillsSection />
 			{:else if activeCategory === 'audio'}

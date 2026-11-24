@@ -172,6 +172,20 @@ export const rollbackCard = (cardId: string, revisionId: number, source: Noteboo
 export const searchKeyword = (query: string, limit = 50) =>
 	invoke<NotebookSearchHit[]>('notebook_search_keyword', { query, limit });
 
+/** Search notebooks: keyword hits, merged with meaning-based ones when `semantic`. */
+export const search = (query: string, semantic: boolean, limit = 50) =>
+	invoke<NotebookSearchHit[]>('notebook_search', { query, limit, semantic });
+
+export interface SemanticStatus {
+	model_present: boolean;
+	pending: number;
+}
+
+export const semanticStatus = () => invoke<SemanticStatus>('notebook_semantic_status');
+
+/** Embed up to `limit` changed cards; how many still wait. */
+export const embedPending = (limit = 16) => invoke<number>('notebook_embed_pending', { limit });
+
 export const trashList = () => invoke<NotebookTrash>('notebook_trash_list');
 
 /** Keep a copy of a file the user picked or dropped. */

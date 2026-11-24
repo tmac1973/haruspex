@@ -4,6 +4,7 @@ export type Category =
 	| 'inference'
 	| 'chat'
 	| 'memory'
+	| 'notebooks'
 	| 'skills'
 	| 'audio'
 	| 'search'

@@ -13,7 +13,7 @@ Click the gear in the header; **← Back** closes.
 
 Appearance, Home, sleep during jobs, running in the background, replies, lean mode and tool loading.
 
-- **Show the Home tab**: on.
+- **Show the Home tab**: on. **Show the Notebooks tab**: on (see `notebooks`).
 - **Keep the computer awake** while a job runs: All jobs, Not Home cards (default) or Never (see `jobs`).
 - **Background**: **Keep running in the tray** and **Start at login**, both off (see `tray`).
 - **Theme**: System (default), Light or Dark.
@@ -61,6 +61,10 @@ What the assistant remembers between chats.
 - A list of everything remembered, to edit or delete.
 
 See the `memory` page.
+
+## Notebooks
+
+- **Semantic search**: off. On finds notebook cards by meaning too, using the model Memory uses (see `notebooks`).
 
 ## Skills
 

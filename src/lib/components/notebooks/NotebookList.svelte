@@ -5,6 +5,7 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
+	import NotebookSearch from '#lib/components/notebooks/NotebookSearch.svelte';
 	import {
 		allTags,
 		getNotebookList,
@@ -26,6 +27,7 @@
 
 	let { top, more }: Props = $props();
 
+	let searching = $state(false);
 	let creating = $state(false);
 	let newTitle = $state('');
 
@@ -77,7 +79,8 @@
 		/>
 	{/if}
 	{#if top}{@render top()}{/if}
-	{#if allTags().length > 0}
+	<NotebookSearch bind:active={searching} />
+	{#if !searching && allTags().length > 0}
 		<div class="tags" role="group" aria-label="Filter by tag">
 			{#each allTags() as tag (tag)}
 				<button
@@ -91,7 +94,7 @@
 			{/each}
 		</div>
 	{/if}
-	<ul>
+	<ul class:hidden={searching}>
 		{#each notebooks as nb (nb.id)}
 			<li>
 				<button
@@ -183,6 +186,10 @@
 		border-color: var(--accent);
 		background: var(--accent-soft);
 		color: var(--text-primary);
+	}
+
+	ul.hidden {
+		display: none;
 	}
 
 	ul {

@@ -13,6 +13,7 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { runCardForAgent } from '#lib/agent/tools/_notebookPython.ts';
 import * as api from '#lib/notebooks/api.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import {
 	PAGE_ROWS,
 	cardFull,
@@ -136,7 +137,11 @@ registerTool({
 	displayLabel: (args) => `Search notebooks: ${str(args.query)}`,
 	execute: (args) =>
 		guard(async () => {
-			const hits = await api.searchKeyword(str(args.query), 20);
+			const hits = await api.search(
+				str(args.query),
+				getSettings().notebooks?.semanticSearch ?? false,
+				20
+			);
 			if (hits.length === 0) return toolResult('No matches.');
 			return toolResult(
 				hits
