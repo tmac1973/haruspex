@@ -98,5 +98,9 @@ export const SHORTCUTS: ShortcutSection[] = [
 	{
 		title: 'Dialogs',
 		items: [{ keys: 'Esc', action: 'Close logs, the image viewer, or this help' }]
+	},
+	{
+		title: 'Image viewer',
+		items: [{ keys: '← / →', action: 'Previous / next picture, when there are several' }]
 	}
 ];

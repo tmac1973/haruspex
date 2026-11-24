@@ -27,6 +27,7 @@
 		resolveUserQuestion,
 		cancelUserQuestion
 	} from '#lib/stores/userQuestion.svelte.ts';
+	import { isImageViewerOpen } from '#lib/stores/imageViewer.svelte.ts';
 
 	const pending = $derived(getPendingQuestion());
 
@@ -100,8 +101,9 @@
 
 	// Esc breaks out of the question (cancels the run/turn). Handled here rather
 	// than via Modal's `dismissable` so backdrop-click stays inert.
+	// While a picture from the question is enlarged, Escape closes that.
 	function onKeydown(e: KeyboardEvent) {
-		if (pending && e.key === 'Escape') {
+		if (pending && e.key === 'Escape' && !isImageViewerOpen()) {
 			e.preventDefault();
 			cancelUserQuestion();
 		}

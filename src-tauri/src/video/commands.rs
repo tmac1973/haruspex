@@ -25,6 +25,14 @@ pub async fn video_probe_folder(
     Ok(probe::probe_episode(ffprobe, &working_dir, &dir).await)
 }
 
+/// Make the episode folder when it is missing (`episode` relative to the
+/// working folder). True when it was made. The Video sequence job calls it
+/// before its first probe, since it writes a new episode.
+#[tauri::command]
+pub fn video_episode_ensure(working_dir: String, episode: String) -> Result<bool, String> {
+    paths::ensure_episode(&working_dir, &episode).map(|(_, created)| created)
+}
+
 /// One clip: a path in the working folder, or the intro or outro set in
 /// Settings → Video editing.
 #[tauri::command]

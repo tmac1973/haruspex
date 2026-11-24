@@ -91,6 +91,23 @@ describe('view-image action', () => {
 		expect(detail.alt).toBe('a red panda');
 	});
 
+	it('sends every picture in the same markdown block as the gallery', () => {
+		const seen = vi.fn();
+		document.addEventListener(VIEW_IMAGE_EVENT, seen as EventListener, { once: true });
+		const pic = (h: string, alt: string) =>
+			`<button type="button" data-action="view-image"><img src="haruspex-img://localhost/${h}" alt="${alt}"></button>`;
+		document.body.innerHTML = `
+			<div class="markdown">${pic('a1', 'opening')}<p>text</p>${pic('b2', 'forest, clip 6')}</div>
+			<div class="markdown">${pic('c3', 'elsewhere')}</div>`;
+		document.querySelectorAll('img')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const detail = (seen.mock.calls[0][0] as CustomEvent).detail;
+		expect(detail.alt).toBe('forest, clip 6');
+		expect(detail.gallery.map((g: { alt: string }) => g.alt)).toEqual([
+			'opening',
+			'forest, clip 6'
+		]);
+	});
+
 	it('fires when the button itself is clicked, not just the image', () => {
 		const seen = vi.fn();
 		document.addEventListener(VIEW_IMAGE_EVENT, seen as EventListener, { once: true });

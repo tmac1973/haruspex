@@ -99,8 +99,14 @@ async function readText(workdir: string, relPath: string): Promise<string | null
 	}
 }
 
-/** What a run needs before it starts, or why it can't. */
-async function preflight(ctx: JobRunContext, cfg: VideoSequenceConfig): Promise<SpecContext> {
+/**
+ * What a run needs before it starts, or why it can't. `made` is a note for
+ * the first step when the episode folder had to be made.
+ */
+async function preflight(
+	ctx: JobRunContext,
+	cfg: VideoSequenceConfig
+): Promise<{ sc: SpecContext; made: string }> {
 	const workdir = ctx.job.working_dir;
 	if (!workdir) throw new Error('No working folder: the job needs the folder the video goes in.');
 	await refreshVideoBinaries().catch(() => null);
@@ -110,7 +116,15 @@ async function preflight(ctx: JobRunContext, cfg: VideoSequenceConfig): Promise<
 	if (getSettings().videoGenBackendKind === 'none') {
 		throw new Error('No video generation is set up: Settings → Video generation.');
 	}
-	return buildSpecContext(workdir, cfg, ctx.abort.signal);
+	// The job writes a new episode, so a missing folder is made, not refused.
+	const made = cfg.episode_dir
+		? await invoke<boolean>('video_episode_ensure', {
+				workingDir: workdir,
+				episode: cfg.episode_dir
+			})
+		: false;
+	const sc = await buildSpecContext(workdir, cfg, ctx.abort.signal);
+	return { sc, made: made ? `Made the episode folder ${cfg.episode_dir}. ` : '' };
 }
 
 /** The Interview stage: what the user decided, '' when nothing was asked. */
@@ -119,23 +133,23 @@ async function interviewStage(
 	steps: Steps,
 	cfg: VideoSequenceConfig,
 	sc: SpecContext,
-	run: { attended: boolean; existing: string | null; specPath: string }
+	run: { attended: boolean; existing: string | null; specPath: string; made: string }
 ): Promise<string> {
 	steps.start(INTERVIEW);
 	steps.abortIfCancelled();
 	if (run.existing !== null) {
-		steps.finish(INTERVIEW, `Skipped: ${run.specPath} is already written.`);
+		steps.finish(INTERVIEW, `${run.made}Skipped: ${run.specPath} is already written.`);
 		return '';
 	}
 	if (!run.attended) {
 		steps.finish(
 			INTERVIEW,
-			'Skipped: the run is unattended, so the spec comes from the brief alone.'
+			`${run.made}Skipped: the run is unattended, so the spec comes from the brief alone.`
 		);
 		return '';
 	}
 	const answers = await interview(ctx, cfg, sc);
-	steps.finish(INTERVIEW, answers || 'Nothing was asked: the brief settles it.');
+	steps.finish(INTERVIEW, `${run.made}${answers || 'Nothing was asked: the brief settles it.'}`);
 	return answers;
 }
 
@@ -188,10 +202,10 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 	const startedMs = Date.now();
 	void markRunStarted(ctx.runId, startedMs);
 	try {
-		const sc = await preflight(ctx, cfg);
+		const { sc, made: madeNote } = await preflight(ctx, cfg);
 		const existing = await readText(ctx.job.working_dir!, specPath);
 		const run = { attended, existing, specPath };
-		const answers = await interviewStage(ctx, steps, cfg, sc, run);
+		const answers = await interviewStage(ctx, steps, cfg, sc, { ...run, made: madeNote });
 		const { validated } = await specStage(ctx, steps, cfg, sc, { ...run, answers });
 		const spec = validated.spec;
 		const draws = usesKeyframes(sc);

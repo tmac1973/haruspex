@@ -14,8 +14,24 @@ import { saveImageAs, saveWithToast } from '#lib/images/save.ts';
 const codeFor = (btn: HTMLElement): string =>
 	btn.closest('.code-block')?.querySelector('code')?.textContent ?? '';
 
-/** Event the chat view listens for to open the full-size image viewer. */
+/** Event `ImageViewerHost` listens for to open the full-size image viewer. */
 export const VIEW_IMAGE_EVENT = 'hsp-view-image';
+
+export interface ViewImageDetail {
+	src: string;
+	alt: string;
+	/** Every enlargeable picture in the same rendered markdown, in order. */
+	gallery?: { src: string; alt: string }[];
+}
+
+/** The pictures beside `zoom`: those in its markdown block, or none. */
+function galleryOf(zoom: HTMLElement): ViewImageDetail['gallery'] {
+	const block = zoom.closest('.markdown');
+	if (!block) return undefined;
+	return Array.from(block.querySelectorAll<HTMLImageElement>('[data-action="view-image"] img')).map(
+		(img) => ({ src: img.src, alt: img.alt })
+	);
+}
 
 export function handleMarkdownAction(event: MouseEvent): void {
 	const target = event.target as HTMLElement | null;
@@ -28,9 +44,8 @@ export function handleMarkdownAction(event: MouseEvent): void {
 	if (zoom) {
 		const img = zoom.querySelector('img');
 		if (img) {
-			document.dispatchEvent(
-				new CustomEvent(VIEW_IMAGE_EVENT, { detail: { src: img.src, alt: img.alt } })
-			);
+			const detail: ViewImageDetail = { src: img.src, alt: img.alt, gallery: galleryOf(zoom) };
+			document.dispatchEvent(new CustomEvent(VIEW_IMAGE_EVENT, { detail }));
 		}
 		return;
 	}

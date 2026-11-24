@@ -21,6 +21,7 @@
 	import YoutubeUploadDialog from '#lib/components/video/YoutubeUploadDialog.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
+	import ImageViewerHost from '#lib/components/ImageViewerHost.svelte';
 	import FileEditorModal from '#lib/components/FileEditorModal.svelte';
 	import LogViewer from '#lib/components/LogViewer.svelte';
 	import HelpModal from '#lib/components/HelpModal.svelte';
@@ -951,6 +952,9 @@
 	<EmailReviewModal />
 	<FileEditorModal />
 {/if}
+
+<!-- One picture viewer per window, for any tab or modal that enlarges one. -->
+<ImageViewerHost />
 
 <!-- Toast host lives outside the detached-shell branch: each webview
      window has its own store instance, and errors surface in detached

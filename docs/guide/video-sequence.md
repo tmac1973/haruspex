@@ -13,7 +13,7 @@ Open Settings → Video editing and turn on **Let the assistant edit videos**, a
 
 ## Write the job
 
-- **Episode folder**: where everything goes, inside the working folder. Clips and pictures already in it can be used as sections and start pictures.
+- **Episode folder**: where everything goes, inside the working folder. Clips and pictures already in it can be used as sections and start pictures. If it doesn't exist yet, the run makes it and says so in the Interview step, so check the name: a misspelt folder starts an empty episode.
 - **Brief**: what the video is. Say lengths, how sections join, and the sound if you know them.
 - **Run mode**: _Attended_ asks, one question at a time, what the brief leaves open, and stops to show you the spec, the stills, and each section's first clip. _Unattended_ never asks.
 - **Speaking model**: a video instance that makes someone speak (Wan2.2 S2V), for speaking sections; it shows only when the server has one.
@@ -23,7 +23,7 @@ Open Settings → Video editing and turn on **Let the assistant edit videos**, a
 
 1. Writes `sequence.json`: the sections, how each joins the next (a cut, a crossfade, or a generated transition), and the sound. You can edit this file; a run reads it as it is.
 2. Speaks the lines of each speaking section into `narration/` (see below).
-3. Makes a still for each generated section in `keyframes/`. Later sections' stills are edits of the first, so the subject stays the same, when the image model can edit.
+3. Makes a still for each generated section in `keyframes/`. Later sections' stills are edits of the first, so the subject stays the same, when the image model can edit. In an Attended run, click a still in the question to see it full size, and use ← and → to go through the others.
 4. Makes the clips in `generated/`. A section longer than the model's longest clip is several clips, each starting from the last frame of the one before; every few clips end on a fresh still of the section, so it doesn't drift.
 5. With a model that can see, checks each seam and makes a clip that jumps once more.
 6. Makes the music beds in `music/` and the narration in `narration/`.

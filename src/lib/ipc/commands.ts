@@ -512,6 +512,7 @@ export const IPC = {
 	tts_synthesize_to_cache: 'tts_synthesize_to_cache',
 	video_binaries_status: 'video_binaries_status',
 	video_encoders_test: 'video_encoders_test',
+	video_episode_ensure: 'video_episode_ensure',
 	video_frames: 'video_frames',
 	video_mux_audio: 'video_mux_audio',
 	video_probe_cached: 'video_probe_cached',
