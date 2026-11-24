@@ -26,6 +26,8 @@ import '#lib/agent/tools/user-question.ts';
 import '#lib/agent/tools/mcp.ts';
 import '#lib/agent/tools/calendar.ts';
 import '#lib/agent/tools/contacts.ts';
+import '#lib/agent/tools/notebook.ts';
+import '#lib/agent/tools/notebook-table.ts';
 import '#lib/agent/tools/screen.ts';
 import '#lib/agent/tools/camera.ts';
 import '#lib/agent/tools/camera-look-around.ts';

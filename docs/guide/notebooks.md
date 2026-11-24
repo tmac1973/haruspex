@@ -29,6 +29,10 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 **+ Add card → Checklist** adds a list of items to tick. Enter starts the next item; Backspace in an empty item removes it. Drag items by their ⋮⋮ to reorder, and **Hide done** hides the ticked ones.
 
+## Ask an agent to make or change a notebook
+
+In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). Agents only see notebooks when asked.
+
 ## Keep files and pictures
 
 **+ Add card → Picture…** or **File…** picks files to keep in the notebook; dropping files onto a notebook does the same, placing them after the card under the pointer. Pictures show in the card, and clicking one enlarges it. Other files show their name and size: **Open** opens them in the app your computer uses for that type, **Save a copy…** saves them where you choose, and PDFs have **Preview**. Programs and scripts aren't opened from a notebook; save a copy instead. **Replace…** swaps in another file. Files up to 200 MB can be kept, and they stay on this computer.

@@ -9,6 +9,7 @@ vi.mock('#lib/stores/settings.ts', async (orig) =>
 		overDefaults: true,
 		settings: () => ({
 			sandboxEnabled: true,
+			notebooksTab: flags.full,
 			screenCaptureEnabled: flags.full,
 			musicBackendKind: flags.full ? 'toolchest' : 'none',
 			videoModels: flags.full

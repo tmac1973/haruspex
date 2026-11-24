@@ -398,7 +398,10 @@ export interface ToolRegistration {
 		| 'job-proposal'
 		/** Looks and listens through Settings → Cameras (`_cameraGate.ts`). Chat only,
 		 *  with a model on this computer or a trusted server. */
-		| 'camera';
+		| 'camera'
+		/** The user's notebooks (the Notebooks tab). Chat, Shell and the Code
+		 *  tab, while Settings → General → Notebooks tab is on; never in lean mode. */
+		| 'notebooks';
 	requiresVision?: boolean;
 	/**
 	 * The schema as settings shape it for this turn, or null to leave the tool

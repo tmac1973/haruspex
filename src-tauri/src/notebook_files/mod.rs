@@ -267,6 +267,31 @@ pub async fn notebook_file_store_path(app: AppHandle, path: String) -> Result<St
     .map_err(|e| format!("store task panicked: {e}"))?
 }
 
+/// Keep a copy of a file an agent names: `path` inside `workdir` (Chat and
+/// the Code tab, confined to the folder like the fs tools), or an absolute
+/// path when there's no working folder (the Shell tab, which reads anywhere).
+#[tauri::command]
+pub async fn notebook_file_store_agent(
+    app: AppHandle,
+    workdir: Option<String>,
+    path: String,
+) -> Result<StoredFile, String> {
+    let resolved = match workdir.as_deref().filter(|w| !w.is_empty()) {
+        Some(w) => crate::fs_tools::path::resolve_in_workdir(
+            &crate::fs_tools::path::workdir_path(w)?,
+            &path,
+        )?,
+        None => {
+            let p = PathBuf::from(&path);
+            if !p.is_absolute() {
+                return Err(format!("{path} is not a full path."));
+            }
+            p
+        }
+    };
+    notebook_file_store_path(app, resolved.to_string_lossy().to_string()).await
+}
+
 /// Where a kept file is on disk, for opening it with another app or export.
 #[tauri::command]
 pub fn notebook_file_path(app: AppHandle, hash: String) -> Result<String, String> {

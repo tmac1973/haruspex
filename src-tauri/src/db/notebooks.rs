@@ -492,6 +492,10 @@ impl Database {
         Ok(NotebookDetail { notebook, cards })
     }
 
+    pub fn notebook_card_get(&self, card_id: &str) -> Result<NotebookCard, String> {
+        card_required(&self.conn(), card_id)
+    }
+
     pub fn notebook_create(&self, title: &str, tags: &[String]) -> Result<NotebookSummary, String> {
         let title = title.trim();
         if title.is_empty() {

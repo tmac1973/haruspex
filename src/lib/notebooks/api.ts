@@ -93,6 +93,8 @@ export const deleteNotebook = (id: string) => invoke<void>('notebook_delete', { 
 export const restoreNotebook = (id: string) => invoke<void>('notebook_restore', { id });
 export const purgeNotebook = (id: string) => invoke<void>('notebook_purge', { id });
 
+export const getCard = (cardId: string) => invoke<NotebookCard>('notebook_card_get', { cardId });
+
 export const addCard = (
 	notebookId: string,
 	card: NewCard,
@@ -175,6 +177,10 @@ export const trashList = () => invoke<NotebookTrash>('notebook_trash_list');
 /** Keep a copy of a file the user picked or dropped. */
 export const storeFilePath = (path: string) =>
 	invoke<NotebookFile>('notebook_file_store_path', { path });
+
+/** Keep a file an agent names: in its working folder, or a full path in Shell. */
+export const storeFileForAgent = (workdir: string | null, path: string) =>
+	invoke<NotebookFile>('notebook_file_store_agent', { workdir, path });
 
 /** Keep bytes made in the app (a pasted picture, a plot). */
 export function storeFileBytes(bytes: Uint8Array, name: string, mime: string) {

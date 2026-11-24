@@ -72,6 +72,13 @@ pub async fn notebook_purge(state: Db<'_>, id: String) -> Result<(), String> {
     on_pool(db, move |db| db.notebook_purge(&id)).await
 }
 
+/// One card, deleted or not, with its first 200 rows.
+#[tauri::command]
+pub async fn notebook_card_get(state: Db<'_>, card_id: String) -> Result<NotebookCard, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.notebook_card_get(&card_id)).await
+}
+
 #[tauri::command]
 pub async fn notebook_card_add(
     state: Db<'_>,
