@@ -112,3 +112,20 @@ Example output:
 A Python card with the code and, under it, a scatter plot of the three speakers. Change a price and the output says "stale" until it runs again.
 
 Read more: notebook-files, notebook-agents
+
+## Move your notebooks to another computer
+
+Back up every notebook, with its files and history, to one file, and restore it on another computer or after a reinstall.
+
+Tab: Settings
+Required settings: None
+
+Prompt:
+
+> Settings → Notebooks → Back up… on the first computer, then Settings → Notebooks → Restore… on the other.
+
+Example output:
+
+"Backed up 14 notebooks, 212 cards, 31 files." On the other computer: "Restored: added 14 notebooks."
+
+Read more: notebook-files

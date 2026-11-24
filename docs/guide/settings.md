@@ -65,6 +65,7 @@ See the `memory` page.
 ## Notebooks
 
 - **Semantic search**: off. On finds notebook cards by meaning too, using the model Memory uses (see `notebooks`).
+- **Back up…** / **Restore…**: save every notebook to one file, or put them back from one (see `notebook-files`).
 
 ## Skills
 

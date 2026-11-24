@@ -35,7 +35,7 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 ## Keep files, run Python, export
 
-Pictures, files, Python cards, and exporting a notebook to PDF, Word, a web page or Markdown (or importing one) are on the `notebook-files` page.
+Pictures, files, Python cards, exporting a notebook to PDF, Word, a web page or Markdown (or importing one), and backing up all of them are on the `notebook-files` page.
 
 ## Have an agent do it
 

@@ -1,6 +1,6 @@
 ---
 title: Notebook files and Python
-description: Keeping files and pictures in a notebook, Python cards that work with its tables, and exporting or importing notebooks (PDF, Word, OpenDocument, web page, Markdown, Jupyter, CSV, Excel).
+description: Files and pictures in a notebook, Python cards that read its tables, exporting or importing notebooks (PDF, Word, web page, Markdown, Jupyter, CSV, Excel), and backing up all of them.
 ---
 
 # Notebook files and Python
@@ -22,3 +22,9 @@ What a notebook can hold besides text, tables and checklists, and how to get not
 ## Import notes and tables
 
 **⤓ Import…** under the notebook list makes a notebook from each Markdown, CSV or spreadsheet file you pick; **⋯ → Import into this notebook…** adds to the open one. Markdown is split at its `##` headings: its tables become table cards and its task lists checklists. A CSV becomes one table, and a spreadsheet a table per sheet (up to 5,000 rows each).
+
+## Back up and restore every notebook
+
+Settings → Notebooks → **Back up…** saves every notebook to one .zip file: cards, tables, files, earlier versions and Trash. Notebook chats aren't included. Keep it somewhere else, or use it to move notebooks to another computer.
+
+**Restore…** picks a backup and says what's in it. **Restore** (or **Add the missing ones**, when some are here already) adds the notebooks that aren't here and leaves the rest alone. **Replace with the backup** puts the backup's notebooks back as they were, losing changes made since, and moves notebooks not in it to Trash. It first saves what's here to `notebook_backups` in Haruspex's data folder. A file in the backup that is damaged isn't restored, and the message says how many.

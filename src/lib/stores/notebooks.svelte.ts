@@ -148,6 +148,13 @@ async function reloadOpen(): Promise<void> {
 	}
 }
 
+/** Read everything again after a restore replaced notebooks underneath. */
+export async function reloadAllNotebooks(): Promise<void> {
+	await loadNotebookList();
+	if (backend === localBackend) await reloadOpen();
+	if (showTrash) await loadTrash();
+}
+
 /** Open a notebook, and optionally bring one of its cards (and row) into view. */
 export async function openNotebook(id: string, cardId?: string, rowId?: string): Promise<boolean> {
 	return openNotebookOn(localBackend, id, cardId, rowId);
