@@ -1993,7 +1993,9 @@ mod tests {
             assert!(ok);
         }
         let wd = dir.to_string_lossy().into_owned();
+        // Kdenlive: the test checks its project, and Shotcut is the default.
         let settings = VideoSettings {
+            editor: crate::video::format::Format::Kdenlive,
             preset: "1080p60".into(),
             ..Default::default()
         };
@@ -2261,7 +2263,9 @@ mod loudness_end_to_end {
             assert!(ok);
         }
         let wd = dir.to_string_lossy().into_owned();
+        // Kdenlive: the test checks its project, and Shotcut is the default.
         let settings = VideoSettings {
+            editor: crate::video::format::Format::Kdenlive,
             preset: "1080p30".into(),
             ..Default::default()
         };
