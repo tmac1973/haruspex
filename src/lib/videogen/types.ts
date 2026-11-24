@@ -1,9 +1,42 @@
 /**
- * Video generation's shapes: one request makes one clip on a llama-toolchest
- * video instance (Settings → Video generation). Clips are kept in the same
- * cache as songs, and named by a `haruspex-video:` URL so an answer shows a
- * video player for them.
+ * Video generation's shapes: one request makes one clip on one of the video
+ * models in Settings → Video generation (a llama-toolchest instance or a
+ * ComfyUI model). Clips are kept in the same cache as songs, and named by a
+ * `haruspex-video:` URL so an answer shows a video player for them.
  */
+
+import type { GenerationEntry } from '#lib/generation/entry.ts';
+import type { VideoLimits } from '#lib/toolchest/models.ts';
+
+/** A server kind that can make clips. */
+export type VideoBackendKind = 'llama-toolchest' | 'comfyui';
+
+/**
+ * What one video model can do and make, as its backend reports it: the same
+ * shape for every backend, so the tools and jobs check one thing.
+ */
+export interface VideoCaps {
+	/** A clip from the prompt alone. */
+	text: boolean;
+	startImage: boolean;
+	endImage: boolean;
+	/** A person in the start image says the given speech (Wan2.2 S2V). */
+	speech: boolean;
+	/** It can't make a clip without speech. */
+	needsSpeech: boolean;
+	/** The clip has its own sound track (LTX-2.3). */
+	sound: boolean;
+	limits: VideoLimits;
+	/** Frame counts are `frameStep × n + 1`: 4 for Wan, 8 for LTX. */
+	frameStep: number;
+	/** Empty when the backend doesn't say. */
+	licence: string;
+	/** Null when the licence isn't one Haruspex knows. */
+	commercialUse: boolean | null;
+}
+
+/** One video model on one server, as Settings → Video generation keeps it. */
+export type VideoModelEntry = GenerationEntry<VideoBackendKind, VideoCaps>;
 
 /** A picture the clip starts from, in the image cache. */
 export interface VideoStartImage {
@@ -65,12 +98,16 @@ export interface VideoResult {
  * it is saved with the task.
  */
 export interface VideoJobHandle {
-	backend: 'llama-toolchest';
+	backend: VideoBackendKind;
 	baseUrl: string;
 	id: string;
 	model: string;
 	/** The API key's id in the key store; empty for none. */
 	keyId: string;
+	/** The video model it was sent for; absent from a handle saved before the list. */
+	entryId?: string;
+	/** What one backend needs to follow it, such as ComfyUI's client id. */
+	extra?: Record<string, string>;
 }
 
 export interface VideoGenerateOptions {

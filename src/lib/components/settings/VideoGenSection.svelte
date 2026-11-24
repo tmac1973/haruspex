@@ -12,7 +12,8 @@
 	 * is picked; `generate_video` is offered only then.
 	 */
 	import { errMessage } from '#lib/utils/error.ts';
-	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
+	import { videoModelsFromFields } from '#lib/videogen/fields.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
@@ -26,6 +27,18 @@
 	import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 
 	type Kind = 'none' | 'llama-toolchest';
+
+	/**
+	 * Write the single-instance fields and the list seeded from them, so the
+	 * video tools (which read the list) follow what this section shows.
+	 */
+	function saveFields(patch: Partial<AppSettings>): void {
+		const s = getSettings();
+		updateSettings({
+			...patch,
+			videoModels: videoModelsFromFields({ ...s, ...patch }, s.videoModels)
+		});
+	}
 
 	let kind = $state<Kind>(getSettings().videoGenBackendKind);
 	let baseUrl = $state(getSettings().videoGenToolchestBaseUrl);
@@ -46,7 +59,7 @@
 
 	function persistKind(e: Event) {
 		kind = (e.currentTarget as HTMLSelectElement).value as Kind;
-		updateSettings({ videoGenBackendKind: kind });
+		saveFields({ videoGenBackendKind: kind });
 		const found = kind === 'llama-toolchest' ? prefillFromInference('video') : null;
 		if (found) {
 			baseUrl = found.baseUrl;
@@ -71,7 +84,7 @@
 			// With one instance there is nothing to choose.
 			if (!modelId && instances.length === 1) {
 				modelId = instances[0].id;
-				updateSettings({ videoGenToolchestModelId: modelId });
+				saveFields({ videoGenToolchestModelId: modelId });
 				probeResult = await probeVideo();
 			}
 		} catch (e) {
@@ -84,7 +97,7 @@
 	function pickServer(saved: GenerationServer | null) {
 		baseUrl = saved?.url ?? '';
 		apiKeyId = saved?.keyId ?? apiKeyId;
-		updateSettings({ videoGenToolchestBaseUrl: baseUrl, videoGenToolchestApiKeyId: apiKeyId });
+		saveFields({ videoGenToolchestBaseUrl: baseUrl, videoGenToolchestApiKeyId: apiKeyId });
 		probeResult = null;
 		if (baseUrl) void probe();
 	}
@@ -92,19 +105,19 @@
 	function saveUrl() {
 		const next = baseUrl.trim();
 		const changed = next !== getSettings().videoGenToolchestBaseUrl;
-		updateSettings({ videoGenToolchestBaseUrl: next });
+		saveFields({ videoGenToolchestBaseUrl: next });
 		if (changed && next) void probe();
 	}
 
 	function chooseKey(id: string | null) {
 		apiKeyId = id;
-		updateSettings({ videoGenToolchestApiKeyId: id });
+		saveFields({ videoGenToolchestApiKeyId: id });
 		if (baseUrl.trim()) void probe();
 	}
 
 	function chooseModel(e: Event) {
 		modelId = (e.currentTarget as HTMLSelectElement).value;
-		updateSettings({ videoGenToolchestModelId: modelId });
+		saveFields({ videoGenToolchestModelId: modelId });
 		void probe();
 	}
 

@@ -13,6 +13,8 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageModelEntry } from '#lib/image/types.ts';
+import type { VideoModelEntry } from '#lib/videogen/types.ts';
+import { videoModelsFromFields } from '#lib/videogen/fields.ts';
 import type { SpecialistEntry } from '#lib/specialists/types.ts';
 import {
 	LEGACY_IMAGE_FIELDS,
@@ -970,6 +972,13 @@ export interface AppSettings {
 	 */
 	imageModels: ImageModelEntry[];
 	/**
+	 * The video models `generate_video` and video-sequence jobs use, in the
+	 * order they are tried (see `#lib/videogen/entries.ts`), edited in
+	 * Settings → Video generation. An install from before the list is seeded
+	 * once from its old single-instance fields (`#lib/videogen/fields.ts`).
+	 */
+	videoModels: VideoModelEntry[];
+	/**
 	 * The specialist models the Code tab's model can hand a job to, edited in
 	 * Settings → Code → Specialists (see `#lib/specialists/entries.ts`).
 	 */
@@ -1318,6 +1327,7 @@ const defaults: AppSettings = {
 	videoGenToolchestModelId: '',
 	generationServers: [],
 	imageModels: [],
+	videoModels: [],
 	specialists: [],
 	codeHelpers: {},
 	codeHelperConfig: {},
@@ -1528,6 +1538,9 @@ function load(): AppSettings {
 				imageModels: Array.isArray(rest.imageModels)
 					? rest.imageModels
 					: imageModelsFromFields(rest as LegacyImageFields),
+				videoModels: Array.isArray(rest.videoModels)
+					? rest.videoModels
+					: videoModelsFromFields({ ...defaults, ...rest }),
 				specialists: Array.isArray(rest.specialists)
 					? rest.specialists.map((e: SpecialistEntry) => ({
 							...e,

@@ -1203,6 +1203,61 @@ describe('load-time imageModels seeding', () => {
 	});
 });
 
+describe('load-time video model list', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings().videoModels;
+	}
+
+	it('makes the old toolchest instance the first entry, and None no entry', async () => {
+		expect(
+			await loadWith({
+				videoGenBackendKind: 'llama-toolchest',
+				videoGenToolchestBaseUrl: 'http://box:3000',
+				videoGenToolchestApiKeyId: 'k1',
+				videoGenToolchestModelId: 'ltx-2.3'
+			})
+		).toMatchObject([
+			{
+				id: 'legacy',
+				name: 'ltx-2.3',
+				backend: 'llama-toolchest',
+				url: 'http://box:3000',
+				keyId: 'k1',
+				model: 'ltx-2.3',
+				caps: null
+			}
+		]);
+		expect(await loadWith({ videoGenBackendKind: 'none' })).toEqual([]);
+		expect(await loadWith({})).toEqual([]);
+	});
+
+	it('keeps a saved list as it is, even an empty one', async () => {
+		const saved = [{ id: 'x', backend: 'comfyui', model: 'wan.safetensors' }];
+		expect(await loadWith({ videoGenBackendKind: 'llama-toolchest', videoModels: saved })).toEqual(
+			saved
+		);
+		expect(await loadWith({ videoGenBackendKind: 'llama-toolchest', videoModels: [] })).toEqual([]);
+	});
+});
+
 describe('load-time specialists', () => {
 	let priorRaw: string | null;
 
