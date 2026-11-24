@@ -24,6 +24,7 @@ const PAGES = [
 	'chat-conversations',
 	'notebooks',
 	'notebook-agents',
+	'notebook-files',
 	'documents',
 	'slides',
 	'shell',

@@ -4,6 +4,7 @@
 //! of one refers to it; `sweep` removes the rest at startup.
 
 pub mod protocol;
+pub mod transfer;
 
 use crate::blob_cache;
 use crate::db::Database;

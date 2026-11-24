@@ -13,7 +13,11 @@
 	import { persistItem } from '#lib/persist.ts';
 	import type { NotebookCard } from '#lib/notebooks/api.ts';
 	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
+	import { exportNotebook, exportTable, type NotebookFormat } from '#lib/notebooks/export.ts';
+	import { importFiles } from '#lib/notebooks/import.ts';
 	import {
+		emitNotebookChanged,
+		openNotebook,
 		getOpenNotebook,
 		isNotebookListLoaded,
 		isTrashShown,
@@ -44,12 +48,63 @@
 		}
 	}
 
+	const EXPORTS: [NotebookFormat, string][] = [
+		['pdf', 'PDF'],
+		['docx', 'Word'],
+		['odt', 'OpenDocument'],
+		['html', 'web page'],
+		['markdown', 'Markdown'],
+		['ipynb', 'Jupyter notebook']
+	];
+
+	function notebookMenu(id: string) {
+		return [
+			...EXPORTS.map(([format, name]) => ({
+				label: `Export as ${name}…`,
+				run: () => void exportNotebook(id, format)
+			})),
+			{
+				label: 'Import into this notebook…',
+				run: () =>
+					void importFiles(id).then((done) => {
+						if (done) emitNotebookChanged(done);
+					})
+			}
+		];
+	}
+
+	function cardMenu(card: NotebookCard) {
+		const items: { label: string; run: () => void }[] = [
+			{
+				label: 'History…',
+				run: () => {
+					historyFor = card;
+				}
+			}
+		];
+		if (card.kind === 'table') {
+			items.push(
+				{ label: 'Export table as CSV…', run: () => void exportTable(card, 'csv') },
+				{ label: 'Export table as Excel…', run: () => void exportTable(card, 'xlsx') }
+			);
+		}
+		return items;
+	}
+
+	async function importNew() {
+		const id = await importFiles(null);
+		if (id) {
+			await loadNotebookList();
+			await openNotebook(id);
+		}
+	}
+
 	/** The card whose History is showing. */
 	let historyFor = $state<NotebookCard | null>(null);
 </script>
 
 <div class="notebooks">
-	<NotebookList />
+	<NotebookList onimport={() => void importNew()} />
 	{#if isTrashShown()}
 		<TrashView />
 	{:else if open}
@@ -58,7 +113,8 @@
 			onpickkind={(kind, after) => {
 				if (kind === 'image' || kind === 'attachment') void pickFilesAsCards(kind, after);
 			}}
-			cardMenu={(card) => [{ label: 'History…', run: () => (historyFor = card) }]}
+			{cardMenu}
+			menuItems={notebookMenu(open.notebook.id)}
 		>
 			{#snippet cardBadge(card)}
 				<SourceBadge {card} />

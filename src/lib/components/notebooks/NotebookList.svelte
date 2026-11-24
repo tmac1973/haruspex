@@ -23,9 +23,11 @@
 		top?: Snippet;
 		/** Below "This computer": other computers' notebooks. */
 		more?: Snippet;
+		/** "Import…": Markdown, CSV or spreadsheet files as new notebooks. */
+		onimport?: () => void;
 	}
 
-	let { top, more }: Props = $props();
+	let { top, more, onimport }: Props = $props();
 
 	let searching = $state(false);
 	let creating = $state(false);
@@ -118,6 +120,15 @@
 		{/each}
 	</ul>
 	{#if more}{@render more()}{/if}
+	{#if onimport}
+		<button
+			class="trash"
+			onclick={onimport}
+			title="Make notebooks from Markdown, CSV or spreadsheet files"
+		>
+			⤓ Import…
+		</button>
+	{/if}
 	<button class="trash" class:active={isTrashShown()} onclick={() => void openTrash()}>
 		🗑 Trash
 	</button>
