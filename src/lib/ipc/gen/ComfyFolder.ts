@@ -3,4 +3,4 @@
 /**
  * A ComfyUI model folder kind, as `/internal/folder_paths` names it.
  */
-export type ComfyFolder = "diffusion_models" | "text_encoders" | "vae" | "upscale_models" | "loras";
+export type ComfyFolder = "diffusion_models" | "text_encoders" | "vae" | "upscale_models" | "loras" | "audio_encoders" | "checkpoints" | "latent_upscale_models";

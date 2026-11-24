@@ -1,12 +1,12 @@
 /**
- * A llama-toolchest server's video instances (Wan 2.2 and the like), set up in
- * Settings → Video generation.
+ * A llama-toolchest server's video instances (Wan 2.2, LTX-2.3 and the like):
+ * one backend per video model in Settings → Video generation.
  *
  * A clip is a job on toolchest's queue (`/v1/videos/jobs`): polled once a
  * second for its phase and step (`followJob`), then downloaded straight into
  * the audio cache by Rust (`audio_store_url`) and deleted from the server.
  * Cancelling sends `DELETE`. The job's id is reported (`onHandle`) as soon as
- * it is queued, so `resumeVideo` can follow it again after a restart.
+ * it is queued, so `resume` can follow it again after a restart.
  *
  * A starting or ending picture goes as a file part from the image cache, so
  * it never crosses the bridge. A finished clip is probed for a sound track,
@@ -21,15 +21,22 @@ import {
 	type ToolchestConfig
 } from '#lib/toolchest/client.ts';
 import { followJob, removeJob, type JobLike } from '#lib/toolchest/jobs.ts';
-import { settleJob, storeJobFile, toolchestKind } from '#lib/toolchest/kind.ts';
+import {
+	instanceLabel,
+	settleJob,
+	storeJobFile,
+	toolchestServer,
+	usable
+} from '#lib/toolchest/kind.ts';
+import { entryConfigKey } from '#lib/generation/entry.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
-import type { ProbeResult } from '#lib/image/backend.ts';
-import { invoke } from '@tauri-apps/api/core';
-import { videoSettings } from '#lib/video/args.ts';
-import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';
+import { clipHasAudio } from '#lib/videogen/clip.ts';
+import { capsFromInstance } from '#lib/videogen/capsOf.ts';
+import { VideoBackendError, type VideoBackend } from '#lib/videogen/backend.ts';
+import { registerVideoBackendKind } from '#lib/videogen/registry.ts';
 import type {
 	VideoGenerateOptions,
-	VideoJobHandle,
+	VideoModelEntry,
 	VideoProgress,
 	VideoRequest,
 	VideoResult
@@ -119,48 +126,6 @@ export function buildVideoBody(req: VideoRequest, model: string): Json {
 	return body;
 }
 
-const server = toolchestKind('video');
-
-/** Every video instance the last probe saw. */
-export const seenVideoInstances = server.seen;
-
-/**
- * The chosen instance (or `id`, on the same server), running, or why it
- * can't make a clip now.
- */
-export async function readyVideoInstance(
-	signal?: AbortSignal,
-	id?: string
-): Promise<ToolchestInstance> {
-	return server.readyInstance(await server.config(), signal, id);
-}
-
-/** The video instances on the server in Settings → Video generation. */
-export async function listVideoInstances(signal?: AbortSignal): Promise<ToolchestInstance[]> {
-	return server.instances(await server.config(), signal);
-}
-
-/** The instance Settings → Video generation names. */
-export function chosenVideoInstanceId(): string {
-	return server.chosenId();
-}
-
-/** Settings → Video generation's Probe: reachable, and the chosen instance running. */
-export function probeVideo(): Promise<ProbeResult> {
-	return server.probe();
-}
-
-/** Whether a cached clip has a sound track; false when it can't be probed. */
-export async function clipHasAudio(hash: string): Promise<boolean> {
-	try {
-		const info = await invoke<ClipInfo>('video_probe_cached', { hash, settings: videoSettings() });
-		return info.audio.length > 0;
-	} catch (e) {
-		console.warn('could not probe a generated clip for sound', e);
-		return false;
-	}
-}
-
 /** The pictures (from the image cache) and speech (from the audio cache) a request sends as form parts. */
 export function videoFiles(req: VideoRequest) {
 	const files = [];
@@ -190,7 +155,7 @@ export function videoFiles(req: VideoRequest) {
 	return files;
 }
 
-/** Follow a job to its end and keep the clip. */
+/** Follow a job to its end and keep the clip; `model` is what the answer names. */
 async function finish(
 	cfg: ToolchestConfig,
 	created: VideoJob,
@@ -227,40 +192,101 @@ async function finish(
 	};
 }
 
-/** Make the clip on the instance in Settings → Video generation. */
-export async function generateVideo(
-	req: VideoRequest,
-	opts: VideoGenerateOptions = {}
-): Promise<VideoResult> {
-	const cfg = await server.config();
-	const instance = await server.readyInstance(cfg, opts.signal, opts.instanceId);
-	const body = buildVideoBody(req, instance.id);
-	const files = videoFiles(req);
-	if (req.audio && !instance.capabilities.includes('audio')) {
-		throw new ToolchestError('unconfigured', `${instance.id} can't make someone speak.`);
-	}
-	const created = readVideoJob(
-		files.length > 0
-			? await toolchestUpload(cfg, { path: ROUTES.jobs, body }, files, opts.signal, true)
-			: await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
-	);
-	if (!created) throw new ToolchestError('rejected', 'llama-toolchest made no job.');
-	opts.onHandle?.({
-		backend: 'llama-toolchest',
-		baseUrl: cfg.baseUrl,
-		id: created.id,
-		model: instance.id,
-		keyId: server.keyId()
-	});
-	return finish(cfg, created, instance.id, req, opts);
+type Server = ReturnType<typeof toolchestServer>;
+
+/** Each entry's view of its server, kept while the entry's config is unchanged. */
+const servers = new Map<string, { key: string; server: Server }>();
+
+function serverFor(entry: VideoModelEntry): Server {
+	const key = entryConfigKey(entry);
+	const have = servers.get(entry.id);
+	if (have?.key === key) return have.server;
+	const server = toolchestServer('video', () => ({
+		baseUrl: entry.url,
+		keyId: entry.keyId,
+		modelId: entry.model
+	}));
+	servers.set(entry.id, { key, server });
+	return server;
 }
 
-/** Follow a job an earlier run sent, on the server it went to, whatever the settings say now. */
-export async function resumeVideo(
-	handle: VideoJobHandle,
-	req: VideoRequest,
-	opts: VideoGenerateOptions = {}
-): Promise<VideoResult> {
-	const cfg = await server.configFor(handle.baseUrl, handle.keyId);
-	return finish(cfg, readVideoJob({ id: handle.id })!, handle.model, req, opts);
+/** Toolchest's error as a video backend's, so routing knows which ones to pass over. */
+function asVideoError(e: unknown): unknown {
+	if (!(e instanceof ToolchestError)) return e;
+	return new VideoBackendError(e.kind, e.message, { status: e.status });
+}
+
+async function mapped<T>(run: () => Promise<T>): Promise<T> {
+	try {
+		return await run();
+	} catch (e) {
+		throw asVideoError(e);
+	}
+}
+
+/** The backend for one toolchest video model. */
+export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
+	const server = serverFor(entry);
+
+	async function ready(signal?: AbortSignal): Promise<ToolchestInstance> {
+		const instance = await server.readyInstance(await server.config(), signal);
+		if (!instance.video) {
+			throw new ToolchestError('unconfigured', `${instance.id} is not a video model.`);
+		}
+		return instance;
+	}
+
+	return {
+		kind: 'llama-toolchest',
+		probe: () => mapped(() => server.probe()),
+		capabilities: (signal) =>
+			mapped(
+				async () =>
+					capsFromInstance(await ready(signal)) as NonNullable<ReturnType<typeof capsFromInstance>>
+			),
+		models: (signal) =>
+			mapped(async () =>
+				(await server.instances(await server.config(), signal))
+					.filter(usable)
+					.map((i) => ({ name: i.id, label: instanceLabel(i) }))
+			),
+		generate: (req, opts = {}) =>
+			mapped(async () => {
+				const cfg = await server.config();
+				const instance = await ready(opts.signal);
+				const body = buildVideoBody(req, instance.id);
+				const files = videoFiles(req);
+				if (req.audio && !instance.capabilities.includes('audio')) {
+					throw new ToolchestError('unconfigured', `${instance.id} can't make someone speak.`);
+				}
+				const created = readVideoJob(
+					files.length > 0
+						? await toolchestUpload(cfg, { path: ROUTES.jobs, body }, files, opts.signal, true)
+						: await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
+				);
+				if (!created) throw new ToolchestError('rejected', 'llama-toolchest made no job.');
+				opts.onHandle?.({
+					backend: 'llama-toolchest',
+					baseUrl: cfg.baseUrl,
+					id: created.id,
+					model: instance.id,
+					keyId: server.keyId()
+				});
+				return finish(cfg, created, entry.name, req, opts);
+			}),
+		resume: (handle, req, opts = {}) =>
+			mapped(async () => {
+				const cfg = await server.configFor(handle.baseUrl, handle.keyId);
+				const name =
+					handle.entryId === entry.id && handle.model === entry.model ? entry.name : handle.model;
+				return finish(cfg, readVideoJob({ id: handle.id })!, name, req, opts);
+			})
+	};
+}
+
+registerVideoBackendKind('llama-toolchest', toolchestVideoFor);
+
+/** The video instances on `entry`'s server, as its last probe or generation saw them. */
+export function seenToolchestVideoInstances(entry: VideoModelEntry): ToolchestInstance[] {
+	return serverFor(entry).seen();
 }

@@ -4,10 +4,11 @@
  * stage uses, built from the lines as spoken.
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { PickedModel } from '#lib/agent/jobs/types/video-sequence/pick.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import { speak } from '#lib/audio/speak.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
-import type { ToolchestInstance, VideoLimits } from '#lib/toolchest/models.ts';
+import type { VideoLimits } from '#lib/toolchest/models.ts';
 import { planClips, type ClipPlan } from '#lib/sequence/spec/plan.ts';
 import {
 	emptyProgress,
@@ -34,7 +35,7 @@ export interface SpeechRun {
 	spec: SequenceSpec;
 	limits: VideoLimits;
 	draws: boolean;
-	speaking: ToolchestInstance | null;
+	speaking: PickedModel | null;
 }
 
 function speechDeps(ctx: JobRunContext, files: RunFiles, save: () => Promise<void>): SpeechDeps {
@@ -84,12 +85,12 @@ export async function speechStage(
 		steps.finish(SPEECH, 'No speaking sections.');
 		return planClips(run.spec, run.limits, run.draws);
 	}
-	if (!run.speaking?.video) throw new Error('Speaking sections need the job’s speaking model.');
+	if (!run.speaking) throw new Error('Speaking sections need the job’s speaking model.');
 	let progress: SequenceProgress = (await readProgress(files)) ?? emptyProgress('');
 	const deps = speechDeps(ctx, files, () => writeProgress(files, progress));
 	const spoken = await speakLines(run.spec, progress, deps);
 	const plan = planClips(run.spec, run.limits, run.draws, {
-		limits: run.speaking.video,
+		limits: run.speaking.caps.limits,
 		speech: speechMap(progress)
 	});
 	progress = mergeProgress(progress, run.spec, plan);

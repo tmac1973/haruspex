@@ -16,7 +16,9 @@ import { toolResult, type ToolContext, type ToolExecOutput } from '#lib/agent/to
 import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 import { detachedTarget } from '#lib/agent/tools/_helpers.ts';
 import { saveCachedAudio } from '#lib/agent/tools/_musicJob.ts';
-import { generateVideo, resumeVideo } from '#lib/videogen/toolchest.ts';
+import { videoBackendForEntry } from '#lib/videogen/index.ts';
+import { firstVideoEntry, videoEntryById, videoEntryForHandle } from '#lib/videogen/entries.ts';
+import { NOT_SET_UP } from '#lib/videogen/route.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
 import type {
 	VideoJobHandle,
@@ -41,6 +43,8 @@ export interface VideoTaskSpec {
 	save: SaveTarget | null;
 	conversationId: string | null;
 	codeSessionId: string | null;
+	/** The video model it is for; absent from a task recorded before the list. */
+	entryId?: string;
 }
 
 /** A `video` task's result, from which its notice and its card are made. */
@@ -149,9 +153,23 @@ export async function runVideoJob(
 		conversationId: spec.conversationId ?? undefined,
 		codeSessionId: spec.codeSessionId ?? undefined
 	};
+	const entry = handle
+		? videoEntryForHandle(handle)
+		: spec.entryId
+			? videoEntryById(spec.entryId)
+			: firstVideoEntry();
+	if (!entry) {
+		throw new Error(
+			spec.entryId
+				? 'The video model this clip was for is no longer in Settings → Video generation.'
+				: NOT_SET_UP
+		);
+	}
+	const backend = videoBackendForEntry(entry);
+	if (!backend) throw new Error(`${entry.name} is not a kind this build can use.`);
 	const generated = handle
-		? await resumeVideo(handle, spec.request, opts)
-		: await generateVideo(spec.request, opts);
+		? await backend.resume(handle, spec.request, opts)
+		: await backend.generate(spec.request, opts);
 	const { made, notes } = await withSpeech(generated, spec);
 	return {
 		hash: made.hash,
@@ -174,14 +192,16 @@ export async function startVideoTask(
 	request: VideoRequest,
 	notes: string[],
 	save: SaveTarget | null,
-	ctx: ToolContext
+	ctx: ToolContext,
+	entryId?: string
 ): Promise<ToolExecOutput> {
 	const spec: VideoTaskSpec = {
 		request,
 		notes,
 		save: save && detachedTarget(save, ctx),
 		conversationId: ctx.conversationId ?? null,
-		codeSessionId: ctx.codeSessionId ?? null
+		codeSessionId: ctx.codeSessionId ?? null,
+		...(entryId ? { entryId } : {})
 	};
 	const task = await invoke<BackgroundTask>('task_create', {
 		kind: 'video',

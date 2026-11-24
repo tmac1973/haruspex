@@ -20,17 +20,24 @@
 		type InstallRoute,
 		type ManagerApi
 	} from '#lib/image/comfyui/provision.ts';
+	import { missingVideoFiles } from '#lib/videogen/comfyui/provision.ts';
 
 	interface Props {
-		/** The server, and the key to send it: the open image model's. */
+		/** The server, and the key to send it: the open model's. */
 		baseUrl: string;
 		apiKey: string;
 		/** Bumped by the parent after each probe, so the rows re-check. */
 		probeCount: number;
 		/** Ask the parent to probe again: a new model shows up in its list. */
 		onInstalled: () => void;
+		/** Which models the card offers: Settings → Image's, or Settings → Video generation's. */
+		kind?: 'image' | 'video';
 	}
-	let { baseUrl, apiKey, probeCount, onInstalled }: Props = $props();
+	let { baseUrl, apiKey, probeCount, onInstalled, kind = 'image' }: Props = $props();
+
+	/** What `set` lacks on the server, asked the way its kind's workflows find files. */
+	const missingOf = (c: { baseUrl: string; apiKey: string }, set: ComfyModelSet) =>
+		set.kind === 'video' ? missingVideoFiles(c, set) : missingFiles(c, set);
 
 	interface Row {
 		set: ComfyModelSet;
@@ -51,9 +58,9 @@
 	async function refresh() {
 		error = '';
 		try {
-			const sets = await modelSets();
+			const sets = (await modelSets()).filter((s) => s.kind === kind);
 			rows = await Promise.all(
-				sets.map(async (set) => ({ set, missing: await missingFiles(cfg(), set) }))
+				sets.map(async (set) => ({ set, missing: await missingOf(cfg(), set) }))
 			);
 			({ route, manager } = await chooseRoute(cfg()));
 		} catch (e) {
@@ -76,7 +83,10 @@
 		text_encoders: 'text encoder',
 		vae: 'VAE',
 		loras: 'Lightning LoRA',
-		upscale_models: 'upscaler'
+		upscale_models: 'upscaler',
+		audio_encoders: 'audio encoder',
+		checkpoints: 'model',
+		latent_upscale_models: 'latent upscaler'
 	};
 
 	const ROUTE_TIP: Record<InstallRoute, string> = {
@@ -111,7 +121,7 @@
 				await installViaManager(cfg(), manager, row.missing, (f) => {
 					status = `ComfyUI-Manager is downloading ${f}…`;
 				});
-				const still = await missingFiles(cfg(), row.set);
+				const still = await missingOf(cfg(), row.set);
 				if (still.length > 0) error = managerRefusalHint(cfg());
 			}
 		} catch (e) {

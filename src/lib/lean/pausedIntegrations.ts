@@ -4,6 +4,7 @@
  * mode leaves their settings and processes alone; the model just isn't
  * offered their tools (see `_leanProfile.ts`).
  */
+import { videoEntries } from '#lib/videogen/entries.ts';
 import {
 	getSettings,
 	hasEnabledCalendarAccount,
@@ -22,7 +23,7 @@ export function pausedIntegrations(): string[] {
 		...(s.screenCaptureEnabled ? ['Screen capture'] : []),
 		...(imageEntries().length > 0 ? ['Image generation'] : []),
 		...(s.musicBackendKind !== 'none' ? ['Music generation'] : []),
-		...(s.videoGenBackendKind !== 'none' ? ['Video generation'] : []),
+		...(videoEntries().length > 0 ? ['Video generation'] : []),
 		...(s.sandboxEnabled ? ['Python sandbox'] : []),
 		...startableMcpServers().map((m) => `MCP: ${m.label}`)
 	];

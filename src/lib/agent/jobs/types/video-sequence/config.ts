@@ -4,6 +4,7 @@
  */
 import { DEFAULT_REANCHOR } from '#lib/sequence/spec/types.ts';
 import { SPEC_FILE } from '#lib/sequence/spec/paths.ts';
+import { videoEntries } from '#lib/videogen/entries.ts';
 
 export type SequenceRunMode = 'attended' | 'unattended';
 export type SequenceEditor = '' | 'shotcut' | 'kdenlive';
@@ -14,13 +15,16 @@ export interface VideoSequenceConfig {
 	/** What the video is, in a line or a paragraph. */
 	brief: string;
 	run_mode: SequenceRunMode;
-	/** A video instance on the server in Settings → Video generation; '' is the one chosen there. */
-	video_instance_id: string;
 	/**
-	 * A video instance that makes someone speak (Wan2.2 S2V), on the same
-	 * server, for speaking sections; '' for none.
+	 * A video model's id in Settings → Video generation; '' is Automatic, the
+	 * first that can make the job's clips.
 	 */
-	speaking_instance_id: string;
+	video_model_id: string;
+	/**
+	 * A video model that makes someone speak (Wan2.2 S2V), for speaking
+	 * sections: its id, '' for Automatic (the first that can), or `none`.
+	 */
+	speaking_model_id: string;
 	/** Open each generated section on a keyframe from the image backend. */
 	image_keyframes: boolean;
 	/** Check each seam with a vision model, when the job's model can see. */
@@ -38,8 +42,8 @@ export function configDefaults(): VideoSequenceConfig {
 		episode_dir: '',
 		brief: '',
 		run_mode: 'attended',
-		video_instance_id: '',
-		speaking_instance_id: '',
+		video_model_id: '',
+		speaking_model_id: '',
 		image_keyframes: true,
 		vision_checks: true,
 		reanchor_every: DEFAULT_REANCHOR,
@@ -48,6 +52,21 @@ export function configDefaults(): VideoSequenceConfig {
 }
 
 const text = (v: unknown, fallback = '') => (typeof v === 'string' ? v.trim() : fallback);
+
+/**
+ * A model id, or one from a config saved before the video model list: an
+ * instance id then, which is the toolchest entry running it, or kept as it is
+ * so the job shows it as missing.
+ */
+function modelId(saved: unknown, oldInstance: unknown): string {
+	if (typeof saved === 'string') return saved.trim();
+	const instance = text(oldInstance);
+	if (!instance) return '';
+	const entry = videoEntries().find(
+		(e) => e.backend === 'llama-toolchest' && e.model.trim() === instance
+	);
+	return entry?.id ?? instance;
+}
 
 /**
  * The config from a job's stored JSON, with defaults for what is missing.
@@ -69,8 +88,8 @@ export function parseConfig(typeConfig: string | null): VideoSequenceConfig {
 		episode_dir: normalizeEpisodeDir(text(o.episode_dir)),
 		brief: text(o.brief),
 		run_mode: o.run_mode === 'unattended' ? 'unattended' : 'attended',
-		video_instance_id: text(o.video_instance_id),
-		speaking_instance_id: text(o.speaking_instance_id),
+		video_model_id: modelId(o.video_model_id, o.video_instance_id),
+		speaking_model_id: modelId(o.speaking_model_id, o.speaking_instance_id),
 		image_keyframes: typeof o.image_keyframes === 'boolean' ? o.image_keyframes : d.image_keyframes,
 		vision_checks: typeof o.vision_checks === 'boolean' ? o.vision_checks : d.vision_checks,
 		reanchor_every:
@@ -86,8 +105,8 @@ export function configToJson(c: VideoSequenceConfig): string {
 		episode_dir: normalizeEpisodeDir(c.episode_dir),
 		brief: c.brief.trim(),
 		run_mode: c.run_mode,
-		video_instance_id: c.video_instance_id.trim() || undefined,
-		speaking_instance_id: c.speaking_instance_id.trim() || undefined,
+		video_model_id: c.video_model_id.trim() || undefined,
+		speaking_model_id: c.speaking_model_id.trim() || undefined,
 		image_keyframes: c.image_keyframes,
 		vision_checks: c.vision_checks,
 		reanchor_every: c.reanchor_every,

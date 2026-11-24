@@ -23,6 +23,12 @@ export interface ValidateContext {
 	limits: VideoLimits;
 	/** Its capabilities: `text`, `start_image`, `end_image`, … */
 	capabilities: string[];
+	/**
+	 * What the other video models can do that this one can't, when the job
+	 * leaves the model to Automatic: a clip that needs one of them goes to
+	 * another model rather than being refused.
+	 */
+	othersCan?: string[];
 	/** An image backend is set up, so sections can open on a keyframe. */
 	imageBackend: boolean;
 	musicBackend: boolean;
@@ -44,6 +50,9 @@ export interface Validated {
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/** Said once when Automatic sends some clips to another video model. */
+export const OTHER_MODEL = 'No one video model can do every clip, so some clips use another.';
 
 const clean = (p: string) => p.replace(/\\/g, '/').replace(/^\.\//, '');
 
@@ -100,7 +109,12 @@ function checkSection(s: Section, ctx: ValidateContext, errors: string[], notes:
 	if (s.kind === 'speaking') return checkSpeaking(s, ctx, errors, notes);
 	const name = `Section ${s.id}`;
 	if (!(s.seconds > 0)) errors.push(`${name}: seconds must be more than 0.`);
-	const can = (c: string) => ctx.capabilities.includes(c);
+	const can = (c: string) => {
+		if (ctx.capabilities.includes(c)) return true;
+		if (!ctx.othersCan?.includes(c)) return false;
+		if (!notes.includes(OTHER_MODEL)) notes.push(OTHER_MODEL);
+		return true;
+	};
 	if (s.start_image) {
 		if (!ctx.files.has(clean(s.start_image))) {
 			errors.push(`${name}: ${s.start_image} is not in the episode folder.`);

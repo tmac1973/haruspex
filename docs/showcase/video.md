@@ -8,7 +8,7 @@ description: Generate clips, make a portrait speak, cut Shotcut or Kdenlive proj
 Describe a clip. It takes minutes, so it runs in the background while you keep chatting.
 
 Tab: Chat or Code
-Required settings: Settings → Video generation → llama-toolchest (a server you run, with a video model such as Wan 2.2 TI2V 5B)
+Required settings: Settings → Video generation → a video model on ComfyUI or llama-toolchest (a server you run), such as Wan 2.2 TI2V 5B
 
 Prompt:
 
@@ -19,6 +19,25 @@ Example output:
 A card shows the clip's place in the queue, its progress and **Cancel**. When it's done, the clip plays in the conversation, with **Save as…** under the player.
 
 <!-- media: the fox clip playing in a Chat answer -->
+
+Read more: video-generation
+
+## Start a clip from a picture, with ComfyUI
+
+Add your ComfyUI server as a video model, install Wan 2.2 I2V 14B from the same place, then hand it a picture to start from and one to end on.
+
+Tab: Chat or Code
+Required settings: Settings → Video generation → a ComfyUI video model, with Wan 2.2 I2V 14B installed from its Install list
+
+Prompt:
+
+> Make a clip that starts on this sketch of a lighthouse and ends on this photo of it at dusk.
+
+Example output:
+
+The clip moves from the first picture to the second and plays in the conversation. The answer names the model that made it.
+
+<!-- media: a Wan 2.2 14B clip moving between two pictures -->
 
 Read more: video-generation
 

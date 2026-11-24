@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	ready: vi.fn(),
+	route: vi.fn(),
 	backend: 'llama-toolchest'
 }));
 
@@ -23,13 +23,30 @@ vi.mock('@tauri-apps/api/core', async () =>
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: () => ({ videoGenBackendKind: state.backend }),
+		settings: () => {
+			const one = {
+				id: 'v',
+				name: 'ti2v',
+				backend: 'llama-toolchest',
+				url: '',
+				keyId: null,
+				model: 'ti2v',
+				options: {},
+				caps: null,
+				capsAt: null,
+				renamed: false
+			};
+			const two = { ...one, id: 'w', name: 'ltx', model: 'ltx' };
+			return {
+				videoModels: state.backend === 'none' ? [] : state.backend === 'two' ? [one, two] : [one]
+			};
+		},
 		overDefaults: true
 	})
 );
-vi.mock('#lib/videogen/toolchest.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/videogen/toolchest.ts')>()),
-	readyVideoInstance: state.ready
+vi.mock('#lib/videogen/route.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/videogen/route.ts')>()),
+	routeVideo: state.route
 }));
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
@@ -41,6 +58,7 @@ import type { VideoLimits } from '#lib/toolchest/models.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { invokeArgs } from '#lib/testing/invoke.ts';
+import { videoCaps } from '#lib/testing/videoModels.ts';
 
 const limits: VideoLimits = {
 	defaultFps: 24,
@@ -53,10 +71,9 @@ const limits: VideoLimits = {
 };
 
 const ti2v = {
-	id: 'ti2v',
-	capabilities: ['text', 'start_image'],
-	state: 'running',
-	video: limits
+	entry: { id: 'v', name: 'ti2v' },
+	backend: {},
+	caps: videoCaps({ limits })
 };
 
 const chat = makeToolContext({ interactive: true, conversationId: 'c1' });
@@ -64,7 +81,7 @@ const chat = makeToolContext({ interactive: true, conversationId: 'c1' });
 beforeEach(() => {
 	_resetTasksForTests();
 	state.backend = 'llama-toolchest';
-	state.ready.mockReset().mockResolvedValue(ti2v);
+	state.route.mockReset().mockResolvedValue(ti2v);
 	vi.mocked(invoke).mockReset();
 });
 
@@ -130,7 +147,8 @@ describe('generate_video', () => {
 				},
 				save: null,
 				conversationId: 'c1',
-				codeSessionId: null
+				codeSessionId: null,
+				entryId: 'v'
 			}
 		});
 		expect(created.spec.notes[0]).toMatch(/^Shortened to 1.4 s/);
@@ -142,7 +160,7 @@ describe('generate_video', () => {
 	});
 
 	it('says why it can’t start, before recording anything', async () => {
-		state.ready.mockRejectedValue(new Error('ti2v is stopped — start it in llama-toolchest.'));
+		state.route.mockRejectedValue(new Error('ti2v is stopped — start it in llama-toolchest.'));
 		const out = await executeTool('generate_video', { prompt: 'x' }, chat);
 		expect(out.result).toMatch(/ti2v is stopped/);
 		const bad = await executeTool('generate_video', { prompt: 'x', path: 'a.mp4' }, chat);
@@ -167,6 +185,17 @@ describe('generate_video', () => {
 		expect(names({ hasWorkingDir: false, interactive: true, taskOwner: 'chat:c1' })).not.toContain(
 			'generate_video'
 		);
+	});
+	it('lets the call name a model only when there are two or more', () => {
+		const props = () =>
+			(
+				getToolSchemas({ hasWorkingDir: false, interactive: true, taskOwner: 'chat:c1' }).find(
+					(s) => s.function.name === 'generate_video'
+				)!.function.parameters as { properties: Record<string, { enum?: string[] }> }
+			).properties;
+		expect(props().model).toBeUndefined();
+		state.backend = 'two';
+		expect(props().model?.enum).toEqual(['ti2v', 'ltx']);
 	});
 });
 
@@ -203,13 +232,20 @@ describe('a finished clip’s notice', () => {
 		});
 	});
 
-	it('refuses an end picture on an instance that can only start from one', async () => {
+	it('asks the router for a model that can end on a picture, and passes on its refusal', async () => {
+		state.route.mockRejectedValue(
+			new Error('None of the video models in Settings → Video generation can end on a picture.')
+		);
 		const out = await executeTool(
 			'generate_video',
-			{ prompt: 'a fox', end_image: 'fox.png' },
+			{ prompt: 'a fox', end_image: 'fox.png', sound: true, model: 'ti2v' },
 			chat
 		);
-		expect(out.result).toContain("ti2v can't end on a picture. It can only start from a picture.");
+		expect(state.route).toHaveBeenCalledWith(
+			{ text: true, startImage: false, endImage: true, speech: false, sound: true },
+			expect.objectContaining({ named: 'ti2v' })
+		);
+		expect(out.result).toContain('can end on a picture');
 		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'task_create')).toBe(false);
 	});
 

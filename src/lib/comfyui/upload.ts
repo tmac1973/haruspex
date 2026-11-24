@@ -18,7 +18,7 @@ import {
 	rejectionMessage,
 	trimUrl,
 	type ClientConfig
-} from '#lib/image/comfyui/client.ts';
+} from '#lib/comfyui/client.ts';
 
 const PATH = '/upload/image';
 
@@ -26,7 +26,8 @@ function viaRust(
 	cfg: ClientConfig,
 	input: ImageInput,
 	name: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	cache: 'image' | 'audio' = 'image'
 ): Promise<unknown> {
 	return invokeBackend<unknown, ImageBackendError>(
 		comfyBackend,
@@ -47,7 +48,7 @@ function viaRust(
 					field: 'image',
 					filename: name,
 					hash: 'hash' in input ? input.hash : null,
-					cache: 'hash' in input ? 'image' : null,
+					cache: 'hash' in input ? cache : null,
 					bytes: 'bytes' in input ? input.bytes : null
 				}
 			]
@@ -100,6 +101,28 @@ export async function uploadImage(
 			'rejected',
 			'The image backend did not say where it put the picture.'
 		);
+	}
+	return typeof a.subfolder === 'string' && a.subfolder ? `${a.subfolder}/${a.name}` : a.name;
+}
+
+/**
+ * Upload a file from the audio cache (speech for Wan2.2 S2V's `LoadAudio`)
+ * into the input folder, through the same route as a picture: ComfyUI keeps
+ * whatever it is sent there. Only from the app, which reads the cache.
+ */
+export async function uploadCachedAudio(
+	cfg: ClientConfig,
+	hash: string,
+	name: string,
+	signal?: AbortSignal
+): Promise<string> {
+	if (!isTauri()) {
+		throw new ImageBackendError('rejected', 'Cached audio can only be uploaded from the app.');
+	}
+	const answer = await viaRust(cfg, { name, hash }, name, signal, 'audio');
+	const a = (answer ?? {}) as { name?: unknown; subfolder?: unknown };
+	if (typeof a.name !== 'string' || !a.name) {
+		throw new ImageBackendError('rejected', 'ComfyUI did not say where it put the speech.');
 	}
 	return typeof a.subfolder === 'string' && a.subfolder ? `${a.subfolder}/${a.name}` : a.name;
 }

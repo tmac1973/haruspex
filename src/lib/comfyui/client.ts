@@ -22,7 +22,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
-import type { ComfyGraph } from '#lib/image/comfyui/fieldMap.ts';
+import type { ComfyGraph } from '#lib/comfyui/fieldMap.ts';
 
 /** One HTTP call. Generous: a busy server queues. */
 export const HTTP_TIMEOUT_MS = 120_000;
@@ -317,18 +317,53 @@ export async function history(
 	return images;
 }
 
+/**
+ * Every file a finished prompt's `outputNode` saved, whatever its kind: the
+ * core SaveVideo node lists a clip under `images` (with `animated`), other
+ * savers under `gifs`, `videos` or `audio`. Null while it is running.
+ */
+export async function historyFiles(
+	cfg: ClientConfig,
+	promptId: string,
+	outputNode: string,
+	signal?: AbortSignal
+): Promise<HistoryImage[] | null> {
+	const json = ((await requestJson(cfg, { path: `/history/${promptId}` }, signal)) ?? {}) as Record<
+		string,
+		{ outputs?: Record<string, Record<string, unknown>> }
+	>;
+	const run = json[promptId];
+	if (!run?.outputs) return null;
+	const out = run.outputs[outputNode] ?? {};
+	const files = ['images', 'gifs', 'videos', 'audio'].flatMap((k) =>
+		Array.isArray(out[k]) ? (out[k] as HistoryImage[]) : []
+	);
+	if (files.length === 0) {
+		throw new ImageBackendError(
+			'rejected',
+			`The workflow finished but node "${outputNode}" saved no files.`
+		);
+	}
+	return files;
+}
+
+/** Where one output file is served: the server's `/view` route. */
+export function viewPath(file: HistoryImage): string {
+	const q = new URLSearchParams({
+		filename: file.filename,
+		subfolder: file.subfolder ?? '',
+		type: file.type ?? 'output'
+	});
+	return `/view?${q}`;
+}
+
 /** Fetch one output image's bytes. */
 export async function view(
 	cfg: ClientConfig,
 	img: HistoryImage,
 	signal?: AbortSignal
 ): Promise<Uint8Array> {
-	const q = new URLSearchParams({
-		filename: img.filename,
-		subfolder: img.subfolder ?? '',
-		type: img.type ?? 'output'
-	});
-	return requestBytes(cfg, { path: `/view?${q}` }, signal);
+	return requestBytes(cfg, { path: viewPath(img) }, signal);
 }
 
 /** The class of a graph node by id, for naming what an `executing` node is doing. */

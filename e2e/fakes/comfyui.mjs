@@ -1,7 +1,7 @@
 /**
  * A fake ComfyUI for the real-app tests: one GPU, one SD checkpoint, and a
  * queue that finishes every prompt at once with a 2×2 PNG. Just the routes the
- * app's client uses (src/lib/image/comfyui/client.ts); the progress socket is
+ * app's client uses (src/lib/comfyui/client.ts); the progress socket is
  * absent, which the client survives by polling /history.
  */
 import http from 'node:http';

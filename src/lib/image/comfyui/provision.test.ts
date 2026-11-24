@@ -21,6 +21,7 @@ const cfg = { baseUrl: 'http://127.0.0.1:8188', apiKey: '' };
 
 const MING: ComfyModelSet = {
 	family: 'ming',
+	kind: 'image',
 	label: 'Ming-Image 0.1 Design',
 	license: 'MIT',
 	license_url: 'https://example.com',
@@ -91,6 +92,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const UPSCALER: ComfyModelSet = {
 	family: 'upscaler',
+	kind: 'image',
 	label: 'Upscaler — Real-ESRGAN x4plus',
 	license: 'BSD 3-Clause',
 	license_url: 'https://example.com',
@@ -112,6 +114,7 @@ const LIGHTNING = 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors';
 const EDIT_2511: ComfyModelSet = {
 	...UPSCALER,
 	family: 'qwen_edit_2511',
+	kind: 'image',
 	label: 'Qwen-Image-Edit-2511',
 	files: [
 		{

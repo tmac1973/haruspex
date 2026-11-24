@@ -1,12 +1,10 @@
 <script lang="ts">
 	import Tooltip from '#lib/components/Tooltip.svelte';
-	import { onMount } from 'svelte';
-	import { getSettings } from '#lib/stores/settings.ts';
+	import { videoEntries } from '#lib/videogen/entries.ts';
 	import { resolveImageBackend } from '#lib/image/backend.ts';
-	import { chosenVideoInstanceId, listVideoInstances } from '#lib/videogen/toolchest.ts';
 	import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 	import type { VideoSequenceConfig } from '#lib/agent/jobs/types/video-sequence/config.ts';
-	import { errMessage } from '#lib/utils/error.ts';
+	import { NO_SPEAKER } from '#lib/agent/jobs/types/video-sequence/pick.ts';
 
 	// The Video sequence section of the job editor (see JobTypeEditorProps).
 	let {
@@ -23,21 +21,12 @@
 
 	const cfg = config as unknown as VideoSequenceConfig;
 	const hasImageBackend = resolveImageBackend().kind !== 'none';
-	let instances: string[] = $state([]);
-	/** Instances that make someone speak (the `audio` capability). */
-	let speakers: string[] = $state([]);
-	let listError = $state('');
-	const chosen = chosenVideoInstanceId();
-
-	onMount(() => {
-		if (getSettings().videoGenBackendKind === 'none') return;
-		void listVideoInstances()
-			.then((list) => {
-				instances = list.map((i) => i.id);
-				speakers = list.filter((i) => i.capabilities.includes('audio')).map((i) => i.id);
-			})
-			.catch((e: unknown) => (listError = errMessage(e)));
-	});
+	const models = videoEntries();
+	/** Models that make clips without speech, or may: no probe has said. */
+	const makers = models.filter((e) => !e.caps?.needsSpeech);
+	/** Models that make someone speak, or may. */
+	const speakers = models.filter((e) => !e.caps || e.caps.speech);
+	const known = (id: string) => models.some((e) => e.id === id);
 
 	// Vision checks need a model that can see; the job's own, unless it says otherwise.
 	const canSee = $derived(jobModel?.vision !== 'no');
@@ -83,37 +72,37 @@
 		Video model
 		<Tooltip
 			label="About the video model"
-			text="A video instance on the server in Settings → Video generation. Its longest clip decides how many clips a section takes."
+			text="Automatic takes the first model in Settings → Video generation that can make the clips, preferring one that can end on a picture. Its longest clip decides how many clips a section takes."
 		/>
 	</span>
-	<select bind:value={cfg.video_instance_id} aria-label="Video model">
-		<option value="">The one in Settings → Video generation{chosen ? ` (${chosen})` : ''}</option>
-		{#each instances.filter((i) => i !== chosen) as id (id)}
-			<option value={id}>{id}</option>
+	<select bind:value={cfg.video_model_id} aria-label="Video model">
+		<option value="">Automatic</option>
+		{#each makers as e (e.id)}
+			<option value={e.id}>{e.name}</option>
 		{/each}
-		{#if cfg.video_instance_id && !instances.includes(cfg.video_instance_id)}
-			<option value={cfg.video_instance_id}>{cfg.video_instance_id}</option>
+		{#if cfg.video_model_id && !known(cfg.video_model_id)}
+			<option value={cfg.video_model_id}>{cfg.video_model_id} — not in Settings</option>
 		{/if}
 	</select>
-	{#if listError}<p class="hint">Could not list the server's models: {listError}</p>{/if}
 </div>
 
-{#if speakers.length || cfg.speaking_instance_id}
+{#if speakers.length || cfg.speaking_model_id}
 	<div class="field">
 		<span class="label">
 			Speaking model
 			<Tooltip
 				label="About the speaking model"
-				text="A video instance that makes a person in a portrait say lines (Wan2.2 S2V), for speaking sections. None leaves them out."
+				text="A video model that makes a person in a portrait say lines (Wan2.2 S2V), for speaking sections. Automatic takes the first that can; None leaves them out."
 			/>
 		</span>
-		<select bind:value={cfg.speaking_instance_id} aria-label="Speaking model">
-			<option value="">None</option>
-			{#each speakers as id (id)}
-				<option value={id}>{id}</option>
+		<select bind:value={cfg.speaking_model_id} aria-label="Speaking model">
+			<option value="">Automatic</option>
+			<option value={NO_SPEAKER}>None</option>
+			{#each speakers as e (e.id)}
+				<option value={e.id}>{e.name}</option>
 			{/each}
-			{#if cfg.speaking_instance_id && !speakers.includes(cfg.speaking_instance_id)}
-				<option value={cfg.speaking_instance_id}>{cfg.speaking_instance_id}</option>
+			{#if cfg.speaking_model_id && cfg.speaking_model_id !== NO_SPEAKER && !known(cfg.speaking_model_id)}
+				<option value={cfg.speaking_model_id}>{cfg.speaking_model_id} — not in Settings</option>
 			{/if}
 		</select>
 	</div>

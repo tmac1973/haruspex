@@ -13,6 +13,8 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageModelEntry } from '#lib/image/types.ts';
+import type { VideoModelEntry } from '#lib/videogen/types.ts';
+import { videoModelsFromFields, type LegacyVideoFields } from '#lib/videogen/fields.ts';
 import type { SpecialistEntry } from '#lib/specialists/types.ts';
 import {
 	LEGACY_IMAGE_FIELDS,
@@ -418,7 +420,7 @@ export interface GenerationServer {
  * generation settings hold, so the dropdowns are not empty after the update.
  */
 export function seedGenerationServers(
-	s: Partial<AppSettings> & LegacyImageFields
+	s: Partial<AppSettings> & LegacyImageFields & LegacyVideoFields
 ): GenerationServer[] {
 	const found: GenerationServer[] = [
 		{ kind: 'comfyui', url: s.imageBackendBaseUrl ?? '', keyId: null },
@@ -952,10 +954,6 @@ export interface AppSettings {
 	 * instances. `'none'` is the shipped default, and `generate_video` is
 	 * offered only off it.
 	 */
-	videoGenBackendKind: 'none' | 'llama-toolchest';
-	videoGenToolchestBaseUrl: string;
-	videoGenToolchestApiKeyId: string | null;
-	videoGenToolchestModelId: string;
 	/**
 	 * Generation servers saved in Settings → Image, Music and Video, to switch
 	 * between without typing the address again. A llama-toolchest is listed in
@@ -969,6 +967,13 @@ export interface AppSettings {
 	 * (`#lib/image/fields.ts`).
 	 */
 	imageModels: ImageModelEntry[];
+	/**
+	 * The video models `generate_video` and video-sequence jobs use, in the
+	 * order they are tried (see `#lib/videogen/entries.ts`), edited in
+	 * Settings → Video generation. An install from before the list is seeded
+	 * once from its old single-instance fields (`#lib/videogen/fields.ts`).
+	 */
+	videoModels: VideoModelEntry[];
 	/**
 	 * The specialist models the Code tab's model can hand a job to, edited in
 	 * Settings → Code → Specialists (see `#lib/specialists/entries.ts`).
@@ -1312,12 +1317,9 @@ const defaults: AppSettings = {
 	musicAceBaseUrl: '',
 	musicAceModel: '',
 	musicDefaultDurationSec: 30,
-	videoGenBackendKind: 'none',
-	videoGenToolchestBaseUrl: '',
-	videoGenToolchestApiKeyId: null,
-	videoGenToolchestModelId: '',
 	generationServers: [],
 	imageModels: [],
+	videoModels: [],
 	specialists: [],
 	codeHelpers: {},
 	codeHelperConfig: {},
@@ -1487,7 +1489,16 @@ function load(): AppSettings {
 					: (storedFileWrite ?? defaults.maxResponseTokensFileWrite);
 			// The Shell's Code mode became Full access, and its default was
 			// renamed with it; an install that had turned it on keeps it on.
-			const { shellCodeModeDefault, ...rest } = parsed;
+			// Settings → Video generation's single-instance fields seed the list
+			// once, then go.
+			const {
+				shellCodeModeDefault,
+				videoGenBackendKind,
+				videoGenToolchestBaseUrl,
+				videoGenToolchestApiKeyId,
+				videoGenToolchestModelId,
+				...rest
+			} = parsed;
 			const shellFullAccessDefault: boolean =
 				rest.shellFullAccessDefault ??
 				(typeof shellCodeModeDefault === 'boolean'
@@ -1524,10 +1535,18 @@ function load(): AppSettings {
 				searchProxy: mergedSearchProxy,
 				generationServers: Array.isArray(rest.generationServers)
 					? rest.generationServers
-					: seedGenerationServers(rest),
+					: seedGenerationServers(parsed),
 				imageModels: Array.isArray(rest.imageModels)
 					? rest.imageModels
 					: imageModelsFromFields(rest as LegacyImageFields),
+				videoModels: Array.isArray(rest.videoModels)
+					? rest.videoModels
+					: videoModelsFromFields({
+							videoGenBackendKind,
+							videoGenToolchestBaseUrl,
+							videoGenToolchestApiKeyId,
+							videoGenToolchestModelId
+						}),
 				specialists: Array.isArray(rest.specialists)
 					? rest.specialists.map((e: SpecialistEntry) => ({
 							...e,

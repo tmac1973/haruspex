@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as api from './client';
-import { ImageBackendError } from '../types';
+import { ImageBackendError } from '#lib/image/types.ts';
 
 const cfg = { baseUrl: 'http://box:8188/', apiKey: '' };
 const withKey = { baseUrl: 'http://box:8188', apiKey: 'sekrit' };
@@ -92,6 +92,34 @@ describe('failure mapping', () => {
 		await expect(api.history(cfg, 'p1', '9', c.signal)).rejects.toMatchObject({
 			kind: 'cancelled'
 		});
+	});
+});
+
+describe('historyFiles', () => {
+	it('takes every file the node saved, a clip under images or gifs included', async () => {
+		fetchMock.mockResolvedValue(ok({}));
+		expect(await api.historyFiles(cfg, 'p1', '9')).toBeNull();
+		fetchMock.mockResolvedValue(
+			ok({
+				p1: {
+					outputs: {
+						'9': {
+							images: [{ filename: 'a.webm', subfolder: 'haruspex', type: 'output' }],
+							animated: [true],
+							gifs: [{ filename: 'b.mp4', subfolder: '', type: 'output' }]
+						}
+					}
+				}
+			})
+		);
+		const files = await api.historyFiles(cfg, 'p1', '9');
+		expect(files?.map((f) => f.filename)).toEqual(['a.webm', 'b.mp4']);
+		expect(api.viewPath(files![0])).toBe('/view?filename=a.webm&subfolder=haruspex&type=output');
+	});
+
+	it('says when the node saved nothing', async () => {
+		fetchMock.mockResolvedValue(ok({ p1: { outputs: { '9': { animated: [true] } } } }));
+		await expect(api.historyFiles(cfg, 'p1', '9')).rejects.toThrow('saved no files');
 	});
 });
 

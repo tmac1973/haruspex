@@ -30,6 +30,6 @@ Pick a job's type in the job editor's **Job type** (see the `jobs` page for runn
 
 **Asset generation.** Makes the images a project needs from a JSON asset spec: sprites and icons in sheets, tiling textures. Without a spec, it writes one from **What to make**. Every asset follows a style anchor, which _Attended_ stops to show you. It needs an image backend in Settings → Image; see the `images` page.
 
-**Video sequence.** Turns a brief into one long generated video: sections of chained clips, joins, music and narration, cut into a Shotcut or Kdenlive project and rendered. _Attended_ asks what the brief leaves open and stops to show the spec, the stills and each section's first clip; a stopped run has **Resume**. It is listed only when Settings → Video editing → **Let the assistant edit videos** is on and Settings → Video generation has a backend. See the `video-sequence` page.
+**Video sequence.** Turns a brief into one long generated video: sections of chained clips, joins, music and narration, cut into a Shotcut or Kdenlive project and rendered. _Attended_ asks what the brief leaves open and stops to show the spec, the stills and each section's first clip; a stopped run has **Resume**. It is listed only when Settings → Video editing → **Let the assistant edit videos** is on and Settings → Video generation has a video model. See the `video-sequence` page.
 
 **3D models.** Builds models from a `models.json` spec with `check_3d` and animates them, each half on a model you choose. See the `3d-models` page.

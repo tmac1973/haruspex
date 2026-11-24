@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyFieldMap, validateFieldMap, type ComfyGraph, type FieldMap } from './fieldMap';
-import type { ImageRequest } from '../types';
+import type { ImageRequest } from '#lib/image/types.ts';
 
 function graph(): ComfyGraph {
 	return {

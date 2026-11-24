@@ -1,72 +1,72 @@
 ---
 title: Video generation
-description: Turning on llama-toolchest video generation, making a short clip, start and end pictures, making someone in a picture speak, continuing a clip, sound, clip length, and where clips are kept.
+description: Video models on ComfyUI or llama-toolchest, installing them, which model makes a clip, start and end pictures, making someone speak, sound, clip length, and where clips are kept.
 ---
 
 # Video generation
 
-Haruspex can have a llama-toolchest server make short video clips, with a model such as Wan 2.2 TI2V 5B. It is off by default: nothing happens until you pick a backend in Settings → Video generation.
+Haruspex can have a ComfyUI or llama-toolchest server make short video clips. It is off until you add a video model in Settings → Video generation.
 
 This page is about making new clips. Cutting and rendering your own footage is on the `video-editing` page.
 
-## Turn it on
+## Add a video model
 
-Open Settings → Video generation and choose **llama-toolchest** as the **Backend**.
+Open Settings → Video generation and press **Add model**. Choose the **Backend**, enter the **Server address** (`http://host:8188` for ComfyUI, `http://host:3000` for llama-toolchest) and pick an **API key** from Settings → Inference → API Keys if the server needs one. If your chat model comes from a toolchest, its address and key are filled in. Press **Probe**, then choose the **Model**; with only one, it is chosen for you.
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its video instances as the **Model**; with only one, it is chosen for you. **Instances on the server** lists its enabled instances. A stopped one starts when Haruspex first uses it, so the first clip takes longer. Adding a model happens in llama-toolchest.
+Add as many as you like: two ComfyUI servers, or a toolchest's LTX-2.3 and its S2V. Each row says where the model runs and what it can do. Use ↑ and ↓ to set the order.
 
-A server you probe or **Add** is kept under **Saved servers**, so you can switch back without typing it; a llama-toolchest is listed in Settings → Image and Music too.
+## Install a model into ComfyUI
 
-Under the model, Settings says the size and frame rate it makes, and how many frames fit at that size.
+A ComfyUI entry lists the four models Haruspex can run there, with their licence and size, and **Install** for any whose files are missing:
+
+- **Wan 2.2 TI2V 5B**: from a prompt or a picture, 24 fps, up to 5 s. Apache 2.0.
+- **Wan 2.2 I2V 14B**: from a picture, and to an end picture, 16 fps, up to 5 s. Apache 2.0.
+- **Wan 2.2 S2V**: a person in a picture says some speech, 16 fps, up to 4.8 s. Apache 2.0.
+- **LTX-2.3**: from a prompt or a picture, with its own sound. Its licence allows commercial use only below a revenue threshold, so you're asked before it downloads.
+
+Install downloads straight into ComfyUI's model folders when ComfyUI runs on this computer. On another computer it goes through ComfyUI-Manager if the server has it, or shows the files and folders to copy by hand. ComfyUI 0.39 or later has every node these need.
+
+On llama-toolchest, adding a model happens in llama-toolchest. A stopped instance starts when Haruspex first uses it.
+
+## Choose which model makes a clip
+
+Haruspex uses the first model in the list that can make what you asked for: a picture to start from, one to end on, speech, or sound. A model that doesn't answer is passed over for the next one. A model that refuses a clip isn't asked again elsewhere. You can also name one: "make it with LTX-2.3".
 
 ## Make a clip
 
-Ask for one in Chat or the Code tab: "a five-second clip of a red fox running through snow". You can ask for portrait instead of landscape, a seed to repeat one, or give a picture from the conversation (or an image file in the working folder) to start from, if the model can.
+Ask for one in Chat or the Code tab: "a five-second clip of a red fox running through snow". You can ask for portrait, a seed to repeat one, a clip with sound, or give a picture from the conversation (or an image file in the working folder) to start from. With an end picture too, the clip moves from one to the other.
 
-Some models can also end on a picture, such as Wan 2.2 I2V A14B; with a start picture too, the clip moves from one to the other. On a model that can't, the assistant says so.
+A clip takes minutes, so it runs in the background. It gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in the conversation, where it plays; **Save as…** under the player saves a copy. With a working folder set, ask "save it as fox.webm" to save it there.
 
-A clip takes minutes, so it always runs in the background. The assistant starts it and carries on, so you can keep chatting. The clip gets a card with its place in the queue, its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation, where it plays; the button in its top-left corner, shown when you point at it, plays it full screen (Esc leaves), and **Save as…** under the player saves a copy anywhere.
-
-With a working folder set in Chat, or in a Code session's project, the assistant can also save it there as a `.webm` file: ask "save it as fox.webm". If that file exists in Chat, you're asked before it is replaced.
-
-If Haruspex closes first, the clip is picked up when it reopens, as long as the server still has it.
+If Haruspex closes first, the clip is picked up when it reopens, as long as the server still has the job.
 
 ## Make someone speak
 
-With a speaking model, such as Wan2.2 S2V (llama-toolchest's **s2v** set), a picture of a person and some speech make a clip of them saying it. Choose that instance in Settings → Video generation, then ask "make this portrait say 'hello, welcome to the channel'". The speech can be made in the conversation first (see the `speech` page), or be a sound file in the working folder.
+With a speaking model (Wan 2.2 S2V), a picture of a person and some speech make a clip of them saying it: "make this portrait say 'hello, welcome to the channel'". The speech can be made in the conversation first (see the `speech` page) or be a sound file in the working folder.
 
-- The clip is as long as the speech. S2V makes at most about 5 seconds (81 frames at 16 fps), less where the instance was measured for fewer; longer speech is refused before anything is sent, so split it at its pauses and make one clip per part.
-- The picture sets who speaks; the clip doesn't keep it as its first frame.
+- The clip is as long as the speech, up to about 5 seconds. Longer speech is refused before anything is sent: split it at its pauses.
 - The finished clip plays with the speech under it.
-
-A speaking model needs both the picture and the speech; other models can't take speech.
 
 ## Continue a clip
 
-With the video tools on (see the `video-editing` page), ask "continue that clip: the fox walks into the trees". The assistant saves the clip's true last frame as a picture and starts the next clip from it. You get two clips; joining them is a cut in a video project.
+With the video tools on (see the `video-editing` page), ask "continue that clip: the fox walks into the trees". The assistant saves the clip's last frame and starts the next clip from it.
 
 ## Sound
 
-A clip has sound when the model makes it, such as LTX-2.3, or when it is a speaking clip. The assistant says whether a clip has sound when it arrives. Other Wan models make silent clips.
+LTX-2.3 and speaking clips have sound; Wan clips are silent. The assistant says whether a clip has sound when it arrives.
 
 ## How long a clip can be
 
-The model's own size and length are used unless you ask otherwise. A clip can't be longer than the instance has GPU memory for: llama-toolchest measures each instance, and Haruspex shortens a longer request to fit and says so. To allow longer clips, measure the instance at a larger size on llama-toolchest's Server page.
-
-Wan models make 4n + 1 frames, so lengths are rounded down to one of those.
+The model's own size and length are used unless you ask otherwise, and a longer request is shortened to fit, with a note. On llama-toolchest the limit is what each instance was measured for; measure it larger on llama-toolchest's Server page for longer clips.
 
 ## Where clips are kept
 
-The server keeps a clip for a day, so Haruspex downloads each one, keeps its own copy beside your songs, and deletes it from the server. A clip that belongs to a chat or a Code session stays until you delete that chat or session. Settings → Music → **Clear unused audio** clears unused clips too.
+Haruspex downloads each clip and keeps its own copy beside your songs. A clip that belongs to a chat or a Code session stays until you delete that chat or session. Settings → Music → **Clear unused audio** clears unused clips too.
 
 ## What it doesn't do
 
-- Only llama-toolchest can make clips.
-- It can't change a clip once made: ask for a new one, perhaps with the same seed.
-- It can't add sound to a silent clip.
-- Clips are saved as WebM; to edit one with your footage, see the `video-editing` page.
+- The bundled image engine makes no video.
+- It doesn't run your own ComfyUI video workflows, only the four models above.
+- It can't change a clip once made, or add sound to a silent one.
+- Clips are WebM; to edit one with your footage, see the `video-editing` page.
 - The Shell assistant and scheduled jobs don't make clips.
-
-## What has been tested
-
-In Chat, against llama-toolchest with Wan 2.2 TI2V 5B: making a clip, playing it in the answer and on its card, and picking it up after Haruspex was closed mid-job. Starting from a picture and saving into a folder are covered only by automated tests so far.

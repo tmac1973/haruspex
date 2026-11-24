@@ -9,6 +9,7 @@
  * `<episode>/sequence.json`. Attended runs stop there to show it. The stages
  * after say they are not built yet.
  */
+import { videoEntries } from '#lib/videogen/entries.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { normalizeAbort } from '#lib/utils/error.ts';
 import {
@@ -28,7 +29,6 @@ import { finishStages } from '#lib/agent/jobs/types/video-sequence/finishStages.
 import { runFiles } from '#lib/agent/jobs/types/video-sequence/files.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { refreshVideoBinaries, videoToolsOn } from '#lib/video/binaries.ts';
 import { parseSequenceSpec } from '#lib/sequence/spec/parse.ts';
 import { validateSequenceSpec, type Validated } from '#lib/sequence/spec/validate.ts';
@@ -80,7 +80,7 @@ function check(json: unknown, sc: SpecContext, keyframes: boolean): Checked | st
 	const validated = validateSequenceSpec(parsed.spec, sc.validate);
 	const problems = [...parsed.problems, ...validated.errors];
 	if (problems.length) return problems;
-	const speaking = sc.speaking?.video ? { limits: sc.speaking.video } : undefined;
+	const speaking = sc.speaking ? { limits: sc.speaking.caps.limits } : undefined;
 	const plan = planClips(validated.spec, sc.validate.limits, keyframes, speaking);
 	const estimate = estimateRun(plan, null, validated.spec);
 	return { validated, summary: specSummary(validated.spec, plan, estimate, validated.notes) };
@@ -113,7 +113,7 @@ async function preflight(
 	if (!videoToolsOn()) {
 		throw new Error('The video tools are off: turn them on in Settings → Video editing.');
 	}
-	if (getSettings().videoGenBackendKind === 'none') {
+	if (videoEntries().length === 0) {
 		throw new Error('No video generation is set up: Settings → Video generation.');
 	}
 	// The job writes a new episode, so a missing folder is made, not refused.
@@ -224,6 +224,7 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 			keyframes: draws,
 			stills,
 			attended,
+			models: sc,
 			writeSpec: (next: SequenceSpec) => writeSpec(ctx, specPath, next)
 		};
 		const made = await generateStage(ctx, steps, cfg, files, genRun);

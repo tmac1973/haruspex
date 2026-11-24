@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSequenceSpec, type ValidateContext } from './validate';
+import { OTHER_MODEL, validateSequenceSpec, type ValidateContext } from './validate';
 import { LTX, LTX_CAPS, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { SequenceSpec } from './types';
 
@@ -55,6 +55,17 @@ describe('validateSequenceSpec', () => {
 		const ti2v = validateSequenceSpec(foxSpec(), ctx({ imageBackend: false }));
 		expect(ti2v.errors).toEqual([]);
 		expect(ti2v.notes[0]).toBe('Section snow opens from its prompt alone, with no keyframe.');
+	});
+
+	it('on Automatic, keeps a clip another model can make, and says so once', () => {
+		const auto = ctx({
+			capabilities: ['start_image', 'end_image'],
+			imageBackend: false,
+			othersCan: ['text']
+		});
+		const v = validateSequenceSpec(foxSpec(), auto);
+		expect(v.errors).toEqual([]);
+		expect(v.notes.filter((n) => n === OTHER_MODEL)).toHaveLength(1);
 	});
 
 	it('checks the sound against the sections and the backends', () => {

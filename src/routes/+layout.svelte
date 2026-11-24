@@ -421,11 +421,8 @@
 		void migrateApiKeys().then(apiKeysReady).then(migrateJobApiKeys);
 		// After the keys: a probe sends the entry's named key.
 		void apiKeysReady()
-			.then(() => import('#lib/image/keys.ts'))
-			.then((m) => m.imageKeysReady())
-			.then(() => import('#lib/image/refreshCaps.ts'))
-			.then((m) => m.refreshMissingImageCaps())
-			.catch((e) => console.warn('Image models were not asked what they can do:', e));
+			.then(() => import('#lib/generation/refreshCaps.ts'))
+			.then((m) => m.refreshMissingGenerationCaps());
 		void remoteToken.migrate();
 		// Requests read OpenRouter reasoning caps off the cached catalog, which
 		// this build may not have yet (or only an old one).

@@ -11,7 +11,22 @@ vi.mock('#lib/stores/settings.ts', async (orig) =>
 			sandboxEnabled: true,
 			screenCaptureEnabled: flags.full,
 			musicBackendKind: flags.full ? 'toolchest' : 'none',
-			videoGenBackendKind: flags.full ? 'toolchest' : 'none',
+			videoModels: flags.full
+				? [
+						{
+							id: 'v',
+							name: 'v',
+							backend: 'llama-toolchest',
+							url: '',
+							keyId: null,
+							model: 'v',
+							options: {},
+							caps: null,
+							capsAt: null,
+							renamed: false
+						}
+					]
+				: [],
 			memoryEnabled: true,
 			leanMode: false,
 			agentFeedbackEnabled: false,

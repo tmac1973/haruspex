@@ -5,10 +5,11 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import { keptSpeech, speechRefusal, speechTooLong } from './_videoSpeech';
 import { fitClip } from '#lib/videogen/fit.ts';
-import { buildVideoBody, videoFiles } from '#lib/videogen/toolchest.ts';
+import { buildVideoBody, videoFiles } from '#lib/videogen/toolchest/backend.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
-import type { ToolchestInstance, VideoLimits } from '#lib/toolchest/models.ts';
+import type { VideoLimits } from '#lib/toolchest/models.ts';
+import { videoCaps } from '#lib/testing/videoModels.ts';
 
 const S2V: VideoLimits = {
 	defaultFps: 16,
@@ -19,8 +20,11 @@ const S2V: VideoLimits = {
 	maxPixelFrames: 832 * 480 * 81,
 	fixedFps: 16
 };
-const s2v = { id: 's2v', capabilities: ['start_image', 'audio'], video: S2V } as ToolchestInstance;
-const ti2v = { id: 'ti2v', capabilities: ['text', 'start_image'], video: S2V } as ToolchestInstance;
+const s2v = {
+	name: 's2v',
+	caps: videoCaps({ text: false, speech: true, needsSpeech: true, limits: S2V })
+};
+const ti2v = { name: 'ti2v', caps: videoCaps({ limits: S2V }) };
 const HASH = 'a'.repeat(64);
 
 beforeEach(() => state.invoke.mockReset());

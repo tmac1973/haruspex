@@ -3,8 +3,8 @@
  * `ImageUpscaleWithModel`. The backend runs the graph.
  */
 
-import type { ComfyGraph } from '#lib/image/comfyui/fieldMap.ts';
-import type * as api from '#lib/image/comfyui/client.ts';
+import type { ComfyGraph } from '#lib/comfyui/fieldMap.ts';
+import type * as api from '#lib/comfyui/client.ts';
 import { findUpscaler } from '#lib/image/comfyui/families.ts';
 
 /**

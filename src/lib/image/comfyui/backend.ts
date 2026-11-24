@@ -30,7 +30,7 @@ import {
 	validateFieldMap,
 	type ComfyGraph,
 	type FieldMap
-} from '#lib/image/comfyui/fieldMap.ts';
+} from '#lib/comfyui/fieldMap.ts';
 import {
 	selectTemplate,
 	templatesFor,
@@ -43,10 +43,10 @@ import {
 	resolveCompanions,
 	type ModelFamily
 } from '#lib/image/comfyui/families.ts';
-import * as api from '#lib/image/comfyui/client.ts';
-import { uploadImage, uploadInpaint } from '#lib/image/comfyui/upload.ts';
+import * as api from '#lib/comfyui/client.ts';
+import { uploadImage, uploadInpaint } from '#lib/comfyui/upload.ts';
 import { UPSCALE_OUTPUT, upscaleGraph, upscalerOf } from '#lib/image/comfyui/upscale.ts';
-import { resumePrompt, run } from '#lib/image/comfyui/run.ts';
+import { resumePrompt, run } from '#lib/comfyui/run.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import { entryApiKey } from '#lib/image/entries.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
@@ -377,7 +377,7 @@ async function generateWith(
 	const save = graph[template.map.outputNode];
 	if (save) save.inputs.filename_prefix = `haruspex/${clientId}`;
 	const outputNode = template.map.outputNode;
-	const bytes = await run(cfg, graph, outputNode, clientId, opts, (id) => ({
+	const bytes = await run<ImageJobHandle>(cfg, graph, outputNode, clientId, opts, (id) => ({
 		backend: 'comfyui',
 		baseUrl: cfg.baseUrl,
 		id,
@@ -418,7 +418,7 @@ async function upscaleWith(
 	const clientId = crypto.randomUUID();
 	const image = await uploadImage(cfg, input, `haruspex-upscale-${clientId}.png`, opts.signal);
 	const graph = upscaleGraph(image, model, `haruspex/${clientId}`);
-	const [bytes] = await run(cfg, graph, UPSCALE_OUTPUT, clientId, opts, (id) => ({
+	const [bytes] = await run<ImageJobHandle>(cfg, graph, UPSCALE_OUTPUT, clientId, opts, (id) => ({
 		backend: 'comfyui',
 		baseUrl: cfg.baseUrl,
 		id,

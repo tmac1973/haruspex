@@ -13,7 +13,20 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 			screenCaptureEnabled: true,
 			imageModels: imageModelsFor('comfyui'),
 			musicBackendKind: 'toolchest',
-			videoGenBackendKind: 'toolchest'
+			videoModels: [
+				{
+					id: 'v',
+					name: 'v',
+					backend: 'llama-toolchest',
+					url: '',
+					keyId: null,
+					model: 'v',
+					options: {},
+					caps: null,
+					capsAt: null,
+					renamed: false
+				}
+			]
 		}),
 		hasEnabledEmailAccount: () => true,
 		hasSendableEmailAccount: () => true,
