@@ -9,6 +9,7 @@
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
+	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
 	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
 	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
@@ -21,6 +22,7 @@
 		renameVideoModel,
 		saveVideoCaps,
 		updateVideoModel,
+		videoEntryApiKey,
 		videoEntryById
 	} from '#lib/videogen/entries.ts';
 	import type { VideoBackendKind, VideoModelEntry } from '#lib/videogen/types.ts';
@@ -49,6 +51,8 @@
 	let serverModels = $state<ModelOption[]>([]);
 	let instances = $state<ToolchestInstance[]>([]);
 	let probeCount = $state(0);
+	/** The key ComfyUI's install card sends, read once per probe. */
+	let apiKey = $state('');
 	const modelOptions = $derived(withSavedModel(model, serverModels));
 
 	const SERVER_TIPS: Record<VideoBackendKind, { placeholder: string; model: string }> = {
@@ -80,6 +84,7 @@
 		probing = true;
 		probeResult = null;
 		try {
+			apiKey = await videoEntryApiKey(current());
 			probeResult = await b.probe();
 			serverModels = probeResult.models ?? (b.models ? await b.models().catch(() => []) : []);
 			probeCount++;
@@ -230,6 +235,16 @@
 
 {#if backend === 'llama-toolchest' && probeCount > 0 && instances.length > 0}
 	<ToolchestModels kind="video" {instances} baseUrl={url.trim()} />
+{/if}
+
+{#if backend === 'comfyui' && probeCount > 0 && probeResult && (probeResult.ok || probeResult.models)}
+	<ComfyModels
+		kind="video"
+		baseUrl={url.trim()}
+		{apiKey}
+		{probeCount}
+		onInstalled={() => void probe()}
+	/>
 {/if}
 
 <style>

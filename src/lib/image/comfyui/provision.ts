@@ -62,12 +62,15 @@ export async function missingFiles(
 		listDiffusionModels(cfg),
 		hasCompanions(cfg, family)
 	]);
-	const have = {
+	const have: Record<ComfyModelFile['folder'], boolean> = {
 		diffusion_models: dits.some((n) => familyOf(n) === family),
 		text_encoders: companions.textEncoder,
 		vae: companions.vae,
 		loras: companions.lora,
-		upscale_models: false
+		upscale_models: false,
+		audio_encoders: false,
+		checkpoints: false,
+		latent_upscale_models: false
 	};
 	return set.files.filter((f) => !have[f.folder]);
 }
@@ -118,7 +121,11 @@ const MANAGER_TYPE: Record<ComfyModelFile['folder'], string> = {
 	text_encoders: 'text_encoders',
 	vae: 'vae',
 	loras: 'lora',
-	upscale_models: 'upscale'
+	upscale_models: 'upscale',
+	// Manager's own names for the folders only video models use.
+	audio_encoders: 'audio_encoders',
+	checkpoints: 'checkpoints',
+	latent_upscale_models: 'latent_upscale_models'
 };
 
 /**

@@ -34,6 +34,9 @@ pub enum ComfyFolder {
     Vae,
     UpscaleModels,
     Loras,
+    AudioEncoders,
+    Checkpoints,
+    LatentUpscaleModels,
 }
 
 impl ComfyFolder {
@@ -44,6 +47,9 @@ impl ComfyFolder {
             Self::Vae => "vae",
             Self::UpscaleModels => "upscale_models",
             Self::Loras => "loras",
+            Self::AudioEncoders => "audio_encoders",
+            Self::Checkpoints => "checkpoints",
+            Self::LatentUpscaleModels => "latent_upscale_models",
         }
     }
 }
@@ -59,12 +65,24 @@ pub struct ComfyModelFile {
     pub size_bytes: u64,
 }
 
+/// What a set's model makes: Settings → Image lists one kind, Settings →
+/// Video generation the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ComfyModelKind {
+    Image,
+    Video,
+}
+
 /// Everything one family needs, with the licence a user decides by.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ComfyModelSet {
-    /// The family `comfyui/families.ts` reads from a filename.
+    /// The family `comfyui/families.ts` (or `videogen/comfyui/families.ts`)
+    /// reads from a filename.
     pub family: String,
+    pub kind: ComfyModelKind,
     pub label: String,
     pub license: String,
     pub license_url: String,
@@ -130,6 +148,7 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
     vec![
         ComfyModelSet {
             family: "ming".into(),
+            kind: ComfyModelKind::Image,
             label: "Ming-Image 0.1 Design".into(),
             license: MING_LICENCE.text.into(),
             license_url: MING_LICENCE.url.into(),
@@ -159,6 +178,7 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
         },
         ComfyModelSet {
             family: "qwen21_turbo".into(),
+            kind: ComfyModelKind::Image,
             label: "Qwen-Image 2.1 Turbo".into(),
             license: QWEN21_LICENCE.text.into(),
             license_url: QWEN21_LICENCE.url.into(),
@@ -188,6 +208,7 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
         },
         ComfyModelSet {
             family: "flux2_klein".into(),
+            kind: ComfyModelKind::Image,
             label: "FLUX.2 klein 4B".into(),
             license: KLEIN_LICENCE.text.into(),
             license_url: KLEIN_LICENCE.url.into(),
@@ -223,6 +244,7 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
         },
         ComfyModelSet {
             family: "qwen_edit_2511".into(),
+            kind: ComfyModelKind::Image,
             label: "Qwen-Image-Edit-2511".into(),
             license: QWEN_EDIT_LICENCE.text.into(),
             license_url: QWEN_EDIT_LICENCE.url.into(),
@@ -265,6 +287,194 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
     ]
 }
 
+/// Wan 2.2, from the Comfy-Org repackaging its ComfyUI templates load.
+pub const WAN22_LICENCE: Licence = Licence {
+    text: "Apache 2.0 — commercial use allowed.",
+    url: "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B",
+    commercial_use: true,
+};
+
+/// LTX-2.3: free for commercial use only below a revenue threshold, so not
+/// counted as allowing it.
+pub const LTX23_LICENCE: Licence = Licence {
+    text: "LTX-2 Community License — commercial use only below its revenue threshold.",
+    url: "https://huggingface.co/Lightricks/LTX-2.3",
+    commercial_use: false,
+};
+
+/// The video sets, as `videogen/comfyui/families.ts` names their families:
+/// the files ComfyUI 0.39's own Wan 2.2 and LTX-2.3 templates load. VRAM and
+/// RAM are what a run needs with ComfyUI offloading what it can.
+pub fn comfy_video_sets() -> Vec<ComfyModelSet> {
+    use ComfyFolder::*;
+    const WAN22: &str = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged";
+    const WAN21: &str = "Comfy-Org/Wan_2.1_ComfyUI_repackaged";
+    let umt5 = || {
+        file(
+            TextEncoders,
+            WAN21,
+            "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68",
+            6_735_906_897,
+        )
+    };
+    let wan21_vae = || {
+        file(
+            Vae,
+            WAN22,
+            "split_files/vae/wan_2.1_vae.safetensors",
+            "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+            253_815_318,
+        )
+    };
+    let wan = |family: &str, label: &str, vram_mb: u32, ram_mb: u32, files| ComfyModelSet {
+        family: family.into(),
+        kind: ComfyModelKind::Video,
+        label: label.into(),
+        license: WAN22_LICENCE.text.into(),
+        license_url: WAN22_LICENCE.url.into(),
+        commercial_use: WAN22_LICENCE.commercial_use,
+        vram_mb,
+        ram_mb,
+        files,
+    };
+    vec![
+        wan(
+            "wan22_ti2v_5b",
+            "Wan 2.2 TI2V 5B",
+            12_288,
+            24_576,
+            vec![
+                file(
+                    DiffusionModels,
+                    WAN22,
+                    "split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+                    "456f901338bd9eadbded3828b819109a9b68e8a525ca5cf8d0049a69fcfeca1e",
+                    9_999_658_848,
+                ),
+                umt5(),
+                file(
+                    Vae,
+                    WAN22,
+                    "split_files/vae/wan2.2_vae.safetensors",
+                    "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+                    1_409_400_960,
+                ),
+            ],
+        ),
+        wan(
+            "wan22_i2v_14b",
+            "Wan 2.2 I2V 14B",
+            20_480,
+            49_152,
+            vec![
+                file(
+                    DiffusionModels,
+                    WAN22,
+                    "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+                    "6122e79d55e0f235698d11d657f3b196c5273c830da00b2b013c5a048d5e6a42",
+                    14_294_742_832,
+                ),
+                file(
+                    DiffusionModels,
+                    WAN22,
+                    "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+                    "5471a457b6ac404202a5fbe6c11595a3d5641fc766b00f38763f72303fffc21e",
+                    14_294_742_832,
+                ),
+                umt5(),
+                wan21_vae(),
+                // Four steps instead of twenty (Apache 2.0).
+                file(
+                    Loras,
+                    WAN22,
+                    "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+                    "d176c808d6fc461999b68e321efcb7501b20b8c3797523ed0df14f7d1deff11e",
+                    1_226_977_424,
+                ),
+                file(
+                    Loras,
+                    WAN22,
+                    "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+                    "024f21de095bc8fad9809ded3e9e49a2e170dcf27075da8145ba7d60d8aab7f9",
+                    1_226_977_424,
+                ),
+            ],
+        ),
+        wan(
+            "wan22_s2v",
+            "Wan 2.2 S2V",
+            20_480,
+            32_768,
+            vec![
+                file(
+                    DiffusionModels,
+                    WAN22,
+                    "split_files/diffusion_models/wan2.2_s2v_14B_fp8_scaled.safetensors",
+                    "140e75af5534ac3d91e710d9df756f7032addd64b341ba2c1c70e3e6da9aa216",
+                    16_394_832_474,
+                ),
+                umt5(),
+                wan21_vae(),
+                file(
+                    AudioEncoders,
+                    WAN22,
+                    "split_files/audio_encoders/wav2vec2_large_english_fp16.safetensors",
+                    "f0017a43ea57ef6b3d4866be607844bbd8cada6d30966f7d70044ed0d63d3f9e",
+                    630_997_322,
+                ),
+                file(
+                    Loras,
+                    WAN22,
+                    "split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+                    "698321cb86bd30c4af06c9b84e656a1048c8cb54e06d50694536fb5de37fde41",
+                    1_226_977_424,
+                ),
+            ],
+        ),
+        ComfyModelSet {
+            family: "ltx23".into(),
+            kind: ComfyModelKind::Video,
+            label: "LTX-2.3".into(),
+            license: LTX23_LICENCE.text.into(),
+            license_url: LTX23_LICENCE.url.into(),
+            commercial_use: LTX23_LICENCE.commercial_use,
+            vram_mb: 32_768,
+            ram_mb: 49_152,
+            files: vec![
+                file(
+                    Checkpoints,
+                    "Lightricks/LTX-2.3-fp8",
+                    "ltx-2.3-22b-dev-fp8.safetensors",
+                    "28606c5b5a06ce56f896d4dfcb20f212739e07a68fbe48e53638188449d26450",
+                    29_145_431_166,
+                ),
+                file(
+                    TextEncoders,
+                    "Comfy-Org/ltx-2",
+                    "split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors",
+                    "aaca463d11e6d8d2a4bdb0d6299214c15ef78a3f73e0ef8113d5a9d0219b3f6d",
+                    9_447_702_218,
+                ),
+                file(
+                    Loras,
+                    "Comfy-Org/ltx-2.3",
+                    "split_files/loras/ltx_2.3_22b_distilled_1.1_lora_dynamic_fro09_avg_rank_111_bf16.safetensors",
+                    "31e0c0195fb841bf31af78e8b60858f489e87ddcea4a5239abc80943da65e3ac",
+                    2_741_024_390,
+                ),
+                file(
+                    LatentUpscaleModels,
+                    "Lightricks/LTX-2.3",
+                    "ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+                    "5f416311fa8172b65af67530758964708d29a317b830d689a51143b7f91913ed",
+                    995_743_560,
+                ),
+            ],
+        },
+    ]
+}
+
 /// Real-ESRGAN for `upscale_image`, the file the bundled engine runs, as a
 /// set of its own: the Settings card installs it like a model, by any route.
 pub const UPSCALER_FAMILY: &str = "upscaler";
@@ -272,6 +482,7 @@ pub const UPSCALER_FAMILY: &str = "upscaler";
 pub fn comfy_upscaler_set() -> ComfyModelSet {
     ComfyModelSet {
         family: UPSCALER_FAMILY.into(),
+        kind: ComfyModelKind::Image,
         label: "Upscaler — Real-ESRGAN x4plus".into(),
         license: UPSCALER_LICENCE.text.into(),
         license_url: UPSCALER_LICENCE.url.into(),
@@ -282,9 +493,11 @@ pub fn comfy_upscaler_set() -> ComfyModelSet {
     }
 }
 
-/// Everything the Settings card offers: the model families, then the upscaler.
+/// Everything the Settings cards offer: the image families, the video
+/// families, then the upscaler.
 fn catalogue() -> Vec<ComfyModelSet> {
     let mut all = comfy_model_sets();
+    all.extend(comfy_video_sets());
     all.push(comfy_upscaler_set());
     all
 }
@@ -312,8 +525,9 @@ fn writable(dir: &Path) -> bool {
 /// kept only where they exist here and can be written. `None` when the
 /// server is not on this machine, or any model kind has no such folder — then
 /// the direct route is not available and the caller goes through Manager.
-/// `upscale_models` and `loras` are kept when they are here, and not asked
-/// for: a ComfyUI without them still installs models directly.
+/// The other folders (`upscale_models`, `loras`, and those only video models
+/// use) are kept when they are here, and not asked for: a ComfyUI without
+/// them still installs models directly.
 ///
 /// A loopback URL is necessary but not enough: a ComfyUI in a container
 /// answers on loopback with paths that mean nothing here. Requiring the path
@@ -336,7 +550,13 @@ pub fn local_folders(answer: &serde_json::Value) -> Option<HashMap<ComfyFolder, 
         }
         out.insert(kind, dirs);
     }
-    for kind in [ComfyFolder::UpscaleModels, ComfyFolder::Loras] {
+    for kind in [
+        ComfyFolder::UpscaleModels,
+        ComfyFolder::Loras,
+        ComfyFolder::AudioEncoders,
+        ComfyFolder::Checkpoints,
+        ComfyFolder::LatentUpscaleModels,
+    ] {
         let dirs: Vec<PathBuf> = answer
             .get(kind.key())
             .and_then(|v| v.as_array())
@@ -593,6 +813,55 @@ mod tests {
         assert_eq!(set.files[0].sha256, UPSCALER.sha256);
         assert!(set.commercial_use);
         assert_eq!(catalogue().last().unwrap().family, UPSCALER_FAMILY);
+    }
+
+    #[test]
+    fn every_video_set_is_verified_and_named_as_the_front_end_reads_it() {
+        let sets = comfy_video_sets();
+        let families: Vec<&str> = sets.iter().map(|s| s.family.as_str()).collect();
+        assert_eq!(
+            families,
+            ["wan22_ti2v_5b", "wan22_i2v_14b", "wan22_s2v", "ltx23"]
+        );
+        for set in &sets {
+            assert_eq!(set.kind, ComfyModelKind::Video);
+            for f in &set.files {
+                assert_eq!(f.sha256.len(), 64, "{}", f.filename);
+                assert!(f.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+                assert!(f.size_bytes > 0);
+                assert!(f.url.ends_with(&f.filename));
+            }
+        }
+        // No family is listed twice across image and video.
+        let all = catalogue();
+        let mut names: Vec<&str> = all.iter().map(|s| s.family.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), all.len());
+        assert!(comfy_model_sets()
+            .iter()
+            .all(|s| s.kind == ComfyModelKind::Image));
+    }
+
+    #[test]
+    fn video_folders_are_kept_when_here_and_not_asked_for() {
+        let (_root, [dm, te, vae, audio]) = folders(["dm", "te", "vae", "audio"]);
+        let without = serde_json::json!({
+            "diffusion_models": [dm],
+            "text_encoders": [te],
+            "vae": [vae]
+        });
+        assert!(local_folders(&without).is_some());
+        let with = serde_json::json!({
+            "diffusion_models": [dm],
+            "text_encoders": [te],
+            "vae": [vae],
+            "audio_encoders": [audio]
+        });
+        assert_eq!(
+            local_folders(&with).unwrap()[&ComfyFolder::AudioEncoders][0],
+            audio
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ const url = process.env.HARUSPEX_MANAGER_URL;
 
 const VAE_ONLY: ComfyModelSet = {
 	family: 'ming',
+	kind: 'image',
 	label: 'Ming-Image VAE',
 	license: 'MIT',
 	license_url: 'https://huggingface.co/inclusionAI/Ming-Image-0.1-Design',

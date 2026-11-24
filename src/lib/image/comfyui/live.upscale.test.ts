@@ -32,6 +32,7 @@ const live = LIVE && BACKEND_URL && SOURCE ? it : it.skip;
 /** As `comfy_upscaler_set` lists it. */
 const UPSCALER: ComfyModelSet = {
 	family: 'upscaler',
+	kind: 'image',
 	label: 'Upscaler — Real-ESRGAN x4plus',
 	license: 'BSD 3-Clause — commercial use allowed.',
 	license_url: 'https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE',
