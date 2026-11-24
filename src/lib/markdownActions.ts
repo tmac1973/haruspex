@@ -62,12 +62,17 @@ export function handleMarkdownAction(event: MouseEvent): void {
 		case 'shell-run':
 			document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: codeFor(btn) }));
 			break;
+		// The env check sits beside each import (not via buildFlags) so the web
+		// build drops these chunks, which reach the whole agent through the
+		// notebook and chat stores; the web page has no Notebooks tab to open.
 		case 'notebook-add-table':
+			if (import.meta.env.VITE_HARUSPEX_WEB === '1') break;
 			void import('#lib/notebooks/capture.ts')
 				.then((m) => m.captureTable(btn))
 				.catch((e) => console.warn('Saving the table failed:', e));
 			break;
 		case 'notebook-open': {
+			if (import.meta.env.VITE_HARUSPEX_WEB === '1') break;
 			const id = btn.dataset.notebook;
 			const card = btn.dataset.card;
 			if (id)
