@@ -75,14 +75,18 @@
 				class="viewer-step viewer-prev"
 				onclick={(e) => step(e, -1)}
 				aria-label="Previous picture"
-				title="Previous (←)">‹</button
+				title="Previous (←)"
 			>
+				‹
+			</button>
 			<button
 				class="viewer-step viewer-next"
 				onclick={(e) => step(e, 1)}
 				aria-label="Next picture"
-				title="Next (→)">›</button
+				title="Next (→)"
 			>
+				›
+			</button>
 		{/if}
 		{#if note}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
