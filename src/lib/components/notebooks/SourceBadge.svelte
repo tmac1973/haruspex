@@ -3,11 +3,20 @@
 	import { parseSource, type NotebookCard } from '#lib/notebooks/api.ts';
 	import { canOpenSource, describeSource, openSource } from '#lib/notebooks/source.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { getConversations } from '#lib/stores/chat.svelte.ts';
 
 	let { card }: { card: NotebookCard } = $props();
 
 	const source = $derived(parseSource(card.source));
-	const label = $derived(describeSource(source));
+	// A chat is named after its first reply, so the label stored with an
+	// early change is its opening words; show its name now when it still exists.
+	const label = $derived.by(() => {
+		if (source.kind === 'chat' && source.ref) {
+			const now = getConversations().find((c) => c.id === source.ref)?.title;
+			if (now) return describeSource({ ...source, label: now });
+		}
+		return describeSource(source);
+	});
 	const when = $derived(new Date(card.updated_at).toLocaleString());
 
 	async function go() {

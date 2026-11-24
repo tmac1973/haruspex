@@ -247,15 +247,17 @@ registerTool({
 			}
 			const added = await api.addCard(nb.id, card, await sourceOf(ctx), str(args.after) || null);
 			const what = kind === 'table' || kind === 'checklist' ? ` with ${added.row_count} rows` : '';
+			// The rows with their ids, so a later change names real ones.
+			const rows = kind === 'table' || kind === 'checklist' ? `\n${cardOutline(added)}` : '';
 			return done(
 				nb.id,
 				[added.id],
-				`Added ${kind} card ${added.id}${what} to "${nb.title}". Link: [${nb.title}](notebook:${nb.id}#${added.id})`
+				`Added ${kind} card ${added.id}${what} to "${nb.title}". Link: [${nb.title}](notebook:${nb.id}#${added.id})${rows}`
 			);
 		})
 });
 
-/** The file an attachment or image card keeps: a path, a picture, or (phase 07) a hash. */
+/** The file an attachment or image card keeps: a path, a dropped document's hash, or a picture. */
 async function fileForCard(
 	args: Record<string, unknown>,
 	ctx: ToolContext
