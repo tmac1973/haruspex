@@ -13,6 +13,9 @@ export const LTX: VideoLimits = {
 	fixedFps: null
 };
 
+/** That LTX-2.3 as a clip plan takes it: its limits and its frame counts, 8n + 1. */
+export const LTX_MODEL = { limits: LTX, frameStep: 8 };
+
 export const LTX_CAPS = ['text', 'start_image', 'end_image'];
 
 /** A fox in snow for a minute, then a summer forest, joined by a transition. */

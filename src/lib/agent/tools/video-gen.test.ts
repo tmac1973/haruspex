@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	route: vi.fn(),
-	backend: 'llama-toolchest'
+	backend: 'llama-toolchest',
+	caps: null as Record<string, unknown> | null
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -32,7 +33,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 				keyId: null,
 				model: 'ti2v',
 				options: {},
-				caps: null,
+				caps: state.caps,
 				capsAt: null,
 				renamed: false
 			};
@@ -81,6 +82,7 @@ const chat = makeToolContext({ interactive: true, conversationId: 'c1' });
 beforeEach(() => {
 	_resetTasksForTests();
 	state.backend = 'llama-toolchest';
+	state.caps = null;
 	state.route.mockReset().mockResolvedValue(ti2v);
 	vi.mocked(invoke).mockReset();
 });
@@ -196,6 +198,42 @@ describe('generate_video', () => {
 		expect(props().model).toBeUndefined();
 		state.backend = 'two';
 		expect(props().model?.enum).toEqual(['ti2v', 'ltx']);
+	});
+
+	it("tells the model each video model's longest clip", () => {
+		const props = () =>
+			(
+				getToolSchemas({ hasWorkingDir: false, interactive: true, taskOwner: 'chat:c1' }).find(
+					(s) => s.function.name === 'generate_video'
+				)!.function.parameters as { properties: Record<string, { description: string }> }
+			).properties;
+		expect(props().seconds.description).not.toContain('longest');
+		state.caps = {
+			text: true,
+			startImage: true,
+			endImage: false,
+			speech: false,
+			needsSpeech: false,
+			sound: true,
+			frameStep: 8,
+			limits: {
+				defaultFps: 24,
+				defaultFrames: 121,
+				defaultSize: '1280x704',
+				maxFrames: 241,
+				maxSize: '1280x704',
+				maxPixelFrames: null,
+				fixedFps: null
+			},
+			licence: '',
+			commercialUse: null
+		};
+		expect(props().seconds.description).toContain('The longest is 10 s.');
+		state.backend = 'two';
+		expect(props().model.description).toContain(
+			'ti2v: From a prompt or a picture · with sound · up to 10 s at 1280×704.'
+		);
+		expect(props().seconds.description).toContain("Each model's longest is under model.");
 	});
 });
 

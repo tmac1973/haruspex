@@ -23,11 +23,12 @@ import { resolveImage } from '#lib/agent/tools/_imageSource.ts';
 import { hashedInput } from '#lib/agent/tools/_imageJob.ts';
 import { SEED_PARAM } from '#lib/agent/tools/music-gen.ts';
 import { startVideoTask } from '#lib/agent/tools/_videoJob.ts';
-import { fitClip } from '#lib/videogen/fit.ts';
+import { clipSeconds, fitClip, longestClip } from '#lib/videogen/fit.ts';
+import { videoCapabilityLine } from '#lib/videogen/capabilityLine.ts';
 
 export { fitClip };
 import { routeVideo, type VideoNeed } from '#lib/videogen/route.ts';
-import { videoEntryNames } from '#lib/videogen/entries.ts';
+import { videoEntries } from '#lib/videogen/entries.ts';
 import type { ToolDefinition } from '#lib/api.ts';
 import type { VideoRequest, VideoStartImage } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
@@ -151,18 +152,50 @@ const MODEL_PARAM = {
 	description: 'The video model to use, by name. Leave out to use the first model that can do this.'
 };
 
+const SECONDS_PARAM = {
+	type: 'number',
+	description: "Length. Default the model's; it is shortened to what the model can make."
+};
+
 let builtFor = '';
 let built: ToolDefinition | null = null;
 
-/** The schema with `model` as an enum of the video models' names, or without it for one model. */
+/**
+ * The schema as the video models in Settings stand: `model` as an enum of
+ * their names, each with what it can do and its longest clip, or no `model`
+ * for one, whose longest clip goes on `seconds` instead. A model no probe has
+ * answered yet is named without the rest.
+ */
 function videoToolSchema(schema: ToolDefinition): ToolDefinition {
-	const names = videoEntryNames();
-	const key = JSON.stringify(names);
+	const entries = videoEntries();
+	const key = JSON.stringify(entries.map((e) => [e.name, e.caps]));
 	if (built && builtFor === key) return built;
 	const params = schema.function.parameters as { properties: Record<string, unknown> };
 	const properties = { ...params.properties };
-	if (names.length < 2) delete properties.model;
-	else properties.model = { ...MODEL_PARAM, enum: names };
+	if (entries.length < 2) {
+		delete properties.model;
+		const caps = entries[0]?.caps;
+		const most = caps ? longestClip(caps) : null;
+		properties.seconds = most
+			? {
+					...SECONDS_PARAM,
+					description: `${SECONDS_PARAM.description} The longest is ${clipSeconds(most.frames, most.fps)} s.`
+				}
+			: SECONDS_PARAM;
+	} else {
+		const lines = entries.map((e) =>
+			e.caps ? `${e.name}: ${videoCapabilityLine(e.caps).text}.` : e.name
+		);
+		properties.model = {
+			...MODEL_PARAM,
+			description: `${MODEL_PARAM.description} In the order tried: ${lines.join(' ')}`,
+			enum: entries.map((e) => e.name)
+		};
+		properties.seconds = {
+			...SECONDS_PARAM,
+			description: `${SECONDS_PARAM.description} Each model's longest is under model.`
+		};
+	}
 	built = { ...schema, function: { ...schema.function, parameters: { ...params, properties } } };
 	builtFor = key;
 	return built;
@@ -189,10 +222,7 @@ registerTool({
 						description: 'What happens in the clip: subject, action, camera and style.'
 					},
 					negative_prompt: { type: 'string', description: 'What to keep out. Optional.' },
-					seconds: {
-						type: 'number',
-						description: "Length. Default the model's; it is shortened to what the model can make."
-					},
+					seconds: SECONDS_PARAM,
 					orientation: {
 						type: 'string',
 						enum: ['landscape', 'portrait'],

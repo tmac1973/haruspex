@@ -81,7 +81,7 @@ function check(json: unknown, sc: SpecContext, keyframes: boolean): Checked | st
 	const problems = [...parsed.problems, ...validated.errors];
 	if (problems.length) return problems;
 	const speaking = sc.speaking ? { limits: sc.speaking.caps.limits } : undefined;
-	const plan = planClips(validated.spec, sc.validate.limits, keyframes, speaking);
+	const plan = planClips(validated.spec, sc.video.caps, keyframes, speaking);
 	const estimate = estimateRun(plan, null, validated.spec);
 	return { validated, summary: specSummary(validated.spec, plan, estimate, validated.notes) };
 }
@@ -212,7 +212,7 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 		const files = runFiles(ctx, cfg);
 		const plan = await speechStage(ctx, steps, files, {
 			spec,
-			limits: sc.validate.limits,
+			video: sc.video,
 			draws,
 			speaking: sc.speaking
 		});

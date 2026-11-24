@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { planClips, splitFrames, type GenerateItem } from './plan';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX, LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { SequenceSpec } from './types';
 
 const gen = (items: ReturnType<typeof planClips>['items']) =>
@@ -8,7 +8,7 @@ const gen = (items: ReturnType<typeof planClips>['items']) =>
 
 describe('planClips', () => {
 	it('cuts the fox spec into 12 + 12 clips and a transition on LTX-2.3', () => {
-		const plan = planClips(foxSpec(), LTX, true);
+		const plan = planClips(foxSpec(), LTX_MODEL, true);
 		expect(plan).toMatchObject({ width: 1280, height: 704, fps: 24, clipFrames: 121 });
 		const ids = plan.items.map((i) => i.id);
 		expect(ids).toHaveLength(25);
@@ -41,7 +41,7 @@ describe('planClips', () => {
 	it('opens a section on the user’s picture, and chains without keyframes from text', () => {
 		const spec = foxSpec();
 		spec.sections[0] = { ...spec.sections[0], start_image: 'stills/fox.png' } as never;
-		const plan = planClips(spec, LTX, false);
+		const plan = planClips(spec, LTX_MODEL, false);
 		const items = gen(plan.items);
 		expect(items[0].start).toEqual({ kind: 'userImage', path: 'stills/fox.png' });
 		const forest = items.find((i) => i.id === 'forest-01')!;
@@ -61,7 +61,7 @@ describe('planClips', () => {
 				{ kind: 'existing', id: 'phone', path: 'raw/phone.mp4', in_secs: 2, fit: { mode: 'fill' } }
 			]
 		};
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		expect(plan.items.map((i) => i.id)).toEqual(['snow-01', 'join-1', 'phone']);
 		expect(plan.items[2]).toEqual({
 			kind: 'existing',
@@ -81,10 +81,23 @@ describe('planClips', () => {
 		for (const f of splitFrames(1440, 81)) expect((f - 1) % 4).toBe(0);
 	});
 
+	it('keeps LTX frame counts (8n + 1) when the model steps by 8', () => {
+		expect(splitFrames(130, 121, 8)).toEqual([121, 17]);
+		const spec = foxSpec();
+		spec.sections[0] = { ...spec.sections[0], seconds: 7 } as SequenceSpec['sections'][number];
+		spec.joins = [{ kind: 'transition', prompt: 'melt', secs: 1.5 }];
+		const plan = planClips(spec, { ...LTX_MODEL, limits: { ...LTX, maxFrames: 241 } }, true);
+		expect(plan.clipFrames).toBe(241);
+		const items = gen(plan.items);
+		for (const i of items) expect((i.frames - 1) % 8).toBe(0);
+		// 7 s at 24 fps is 168 frames: 169 is the smallest 8n + 1 that covers it.
+		expect(items.find((i) => i.id === 'snow-01')!.frames).toBe(169);
+	});
+
 	it('steps the seed through a section’s clips', () => {
 		const spec = foxSpec();
 		(spec.sections[0] as { seed?: number }).seed = 100;
-		const items = gen(planClips(spec, LTX, true).items);
+		const items = gen(planClips(spec, LTX_MODEL, true).items);
 		expect(items.slice(0, 3).map((i) => i.seed)).toEqual([100, 101, 102]);
 	});
 });

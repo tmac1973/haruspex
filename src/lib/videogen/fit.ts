@@ -6,6 +6,7 @@
  * sequence job's clip plan.
  */
 import type { VideoLimits } from '#lib/toolchest/models.ts';
+import type { VideoCaps } from '#lib/videogen/types.ts';
 
 /** A clip's length in seconds, for a sentence. */
 export function clipSeconds(frames: number, fps: number): string {
@@ -76,4 +77,12 @@ export function fitClip(
 		fps,
 		note: `Shortened to ${clipSeconds(frames, fps)} s (${frames} frames): ${why}`
 	};
+}
+
+/**
+ * The longest landscape clip `caps` makes: its default size, and as many
+ * frames as its frame limit and (on toolchest) measured memory allow.
+ */
+export function longestClip(caps: Pick<VideoCaps, 'limits' | 'frameStep'>) {
+	return fitClip(caps.limits, '', { seconds: 1e6, portrait: false }, caps.frameStep);
 }

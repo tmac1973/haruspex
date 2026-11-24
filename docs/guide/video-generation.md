@@ -57,7 +57,7 @@ LTX-2.3 and speaking clips have sound; Wan clips are silent. The assistant says 
 
 ## How long a clip can be
 
-The model's own size and length are used unless you ask otherwise, and a longer request is shortened to fit, with a note. On llama-toolchest the limit is what each instance was measured for; measure it larger on llama-toolchest's Server page for longer clips.
+The model's own size and length are used unless you ask otherwise. The assistant knows each model's longest clip, which its row in Settings → Video generation shows too; a longer request is shortened to fit, with a note. A video-sequence job plans its clips to that length. On llama-toolchest the limit is what each instance was measured for; measure it larger on llama-toolchest's Server page for longer clips.
 
 ## Where clips are kept
 

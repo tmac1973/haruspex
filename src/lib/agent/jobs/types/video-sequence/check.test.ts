@@ -9,7 +9,7 @@ import { checkTimes, clipChecker, flaggedClips, flaggedSummary, withFollowers } 
 import { SUBMIT_CLIP_CHECK_TOOL } from './tools';
 import { configDefaults } from './config';
 import { planClips } from '#lib/sequence/spec/plan.ts';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { RunFiles } from './files';
 
@@ -62,7 +62,7 @@ describe('clip checks', () => {
 		});
 		const { ctx, turns } = ctxWith(true, { ok: false, problem: 'the fox turned grey' });
 		const check = clipChecker(ctx, { ...configDefaults(), episode_dir: 'ep1' }, files, 24)!;
-		const item = planClips(foxSpec(), LTX, true).items[1];
+		const item = planClips(foxSpec(), LTX_MODEL, true).items[1];
 		const verdict = await check(item as never, 'generated/snow-02.webm', {
 			start: '.haruspex/stills/snow-01-last.png',
 			keyframe: 'keyframes/snow.png'
@@ -77,7 +77,7 @@ describe('clip checks', () => {
 	});
 
 	it('list what still failed, and what must be made again with it', () => {
-		const plan = planClips(foxSpec(), LTX, true);
+		const plan = planClips(foxSpec(), LTX_MODEL, true);
 		const clips = {
 			'snow-11': { key: 'k', status: 'done' as const, check: { ok: false, problem: 'a jump' } },
 			'snow-03': { key: 'k', status: 'done' as const, check: { ok: true } }

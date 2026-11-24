@@ -238,6 +238,6 @@ export async function generateStage(
 		}
 		spec = withNote(spec, outcome.section, outcome.note);
 		await run.writeSpec(spec);
-		plan = planClips(spec, run.limits, run.keyframes);
+		plan = planClips(spec, run.models.video.caps, run.keyframes);
 	}
 }

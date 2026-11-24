@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { joinWindows, speakLines, speechMap, type SpeechDeps } from './speech';
 import { planClips } from '#lib/sequence/spec/plan.ts';
 import { emptyProgress } from '#lib/sequence/spec/progress.ts';
-import { LTX, S2V_10S, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, S2V_10S, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
 
 function deps(lengths: Record<string, number> = {}) {
 	const files = new Set<string>();
@@ -44,14 +44,14 @@ describe('the Speech stage', () => {
 		const { d } = deps();
 		const progress = emptyProgress('x');
 		await speakLines(presenterSpec(), progress, d);
-		const before = planClips(presenterSpec(), LTX, true, {
+		const before = planClips(presenterSpec(), LTX_MODEL, true, {
 			limits: S2V_10S,
 			speech: speechMap(progress)
 		});
 		d.speak.mockClear();
 		expect(await speakLines(presenterSpec(), progress, d)).toBe(0);
 		expect(d.speak).not.toHaveBeenCalled();
-		const after = planClips(presenterSpec(), LTX, true, {
+		const after = planClips(presenterSpec(), LTX_MODEL, true, {
 			limits: S2V_10S,
 			speech: speechMap(progress)
 		});
@@ -64,7 +64,7 @@ describe('the Speech stage', () => {
 		const spec = presenterSpec();
 		await speakLines(spec, progress, d);
 		const plan = (s: typeof spec) =>
-			planClips(s, LTX, true, { limits: S2V_10S, speech: speechMap(progress) });
+			planClips(s, LTX_MODEL, true, { limits: S2V_10S, speech: speechMap(progress) });
 		const first = plan(spec);
 		expect(await joinWindows(first, progress, d)).toBe(2);
 		expect(await joinWindows(first, progress, d)).toBe(0);

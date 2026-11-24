@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { planClips, type GenerateItem } from './plan';
 import { estimateLineSecs, splitLine, type LineSpeech } from './speaking';
-import { LTX, S2V_10S, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, S2V_10S, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
 
 const spoken = (file: string, secs: number, silences: LineSpeech['silences'] = []): LineSpeech => ({
 	file,
@@ -20,7 +20,7 @@ describe('speaking sections', () => {
 			l2: spoken('narration/host-line-02.wav', 6),
 			l3: spoken('narration/host-line-03.wav', 9)
 		};
-		const plan = planClips(presenterSpec(), LTX, true, { limits: S2V_10S, speech });
+		const plan = planClips(presenterSpec(), LTX_MODEL, true, { limits: S2V_10S, speech });
 		const w = windows(plan);
 		expect(w.map((i) => i.id)).toEqual(['host-01', 'host-02']);
 		expect(w.every((i) => i.start.kind === 'portrait' && i.start.section === 'host')).toBe(true);
@@ -60,7 +60,7 @@ describe('speaking sections', () => {
 	it('plans from estimates before the lines are spoken, at 150 words a minute', () => {
 		expect(estimateLineSecs('They hear a mouse under a metre of snow.')).toBeCloseTo(3.6);
 		expect(estimateLineSecs('Hi.')).toBe(1);
-		const w = windows(planClips(presenterSpec(), LTX, true, { limits: S2V_10S }));
+		const w = windows(planClips(presenterSpec(), LTX_MODEL, true, { limits: S2V_10S }));
 		expect(w).toHaveLength(1);
 		expect(w[0].estimated).toBe(true);
 		expect(w[0].audio?.parts.map((p) => p.file)).toEqual([
@@ -73,8 +73,8 @@ describe('speaking sections', () => {
 	it('changes a window when its line is spoken again, even at the same length', () => {
 		const a = { l1: spoken('a.wav', 4), l2: spoken('b.wav', 6), l3: spoken('c.wav', 9) };
 		const b = { ...a, l2: { ...a.l2, hash: 'new' } };
-		const pa = windows(planClips(presenterSpec(), LTX, true, { limits: S2V_10S, speech: a }));
-		const pb = windows(planClips(presenterSpec(), LTX, true, { limits: S2V_10S, speech: b }));
+		const pa = windows(planClips(presenterSpec(), LTX_MODEL, true, { limits: S2V_10S, speech: a }));
+		const pb = windows(planClips(presenterSpec(), LTX_MODEL, true, { limits: S2V_10S, speech: b }));
 		expect(pa[0]).not.toEqual(pb[0]);
 		expect(pa[1]).toEqual(pb[1]);
 	});
@@ -82,7 +82,7 @@ describe('speaking sections', () => {
 	it('ends a transition into a speaking section on its portrait', () => {
 		const spec = presenterSpec();
 		spec.joins[0] = { kind: 'transition' };
-		const plan = planClips(spec, LTX, true, { limits: S2V_10S });
+		const plan = planClips(spec, LTX_MODEL, true, { limits: S2V_10S });
 		const join = plan.items.find((i) => i.id === 'join-1') as GenerateItem;
 		expect(join.end).toEqual({ kind: 'startOf', start: { kind: 'portrait', section: 'host' } });
 	});
