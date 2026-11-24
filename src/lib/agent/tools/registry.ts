@@ -4,6 +4,7 @@ import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/t
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { coerceArgsToSchema } from '#lib/agent/tools/_coerce.ts';
 import { imageEntries } from '#lib/image/entries.ts';
+import { videoEntries } from '#lib/videogen/entries.ts';
 import {
 	hasEnabledEmailAccount,
 	hasSendableEmailAccount,
@@ -531,7 +532,7 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		cameras: interactive && !opts.codeMode && !opts.shellMode && camerasUsable(opts.backend),
 		imageGeneration: interactive && imageEntries().length > 0,
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
-		videoGeneration: interactive && getSettings().videoGenBackendKind !== 'none',
+		videoGeneration: interactive && videoEntries().length > 0,
 		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
@@ -692,7 +693,7 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 	}
 	if (reg.category === 'video-gen') {
 		return backendRefusal(
-			s.videoGenBackendKind === 'none',
+			videoEntries().length === 0,
 			'Video generation is off. The user can set it up in Settings → Video generation.',
 			'Video generation',
 			ctx

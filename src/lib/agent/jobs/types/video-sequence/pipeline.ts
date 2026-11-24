@@ -9,6 +9,7 @@
  * `<episode>/sequence.json`. Attended runs stop there to show it. The stages
  * after say they are not built yet.
  */
+import { videoEntries } from '#lib/videogen/entries.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { normalizeAbort } from '#lib/utils/error.ts';
 import {
@@ -28,7 +29,6 @@ import { finishStages } from '#lib/agent/jobs/types/video-sequence/finishStages.
 import { runFiles } from '#lib/agent/jobs/types/video-sequence/files.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { refreshVideoBinaries, videoToolsOn } from '#lib/video/binaries.ts';
 import { parseSequenceSpec } from '#lib/sequence/spec/parse.ts';
 import { validateSequenceSpec, type Validated } from '#lib/sequence/spec/validate.ts';
@@ -113,7 +113,7 @@ async function preflight(
 	if (!videoToolsOn()) {
 		throw new Error('The video tools are off: turn them on in Settings → Video editing.');
 	}
-	if (getSettings().videoGenBackendKind === 'none') {
+	if (videoEntries().length === 0) {
 		throw new Error('No video generation is set up: Settings → Video generation.');
 	}
 	// The job writes a new episode, so a missing folder is made, not refused.

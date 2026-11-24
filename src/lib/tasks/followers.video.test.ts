@@ -19,10 +19,30 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })
 }));
-vi.mock('#lib/videogen/toolchest.ts', () => ({
-	generateVideo: state.generate,
-	resumeVideo: state.resume
+vi.mock('#lib/videogen/index.ts', () => ({
+	videoBackendForEntry: () => ({ generate: state.generate, resume: state.resume })
 }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: {
+			videoModels: [
+				{
+					id: 'v',
+					name: 'ti2v',
+					backend: 'llama-toolchest',
+					url: 'http://box:3000',
+					keyId: null,
+					model: 'ti2v',
+					options: {},
+					caps: null,
+					capsAt: null,
+					renamed: false
+				}
+			]
+		},
+		overDefaults: true
+	})
+);
 
 import './followers.ts';
 import { _dispatchForTests as dispatch } from './runner.svelte.ts';

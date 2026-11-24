@@ -1,5 +1,5 @@
+import { videoEntries } from '#lib/videogen/entries.ts';
 import type { JobTypeDefinition, PlannedStep } from '#lib/agent/jobs/types/types.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { refreshVideoBinaries, videoToolsOn } from '#lib/video/binaries.ts';
 import { parseSequenceSpec } from '#lib/sequence/spec/parse.ts';
 import { runVideoSequencePipeline } from '#lib/agent/jobs/types/video-sequence/pipeline.ts';
@@ -49,7 +49,7 @@ function planSequenceSteps(): PlannedStep[] {
 
 /** Whether a run can start: the video tools on and video generation set up. */
 export async function sequenceAvailable(): Promise<boolean> {
-	if (getSettings().videoGenBackendKind === 'none') return false;
+	if (videoEntries().length === 0) return false;
 	await refreshVideoBinaries().catch(() => null);
 	return videoToolsOn();
 }

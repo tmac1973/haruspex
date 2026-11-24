@@ -1,14 +1,15 @@
 /**
  * `generate_video`: a short clip from a description, and optionally a picture
- * to start from and one to end on, made by the llama-toolchest video instance set up in
- * Settings → Video generation.
+ * to start from and one to end on, made by one of the video models in
+ * Settings → Video generation: the one the call names, or the first that can
+ * do what it asks (`#lib/videogen/route.ts`).
  *
  * Always in the background (`_videoJob.ts`): a clip takes minutes, so the
  * tool settles the request and answers at once, and the clip arrives as a
  * notice turn. That needs a chat or Code session to own the task, so the tool
  * is offered only there (the registry's `videoGenOffered`).
  *
- * The instance's limits decide the size and length: its default size (turned
+ * The model's limits decide the size and length: its default size (turned
  * for portrait), and no more frames than it takes, which on toolchest is what
  * the instance was measured for. A request past them is shortened, and the
  * answer says so.
@@ -25,11 +26,17 @@ import { startVideoTask } from '#lib/agent/tools/_videoJob.ts';
 import { fitClip } from '#lib/videogen/fit.ts';
 
 export { fitClip };
-import { readyVideoInstance } from '#lib/videogen/toolchest.ts';
-import type { ToolchestInstance, VideoLimits } from '#lib/toolchest/models.ts';
+import { routeVideo, type VideoNeed } from '#lib/videogen/route.ts';
+import { videoEntryNames } from '#lib/videogen/entries.ts';
+import type { ToolDefinition } from '#lib/api.ts';
 import type { VideoRequest, VideoStartImage } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
-import { keptSpeech, speechRefusal, speechTooLong } from '#lib/agent/tools/_videoSpeech.ts';
+import {
+	keptSpeech,
+	speechRefusal,
+	speechTooLong,
+	type VideoModelCaps
+} from '#lib/agent/tools/_videoSpeech.ts';
 import { trimmed } from '#lib/utils/coerce.ts';
 
 /** A title from the prompt when none was given: its first five words. */
@@ -80,18 +87,6 @@ async function keptPicture(
 	};
 }
 
-/** Why the instance can't take the pictures asked for, or null. */
-function pictureRefusal(wants: (f: string) => boolean, instance: ToolchestInstance): string | null {
-	const can = (c: string) => instance.capabilities.includes(c);
-	if (wants('start_image') && !can('start_image'))
-		return `${instance.id} can't start from a picture.`;
-	if (wants('end_image') && !can('end_image')) {
-		const only = can('start_image') ? ' It can only start from a picture.' : '';
-		return `${instance.id} can't end on a picture.${only}`;
-	}
-	return null;
-}
-
 /**
  * The pictures the clip starts from and ends on, kept in the image cache, and
  * whether the clip is portrait: as asked, else the start (or end) picture's
@@ -99,13 +94,10 @@ function pictureRefusal(wants: (f: string) => boolean, instance: ToolchestInstan
  */
 export async function picturesFrom(
 	args: Record<string, unknown>,
-	instance: ToolchestInstance,
 	ctx: ToolContext
 ): Promise<{ image?: VideoStartImage; endImage?: VideoStartImage; portrait: boolean } | string> {
 	const asked = trimmed(args.orientation);
 	const wants = (f: string) => trimmed(args[f]) !== '';
-	const refused = pictureRefusal(wants, instance);
-	if (refused) return refused;
 	const start = wants('start_image') ? await keptPicture('start_image', args, ctx) : null;
 	if (typeof start === 'string') return start;
 	const end = wants('end_image') ? await keptPicture('end_image', args, ctx) : null;
@@ -125,17 +117,55 @@ export async function picturesFrom(
  */
 async function shapeClip(
 	args: Record<string, unknown>,
-	instance: ToolchestInstance,
-	limits: VideoLimits,
+	model: VideoModelCaps,
 	portrait: boolean,
 	ctx: ToolContext
 ) {
 	const speech = trimmed(args.audio) ? await keptSpeech(args, ctx) : null;
 	if (typeof speech === 'string') return speech;
 	const given = typeof args.seconds === 'number' && args.seconds > 0 ? args.seconds : undefined;
-	const fit = fitClip(limits, instance.id, { seconds: given ?? speech?.secs, portrait });
-	const tooLong = speech && !given ? speechTooLong(speech, instance, fit) : null;
+	const fit = fitClip(
+		model.caps.limits,
+		model.name,
+		{ seconds: given ?? speech?.secs, portrait },
+		model.caps.frameStep
+	);
+	const tooLong = speech && !given ? speechTooLong(speech, model, fit) : null;
 	return tooLong ?? { fit, speech, given };
+}
+
+/** What the call asks of a video model. */
+function needOfArgs(args: Record<string, unknown>): VideoNeed {
+	const wants = (f: string) => trimmed(args[f]) !== '';
+	return {
+		text: !wants('start_image'),
+		startImage: wants('start_image'),
+		endImage: wants('end_image'),
+		speech: wants('audio'),
+		sound: args.sound === true
+	};
+}
+
+const MODEL_PARAM = {
+	type: 'string',
+	description: 'The video model to use, by name. Leave out to use the first model that can do this.'
+};
+
+let builtFor = '';
+let built: ToolDefinition | null = null;
+
+/** The schema with `model` as an enum of the video models' names, or without it for one model. */
+function videoToolSchema(schema: ToolDefinition): ToolDefinition {
+	const names = videoEntryNames();
+	const key = JSON.stringify(names);
+	if (built && builtFor === key) return built;
+	const params = schema.function.parameters as { properties: Record<string, unknown> };
+	const properties = { ...params.properties };
+	if (names.length < 2) delete properties.model;
+	else properties.model = { ...MODEL_PARAM, enum: names };
+	built = { ...schema, function: { ...schema.function, parameters: { ...params, properties } } };
+	builtFor = key;
+	return built;
 }
 
 registerTool({
@@ -187,6 +217,11 @@ registerTool({
 							'A picture to end on, as for start_image, when the model can. With start_image, ' +
 							'the clip moves from one to the other.'
 					},
+					sound: {
+						type: 'boolean',
+						description: 'True when the clip must have its own sound track. Default false.'
+					},
+					model: MODEL_PARAM,
 					seed: SEED_PARAM,
 					title: { type: 'string', description: 'A short title for the player and the file.' },
 					path: {
@@ -199,24 +234,26 @@ registerTool({
 			}
 		}
 	},
+	liveSchema: (schema) => videoToolSchema(schema),
 	displayLabel: (args) => `video: ${String(args.title ?? args.prompt ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
 		const refused = argsRefusal(args, ctx);
 		if (refused) return toolResult(toolError(refused));
-		let instance;
+		let routed;
 		try {
-			instance = await readyVideoInstance(ctx.signal);
+			routed = await routeVideo(needOfArgs(args), {
+				named: trimmed(args.model) || undefined,
+				signal: ctx.signal
+			});
 		} catch (e) {
 			return toolResult(toolError(`Could not make it: ${errMessage(e)}`));
 		}
-		if (!instance.video) {
-			return toolResult(toolError(`${instance.id} says nothing of the clips it makes.`));
-		}
-		const refusedSpeech = speechRefusal(args, instance);
+		const model = { name: routed.entry.name, caps: routed.caps };
+		const refusedSpeech = speechRefusal(args, model);
 		if (refusedSpeech) return toolResult(toolError(refusedSpeech));
-		const start = await picturesFrom(args, instance, ctx);
+		const start = await picturesFrom(args, ctx);
 		if (typeof start === 'string') return toolResult(toolError(start));
-		const shaped = await shapeClip(args, instance, instance.video, start.portrait, ctx);
+		const shaped = await shapeClip(args, model, start.portrait, ctx);
 		if (typeof shaped === 'string') return toolResult(toolError(shaped));
 		const { fit, speech, given } = shaped;
 
@@ -246,6 +283,6 @@ registerTool({
 			...(start.endImage ? { endImage: start.endImage } : {}),
 			...(speech ? { audio: { name: speech.name, hash: speech.hash }, followAudio: !given } : {})
 		};
-		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx);
+		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx, routed.entry.id);
 	}
 });

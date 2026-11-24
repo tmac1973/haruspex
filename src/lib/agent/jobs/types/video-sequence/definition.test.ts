@@ -3,7 +3,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const env = vi.hoisted(() => ({ backend: 'llama-toolchest', tools: true }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: () => ({ videoGenBackendKind: env.backend }),
+		settings: () => ({
+			videoModels:
+				env.backend === 'none'
+					? []
+					: [
+							{
+								id: 'v',
+								name: 'v',
+								backend: 'llama-toolchest',
+								url: '',
+								keyId: null,
+								model: 'v',
+								options: {},
+								caps: null,
+								capsAt: null,
+								renamed: false
+							}
+						]
+		}),
 		overDefaults: true
 	})
 );

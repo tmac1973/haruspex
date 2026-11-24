@@ -25,7 +25,7 @@ const NOTHING = {
 	screenCaptureEnabled: false,
 	imageModels: imageModelsFor('none'),
 	musicBackendKind: 'none',
-	videoGenBackendKind: 'none',
+	videoModels: [],
 	sandboxEnabled: false
 };
 
@@ -45,7 +45,20 @@ describe('pausedIntegrations', () => {
 			screenCaptureEnabled: true,
 			imageModels: imageModelsFor('comfyui'),
 			musicBackendKind: 'toolchest',
-			videoGenBackendKind: 'toolchest',
+			videoModels: [
+				{
+					id: 'v',
+					name: 'v',
+					backend: 'llama-toolchest',
+					url: '',
+					keyId: null,
+					model: 'v',
+					options: {},
+					caps: null,
+					capsAt: null,
+					renamed: false
+				}
+			],
 			sandboxEnabled: true
 		};
 		state.mcp = [{ label: 'GitHub' }, { label: 'Blender' }];
