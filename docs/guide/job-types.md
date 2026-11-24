@@ -1,6 +1,6 @@
 ---
 title: Job types
-description: What each kind of job in the Jobs tab does: digests, research, audit, guided planning, autonomous coding, asset generation and 3D models, and their options.
+description: What each kind of job in the Jobs tab does: digests, research, notebook refresh, audit, guided planning, autonomous coding, asset generation and 3D models, and their options.
 ---
 
 # Job types
@@ -8,6 +8,8 @@ description: What each kind of job in the Jobs tab does: digests, research, audi
 Pick a job's type in the job editor's **Job type** (see the `jobs` page for running and scheduling jobs).
 
 **Digests.** Email and news digests are what two Home cards run (see the `home` page). A camera digest summarises camera logs, leading with entries camera alerts flagged, and can email the result (see the `camera-log` and `camera-alerts` pages).
+
+**Refresh notebook.** On its schedule, does what you wrote ("update the prices in the Models table") to one notebook, with the notebook tools and web search, changing only what it names. Each card it changes says "From Jobs" and its History can undo it. **⋯ → Refresh on a schedule…** on a notebook starts one (see the `notebook-agents` page).
 
 **Research by email.** Answers questions you email to yourself with a trigger phrase in the subject, using web tools only, and replies in the thread. It acts only on a request with a matching copy in your Sent folder. See the `email-research` page.
 

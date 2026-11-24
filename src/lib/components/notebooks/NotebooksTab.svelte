@@ -68,6 +68,18 @@
 				run: () => void exportNotebook(id, format)
 			})),
 			{
+				label: 'Refresh on a schedule…',
+				run: () =>
+					void import('#lib/agent/jobs/openDraft.ts').then(({ openJobDraft }) =>
+						openJobDraft({
+							jobType: 'notebook_refresh',
+							name: `Refresh ${open?.notebook.title ?? 'notebook'}`,
+							workingDir: '',
+							config: { notebookId: id, instruction: '' }
+						})
+					)
+			},
+			{
 				label: 'Import into this notebook…',
 				run: () =>
 					void importFiles(id).then((done) => {

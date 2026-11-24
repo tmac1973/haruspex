@@ -15,6 +15,10 @@ The panel on the right is the notebook's own chat, kept with it: "organize these
 
 In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). Agents only see notebooks when asked.
 
+## Keep a notebook up to date
+
+**⋯ → Refresh on a schedule…** on a notebook makes a **Refresh notebook** job (see `job-types`): say what to update ("check each speaker's current price and update the Price column") and set its schedule in the Jobs tab. Each run changes only what you named; its changes say "From Jobs" on the cards, and History undoes them.
+
 ## Save from a chat
 
 In Chat, Shell and Code, **📓** under an answer saves it as a text card, and **📓 Save to notebook** on a table (shown on hover) saves it as a table card, with link cells kept as links. Right-click text you've selected in an answer for **Add selection to notebook…**. Each asks which notebook, or makes a new one; the card links back to the conversation.

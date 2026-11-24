@@ -52,7 +52,9 @@ const ok = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('python cards', () => {
-	beforeEach(() => py.runPython.mockReset());
+	beforeEach(() => {
+		py.runPython.mockReset();
+	});
 
 	it('names tables by title, numbering repeats', async () => {
 		const specs = await tableSpecs([
