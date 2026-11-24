@@ -1,11 +1,17 @@
 <script lang="ts">
 	/**
-	 * Settings → Notebooks: semantic search, and backing up and restoring
-	 * every notebook. Semantic search downloads the embedding model Memory
+	 * Settings → Notebooks: the notebook chat's step limit, semantic search,
+	 * and backing up and restoring every notebook. Semantic search downloads the embedding model Memory
 	 * uses (once), then indexes notebooks in the background.
 	 */
 	import { onMount } from 'svelte';
-	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import {
+		getSettings,
+		updateSettings,
+		MIN_CHAT_MAX_ITERATIONS,
+		MAX_CHAT_MAX_ITERATIONS
+	} from '#lib/stores/settings.ts';
+	import { clampInt } from '#lib/utils/clampInt.ts';
 	import {
 		downloadModel,
 		getModelError,
@@ -27,6 +33,12 @@
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let on = $state(getSettings().notebooks.semanticSearch);
+	let maxSteps = $state(getSettings().notebooks.chatMaxIterations);
+
+	function persistMaxSteps() {
+		maxSteps = clampInt(maxSteps, MIN_CHAT_MAX_ITERATIONS, MAX_CHAT_MAX_ITERATIONS);
+		updateSettings({ notebooks: { ...getSettings().notebooks, chatMaxIterations: maxSteps } });
+	}
 	const status = $derived(getModelStatus());
 	const error = $derived(getModelError());
 
@@ -94,6 +106,30 @@
 		}
 	}
 </script>
+
+<section class="settings-section">
+	<h2>Max steps per turn</h2>
+	<label
+		class="tokens-row"
+		title="Each tool call or model reply is a step. Raise it if the notebook chat stops before it has written everything. Settings → Chat has its own limit. {MIN_CHAT_MAX_ITERATIONS}–{MAX_CHAT_MAX_ITERATIONS}."
+	>
+		<span class="tokens-label">
+			Notebook chat steps
+			<span class="tokens-sub">
+				How many steps a notebook chat turn takes before it has to answer.
+			</span>
+		</span>
+		<input
+			type="number"
+			min={MIN_CHAT_MAX_ITERATIONS}
+			max={MAX_CHAT_MAX_ITERATIONS}
+			step="5"
+			bind:value={maxSteps}
+			onblur={persistMaxSteps}
+			onkeydown={(e) => e.key === 'Enter' && persistMaxSteps()}
+		/>
+	</label>
+</section>
 
 <section class="settings-section">
 	<h2>Search</h2>
@@ -168,6 +204,44 @@
 </section>
 
 <style>
+	.tokens-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16px;
+	}
+
+	.tokens-label {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+
+	.tokens-sub {
+		display: block;
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+		max-width: 46ch;
+	}
+
+	.tokens-row input {
+		flex-shrink: 0;
+		width: 9ch;
+		padding: 6px 8px;
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+		color: var(--text-primary);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+	}
+
+	.tokens-row input:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
 	.lede {
 		margin: 0 0 10px;
 		color: var(--text-secondary);

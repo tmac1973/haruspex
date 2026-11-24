@@ -1203,6 +1203,12 @@ export function chatTurnMaxIterations(setting: number, deepResearch: boolean): n
 		: defaults.chatMaxIterations;
 	return deepResearch ? Math.max(DEEP_RESEARCH_MIN_ITERATIONS, steps) : steps;
 }
+/** Steps a notebook chat turn may take: the user's setting, clamped like Chat's. */
+export function notebookChatMaxIterations(setting: number | undefined): number {
+	return typeof setting === 'number' && Number.isFinite(setting)
+		? clampInt(setting, MIN_CHAT_MAX_ITERATIONS, MAX_CHAT_MAX_ITERATIONS)
+		: defaults.notebooks.chatMaxIterations;
+}
 export const DEFAULT_SEARXNG_URL = 'http://localhost:8080';
 export const DEFAULT_TTS_VOICE = 'af_heart';
 
@@ -1260,7 +1266,7 @@ const defaults: AppSettings = {
 	leanMode: false,
 	homeTab: true,
 	notebooksTab: true,
-	notebooks: { semanticSearch: false },
+	notebooks: { semanticSearch: false, chatMaxIterations: 25 },
 	jobKeepAwake: 'except-home',
 	leanFileWrites: false,
 	deferTools: 'auto',
@@ -2281,6 +2287,12 @@ export interface NotebookSettings {
 	 * embedding model Memory uses. Settings → Notebooks → Semantic search.
 	 */
 	semanticSearch: boolean;
+	/**
+	 * Max agent-loop iterations for one turn of a notebook's own chat.
+	 * Settings → Notebooks → Max steps per turn. Higher than Chat's, since a
+	 * notebook turn often researches and then writes rows.
+	 */
+	chatMaxIterations: number;
 }
 
 /** Settings → General → Keep the computer awake; an unknown value reads as the default. */
