@@ -20,6 +20,7 @@ const ORDER = [
 	'chat',
 	'chat-conversations',
 	'notebooks',
+	'notebook-agents',
 	'documents',
 	'slides',
 	'shell',

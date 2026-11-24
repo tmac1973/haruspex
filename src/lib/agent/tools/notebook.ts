@@ -213,6 +213,11 @@ registerTool({
 						type: 'string',
 						description: 'kind image: a haruspex-img:// URL from an image tool, instead of path.'
 					},
+					file: {
+						type: 'string',
+						description:
+							'kind attachment or image: the hash of a document the user dropped in this chat, instead of path.'
+					},
 					after: { type: 'string', description: 'Put it after this card id; omit for the end.' }
 				},
 				required: ['notebook', 'kind']
@@ -255,6 +260,13 @@ async function fileForCard(
 	args: Record<string, unknown>,
 	ctx: ToolContext
 ): Promise<api.NotebookFile> {
+	const hash = str(args.file).trim();
+	if (hash) {
+		const { droppedFile } = await import('#lib/notebooks/droppedFiles.ts');
+		const file = droppedFile(hash);
+		if (!file) throw new Error('No dropped file with that hash in this session.');
+		return file;
+	}
 	const image = str(args.image).trim();
 	if (image) {
 		const m = /([0-9a-f]{64})/.exec(image);
@@ -262,7 +274,7 @@ async function fileForCard(
 		return api.fileFromImage(m[1]);
 	}
 	const path = str(args.path).trim();
-	if (!path) throw new Error('Give path (or image) for an attachment or image card.');
+	if (!path) throw new Error('Give path, file or image for an attachment or image card.');
 	return api.storeFileForAgent(ctx.shellMode ? null : (ctx.workingDir ?? null), path);
 }
 

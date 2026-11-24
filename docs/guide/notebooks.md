@@ -29,9 +29,9 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 **+ Add card → Checklist** adds a list of items to tick. Enter starts the next item; Backspace in an empty item removes it. Drag items by their ⋮⋮ to reorder, and **Hide done** hides the ticked ones.
 
-## Ask an agent to make or change a notebook
+## Have an agent do it
 
-In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). Agents only see notebooks when asked.
+Agents in Chat, Shell, Code and each notebook's own chat can make and change notebooks for you; see the `notebook-agents` page.
 
 ## Keep files and pictures
 

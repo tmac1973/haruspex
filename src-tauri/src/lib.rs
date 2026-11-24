@@ -734,6 +734,7 @@ pub fn run() {
             db::notebook_restore,
             db::notebook_purge,
             db::notebook_card_get,
+            db::notebook_conversation,
             db::notebook_card_add,
             db::notebook_card_update,
             db::notebook_card_move,

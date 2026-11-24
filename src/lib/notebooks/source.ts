@@ -82,12 +82,15 @@ export async function openSource(source: NotebookSource, notebookId?: string): P
 export type SourceContext = Partial<
 	Pick<
 		ToolContext,
-		'conversationId' | 'codeMode' | 'shellMode' | 'codeSessionId' | 'jobRunId' | 'requester'
+		| 'conversationId'
+		| 'codeMode'
+		| 'shellMode'
+		| 'codeSessionId'
+		| 'jobRunId'
+		| 'requester'
+		| 'notebookChat'
 	>
-> & {
-	/** Set by a notebook's own chat (phase 07): the notebook it works in. */
-	notebookChat?: { notebookId: string; title: string };
-};
+>;
 
 /** Lookups `sourceFromToolContext` needs, passed in so it stays testable. */
 export interface SourceLookups {

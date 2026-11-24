@@ -397,6 +397,7 @@ export const IPC = {
 	notebook_card_rollback: 'notebook_card_rollback',
 	notebook_card_update: 'notebook_card_update',
 	notebook_columns_set: 'notebook_columns_set',
+	notebook_conversation: 'notebook_conversation',
 	notebook_create: 'notebook_create',
 	notebook_delete: 'notebook_delete',
 	notebook_file_from_image: 'notebook_file_from_image',

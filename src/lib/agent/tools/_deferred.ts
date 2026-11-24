@@ -102,7 +102,9 @@ export interface ToolSplit {
 export function splitTurnTools(
 	offered: ToolDefinition[],
 	codeTab: boolean,
-	readOnly = false
+	readOnly = false,
+	/** Families sent whole, as if loaded already. */
+	keep: readonly string[] = []
 ): ToolSplit {
 	const families = allFamilies();
 	const sent: ToolDefinition[] = [];
@@ -112,7 +114,7 @@ export function splitTurnTools(
 		const family = isCore(name, codeTab)
 			? undefined
 			: families.find((f) => f.has(name, categoryOf(name)));
-		if (!family) {
+		if (!family || keep.includes(family.id)) {
 			sent.push(schema);
 			continue;
 		}

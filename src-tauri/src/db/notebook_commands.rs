@@ -72,6 +72,13 @@ pub async fn notebook_purge(state: Db<'_>, id: String) -> Result<(), String> {
     on_pool(db, move |db| db.notebook_purge(&id)).await
 }
 
+/// The id of the conversation a notebook's agent chat is kept in.
+#[tauri::command]
+pub async fn notebook_conversation(state: Db<'_>, notebook_id: String) -> Result<String, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.conversation_for_notebook(&notebook_id)).await
+}
+
 /// One card, deleted or not, with its first 200 rows.
 #[tauri::command]
 pub async fn notebook_card_get(state: Db<'_>, card_id: String) -> Result<NotebookCard, String> {

@@ -135,6 +135,15 @@ describe('splitTurnTools', () => {
 		expect(load.properties.family.enum).toContain('video');
 	});
 
+	it('sends a kept family whole, as a notebook chat keeps notebooks', () => {
+		const offered = getToolSchemas({ hasWorkingDir: false, interactive: true });
+		const kept = splitTurnTools(offered, false, false, ['notebooks']);
+		expect(kept.deferred.map((f) => f.id)).not.toContain('notebooks');
+		expect(kept.sent.map((s) => s.function.name)).toContain('notebook_table_rows');
+		const plain = splitTurnTools(offered, false);
+		expect(plain.deferred.map((f) => f.id)).toContain('notebooks');
+	});
+
 	it('sends what was offered when there is nothing to defer', () => {
 		flags.full = false;
 		const offered = getToolSchemas({ hasWorkingDir: false, interactive: true });

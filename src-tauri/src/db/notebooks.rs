@@ -1028,6 +1028,33 @@ mod tests {
     }
 
     #[test]
+    fn a_notebook_chat_is_kept_out_of_chat_and_purged_with_its_notebook() {
+        let db = Database::open_in_memory();
+        db.create_conversation("plain", "Plain").unwrap();
+        let nb = db.notebook_create("N", &[]).unwrap();
+        let id = db.conversation_for_notebook(&nb.id).unwrap();
+        assert_eq!(id, format!("notebook-{}", nb.id));
+        assert_eq!(db.conversation_for_notebook(&nb.id).unwrap(), id, "made once");
+        let listed: Vec<String> = db
+            .list_conversations()
+            .unwrap()
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(listed, vec!["plain".to_string()]);
+        db.notebook_purge(&nb.id).unwrap();
+        let left: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM conversations WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
+    }
+
+    #[test]
     fn referenced_hashes_include_revisions() {
         let db = Database::open_in_memory();
         let nb = db.notebook_create("N", &[]).unwrap();

@@ -237,6 +237,11 @@ export interface ToolContext {
 	/** The job run this turn belongs to, so its questions name it to a client elsewhere. */
 	jobRunId?: number;
 	/**
+	 * A notebook's own chat (the Notebooks tab): the notebook it works in.
+	 * Its changes are stamped "From notebook chat" (`#lib/notebooks/source.ts`).
+	 */
+	notebookChat?: { notebookId: string; title: string };
+	/**
 	 * Who is asking, named in an approval prompt so the user can tell two
 	 * sessions' prompts apart: a Code session's title, a Shell tab's name.
 	 * Read when the prompt opens, since a new session is named mid-turn.

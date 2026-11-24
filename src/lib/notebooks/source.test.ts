@@ -71,4 +71,13 @@ describe('sourceFromToolContext', () => {
 		});
 		expect(await sourceFromToolContext({ jobRunId: 99 }, lookups)).toEqual({ kind: 'job' });
 	});
+
+	it('maps a notebook chat turn to that notebook', async () => {
+		expect(
+			await sourceFromToolContext(
+				{ conversationId: 'notebook-n1', notebookChat: { notebookId: 'n1', title: 'Speakers' } },
+				lookups
+			)
+		).toEqual({ kind: 'notebook_chat', ref: 'notebook-n1', label: 'Speakers' });
+	});
 });
