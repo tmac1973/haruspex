@@ -2,9 +2,15 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import UserQuestionModal from './UserQuestionModal.svelte';
-import { askUserQuestion, cancelUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
+import {
+	askUserQuestion,
+	cancelUserQuestion,
+	getPendingQuestion
+} from '#lib/stores/userQuestion.svelte.ts';
+import { closeImageViewer, openImageViewer } from '#lib/stores/imageViewer.svelte.ts';
 
 afterEach(() => {
+	closeImageViewer();
 	cancelUserQuestion();
 });
 
@@ -36,6 +42,22 @@ describe('UserQuestionModal', () => {
 		await ask({ question: 'Pick one', body: 'hi <script>window.__pwned = 1</script>' });
 		expect(document.querySelector('.qbody-text script')).toBeNull();
 		expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+	});
+});
+
+describe('UserQuestionModal and Escape', () => {
+	it('cancels the question on Escape', async () => {
+		await ask({ question: 'Approve them?' });
+		await fireEvent.keyDown(window, { key: 'Escape' });
+		expect(getPendingQuestion()).toBeNull();
+	});
+
+	// A still enlarged from the question: Escape closes the picture, not the run.
+	it('leaves the question alone while a picture is enlarged', async () => {
+		await ask({ question: 'Approve them?' });
+		openImageViewer([{ src: 'haruspex-img://localhost/abc', alt: 'opening' }]);
+		await fireEvent.keyDown(window, { key: 'Escape' });
+		expect(getPendingQuestion()?.question).toBe('Approve them?');
 	});
 });
 

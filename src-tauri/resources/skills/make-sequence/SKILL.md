@@ -58,7 +58,7 @@ Call `propose_job` with:
   section, with lengths, joins, music, narration and speakers, so the job
   doesn't ask again;
 - `settings`: `episode_dir` when the video goes in a folder of its own
-  inside the working folder, and `run_mode: "unattended"` only if the user
+  inside the working folder (the run makes it if it doesn't exist), and `run_mode: "unattended"` only if the user
   doesn't want to check the spec and the stills first.
 
 Leave `spec` out: the job writes it from the brief and checks it.

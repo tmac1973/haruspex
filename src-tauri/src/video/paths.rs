@@ -30,6 +30,26 @@ pub fn resolve_episode(working_dir: &str, episode: &str) -> Result<PathBuf, Stri
     Ok(dir)
 }
 
+/// The episode folder `episode` names, made when it is missing. Returns the
+/// folder and whether it was made. For a job that writes a new episode; the
+/// tools a user drives keep `resolve_episode`, where a missing folder is
+/// usually a wrong name.
+pub fn ensure_episode(working_dir: &str, episode: &str) -> Result<(PathBuf, bool), String> {
+    let name = episode.trim().trim_matches(['/', '\\']);
+    let dir = plain(resolve_in_workdir(Path::new(working_dir), name)?);
+    if dir.is_dir() {
+        return Ok((dir, false));
+    }
+    if dir.exists() {
+        return Err(format!(
+            "{name} in the working folder is a file, not a folder."
+        ));
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not make the folder {name}: {e}"))?;
+    // Checked again now that it exists, in case a link in the path led out.
+    Ok((resolve_episode(working_dir, name)?, true))
+}
+
 /// Any path inside `working_dir`, existing or not (for a file about to be
 /// written).
 pub fn resolve_in_working(working_dir: &str, path: &str) -> Result<PathBuf, String> {
@@ -167,6 +187,43 @@ mod tests {
         std::os::unix::fs::symlink(&*outside, dir.join("ep010/escape")).unwrap();
         let wd = dir.join("ep010");
         assert!(resolve_episode(&wd.to_string_lossy(), "escape").is_err());
+    }
+
+    #[test]
+    fn a_missing_episode_is_made_and_an_existing_one_is_kept() {
+        let dir = series();
+        let wd = dir.to_string_lossy();
+        let (made, created) = ensure_episode(&wd, " ep011/ ").unwrap();
+        assert!(created);
+        assert!(made.is_dir() && made.ends_with("ep011"));
+        let (nested, created) = ensure_episode(&wd, "season2/ep001").unwrap();
+        assert!(created && nested.is_dir());
+        let (kept, created) = ensure_episode(&wd, "ep010").unwrap();
+        assert!(!created);
+        assert!(kept.join("raw/obs.mp4").exists());
+        assert_eq!(ensure_episode(&wd, "").unwrap(), (dir.to_path_buf(), false));
+    }
+
+    #[test]
+    fn ensure_episode_refuses_a_file_and_the_outside() {
+        let dir = series();
+        fs::write(dir.join("notes"), b"x").unwrap();
+        let wd = dir.join("ep010");
+        let wd = wd.to_string_lossy();
+        assert!(ensure_episode(&dir.to_string_lossy(), "notes").is_err());
+        assert!(ensure_episode(&wd, "../ep099").is_err());
+        assert!(!dir.join("ep099").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_episode_makes_nothing_through_a_link_out() {
+        let dir = series();
+        let outside = temp_dir("video_ensure_outside");
+        std::os::unix::fs::symlink(&*outside, dir.join("ep010/escape")).unwrap();
+        let wd = dir.join("ep010");
+        assert!(ensure_episode(&wd.to_string_lossy(), "escape/ep001").is_err());
+        assert!(!outside.join("ep001").exists());
     }
 
     #[test]

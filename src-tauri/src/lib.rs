@@ -494,6 +494,7 @@ pub fn run() {
             video::commands::media_shims_set,
             video::commands::video_binaries_status,
             video::commands::video_probe_folder,
+            video::commands::video_episode_ensure,
             video::commands::video_probe_file,
             video::commands::video_project_summary,
             video::commands::video_project_cut,

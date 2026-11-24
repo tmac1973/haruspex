@@ -102,4 +102,12 @@ Typing `/` at the start of the Chat, Shell or Code input box opens a list of com
 |---|---|
 | Esc | Close the logs, the image viewer or the shortcuts list |
 
-Some dialogs ignore Esc on purpose. **Run this command?** (command approval) and other approval windows wait for you to pick a button, so a stray key never answers for you.
+Some dialogs ignore Esc on purpose. **Run this command?** (command approval) and other approval windows wait for you to pick a button, so a stray key never answers for you. With a picture from a question enlarged, Esc closes the picture and leaves the question open.
+
+## Image viewer
+
+Click a picture in a chat, a job's question or a run to see it full size. When the picture is one of several, such as a Video sequence job's stills:
+
+| Keys | What it does |
+|---|---|
+| ← / → | Previous / next picture, when there are several |

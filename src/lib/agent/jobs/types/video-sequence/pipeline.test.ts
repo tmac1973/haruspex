@@ -113,6 +113,8 @@ vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 
 let files: Map<string, string>;
 let cuts: unknown[];
+/** Episode folders that exist; `video_episode_ensure` adds to it. */
+let dirs: Set<string>;
 let bytes: Map<string, Uint8Array>;
 
 function routes() {
@@ -159,6 +161,11 @@ function routes() {
 			return { path: req.out, width: 1, height: 1, previewDataUrl: '' };
 		},
 		image_store_bytes: () => 'f'.repeat(64),
+		video_episode_ensure: (a) => {
+			const made = !dirs.has(a!.episode as string);
+			dirs.add(a!.episode as string);
+			return made;
+		},
 		video_probe_folder: () => ({ clips: [], unreadable: [], introCandidates: [] })
 	});
 }
@@ -236,6 +243,7 @@ function foxArgs(): Record<string, unknown> {
 beforeEach(() => {
 	files = new Map();
 	cuts = [];
+	dirs = new Set(['ep1']);
 	music.made = [];
 	bytes = new Map();
 	image.requests = [];
@@ -262,6 +270,28 @@ describe('the Video sequence run', () => {
 		expect(h.steps[SPEC].output).toContain('unknown until the first clip');
 		expect(h.steps[REPORT].output).toMatch(/^Wrote ep1\/REPORT-sequence.md/);
 		expect(asked.questions).toEqual([]);
+	});
+
+	it('makes a missing episode folder before it looks in it, and says so', async () => {
+		dirs.clear();
+		const h = harness({ run_mode: 'unattended' }, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(h.finished?.status).toBe('succeeded');
+		const calls = vi.mocked(invoke).mock.calls.map(([cmd]) => cmd);
+		expect(calls.indexOf('video_episode_ensure')).toBeLessThan(calls.indexOf('video_probe_folder'));
+		expect(invoke).toHaveBeenCalledWith('video_episode_ensure', {
+			workingDir: '/videos',
+			episode: 'ep1'
+		});
+		expect(h.steps[INTERVIEW].output).toMatch(/^Made the episode folder ep1\. Skipped:/);
+	});
+
+	it('makes no folder when the working folder is the episode', async () => {
+		const h = harness({ run_mode: 'unattended', episode_dir: '' }, () => foxArgs());
+		await runVideoSequencePipeline(h.ctx);
+		expect(h.finished?.status).toBe('succeeded');
+		expect(invoke).not.toHaveBeenCalledWith('video_episode_ensure', expect.anything());
+		expect(h.steps[INTERVIEW].output).toMatch(/^Skipped:/);
 	});
 
 	it('gives a first bad spec its problems back, and its last spec', async () => {
