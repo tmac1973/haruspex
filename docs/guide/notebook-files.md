@@ -1,6 +1,6 @@
 ---
 title: Notebook files and Python
-description: Keeping files and pictures in a notebook, Python cards that work with its tables, exporting or importing notebooks (PDF, Word, OpenDocument, web page, Markdown, Jupyter, CSV, Excel), and backing up and restoring all of them.
+description: Files and pictures in a notebook, Python cards that read its tables, exporting or importing notebooks (PDF, Word, web page, Markdown, Jupyter, CSV, Excel), and backing up all of them.
 ---
 
 # Notebook files and Python
