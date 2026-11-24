@@ -185,6 +185,14 @@ export function storeFileBytes(bytes: Uint8Array, name: string, mime: string) {
 
 export const filePath = (hash: string) => invoke<string>('notebook_file_path', { hash });
 
+/** Open a kept file with the app the system uses for its type. */
+export const openFile = (hash: string, name: string) =>
+	invoke<void>('notebook_file_open', { hash, name });
+
+/** Keep a picture from the image cache as a notebook file. */
+export const fileFromImage = (hash: string) =>
+	invoke<NotebookFile>('notebook_file_from_image', { hash });
+
 export const saveFileAs = (hash: string, path: string) =>
 	invoke<void>('notebook_file_save_as', { hash, path });
 

@@ -8,6 +8,8 @@ import type { NewCard, NotebookCard } from '#lib/notebooks/api.ts';
 import TextCard from '#lib/components/notebooks/cards/TextCard.svelte';
 import TableCard from '#lib/components/notebooks/cards/TableCard.svelte';
 import ChecklistCard from '#lib/components/notebooks/cards/ChecklistCard.svelte';
+import AttachmentCard from '#lib/components/notebooks/cards/AttachmentCard.svelte';
+import ImageCard from '#lib/components/notebooks/cards/ImageCard.svelte';
 
 export interface CardViewProps {
 	card: NotebookCard;
@@ -59,7 +61,10 @@ const KINDS: CardKindDef[] = [
 			meta: '{}',
 			rows: [JSON.stringify({ text: '', done: false })]
 		})
-	}
+	},
+	// Both pick files first: NotebookView's onpickkind opens the dialog.
+	{ kind: 'image', label: 'Picture…', component: ImageCard, create: null },
+	{ kind: 'attachment', label: 'File…', component: AttachmentCard, create: null }
 ];
 
 export function cardKinds(): CardKindDef[] {

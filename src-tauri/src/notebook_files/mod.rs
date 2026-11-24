@@ -165,6 +165,46 @@ pub fn sweep(db: &Database, dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Extensions the system would run rather than show: opening one of these
+/// is refused, and Save a copy… is the way to get it out.
+const RUNNABLE: &[&str] = &[
+    "exe", "msi", "bat", "cmd", "com", "scr", "ps1", "vbs", "js", "jse", "wsf", "hta", "lnk", "sh",
+    "bash", "zsh", "csh", "command", "desktop", "app", "appimage", "run", "bin", "jar", "py",
+    "pyw", "pl", "rb", "deb", "rpm", "pkg", "dmg", "reg", "url", "scpt",
+];
+
+/// Whether a file named `name` would run code if opened.
+pub fn is_runnable(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| RUNNABLE.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+/// A file name safe to create: no folders, no leading dots, nothing empty.
+fn safe_name(name: &str) -> String {
+    let base = Path::new(name)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let cleaned: String = base
+        .chars()
+        .map(|c| {
+            if c.is_control() || "<>:\"/\\|?*".contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_start_matches('.').trim();
+    if trimmed.is_empty() {
+        "file".into()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
     let raw = request
         .headers()
@@ -231,6 +271,66 @@ pub async fn notebook_file_store_path(app: AppHandle, path: String) -> Result<St
 #[tauri::command]
 pub fn notebook_file_path(app: AppHandle, hash: String) -> Result<String, String> {
     Ok(path_of(&dir(&app)?, &hash)?.to_string_lossy().to_string())
+}
+
+/// Open a kept file with the app the system uses for its type. The store
+/// names files by hash, so a copy named `name` goes in the app's cache
+/// first, for the system to tell the type from.
+#[tauri::command]
+pub async fn notebook_file_open(app: AppHandle, hash: String, name: String) -> Result<(), String> {
+    use tauri::Manager;
+    let name = safe_name(&name);
+    if is_runnable(&name) {
+        return Err("This kind of file can run programs, so it isn't opened from a notebook. Use Save a copy… instead.".into());
+    }
+    let from = path_of(&dir(&app)?, &hash)?;
+    let to_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("No cache folder: {e}"))?
+        .join("notebook-open")
+        .join(&hash[..16]);
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&to_dir).map_err(|e| format!("Could not open the file: {e}"))?;
+        let to = to_dir.join(&name);
+        if !to.exists() {
+            std::fs::copy(&from, &to).map_err(|e| format!("Could not open the file: {e}"))?;
+        }
+        crate::links::open_notebook_copy(&to)
+    })
+    .await
+    .map_err(|e| format!("open task panicked: {e}"))?
+}
+
+/// Keep a picture from the image cache (one an image tool made) as a
+/// notebook file, so the cache evicting it later can't break the card.
+#[tauri::command]
+pub async fn notebook_file_from_image(
+    app: AppHandle,
+    db: tauri::State<'_, Database>,
+    hash: String,
+) -> Result<StoredFile, String> {
+    let row = db
+        .image_by_hash(&hash)?
+        .ok_or_else(|| "That picture is no longer kept.".to_string())?;
+    let src = crate::blob_cache::find(&crate::image_cache::cache_dir(&app)?, &hash, |_| Ok(true))?
+        .ok_or_else(|| "That picture is no longer kept.".to_string())?;
+    let dir = dir(&app)?;
+    let (stored, size) = tauri::async_runtime::spawn_blocking(move || store_path(&dir, &src))
+        .await
+        .map_err(|e| format!("store task panicked: {e}"))??;
+    let ext = row
+        .mime
+        .rsplit('/')
+        .next()
+        .unwrap_or("png")
+        .replace("jpeg", "jpg");
+    Ok(StoredFile {
+        hash: stored,
+        name: format!("picture.{ext}"),
+        mime: row.mime,
+        size,
+    })
 }
 
 /// Save a copy of a kept file to `path`, chosen in a Save dialog.
@@ -319,6 +419,16 @@ mod tests {
         assert!(path_of(&dir, &kept).is_ok());
         assert!(path_of(&dir, &newer).is_ok());
         assert!(path_of(&dir, &stray).is_err());
+    }
+
+    #[test]
+    fn runnable_names_and_safe_names() {
+        assert!(is_runnable("setup.EXE"));
+        assert!(is_runnable("run.sh"));
+        assert!(!is_runnable("report.pdf"));
+        assert_eq!(safe_name("../../.bashrc"), "bashrc");
+        assert_eq!(safe_name("a/b:c?.pdf"), "b_c_.pdf");
+        assert_eq!(safe_name(""), "file");
     }
 
     #[test]

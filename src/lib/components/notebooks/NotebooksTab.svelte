@@ -7,6 +7,7 @@
 	import NotebookList from '#lib/components/notebooks/NotebookList.svelte';
 	import NotebookView from '#lib/components/notebooks/NotebookView.svelte';
 	import TrashView from '#lib/components/notebooks/TrashView.svelte';
+	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
 	import {
 		getOpenNotebook,
 		isNotebookListLoaded,
@@ -26,7 +27,12 @@
 	{#if isTrashShown()}
 		<TrashView />
 	{:else if open}
-		<NotebookView notebook={open} />
+		<NotebookView
+			notebook={open}
+			onpickkind={(kind, after) => {
+				if (kind === 'image' || kind === 'attachment') void pickFilesAsCards(kind, after);
+			}}
+		/>
 	{:else}
 		<div class="none">
 			<p>Pick a notebook, or make one with + New.</p>

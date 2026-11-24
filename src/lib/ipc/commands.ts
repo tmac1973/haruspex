@@ -398,6 +398,8 @@ export const IPC = {
 	notebook_columns_set: 'notebook_columns_set',
 	notebook_create: 'notebook_create',
 	notebook_delete: 'notebook_delete',
+	notebook_file_from_image: 'notebook_file_from_image',
+	notebook_file_open: 'notebook_file_open',
 	notebook_file_path: 'notebook_file_path',
 	notebook_file_save_as: 'notebook_file_save_as',
 	notebook_file_store: 'notebook_file_store',

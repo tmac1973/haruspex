@@ -9,6 +9,8 @@
 	import AddCardMenu from '#lib/components/notebooks/AddCardMenu.svelte';
 	import UnavailableCard from '#lib/components/notebooks/cards/UnavailableCard.svelte';
 	import { cardKind } from '#lib/notebooks/cardKinds.ts';
+	import { addFilesAsCards } from '#lib/notebooks/files.ts';
+	import { fileDropTarget } from '#lib/utils/fileDrop.ts';
 	import type { NotebookCard, NotebookDetail } from '#lib/notebooks/api.ts';
 	import {
 		getFocusCard,
@@ -81,6 +83,18 @@
 		});
 	});
 
+	let fileOver = $state(false);
+
+	/** Files dropped on the notebook land after the card under the pointer. */
+	function onFiles(paths: string[], at: { x: number; y: number }) {
+		let after: string | null = null;
+		for (const c of cards) {
+			const el = document.getElementById(`nb-card-${c.id}`);
+			if (el && el.getBoundingClientRect().top <= at.y) after = c.id;
+		}
+		void addFilesAsCards(paths, after);
+	}
+
 	function onDrop(targetId: string) {
 		const id = dragId;
 		dragId = null;
@@ -96,7 +110,11 @@
 	}}
 />
 
-<div class="view">
+<div
+	class="view"
+	class:file-over={fileOver}
+	use:fileDropTarget={{ onFiles, onDragChange: (o) => (fileOver = o) }}
+>
 	<header>
 		<div class="title-row">
 			<input
@@ -218,6 +236,11 @@
 </div>
 
 <style>
+	.view.file-over {
+		outline: 2px dashed var(--accent);
+		outline-offset: -6px;
+	}
+
 	.view {
 		flex: 1;
 		min-width: 0;

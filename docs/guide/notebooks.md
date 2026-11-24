@@ -29,6 +29,10 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 **+ Add card → Checklist** adds a list of items to tick. Enter starts the next item; Backspace in an empty item removes it. Drag items by their ⋮⋮ to reorder, and **Hide done** hides the ticked ones.
 
+## Keep files and pictures
+
+**+ Add card → Picture…** or **File…** picks files to keep in the notebook; dropping files onto a notebook does the same, placing them after the card under the pointer. Pictures show in the card, and clicking one enlarges it. Other files show their name and size: **Open** opens them in the app your computer uses for that type, **Save a copy…** saves them where you choose, and PDFs have **Preview**. Programs and scripts aren't opened from a notebook; save a copy instead. **Replace…** swaps in another file. Files up to 200 MB can be kept, and they stay on this computer.
+
 ## Link to a notebook
 
 A link written `[speakers](notebook:<id>)` opens that notebook in this tab, and `notebook:<id>#<card>` scrolls to one of its cards. Agents use these links when they tell you about a notebook they made.

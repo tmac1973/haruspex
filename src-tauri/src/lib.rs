@@ -751,6 +751,8 @@ pub fn run() {
             notebook_files::notebook_file_store_path,
             notebook_files::notebook_file_path,
             notebook_files::notebook_file_save_as,
+            notebook_files::notebook_file_open,
+            notebook_files::notebook_file_from_image,
             db::db_email_requests_get,
             db::db_email_requests_insert,
             db::db_email_requests_update,
