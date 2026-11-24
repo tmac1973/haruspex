@@ -18,6 +18,7 @@ export type JobType =
 	| 'email_digest'
 	| 'news_digest'
 	| 'camera_digest'
+	| 'notebook_refresh'
 	| 'audit'
 	| 'guided_planning'
 	| 'autonomous_coding'

@@ -38,6 +38,8 @@ mod media_http;
 mod memory;
 mod models;
 mod net_util;
+mod notebook_files;
+mod notebook_links;
 mod orphans;
 mod owner;
 mod peers;
@@ -140,6 +142,17 @@ pub fn run() {
                 responder.respond(image_cache::protocol::handle(&app, request));
             });
         })
+        // Notebook attachments and pictures by content hash; see
+        // notebook_files::protocol.
+        .register_asynchronous_uri_scheme_protocol(
+            "haruspex-notebook-file",
+            |ctx, request, responder| {
+                let app = ctx.app_handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    responder.respond(notebook_files::protocol::handle(&app, request));
+                });
+            },
+        )
         // Generated audio by content hash, with Range so a player can seek.
         // See audio_cache::protocol.
         .register_asynchronous_uri_scheme_protocol("haruspex-audio", |ctx, request, responder| {
@@ -289,6 +302,19 @@ pub fn run() {
                             }
                         }
                         Err(e) => log::warn!("image cache dir unavailable: {}", e),
+                    }
+                    // Notebook Trash older than 30 days, then the files
+                    // nothing refers to any more.
+                    if let Err(e) = db.purge_notebook_trash(time_util::now_ms()) {
+                        log::warn!("notebook trash purge failed: {}", e);
+                    }
+                    match notebook_files::dir(&handle) {
+                        Ok(dir) => {
+                            if let Err(e) = notebook_files::sweep(&db, &dir) {
+                                log::warn!("notebook file sweep failed: {}", e);
+                            }
+                        }
+                        Err(e) => log::warn!("notebook file dir unavailable: {}", e),
                     }
                     match audio_cache::cache_dir(&handle) {
                         Ok(dir) => {
@@ -701,6 +727,44 @@ pub fn run() {
             db::db_home_cards_set_result,
             db::db_home_cards_delete,
             db::db_home_cards_reorder,
+            db::notebook_list,
+            db::notebook_get,
+            db::notebook_create,
+            db::notebook_update,
+            db::notebook_delete,
+            db::notebook_restore,
+            db::notebook_purge,
+            db::notebook_card_get,
+            db::notebook_conversation,
+            db::notebook_card_add,
+            db::notebook_card_update,
+            db::notebook_card_move,
+            db::notebook_card_delete,
+            db::notebook_card_restore,
+            db::notebook_card_purge,
+            db::notebook_rows_get,
+            db::notebook_rows_apply,
+            db::notebook_columns_set,
+            db::notebook_card_history,
+            db::notebook_card_revision,
+            db::notebook_card_rollback,
+            db::notebook_search_keyword,
+            db::notebook_search,
+            db::notebook_embed_pending,
+            db::notebook_semantic_status,
+            db::notebook_trash_list,
+            notebook_files::notebook_file_store,
+            notebook_files::notebook_file_store_path,
+            notebook_files::notebook_file_store_agent,
+            notebook_files::notebook_file_path,
+            notebook_files::notebook_file_save_as,
+            notebook_files::transfer::notebook_export_bytes,
+            notebook_files::transfer::notebook_import_xlsx,
+            notebook_files::transfer::notebook_import_text,
+            notebook_links::notebook_links_check,
+            notebook_links::notebook_link_status_get,
+            notebook_files::notebook_file_open,
+            notebook_files::notebook_file_from_image,
             db::db_email_requests_get,
             db::db_email_requests_insert,
             db::db_email_requests_update,

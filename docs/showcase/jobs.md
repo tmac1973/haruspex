@@ -132,3 +132,24 @@ Example output:
 The card shows the last step's output of the job's newest successful run. If the newest run failed, its error sits above.
 
 Read more: home, jobs
+
+## Keep a notebook's prices up to date
+
+A Refresh notebook job re-runs one instruction against a notebook on a schedule, a row at a time, so you can see and undo each change.
+
+Tab: Jobs
+Required settings: None (a notebook)
+
+Prompt:
+
+> Check each speaker's current price at its retailer link and update the Price column in the Models table.
+
+Example output:
+
+Updated 2 of 3 prices in Speakers → Models:
+
+- JBL Charge 5: $179.95 → $159.95
+- UE Boom 3: unchanged
+- Soundcore Motion+: $119.99 → $99.99
+
+Read more: notebook-agents, job-types

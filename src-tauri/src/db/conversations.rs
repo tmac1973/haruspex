@@ -6,8 +6,9 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
+                // A notebook's own chat lives with its notebook, not in Chat.
                 "SELECT id, title, created_at, updated_at, unread, working_dir FROM conversations \
-                 ORDER BY updated_at DESC",
+                 WHERE notebook_id IS NULL ORDER BY updated_at DESC",
             )
             .map_err(|e| format!("Query failed: {}", e))?;
 
@@ -80,6 +81,29 @@ impl Database {
             updated_at,
             messages,
         })
+    }
+
+    /// The conversation a notebook's agent chat is kept in (`notebook-<id>`),
+    /// made the first time. Memory never reads it: it is about the notebook.
+    pub fn conversation_for_notebook(&self, notebook_id: &str) -> Result<String, String> {
+        let conn = self.conn();
+        let title: String = conn
+            .query_row(
+                "SELECT title FROM notebooks WHERE id = ?1",
+                params![notebook_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("No notebook {notebook_id}."))?;
+        let id = format!("notebook-{notebook_id}");
+        let now = chrono_now();
+        conn.execute(
+            "INSERT OR IGNORE INTO conversations
+             (id, title, created_at, updated_at, notebook_id, memory_enabled)
+             VALUES (?1, ?2, ?3, ?3, ?4, 0)",
+            params![id, format!("Notebook: {title}"), now, notebook_id],
+        )
+        .map_err(|e| format!("Insert failed: {}", e))?;
+        Ok(id)
     }
 
     pub fn create_conversation(&self, id: &str, title: &str) -> Result<(), String> {

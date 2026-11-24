@@ -142,6 +142,8 @@ interface ToolFilterOpts {
 	 * type that lists the tools.
 	 */
 	cameras: boolean;
+	/** Settings → General → Notebooks tab is on. */
+	notebooks: boolean;
 	/**
 	 * An image backend is set up AND someone is there to see the picture. The
 	 * second half matters: a research job runs without an allowlist, so it gets
@@ -242,6 +244,9 @@ function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): bo
 	// Asking the person at the terminal a multiple-choice question, in the
 	// modal rather than as chat text.
 	if (reg.category === 'interaction') return opts.interactive;
+	// "Outline this folder in a notebook". Shell defers nothing, so the
+	// family is simply there.
+	if (reg.category === 'notebooks') return opts.notebooks;
 	// Email, sandbox, etc. are intentionally hidden in Shell mode.
 	return false;
 }
@@ -292,6 +297,8 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// family is deferred, so it costs the turn one menu line; without it the
 	// model wrote markdown into report.pdf with fs_write_text.
 	if (CODE_DOCUMENT_TOOLS.has(name)) return isCodeTab(opts);
+	// "Put the bugs you found in a notebook", "work through notebook X".
+	if (reg.category === 'notebooks') return opts.notebooks;
 	// Editing the videos in the project folder. The Code tab only: Shell has
 	// no folder that stays put.
 	if (reg.category === 'video') return opts.videoTools && isCodeTab(opts);
@@ -328,6 +335,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'camera' && !opts.cameras) return false;
+	if (reg.category === 'notebooks' && !opts.notebooks) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
 	if (reg.category === 'music' && !opts.musicGeneration) return false;
 	if (reg.category === 'speech' && !opts.interactive) return false;
@@ -539,6 +547,8 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		memoryWritable: memoryActive(),
 		taskOwner: opts.taskOwner,
 		lean: getSettings().leanMode,
+		// Lean mode's Chat turns have their own fixed set (`_leanProfile.ts`).
+		notebooks: getSettings().notebooksTab,
 		leanFileWrites: getSettings().leanFileWrites
 	};
 	const schemas: ToolDefinition[] = [];

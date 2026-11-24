@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, isCodeWriteTool } from './_codeTabProfile';
+import { NOTEBOOK_TOOLS } from './notebook';
 
 /** The tab's own tools every turn gets: ask_specialist also needs a specialist on (ask-specialist.test.ts). */
 const ALWAYS_TAB_ONLY = [...CODE_TAB_ONLY].filter((t) => t !== 'ask_specialist');
@@ -59,13 +60,16 @@ describe('tool profiles over (codeMode, shellMode)', () => {
 				'fs_write_spreadsheet',
 				'fs_write_slides',
 				// The Web preview helper's, on by default.
-				'show_preview'
+				'show_preview',
+				...NOTEBOOK_TOOLS
 			].sort()
 		);
 	});
 
 	it('(code, shell) — Shell Code mode: code tools plus the terminal tools, none of the tab’s', () => {
-		expect(names(true, true)).toEqual([...CODE_TOOLS, ...SHELL_INTERACTIVE].sort());
+		expect(names(true, true)).toEqual(
+			[...CODE_TOOLS, ...SHELL_INTERACTIVE, ...NOTEBOOK_TOOLS].sort()
+		);
 	});
 
 	it('(no code, shell) — the plain Shell assistant runs nothing', () => {
@@ -147,7 +151,7 @@ describe('a read-only Code session', () => {
 			.map((s) => s.function.name)
 			.sort();
 		expect(n).toEqual(
-			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'fs_read_image', 'show_preview']
+			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'fs_read_image', 'show_preview', ...NOTEBOOK_TOOLS]
 				.filter((t) => !isCodeWriteTool(t))
 				.sort()
 		);

@@ -24,6 +24,7 @@ import {
 import {
 	isChatEvent,
 	isHomeEvent,
+	isNotebookEvent,
 	isJobEvent,
 	isTaskEvent,
 	isSessionEvent,
@@ -60,6 +61,8 @@ export class EngineClient {
 	lean = $state(false);
 	/** Its Settings → General → Home tab is off. */
 	homeOff = $state(false);
+	/** Its Settings → General → Notebooks tab is off (or it predates notebooks). */
+	notebooksOff = $state(true);
 	chats = $state<ChatListItem[]>([]);
 	/** Followed chats by id. */
 	chatMirrors = $state<Record<string, ChatMirror>>({});
@@ -81,6 +84,8 @@ export class EngineClient {
 	private readyHook = new Hook<[]>();
 	private modeHook = new Hook<[]>();
 	private homeHook = new Hook<[]>();
+	private notebookHook = new Hook<[string]>();
+	private notebookChatHook = new Hook<[string]>();
 	private promptHook = new Hook<[Prompt]>();
 	private promptGoneHook = new Hook<[string]>();
 
@@ -99,6 +104,16 @@ export class EngineClient {
 	/** Something Home shows may have changed. */
 	onHomeChanged(cb: () => void): () => void {
 		return this.homeHook.add(cb);
+	}
+
+	/** A notebook changed there (its id). */
+	onNotebookChanged(cb: (notebookId: string) => void): () => void {
+		return this.notebookHook.add(cb);
+	}
+
+	/** A notebook's chat moved on there (its notebook's id). */
+	onNotebookChat(cb: (notebookId: string) => void): () => void {
+		return this.notebookChatHook.add(cb);
 	}
 
 	/** A prompt arrived (or changed) from an event. */
@@ -156,14 +171,21 @@ export class EngineClient {
 	 */
 	async refreshMode(): Promise<void> {
 		try {
-			const mode = await this.transport.op<{ lean: boolean; home?: boolean }>({
+			const mode = await this.transport.op<{
+				lean: boolean;
+				home?: boolean;
+				notebooks?: boolean;
+			}>({
 				type: 'app.mode'
 			});
 			this.lean = mode.lean === true;
 			this.homeOff = mode.home === false;
+			// Absent: a Haruspex from before notebooks.
+			this.notebooksOff = mode.notebooks !== true || this.lean;
 		} catch {
 			this.lean = false;
 			this.homeOff = false;
+			this.notebooksOff = true;
 		}
 		this.modeHook.call();
 	}
@@ -283,6 +305,11 @@ export class EngineClient {
 		}
 		if (isHomeEvent(e)) {
 			this.homeHook.call();
+			return;
+		}
+		if (isNotebookEvent(e)) {
+			if (e.type === 'notebook-chat') this.notebookChatHook.call(e.notebookId);
+			else this.notebookHook.call(e.notebookId);
 			return;
 		}
 		if (isChatEvent(e)) {

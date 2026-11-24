@@ -5,6 +5,7 @@
  * phase 3 HTTP and a WebSocket. Rust routes them without looking inside
  * (`src-tauri/src/engine/`), so this file is their only definition.
  */
+import type { RowOp } from '#lib/ipc/gen/RowOp.ts';
 import type { HomeEmailRequest } from '#lib/home/emailRequests.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
@@ -74,9 +75,11 @@ export type EngineOp =
 	| ObserveOp
 	/** Home's cards in order, each with what it shows (`HomeCardView`). Read-only. */
 	| { type: 'home.cards' }
+	| NotebookOp
 	/**
 	 * What the app is set to show, for a client that can't read the settings:
-	 * `{ lean }`, whether Settings → General → Lean mode is on.
+	 * `{ lean, home, notebooks }` — Settings → General → Lean mode, and
+	 * whether the Home and Notebooks tabs are on.
 	 */
 	| { type: 'app.mode' }
 	/** The settings, secrets blanked; `keys` picks top-level settings. */
@@ -419,6 +422,56 @@ export type ChatEvent = { seq: number; chatId: string } & (
  */
 export type HomeEvent = { type: 'home-card'; seq: number; cardId: string };
 
+/**
+ * The notebooks (the Notebooks tab), for a client: read, search and edit
+ * text, table and checklist cards, and use a notebook's own chat. Answered
+ * by the main window. Card and row payloads are the desktop's own
+ * (`NotebookDetail`, `NotebookCard`); a stale `expectedVersion` fails with
+ * "conflict". No field is called `id`: that routes an op to a session.
+ */
+export type NotebookOp =
+	| { type: 'notebooks.list' }
+	| { type: 'notebooks.get'; notebookId: string }
+	| { type: 'notebooks.rows'; cardId: string; offset: number; limit: number }
+	| { type: 'notebooks.search'; query: string }
+	| { type: 'notebooks.create'; title: string }
+	| {
+			type: 'notebooks.card.add';
+			notebookId: string;
+			kind: 'text' | 'table' | 'checklist';
+			title?: string;
+			body?: string;
+			after?: string | null;
+	  }
+	| {
+			type: 'notebooks.card.update';
+			cardId: string;
+			expectedVersion: number;
+			title?: string;
+			body?: string;
+	  }
+	| { type: 'notebooks.rows.apply'; cardId: string; expectedVersion: number; ops: RowOp[] }
+	| { type: 'notebooks.card.delete'; cardId: string }
+	| { type: 'notebooks.card.history'; cardId: string }
+	| { type: 'notebooks.card.rollback'; cardId: string; revisionId: number }
+	| { type: 'notebooks.chat.get'; notebookId: string }
+	| { type: 'notebooks.chat.send'; notebookId: string; text: string }
+	| { type: 'notebooks.chat.stop'; notebookId: string };
+
+/** A notebook (or its chat) changed: a client reads it again. */
+export type NotebookEvent =
+	| { type: 'notebook-changed'; seq: number; notebookId: string }
+	| { type: 'notebook-chat'; seq: number; notebookId: string };
+
+/** `notebooks.chat.get`'s answer. */
+export interface NotebookChatView {
+	messages: { role: 'user' | 'assistant'; content: string }[];
+	busy: boolean;
+	streaming: string;
+	step: string | null;
+	error: string | null;
+}
+
 /** A run as a Home card names it. */
 export interface HomeRunLine {
 	jobName: string;
@@ -567,7 +620,7 @@ export interface HomeCardView {
 }
 
 export type EngineEvent = (
-	SessionEvent | PromptEvent | ChatEvent | JobEvent | TaskEvent | HomeEvent
+	SessionEvent | PromptEvent | ChatEvent | JobEvent | TaskEvent | HomeEvent | NotebookEvent
 ) & {
 	/** Stamped by Rust: the window the event came from. */
 	window?: string;
@@ -595,6 +648,10 @@ export function isTaskEvent(e: EngineEvent): e is TaskEvent & { window?: string 
 
 export function isHomeEvent(e: EngineEvent): e is HomeEvent & { window?: string } {
 	return e.type === 'home-card';
+}
+
+export function isNotebookEvent(e: EngineEvent): e is NotebookEvent & { window?: string } {
+	return e.type === 'notebook-changed' || e.type === 'notebook-chat';
 }
 
 /** `session.readFile`'s answer. */

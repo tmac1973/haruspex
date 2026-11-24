@@ -70,6 +70,7 @@ describe('registration barrel', () => {
 			'email_digest',
 			'news_digest',
 			'camera_digest',
+			'notebook_refresh',
 			'audit',
 			'guided_planning',
 			'autonomous_coding',
@@ -84,7 +85,7 @@ describe('registration barrel', () => {
 	// defined when something imports it first, and the barrel throws.
 	it('loads every definition on its own, without an import cycle through the barrel', async () => {
 		const definitions = import.meta.glob('./*/definition.ts');
-		expect(Object.keys(definitions)).toHaveLength(11);
+		expect(Object.keys(definitions)).toHaveLength(12);
 		for (const [path, load] of Object.entries(definitions)) {
 			vi.resetModules();
 			await expect(load(), path).resolves.toBeTruthy();

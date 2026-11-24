@@ -42,6 +42,7 @@ export type TurnToolsInput = Pick<
 	| 'codeSpecialists'
 	| 'codeHelpers'
 	| 'conversationId'
+	| 'keepFamilies'
 	| 'backend'
 >;
 
@@ -101,7 +102,7 @@ export function resolveTurnTools(options: TurnToolsInput): TurnTools {
 		allowlisted: options.toolAllowlist !== undefined || options.forceFinalTool !== undefined,
 		lean: getSettings().leanMode
 	})
-		? splitTurnTools(offered, codeMode, options.codeReadOnly ?? false)
+		? splitTurnTools(offered, codeMode, options.codeReadOnly ?? false, options.keepFamilies)
 		: null;
 	if (!split?.deferred.length) return { tools: split?.sent ?? offered };
 	return { tools: split.sent, deferredTools: split.deferred };

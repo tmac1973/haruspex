@@ -194,6 +194,7 @@ export async function executeToolCalls(
 				codeAutoApprove: ctx.codeAutoApprove,
 				interactive: ctx.interactive,
 				conversationId: ctx.conversationId,
+				notebookChat: ctx.notebookChat,
 				backend: ctx.backend,
 				runInSlot,
 				releaseSlot: ctx.slot && !batchUsesModel ? releaseSlot : undefined,

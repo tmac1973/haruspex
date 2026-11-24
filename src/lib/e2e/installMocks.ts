@@ -14,6 +14,7 @@ import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { JOBS_DB } from '#lib/e2e/jobsDb.ts';
 import { CODE_DB } from '#lib/e2e/codeDb.ts';
 import { HOME_DB } from '#lib/e2e/homeDb.ts';
+import { NOTEBOOKS_DB } from '#lib/e2e/notebooksDb.ts';
 
 type Args = Record<string, unknown> | undefined;
 type Handler = (args: Args) => unknown;
@@ -228,6 +229,7 @@ const TABLE: Record<string, Handler> = {
 	// Jobs: an in-memory database, so a job made in a test can be run.
 	...JOBS_DB,
 	...HOME_DB,
+	...NOTEBOOKS_DB,
 
 	// The Code tab: an in-memory session table and a scripted project.
 	...CODE_DB,

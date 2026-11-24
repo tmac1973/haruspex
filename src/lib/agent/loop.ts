@@ -366,6 +366,13 @@ export interface AgentLoopOptions {
 	/** The chat conversation, for tools that keep what they make with it. */
 	conversationId?: string;
 	/**
+	 * Deferred families this turn sends whole, as if already loaded: a
+	 * notebook's own chat keeps `notebooks` (see `splitTurnTools`).
+	 */
+	keepFamilies?: readonly string[];
+	/** The notebook a notebook's own chat works in; see `ToolContext.notebookChat`. */
+	notebookChat?: { notebookId: string; title: string };
+	/**
 	 * Where `ask_user_question` sends its question when the person who can
 	 * answer is not at this keyboard — a remote chat guest, say. See
 	 * `ToolContext.askUser`.

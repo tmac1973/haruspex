@@ -6,6 +6,7 @@
 	import type { WebStore } from '../store.svelte.ts';
 	import ChatList from './ChatList.svelte';
 	import HomeView from './home/HomeView.svelte';
+	import NotebooksList from './notebooks/NotebooksList.svelte';
 
 	let { store }: { store: WebStore } = $props();
 
@@ -89,6 +90,18 @@
 		>
 			Chat
 		</button>
+		{#if !store.notebooksOff}
+			<button
+				class:active={store.tab === 'notebooks'}
+				title="Your notebooks."
+				onclick={() => {
+					store.tab = 'notebooks';
+					void store.notebooks.refreshList();
+				}}
+			>
+				Notebooks
+			</button>
+		{/if}
 	</div>
 	{#if store.lean}
 		<span class="lean" title="Turn it off on the computer running Haruspex, in Settings → General.">
@@ -106,6 +119,8 @@
 
 {#if store.tab === 'chat'}
 	<ChatList {store} />
+{:else if store.tab === 'notebooks'}
+	<NotebooksList nb={store.notebooks} />
 {:else if store.tab === 'home'}
 	<HomeView {store} />
 {:else}

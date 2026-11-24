@@ -1,0 +1,22 @@
+[
+	{
+		"match": { "lastUser": "speakers table" },
+		"reply": {
+			"tool_calls": [
+				{
+					"name": "notebook_add_card",
+					"arguments": {
+						"notebook": "Speakers",
+						"kind": "table",
+						"title": "Models",
+						"csv": "Name,Price:currency,Retailer:url\nSoundcore Motion 300,79.99,https://example.com/a\nJBL Flip 6,129,https://example.com/b"
+					}
+				}
+			]
+		}
+	},
+	{
+		"match": {},
+		"reply": { "content": "I added a table of two speakers to the notebook." }
+	}
+]

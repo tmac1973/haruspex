@@ -1,3 +1,4 @@
+import { isWebClient } from '#lib/buildFlags.ts';
 import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import { classifyShellRisk } from '#lib/shell/riskyCommands.ts';
@@ -180,6 +181,13 @@ const marked = new Marked({
 		 * link, a click sent the app's router to a page that doesn't exist.
 		 */
 		link(token) {
+			// `notebook:<id>` and `notebook:<id>#<card>`: open it in the
+			// Notebooks tab (markdownActions' `notebook-open`).
+			const nb = notebookLink(token.href);
+			if (nb) {
+				const card = nb.card ? ` data-card="${escapeHtml(nb.card)}"` : '';
+				return `<button type="button" class="notebook-link" data-action="notebook-open" data-notebook="${escapeHtml(nb.id)}"${card} title="Open the notebook">${this.parser.parseInline(token.tokens)}</button>`;
+			}
 			const linker = activeLinker;
 			if (!linker || /^[a-z][a-z0-9+.-]*:|^#/i.test(token.href)) return false;
 			// A bare `stats.js` in prose may be a word, but as a link target it
@@ -838,6 +846,28 @@ export interface ResolvedImages {
 }
 
 /**
+ * Each table gets a "Save to notebook" button (markdownActions'
+ * `notebook-add-table`), in the desktop app only: the web client has no
+ * notebooks of its own to save to. Hidden by CSS where it means nothing (a
+ * notebook's own cards, the Notebooks tab switched off).
+ */
+export function withTableActions(html: string): string {
+	if (isWebClient || !html.includes('<table')) return html;
+	return html
+		.replace(
+			/<table>/g,
+			'<div class="md-table"><button type="button" class="table-save" data-action="notebook-add-table" title="Save this table to a notebook">📓 Save to notebook</button><table>'
+		)
+		.replace(/<\/table>/g, '</table></div>');
+}
+
+/** The notebook (and card) a `notebook:<id>[#<card>]` link names, or null. */
+export function notebookLink(href: string): { id: string; card: string | null } | null {
+	const m = /^notebook:([A-Za-z0-9_-]+)(?:#([A-Za-z0-9_-]+))?$/.exec(href.trim());
+	return m ? { id: m[1], card: m[2] ?? null } : null;
+}
+
+/**
  * `codePaths`: turn file references (`src/app.ts:42`, in backticks or not)
  * that it accepts into "open in the editor" buttons. Only the Code
  * transcript passes it.
@@ -857,7 +887,9 @@ export function renderMarkdown(
 	// keeps its lines rather than running together as one paragraph.
 	activeLinker = codePaths ?? null;
 	try {
-		return sanitizeHtml(marked.parse(withFixedTables, { breaks: true }) as string);
+		return withTableActions(
+			sanitizeHtml(marked.parse(withFixedTables, { breaks: true }) as string)
+		);
 	} finally {
 		activeLinker = null;
 	}

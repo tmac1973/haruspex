@@ -163,6 +163,8 @@ export async function enableMemory(): Promise<boolean> {
  */
 export async function disableMemory(): Promise<void> {
 	updateSettings({ memoryEnabled: false });
+	// Notebook semantic search uses the same model; keep it while that's on.
+	if (getSettings().notebooks?.semanticSearch) return;
 	try {
 		await invoke('memory_unload_model');
 	} catch (e) {

@@ -16,7 +16,7 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | Shift + F2 | Constant listening: dictate into the chat box (press again to stop) |
 | F3 | Read the last reply aloud (press again to stop) |
 | Ctrl / ⌘ + N | New conversation (Chat tab) |
-| Ctrl / ⌘ + 1–5 | Switch to the Home, Chat, Jobs, Shell or Code tab (Chat and Jobs only in lean mode) |
+| Ctrl / ⌘ + 1–6 | Switch to the Home, Chat, Notebooks, Jobs, Shell or Code tab (Chat and Jobs only in lean mode) |
 | Ctrl / ⌘ + + / − | Zoom the interface in / out |
 | Ctrl / ⌘ + 0 | Reset the zoom |
 | Ctrl + Shift + I / ⌘ + ⌥ + I | Open the web inspector (developer tools) |

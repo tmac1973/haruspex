@@ -54,6 +54,9 @@
 	import { recoverOrphanRuns } from '#lib/stores/jobRuns.svelte.ts';
 	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
 	import { startCardWatch } from '#lib/home/cardWatch.svelte.ts';
+	import { startNotebookIndexer } from '#lib/notebooks/indexer.svelte.ts';
+	import NotebookPickerHost from '#lib/components/notebooks/NotebookPickerHost.svelte';
+	import SelectionMenu from '#lib/components/notebooks/SelectionMenu.svelte';
 	import { startFetchedCards } from '#lib/home/fetchedCards.svelte.ts';
 	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
 	import {
@@ -274,6 +277,14 @@
 		}
 	}
 
+	// "Save to notebook" buttons hide while the Notebooks tab is off or lean
+	// mode is on (CSS keys on this attribute, so rendered answers needn't change).
+	$effect(() => {
+		const s = getLiveSettings();
+		const off = !s.notebooksTab || s.leanMode;
+		document.body.toggleAttribute('data-notebooks-off', off);
+	});
+
 	/**
 	 * Suppress the webview's right-click context menu on links. WebKitGTK's
 	 * default "Open Link" item navigates the current frame, which replaces the
@@ -453,6 +464,8 @@
 		startEmailWatch();
 		// Home's meetings and weather cards, read on their interval.
 		startFetchedCards();
+		// Notebook semantic search's index, when Settings → Notebooks has it on.
+		startNotebookIndexer();
 		// Remote web chat, if Settings has it on. Only the main window does
 		// this: the driver answers a process-wide event, so a second listener
 		// in a detached shell would race it for every guest prompt.
@@ -691,15 +704,15 @@
 	}
 
 	/**
-	 * Ctrl / ⌘ + 1–5 picks a main tab. In the capture phase, so it works while
+	 * Ctrl / ⌘ + 1–6 picks a main tab. In the capture phase, so it works while
 	 * a terminal has focus: xterm takes Ctrl+3 and Ctrl+4 as control codes.
 	 */
 	function onTabSwitchKeydown(event: KeyboardEvent) {
 		const modifier = isMac ? event.metaKey : event.ctrlKey;
 		if (!modifier || event.altKey || event.shiftKey || (isMac && event.ctrlKey)) return;
-		if (!/^[1-5]$/.test(event.key) || detached || !isMainPage() || showSettings) return;
+		if (!/^[1-6]$/.test(event.key) || detached || !isMainPage() || showSettings) return;
 		const tab = mainTabs()[Number(event.key) - 1];
-		// Lean mode hides Home, Shell and Code: their keys are left to the page.
+		// Lean mode hides Home, Notebooks, Shell and Code: their keys are left to the page.
 		if (!tab || !visibleTabs().includes(tab)) return;
 		event.preventDefault();
 		event.stopPropagation();
@@ -952,6 +965,8 @@
 
 <!-- One picture viewer per window, for any tab or modal that enlarges one. -->
 <ImageViewerHost />
+<NotebookPickerHost />
+<SelectionMenu />
 
 <!-- Toast host lives outside the detached-shell branch: each webview
      window has its own store instance, and errors surface in detached

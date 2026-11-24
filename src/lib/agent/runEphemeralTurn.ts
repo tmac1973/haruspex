@@ -61,6 +61,12 @@ export interface EphemeralTurnOptions {
 	interactive?: boolean;
 	/** The job run this turn belongs to; see ToolContext.jobRunId. */
 	jobRunId?: number;
+	/** The conversation the turn is saved in; see ToolContext.conversationId. */
+	conversationId?: string;
+	/** Deferred families sent whole; see AgentLoopOptions.keepFamilies. */
+	keepFamilies?: readonly string[];
+	/** A notebook's own chat; see ToolContext.notebookChat. */
+	notebookChat?: { notebookId: string; title: string };
 	/**
 	 * Where `ask_user_question` sends its question when the person who can
 	 * answer it is somewhere else — a remote chat guest. See
@@ -267,6 +273,9 @@ export async function runEphemeralTurn(
 			slot: options.slot,
 			interactive: options.interactive,
 			jobRunId: options.jobRunId,
+			conversationId: options.conversationId,
+			keepFamilies: options.keepFamilies,
+			notebookChat: options.notebookChat,
 			askUser: options.askUser,
 			writeRoot: options.writeRoot,
 			onUsageUpdate: options.onUsageUpdate,

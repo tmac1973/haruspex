@@ -124,6 +124,9 @@ async function run(label: string): Promise<void> {
 		keep(watchTasks(sink).stop);
 		const { watchHome } = await import('#lib/engine/homeWatch.svelte.ts');
 		keep(watchHome(sink).stop);
+		const { watchNotebooks } = await import('#lib/engine/notebookWatch.svelte.ts');
+		const { followedNotebookChats } = await import('#lib/engine/dispatch.ts');
+		keep(watchNotebooks(sink, followedNotebookChats).stop);
 	}
 
 	const unlistenOps = await listen<{ reqId: string; op: EngineOp; window: string }>(

@@ -71,6 +71,17 @@ pub(crate) fn open_render(file: &std::path::Path) -> Result<(), String> {
     spawn_folder_handler(file)
 }
 
+/// Open a file a notebook keeps with the app the system uses for its type.
+/// Only a copy in the app's cache reaches this (`notebook_files::open`),
+/// after its name has been checked for a type that would run code.
+pub(crate) fn open_notebook_copy(file: &std::path::Path) -> Result<(), String> {
+    if !file.is_file() {
+        return Err(format!("not a file: {}", file.display()));
+    }
+    info!("open_notebook_copy: {}", file.display());
+    spawn_folder_handler(file)
+}
+
 #[cfg(target_os = "linux")]
 fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
     let mut cmd = std::process::Command::new("xdg-open");

@@ -875,7 +875,105 @@ impl Database {
             CREATE TRIGGER IF NOT EXISTS messages_fts_delete
             AFTER DELETE ON messages BEGIN
                 DELETE FROM messages_fts WHERE rowid = old.id;
-            END;",
+            END;
+
+            -- Notebooks (notebooks::). A notebook is an ordered list of
+            -- cards; deleting either sets deleted_at (Trash) and the purge
+            -- after 30 days removes the row.
+            CREATE TABLE IF NOT EXISTS notebooks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                deleted_at INTEGER NULL,
+                links_checked_at INTEGER NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notebook_tags (
+                notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+                tag TEXT NOT NULL,
+                PRIMARY KEY (notebook_id, tag)
+            );
+
+            -- body: markdown (text) or code (python). meta: JSON — a table's
+            -- columns, a python card's last output, a file's {hash,name,mime,size}.
+            -- source: JSON {kind, ref?, label?} of whoever changed it last.
+            CREATE TABLE IF NOT EXISTS notebook_cards (
+                id TEXT PRIMARY KEY,
+                notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+                position REAL NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN
+                    ('text','table','checklist','python','attachment','image')),
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                meta TEXT NOT NULL DEFAULT '{}',
+                version INTEGER NOT NULL DEFAULT 1,
+                source TEXT NOT NULL DEFAULT '{\"kind\":\"user\"}',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                deleted_at INTEGER NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_notebook_cards_notebook
+                ON notebook_cards(notebook_id, position);
+
+            -- A table or checklist card's rows; cells is JSON keyed by column id.
+            CREATE TABLE IF NOT EXISTS notebook_rows (
+                id TEXT PRIMARY KEY,
+                card_id TEXT NOT NULL REFERENCES notebook_cards(id) ON DELETE CASCADE,
+                position REAL NOT NULL,
+                cells TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_notebook_rows_card
+                ON notebook_rows(card_id, position);
+
+            -- A card's earlier states (notebook_revisions::): the card and its
+            -- rows as JSON, the last 50 per card.
+            CREATE TABLE IF NOT EXISTS notebook_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id TEXT NOT NULL REFERENCES notebook_cards(id) ON DELETE CASCADE,
+                created_at INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                snapshot TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_notebook_revisions_card
+                ON notebook_revisions(card_id, id);
+
+            -- The dead-link check's results, per notebook and URL.
+            CREATE TABLE IF NOT EXISTS notebook_link_status (
+                notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+                url TEXT NOT NULL,
+                ok INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                checked_at INTEGER NOT NULL,
+                PRIMARY KEY (notebook_id, url)
+            );
+
+            -- Semantic search's vectors, one per chunk of a card's text.
+            CREATE TABLE IF NOT EXISTS notebook_embeddings (
+                card_id TEXT NOT NULL REFERENCES notebook_cards(id) ON DELETE CASCADE,
+                chunk INTEGER NOT NULL,
+                notebook_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                embedding_model TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                PRIMARY KEY (card_id, chunk)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_notebook_embeddings_model
+                ON notebook_embeddings(embedding_model);
+
+            -- Keyword search over notebooks: its own copy, written by the
+            -- notebook write paths (the text is derived from JSON cells). A
+            -- notebook's title is a row with card_id ''; a table row's text
+            -- is a row with its row_id.
+            CREATE VIRTUAL TABLE IF NOT EXISTS notebooks_fts USING fts5(
+                text, notebook_id UNINDEXED, card_id UNINDEXED, row_id UNINDEXED
+            );",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -995,6 +1093,9 @@ impl Database {
             "ALTER TABLE camera_events ADD COLUMN alert_reason TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE camera_events ADD COLUMN dismissed_at INTEGER",
             "ALTER TABLE camera_events ADD COLUMN dismiss_note TEXT NOT NULL DEFAULT ''",
+            // A notebook's own agent chat (notebooks::); NULL for every other
+            // conversation, and those are the only ones Chat lists.
+            "ALTER TABLE conversations ADD COLUMN notebook_id TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();
@@ -1153,6 +1254,12 @@ mod images;
 mod jobs;
 mod memories;
 mod memory_commands;
+mod notebook_commands;
+mod notebook_revisions;
+mod notebook_rows;
+mod notebook_search;
+mod notebook_semantic;
+mod notebooks;
 mod peer_lists;
 mod prompts;
 mod runs;
@@ -1168,6 +1275,9 @@ pub use email_requests::{EmailRequestPatch, EmailRequestRow, NewEmailRequest};
 pub use home_cards::{HomeCard, RecentRun};
 pub use images::ImageRow;
 pub use memory_commands::*;
+pub use notebook_commands::*;
+#[cfg(test)]
+pub use notebooks::NewCard;
 pub use peer_lists::PeerLists;
 
 #[cfg(test)]

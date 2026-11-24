@@ -126,6 +126,8 @@ export interface LoopContext {
 	/** True when a live user can answer interactive tools (ask_user_question). */
 	interactive: boolean;
 	conversationId?: string;
+	/** A notebook's own chat. See `ToolContext.notebookChat`. */
+	notebookChat?: ToolContext['notebookChat'];
 	/** Alternate route to a human for `ask_user_question`. See `ToolContext.askUser`. */
 	askUser?: ToolContext['askUser'];
 	/** The turn's skills, with those already in the conversation. */
@@ -277,6 +279,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeAutoApprove,
 		interactive: options.interactive ?? false,
 		conversationId: options.conversationId,
+		notebookChat: options.notebookChat,
 		askUser: options.askUser,
 		skills: options.skills && {
 			names: options.skills.catalog.map((s) => s.name),

@@ -17,6 +17,7 @@ import type {
 	SessionState
 } from '#lib/engine/types.ts';
 import { events, op, upload } from './api.ts';
+import { WebNotebooks } from './notebooks.svelte.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -32,8 +33,10 @@ interface Handled {
 export class WebStore {
 	/** The desktop, as its events have built it. */
 	readonly client: EngineClient;
-	/** What the page shows: Home, or the Code or Chat list. */
-	tab = $state<'home' | 'code' | 'chat'>('home');
+	/** What the page shows: Home, the Code or Chat list, or notebooks. */
+	tab = $state<'home' | 'code' | 'chat' | 'notebooks'>('home');
+	/** The desktop's notebooks (the Notebooks tab). */
+	readonly notebooks: WebNotebooks;
 	/** Home's cards, read-only; null until first read. */
 	homeCards = $state<HomeCardView[] | null>(null);
 	selectedChat = $state<string | null>(null);
@@ -49,6 +52,7 @@ export class WebStore {
 
 	constructor(transport: Transport = { op, events, upload }) {
 		this.client = new EngineClient(transport);
+		this.notebooks = new WebNotebooks(this.client);
 		this.client.onReady(() => {
 			if (this.tab === 'home') void this.refreshHome();
 		});
@@ -56,6 +60,7 @@ export class WebStore {
 		this.client.onMode(() => {
 			if (this.client.lean) this.tab = 'chat';
 			else if (this.client.homeOff && this.tab === 'home') this.tab = 'code';
+			else if (this.client.notebooksOff && this.tab === 'notebooks') this.tab = 'chat';
 		});
 	}
 
@@ -68,6 +73,9 @@ export class WebStore {
 	}
 	get homeOff(): boolean {
 		return this.client.homeOff;
+	}
+	get notebooksOff(): boolean {
+		return this.client.notebooksOff;
 	}
 	get chats(): ChatListItem[] {
 		return this.client.chats;
@@ -148,6 +156,7 @@ export class WebStore {
 
 	stop(): void {
 		this.client.stop();
+		this.notebooks.stop();
 		if (this.homeTimer) clearTimeout(this.homeTimer);
 	}
 

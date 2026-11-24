@@ -111,9 +111,11 @@ pub fn webview_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             if let Err(e) = webview.with_webview(|platform| {
                 use webkit2gtk::WebViewExt;
                 // haruspex-audio (audio_cache::protocol) needs the same pass.
-                platform
-                    .inner()
-                    .set_cors_allowlist(&["haruspex-img://*/*", "haruspex-audio://*/*"]);
+                platform.inner().set_cors_allowlist(&[
+                    "haruspex-img://*/*",
+                    "haruspex-audio://*/*",
+                    "haruspex-notebook-file://*/*",
+                ]);
             }) {
                 debug!(
                     "could not allowlist haruspex-img for {}: {}",

@@ -55,6 +55,11 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
 		has: byCategory('contacts')
 	},
 	{
+		id: 'notebooks',
+		line: "notebooks — make, read, search and change the user's notebooks (notes, tables, checklists, files)",
+		has: byCategory('notebooks')
+	},
+	{
 		id: 'images',
 		line: 'images — make, edit or upscale a picture',
 		has: byName('generate_image', 'edit_image', 'upscale_image')

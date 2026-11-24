@@ -145,6 +145,22 @@
 		{:else if block.kind === 'lead'}
 			<div class="lead" data-testid="step-lead">
 				{@html renderMarkdown(block.text, undefined, codePaths)}
+				<!-- Read here, not via buildFlags, so the web build drops the chunk too. -->
+				{#if import.meta.env.VITE_HARUSPEX_WEB !== '1'}
+					<button
+						class="lead-save notebook-save"
+						title="Save to a notebook"
+						onclick={(e) => {
+							const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+							const text = block.text;
+							void import('#lib/notebooks/capture.ts').then((m) =>
+								m.captureText(text, { x: r.left, y: r.bottom })
+							);
+						}}
+					>
+						📓
+					</button>
+				{/if}
 			</div>
 		{:else if block.kind === 'command'}
 			<CommandCard step={block.step} root={openInShell ? root : undefined} />
@@ -338,5 +354,26 @@
 	.code-steps :global(.search-steps) {
 		border-bottom: 0;
 		padding: 4px 0;
+	}
+
+	.lead {
+		position: relative;
+	}
+
+	.lead-save {
+		position: absolute;
+		top: 0;
+		right: 0;
+		opacity: 0;
+		border: none;
+		background: none;
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 2px 4px;
+	}
+
+	.lead:hover .lead-save,
+	.lead-save:focus-visible {
+		opacity: 0.7;
 	}
 </style>

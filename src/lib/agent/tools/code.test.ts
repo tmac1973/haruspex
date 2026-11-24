@@ -7,6 +7,7 @@ import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 // whose first load takes seconds, and inside a test that load counts against
 // the 5 s test timeout, which a busy machine overruns (#409).
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
+import { NOTEBOOK_TOOLS } from './notebook';
 
 const mocks = vi.hoisted(() => ({
 	askCommandApproval: vi.fn(),
@@ -767,7 +768,8 @@ describe('Code-mode tool filtering', () => {
 				'fs_write_spreadsheet',
 				'fs_write_slides',
 				// The Web preview helper's, on by default.
-				'show_preview'
+				'show_preview',
+				...NOTEBOOK_TOOLS
 			].sort()
 		);
 	});
@@ -784,7 +786,8 @@ describe('Code-mode tool filtering', () => {
 			'shell_read',
 			'shell_input',
 			'shell_interrupt',
-			'shell_snapshot'
+			'shell_snapshot',
+			...NOTEBOOK_TOOLS
 		].sort();
 		expect(names.sort()).toEqual(expected);
 	});

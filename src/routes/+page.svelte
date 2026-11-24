@@ -6,6 +6,7 @@
 	import JobsTab from '#lib/components/jobs/JobsTab.svelte';
 	import ShellWorkspace from '#lib/components/shell/ShellWorkspace.svelte';
 	import CodeWorkspace from '#lib/components/code/CodeWorkspace.svelte';
+	import NotebooksTab from '#lib/components/notebooks/NotebooksTab.svelte';
 	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
 
 	const activeTab = $derived(getActiveTab());
@@ -24,6 +25,12 @@
 	$effect(() => {
 		if (activeTab === 'code') codeEverOpened = true;
 	});
+	// Notebooks too: a notebook's agent chat keeps working while you look
+	// at another tab.
+	let notebooksEverOpened = $state(false);
+	$effect(() => {
+		if (activeTab === 'notebooks') notebooksEverOpened = true;
+	});
 </script>
 
 <div class="page-layout">
@@ -34,6 +41,11 @@
 		<ChatView source={getActiveChatSource()} />
 	{:else if activeTab === 'jobs'}
 		<JobsTab />
+	{/if}
+	{#if notebooksEverOpened}
+		<div class="shell-host" class:hidden={activeTab !== 'notebooks'}>
+			<NotebooksTab />
+		</div>
 	{/if}
 	{#if shellEverOpened}
 		<div class="shell-host" class:hidden={activeTab !== 'shell'}>
