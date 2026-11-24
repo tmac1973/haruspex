@@ -5,8 +5,8 @@
  * existing clips as they are. Pure, so every stage plans the same way.
  */
 import type { Fit } from '#lib/ipc/gen/Fit.ts';
-import type { VideoLimits } from '#lib/toolchest/models.ts';
-import { fitClip } from '#lib/videogen/fit.ts';
+import { longestClip } from '#lib/videogen/fit.ts';
+import type { VideoCaps } from '#lib/videogen/types.ts';
 import type { GeneratedSection, SequenceSpec, SpeakingSection } from '#lib/sequence/spec/types.ts';
 import {
 	speakingFormat,
@@ -85,9 +85,9 @@ export interface ClipPlan {
 	speakingSize?: { width: number; height: number };
 }
 
-/** The smallest Wan frame count (4n + 1) of at least `n`. */
-function atLeast(n: number): number {
-	return Math.max(1, Math.ceil((n - 1) / 4) * 4 + 1);
+/** The smallest frame count the model takes (`step × n + 1`) of at least `n`. */
+function atLeast(n: number, step = 4): number {
+	return Math.max(1, Math.ceil((n - 1) / step) * step + 1);
 }
 
 /** `style. prompt`, or the prompt alone. */
@@ -95,14 +95,17 @@ function withStyle(style: string, prompt: string): string {
 	return style ? `${style}. ${prompt}` : prompt;
 }
 
-/** The frame counts of one section's clips, each new frame counted once. */
-export function splitFrames(totalFrames: number, cap: number): number[] {
+/**
+ * The frame counts of one section's clips, each new frame counted once, in
+ * the model's frame steps (`step`: 4 for Wan, 8 for LTX) and none over `cap`.
+ */
+export function splitFrames(totalFrames: number, cap: number, step = 4): number[] {
 	const out: number[] = [];
 	let left = Math.max(1, totalFrames);
 	while (left > 0) {
 		// A continuation's first frame is its predecessor's last, so it adds one fewer.
 		const extra = out.length === 0 ? 0 : 1;
-		const f = Math.min(cap, atLeast(left + extra));
+		const f = Math.min(cap, atLeast(left + extra, step));
 		out.push(f);
 		left -= f - extra;
 	}
@@ -137,18 +140,20 @@ function windowItems(spec: SequenceSpec, s: SpeakingSection, speaking: Speaking)
 }
 
 /**
- * The plan for `spec` on an instance with `limits`. `keyframes` says the run
+ * The plan for `spec` on `video`: its limits, and the frame counts it takes
+ * (`frameStep`, 4 for Wan and 8 for LTX). `keyframes` says the run
  * makes a keyframe for each section without a start picture (an image
  * backend is set up and the instance starts from pictures). `speaking` is
  * the speaking instance and the lines spoken so far, for speaking sections.
  */
 export function planClips(
 	spec: SequenceSpec,
-	limits: VideoLimits,
+	video: Pick<VideoCaps, 'limits' | 'frameStep'>,
 	keyframes: boolean,
 	speaking?: Speaking
 ): ClipPlan {
-	const longest = fitClip(limits, '', { seconds: 1e6, portrait: false });
+	const frameStep = video.frameStep;
+	const longest = longestClip(video);
 	const { width, height, fps } = longest;
 	const cap = longest.frames;
 	const items: PlanItem[] = [];
@@ -173,7 +178,7 @@ export function planClips(
 				lastIds.set(s.id, windows[windows.length - 1].id);
 			}
 		} else {
-			const frames = splitFrames(Math.round(s.seconds * fps), cap);
+			const frames = splitFrames(Math.round(s.seconds * fps), cap, frameStep);
 			let prev: string | null = null;
 			frames.forEach((f, i) => {
 				const n = i + 1;
@@ -202,7 +207,11 @@ export function planClips(
 		// A speaking section with no speaking instance plans nothing; validation says why.
 		if (before && firsts.has(s.id) && lastIds.has(spec.sections[k - 1].id)) {
 			const at = items.indexOf(firsts.get(s.id)!);
-			items.splice(at, 0, transition(spec, before.k, before.join, firsts, lastIds, cap, fps));
+			items.splice(
+				at,
+				0,
+				transition(spec, before.k, before.join, firsts, lastIds, { cap, fps, step: frameStep })
+			);
 		}
 		const join = spec.joins[k];
 		if (join?.kind === 'transition') pending.push({ k: k + 1, join });
@@ -221,8 +230,7 @@ function transition(
 	join: SequenceSpec['joins'][number],
 	firsts: Map<string, PlanItem>,
 	lastIds: Map<string, string>,
-	cap: number,
-	fps: number
+	{ cap, fps, step }: { cap: number; fps: number; step: number }
 ): GenerateItem {
 	const a = spec.sections[k - 1];
 	const b = spec.sections[k];
@@ -232,7 +240,7 @@ function transition(
 			? { kind: 'startOf', start: first.start }
 			: { kind: 'firstFrameOf', id: first.id };
 	const what = (s: typeof a) => (s.kind === 'existing' ? 'the next clip' : s.prompt);
-	const frames = join.secs ? Math.min(cap, atLeast(Math.round(join.secs * fps))) : cap;
+	const frames = join.secs ? Math.min(cap, atLeast(Math.round(join.secs * fps), step)) : cap;
 	return {
 		kind: 'generate',
 		id: `join-${k}`,

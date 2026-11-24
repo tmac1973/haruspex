@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { clipPath, makeOrder, runGenerate, type GenerateDeps, type GenerateRun } from './generate';
 import { planClips } from '#lib/sequence/spec/plan.ts';
 import { itemKeys, type ClipProgress } from '#lib/sequence/spec/progress.ts';
-import { LTX, S2V_10S, foxSpec, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, S2V_10S, foxSpec, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { VideoRequest, VideoResult } from '#lib/videogen/types.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 
@@ -70,7 +70,7 @@ function deps(over: Partial<GenerateDeps> = {}): GenerateDeps {
 }
 
 function runOf(spec: SequenceSpec, clips: Record<string, ClipProgress> = {}): GenerateRun {
-	const plan = planClips(spec, LTX, true);
+	const plan = planClips(spec, LTX_MODEL, true);
 	return {
 		plan,
 		keys: itemKeys(spec, plan),
@@ -112,7 +112,7 @@ describe('runGenerate', () => {
 		const spec = presenterSpec();
 		(spec.sections[0] as { seconds: number }).seconds = 5;
 		(spec.sections[2] as { seconds: number }).seconds = 5;
-		const plan = planClips(spec, LTX, true, { limits: S2V_10S });
+		const plan = planClips(spec, LTX_MODEL, true, { limits: S2V_10S });
 		const run: GenerateRun = {
 			plan,
 			keys: itemKeys(spec, plan),
@@ -276,7 +276,7 @@ describe('runGenerate', () => {
 
 	it('makes a transition that ends on a clip made from text after that clip', () => {
 		const spec = shortFox();
-		const plan = planClips(spec, LTX, false);
+		const plan = planClips(spec, LTX_MODEL, false);
 		expect(makeOrder(plan).map((i) => i.id)).toEqual(['snow-01', 'snow-02', 'forest-01', 'join-1']);
 	});
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildCut, placeSound, speechPlaced, timeline } from './assemble';
 import { planClips } from '#lib/sequence/spec/plan.ts';
 import type { LineSpeech } from '#lib/sequence/spec/speaking.ts';
-import { LTX, S2V_10S, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, S2V_10S, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
 
 const path = (rel: string) => `ep1/${rel}`;
 const format = { preset: '720p24', width: 1280, height: 720 };
@@ -18,7 +18,7 @@ function setUp() {
 	(spec.sections[0] as { seconds: number }).seconds = 5;
 	(spec.sections[2] as { seconds: number }).seconds = 5;
 	const speech = { l1: spoken(1, 4), l2: spoken(2, 6), l3: spoken(3, 9) };
-	const plan = planClips(spec, LTX, true, { limits: S2V_10S, speech });
+	const plan = planClips(spec, LTX_MODEL, true, { limits: S2V_10S, speech });
 	const clips = Object.fromEntries(
 		plan.items.map((i) => [i.id, { file: `generated/${i.id}.webm`, hasAudio: true }])
 	);

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { hashOf, mergeProgress, progressKeys, stableJson, type SequenceProgress } from './progress';
 import { planClips } from './plan';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { SequenceSpec } from './types';
 
 /** A run that finished everything for `spec`. */
 function finished(spec: SequenceSpec): SequenceProgress {
-	const plan = planClips(spec, LTX, true);
+	const plan = planClips(spec, LTX_MODEL, true);
 	const keys = progressKeys(spec, plan);
 	const done = (k: Record<string, string>) =>
 		Object.fromEntries(
@@ -26,7 +26,7 @@ function finished(spec: SequenceSpec): SequenceProgress {
 describe('mergeProgress', () => {
 	it('keeps everything for the same spec', () => {
 		const old = finished(foxSpec());
-		const plan = planClips(foxSpec(), LTX, true);
+		const plan = planClips(foxSpec(), LTX_MODEL, true);
 		expect(mergeProgress(old, foxSpec(), plan)).toBe(old);
 	});
 
@@ -34,7 +34,7 @@ describe('mergeProgress', () => {
 		const old = finished(foxSpec());
 		const spec = foxSpec();
 		(spec.sections[1] as { prompt: string }).prompt = 'a fox in an autumn forest';
-		const merged = mergeProgress(old, spec, planClips(spec, LTX, true));
+		const merged = mergeProgress(old, spec, planClips(spec, LTX_MODEL, true));
 		const kept = Object.keys(merged.clips);
 		expect(kept.filter((id) => id.startsWith('snow-'))).toHaveLength(12);
 		expect(kept.some((id) => id.startsWith('forest-'))).toBe(false);
@@ -50,7 +50,7 @@ describe('mergeProgress', () => {
 		const old = finished(foxSpec());
 		const spec = foxSpec();
 		(spec.sections[0] as { seconds: number }).seconds = 58;
-		const merged = mergeProgress(old, spec, planClips(spec, LTX, true));
+		const merged = mergeProgress(old, spec, planClips(spec, LTX_MODEL, true));
 		const snow = Object.keys(merged.clips).filter((id) => id.startsWith('snow-'));
 		// Only the last snow clip got shorter; it and what continues from it start again.
 		expect(snow).toHaveLength(11);
@@ -60,7 +60,7 @@ describe('mergeProgress', () => {
 
 	it('starts afresh with nothing to go on', () => {
 		const spec = foxSpec();
-		const merged = mergeProgress(null, spec, planClips(spec, LTX, true));
+		const merged = mergeProgress(null, spec, planClips(spec, LTX_MODEL, true));
 		expect(merged).toEqual({
 			specHash: hashOf(spec),
 			clips: {},
@@ -83,9 +83,13 @@ describe('hashOf', () => {
 		const old = finished(foxSpec());
 		const longer = foxSpec();
 		(longer.sections[1] as { seconds: number }).seconds = 90;
-		expect(mergeProgress(old, longer, planClips(longer, LTX, true)).music.piano).toBeUndefined();
+		expect(
+			mergeProgress(old, longer, planClips(longer, LTX_MODEL, true)).music.piano
+		).toBeUndefined();
 		const reworded = foxSpec();
 		(reworded.sections[1] as { prompt: string }).prompt = 'a fox among ferns';
-		expect(mergeProgress(old, reworded, planClips(reworded, LTX, true)).music.piano).toBeDefined();
+		expect(
+			mergeProgress(old, reworded, planClips(reworded, LTX_MODEL, true)).music.piano
+		).toBeDefined();
 	});
 });

@@ -8,7 +8,6 @@ import type { PickedModel } from '#lib/agent/jobs/types/video-sequence/pick.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import { speak } from '#lib/audio/speak.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
-import type { VideoLimits } from '#lib/toolchest/models.ts';
 import { planClips, type ClipPlan } from '#lib/sequence/spec/plan.ts';
 import {
 	emptyProgress,
@@ -33,7 +32,7 @@ import {
 
 export interface SpeechRun {
 	spec: SequenceSpec;
-	limits: VideoLimits;
+	video: PickedModel;
 	draws: boolean;
 	speaking: PickedModel | null;
 }
@@ -83,13 +82,13 @@ export async function speechStage(
 	const sections = speakingSections(run.spec);
 	if (!sections.length) {
 		steps.finish(SPEECH, 'No speaking sections.');
-		return planClips(run.spec, run.limits, run.draws);
+		return planClips(run.spec, run.video.caps, run.draws);
 	}
 	if (!run.speaking) throw new Error('Speaking sections need the job’s speaking model.');
 	let progress: SequenceProgress = (await readProgress(files)) ?? emptyProgress('');
 	const deps = speechDeps(ctx, files, () => writeProgress(files, progress));
 	const spoken = await speakLines(run.spec, progress, deps);
-	const plan = planClips(run.spec, run.limits, run.draws, {
+	const plan = planClips(run.spec, run.video.caps, run.draws, {
 		limits: run.speaking.caps.limits,
 		speech: speechMap(progress)
 	});

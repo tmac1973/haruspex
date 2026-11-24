@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildCut, projectFormat, timeline, type ClipOnDisk } from './assemble';
 import { planClips } from '#lib/sequence/spec/plan.ts';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 
 const path = (rel: string) => `ep1/${rel}`;
@@ -9,7 +9,7 @@ const format = { preset: '720p24', width: 1280, height: 720 };
 
 function allMade(spec: SequenceSpec, hasAudio = true): Record<string, ClipOnDisk> {
 	return Object.fromEntries(
-		planClips(spec, LTX, true)
+		planClips(spec, LTX_MODEL, true)
 			.items.filter((i) => i.kind === 'generate')
 			.map((i) => [i.id, { file: `generated/${i.id}.webm`, hasAudio }])
 	);
@@ -37,7 +37,7 @@ describe('assembly', () => {
 
 	it('lays the fox out as 25 clips, continuations dropping their first frame', () => {
 		const spec = foxSpec();
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		const { cut, notes } = buildCut({
 			spec,
 			plan,
@@ -63,7 +63,7 @@ describe('assembly', () => {
 	it('mutes each clip’s own sound over its whole length when the spec drops it', () => {
 		const spec = foxSpec();
 		spec.sound.clip_sound = false;
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		const { cut } = buildCut({
 			spec,
 			plan,
@@ -79,7 +79,7 @@ describe('assembly', () => {
 
 	it('says when the clips the spec wanted the sound of are silent', () => {
 		const spec = foxSpec();
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		const { notes } = buildCut({
 			spec,
 			plan,
@@ -102,7 +102,7 @@ describe('assembly', () => {
 			],
 			joins: [{ kind: 'crossfade', secs: 1 }]
 		};
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		const existing = { 'raw/phone.mp4': { secs: 9, width: 1080, height: 1920 } };
 		const t = timeline(spec, plan, existing);
 		expect(t.sections.snow).toEqual({ start: 0, end: 121 / 24 });
@@ -137,7 +137,7 @@ describe('assembly', () => {
 
 	it('refuses to assemble a clip that was not made', () => {
 		const spec = foxSpec();
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		expect(() =>
 			buildCut({ spec, plan, clips: {}, existing: {}, path, format, editor: null, sound: [] })
 		).toThrow(/Clip snow-01 was not made/);

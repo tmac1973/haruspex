@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { renderSequenceReport } from './report';
 import { planClips } from '#lib/sequence/spec/plan.ts';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 
 describe('renderSequenceReport', () => {
 	it('says what was made, what was flagged, and where it all is', () => {
 		const spec = foxSpec();
-		const plan = planClips(spec, LTX, true);
+		const plan = planClips(spec, LTX_MODEL, true);
 		const report = renderSequenceReport({
 			spec,
 			plan,

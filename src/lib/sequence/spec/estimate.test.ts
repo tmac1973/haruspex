@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { estimateRun } from './estimate';
 import { planClips } from './plan';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 
 describe('estimateRun', () => {
-	const plan = planClips(foxSpec(), LTX, true);
+	const plan = planClips(foxSpec(), LTX_MODEL, true);
 
 	it('says the time from the first clip’s pace', () => {
 		const e = estimateRun(plan, 260, foxSpec());

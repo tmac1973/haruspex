@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeKeyframes, stillPath, stillsSummary, type KeyframeDeps } from './keyframes';
 import { planClips } from '#lib/sequence/spec/plan.ts';
 import { stillKeys } from '#lib/sequence/spec/progress.ts';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { ImageRequest } from '#lib/image/types.ts';
 import type { FileProgress } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
@@ -41,7 +41,7 @@ function deps(over: Partial<KeyframeDeps> = {}): KeyframeDeps {
 }
 
 function runOf(spec: SequenceSpec, done: Record<string, FileProgress> = {}, keyframes = true) {
-	const plan = planClips(spec, LTX, keyframes);
+	const plan = planClips(spec, LTX_MODEL, keyframes);
 	return { spec, plan, keys: stillKeys(spec, plan), done };
 }
 

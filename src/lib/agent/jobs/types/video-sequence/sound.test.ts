@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeSound, planBed, type SoundDeps } from './sound';
 import { progressKeys } from '#lib/sequence/spec/progress.ts';
 import { planClips } from '#lib/sequence/spec/plan.ts';
-import { LTX, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { MusicRequest } from '#lib/music/types.ts';
 
 describe('planBed', () => {
@@ -65,7 +65,7 @@ beforeEach(() => {
 describe('makeSound', () => {
 	const spec = foxSpec();
 	spec.sound.narration = [{ section: 'forest', at_secs: 4, text: 'Summer comes.' }];
-	const plan = planClips(spec, LTX, true);
+	const plan = planClips(spec, LTX_MODEL, true);
 	const sections = { snow: { start: 0, end: 150 }, forest: { start: 155, end: 300 } };
 	const run = () => ({
 		spec,
