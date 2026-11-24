@@ -426,6 +426,10 @@
 			.then(() => import('#lib/image/refreshCaps.ts'))
 			.then((m) => m.refreshMissingImageCaps())
 			.catch((e) => console.warn('Image models were not asked what they can do:', e));
+		void apiKeysReady()
+			.then(() => import('#lib/videogen/refreshCaps.ts'))
+			.then((m) => m.refreshMissingVideoCaps())
+			.catch((e) => console.warn('Video models were not asked what they can do:', e));
 		void remoteToken.migrate();
 		// Requests read OpenRouter reasoning caps off the cached catalog, which
 		// this build may not have yet (or only an old one).

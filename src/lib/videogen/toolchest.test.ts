@@ -4,10 +4,22 @@ vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
 const settings = vi.hoisted(() => ({
-	videoGenToolchestBaseUrl: 'http://box:3000/',
-	videoGenToolchestApiKeyId: 'k1' as string | null,
-	videoGenToolchestModelId: 'ti2v'
+	videoModels: [
+		{
+			id: 'v1',
+			name: 'ti2v',
+			backend: 'llama-toolchest' as const,
+			url: 'http://box:3000/',
+			keyId: 'k1' as string | null,
+			model: 'ti2v',
+			options: {},
+			caps: null,
+			capsAt: null,
+			renamed: false
+		}
+	]
 }));
+const entry = () => settings.videoModels[0];
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings,
@@ -151,9 +163,9 @@ const request: VideoRequest = {
 };
 
 beforeEach(() => {
-	settings.videoGenToolchestBaseUrl = 'http://box:3000/';
-	settings.videoGenToolchestApiKeyId = 'k1';
-	settings.videoGenToolchestModelId = 'ti2v';
+	entry().url = 'http://box:3000/';
+	entry().keyId = 'k1';
+	entry().model = 'ti2v';
 	use(jobRoutes());
 });
 
@@ -231,7 +243,8 @@ describe('making a clip', () => {
 				baseUrl: 'http://box:3000/',
 				id: ID,
 				model: 'ti2v',
-				keyId: 'k1'
+				keyId: 'k1',
+				entryId: 'v1'
 			}
 		]);
 		expect(seen).toEqual([
@@ -344,8 +357,8 @@ describe('after a restart', () => {
 	};
 
 	it('follows the job on the server it went to, whatever the settings say now', async () => {
-		settings.videoGenToolchestBaseUrl = 'http://elsewhere:3000/';
-		settings.videoGenToolchestApiKeyId = null;
+		entry().url = 'http://elsewhere:3000/';
+		entry().keyId = null;
 		const result = await resumeVideo(handle, request, { codeSessionId: 'code-1' });
 		expect(calls('toolchest_json').some((a) => a.call.method === 'POST')).toBe(false);
 		expect(calls('audio_store_url')[0]).toMatchObject({
@@ -375,7 +388,55 @@ describe('probing', () => {
 			ok: false,
 			detail: 'ti2v is failed — check it in llama-toolchest.'
 		});
-		settings.videoGenToolchestBaseUrl = '';
+		entry().url = '';
 		expect((await probeVideo()).ok).toBe(false);
+	});
+});
+
+describe('one backend per video model', () => {
+	const second = {
+		id: 'v2',
+		name: 'Other',
+		backend: 'llama-toolchest' as const,
+		url: 'http://other:3000',
+		keyId: null,
+		model: 'ti2v',
+		options: {},
+		caps: null,
+		capsAt: null,
+		renamed: false
+	};
+
+	it('reports caps, models and the entry name, each on its own server', async () => {
+		use(jobRoutes());
+		const { toolchestVideoFor } = await import('./toolchest/backend.ts');
+		const b = toolchestVideoFor(second);
+		expect(await b.capabilities()).toMatchObject({
+			text: true,
+			startImage: true,
+			endImage: false,
+			sound: false,
+			frameStep: 4,
+			limits: { defaultSize: '832x480', maxFrames: 121 }
+		});
+		expect(await b.models!()).toContainEqual({ name: 'ti2v', label: 'ti2v' });
+		expect(
+			invokeCalls<{ call: { base_url: string } }>(vi.mocked(invoke), 'toolchest_json').every(
+				(c) => c.call.base_url === 'http://other:3000'
+			)
+		).toBe(true);
+		const result = await b.generate(request);
+		expect(result.model).toBe('Other');
+	});
+
+	it("turns toolchest's errors into video backend errors", async () => {
+		use({ 'GET /v1/models': models('failed') });
+		const { toolchestVideoFor } = await import('./toolchest/backend.ts');
+		const { VideoBackendError } = await import('./backend.ts');
+		const err = await toolchestVideoFor(second)
+			.capabilities()
+			.catch((e: unknown) => e);
+		expect(err).toBeInstanceOf(VideoBackendError);
+		expect(err).toMatchObject({ kind: 'unconfigured' });
 	});
 });
