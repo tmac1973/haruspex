@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
 	cancelPrompt: vi.fn()
 }));
 
-vi.mock('#lib/image/comfyui/client.ts', () => api);
+vi.mock('#lib/comfyui/client.ts', () => api);
 vi.mock('#lib/utils/async.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/utils/async.ts')>()),
 	sleep: () => Promise.resolve()

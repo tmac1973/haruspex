@@ -26,12 +26,7 @@ import kleinGraph from '#lib/image/comfyui/templates/flux2_klein_t2i.json';
 import kleinEditGraph from '#lib/image/comfyui/templates/flux2_klein_edit.json';
 import qwenEditGraph from '#lib/image/comfyui/templates/qwen_edit_2511_edit.json';
 import qwenEditDrawGraph from '#lib/image/comfyui/templates/qwen_edit_2511_t2i.json';
-import type {
-	ComfyGraph,
-	FieldMap,
-	InpaintBinding,
-	ScalarBinding
-} from '#lib/image/comfyui/fieldMap.ts';
+import type { ComfyGraph, FieldMap, InpaintBinding, ScalarBinding } from '#lib/comfyui/fieldMap.ts';
 import type { ModelFamily } from '#lib/image/comfyui/families.ts';
 import type { SamplerSettings } from '#lib/image/types.ts';
 

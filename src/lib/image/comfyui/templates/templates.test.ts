@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyFieldMap } from '../fieldMap';
+import { applyFieldMap } from '#lib/comfyui/fieldMap.ts';
 import {
 	TEMPLATES,
 	mingTransparent,
@@ -7,7 +7,7 @@ import {
 	selectTemplate,
 	templatesFor
 } from './index';
-import { validateFieldMap } from '../fieldMap';
+import { validateFieldMap } from '#lib/comfyui/fieldMap.ts';
 
 describe('the bundled workflows', () => {
 	it('every map matches its graph', () => {

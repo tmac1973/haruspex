@@ -25,7 +25,7 @@ import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import { formatGigabytes } from '#lib/utils/format.ts';
 import { sleep } from '#lib/utils/async.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
-import * as api from '#lib/image/comfyui/client.ts';
+import * as api from '#lib/comfyui/client.ts';
 import {
 	familyOf,
 	findUpscaler,

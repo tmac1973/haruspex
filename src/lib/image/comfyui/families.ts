@@ -13,7 +13,10 @@
  */
 
 import { ImageBackendError } from '#lib/image/types.ts';
-import * as api from '#lib/image/comfyui/client.ts';
+import * as api from '#lib/comfyui/client.ts';
+import { listDiffusionModels, optionsOf, pickCompanion } from '#lib/comfyui/nodes.ts';
+
+export { listDiffusionModels, pickCompanion };
 
 export type ModelFamily =
 	'sd' | 'ming' | 'qwen21' | 'qwen21_turbo' | 'flux2_klein' | 'qwen_edit_2511';
@@ -90,33 +93,6 @@ const FILE_LABELS: Record<Exclude<ModelFamily, 'sd'>, string> = {
 	qwen_edit_2511: 'Qwen-Image-Edit-2511'
 };
 
-const NOT_A_COMPANION = /layer|_pe_/i;
-
-/** The first name matching the first pattern that matches anything. */
-export function pickCompanion(names: string[], wanted: RegExp[]): string | null {
-	const candidates = names.filter((n) => !NOT_A_COMPANION.test(n));
-	for (const re of wanted) {
-		const hit = candidates.find((n) => re.test(n));
-		if (hit) return hit;
-	}
-	return null;
-}
-
-/**
- * The option list of one loader input, as `object_info` reports it: a bare
- * list, or `["COMBO", {options}]` from a node on ComfyUI's newer node API
- * (`UpscaleModelLoader` on 0.39).
- */
-async function optionsOf(cfg: api.ClientConfig, cls: string, input: string): Promise<string[]> {
-	const info = (await api.objectInfo(cfg, cls)) as Record<
-		string,
-		{ input?: { required?: Record<string, [unknown, { options?: unknown }?]> } }
-	>;
-	const declared = info[cls]?.input?.required?.[input];
-	const names = declared?.[0] === 'COMBO' ? declared[1]?.options : declared?.[0];
-	return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : [];
-}
-
 /**
  * Resolve a family's text encoder and VAE from what the server has.
  *
@@ -187,11 +163,6 @@ const UPSCALER = /realesrgan[_-]?x4plus(?!_anime)/i;
 export async function findUpscaler(cfg: api.ClientConfig): Promise<string | null> {
 	const names = await optionsOf(cfg, 'UpscaleModelLoader', 'model_name');
 	return names.find((n) => UPSCALER.test(n)) ?? null;
-}
-
-/** The server's diffusion models (`models/diffusion_models`), any family. */
-export async function listDiffusionModels(cfg: api.ClientConfig): Promise<string[]> {
-	return optionsOf(cfg, 'UNETLoader', 'unet_name');
 }
 
 const FAMILY_LABELS: Record<ModelFamily, string> = {
