@@ -161,6 +161,10 @@ const TABLE: Record<string, Handler> = {
 	voices_list: empty,
 	list_audio_input_devices: empty,
 	email_list_providers: empty,
+	// Print: the window opens on a fixed page, and printing does nothing.
+	print_open: none,
+	print_document: () => ({ title: 'Sample', html: '<h1>Sample</h1><p>Printed text.</p>' }),
+	print_run: none,
 	secret_available: () => true,
 	secret_store_kind: () => 'keychain',
 	// No OAuth client in a test build, so Settings → Calendar offers no Google sign-in.

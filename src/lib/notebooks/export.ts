@@ -47,9 +47,7 @@ export function safeFileName(title: string): string {
 }
 
 /** The notebook with every table row read, not only the first 200. */
-async function fullNotebook(
-	id: string
-): Promise<{ detail: NotebookDetail; rowsOf: (c: NotebookCard) => NotebookRow[] }> {
+export async function fullNotebook(id: string): Promise<Full> {
 	const detail = await api.getNotebook(id);
 	const all = new Map<string, NotebookRow[]>();
 	for (const c of detail.cards) {
@@ -90,9 +88,14 @@ async function imagesFor(
 	return map;
 }
 
+/** Notebook Markdown as sanitized HTML. */
+export function markdownHtml(markdown: string): string {
+	return sanitizeHtml(new Marked({ gfm: true }).parse(markdown) as string);
+}
+
 /** One self-contained HTML page. */
 export function htmlPage(title: string, markdown: string): string {
-	const body = sanitizeHtml(new Marked({ gfm: true }).parse(markdown) as string);
+	const body = markdownHtml(markdown);
 	const esc = title.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 	return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -174,7 +177,7 @@ async function ask(title: string, format: NotebookFormat | TableFormat, zip = fa
 	});
 }
 
-type Full = { detail: NotebookDetail; rowsOf: (c: NotebookCard) => NotebookRow[] };
+export type Full = { detail: NotebookDetail; rowsOf: (c: NotebookCard) => NotebookRow[] };
 /** What to save: its bytes and whether it's a zip (Markdown with files). */
 type Built = { bytes: Uint8Array; zip?: boolean };
 
@@ -190,8 +193,12 @@ async function buildMarkdown({ detail, rowsOf }: Full): Promise<Built> {
 	return { bytes: await z.generateAsync({ type: 'uint8array' }), zip: true };
 }
 
-async function buildHtml({ detail, rowsOf }: Full): Promise<Built> {
-	// Pictures go inside the page as data URLs; other files are named.
+async function buildHtml(full: Full): Promise<Built> {
+	return { bytes: enc.encode(htmlPage(full.detail.notebook.title, await inlinedMarkdown(full))) };
+}
+
+/** The notebook's Markdown with its pictures inside as data URLs; other files are named. */
+export async function inlinedMarkdown({ detail, rowsOf }: Full): Promise<string> {
 	const dataUrls = new Map<string, string>();
 	for (const f of notebookToMarkdown(detail, { rowsOf }).files) {
 		if (/^image\//.test(f.mime)) {
@@ -206,7 +213,7 @@ async function buildHtml({ detail, rowsOf }: Full): Promise<Built> {
 		fileRef: (f) => dataUrls.get(f.name) ?? '#',
 		embeddable: (f) => dataUrls.has(f.name)
 	});
-	return { bytes: enc.encode(htmlPage(detail.notebook.title, markdown)) };
+	return markdown;
 }
 
 async function buildDocument(

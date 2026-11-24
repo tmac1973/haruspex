@@ -1,6 +1,7 @@
 <script lang="ts">
 	/**
-	 * The review dialog for a draft from `email_compose`. Mounted once in the
+	 * The review dialog for a draft from `email_compose`, Draft reply, or
+	 * Email in Chat and Notebooks (`share/email.ts`). Mounted once in the
 	 * root layout. Everything is editable; Send calls `email_send` and closes
 	 * on success, and an error keeps the dialog open with the draft intact.
 	 * Discard, Esc and the close button all discard, with the optional note
@@ -31,6 +32,7 @@
 	let sending = $state(false);
 	let error = $state<string | null>(null);
 	let bodyEl = $state<HTMLTextAreaElement | undefined>();
+	let toEl = $state<HTMLInputElement | undefined>();
 
 	// Load each new draft into the fields.
 	$effect(() => {
@@ -46,8 +48,13 @@
 			error = null;
 			sending = false;
 		});
-		// A reply opens with the cursor at the top of the body.
+		// A reply opens with the cursor at the top of the body; a new message
+		// with no recipient yet, in To.
 		void tick().then(() => {
+			if (p.draft.to.length === 0) {
+				toEl?.focus();
+				return;
+			}
 			bodyEl?.focus();
 			bodyEl?.setSelectionRange(0, 0);
 			if (bodyEl) bodyEl.scrollTop = 0;
@@ -119,7 +126,7 @@
 			{/if}
 			<label>
 				<span>To</span>
-				<input type="text" bind:value={to} disabled={sending} />
+				<input type="text" bind:this={toEl} bind:value={to} disabled={sending} />
 			</label>
 			<label>
 				<span>Cc</span>
@@ -144,16 +151,18 @@
 					<pre class="quoted">{pending.draft.quoted}</pre>
 				</details>
 			{/if}
-			<label>
-				<span>Note</span>
-				<input
-					type="text"
-					bind:value={note}
-					placeholder="Tell the assistant why (optional)"
-					title="Sent back to the assistant if you discard the draft."
-					disabled={sending}
-				/>
-			</label>
+			{#if pending.note}
+				<label>
+					<span>Note</span>
+					<input
+						type="text"
+						bind:value={note}
+						placeholder="Tell the assistant why (optional)"
+						title="Sent back to the assistant if you discard the draft."
+						disabled={sending}
+					/>
+				</label>
+			{/if}
 			{#if error}
 				<p class="error-text">{error}</p>
 			{/if}

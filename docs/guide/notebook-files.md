@@ -1,6 +1,6 @@
 ---
 title: Notebook files and Python
-description: Files and pictures in a notebook, Python cards that read its tables, exporting or importing notebooks (PDF, Word, web page, Markdown, Jupyter, CSV, Excel), and backing up all of them.
+description: Files and pictures in a notebook, Python cards that read its tables, exporting, importing, printing and emailing notebooks (PDF, Word, web page, Markdown, Jupyter, CSV, Excel), and backups.
 ---
 
 # Notebook files and Python
@@ -18,6 +18,10 @@ What a notebook can hold besides text, tables and checklists, and how to get not
 ## Export a notebook
 
 **⋯ → Export as…** on a notebook saves it as a PDF, a Word or OpenDocument file, a web page (one file, pictures inside), Markdown, or a Jupyter notebook (Python cards become code cells, with their output). Markdown with files or pictures is saved as a .zip with them in `files/`. A table's **⋯ → Export table as CSV… / Excel…** saves that table alone.
+
+## Print or email a notebook
+
+**⋯ → Print…** on a notebook opens it as a page, pictures inside, and then the print dialog; **Print…** in that window opens the dialog again. **⋯ → Email…** opens a new message with the notebook as its text, in the **Review email** window: add the recipients and click **Send**. Files and pictures are named in the text, not attached. Email shows only when an email account has **Allow sending** on (see the `integrations` page). A card's **⋯ → Print card…** and **Email card…** do the same for that card alone. Neither is offered for a notebook on another computer.
 
 ## Import notes and tables
 

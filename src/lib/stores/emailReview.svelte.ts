@@ -33,10 +33,20 @@ export type EmailReviewOutcome =
 	| { kind: 'sent'; messageId: string; to: string[]; sentCopyError?: string }
 	| { kind: 'discarded'; note: string };
 
+export interface EmailReviewOptions {
+	/**
+	 * Show the Note field, whose text goes back to the model on a discard.
+	 * Off for a message the user started (Email in Chat or Notebooks), where
+	 * no model is waiting. Default true.
+	 */
+	note?: boolean;
+}
+
 interface PendingEmailReview {
 	draft: EmailDraft;
 	/** The accounts it may go from: enabled, with Allow sending on. */
 	accounts: EmailAccount[];
+	note: boolean;
 	resolve: (outcome: EmailReviewOutcome) => void;
 }
 
@@ -44,7 +54,8 @@ let pending = $state<PendingEmailReview | null>(null);
 
 export function askEmailReview(
 	draft: EmailDraft,
-	accounts: EmailAccount[]
+	accounts: EmailAccount[],
+	options: EmailReviewOptions = {}
 ): Promise<EmailReviewOutcome> {
 	if (pending !== null) {
 		return Promise.reject(
@@ -52,7 +63,7 @@ export function askEmailReview(
 		);
 	}
 	return new Promise<EmailReviewOutcome>((resolve) => {
-		pending = { draft, accounts, resolve };
+		pending = { draft, accounts, note: options.note ?? true, resolve };
 	});
 }
 

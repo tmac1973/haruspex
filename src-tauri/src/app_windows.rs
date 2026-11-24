@@ -1,5 +1,5 @@
 //! The app's extra windows — editor windows, detached Code sessions,
-//! detached Shell tabs and Code preview windows — made here rather than with the JS `WebviewWindow`.
+//! detached Shell tabs, Code preview windows and print windows — made here rather than with the JS `WebviewWindow`.
 //!
 //! On Windows every webview in the app shares one WebView2 data folder, and
 //! WebView2 refuses a second webview whose browser arguments differ from the
@@ -13,7 +13,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 /// The windows this may make, by label prefix; anything else is refused.
-const PREFIXES: [&str; 4] = ["editor-", "code-", "shell-", "preview-"];
+const PREFIXES: [&str; 5] = ["editor-", "code-", "shell-", "preview-", "print-"];
 
 /// A window to open: the frontend's own route, its size, and where.
 #[derive(Debug, Deserialize)]
@@ -45,11 +45,16 @@ fn check(spec: &WindowSpec) -> Result<(), String> {
 /// made from a synchronous command can deadlock.
 #[tauri::command]
 pub async fn app_window_open(app: AppHandle, spec: WindowSpec) -> Result<(), String> {
+    open(&app, spec)
+}
+
+/// Open `spec`, for a command that makes a window of its own (`print_open`).
+/// Call it from an async command, as above.
+pub fn open(app: &AppHandle, spec: WindowSpec) -> Result<(), String> {
     check(&spec)?;
-    let mut builder =
-        WebviewWindowBuilder::new(&app, &spec.label, WebviewUrl::App(spec.url.into()))
-            .title(&spec.title)
-            .inner_size(spec.width, spec.height);
+    let mut builder = WebviewWindowBuilder::new(app, &spec.label, WebviewUrl::App(spec.url.into()))
+        .title(&spec.title)
+        .inner_size(spec.width, spec.height);
     builder = match (spec.x, spec.y) {
         (Some(x), Some(y)) => builder.position(x, y),
         _ => builder.center(),
@@ -91,6 +96,7 @@ mod tests {
         assert!(check(&spec("code-1", "/code/1")).is_ok());
         assert!(check(&spec("shell-3", "/shell-detached?id=3")).is_ok());
         assert!(check(&spec("preview-1", "/preview?session=1")).is_ok());
+        assert!(check(&spec("print-1", "/print?id=1")).is_ok());
         assert!(check(&spec("preview-1", "http://127.0.0.1:1/x")).is_err());
         assert!(check(&spec("main", "/")).is_err());
         assert!(check(&spec("evil", "/editor")).is_err());

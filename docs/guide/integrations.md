@@ -17,7 +17,7 @@ With an account on, the assistant can list recent mail, summarise a message, or 
 
 ## Let the assistant draft emails
 
-Turn on **Allow sending** for an account and fill in its SMTP server (preset for listed providers). The assistant can then draft a reply or a new message, which opens in a **Review email** window. Edit any of it. Nothing is sent until you click **Send**. **Discard** declines it; a **Note** goes back to the assistant. Replies thread under the original, and a copy goes to Sent. Jobs never send email (camera alerts aside: `camera-alerts` page); auto-approve does not apply.
+Turn on **Allow sending** for an account and fill in its SMTP server (preset for listed providers). The assistant can draft mail; Chat and Notebooks get **Email** (`chat-conversations` page). It opens a **Review email** window; nothing is sent until you click **Send**. **Discard** declines it; a **Note** goes back to the assistant. Replies thread under the original, and a copy goes to Sent. Jobs never send email (camera alerts aside: `camera-alerts` page); auto-approve does not apply.
 
 ## Connect calendars and contacts
 
@@ -53,7 +53,7 @@ When a release brings a newer version of a catalog server, its card shows **Upda
 
 ## Test a web app in a browser
 
-**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, use them, and read their console and network requests. It reaches `localhost`, so the Code tab can test the app or game it is building; 3D pages draw on your GPU. A screenshot it names is saved in the working folder. The browser closes after 5 idle minutes. Setup downloads its own Chromium (400 MB). It never uses your own browser or logins.
+**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, use them, and read their console and network requests. It reaches `localhost`, so the Code tab can test the app it builds; 3D pages use your GPU. A screenshot it names is saved in the working folder. The browser closes after 5 idle minutes. Setup downloads its own Chromium (400 MB). It never uses your own browser or logins.
 
 Its tools are on by default. Reading a page, its console and requests, screenshots, and opening a page on `localhost` run without asking; the rest ask first, and **Always allow** stops asking for that tool.
 

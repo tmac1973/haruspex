@@ -5,7 +5,9 @@
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
 	import SpeakerButton from '#lib/components/SpeakerButton.svelte';
-	import { getSettings } from '#lib/stores/settings.ts';
+	import { getLiveSettings, getSettings } from '#lib/stores/settings.ts';
+	import { canEmail, emailText } from '#lib/share/email.ts';
+	import { printHtml } from '#lib/share/print.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { isWebClient } from '#lib/buildFlags.ts';
 	import { formatDuration } from '#lib/utils/format.ts';
@@ -38,6 +40,11 @@
 		onFork?: () => void;
 		/** Why forking is not possible right now; the button is inert and says so. */
 		forkBlocked?: string | null;
+		/**
+		 * Print and Email buttons on an answer (the Chat tab), with the
+		 * conversation's title for the page and the subject line.
+		 */
+		shareTitle?: string;
 	}
 
 	let {
@@ -48,8 +55,11 @@
 		steps,
 		codePaths,
 		onFork,
-		forkBlocked = null
+		forkBlocked = null,
+		shareTitle
 	}: Props = $props();
+
+	const emailOffered = $derived(canEmail(getLiveSettings()));
 
 	let elapsedLabel = $derived(
 		typeof elapsedMs === 'number' && elapsedMs > 0 ? formatDuration(elapsedMs) : ''
@@ -197,6 +207,26 @@
 				>
 					📓
 				</button>
+			{/if}
+			{#if shareTitle !== undefined && !isWebClient}
+				<button
+					class="icon-btn"
+					title="Print this answer"
+					aria-label="Print this answer"
+					onclick={() => void printHtml(shareTitle, renderedContent)}
+				>
+					🖨️
+				</button>
+				{#if emailOffered}
+					<button
+						class="icon-btn"
+						title="Email this answer"
+						aria-label="Email this answer"
+						onclick={() => void emailText(shareTitle, answerText)}
+					>
+						✉️
+					</button>
+				{/if}
 			{/if}
 			{#if onFork}
 				{@render forkButton()}
