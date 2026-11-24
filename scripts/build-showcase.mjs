@@ -36,6 +36,7 @@ import { readPages } from './build-guide.mjs';
 /** The subjects, in the order the site lists them. The first is /showcase/. */
 export const ORDER = [
 	'research',
+	'notebooks',
 	'files',
 	'images',
 	'music-voice',

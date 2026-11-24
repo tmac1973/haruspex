@@ -1,6 +1,6 @@
 ---
 title: Notebooks
-description: The Notebooks tab — keeping notes and research as cards, editing them, organizing notebooks with pins and tags, and getting deleted ones back from Trash.
+description: The Notebooks tab — notes and research kept as text, table and checklist cards; pins, tags and search; broken links; undoing changes; Trash; and notebooks on your other computers or phone.
 ---
 
 # Notebooks
