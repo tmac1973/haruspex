@@ -3,7 +3,7 @@ import { isDetachedRoute, rendersAgentModals } from './windowRoutes';
 
 describe('window routes', () => {
 	it('treats detached Shell, Code and editor windows as detached', () => {
-		for (const id of ['/shell/[id]', '/code/[id]', '/editor', '/preview'])
+		for (const id of ['/shell/[id]', '/code/[id]', '/editor', '/preview', '/print'])
 			expect(isDetachedRoute(id)).toBe(true);
 		for (const id of ['/', '/settings', null]) expect(isDetachedRoute(id)).toBe(false);
 	});

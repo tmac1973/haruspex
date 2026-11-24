@@ -188,6 +188,10 @@ xcap = "0.9"
 # every window missing — see desktop::external.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGWindow"] }
+# The print dialog for src/print.rs: wry makes the print operation but never
+# runs it. The versions are wry's own.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSView", "NSWindow"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-app-kit", "WKWebView"] }
 # The login Keychain for src/secrets.rs.
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 

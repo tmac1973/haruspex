@@ -4,13 +4,14 @@
  * main chrome for them (see `routes/+layout.svelte`).
  */
 
-/** A detached Shell, a detached Code session, an editor or a preview window. */
+/** A detached Shell, a detached Code session, an editor, a preview or a print window. */
 export function isDetachedRoute(routeId: string | null): boolean {
 	return (
 		routeId === '/shell/[id]' ||
 		routeId === '/code/[id]' ||
 		routeId === '/editor' ||
-		routeId === '/preview'
+		routeId === '/preview' ||
+		routeId === '/print'
 	);
 }
 

@@ -6,18 +6,14 @@
  * Offered only in an attended Chat with an account that has Allow sending on
  * (`registry.ts`), and refused here too when nobody is present.
  */
-import { getSettings, type EmailAccount } from '#lib/stores/settings.ts';
+import type { EmailAccount } from '#lib/stores/settings.ts';
 import { askEmailReview, type EmailDraft } from '#lib/stores/emailReview.svelte.ts';
+import { sendableAccounts } from '#lib/share/email.ts';
 import type { ReplyContext } from '#lib/ipc/gen/ReplyContext.ts';
 import { toolInvokeError, waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { emailCall, resolveEmailAccounts } from '#lib/agent/tools/email.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
-
-/** The accounts a draft may go from: enabled, with Allow sending on. */
-function sendableAccounts(): EmailAccount[] {
-	return getSettings().integrations.email.accounts.filter((a) => a.enabled && a.sendEnabled);
-}
 
 /** Addresses from an argument that may be a list or one comma-separated string. */
 function addressList(raw: unknown): string[] | undefined {

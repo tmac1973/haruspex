@@ -129,3 +129,20 @@ Example output:
 "Backed up 14 notebooks, 212 cards, 31 files." On the other computer: "Restored: added 14 notebooks."
 
 Read more: notebook-files
+
+## Print a notebook or email it
+
+Print a notebook, or one card of it, with its pictures, or send its text to someone from your own email account.
+
+Tab: Notebooks
+Required settings: Email needs an account with Allow sending on (Settings → Integrations → Email)
+
+Prompt:
+
+> ⋯ → Print… on the Speakers notebook; or ⋯ → Email card… on its Models table.
+
+Example output:
+
+A print window shows the notebook as a white page, with the system print dialog open over it. Email opens a Review email window with the subject "Models — Speakers" and the table as text, ready for a recipient.
+
+Read more: notebook-files, integrations

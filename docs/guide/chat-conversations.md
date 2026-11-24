@@ -1,6 +1,6 @@
 ---
 title: Chat conversations
-description: Several Chat conversations at once, adding to an answer as it is written, the busy and unread marks, searching and deleting many, results that arrive while you are elsewhere, and the Tasks list.
+description: Several Chat conversations at once, adding to an answer as it is written, busy and unread marks, searching and deleting, printing and emailing, results that arrive later, and the Tasks list.
 ---
 
 # Chat conversations
@@ -33,6 +33,12 @@ Hover over a dot to see what it means. The Remote control page (see the `remote-
 - **Select** puts a checkbox on each row. Click rows to pick them, shift-click to pick a range, or **Select all shown** for everything the search keeps, then **Delete N**. It asks first, saying how many go on each computer. An offline computer's chats can't be picked.
 - **Clear all on this computer** deletes every conversation here. Your other computers' chats stay.
 - Drag the list's right edge to make it wider; the width is remembered.
+
+## Print or email an answer or a conversation
+
+Under each answer, 🖨️ prints it and ✉️ emails it. The printer and envelope buttons beside the chat box do the same for the whole conversation: what you typed and the answers, without the reasoning or tool steps.
+
+Print opens the text as a page, then the print dialog; **Print…** in that window opens the dialog again. Email opens a new message in the **Review email** window, with the conversation's title as its subject: add the recipients and click **Send**. The text goes as written (Markdown). Pictures are not sent: the text says how many you attached. Email shows only when an email account has **Allow sending** on (see the `integrations` page).
 
 ## Results that arrive while you're elsewhere
 

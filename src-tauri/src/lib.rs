@@ -45,6 +45,7 @@ mod owner;
 mod peers;
 mod power;
 mod preview;
+mod print;
 mod process_util;
 mod proxy;
 mod remote;
@@ -937,6 +938,9 @@ pub fn run() {
             links::open_url,
             links::folder_open,
             app_windows::app_window_open,
+            print::print_open,
+            print::print_document,
+            print::print_run,
             agent_feedback::agent_feedback_append,
             agent_feedback::agent_feedback_dir,
             agent_feedback::agent_feedback_list,

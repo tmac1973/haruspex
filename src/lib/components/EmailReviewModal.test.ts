@@ -106,4 +106,12 @@ describe('EmailReviewModal', () => {
 		);
 		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 	});
+
+	it('a message the user started has no Note, and opens in To', async () => {
+		render(EmailReviewModal);
+		void askEmailReview(draft({ to: [], quoted: undefined }), [sender], { note: false });
+		await screen.findByText('Review email');
+		expect(screen.queryByLabelText('Note')).toBeNull();
+		await waitFor(() => expect(document.activeElement).toBe(field('To')));
+	});
 });

@@ -42,6 +42,9 @@
 	import { createPendingAudio } from '#lib/utils/pendingAudio.svelte.ts';
 	import { withAttachedAudio } from '#lib/audio/attached.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
+	import { conversationHtml, conversationText } from '#lib/share/conversation.ts';
+	import { canEmail, emailText } from '#lib/share/email.ts';
+	import { printHtml } from '#lib/share/print.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
@@ -435,6 +438,21 @@
 		if (!conv) return;
 		openShellFromChat({ title: conv.title, messages: conv.messages });
 	}
+
+	const hasTurns = $derived(
+		!!activeConversation?.messages.some((m) => m.role === 'user' || m.role === 'assistant')
+	);
+	const emailOffered = $derived(canEmail(getLiveSettings()));
+
+	function printConversation() {
+		const conv = activeConversation;
+		if (conv) void printHtml(conv.title, conversationHtml(conv.title, conv.messages));
+	}
+
+	function emailConversation() {
+		const conv = activeConversation;
+		if (conv) void emailText(conv.title, conversationText(conv.messages));
+	}
 </script>
 
 <div class="chat-layout">
@@ -514,6 +532,7 @@
 							tokensPerSecond={activeConversation.messageStats?.[i]?.tokensPerSecond}
 							elapsedMs={activeConversation.messageStats?.[i]?.elapsedMs}
 							steps={activeConversation.messageSteps[i]}
+							shareTitle={activeConversation.title}
 						/>
 						{#if activeConversation.messageStops?.[i]}
 							<StopIndicator
@@ -770,6 +789,54 @@
 							>
 								<polyline points="4 17 10 11 4 5"></polyline>
 								<line x1="12" y1="19" x2="20" y2="19"></line>
+							</svg>
+						</button>
+					{/if}
+					<button
+						class="share-btn"
+						onclick={printConversation}
+						disabled={!hasTurns}
+						title="Print this conversation"
+						aria-label="Print conversation"
+					>
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<polyline points="6 9 6 2 18 2 18 9"></polyline>
+							<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+							></path>
+							<rect x="6" y="14" width="12" height="8"></rect>
+						</svg>
+					</button>
+					{#if emailOffered}
+						<button
+							class="share-btn"
+							onclick={emailConversation}
+							disabled={!hasTurns}
+							title="Email this conversation"
+							aria-label="Email conversation"
+						>
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path
+									d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+								></path>
+								<polyline points="22,6 12,13 2,6"></polyline>
 							</svg>
 						</button>
 					{/if}
@@ -1340,7 +1407,8 @@
 		height: 12px;
 	}
 
-	.open-shell-btn {
+	.open-shell-btn,
+	.share-btn {
 		width: 40px;
 		height: 40px;
 		border-radius: 50%;
@@ -1355,12 +1423,14 @@
 		transition: all 0.15s;
 	}
 
-	.open-shell-btn:hover:not(:disabled) {
+	.open-shell-btn:hover:not(:disabled),
+	.share-btn:hover:not(:disabled) {
 		color: var(--text-primary);
 		border-color: var(--text-secondary);
 	}
 
-	.open-shell-btn:disabled {
+	.open-shell-btn:disabled,
+	.share-btn:disabled {
 		opacity: 0.4;
 		cursor: default;
 	}

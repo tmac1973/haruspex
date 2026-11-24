@@ -18,6 +18,9 @@
 	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
 	import { exportNotebook, exportTable, type NotebookFormat } from '#lib/notebooks/export.ts';
 	import { importFiles } from '#lib/notebooks/import.ts';
+	import { emailNotebook, printNotebook } from '#lib/notebooks/share.ts';
+	import { canEmail } from '#lib/share/email.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import {
 		emitNotebookChanged,
 		openNotebook,
@@ -64,8 +67,19 @@
 		['ipynb', 'Jupyter notebook']
 	];
 
+	/** Print, and Email when an account can send. */
+	function shareItems(id: string, card?: NotebookCard) {
+		const what = card ? ' card' : '';
+		const items = [{ label: `Print${what}…`, run: () => void printNotebook(id, card) }];
+		if (canEmail(getLiveSettings())) {
+			items.push({ label: `Email${what}…`, run: () => void emailNotebook(id, card) });
+		}
+		return items;
+	}
+
 	function notebookMenu(id: string) {
 		return [
+			...shareItems(id),
 			...EXPORTS.map(([format, name]) => ({
 				label: `Export as ${name}…`,
 				run: () => void exportNotebook(id, format)
@@ -105,6 +119,9 @@
 				}
 			}
 		];
+		if (getOpenBackend().kind === 'local' && open) {
+			items.push(...shareItems(open.notebook.id, card));
+		}
 		if (card.kind === 'table' && getOpenBackend().kind === 'local') {
 			items.push(
 				{ label: 'Export table as CSV…', run: () => void exportTable(card, 'csv') },

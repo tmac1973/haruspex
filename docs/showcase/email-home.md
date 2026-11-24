@@ -153,3 +153,20 @@ Haruspex asks first, hides while it captures, then answers:
 The dialog says the disk is full… Free some space in your home folder, then try again.
 
 Read more: integrations, chat
+
+## Send an answer to someone
+
+Email or print one answer, or the whole conversation, from Chat. You add the recipient and send it yourself.
+
+Tab: Chat
+Required settings: Email needs an account with Allow sending on (Settings → Integrations → Email)
+
+Prompt:
+
+> Plan a three-day trip to Lisbon in March for two people who like food and walking.
+
+Example output:
+
+Under the answer, ✉️ opens a Review email window with the subject "Lisbon trip" and the plan as its text. 🖨️ opens the answer as a page with the print dialog over it.
+
+Read more: chat-conversations, integrations
