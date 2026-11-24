@@ -8,7 +8,12 @@ import { videoOverrides } from '#lib/video/binaries.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
-import { generateVideo, resumeVideo } from '#lib/videogen/toolchest.ts';
+import { videoBackendForEntry } from '#lib/videogen/index.ts';
+import { videoEntryForHandle } from '#lib/videogen/entries.ts';
+import { meetsNeed, needOf, routeVideo } from '#lib/videogen/route.ts';
+import { fitClip } from '#lib/videogen/fit.ts';
+import type { VideoGenerateOptions, VideoRequest, VideoResult } from '#lib/videogen/types.ts';
+import type { PickedModel } from '#lib/agent/jobs/types/video-sequence/pick.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
 import { videoSettings } from '#lib/video/args.ts';
 import { randomSeed } from '#lib/utils/random.ts';
@@ -44,8 +49,48 @@ export interface GenerateStageRun {
 	keyframes: boolean;
 	stills: Still[];
 	attended: boolean;
+	models: RunModels;
 	/** Write the spec back, when a note changed a section's prompt. */
 	writeSpec: (spec: SequenceSpec) => Promise<void>;
+}
+
+/** The video models a run uses. */
+export interface RunModels {
+	video: PickedModel;
+	speaking: PickedModel | null;
+	/** The job leaves the video model to Automatic, so a clip it can't make goes to another. */
+	automatic: boolean;
+}
+
+/**
+ * Make one clip: a speaking window on the speaking model, the rest on the
+ * run's video model. On Automatic, a clip that model can't make goes to the
+ * first that can, sized for that one.
+ */
+async function generateOn(
+	models: RunModels,
+	req: VideoRequest,
+	opts: VideoGenerateOptions
+): Promise<VideoResult> {
+	if (req.audio) {
+		if (!models.speaking) throw new Error('Speaking sections need a speaking model.');
+		return models.speaking.backend.generate(req, opts);
+	}
+	const need = needOf(req);
+	if (!models.automatic || meetsNeed(models.video.caps, need)) {
+		return models.video.backend.generate(req, opts);
+	}
+	const other = await routeVideo(need, { signal: opts.signal });
+	const fit = fitClip(
+		other.caps.limits,
+		other.entry.name,
+		{ seconds: req.frames / req.fps, portrait: req.height > req.width },
+		other.caps.frameStep
+	);
+	return other.backend.generate(
+		{ ...req, width: fit.width, height: fit.height, frames: fit.frames, fps: fit.fps },
+		opts
+	);
 }
 
 function depsFor(
@@ -53,18 +98,12 @@ function depsFor(
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
 	save: () => Promise<void>,
-	attended: boolean
+	attended: boolean,
+	models: RunModels
 ): GenerateDeps {
 	const signal = ctx.abort.signal;
-	const instanceId = cfg.video_instance_id || undefined;
 	return {
-		// A speaking window goes to the speaking instance.
-		generate: (req, opts) =>
-			generateVideo(req, {
-				...opts,
-				signal,
-				instanceId: req.audio ? cfg.speaking_instance_id || undefined : instanceId
-			}),
+		generate: (req, opts) => generateOn(models, req, { ...opts, signal }),
 		cacheAudio: async (rel) => {
 			const stored = await invoke<StoredAudio>('audio_cache_import', {
 				workingDir: ctx.job.working_dir,
@@ -75,7 +114,12 @@ function depsFor(
 			});
 			return { name: basename(rel) || 'speech.wav', hash: stored.hash };
 		},
-		resume: (handle, req, opts) => resumeVideo(handle, req, { ...opts, signal }),
+		resume: (handle, req, opts) => {
+			const entry = videoEntryForHandle(handle);
+			const backend = videoBackendForEntry(entry);
+			if (!backend) throw new Error(`${entry.name} is not a kind this build can use.`);
+			return backend.resume(handle, req, { ...opts, signal });
+		},
 		cacheImage: async (rel) => {
 			const bytes = await files.readBytes(rel);
 			if (!bytes) throw new Error(`${files.path(rel)} is missing.`);
@@ -174,7 +218,7 @@ export async function generateStage(
 		const progress = mergeProgress(await readProgress(files), spec, plan);
 		const save = () => writeProgress(files, progress);
 		const deps = {
-			...depsFor(ctx, cfg, files, save, run.attended && notes < MAX_NOTES),
+			...depsFor(ctx, cfg, files, save, run.attended && notes < MAX_NOTES, run.models),
 			check: clipChecker(ctx, cfg, files, plan.fps)
 		};
 		const outcome = await runGenerate(

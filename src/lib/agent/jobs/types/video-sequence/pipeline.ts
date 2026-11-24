@@ -80,7 +80,7 @@ function check(json: unknown, sc: SpecContext, keyframes: boolean): Checked | st
 	const validated = validateSequenceSpec(parsed.spec, sc.validate);
 	const problems = [...parsed.problems, ...validated.errors];
 	if (problems.length) return problems;
-	const speaking = sc.speaking?.video ? { limits: sc.speaking.video } : undefined;
+	const speaking = sc.speaking ? { limits: sc.speaking.caps.limits } : undefined;
 	const plan = planClips(validated.spec, sc.validate.limits, keyframes, speaking);
 	const estimate = estimateRun(plan, null, validated.spec);
 	return { validated, summary: specSummary(validated.spec, plan, estimate, validated.notes) };
@@ -224,6 +224,7 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 			keyframes: draws,
 			stills,
 			attended,
+			models: sc,
 			writeSpec: (next: SequenceSpec) => writeSpec(ctx, specPath, next)
 		};
 		const made = await generateStage(ctx, steps, cfg, files, genRun);

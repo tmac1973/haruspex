@@ -5,9 +5,14 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
-import type { ToolchestInstance } from '#lib/toolchest/models.ts';
-import { readyVideoInstance } from '#lib/videogen/toolchest.ts';
 import { fitClip } from '#lib/videogen/fit.ts';
+import {
+	capabilityWords,
+	othersCan,
+	pickSpeakingModel,
+	pickVideoModel,
+	type PickedModel
+} from '#lib/agent/jobs/types/video-sequence/pick.ts';
 import { projectFormat } from '#lib/sequence/spec/format.ts';
 import { speakingFormat } from '#lib/sequence/spec/speaking.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -29,9 +34,11 @@ export interface EpisodeClip {
 }
 
 export interface SpecContext {
-	instance: ToolchestInstance;
-	/** The instance speaking sections use, when the job names one. */
-	speaking: ToolchestInstance | null;
+	video: PickedModel;
+	/** The model speaking sections use, when there is one. */
+	speaking: PickedModel | null;
+	/** The job leaves the video model to Automatic, so a clip it can't make may go to another. */
+	automatic: boolean;
 	validate: ValidateContext;
 	clips: EpisodeClip[];
 	images: string[];
@@ -96,13 +103,13 @@ async function listClips(workdir: string, episodeDir: string): Promise<EpisodeCl
 	});
 }
 
-/** The instance as the model needs to know it. */
-function instanceText(instance: ToolchestInstance): string {
-	const limits = instance.video!;
-	const longest = fitClip(limits, instance.id, { seconds: 1e6, portrait: false });
-	const can = (c: string) => instance.capabilities.includes(c);
+/** The video model as the spec turn needs to know it. */
+function instanceText(model: PickedModel): string {
+	const { limits, frameStep } = model.caps;
+	const longest = fitClip(limits, model.entry.name, { seconds: 1e6, portrait: false }, frameStep);
+	const can = (c: string) => capabilityWords(model.caps).includes(c);
 	const lines = [
-		`Video model: ${instance.id}, ${longest.width}×${longest.height} at ${longest.fps} fps.`,
+		`Video model: ${model.entry.name}, ${longest.width}×${longest.height} at ${longest.fps} fps.`,
 		`Its longest clip is ${(longest.frames / longest.fps).toFixed(1)} s; longer sections are made of several clips, each continuing from the last.`,
 		can('start_image') ? 'It can start a clip from a picture.' : 'It cannot start from a picture.',
 		can('end_image')
@@ -113,24 +120,23 @@ function instanceText(instance: ToolchestInstance): string {
 	return lines.join('\n');
 }
 
-/** Everything the spec turn and the validator need, for `cfg` in `workdir`. */
 /** What the model is told about speaking sections. */
-function speakingText(speaking: ToolchestInstance | null): string {
-	if (!speaking?.video) return 'There is no speaking instance: no speaking sections.';
-	const f = speakingFormat(speaking.video);
-	return `Speaking sections (a person in a portrait saying lines) use ${speaking.id}: one clip per stretch of speech, up to ${f.secs.toFixed(1)} s each at ${f.fps} fps. Give each line a short id.`;
+function speakingText(speaking: PickedModel | null): string {
+	if (!speaking) return 'There is no speaking model: no speaking sections.';
+	const f = speakingFormat(speaking.caps.limits);
+	return `Speaking sections (a person in a portrait saying lines) use ${speaking.entry.name}: one clip per stretch of speech, up to ${f.secs.toFixed(1)} s each at ${f.fps} fps. Give each line a short id.`;
 }
 
+/** Everything the spec turn and the validator need, for `cfg` in `workdir`. */
 export async function buildSpecContext(
 	workdir: string,
 	cfg: VideoSequenceConfig,
 	signal?: AbortSignal
 ): Promise<SpecContext> {
-	const instance = await readyVideoInstance(signal, cfg.video_instance_id || undefined);
-	if (!instance.video) throw new Error(`${instance.id} says nothing of the clips it makes.`);
-	const speaking = cfg.speaking_instance_id
-		? await readyVideoInstance(signal, cfg.speaking_instance_id)
-		: null;
+	const video = await pickVideoModel(cfg, signal);
+	const speaking = await pickSpeakingModel(cfg, signal);
+	const automatic = !cfg.video_model_id;
+	const limits = video.caps.limits;
 	const [clips, images] = await Promise.all([
 		listClips(workdir, cfg.episode_dir),
 		listImages(workdir, cfg.episode_dir)
@@ -138,21 +144,22 @@ export async function buildSpecContext(
 	const imageBackend = cfg.image_keyframes && resolveImageBackend().kind !== 'none';
 	const musicBackend = resolveMusicBackend().kind !== 'none';
 	const validate: ValidateContext = {
-		instance: instance.id,
-		limits: instance.video,
-		capabilities: instance.capabilities,
+		instance: video.entry.name,
+		limits,
+		capabilities: capabilityWords(video.caps),
+		...(automatic ? { othersCan: othersCan(video) } : {}),
 		imageBackend,
 		musicBackend,
 		files: new Set([...clips.map((c) => c.path), ...images]),
-		...(speaking?.video
+		...(speaking
 			? {
 					speaking: {
-						instance: speaking.id,
-						limits: speaking.video,
-						capabilities: speaking.capabilities
+						instance: speaking.entry.name,
+						limits: speaking.caps.limits,
+						capabilities: capabilityWords(speaking.caps)
 					},
 					projectFps: projectFormat(
-						fitClip(instance.video, instance.id, { portrait: false }),
+						fitClip(limits, video.entry.name, { portrait: false }, video.caps.frameStep),
 						{},
 						getSettings().videoPreset
 					).fps
@@ -164,7 +171,7 @@ export async function buildSpecContext(
 		return `- ${c.path}: ${c.secs.toFixed(1)} s${size}${c.sound ? '' : ', no sound'}`;
 	});
 	const text = [
-		instanceText(instance),
+		instanceText(video),
 		imageBackend
 			? 'Each generated section opens on a keyframe still the image backend makes, unless it has a start_image.'
 			: 'There are no keyframes: a generated section opens from its start_image, or from its prompt alone.',
@@ -178,5 +185,5 @@ export async function buildSpecContext(
 			? `Pictures in the episode folder, which can be start images:\n${images.map((p) => `- ${p}`).join('\n')}`
 			: 'There are no pictures in the episode folder.'
 	].join('\n\n');
-	return { instance, speaking, validate, clips, images, text };
+	return { video, speaking, automatic, validate, clips, images, text };
 }

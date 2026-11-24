@@ -5,7 +5,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import { keptSpeech, speechRefusal, speechTooLong } from './_videoSpeech';
 import { fitClip } from '#lib/videogen/fit.ts';
-import { buildVideoBody, videoFiles } from '#lib/videogen/toolchest.ts';
+import { buildVideoBody, videoFiles } from '#lib/videogen/toolchest/backend.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { VideoLimits } from '#lib/toolchest/models.ts';

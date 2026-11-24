@@ -228,8 +228,8 @@ async function mapped<T>(run: () => Promise<T>): Promise<T> {
 export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
 	const server = serverFor(entry);
 
-	async function ready(signal?: AbortSignal, id?: string): Promise<ToolchestInstance> {
-		const instance = await server.readyInstance(await server.config(), signal, id);
+	async function ready(signal?: AbortSignal): Promise<ToolchestInstance> {
+		const instance = await server.readyInstance(await server.config(), signal);
 		if (!instance.video) {
 			throw new ToolchestError('unconfigured', `${instance.id} is not a video model.`);
 		}
@@ -253,7 +253,7 @@ export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
 		generate: (req, opts = {}) =>
 			mapped(async () => {
 				const cfg = await server.config();
-				const instance = await ready(opts.signal, opts.instanceId);
+				const instance = await ready(opts.signal);
 				const body = buildVideoBody(req, instance.id);
 				const files = videoFiles(req);
 				if (req.audio && !instance.capabilities.includes('audio')) {
@@ -272,8 +272,7 @@ export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
 					model: instance.id,
 					keyId: server.keyId()
 				});
-				const name = opts.instanceId ? instance.id : entry.name;
-				return finish(cfg, created, name, req, opts);
+				return finish(cfg, created, entry.name, req, opts);
 			}),
 		resume: (handle, req, opts = {}) =>
 			mapped(async () => {

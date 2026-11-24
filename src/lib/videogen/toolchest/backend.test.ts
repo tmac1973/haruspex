@@ -20,6 +20,10 @@ const settings = vi.hoisted(() => ({
 	]
 }));
 const entry = () => settings.videoModels[0];
+const backend = () => videoBackendForEntry(entry())!;
+const generateVideo = (...a: Parameters<VideoBackend['generate']>) => backend().generate(...a);
+const resumeVideo = (...a: Parameters<VideoBackend['resume']>) => backend().resume(...a);
+const probeVideo = () => backend().probe();
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings,
@@ -40,14 +44,10 @@ import {
 	type HttpCall
 } from '#lib/testing/invoke.ts';
 import { parseGenerationModels } from '#lib/toolchest/models.ts';
-import {
-	generateVideo,
-	probeVideo,
-	readVideoJob,
-	resumeVideo,
-	videoProgressOf
-} from './toolchest.ts';
-import type { VideoJobHandle, VideoProgress, VideoRequest } from './types.ts';
+import { readVideoJob, videoProgressOf } from './backend.ts';
+import { videoBackendForEntry } from '../index.ts';
+import type { VideoBackend } from '../backend.ts';
+import type { VideoJobHandle, VideoProgress, VideoRequest } from '../types.ts';
 
 interface Call extends HttpCall {
 	api_key: string;
@@ -409,7 +409,7 @@ describe('one backend per video model', () => {
 
 	it('reports caps, models and the entry name, each on its own server', async () => {
 		use(jobRoutes());
-		const { toolchestVideoFor } = await import('./toolchest/backend.ts');
+		const { toolchestVideoFor } = await import('./backend.ts');
 		const b = toolchestVideoFor(second);
 		expect(await b.capabilities()).toMatchObject({
 			text: true,
@@ -431,8 +431,8 @@ describe('one backend per video model', () => {
 
 	it("turns toolchest's errors into video backend errors", async () => {
 		use({ 'GET /v1/models': models('failed') });
-		const { toolchestVideoFor } = await import('./toolchest/backend.ts');
-		const { VideoBackendError } = await import('./backend.ts');
+		const { toolchestVideoFor } = await import('./backend.ts');
+		const { VideoBackendError } = await import('../backend.ts');
 		const err = await toolchestVideoFor(second)
 			.capabilities()
 			.catch((e: unknown) => e);

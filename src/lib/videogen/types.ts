@@ -117,6 +117,4 @@ export interface VideoGenerateOptions {
 	/** Who the clip belongs to, so the cache keeps it: a chat or a Code session. */
 	conversationId?: string;
 	codeSessionId?: string;
-	/** An instance on the same server, instead of the one Settings → Video generation names. */
-	instanceId?: string;
 }

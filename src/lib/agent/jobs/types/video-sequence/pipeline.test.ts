@@ -57,20 +57,33 @@ vi.mock('#lib/video/binaries.ts', () => ({
 	videoOverrides: () => ({})
 }));
 const video = vi.hoisted(() => ({ made: [] as string[] }));
-vi.mock('#lib/videogen/toolchest.ts', () => ({
-	readyVideoInstance: async () => ({
-		id: 'ltx',
-		capabilities: LTX_CAPS,
-		state: 'running',
-		video: LTX
+vi.mock('#lib/agent/jobs/types/video-sequence/pick.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/agent/jobs/types/video-sequence/pick.ts')>()),
+	pickVideoModel: async () => ({
+		entry: { id: 'v', name: 'ltx' },
+		caps: {
+			text: LTX_CAPS.includes('text'),
+			startImage: LTX_CAPS.includes('start_image'),
+			endImage: LTX_CAPS.includes('end_image'),
+			speech: false,
+			needsSpeech: false,
+			sound: false,
+			limits: LTX,
+			frameStep: 4,
+			licence: '',
+			commercialUse: null
+		},
+		backend: {
+			generate: async (req: { title: string; seed: number }) => {
+				video.made.push(req.title);
+				return { hash: 'a'.repeat(64), mime: 'video/webm', seed: req.seed, hasAudio: false };
+			},
+			resume: async () => {
+				throw new Error('not in these tests');
+			}
+		}
 	}),
-	generateVideo: async (req: { title: string; seed: number }) => {
-		video.made.push(req.title);
-		return { hash: 'a'.repeat(64), mime: 'video/webm', seed: req.seed, hasAudio: false };
-	},
-	resumeVideo: async () => {
-		throw new Error('not in these tests');
-	}
+	pickSpeakingModel: async () => null
 }));
 vi.mock('#lib/image/backend.ts', () => ({ resolveImageBackend: () => ({ kind: 'comfyui' }) }));
 const image = vi.hoisted(() => ({ requests: [] as { prompt: string; edit?: unknown }[] }));
