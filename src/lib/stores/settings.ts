@@ -682,6 +682,14 @@ export interface AppSettings {
 	 */
 	homeTab: boolean;
 	/**
+	 * Show the Notebooks tab. Off also hides the notebook tools from agents
+	 * and the "Save to notebook" buttons; notebooks are kept.
+	 * Settings → General → Notebooks tab.
+	 */
+	notebooksTab: boolean;
+	/** Notebooks settings: Settings → Notebooks. */
+	notebooks: NotebookSettings;
+	/**
 	 * Which job runs hold the computer awake (`agent/jobs/keepAwake.ts`).
 	 * `except-home` leaves out Home card jobs (job types marked `background`).
 	 * Settings → General → Keep the computer awake.
@@ -1251,6 +1259,8 @@ const defaults: AppSettings = {
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
 	homeTab: true,
+	notebooksTab: true,
+	notebooks: { semanticSearch: false },
 	jobKeepAwake: 'except-home',
 	leanFileWrites: false,
 	deferTools: 'auto',
@@ -1531,6 +1541,7 @@ function load(): AppSettings {
 				inferenceBackend: mergedInference,
 				apiKeys,
 				integrations: mergedIntegrations,
+				notebooks: { ...defaults.notebooks, ...(rest.notebooks ?? {}) },
 				proxy: mergedProxy,
 				searchProxy: mergedSearchProxy,
 				generationServers: Array.isArray(rest.generationServers)
@@ -2262,6 +2273,15 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 }
 
 export type JobKeepAwake = 'all' | 'except-home' | 'never';
+
+/** Settings → Notebooks. */
+export interface NotebookSettings {
+	/**
+	 * Merge meaning-based results into notebook search. On downloads the
+	 * embedding model Memory uses. Settings → Notebooks → Semantic search.
+	 */
+	semanticSearch: boolean;
+}
 
 /** Settings → General → Keep the computer awake; an unknown value reads as the default. */
 export function getJobKeepAwake(): JobKeepAwake {

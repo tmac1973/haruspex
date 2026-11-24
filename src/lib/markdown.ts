@@ -180,6 +180,13 @@ const marked = new Marked({
 		 * link, a click sent the app's router to a page that doesn't exist.
 		 */
 		link(token) {
+			// `notebook:<id>` and `notebook:<id>#<card>`: open it in the
+			// Notebooks tab (markdownActions' `notebook-open`).
+			const nb = notebookLink(token.href);
+			if (nb) {
+				const card = nb.card ? ` data-card="${escapeHtml(nb.card)}"` : '';
+				return `<button type="button" class="notebook-link" data-action="notebook-open" data-notebook="${escapeHtml(nb.id)}"${card} title="Open the notebook">${this.parser.parseInline(token.tokens)}</button>`;
+			}
 			const linker = activeLinker;
 			if (!linker || /^[a-z][a-z0-9+.-]*:|^#/i.test(token.href)) return false;
 			// A bare `stats.js` in prose may be a word, but as a link target it
@@ -835,6 +842,12 @@ export function finalizeStreamText(
  */
 export interface ResolvedImages {
 	figureFor: (url: string, alt: string) => string | null;
+}
+
+/** The notebook (and card) a `notebook:<id>[#<card>]` link names, or null. */
+export function notebookLink(href: string): { id: string; card: string | null } | null {
+	const m = /^notebook:([A-Za-z0-9_-]+)(?:#([A-Za-z0-9_-]+))?$/.exec(href.trim());
+	return m ? { id: m[1], card: m[2] ?? null } : null;
 }
 
 /**

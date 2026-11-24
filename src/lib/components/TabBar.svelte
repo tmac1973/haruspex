@@ -17,6 +17,7 @@
 	const allTabs: Tab[] = [
 		{ id: 'home', label: 'Home' },
 		{ id: 'chat', label: 'Chat' },
+		{ id: 'notebooks', label: 'Notebooks' },
 		{ id: 'jobs', label: 'Jobs' },
 		{ id: 'shell', label: 'Shell' },
 		{ id: 'code', label: 'Code' }

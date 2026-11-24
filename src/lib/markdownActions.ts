@@ -62,6 +62,15 @@ export function handleMarkdownAction(event: MouseEvent): void {
 		case 'shell-run':
 			document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: codeFor(btn) }));
 			break;
+		case 'notebook-open': {
+			const id = btn.dataset.notebook;
+			const card = btn.dataset.card;
+			if (id)
+				void import('#lib/notebooks/openLink.ts')
+					.then((m) => m.openNotebookLink(id, card))
+					.catch((e) => console.warn('Could not open the notebook:', e));
+			break;
+		}
 		case 'save-image': {
 			const hash = btn.dataset.hash;
 			const alt = btn.closest('.image-frame')?.querySelector('img')?.alt ?? '';

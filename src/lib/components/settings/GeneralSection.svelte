@@ -18,6 +18,12 @@
 	let theme = $state<ThemeMode>(getSettings().theme);
 	let accent = $state<AccentColor>(getSettings().accentColor);
 	let homeTab = $state(getSettings().homeTab);
+	let notebooksTab = $state(getSettings().notebooksTab);
+
+	function setNotebooksTab(on: boolean) {
+		notebooksTab = on;
+		updateSettings({ notebooksTab: on });
+	}
 
 	function setHomeTab(on: boolean) {
 		homeTab = on;
@@ -66,6 +72,24 @@
 		<div>
 			<strong>Show the Home tab</strong>
 			<span>Cards with your jobs, mail, meetings and more.</span>
+		</div>
+	</label>
+</section>
+
+<section class="settings-section">
+	<h2>Notebooks tab</h2>
+	<label
+		class="toggle-row"
+		title="Off hides the tab, the notebook tools agents use, and the Save to notebook buttons. Your notebooks are kept."
+	>
+		<input
+			type="checkbox"
+			checked={notebooksTab}
+			onchange={(e) => setNotebooksTab(e.currentTarget.checked)}
+		/>
+		<div>
+			<strong>Show the Notebooks tab</strong>
+			<span>Notes, tables and research you keep.</span>
 		</div>
 	</label>
 </section>

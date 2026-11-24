@@ -27,9 +27,9 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: 'F3', action: 'Read the last reply aloud (toggle)' },
 			{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' },
 			{
-				keys: 'Ctrl / ⌘ + 1–5',
+				keys: 'Ctrl / ⌘ + 1–6',
 				action:
-					'Switch to the Home, Chat, Jobs, Shell or Code tab (Chat and Jobs only in lean mode)'
+					'Switch to the Home, Chat, Notebooks, Jobs, Shell or Code tab (Chat and Jobs only in lean mode)'
 			},
 			{ keys: 'Ctrl / ⌘ + + / −', action: 'Zoom the UI in / out' },
 			{ keys: 'Ctrl / ⌘ + 0', action: 'Reset UI zoom' },

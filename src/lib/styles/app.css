@@ -772,6 +772,18 @@ body:not(.shell-tab-active) .code-block .run-btn {
 	text-align: left;
 }
 
+/* A `notebook:` link: a button (markdownActions routes it) that reads as a link. */
+.notebook-link {
+	display: inline;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--accent);
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
 .markdown th {
 	background: var(--bg-secondary);
 	font-weight: 600;

@@ -76,7 +76,8 @@ export type EngineOp =
 	| { type: 'home.cards' }
 	/**
 	 * What the app is set to show, for a client that can't read the settings:
-	 * `{ lean }`, whether Settings → General → Lean mode is on.
+	 * `{ lean, home, notebooks }` — Settings → General → Lean mode, and
+	 * whether the Home and Notebooks tabs are on.
 	 */
 	| { type: 'app.mode' }
 	/** The settings, secrets blanked; `keys` picks top-level settings. */
