@@ -16,8 +16,9 @@ Open Settings → Video editing and turn on **Let the assistant edit videos**, a
 - **Episode folder**: where everything goes, inside the working folder. Clips and pictures already in it can be used as sections and start pictures. If it doesn't exist yet, the run makes it and says so in the Interview step, so check the name: a misspelt folder starts an empty episode.
 - **Brief**: what the video is. Say lengths, how sections join, and the sound if you know them.
 - **Run mode**: _Attended_ asks, one question at a time, what the brief leaves open, and stops to show you the spec, the stills, and each section's first clip. _Unattended_ never asks.
-- **Speaking model**: a video instance that makes someone speak (Wan2.2 S2V), for speaking sections; it shows only when the server has one.
-- **Video model**, **Open each section on a keyframe**, **Check each seam**, **Re-anchor every** and **Editor**: see their tooltips.
+- **Video model**: one from Settings → Video generation, or **Automatic**: the first that can make the clips, preferring one that ends on a picture. On Automatic, a clip it can't make goes to another model.
+- **Speaking model**: one that makes someone speak (Wan2.2 S2V), for speaking sections; **Automatic** takes the first, **None** leaves them out.
+- **Open each section on a keyframe**, **Check each seam**, **Re-anchor every** and **Editor**: see their tooltips.
 
 ## What a run does
 
