@@ -9,7 +9,12 @@
 	import { createEditor, type EditorHandle } from '#lib/editor/codemirror.ts';
 	import ArtifactFrame from '#lib/components/ArtifactFrame.svelte';
 	import { openImageViewer } from '#lib/stores/imageViewer.svelte.ts';
-	import { addCard, getOpenNotebook, saveCard } from '#lib/stores/notebooks.svelte.ts';
+	import {
+		addCard,
+		getOpenBackend,
+		getOpenNotebook,
+		saveCard
+	} from '#lib/stores/notebooks.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { cancelRun, resetSandbox } from '#lib/sandbox/sandbox.ts';
 	import {
@@ -36,7 +41,11 @@
 
 	const output = $derived(outputOf(card));
 	const stale = $derived(!!output && isStale(output, getOpenNotebook()?.cards ?? []));
-	const unavailable = $derived(pythonUnavailable());
+	const unavailable = $derived(
+		getOpenBackend().kind === 'local'
+			? pythonUnavailable()
+			: `Python runs on ${getOpenBackend().peerName ?? 'the computer'} this notebook is on.`
+	);
 
 	async function flush(): Promise<typeof card> {
 		if (timer) clearTimeout(timer);
@@ -191,7 +200,7 @@
 			<span class="hint">
 				Ran {new Date(output.ran_at).toLocaleString()} · {output.duration_ms} ms
 			</span>
-			{#if output.result_csv && !readonly}
+			{#if output.result_csv && !readonly && getOpenBackend().can.meta}
 				<button class="mini" onclick={() => void saveAsTable()}>Save as table card</button>
 			{/if}
 		</div>

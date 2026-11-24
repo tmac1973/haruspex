@@ -4,6 +4,7 @@
 	import { canOpenSource, describeSource, openSource } from '#lib/notebooks/source.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { getConversations } from '#lib/stores/chat.svelte.ts';
+	import { getOpenBackend } from '#lib/stores/notebooks.svelte.ts';
 
 	let { card }: { card: NotebookCard } = $props();
 
@@ -27,7 +28,7 @@
 </script>
 
 {#if source.kind !== 'user'}
-	{#if canOpenSource(source)}
+	{#if canOpenSource(source) && getOpenBackend().kind === 'local'}
 		<button class="badge link" title="{when} — click to open" onclick={() => void go()}>
 			{label}
 		</button>

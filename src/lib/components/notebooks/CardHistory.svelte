@@ -8,7 +8,7 @@
 	import type { CardHistoryEntry, NotebookCard } from '#lib/notebooks/api.ts';
 	import { cardKind } from '#lib/notebooks/cardKinds.ts';
 	import { describeSource } from '#lib/notebooks/source.ts';
-	import { restoreRevision } from '#lib/stores/notebooks.svelte.ts';
+	import { getOpenBackend, restoreRevision } from '#lib/stores/notebooks.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -27,8 +27,8 @@
 	$effect(() => {
 		const id = card.id;
 		loading = true;
-		void api
-			.cardHistory(id)
+		void getOpenBackend()
+			.history(id)
 			.then((list) => (entries = list))
 			.catch((e) => showToast(`History failed: ${errMessage(e)}`, { kind: 'error' }))
 			.finally(() => (loading = false));
@@ -36,6 +36,8 @@
 
 	async function pick(entry: CardHistoryEntry) {
 		picked = entry.id;
+		// Another computer's versions are restored there, not previewed here.
+		if (!getOpenBackend().can.preview) return;
 		try {
 			const snap = await api.cardRevision(entry.id);
 			preview = {
@@ -102,7 +104,11 @@
 				<h4>{preview.title || 'Untitled'}</h4>
 				<def.component card={preview} readonly />
 			{:else}
-				<p class="hint">Pick a version to see it.</p>
+				<p class="hint">
+					{getOpenBackend().can.preview
+						? 'Pick a version to see it.'
+						: `Pick a version to restore; it's kept on ${getOpenBackend().peerName}.`}
+				</p>
 			{/if}
 		</div>
 	</div>

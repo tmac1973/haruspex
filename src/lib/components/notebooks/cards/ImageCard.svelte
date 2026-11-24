@@ -1,6 +1,6 @@
 <script lang="ts">
 	/** An image card: a picture kept with the notebook, shown inline; click to enlarge. */
-	import * as api from '#lib/notebooks/api.ts';
+	import { getOpenBackend } from '#lib/stores/notebooks.svelte.ts';
 	import { fileMeta, saveFileCopy } from '#lib/notebooks/files.ts';
 	import { openImageViewer } from '#lib/stores/imageViewer.svelte.ts';
 	import type { CardViewProps } from '#lib/notebooks/cardKinds.ts';
@@ -8,7 +8,19 @@
 	let { card }: CardViewProps = $props();
 
 	const file = $derived(fileMeta(card));
-	const src = $derived(file ? api.fileUrl(file.hash) : '');
+	let src = $state('');
+	let missing = $state(false);
+	$effect(() => {
+		const f = file;
+		const be = getOpenBackend();
+		src = '';
+		missing = false;
+		if (!f) return;
+		void be.fileUrl(f.hash, f.mime).then((u) => {
+			if (u) src = u;
+			else missing = true;
+		});
+	});
 	const alt = $derived(card.title || file?.name || 'Picture');
 </script>
 
@@ -17,9 +29,13 @@
 		<img {src} {alt} loading="lazy" />
 	</button>
 	<div class="actions">
-		<button class="mini" onclick={() => void saveFileCopy(file)}>Save a copy…</button>
+		<button class="mini" onclick={() => void saveFileCopy(file, getOpenBackend())}>
+			Save a copy…
+		</button>
 	</div>
-{:else}
+{:else if file && missing}
+	<p class="missing">{file.name} is on {getOpenBackend().peerName ?? 'the other computer'}.</p>
+{:else if !file}
 	<p class="missing">This picture's details are missing.</p>
 {/if}
 

@@ -1,7 +1,7 @@
 <script lang="ts">
 	/** "+ Add card": a small menu of card kinds, placed after a card or at the end. */
 	import { cardKinds } from '#lib/notebooks/cardKinds.ts';
-	import { addCard } from '#lib/stores/notebooks.svelte.ts';
+	import { addCard, getOpenBackend } from '#lib/stores/notebooks.svelte.ts';
 
 	interface Props {
 		/** Add after this card; null adds at the end. */
@@ -41,7 +41,7 @@
 	</button>
 	{#if open}
 		<div class="menu" role="menu" aria-label="Card type">
-			{#each cardKinds() as k (k.kind)}
+			{#each cardKinds().filter((k) => getOpenBackend().can.meta || ['text', 'table', 'checklist'].includes(k.kind)) as k (k.kind)}
 				<button role="menuitem" onclick={() => pick(k.kind)}>{k.label}</button>
 			{/each}
 		</div>

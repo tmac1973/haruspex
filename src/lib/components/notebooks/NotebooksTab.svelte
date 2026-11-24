@@ -10,6 +10,9 @@
 	import SourceBadge from '#lib/components/notebooks/SourceBadge.svelte';
 	import CardHistory from '#lib/components/notebooks/CardHistory.svelte';
 	import NotebookChatPanel from '#lib/components/notebooks/NotebookChatPanel.svelte';
+	import PeerNotebooks from '#lib/components/notebooks/PeerNotebooks.svelte';
+	import { PeerNotebookChat } from '#lib/notebooks/backend.svelte.ts';
+	import { peerView } from '#lib/peers/store.svelte.ts';
 	import { persistItem } from '#lib/persist.ts';
 	import type { NotebookCard } from '#lib/notebooks/api.ts';
 	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
@@ -18,6 +21,7 @@
 	import {
 		emitNotebookChanged,
 		openNotebook,
+		getOpenBackend,
 		getOpenNotebook,
 		isNotebookListLoaded,
 		isTrashShown,
@@ -82,7 +86,7 @@
 				}
 			}
 		];
-		if (card.kind === 'table') {
+		if (card.kind === 'table' && getOpenBackend().kind === 'local') {
 			items.push(
 				{ label: 'Export table as CSV…', run: () => void exportTable(card, 'csv') },
 				{ label: 'Export table as Excel…', run: () => void exportTable(card, 'xlsx') }
@@ -99,12 +103,31 @@
 		}
 	}
 
+	/** The open notebook's chat when it's on another computer. */
+	let peerChat = $state<PeerNotebookChat | null>(null);
+	$effect(() => {
+		const be = getOpenBackend();
+		const id = open?.notebook.id;
+		const client = be.peerId ? peerView(be.peerId)?.client : undefined;
+		if (!client || !id) {
+			peerChat = null;
+			return;
+		}
+		const chat = new PeerNotebookChat(client, id);
+		peerChat = chat;
+		return () => chat.dispose();
+	});
+
 	/** The card whose History is showing. */
 	let historyFor = $state<NotebookCard | null>(null);
 </script>
 
 <div class="notebooks">
-	<NotebookList onimport={() => void importNew()} />
+	<NotebookList onimport={() => void importNew()}>
+		{#snippet more()}
+			<PeerNotebooks />
+		{/snippet}
+	</NotebookList>
 	{#if isTrashShown()}
 		<TrashView />
 	{:else if open}
@@ -114,7 +137,7 @@
 				if (kind === 'image' || kind === 'attachment') void pickFilesAsCards(kind, after);
 			}}
 			{cardMenu}
-			menuItems={notebookMenu(open.notebook.id)}
+			menuItems={getOpenBackend().kind === 'local' ? notebookMenu(open.notebook.id) : []}
 		>
 			{#snippet cardBadge(card)}
 				<SourceBadge {card} />
@@ -124,6 +147,7 @@
 			<NotebookChatPanel
 				notebookId={open.notebook.id}
 				title={open.notebook.title}
+				peer={peerChat}
 				onclose={() => setChatOpen(false)}
 			/>
 		{:else}

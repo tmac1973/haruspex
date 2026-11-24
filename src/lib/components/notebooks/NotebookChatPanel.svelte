@@ -15,17 +15,20 @@
 		stopNotebookChat
 	} from '#lib/notebooks/notebookChat.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import type { PeerNotebookChat } from '#lib/notebooks/backend.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	interface Props {
 		notebookId: string;
 		title: string;
 		onclose: () => void;
+		/** Another computer's notebook: its chat runs there. */
+		peer?: PeerNotebookChat | null;
 	}
 
-	let { notebookId, title, onclose }: Props = $props();
+	let { notebookId, title, onclose, peer = null }: Props = $props();
 
-	const chat = $derived(getNotebookChat(notebookId));
+	const chat = $derived(peer ? peer.view : getNotebookChat(notebookId));
 	let draft = $state('');
 	/** Documents to send with the next message. */
 	let docs = $state<{ name: string; block: string }[]>([]);
@@ -34,7 +37,7 @@
 	let log = $state<HTMLDivElement | null>(null);
 
 	$effect(() => {
-		void loadNotebookChat(notebookId);
+		if (!peer) void loadNotebookChat(notebookId);
 	});
 
 	// Keep the newest message in view.
@@ -45,6 +48,10 @@
 	});
 
 	async function onFiles(paths: string[]) {
+		if (peer) {
+			showToast('Drop documents on the computer this notebook is on.', { kind: 'info' });
+			return;
+		}
 		for (const path of paths) {
 			const { name } = splitPath(path);
 			if (!readerFor(name)) {
@@ -71,7 +78,8 @@
 		const message = [text, ...docs.map((d) => d.block)].filter(Boolean).join('\n\n');
 		draft = '';
 		docs = [];
-		void sendNotebookChat(notebookId, message);
+		if (peer) void peer.send(message);
+		else void sendNotebookChat(notebookId, message);
 	}
 
 	/** A user message without its document text, as the panel shows it. */
@@ -92,7 +100,7 @@
 	<header>
 		<h3 title="Ask about {title}">Ask about this notebook</h3>
 		<div class="tools">
-			{#if chat.messages.length > 0 && !chat.busy}
+			{#if chat.messages.length > 0 && !chat.busy && !peer}
 				<button
 					class="mini"
 					onclick={() => void clearNotebookChat(notebookId)}
@@ -163,7 +171,12 @@
 				}
 			}}></textarea>
 		{#if chat.busy}
-			<button class="send stop" onclick={() => stopNotebookChat(notebookId)}>Stop</button>
+			<button
+				class="send stop"
+				onclick={() => (peer ? void peer.stop() : stopNotebookChat(notebookId))}
+			>
+				Stop
+			</button>
 		{:else}
 			<button class="send" onclick={send} disabled={reading > 0}>Send</button>
 		{/if}

@@ -57,6 +57,10 @@ A card an agent changed shows where the change came from, such as "From Chat: Bl
 
 If a card changed somewhere else while you were editing it, Haruspex reloads it and says so. What you typed stays in the editor, so you can copy it back in.
 
+## Notebooks on your other computers
+
+With a paired computer on (see `other-computers`), its notebooks are listed under its name and search looks in them too. Edit their text, tables and checklists, restore earlier versions, and use their chat (it runs there). Files up to 25 MB can be saved from them. Python, files, reordering and columns change only on that computer, and nothing is copied: they're there while it's on.
+
 ## Use them from your phone
 
 Settings → Remote control's page has a **Notebooks** tab: search and read every notebook, edit text, tables and checklists, and use a notebook's chat (**Ask**). Python, files and pictures are shown there but changed only here.
@@ -65,4 +69,4 @@ Settings → Remote control's page has a **Notebooks** tab: search and read ever
 
 - They aren't one long document: each card is edited on its own.
 - There are no folders; use pins, tags and search.
-- Notebooks aren't copied to your other computers.
+- Notebooks aren't copied or merged between computers.

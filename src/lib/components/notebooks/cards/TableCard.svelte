@@ -22,7 +22,7 @@
 		type ColumnType
 	} from '#lib/notebooks/columns.ts';
 	import { columnId, parseCsv } from '#lib/notebooks/csv.ts';
-	import { applyRows, setColumns } from '#lib/stores/notebooks.svelte.ts';
+	import { applyRows, loadRows, setColumns } from '#lib/stores/notebooks.svelte.ts';
 	import type { CardViewProps } from '#lib/notebooks/cardKinds.ts';
 	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
 
@@ -43,8 +43,7 @@
 			return;
 		}
 		const want = loadedPast;
-		void api
-			.getRows(card.id, PAGE, want)
+		void loadRows(card.id, PAGE, want)
 			.then((r) => (extra = r))
 			.catch((e) => console.warn('notebooks: reading more rows failed', e));
 	});

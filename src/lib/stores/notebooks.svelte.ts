@@ -19,6 +19,8 @@ import type {
 	RowOp
 } from '#lib/notebooks/api.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
+import { localBackend, onlyThere, type NotebookBackend } from '#lib/notebooks/backend.svelte.ts';
+import type { EngineClient } from '#lib/engine/client.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 let list = $state<NotebookSummary[]>([]);
@@ -30,6 +32,9 @@ let focusCard = $state<{ id: string; rowId?: string; at: number } | null>(null);
 let showTrash = $state(false);
 let trash = $state<NotebookTrash>({ notebooks: [], cards: [] });
 let tagFilter = $state<string | null>(null);
+/** Where the open notebook lives: here, or a paired computer. */
+let backend = $state.raw<NotebookBackend>(localBackend);
+let stopPeerWatch: (() => void) | null = null;
 
 export const getNotebookList = () => list;
 export const isNotebookListLoaded = () => listLoaded;
@@ -39,6 +44,14 @@ export const getFocusCard = () => focusCard;
 export const isTrashShown = () => showTrash;
 export const getTrash = () => trash;
 export const getTagFilter = () => tagFilter;
+export const getOpenBackend = () => backend;
+
+/** Refuse what only the computer the open notebook is on can do. */
+function here(able: boolean): boolean {
+	if (able) return true;
+	showToast(onlyThere(backend.peerName).message, { kind: 'info' });
+	return false;
+}
 
 export function setTagFilter(tag: string | null): void {
 	tagFilter = tag;
@@ -69,7 +82,7 @@ export async function loadNotebookList(): Promise<void> {
 async function reloadOpen(): Promise<void> {
 	if (!openId) return;
 	try {
-		open = await api.getNotebook(openId);
+		open = await backend.get(openId);
 	} catch (e) {
 		// Deleted elsewhere: close it.
 		console.warn('notebooks: open notebook is gone', e);
@@ -80,10 +93,32 @@ async function reloadOpen(): Promise<void> {
 
 /** Open a notebook, and optionally bring one of its cards (and row) into view. */
 export async function openNotebook(id: string, cardId?: string, rowId?: string): Promise<boolean> {
+	return openNotebookOn(localBackend, id, cardId, rowId);
+}
+
+/**
+ * Open a notebook on `be` (this computer, or a paired one). A paired
+ * computer's changes reach the open notebook through its events.
+ */
+export async function openNotebookOn(
+	be: NotebookBackend,
+	id: string,
+	cardId?: string,
+	rowId?: string,
+	client?: EngineClient
+): Promise<boolean> {
 	showTrash = false;
+	stopPeerWatch?.();
+	stopPeerWatch = null;
+	backend = be;
+	if (client) {
+		stopPeerWatch = client.onNotebookChanged((changed) => {
+			if (changed === openId && backend === be) void reloadOpen();
+		});
+	}
 	openId = id;
 	try {
-		open = await api.getNotebook(id);
+		open = await be.get(id);
 	} catch (e) {
 		console.warn('notebooks: open failed', e);
 		open = null;
@@ -99,6 +134,9 @@ export async function openNotebook(id: string, cardId?: string, rowId?: string):
 export function closeNotebook(): void {
 	open = null;
 	openId = null;
+	stopPeerWatch?.();
+	stopPeerWatch = null;
+	backend = localBackend;
 }
 
 export async function newNotebook(title: string, tags: string[] = []): Promise<string | null> {
@@ -117,6 +155,7 @@ export async function patchNotebook(
 	id: string,
 	patch: { title?: string; pinned?: boolean; tags?: string[] }
 ): Promise<void> {
+	if (id === openId && !here(backend.can.arrange)) return;
 	try {
 		await api.updateNotebook(id, patch);
 		await loadNotebookList();
@@ -127,6 +166,7 @@ export async function patchNotebook(
 }
 
 export async function trashNotebook(id: string): Promise<void> {
+	if (id === openId && !here(backend.can.trash)) return;
 	try {
 		await api.deleteNotebook(id);
 		if (id === openId) closeNotebook();
@@ -166,7 +206,7 @@ export async function addCard(
 ): Promise<NotebookCard | null> {
 	if (!openId) return null;
 	try {
-		const added = await api.addCard(openId, card, source, afterCardId);
+		const added = await backend.addCard(openId, card, source, afterCardId);
 		await reloadOpen();
 		focusCard = { id: added.id, at: Date.now() };
 		void loadNotebookList();
@@ -211,7 +251,7 @@ export function saveCard(
 	patch: { title?: string; body?: string; meta?: string },
 	source: NotebookSource = api.USER_SOURCE
 ): Promise<NotebookCard | null> {
-	return writeCard('Saving the card', () => api.updateCard(card.id, card.version, patch, source));
+	return writeCard('Saving the card', () => backend.updateCard(card, patch, source));
 }
 
 export function applyRows(
@@ -219,7 +259,7 @@ export function applyRows(
 	ops: RowOp[],
 	source: NotebookSource = api.USER_SOURCE
 ): Promise<NotebookCard | null> {
-	return writeCard('Saving the table', () => api.applyRows(card.id, card.version, ops, source));
+	return writeCard('Saving the table', () => backend.applyRows(card, ops, source));
 }
 
 export function setColumns(
@@ -227,15 +267,25 @@ export function setColumns(
 	columns: unknown[],
 	source: NotebookSource = api.USER_SOURCE
 ): Promise<NotebookCard | null> {
+	if (!here(backend.can.arrange)) return Promise.resolve(null);
 	return writeCard('Saving the columns', () =>
 		api.setColumns(card.id, card.version, columns, source)
 	);
 }
 
+/** All of a table's rows from `offset`, wherever the open notebook is. */
+export function loadRows(
+	cardId: string,
+	offset: number,
+	limit: number
+): Promise<api.NotebookRow[]> {
+	return backend.rows(cardId, offset, limit);
+}
+
 /** Put a card back as revision `revisionId` had it. */
 export async function restoreRevision(cardId: string, revisionId: number): Promise<boolean> {
 	try {
-		const card = await api.rollbackCard(cardId, revisionId, api.USER_SOURCE);
+		const card = await backend.rollback(cardId, revisionId, api.USER_SOURCE);
 		replaceCard(card);
 		return true;
 	} catch (e) {
@@ -246,6 +296,7 @@ export async function restoreRevision(cardId: string, revisionId: number): Promi
 
 /** Put a card right after `afterCardId`, or first when null. */
 export async function moveCard(cardId: string, afterCardId: string | null): Promise<void> {
+	if (!here(backend.can.arrange)) return;
 	try {
 		await api.moveCard(cardId, afterCardId);
 		await reloadOpen();
@@ -268,12 +319,14 @@ export async function nudgeCard(cardId: string, delta: -1 | 1): Promise<void> {
 
 export async function trashCard(cardId: string): Promise<void> {
 	try {
-		await api.deleteCard(cardId);
+		await backend.deleteCard(cardId);
 		await reloadOpen();
-		showToast('Card moved to Trash.', {
-			actionLabel: 'Undo',
-			onAction: () => void restoreCardFromTrash(cardId)
-		});
+		showToast(
+			'Card moved to Trash.',
+			backend.can.trash
+				? { actionLabel: 'Undo', onAction: () => void restoreCardFromTrash(cardId) }
+				: {}
+		);
 	} catch (e) {
 		fail('Deleting the card', e);
 	}
@@ -336,7 +389,7 @@ export function onNotebookChanged(fn: ChangeListener): () => void {
  * open notebook and the list refresh, and listeners hear of it.
  */
 export function emitNotebookChanged(notebookId: string, cardIds: string[] = []): void {
-	if (notebookId === openId) void reloadOpen();
+	if (notebookId === openId && backend.kind === 'local') void reloadOpen();
 	if (listLoaded) void loadNotebookList();
 	for (const fn of listeners) {
 		try {

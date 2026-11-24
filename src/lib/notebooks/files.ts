@@ -3,7 +3,9 @@
  * notebook file store, and added as an image card (pictures) or an
  * attachment card (anything else).
  */
+import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
+import type { NotebookBackend } from '#lib/notebooks/backend.svelte.ts';
 import * as api from '#lib/notebooks/api.ts';
 import type { NotebookCard, NotebookFile, NotebookSource } from '#lib/notebooks/api.ts';
 import { addCard } from '#lib/stores/notebooks.svelte.ts';
@@ -79,12 +81,19 @@ export async function pickFilesAsCards(kind: 'image' | 'attachment', after: stri
 	await addFilesAsCards(paths, after, api.USER_SOURCE, kind);
 }
 
-/** "Save a copy…" for a kept file. */
-export async function saveFileCopy(file: FileMeta): Promise<void> {
+/** "Save a copy…" for a kept file (another computer's: its bytes, up to 25 MB). */
+export async function saveFileCopy(file: FileMeta, be?: NotebookBackend): Promise<void> {
 	const path = await save({ defaultPath: file.name });
 	if (!path) return;
 	try {
-		await api.saveFileAs(file.hash, path);
+		if (be && be.kind !== 'local') {
+			const bytes = await be.fileBytes(file.hash);
+			await invoke('notebook_export_bytes', bytes, {
+				headers: { 'x-path': encodeURIComponent(path) }
+			});
+		} else {
+			await api.saveFileAs(file.hash, path);
+		}
 		showToast('Saved.', { kind: 'success' });
 	} catch (e) {
 		showToast(errMessage(e), { kind: 'error' });

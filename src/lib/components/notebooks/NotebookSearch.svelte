@@ -5,7 +5,9 @@
 	 */
 	import * as api from '#lib/notebooks/api.ts';
 	import type { NotebookSearchHit } from '#lib/notebooks/api.ts';
-	import { openNotebook } from '#lib/stores/notebooks.svelte.ts';
+	import { openNotebook, openNotebookOn } from '#lib/stores/notebooks.svelte.ts';
+	import { peerBackend } from '#lib/notebooks/backend.svelte.ts';
+	import { peerViews, type PeerView } from '#lib/peers/store.svelte.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 
 	interface Props {
@@ -16,7 +18,9 @@
 	let { active = $bindable(false) }: Props = $props();
 
 	let query = $state('');
-	let hits = $state<NotebookSearchHit[]>([]);
+	/** A hit, and the paired computer it's on (none: this one). */
+	type Hit = NotebookSearchHit & { peer?: PeerView };
+	let hits = $state<Hit[]>([]);
 	let searching = $state(false);
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let seq = 0;
@@ -36,8 +40,17 @@
 		const mine = ++seq;
 		searching = true;
 		try {
-			const found = await api.search(q, getSettings().notebooks?.semanticSearch ?? false, 50);
-			if (mine === seq) hits = found;
+			const local = await api.search(q, getSettings().notebooks?.semanticSearch ?? false, 50);
+			if (mine === seq) hits = local;
+			// Paired computers' notebooks too, as each answers.
+			for (const peer of peerViews().filter((p) => p.online && !p.client.notebooksOff)) {
+				void peerBackend(peer.id, peer.config.name, peer.client)
+					.search(q, false)
+					.then((found) => {
+						if (mine === seq) hits = [...hits, ...found.map((h) => ({ ...h, peer }))];
+					})
+					.catch((e) => console.warn('notebook search on another computer', e));
+			}
 		} catch (e) {
 			console.warn('notebook search failed', e);
 			if (mine === seq) hits = [];
@@ -54,6 +67,22 @@
 			.map((p) =>
 				p.startsWith('[[') ? { text: p.slice(2, -2), bold: true } : { text: p, bold: false }
 			);
+	}
+
+	function openHit(h: Hit) {
+		const card = h.card_id ?? undefined;
+		const row = h.row_id ?? undefined;
+		if (h.peer) {
+			void openNotebookOn(
+				peerBackend(h.peer.id, h.peer.config.name, h.peer.client),
+				h.notebook_id,
+				card,
+				row,
+				h.peer.client
+			);
+		} else {
+			void openNotebook(h.notebook_id, card, row);
+		}
 	}
 
 	function clear() {
@@ -84,10 +113,7 @@
 	<ul class="hits" aria-label="Search results">
 		{#each hits as h, i (i)}
 			<li>
-				<button
-					onclick={() =>
-						void openNotebook(h.notebook_id, h.card_id ?? undefined, h.row_id ?? undefined)}
-				>
+				<button onclick={() => openHit(h)}>
 					<span class="where">
 						{h.notebook_title}{#if h.card_title}<span class="card"> · {h.card_title}</span>{/if}
 					</span>

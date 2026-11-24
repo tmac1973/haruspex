@@ -7,7 +7,7 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import * as api from '#lib/notebooks/api.ts';
 	import { fileMeta, formatSize, openFileCard, saveFileCopy } from '#lib/notebooks/files.ts';
-	import { saveCard } from '#lib/stores/notebooks.svelte.ts';
+	import { getOpenBackend, saveCard } from '#lib/stores/notebooks.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import type { CardViewProps } from '#lib/notebooks/cardKinds.ts';
@@ -15,7 +15,8 @@
 	let { card, readonly = false }: CardViewProps = $props();
 
 	const file = $derived(fileMeta(card));
-	const isPdf = $derived(file?.mime === 'application/pdf');
+	const local = $derived(getOpenBackend().kind === 'local');
+	const isPdf = $derived(local && file?.mime === 'application/pdf');
 
 	let preview = $state<string | null>(null);
 	let previewing = $state(false);
@@ -71,19 +72,26 @@
 			<span class="size">{formatSize(file.size)}</span>
 		</div>
 		<div class="actions">
+			{#if local}
+				<button
+					onclick={() => void openFileCard(file)}
+					title="Open it in the app your computer uses for this type"
+				>
+					Open
+				</button>
+			{/if}
 			<button
-				onclick={() => void openFileCard(file)}
-				title="Open it in the app your computer uses for this type"
+				onclick={() => void saveFileCopy(file, getOpenBackend())}
+				title={local ? undefined : 'Files over 25 MB stay on the other computer'}
 			>
-				Open
+				Save a copy…
 			</button>
-			<button onclick={() => void saveFileCopy(file)}>Save a copy…</button>
 			{#if isPdf}
 				<button onclick={() => void togglePreview()} disabled={previewing}>
 					{preview ? 'Hide preview' : previewing ? 'Drawing…' : 'Preview'}
 				</button>
 			{/if}
-			{#if !readonly}
+			{#if !readonly && local}
 				<button
 					onclick={() => void replace()}
 					title="Put another file here; the old one stays in History"
