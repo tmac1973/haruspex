@@ -65,3 +65,28 @@ test('search finds a card and opens its notebook', async ({ app }) => {
 	await app.getByRole('list', { name: 'Search results' }).getByRole('button').first().click();
 	await expect(app.getByLabel('Notebook title')).toHaveValue('Trips');
 });
+
+test('a table in a Chat answer saves to a new notebook', async ({ app }) => {
+	await useScenario('chat-table');
+	const input = app.getByPlaceholder(/Type a message/);
+	await input.fill('two speakers please');
+	await input.press('Enter');
+	const table = app.locator('.md-table').first();
+	await expect(table.getByText('JBL Flip 6')).toBeVisible();
+
+	await table.hover();
+	await table.getByRole('button', { name: /Save to notebook/ }).click();
+	await app.getByRole('button', { name: '+ New notebook…' }).click();
+	const name = app.getByRole('dialog').getByLabel('New notebook title');
+	await name.fill('Speakers');
+	await name.press('Enter');
+	await app
+		.locator('.toast', { hasText: 'Added to Speakers' })
+		.getByRole('button', { name: 'Open' })
+		.click();
+
+	await expect(app.getByLabel('Notebook title')).toHaveValue('Speakers');
+	await expect(app.getByRole('button', { name: 'Soundcore Motion 300' })).toBeVisible();
+	await expect(app.getByRole('link', { name: 'example.com/b' })).toBeVisible();
+	await expect(app.getByText('$79.99')).toBeVisible();
+});

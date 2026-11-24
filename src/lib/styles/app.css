@@ -772,6 +772,44 @@ body:not(.shell-tab-active) .code-block .run-btn {
 	text-align: left;
 }
 
+/* A rendered table's "Save to notebook" button: shown on hover. */
+.md-table {
+	position: relative;
+}
+
+.md-table .table-save {
+	position: absolute;
+	top: -10px;
+	right: 0;
+	z-index: 1;
+	opacity: 0;
+	padding: 1px 8px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	font-size: 0.72rem;
+	cursor: pointer;
+	transition: opacity 0.15s;
+}
+
+.md-table:hover .table-save,
+.md-table .table-save:focus-visible {
+	opacity: 1;
+}
+
+.md-table .table-save:hover {
+	color: var(--accent);
+	border-color: var(--accent);
+}
+
+/* Not in a notebook's own cards, and not with the Notebooks tab off. */
+.notebooks .md-table .table-save,
+body[data-notebooks-off] .table-save,
+body[data-notebooks-off] .notebook-save {
+	display: none;
+}
+
 /* A `notebook:` link: a button (markdownActions routes it) that reads as a link. */
 .notebook-link {
 	display: inline;

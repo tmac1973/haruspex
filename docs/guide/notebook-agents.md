@@ -1,6 +1,6 @@
 ---
 title: Notebook agents
-description: Having agents make, read and change notebooks — a notebook's own chat, asking from Chat, Shell or Code, and documents dropped into the chat.
+description: Having agents make, read and change notebooks — a notebook's own chat, asking from Chat, Shell or Code, documents dropped into the chat, and saving answers and tables to a notebook.
 ---
 
 # Notebook agents
@@ -14,6 +14,10 @@ The panel on the right is the notebook's own chat, kept with it: "organize these
 ## Ask an agent to make or change a notebook
 
 In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). Agents only see notebooks when asked.
+
+## Save from a chat
+
+In Chat, Shell and Code, **📓** under an answer saves it as a text card, and **📓 Save to notebook** on a table (shown on hover) saves it as a table card, with link cells kept as links. Right-click text you've selected in an answer for **Add selection to notebook…**. Each asks which notebook, or makes a new one; the card links back to the conversation.
 
 ## What agents don't do with notebooks
 

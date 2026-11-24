@@ -62,6 +62,11 @@ export function handleMarkdownAction(event: MouseEvent): void {
 		case 'shell-run':
 			document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: codeFor(btn) }));
 			break;
+		case 'notebook-add-table':
+			void import('#lib/notebooks/capture.ts')
+				.then((m) => m.captureTable(btn))
+				.catch((e) => console.warn('Saving the table failed:', e));
+			break;
 		case 'notebook-open': {
 			const id = btn.dataset.notebook;
 			const card = btn.dataset.card;

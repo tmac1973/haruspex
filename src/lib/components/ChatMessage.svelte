@@ -7,6 +7,7 @@
 	import SpeakerButton from '#lib/components/SpeakerButton.svelte';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
+	import { isWebClient } from '#lib/buildFlags.ts';
 	import { formatDuration } from '#lib/utils/format.ts';
 	import { messageText, type ChatMessage, type MessageContentPart } from '#lib/api.ts';
 	import { typedText } from '#lib/skills/content.ts';
@@ -183,6 +184,20 @@
 			<button class="icon-btn" title="Copy to clipboard" onclick={() => copy.copy(textContent)}>
 				{copy.state === 'copied' ? '\u2705' : '\u{1F4CB}'}
 			</button>
+			{#if !isWebClient}
+				<button
+					class="icon-btn notebook-save"
+					title="Save to a notebook"
+					onclick={(e) => {
+						const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+						void import('#lib/notebooks/capture.ts').then((m) =>
+							m.captureText(channels.answer, { x: r.left, y: r.bottom })
+						);
+					}}
+				>
+					📓
+				</button>
+			{/if}
 			{#if onFork}
 				{@render forkButton()}
 			{/if}

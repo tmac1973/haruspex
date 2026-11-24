@@ -55,6 +55,8 @@
 	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
 	import { startCardWatch } from '#lib/home/cardWatch.svelte.ts';
 	import { startNotebookIndexer } from '#lib/notebooks/indexer.svelte.ts';
+	import NotebookPickerHost from '#lib/components/notebooks/NotebookPickerHost.svelte';
+	import SelectionMenu from '#lib/components/notebooks/SelectionMenu.svelte';
 	import { startFetchedCards } from '#lib/home/fetchedCards.svelte.ts';
 	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
 	import {
@@ -274,6 +276,14 @@
 			e.preventDefault();
 		}
 	}
+
+	// "Save to notebook" buttons hide while the Notebooks tab is off or lean
+	// mode is on (CSS keys on this attribute, so rendered answers needn't change).
+	$effect(() => {
+		const s = getLiveSettings();
+		const off = !s.notebooksTab || s.leanMode;
+		document.body.toggleAttribute('data-notebooks-off', off);
+	});
 
 	/**
 	 * Suppress the webview's right-click context menu on links. WebKitGTK's
@@ -955,6 +965,8 @@
 
 <!-- One picture viewer per window, for any tab or modal that enlarges one. -->
 <ImageViewerHost />
+<NotebookPickerHost />
+<SelectionMenu />
 
 <!-- Toast host lives outside the detached-shell branch: each webview
      window has its own store instance, and errors surface in detached

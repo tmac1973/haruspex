@@ -1,0 +1,8 @@
+[
+	{
+		"match": {},
+		"reply": {
+			"content": "Here are two:\n\n| Speaker | Price | Retailer |\n|---|---|---|\n| JBL Flip 6 | $129 | [example.com/b](https://example.com/b) |\n| Soundcore Motion 300 | $79.99 | [example.com/a](https://example.com/a) |"
+		}
+	}
+]
