@@ -7,6 +7,9 @@
 	import NotebookList from '#lib/components/notebooks/NotebookList.svelte';
 	import NotebookView from '#lib/components/notebooks/NotebookView.svelte';
 	import TrashView from '#lib/components/notebooks/TrashView.svelte';
+	import SourceBadge from '#lib/components/notebooks/SourceBadge.svelte';
+	import CardHistory from '#lib/components/notebooks/CardHistory.svelte';
+	import type { NotebookCard } from '#lib/notebooks/api.ts';
 	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
 	import {
 		getOpenNotebook,
@@ -20,6 +23,9 @@
 	});
 
 	const open = $derived(getOpenNotebook());
+
+	/** The card whose History is showing. */
+	let historyFor = $state<NotebookCard | null>(null);
 </script>
 
 <div class="notebooks">
@@ -32,13 +38,21 @@
 			onpickkind={(kind, after) => {
 				if (kind === 'image' || kind === 'attachment') void pickFilesAsCards(kind, after);
 			}}
-		/>
+			cardMenu={(card) => [{ label: 'History…', run: () => (historyFor = card) }]}
+		>
+			{#snippet cardBadge(card)}
+				<SourceBadge {card} />
+			{/snippet}
+		</NotebookView>
 	{:else}
 		<div class="none">
 			<p>Pick a notebook, or make one with + New.</p>
 		</div>
 	{/if}
 </div>
+{#if historyFor}
+	<CardHistory card={historyFor} onclose={() => (historyFor = null)} />
+{/if}
 
 <style>
 	.notebooks {

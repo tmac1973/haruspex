@@ -232,6 +232,18 @@ export function setColumns(
 	);
 }
 
+/** Put a card back as revision `revisionId` had it. */
+export async function restoreRevision(cardId: string, revisionId: number): Promise<boolean> {
+	try {
+		const card = await api.rollbackCard(cardId, revisionId, api.USER_SOURCE);
+		replaceCard(card);
+		return true;
+	} catch (e) {
+		fail('Restoring that version', e);
+		return false;
+	}
+}
+
 /** Put a card right after `afterCardId`, or first when null. */
 export async function moveCard(cardId: string, afterCardId: string | null): Promise<void> {
 	try {

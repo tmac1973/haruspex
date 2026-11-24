@@ -37,6 +37,10 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 A link written `[speakers](notebook:<id>)` opens that notebook in this tab, and `notebook:<id>#<card>` scrolls to one of its cards. Agents use these links when they tell you about a notebook they made.
 
+## Undo an agent's change
+
+A card an agent changed shows where the change came from, such as "From Chat: Bluetooth speakers"; click it to open that conversation, Code session or job run. **⋯ → History…** lists the card's earlier versions: pick one to see it, then **Restore this version**. Changes from one source within two minutes share one version, and a card keeps its last 50. Restoring is itself a change, so it can be undone the same way.
+
 ## Get something back from Trash
 
 **⋯ → Delete** on a card, or **⋯ → Delete notebook**, moves it to Trash; the message that appears has **Undo**. **🗑 Trash** at the bottom of the list shows everything deleted in the last 30 days: **Restore** puts it back, **Delete forever** removes it now. After 30 days it is removed on the next start.
