@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Haruspex",
-  "version": "0.2.23",
+  "version": "0.2.24",
   "identifier": "com.haruspex.app",
   "build": {
     "frontendDist": "../build",
@@ -83,14 +83,18 @@
         "bundleMediaFramework": true
       },
       "deb": {
-        "depends": ["libayatana-appindicator3-1"],
+        "depends": [
+          "libayatana-appindicator3-1"
+        ],
         "files": {
           "/usr/share/metainfo/com.haruspex.app.metainfo.xml": "linux/com.haruspex.app.metainfo.xml"
         },
         "desktopTemplate": "linux/main.desktop"
       },
       "rpm": {
-        "depends": ["libayatana-appindicator-gtk3"],
+        "depends": [
+          "libayatana-appindicator-gtk3"
+        ],
         "files": {
           "/usr/share/metainfo/com.haruspex.app.metainfo.xml": "linux/com.haruspex.app.metainfo.xml"
         },

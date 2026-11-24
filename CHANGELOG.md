@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.2.24](https://github.com/tmac1973/haruspex/compare/v0.2.23...v0.2.24) (2026-11-24)
+
+
+### Features
+
+* **camera:** judge camera entries, check rooms against a reference, and email alerts ([#1154](https://github.com/tmac1973/haruspex/issues/1154)) ([a3afa26](https://github.com/tmac1973/haruspex/commit/a3afa26fe46d81fc4af9fa9e5df2bdde1f40764a))
+* **db:** store research-by-email requests ([#1161](https://github.com/tmac1973/haruspex/issues/1161)) ([cb32edd](https://github.com/tmac1973/haruspex/commit/cb32edde3528e7e46196135ee26adc756c28054f))
+* **desktop:** keep running in the tray and start at login ([#1166](https://github.com/tmac1973/haruspex/issues/1166)) ([46ac895](https://github.com/tmac1973/haruspex/commit/46ac8956830fcc4b383c13a3a5a90a3677598406))
+* **editor:** stream media over loopback, a video tab, renders play in place ([#1189](https://github.com/tmac1973/haruspex/issues/1189)) ([535d75e](https://github.com/tmac1973/haruspex/commit/535d75ea38220912a9c79d8b1617c09da797ac29)), closes [#755](https://github.com/tmac1973/haruspex/issues/755)
+* **editor:** word-timed transcript viewer with an edit list ([#1190](https://github.com/tmac1973/haruspex/issues/1190)) ([463e8b4](https://github.com/tmac1973/haruspex/commit/463e8b45ae1346a9c3d9cca224262bccc89a15e6))
+* **email:** make the research claim-move a lock between computers ([#1171](https://github.com/tmac1973/haruspex/issues/1171)) ([667ab68](https://github.com/tmac1973/haruspex/commit/667ab6861419a66a76bf256023f7789fda3845b6)), closes [#1164](https://github.com/tmac1973/haruspex/issues/1164)
+* **email:** scan the inbox for request emails, check Sent and move messages ([#1159](https://github.com/tmac1973/haruspex/issues/1159)) ([31853b3](https://github.com/tmac1973/haruspex/commit/31853b3b13540d8b501669380f979388be8a6e89))
+* **email:** send threaded HTML replies to the account's own address ([#1160](https://github.com/tmac1973/haruspex/issues/1160)) ([3411bae](https://github.com/tmac1973/haruspex/commit/3411bae818beb5198175d56250e33cbc32a7103b))
+* **email:** watch inboxes with IMAP IDLE for research requests ([#1165](https://github.com/tmac1973/haruspex/issues/1165)) ([6c814ed](https://github.com/tmac1973/haruspex/commit/6c814ed1082da284370ac69751b448f018c13bb4))
+* **home:** add an Email requests card for research by email ([#1163](https://github.com/tmac1973/haruspex/issues/1163)) ([2ff3391](https://github.com/tmac1973/haruspex/commit/2ff33919cee05b39c75055a7a7c0410499d1b4d5))
+* **jobs:** answer research-by-email requests as they arrive ([#1169](https://github.com/tmac1973/haruspex/issues/1169)) ([4afffe1](https://github.com/tmac1973/haruspex/commit/4afffe1647231801fc7aecfd869b05050b4f438c))
+* **jobs:** let Chat and the Code tab propose a job ([#1170](https://github.com/tmac1973/haruspex/issues/1170)) ([32a74a9](https://github.com/tmac1973/haruspex/commit/32a74a96d89468402f908532fb0188dd12b2eadf)), closes [#1168](https://github.com/tmac1973/haruspex/issues/1168)
+* **jobs:** research requests sent by email and reply in the thread ([#1162](https://github.com/tmac1973/haruspex/issues/1162)) ([62ae0c4](https://github.com/tmac1973/haruspex/commit/62ae0c4944739e34f87dd93592bfbd5997df51f4))
+* **jobs:** setting for which job runs keep the computer awake ([#1198](https://github.com/tmac1973/haruspex/issues/1198)) ([12d7236](https://github.com/tmac1973/haruspex/commit/12d72365adc896fc4dba776d3b361ebbe60df262))
+* **jobs:** video sequence generation with clip chaining and resume ([#1182](https://github.com/tmac1973/haruspex/issues/1182)) ([5bc55f5](https://github.com/tmac1973/haruspex/commit/5bc55f5a86e09a84c79eab142cce701c153b79ca))
+* **jobs:** Video sequence job — interview and a validated spec ([#1180](https://github.com/tmac1973/haruspex/issues/1180)) ([5e1f4d1](https://github.com/tmac1973/haruspex/commit/5e1f4d1a581e5f7c31f1fe2a9e15df237ee17b30))
+* **jobs:** Video sequence keyframe stills ([#1181](https://github.com/tmac1973/haruspex/issues/1181)) ([629b960](https://github.com/tmac1973/haruspex/commit/629b960bb72d3750dbaee590d71c192806764b95))
+* **jobs:** video sequence sound, assembly, render and report ([#1184](https://github.com/tmac1973/haruspex/issues/1184)) ([033420e](https://github.com/tmac1973/haruspex/commit/033420ece77e35d841a71fbfaf75d96e90d82ac1))
+* **jobs:** video sequence vision checks on seams and drift ([#1183](https://github.com/tmac1973/haruspex/issues/1183)) ([f933418](https://github.com/tmac1973/haruspex/commit/f9334183bbc48a1d34165591c3006fb3b15b30e1))
+* **sequence:** spec types, validation, clip plan and run estimate ([#1179](https://github.com/tmac1973/haruspex/issues/1179)) ([6aeee71](https://github.com/tmac1973/haruspex/commit/6aeee71c697dc2517c53ebff42798349849c3751))
+* **skills:** fix-speech applies transcript edits with a saved voice ([#1192](https://github.com/tmac1973/haruspex/issues/1192)) ([dca9fcf](https://github.com/tmac1973/haruspex/commit/dca9fcf5977481ccb00867157098dea67e6787f9))
+* **skills:** save-my-voice, clean-up-talk and make-sequence, and saved voices in narrate ([#1195](https://github.com/tmac1973/haruspex/issues/1195)) ([d8a4f0e](https://github.com/tmac1973/haruspex/commit/d8a4f0ea4b4ad85aef2cfc8232a50bda0741dffb)), closes [#1188](https://github.com/tmac1973/haruspex/issues/1188)
+* **speech:** llama.cpp /tts speech engine and consent-gated saved voices ([#1187](https://github.com/tmac1973/haruspex/issues/1187)) ([d8df078](https://github.com/tmac1973/haruspex/commit/d8df07890eafbda5dc1f5f94bcfbc1db8c60e597))
+* **speech:** word-level timestamps and transcribe any audio file ([#1186](https://github.com/tmac1973/haruspex/issues/1186)) ([834b91d](https://github.com/tmac1973/haruspex/commit/834b91d699c18fa0a162143199cf57fcfce19f56))
+* **ui:** name the step-limit setting when a turn stops at its limit ([#1149](https://github.com/tmac1973/haruspex/issues/1149)) ([e2f5ec1](https://github.com/tmac1973/haruspex/commit/e2f5ec18c464e2009d16fdf7b964e3e9ea3a2083))
+* **video:** bundle melt and add shotcut projects ([#1141](https://github.com/tmac1973/haruspex/issues/1141)) ([5202e0b](https://github.com/tmac1973/haruspex/commit/5202e0b0d9e37b616dc5c83c801c6b183d279991))
+* **video:** full-size stills, end_image for generated clips, report clip sound ([#1172](https://github.com/tmac1973/haruspex/issues/1172)) ([722d64e](https://github.com/tmac1973/haruspex/commit/722d64e8f8f976722cb8facf8a37d8a33c26f24a))
+* **video:** gain over a range of a clip's sound, and hold frames ([#1175](https://github.com/tmac1973/haruspex/issues/1175)) ([373805c](https://github.com/tmac1973/haruspex/commit/373805cc703af9de45896d7fc32c70ca05d5228f))
+* **video:** per-clip fit and crop, frame-accurate trims, 720p24 format ([#1174](https://github.com/tmac1973/haruspex/issues/1174)) ([9867819](https://github.com/tmac1973/haruspex/commit/98678190ee32c3956eda74f24046147ccca99bfb))
+* **video:** place a voiceover or music bed under the picture with video_cut's audio ([#1150](https://github.com/tmac1973/haruspex/issues/1150)) ([f0ecc1f](https://github.com/tmac1973/haruspex/commit/f0ecc1f7692af16ed7016a7b05ab359088a800f0)), closes [#1147](https://github.com/tmac1973/haruspex/issues/1147)
+* **video:** play a main-track clip faster or slower ([#1176](https://github.com/tmac1973/haruspex/issues/1176)) ([42f01a1](https://github.com/tmac1973/haruspex/commit/42f01a19b6f466bab1a1c915b835d31e0c9000c3))
+* **video:** speaking clips with Wan2.2 S2V in generate_video ([#1193](https://github.com/tmac1973/haruspex/issues/1193)) ([e09fd30](https://github.com/tmac1973/haruspex/commit/e09fd30e8fef3d1cb194d04e072a24564b2bf277))
+* **video:** speaking sections in the Video sequence job ([#1194](https://github.com/tmac1973/haruspex/issues/1194)) ([8467e08](https://github.com/tmac1973/haruspex/commit/8467e080c42ff3f3dd3edf6c8f208ee83a98e4f1))
+
+
+### Bug Fixes
+
+* audit quick wins ([#1203](https://github.com/tmac1973/haruspex/issues/1203)) ([7f76706](https://github.com/tmac1973/haruspex/commit/7f76706508cf07c5d2416efce51e702601d58034))
+* **background:** quote the Linux autostart entry and point it at the current AppImage ([#1217](https://github.com/tmac1973/haruspex/issues/1217)) ([78dbde8](https://github.com/tmac1973/haruspex/commit/78dbde83c0de66ba84477a31206caec733ea5ecb))
+* **camera:** room checks tolerate a slightly shifted home, and pictures open larger ([#1156](https://github.com/tmac1973/haruspex/issues/1156)) ([8a7e9fe](https://github.com/tmac1973/haruspex/commit/8a7e9feee20c96a01c19f4ee212e1fecb5785611))
+* clippy and the melt tests on the Windows runner ([#1211](https://github.com/tmac1973/haruspex/issues/1211)) ([5306ce8](https://github.com/tmac1973/haruspex/commit/5306ce811a5451e201603fb806297db45b2c8e3f))
+* consistency items from the audit ([#1205](https://github.com/tmac1973/haruspex/issues/1205)) ([4fe7ed3](https://github.com/tmac1973/haruspex/commit/4fe7ed3c0c4214b9a004b984dad3af9440bb5060))
+* **deps:** pin wdio back to 10.1 so stable distro node can build ([#1213](https://github.com/tmac1973/haruspex/issues/1213)) ([32bd2ff](https://github.com/tmac1973/haruspex/commit/32bd2ff8a6bcb1b85efd5448e43ac87338636da6))
+* **deps:** update lettre, cookie and url for RustSec advisories ([#1201](https://github.com/tmac1973/haruspex/issues/1201)) ([281bd6c](https://github.com/tmac1973/haruspex/commit/281bd6c042a75d58416ee7c06dc339979ec8e7ba))
+* **dev:** make dev fetches the media bundle with fetch-media.sh ([#1142](https://github.com/tmac1973/haruspex/issues/1142)) ([b890bb8](https://github.com/tmac1973/haruspex/commit/b890bb888271216d298d36dcb0fa4c042b4e8c1a))
+* first-launch instance id, and test harness gaps from the release test ([#1216](https://github.com/tmac1973/haruspex/issues/1216)) ([f6fe6b3](https://github.com/tmac1973/haruspex/commit/f6fe6b32d530d244984fbb5399fa161d81818687))
+* **jobs:** a newer draft replaces an untouched one without asking ([#1220](https://github.com/tmac1973/haruspex/issues/1220)) ([235ded8](https://github.com/tmac1973/haruspex/commit/235ded8b93b9b4e3decc9759a51fc6a09b84c4eb))
+* **jobs:** wait for a video model that can't start, and match the project's frame rate ([#1185](https://github.com/tmac1973/haruspex/issues/1185)) ([7caeadf](https://github.com/tmac1973/haruspex/commit/7caeadfe11e1e593462d73190dceb4f99820a359))
+* **mcp:** stop a second launch reaping the first one's live servers ([#1140](https://github.com/tmac1973/haruspex/issues/1140)) ([23e1349](https://github.com/tmac1973/haruspex/commit/23e13493e22d2db81bdd6f278410a9f327dec2c2))
+* **memory:** check for the embedding model at startup ([#1191](https://github.com/tmac1973/haruspex/issues/1191)) ([284d407](https://github.com/tmac1973/haruspex/commit/284d40718d58bb7127da98e5763dfb82bc06382f))
+* **pages:** deploy in its own job so it finds the uploaded artifact ([#1218](https://github.com/tmac1973/haruspex/issues/1218)) ([426d5b0](https://github.com/tmac1973/haruspex/commit/426d5b02692fe75fb447871838915c598f22a511))
+* **remote:** settings.get marks its secret fields instead of guessing ([#1207](https://github.com/tmac1973/haruspex/issues/1207)) ([42999e7](https://github.com/tmac1973/haruspex/commit/42999e7a7dc812fa96fc240de75e28640ddf43f9))
+* **settings:** say what the speech engine and saved voices are for ([#1199](https://github.com/tmac1973/haruspex/issues/1199)) ([e55a67c](https://github.com/tmac1973/haruspex/commit/e55a67c60b351d4e30b95d88b73eed5aa3deeca8))
+* **skills:** save-my-voice trusts the consent question ([#1196](https://github.com/tmac1973/haruspex/issues/1196)) ([4b7e7e5](https://github.com/tmac1973/haruspex/commit/4b7e7e5f3776b05c63b37f6d034b6a416383745d))
+* **skills:** write and read AGENTS.md in a project folder that isn't a git repo ([#1155](https://github.com/tmac1973/haruspex/issues/1155)) ([fc0a5b9](https://github.com/tmac1973/haruspex/commit/fc0a5b990009398c7d1e29b1d8095e74bb0bbb61))
+* **speech:** join a word whisper gives in pieces ([#1197](https://github.com/tmac1973/haruspex/issues/1197)) ([435f977](https://github.com/tmac1973/haruspex/commit/435f9776ae2e6817ada7618b8c711a4f8d6bc463))
+* **tasks:** label task notices, and hold them after a stop or the turn limit ([#1148](https://github.com/tmac1973/haruspex/issues/1148)) ([f53425b](https://github.com/tmac1973/haruspex/commit/f53425beacf3c5135b7d0e5ef6e33b0bfcd3311f))
+* **video:** refuse a thumbnail title instead of ignoring it ([#1152](https://github.com/tmac1973/haruspex/issues/1152)) ([1e60a44](https://github.com/tmac1973/haruspex/commit/1e60a447ec32c18a1686efd5c9060cb23b908fe1)), closes [#1147](https://github.com/tmac1973/haruspex/issues/1147)
+* **video:** set Kdenlive in the two ignored real-tools tests ([#1219](https://github.com/tmac1973/haruspex/issues/1219)) ([ff0f2ea](https://github.com/tmac1973/haruspex/commit/ff0f2ea1c1c97d0c1b75504c8fce8edc93dc9370)), closes [#1178](https://github.com/tmac1973/haruspex/issues/1178)
+
+
+### Code Refactoring
+
+* shared helpers from the [#1202](https://github.com/tmac1973/haruspex/issues/1202) audit ([#1204](https://github.com/tmac1973/haruspex/issues/1204)) ([73fca84](https://github.com/tmac1973/haruspex/commit/73fca841953e19768437643289bf59d304c29a92))
+
+
+### Documentation
+
+* add a Things you can do showcase to the website ([#1209](https://github.com/tmac1973/haruspex/issues/1209)) ([392dbe0](https://github.com/tmac1973/haruspex/commit/392dbe01d74015bdbae2533e650b478023c19635))
+* **plan:** camera alerts plan for judging events, room checks and email alerts ([#1146](https://github.com/tmac1973/haruspex/issues/1146)) ([082c9a7](https://github.com/tmac1973/haruspex/commit/082c9a79a87eb511dc6d163ee1e1d22a4fb4e7c7))
+* **plan:** long generated videos and speech replacement ([#1167](https://github.com/tmac1973/haruspex/issues/1167)) ([b5c1518](https://github.com/tmac1973/haruspex/commit/b5c15187446034f7fed9638adad0d757abddea49))
+* **plan:** research by email ([#1158](https://github.com/tmac1973/haruspex/issues/1158)) ([5b13117](https://github.com/tmac1973/haruspex/commit/5b13117c912557a4526de73969345c6090ea5d04))
+* **plan:** video sequence follow-ups the plan PR missed ([#1177](https://github.com/tmac1973/haruspex/issues/1177)) ([695b9fb](https://github.com/tmac1973/haruspex/commit/695b9fb4eba95ef1a633fcf48d38456bdc3cb900))
+
 ## [0.2.23](https://github.com/tmac1973/haruspex/compare/v0.2.22...v0.2.23) (2026-11-20)
 
 
