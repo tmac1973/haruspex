@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import { registerImageBackend } from './registry';
 import { generateOneImage, DEFAULT_EDGE } from './generateOne';
 import { ImageBackendError, type ImageRequest } from './types';
@@ -36,7 +37,7 @@ function resolveSpecifier(importPath: string, from: string): string | null {
 	return null;
 }
 
-const saved = getSettings().imageBackendKind;
+const saved = getSettings().imageModels;
 const seen: ImageRequest[] = [];
 let fail: ImageBackendError | null = null;
 
@@ -70,9 +71,9 @@ beforeEach(() => {
 	seen.length = 0;
 	fail = null;
 	registerImageBackend(stub);
-	updateSettings({ imageBackendKind: 'comfyui' });
+	updateSettings({ imageModels: imageModelsFor('comfyui') });
 });
-afterEach(() => updateSettings({ imageBackendKind: saved }));
+afterEach(() => updateSettings({ imageModels: saved }));
 
 describe('generateOneImage', () => {
 	it('calls the configured backend once with the prompt', async () => {
@@ -114,7 +115,7 @@ describe('generateOneImage', () => {
 	});
 
 	it('fails with the unconfigured message when no backend is set', async () => {
-		updateSettings({ imageBackendKind: 'none' });
+		updateSettings({ imageModels: imageModelsFor('none') });
 		await expect(generateOneImage({ prompt: 'x' })).rejects.toThrow(/Settings → Image/);
 	});
 });

@@ -14,8 +14,6 @@ vi.mock('@tauri-apps/api/core', async () =>
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const settings = vi.hoisted(() => ({
-	imageBackendKind: 'none',
-	imageKeysMigrated: true,
 	imageModels: [] as ImageModelEntry[],
 	generationServers: [] as { kind: string; url: string; keyId: string | null }[],
 	inferenceBackend: {

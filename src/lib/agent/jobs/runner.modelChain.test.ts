@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import type { JobType, JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 
 const {
@@ -156,11 +157,11 @@ describe('guided_planning — 3D models', () => {
 	const configOf = (input: Record<string, unknown>) => JSON.parse(String(input.type_config));
 
 	beforeEach(() => {
-		settingsState.imageBackendKind = 'comfyui';
+		settingsState.imageModels = imageModelsFor('comfyui');
 		imageState.kind = 'comfyui';
 	});
 	afterEach(() => {
-		settingsState.imageBackendKind = 'none';
+		settingsState.imageModels = [];
 		imageState.kind = 'none';
 	});
 

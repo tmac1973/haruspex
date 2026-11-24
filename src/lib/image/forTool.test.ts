@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ImageBackendKind } from '#lib/image/types.ts';
 import { ImageBackendError, type ImageBackendCapabilities, type ImageRequest } from './types';
 
 const state = vi.hoisted(() => ({
-	kind: 'local' as string,
+	kind: 'local' as ImageBackendKind | 'none',
 	localModel: 'ming',
 	comfyCheckpoint: '',
 	probe: { ok: true, detail: 'ok' } as { ok: boolean; detail: string },
@@ -30,13 +31,14 @@ vi.mock('./registry', async (importOriginal) => ({
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({
-			imageBackendKind: state.kind,
-			imageLocalModelId: state.localModel,
-			imageComfyCheckpoint: state.comfyCheckpoint
+			imageModels: imageModelsFor(state.kind, {
+				model: state.kind === 'local' ? state.localModel : state.comfyCheckpoint
+			})
 		})
 	})
 );
 
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import {
 	generateForTool,
 	upscaleForTool,

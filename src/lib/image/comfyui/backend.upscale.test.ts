@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from './backend';
+import { imageModel } from '#lib/testing/imageModels.ts';
 import { upscaleGraph } from './upscale';
 import { findUpscaler } from './families';
 
-const saved = {
-	url: getSettings().imageBackendBaseUrl,
-	ckpt: getSettings().imageComfyCheckpoint
+const saved = getSettings().imageModels;
+
+/** Change what the one ComfyUI entry names; whatever is not named stays. */
+const setComfy = (fill: { url?: string; model?: string }) => {
+	const now = getSettings().imageModels[0];
+	updateSettings({
+		imageModels: [imageModel('comfyui', { url: now?.url ?? '', model: now?.model ?? '', ...fill })]
+	});
 };
 
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -47,10 +53,7 @@ function submitted() {
 }
 
 beforeEach(() => {
-	updateSettings({
-		imageBackendBaseUrl: 'http://box:8188',
-		imageComfyCheckpoint: 'sd15.safetensors'
-	});
+	setComfy({ url: 'http://box:8188', model: 'sd15.safetensors' });
 	fetchMock = vi.fn();
 	vi.stubGlobal('fetch', fetchMock);
 	vi.stubGlobal(
@@ -63,7 +66,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
-	updateSettings({ imageBackendBaseUrl: saved.url, imageComfyCheckpoint: saved.ckpt });
+	updateSettings({ imageModels: saved });
 });
 
 describe('upscaling on ComfyUI', () => {

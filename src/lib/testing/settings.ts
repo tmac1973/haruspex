@@ -3,7 +3,7 @@
  * settings. Not shipped: only test files import this. Load it inside the mock
  * factory, which vitest hoists above every import:
  *
- *   const settings = vi.hoisted(() => ({ imageToolchestBaseUrl: 'http://box:3000' }));
+ *   const settings = vi.hoisted(() => ({ musicToolchestBaseUrl: 'http://box:3000' }));
  *   vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
  *     (await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
  *       settings,

@@ -14,7 +14,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ProtectedTargets } from '#lib/ipc/gen/ProtectedTargets.ts';
 import type { ProtectedPort } from '#lib/ipc/gen/ProtectedPort.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { imageEntries } from '#lib/image/entries.ts';
 import { isLoopbackHost } from '#lib/utils/loopback.ts';
 
@@ -140,12 +139,11 @@ function localPort(url: string): ProtectedPort[] {
 
 /** The ports of the ComfyUI servers Settings → Image names that run on this machine. */
 function imageBackendPort(): ProtectedPort[] {
-	const urls = new Set([
-		getSettings().imageBackendBaseUrl ?? '',
-		...imageEntries()
+	const urls = new Set(
+		imageEntries()
 			.filter((e) => e.backend === 'comfyui')
 			.map((e) => e.url)
-	]);
+	);
 	const ports = [...urls].flatMap(localPort);
 	return ports.filter((p, i) => ports.findIndex((q) => q.port === p.port) === i);
 }

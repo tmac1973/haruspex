@@ -5,14 +5,13 @@
  */
 
 import { BACKEND_TIMEOUT_MS, invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { errorBody } from '#lib/utils/http.ts';
 
 export interface LemonadeConfig {
 	baseUrl: string;
-	/** Inline only where no secret store works; Rust falls back to `lemonade:key`. */
+	/** The entry's named key's value, or empty. */
 	apiKey: string;
 }
 
@@ -27,11 +26,9 @@ export function useLemonadeServer(cfg: LemonadeConfig): void {
 	working = { baseUrl: cfg.baseUrl.trim(), apiKey: cfg.apiKey };
 }
 
-/** The Lemonade server Settings is working with, or the old field's before one was opened. */
+/** The Lemonade server Settings is working with; no address before one was opened. */
 export function lemonadeConfig(): LemonadeConfig {
-	if (working) return working;
-	const s = getSettings();
-	return { baseUrl: s.imageLemonadeBaseUrl.trim(), apiKey: s.imageLemonadeApiKey };
+	return working ?? { baseUrl: '', apiKey: '' };
 }
 
 const lemonade: Backend<ImageBackendError> = {

@@ -1,3 +1,4 @@
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -6,7 +7,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: () => ({ imageBackendKind: 'none' }),
+		settings: () => ({ imageModels: imageModelsFor('none') }),
 		overDefaults: true
 	})
 );

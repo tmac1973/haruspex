@@ -2,16 +2,26 @@ import { test, expect } from './fixtures';
 
 test.use({
 	settings: {
-		imageBackendKind: 'comfyui',
-		imageBackendBaseUrl: 'http://127.0.0.1:8188',
-		imageComfyCheckpoint: 'e2e-sd15.safetensors'
+		imageModels: [
+			{
+				id: 'e2e-comfy',
+				name: 'e2e-sd15',
+				backend: 'comfyui',
+				url: 'http://127.0.0.1:8188',
+				keyId: null,
+				model: 'e2e-sd15.safetensors',
+				options: {},
+				caps: null,
+				capsAt: null,
+				renamed: false
+			}
+		]
 	}
 });
 
 test('Settings → Image probes ComfyUI and lists its model', async ({ app }) => {
 	await app.getByRole('button', { name: 'Settings' }).click();
 	await app.getByRole('button', { name: 'Image', exact: true }).click();
-	// The single backend set before the list is its first model.
 	await app.getByRole('button', { name: /^e2e-sd15/ }).click();
 	await app.getByRole('button', { name: 'Probe' }).click();
 	await expect(app.getByText('Connected — E2E GPU.')).toBeVisible();

@@ -2,15 +2,16 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 
 // Everything the full prompt has a section for is on, so a lean prompt that
 // leaks one shows it.
-vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
-	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const { imageModelsFor } = await import('#lib/testing/imageModels.ts');
+	return (await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		overDefaults: true,
 		settings: () => ({
 			customSystemPrompt: '',
 			sandboxEnabled: true,
 			agentFeedbackEnabled: true,
 			screenCaptureEnabled: true,
-			imageBackendKind: 'comfyui',
+			imageModels: imageModelsFor('comfyui'),
 			musicBackendKind: 'toolchest',
 			videoGenBackendKind: 'toolchest'
 		}),
@@ -30,8 +31,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 				setupComplete: true
 			}
 		]
-	})
-);
+	});
+});
 vi.mock('#lib/stores/memory.svelte.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/memory.svelte.ts')>()),
 	memoryActive: () => true

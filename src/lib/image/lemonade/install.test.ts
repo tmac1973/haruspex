@@ -8,20 +8,18 @@ vi.mock('#lib/utils/async.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/utils/async.ts')>()),
 	sleep: () => Promise.resolve()
 }));
-const settings = vi.hoisted(() => ({
-	imageLemonadeBaseUrl: 'http://box:13305',
-	imageLemonadeApiKey: '',
-	imageLemonadeModelId: '',
-	proxy: { mode: 'none' }
-}));
+const settings = vi.hoisted(() => ({ proxy: { mode: 'none' } }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, { settings })
 );
 
+import { useLemonadeServer } from '#lib/image/lemonade/client.ts';
 import systemInfo from './fixtures/system-info.json';
 import { getInstall, installModel, installUpscaler, resumeInstall } from './install.svelte';
 import { httpCalls, invokeRouter, type HttpCall } from '#lib/testing/invoke.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
+
+beforeEach(() => useLemonadeServer({ baseUrl: 'http://box:13305', apiKey: '' }));
 
 const ming = {
 	id: 'ming',

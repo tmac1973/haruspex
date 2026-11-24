@@ -2,20 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ImageModelEntry } from './types';
 
 const settings = vi.hoisted(() => ({
-	imageBackendKind: 'comfyui' as string,
-	imageBackendBaseUrl: ' http://comfy:8188 ',
-	imageBackendApiKey: 'inline',
-	imageComfyCheckpoint: 'checkpoints/sd15.safetensors',
-	imageComfyWorkflowPath: '/w.json',
-	imageComfyFieldMapPath: '/m.json',
-	imageLocalModelId: 'ming',
-	imageLemonadeBaseUrl: 'http://lemon:13305',
-	imageLemonadeApiKey: '',
-	imageLemonadeModelId: '',
-	imageToolchestBaseUrl: 'http://box:3000',
-	imageToolchestApiKeyId: 'k1' as string | null,
-	imageToolchestModelId: 'klein',
-	imageKeysMigrated: true,
 	imageModels: undefined as ImageModelEntry[] | undefined
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
@@ -36,7 +22,7 @@ import {
 	entryForHandle,
 	firstImageEntry,
 	imageEntries,
-	legacyEntryFor,
+	entryOfKind,
 	maxEditPictures,
 	moveImageModel,
 	removeImageModel,
@@ -44,31 +30,37 @@ import {
 	saveImageCaps,
 	updateImageModel
 } from './entries';
+import { imageModel } from '#lib/testing/imageModels.ts';
 
 const caps = { transparency: true, seamlessTiling: false, loras: false, maxLoras: 0 };
 const ids = () => imageEntries().map((e) => e.name);
 
+const toolchest = () =>
+	imageModel('llama-toolchest', { url: 'http://box:3000', keyId: 'k1', model: 'klein' });
+
 beforeEach(() => {
-	settings.imageBackendKind = 'comfyui';
 	settings.imageModels = undefined;
 });
 
 describe('the image models', () => {
-	it('are read through the old fields before any list was saved', () => {
-		expect(firstImageEntry()).toMatchObject({
-			id: 'legacy',
-			backend: 'comfyui',
-			name: 'sd15',
-			url: 'http://comfy:8188',
-			options: { workflowPath: '/w.json', fieldMapPath: '/m.json' }
-		});
-		settings.imageBackendKind = 'none';
+	it('are none before any list was saved', () => {
 		expect(imageEntries()).toEqual([]);
+		expect(firstImageEntry()).toBeNull();
 	});
 
-	it('are the saved list once there is one, however the old fields read', () => {
-		settings.imageModels = [];
-		expect(firstImageEntry()).toBeNull();
+	it('give each backend its first model, or a blank one', () => {
+		settings.imageModels = [
+			imageModel('comfyui', { id: 'a', model: 'one' }),
+			imageModel('comfyui', { id: 'b', model: 'two' })
+		];
+		expect(entryOfKind('comfyui').id).toBe('a');
+		expect(entryOfKind('lemonade')).toMatchObject({
+			id: 'lemonade',
+			backend: 'lemonade',
+			name: 'Lemonade',
+			url: '',
+			model: ''
+		});
 	});
 
 	it('take a new model at the end, named for its backend, then for its model', () => {
@@ -107,18 +99,18 @@ describe('the image models', () => {
 	});
 
 	it('remember what a probe saw, once', () => {
-		settings.imageModels = [legacyEntryFor('comfyui')];
-		saveImageCaps('legacy', caps);
+		settings.imageModels = [imageModel('comfyui')];
+		saveImageCaps('test-comfyui', caps);
 		const saved = settings.imageModels[0];
 		expect(saved).toMatchObject({ caps });
-		saveImageCaps('legacy', { ...caps });
+		saveImageCaps('test-comfyui', { ...caps });
 		expect(settings.imageModels[0]).toBe(saved);
 	});
 
 	it('send their named key, and none without one', async () => {
-		expect(await entryApiKey(legacyEntryFor('llama-toolchest'))).toBe('sekrit');
-		expect(await entryApiKey(legacyEntryFor('comfyui'))).toBe('');
-		expect(await entryApiKey({ ...legacyEntryFor('comfyui'), keyId: 'k1' })).toBe('sekrit');
+		expect(await entryApiKey(toolchest())).toBe('sekrit');
+		expect(await entryApiKey(imageModel('llama-toolchest'))).toBe('');
+		expect(await entryApiKey(imageModel('comfyui', { keyId: 'k1' }))).toBe('sekrit');
 	});
 });
 
@@ -134,13 +126,20 @@ describe('entryForHandle', () => {
 	};
 
 	it('is the saved entry with the handle’s id', () => {
-		settings.imageModels = [{ ...legacyEntryFor('llama-toolchest'), id: 'saved', model: 'ming' }];
+		settings.imageModels = [{ ...toolchest(), id: 'saved', model: 'ming' }];
 		expect(entryForHandle({ ...handle, entryId: 'saved' })?.model).toBe('ming');
 	});
 
-	it('is the old fields’ entry for a handle from before the list', () => {
-		expect(entryForHandle({ ...handle, entryId: 'legacy' })?.model).toBe('klein');
-		expect(entryForHandle(handle)?.model).toBe('klein');
+	it('is made from the handle alone for one from before the list', () => {
+		settings.imageModels = [toolchest()];
+		for (const h of [{ ...handle, entryId: 'legacy' }, handle]) {
+			expect(entryForHandle(h)).toMatchObject({
+				backend: 'llama-toolchest',
+				url: 'http://old:3000',
+				keyId: null,
+				model: 'qwen-image-edit-2511'
+			});
+		}
 	});
 
 	it('is made from the handle when its entry is gone', () => {
@@ -156,7 +155,7 @@ describe('entryForHandle', () => {
 
 describe('what the image models can do, together', () => {
 	const entry = (name: string, c: object | null): ImageModelEntry => ({
-		...legacyEntryFor('llama-toolchest'),
+		...toolchest(),
 		id: name,
 		name,
 		caps: c && { ...caps, ...c }

@@ -2,7 +2,7 @@
  * A llama-toolchest server's image instances as the image backend.
  *
  * Toolchest runs the sd-server processes and their queue; Haruspex picks an
- * instance by id (`imageToolchestModelId`) and sends it the request. Starting
+ * instance by id (the entry's `model`) and sends it the request. Starting
  * an instance or installing a model set stays in toolchest's own UI, so a
  * stopped instance is a sentence pointing there, not a button here.
  *
@@ -18,7 +18,7 @@
  */
 
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
-import { legacyEntryFor } from '#lib/image/entries.ts';
+import { entryOfKind } from '#lib/image/entries.ts';
 import { toImageResult, type MadeImages } from '#lib/image/result.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
 import type {
@@ -90,8 +90,8 @@ export function _resetForTests(): void {
 	registerImageBackendKind('llama-toolchest', toolchestFor);
 }
 
-/** Settings → Image's toolchest, which the exports below default to. */
-const settingsEntry = () => legacyEntryFor('llama-toolchest');
+/** The first llama-toolchest image model, which the exports below default to. */
+const settingsEntry = () => entryOfKind('llama-toolchest');
 
 function asImageError(e: unknown): unknown {
 	if (!(e instanceof ToolchestError)) return e;
@@ -435,5 +435,5 @@ function resultOf(images: Uint8Array[], made: Omit<MadeImages, 'backend'>): Imag
 
 registerImageBackendKind('llama-toolchest', toolchestFor);
 
-/** Settings → Image's toolchest as a backend, for what has no entry of its own yet. */
+/** The first toolchest image model as a backend, read again on every call. */
 export const toolchestBackend = legacyBackend('llama-toolchest');

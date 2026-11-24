@@ -1,3 +1,4 @@
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -15,7 +16,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		overDefaults: true,
-		settings: () => ({ imageBackendKind: 'comfyui' })
+		settings: () => ({ imageModels: imageModelsFor('comfyui') })
 	})
 );
 vi.mock('#lib/image/forTool.ts', () => ({
@@ -188,7 +189,7 @@ describe('background: true', () => {
 					conversationId: 'c1',
 					job: expect.objectContaining({ op: 'draw', verb: 'Image ready' }),
 					// The model it goes to now, tried first when it runs.
-					entry: expect.objectContaining({ id: 'legacy', backend: 'comfyui' })
+					entry: expect.objectContaining({ id: 'test-comfyui', backend: 'comfyui' })
 				})
 			})
 		);

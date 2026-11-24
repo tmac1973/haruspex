@@ -60,9 +60,9 @@ describe('prefillFromInference', () => {
 	it('does nothing when inference is not a toolchest', () => {
 		state.settings = {
 			inferenceBackend: { ...toolchestInference, mode: 'local' },
-			imageToolchestBaseUrl: ''
+			musicToolchestBaseUrl: ''
 		};
-		expect(prefillFromInference('image')).toBeNull();
+		expect(prefillFromInference('music')).toBeNull();
 		expect(state.updates).toEqual([]);
 	});
 });

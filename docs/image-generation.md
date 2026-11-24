@@ -51,8 +51,10 @@ chat model already comes from one. See
 ## The Lemonade backend
 
 `src/lib/image/lemonade/`, with `src-tauri/src/lemonade.rs`. Calls go through
-`comfy.rs`'s client from Rust (no `Origin`; the key is `lemonade:key`), since
-Lemonade's `allowed_origins` is empty by default.
+`comfy.rs`'s client from Rust (no `Origin`; the key is a named key from
+Settings → Inference → API Keys), since Lemonade's `allowed_origins` is empty
+by default. The old `comfy:key` and `lemonade:key` secrets are moved into named
+keys at start, then deleted (`src/lib/image/keys.ts`).
 
 **Generation** is Lemonade's OpenAI-style `/api/v1/images/generations`, which
 has no field for a start image, a mask or a strength. sd-server reads native
@@ -133,7 +135,7 @@ any prompt.
 `src/lib/image/toolchest/`, with `src/lib/toolchest/` (shared with music) and
 `src-tauri/src/toolchest.rs`. Calls go through `comfy.rs`'s client like
 Lemonade's. The key is not a secret of its own: it is a named key from
-Settings → Inference → API Keys (`imageToolchestApiKeyId`), resolved in the
+Settings → Inference → API Keys (the entry's `keyId`), resolved in the
 webview and sent inline, because it is usually the key the toolchest's chat
 models already use.
 

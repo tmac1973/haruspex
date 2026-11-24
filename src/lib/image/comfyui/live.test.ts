@@ -19,6 +19,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from './backend';
+import { imageModel } from '#lib/testing/imageModels.ts';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -84,18 +85,15 @@ async function transparentFraction(png: Uint8Array): Promise<number> {
 }
 
 describe('ComfyUI, live (opt-in)', () => {
-	const saved = {
-		url: getSettings().imageBackendBaseUrl,
-		model: getSettings().imageComfyCheckpoint
-	};
-	afterAll(() =>
-		updateSettings({ imageBackendBaseUrl: saved.url, imageComfyCheckpoint: saved.model })
-	);
+	const saved = getSettings().imageModels;
+	afterAll(() => updateSettings({ imageModels: saved }));
 
 	live(
 		'a transparent Ming-Image request comes back with real alpha',
 		async () => {
-			updateSettings({ imageBackendBaseUrl: BACKEND_URL, imageComfyCheckpoint: MING_MODEL });
+			updateSettings({
+				imageModels: [imageModel('comfyui', { url: BACKEND_URL, model: MING_MODEL })]
+			});
 			expect(await comfyUiBackend.probe()).toMatchObject({ ok: true });
 			expect((await comfyUiBackend.capabilities()).transparency).toBe(true);
 			const r = await comfyUiBackend.generate({
@@ -115,7 +113,9 @@ describe('ComfyUI, live (opt-in)', () => {
 	live(
 		'an opaque Ming-Image request has no transparent background',
 		async () => {
-			updateSettings({ imageBackendBaseUrl: BACKEND_URL, imageComfyCheckpoint: MING_MODEL });
+			updateSettings({
+				imageModels: [imageModel('comfyui', { url: BACKEND_URL, model: MING_MODEL })]
+			});
 			const r = await comfyUiBackend.generate({
 				prompt: '16-bit pixel art. A single game sprite of an iron sword on a white background.',
 				width: 1024,
@@ -130,7 +130,9 @@ describe('ComfyUI, live (opt-in)', () => {
 	liveQwen(
 		'a transparent Qwen-Image-2.1 request comes back with real alpha',
 		async () => {
-			updateSettings({ imageBackendBaseUrl: BACKEND_URL, imageComfyCheckpoint: QWEN21_MODEL });
+			updateSettings({
+				imageModels: [imageModel('comfyui', { url: BACKEND_URL, model: QWEN21_MODEL })]
+			});
 			const r = await comfyUiBackend.generate({
 				prompt: '16-bit pixel art, bold dark outlines. A single game sprite of an iron sword.',
 				width: 1024,

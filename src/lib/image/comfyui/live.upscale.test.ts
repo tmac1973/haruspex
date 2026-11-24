@@ -19,6 +19,7 @@ import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from './backend';
 import { pngSize } from '#lib/utils/png.ts';
 import { installViaManager, managerApi, missingFiles } from './provision';
+import { imageModel } from '#lib/testing/imageModels.ts';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -48,14 +49,14 @@ const UPSCALER: ComfyModelSet = {
 	]
 };
 
-const saved = getSettings().imageBackendBaseUrl;
-afterAll(() => updateSettings({ imageBackendBaseUrl: saved }));
+const saved = getSettings().imageModels;
+afterAll(() => updateSettings({ imageModels: saved }));
 
 describe('ComfyUI upscale, live', () => {
 	live(
 		'installs the upscaler through Manager and makes a picture four times larger',
 		async () => {
-			updateSettings({ imageBackendBaseUrl: BACKEND_URL });
+			updateSettings({ imageModels: [imageModel('comfyui', { url: BACKEND_URL })] });
 			const cfg = { baseUrl: BACKEND_URL, apiKey: '' };
 			const missing = await missingFiles(cfg, UPSCALER);
 			if (missing.length > 0) {

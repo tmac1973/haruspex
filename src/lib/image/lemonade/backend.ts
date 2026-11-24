@@ -2,7 +2,7 @@
  * A Lemonade server's sd-cpp recipe as the image backend: the bundled
  * engine's models and its way of drawing, on a server the user keeps.
  *
- * The model is a catalogue id (`imageLemonadeModelId`), installed on the
+ * The model is a catalogue id (the entry's `model`), installed on the
  * server from Settings → Image (`./install.svelte.ts`) under a fixed name, so
  * every request knows its family and how to make it transparent.
  *
@@ -341,5 +341,5 @@ async function upscaleWith(
 
 registerImageBackendKind('lemonade', lemonadeFor);
 
-/** Settings → Image's Lemonade as a backend, for what has no entry of its own yet. */
+/** The first Lemonade image model as a backend, read again on every call. */
 export const lemonadeBackend = legacyBackend('lemonade');

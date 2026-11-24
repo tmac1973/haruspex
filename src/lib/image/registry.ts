@@ -11,7 +11,7 @@
 import type { GenerateOptions, ImageBackend } from '#lib/image/backend.ts';
 import type { ImageBackendKind, ImageModelEntry, ImageResult } from '#lib/image/types.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
-import { legacyEntryFor } from '#lib/image/entries.ts';
+import { entryOfKind } from '#lib/image/entries.ts';
 
 type Factory = (entry: ImageModelEntry) => ImageBackend;
 
@@ -71,13 +71,10 @@ export function backendForEntry(entry: ImageModelEntry): ImageBackend | undefine
 	return backend;
 }
 
-/**
- * `kind`'s backend as Settings → Image's fields for that kind describe it,
- * whichever kind is chosen.
- */
+/** `kind`'s backend, built from the first image model on that kind (`entryOfKind`). */
 export function getImageBackend(kind: ImageBackendKind): ImageBackend | undefined {
 	if (kind === 'none') return kinds.get('none')?.fixed;
-	return backendForEntry(legacyEntryFor(kind));
+	return backendForEntry(entryOfKind(kind));
 }
 
 /** Each registered kind's backend, in registration order. */
@@ -86,7 +83,7 @@ export function listImageBackends(): ImageBackend[] {
 }
 
 /**
- * `kind`'s backend as Settings → Image's fields for that kind describe it, read
+ * `kind`'s backend as the first image model on that kind describes it, read
  * again on every call: for callers (and tests) that hold one backend per kind.
  */
 export function legacyBackend(kind: Exclude<ImageBackendKind, 'none'>): ImageBackend {

@@ -44,7 +44,6 @@
 	import { migrateEmailSecrets } from '#lib/stores/emailSecrets.ts';
 	import { migrateDavSecrets } from '#lib/stores/davSecrets.ts';
 	import { migrateBraveApiKey } from '#lib/stores/searchSecrets.ts';
-	import { comfyApiKey, lemonadeApiKey } from '#lib/stores/imageSecrets.ts';
 	import { migrateProxyPasswords } from '#lib/stores/proxySecrets.ts';
 	import { migrateMcpSecrets } from '#lib/stores/mcpSecrets.ts';
 	import { apiKeysReady, migrateApiKeys, migrateJobApiKeys } from '#lib/stores/apiKeySecrets.ts';
@@ -416,8 +415,6 @@
 		void migrateEmailSecrets();
 		void migrateDavSecrets();
 		void migrateBraveApiKey();
-		void comfyApiKey.migrate();
-		void lemonadeApiKey.migrate();
 		void migrateProxyPasswords();
 		void migrateMcpSecrets();
 		void migrateApiKeys().then(apiKeysReady).then(migrateJobApiKeys);

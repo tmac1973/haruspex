@@ -49,7 +49,7 @@ vi.mock('#lib/image/index.ts', async (importOriginal) => ({
 // No image models configured: nothing names a model, so the report says so.
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: { imageModels: [], imageLocalModelPath: '' },
+		settings: { imageModels: [] },
 		overDefaults: true
 	})
 );

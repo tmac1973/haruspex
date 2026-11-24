@@ -24,8 +24,6 @@ import { urlForReport } from '#lib/utils/http.ts';
  */
 export const SECRET_FIELDS = new Set([
 	'braveApiKey',
-	'imageBackendApiKey',
-	'imageLemonadeApiKey',
 	'remoteApiKey',
 	'remoteAccessToken',
 	'password',

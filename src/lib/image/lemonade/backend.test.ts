@@ -3,11 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-const settings = vi.hoisted(() => ({
-	imageLemonadeBaseUrl: 'http://box:13305',
-	imageLemonadeApiKey: '',
-	imageLemonadeModelId: 'ming'
-}));
+const settings = vi.hoisted(() => ({ imageModels: [] as ImageModelEntry[] }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, { settings })
 );
@@ -25,7 +21,13 @@ import {
 	invokeRouter,
 	type HttpCall
 } from '#lib/testing/invoke.ts';
-import type { ImageProgress } from '#lib/image/types.ts';
+import type { ImageModelEntry, ImageProgress } from '#lib/image/types.ts';
+import { imageModel } from '#lib/testing/imageModels.ts';
+
+/** Change the one Lemonade entry, as a user editing it in Settings → Image would. */
+const editEntry = (over: Partial<ImageModelEntry>) => {
+	settings.imageModels = [{ ...settings.imageModels[0], ...over }];
+};
 
 const catalogue = [
 	{
@@ -62,9 +64,7 @@ const extrasOf = (call: Call) =>
 // Every block starts from the same server and model: some tests clear them,
 // and the suite runs in a shuffled order.
 beforeEach(() => {
-	settings.imageLemonadeBaseUrl = 'http://box:13305';
-	settings.imageLemonadeApiKey = '';
-	settings.imageLemonadeModelId = 'ming';
+	settings.imageModels = [imageModel('lemonade', { url: 'http://box:13305', model: 'ming' })];
 });
 
 describe('lemonade backend', () => {
@@ -97,15 +97,15 @@ describe('lemonade backend', () => {
 	});
 
 	it('lists the models even when the chosen one is missing or none is chosen', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		const missing = await lemonadeBackend.probe();
 		expect(missing.detail).toMatch(/Qwen-Image 2.1 Turbo is not installed on the server/);
 		expect(missing.models).toEqual([{ name: 'ming', label: 'Ming-Image 0.1 Design' }]);
-		settings.imageLemonadeModelId = '';
+		editEntry({ model: '' });
 		const none = await lemonadeBackend.probe();
 		expect(none.detail).toMatch(/No model is chosen/);
 		expect(none.models).toHaveLength(1);
-		settings.imageLemonadeBaseUrl = '';
+		editEntry({ url: '' });
 		expect(await lemonadeBackend.probe()).toEqual({
 			ok: false,
 			detail: 'No server address — Settings → Image.'
@@ -167,7 +167,7 @@ describe('lemonade backend', () => {
 	});
 
 	it('makes Qwen transparent by prompt alone, from noise', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		await lemonadeBackend.generate({
 			prompt: 'a coin',
 			width: 512,
@@ -202,7 +202,7 @@ describe('lemonade backend', () => {
 	});
 
 	it('says it is loading when another image model is resident', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		const seen: ImageProgress[] = [];
 		await lemonadeBackend.generate(
 			{ prompt: 'x', width: 64, height: 64, seed: 1 },
@@ -212,11 +212,11 @@ describe('lemonade backend', () => {
 	});
 
 	it('refuses to start without a server or a model', async () => {
-		settings.imageLemonadeModelId = '';
+		editEntry({ model: '' });
 		await expect(
 			lemonadeBackend.generate({ prompt: 'x', width: 64, height: 64, seed: 1 })
 		).rejects.toMatchObject({ kind: 'unconfigured' });
-		settings.imageLemonadeBaseUrl = '';
+		editEntry({ url: '' });
 		await expect(
 			lemonadeBackend.generate({ prompt: 'x', width: 64, height: 64, seed: 1 })
 		).rejects.toMatchObject({ kind: 'unconfigured' });
@@ -325,7 +325,7 @@ describe('lemonade edits and upscaling', () => {
 	};
 
 	it('says Qwen can edit only with its vision weights, and upscales once the upscaler is in', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		use(withEditing);
 		expect(await lemonadeBackend.capabilities()).toMatchObject({
 			edit: true,
@@ -337,7 +337,7 @@ describe('lemonade edits and upscaling', () => {
 	});
 
 	it('edits through /api/v1/images/edits, the picture a file part from the cache', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		use(withEditing);
 		const r = await lemonadeBackend.generate(edit);
 		expect(Array.from(r.images[0].bytes)).toEqual([4, 5, 6]);
@@ -357,7 +357,7 @@ describe('lemonade edits and upscaling', () => {
 	});
 
 	it('sends an edit’s mask as the form’s mask part', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		use(withEditing);
 		const mask = { name: 'mask.png', hash: 'b'.repeat(64) };
 		await lemonadeBackend.generate({ ...edit, edit: { ...edit.edit!, mask } });
@@ -367,7 +367,7 @@ describe('lemonade edits and upscaling', () => {
 	});
 
 	it('refuses an edit without the vision weights, pointing at Add editing', async () => {
-		settings.imageLemonadeModelId = 'qwen21';
+		editEntry({ model: 'qwen21' });
 		use(models);
 		await expect(lemonadeBackend.generate(edit)).rejects.toMatchObject({
 			kind: 'unconfigured',

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-const settings = vi.hoisted(() => ({ imageLocalModelId: 'ming' }));
+const settings = vi.hoisted(() => ({ imageModels: [] as ImageModelEntry[] }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings
@@ -13,6 +13,13 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 import { engineSetupMessage, localBackend } from './backend';
 import { invoke } from '@tauri-apps/api/core';
 import { invokeArgs, invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+import type { ImageModelEntry } from '#lib/image/types.ts';
+import { imageModel } from '#lib/testing/imageModels.ts';
+
+const useModel = (model: string) => {
+	settings.imageModels = [imageModel('local', { model })];
+};
+beforeEach(() => useModel('ming'));
 
 /** What `image_engine_request` carries: a path on sd-server and a JSON body. */
 interface EngineRequest {
@@ -57,13 +64,13 @@ describe('generate', () => {
 	};
 
 	it('starts the engine on the catalogue id, not a file path', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		await localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 });
 		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
 	});
 
 	it('makes Ming transparent from a clear canvas AND its RGBA phrase', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		const r = await localBackend.generate({
 			prompt: 'a coin',
 			width: 1024,
@@ -84,7 +91,7 @@ describe('generate', () => {
 	});
 
 	it('makes Qwen transparent by prompt alone, from noise', async () => {
-		settings.imageLocalModelId = 'qwen21';
+		useModel('qwen21');
 		await localBackend.generate({
 			prompt: 'a coin',
 			width: 512,
@@ -101,7 +108,7 @@ describe('generate', () => {
 	});
 
 	it('tiles by rolling, repainting the seams through the mask, and blending back', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		const r = await localBackend.generate({
 			prompt: 'cobblestones',
 			width: 1024,
@@ -130,7 +137,7 @@ describe('generate', () => {
 	});
 
 	it('returns the texture it drew, untiled and saying why, when the seam pass fails', async () => {
-		settings.imageLocalModelId = 'qwen21';
+		useModel('qwen21');
 		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
@@ -157,7 +164,7 @@ describe('generate', () => {
 	});
 
 	it('draws a tiling texture opaque even when asked for transparency too', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		await localBackend.generate({
 			prompt: 'grass',
 			width: 512,
@@ -171,7 +178,7 @@ describe('generate', () => {
 	});
 
 	it("retries the engine's transient empty result, and gives up after three", async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		vi.useFakeTimers();
 		try {
 			const empty = new Error(
@@ -207,7 +214,7 @@ describe('generate', () => {
 	});
 
 	it('does not retry other engine failures', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		vi.mocked(invoke).mockImplementation(
 			invokeRouter(
 				{
@@ -226,7 +233,7 @@ describe('generate', () => {
 	});
 
 	it('refuses an id it cannot run, before starting anything', async () => {
-		settings.imageLocalModelId = 'sdxl';
+		useModel('sdxl');
 		await expect(
 			localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 })
 		).rejects.toMatchObject({ kind: 'unconfigured' });
@@ -263,7 +270,7 @@ describe('edits', () => {
 	};
 
 	it('says Qwen can edit once its vision weights are on disk, and Ming never', async () => {
-		settings.imageLocalModelId = 'qwen21';
+		useModel('qwen21');
 		vi.mocked(invoke)
 			.mockReset()
 			.mockImplementation(invokeRouter(routes(true), undefined));
@@ -272,12 +279,12 @@ describe('edits', () => {
 			.mockReset()
 			.mockImplementation(invokeRouter(routes(false), undefined));
 		expect(await localBackend.capabilities()).toMatchObject({ edit: false, maxEditImages: 0 });
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		expect(await localBackend.capabilities()).toMatchObject({ edit: false });
 	});
 
 	it('sends the pictures as extra_images on txt2img, with no clear start or RGBA phrase', async () => {
-		settings.imageLocalModelId = 'qwen21';
+		useModel('qwen21');
 		vi.mocked(invoke)
 			.mockReset()
 			.mockImplementation(invokeRouter(routes(true), undefined));
@@ -292,7 +299,7 @@ describe('edits', () => {
 	});
 
 	it('refuses an edit without the vision weights, saying where to get them', async () => {
-		settings.imageLocalModelId = 'qwen21';
+		useModel('qwen21');
 		vi.mocked(invoke)
 			.mockReset()
 			.mockImplementation(invokeRouter(routes(false), undefined));
@@ -314,7 +321,7 @@ describe('upscale', () => {
 	});
 
 	it('says it can upscale once the upscaler is downloaded', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		vi.mocked(invoke)
 			.mockReset()
 			.mockImplementation(invokeRouter(routes(true), undefined));
@@ -326,7 +333,7 @@ describe('upscale', () => {
 	});
 
 	it('starts the engine and sends the cached picture to /sdcpp/v1/upscale', async () => {
-		settings.imageLocalModelId = 'ming';
+		useModel('ming');
 		vi.mocked(invoke)
 			.mockReset()
 			.mockImplementation(invokeRouter(routes(true), undefined));

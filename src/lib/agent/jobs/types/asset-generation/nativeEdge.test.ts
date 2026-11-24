@@ -1,17 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
+import type { ImageModelEntry } from '#lib/image/types.ts';
 import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
 
-const settings = vi.hoisted(() => ({
-	imageBackendKind: 'comfyui',
-	imageComfyCheckpoint: '',
-	imageLocalModelId: ''
-}));
+const settings = vi.hoisted(() => ({ imageModels: [] as ImageModelEntry[] }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings
@@ -24,9 +22,7 @@ const CATALOGUE = [
 ];
 
 beforeEach(() => {
-	settings.imageBackendKind = 'comfyui';
-	settings.imageComfyCheckpoint = '';
-	settings.imageLocalModelId = '';
+	settings.imageModels = imageModelsFor('comfyui');
 	vi.mocked(invoke).mockReset().mockResolvedValue(CATALOGUE);
 });
 
@@ -53,26 +49,27 @@ describe('upscaleForEdge', () => {
 
 describe('nativeEdgeFor', () => {
 	it('matches the checkpoint configured for ComfyUI', () => {
-		settings.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
+		settings.imageModels = imageModelsFor('comfyui', { model: 'sd_xl_base_1.0.safetensors' });
 		return expect(nativeEdgeFor(undefined)).resolves.toBe(1024);
 	});
 
 	it('matches a checkpoint given as a full path', () => {
 		// ComfyUI reports bare filenames, but a spec may pin a path.
-		settings.imageComfyCheckpoint = '/models/checkpoints/sd_xl_base_1.0.safetensors';
+		settings.imageModels = imageModelsFor('comfyui', {
+			model: '/models/checkpoints/sd_xl_base_1.0.safetensors'
+		});
 		return expect(nativeEdgeFor(undefined)).resolves.toBe(1024);
 	});
 
 	it('lets the spec’s pinned model win over the configured default', () => {
 		// The spec pins the model for the whole set; that is the point of the
 		// field, and the same precedence the request uses.
-		settings.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
+		settings.imageModels = imageModelsFor('comfyui', { model: 'sd_xl_base_1.0.safetensors' });
 		return expect(nativeEdgeFor('v1-5-pruned-emaonly-fp16.safetensors')).resolves.toBe(512);
 	});
 
 	it('matches a bundled model by catalogue id', async () => {
-		settings.imageBackendKind = 'local';
-		settings.imageLocalModelId = 'sdxl';
+		settings.imageModels = imageModelsFor('local', { model: 'sdxl' });
 		await expect(nativeEdgeFor(undefined)).resolves.toBe(1024);
 	});
 
@@ -80,7 +77,9 @@ describe('nativeEdgeFor', () => {
 		// Never a guess. Inferring "xl" from a filename would be wrong
 		// exactly when it matters — a fine-tune named for its style rather
 		// than its base — and a wrong native edge is worse than none.
-		settings.imageComfyCheckpoint = 'someones-pixel-mix-v4.safetensors';
+		settings.imageModels = imageModelsFor('comfyui', {
+			model: 'someones-pixel-mix-v4.safetensors'
+		});
 		await expect(nativeEdgeFor(undefined)).resolves.toBeNull();
 	});
 
@@ -90,7 +89,7 @@ describe('nativeEdgeFor', () => {
 
 	it('returns null rather than throwing when the catalogue is unavailable', async () => {
 		vi.mocked(invoke).mockRejectedValue(new Error('no such command'));
-		settings.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
+		settings.imageModels = imageModelsFor('comfyui', { model: 'sd_xl_base_1.0.safetensors' });
 		await expect(nativeEdgeFor(undefined)).resolves.toBeNull();
 	});
 });

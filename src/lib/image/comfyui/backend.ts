@@ -459,5 +459,5 @@ async function resumeWith(
 
 registerImageBackendKind('comfyui', comfyUiFor);
 
-/** Settings → Image's ComfyUI as a backend, for what has no entry of its own yet. */
+/** The first ComfyUI image model as a backend, read again on every call. */
 export const comfyUiBackend = legacyBackend('comfyui');

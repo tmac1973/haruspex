@@ -1,8 +1,10 @@
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
+import type { ImageBackendKind } from '#lib/image/types.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
-	backend: 'local',
+	backend: 'local' as ImageBackendKind | 'none',
 	upscale: vi.fn(),
 	size: { width: 512, height: 384 }
 }));
@@ -12,7 +14,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: () => ({ imageBackendKind: state.backend }),
+		settings: () => ({ imageModels: imageModelsFor(state.backend) }),
 		overDefaults: true
 	})
 );

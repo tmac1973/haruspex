@@ -19,6 +19,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from './backend';
+import { imageModel } from '#lib/testing/imageModels.ts';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -29,19 +30,18 @@ const EDIT_MODEL =
 const OUT_DIR = process.env.HARUSPEX_IMAGE_OUT_DIR ?? '';
 const live = LIVE && BACKEND_URL && EDIT_MODEL ? it : it.skip;
 
-const saved = {
-	url: getSettings().imageBackendBaseUrl,
-	ckpt: getSettings().imageComfyCheckpoint
-};
+const saved = getSettings().imageModels;
 afterAll(() => {
-	updateSettings({ imageBackendBaseUrl: saved.url, imageComfyCheckpoint: saved.ckpt });
+	updateSettings({ imageModels: saved });
 });
 
 describe('ComfyUI edit, live', () => {
 	live(
 		'edits a picture it drew, keeping its shape',
 		async () => {
-			updateSettings({ imageBackendBaseUrl: BACKEND_URL, imageComfyCheckpoint: EDIT_MODEL });
+			updateSettings({
+				imageModels: [imageModel('comfyui', { url: BACKEND_URL, model: EDIT_MODEL })]
+			});
 			expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: true });
 
 			const drawn = await comfyUiBackend.generate({

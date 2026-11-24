@@ -21,6 +21,7 @@ import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from '#lib/image/comfyui/backend.ts';
 import { sheetRequest } from './sheets';
 import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+import { imageModel } from '#lib/testing/imageModels.ts';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -44,18 +45,15 @@ const SUBJECTS = [
 ];
 
 describe('a sheet, live (opt-in)', () => {
-	const saved = {
-		url: getSettings().imageBackendBaseUrl,
-		model: getSettings().imageComfyCheckpoint
-	};
-	afterAll(() =>
-		updateSettings({ imageBackendBaseUrl: saved.url, imageComfyCheckpoint: saved.model })
-	);
+	const saved = getSettings().imageModels;
+	afterAll(() => updateSettings({ imageModels: saved }));
 
 	live(
 		'nine subjects come back as one transparent PNG',
 		async () => {
-			updateSettings({ imageBackendBaseUrl: URL, imageComfyCheckpoint: MODEL });
+			updateSettings({
+				imageModels: [imageModel('comfyui', { url: URL, model: MODEL })]
+			});
 			const entries: AssetEntry[] = SUBJECTS.map((prompt, i) => ({
 				id: `s${i}`,
 				kind: 'sprite',
