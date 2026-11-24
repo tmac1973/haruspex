@@ -2,6 +2,7 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { onMount } from 'svelte';
 	import { getSettings } from '#lib/stores/settings.ts';
+	import { videoEntries } from '#lib/videogen/entries.ts';
 	import { resolveImageBackend } from '#lib/image/backend.ts';
 	import { chosenVideoInstanceId, listVideoInstances } from '#lib/videogen/toolchest.ts';
 	import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
@@ -30,7 +31,7 @@
 	const chosen = chosenVideoInstanceId();
 
 	onMount(() => {
-		if (getSettings().videoGenBackendKind === 'none') return;
+		if (videoEntries().length === 0) return;
 		void listVideoInstances()
 			.then((list) => {
 				instances = list.map((i) => i.id);

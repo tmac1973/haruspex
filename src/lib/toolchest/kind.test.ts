@@ -44,10 +44,10 @@ describe('prefillFromInference', () => {
 	});
 
 	it('fills an empty section from the inference toolchest', () => {
-		state.settings = { inferenceBackend: toolchestInference, videoGenToolchestBaseUrl: '' };
-		expect(prefillFromInference('video')).toEqual({ baseUrl: 'http://box:3000', apiKeyId: 'k1' });
+		state.settings = { inferenceBackend: toolchestInference, musicToolchestBaseUrl: '' };
+		expect(prefillFromInference('music')).toEqual({ baseUrl: 'http://box:3000', apiKeyId: 'k1' });
 		expect(state.updates).toEqual([
-			{ videoGenToolchestBaseUrl: 'http://box:3000', videoGenToolchestApiKeyId: 'k1' }
+			{ musicToolchestBaseUrl: 'http://box:3000', musicToolchestApiKeyId: 'k1' }
 		]);
 	});
 

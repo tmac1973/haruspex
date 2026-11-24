@@ -16,7 +16,7 @@ export type GenerationKind = 'image' | 'music' | 'video';
 export type ListedKind = GenerationKind | 'upscale';
 
 /** The settings fields that hold a toolchest server's named key. */
-export type ApiKeyIdField = 'musicToolchestApiKeyId' | 'videoGenToolchestApiKeyId';
+export type ApiKeyIdField = 'musicToolchestApiKeyId';
 
 /** What a request names, and what Settings shows about it. */
 export interface ToolchestInstance {

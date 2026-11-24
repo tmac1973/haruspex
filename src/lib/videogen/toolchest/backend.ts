@@ -286,3 +286,8 @@ export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
 }
 
 registerVideoBackendKind('llama-toolchest', toolchestVideoFor);
+
+/** The video instances on `entry`'s server, as its last probe or generation saw them. */
+export function seenToolchestVideoInstances(entry: VideoModelEntry): ToolchestInstance[] {
+	return serverFor(entry).seen();
+}

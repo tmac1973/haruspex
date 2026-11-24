@@ -1249,6 +1249,17 @@ describe('load-time video model list', () => {
 		expect(await loadWith({})).toEqual([]);
 	});
 
+	it('drops the old fields once the list is seeded', async () => {
+		localStorage.setItem(
+			SETTINGS_KEY,
+			JSON.stringify({ videoGenBackendKind: 'llama-toolchest', videoGenToolchestModelId: 'x' })
+		);
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		expect(fresh.getSettings()).not.toHaveProperty('videoGenBackendKind');
+		expect(fresh.getSettings()).not.toHaveProperty('videoGenToolchestModelId');
+	});
+
 	it('keeps a saved list as it is, even an empty one', async () => {
 		const saved = [{ id: 'x', backend: 'comfyui', model: 'wan.safetensors' }];
 		expect(await loadWith({ videoGenBackendKind: 'llama-toolchest', videoModels: saved })).toEqual(

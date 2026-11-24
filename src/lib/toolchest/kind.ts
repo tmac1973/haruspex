@@ -39,10 +39,11 @@ const SECTIONS: Record<GenerationKind, string> = {
 };
 
 /**
- * The kinds kept as one server in their own settings fields. An image model
- * names its server in its entry instead (`#lib/image/entries.ts`).
+ * The kinds kept as one server in their own settings fields. An image or
+ * video model names its server in its entry instead (`#lib/image/entries.ts`,
+ * `#lib/videogen/entries.ts`).
  */
-export type FieldKind = Exclude<GenerationKind, 'image'>;
+export type FieldKind = Exclude<GenerationKind, 'image' | 'video'>;
 
 /** Each such kind's settings fields. */
 const FIELDS = {
@@ -50,11 +51,6 @@ const FIELDS = {
 		url: 'musicToolchestBaseUrl',
 		key: 'musicToolchestApiKeyId',
 		model: 'musicToolchestModelId'
-	},
-	video: {
-		url: 'videoGenToolchestBaseUrl',
-		key: 'videoGenToolchestApiKeyId',
-		model: 'videoGenToolchestModelId'
 	}
 } as const satisfies Record<FieldKind, { url: string; key: ApiKeyIdField; model: string }>;
 

@@ -1,244 +1,94 @@
-<script module lang="ts">
-	function sizeArea(size: string): number {
-		const [w, h] = size.split('x').map(Number);
-		return w > 0 && h > 0 ? w * h : 1;
-	}
-</script>
-
 <script lang="ts">
 	/**
-	 * Settings → Video generation: a llama-toolchest server's video instances,
-	 * as Settings → Music's toolchest part does for songs. Off until a backend
-	 * is picked; `generate_video` is offered only then.
+	 * Settings → Video generation: the video models `generate_video` and
+	 * video-sequence jobs use, in the order they try them
+	 * (`#lib/videogen/route.ts`). One row's editor is open at a time.
 	 */
-	import { errMessage } from '#lib/utils/error.ts';
-	import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
-	import { videoModelsFromFields } from '#lib/videogen/fields.ts';
-	import Tooltip from '#lib/components/Tooltip.svelte';
-	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
-	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
-	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
-	import type { GenerationServer } from '#lib/stores/settings.ts';
-	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
-	import { probeVideo, seenVideoInstances } from '#lib/videogen/toolchest.ts';
-	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
-	import { toolchestHint } from '#lib/toolchest/detect.ts';
-	import { prefillFromInference, withSavedModel } from '#lib/toolchest/kind.ts';
-	import type { ToolchestInstance } from '#lib/toolchest/models.ts';
+	import GenerationModelList from '#lib/components/settings/GenerationModelList.svelte';
+	import VideoEntryEditor from '#lib/components/settings/VideoEntryEditor.svelte';
+	import { toolchestHint, inferenceToolchest } from '#lib/toolchest/detect.ts';
+	import { hostOf } from '#lib/toolchest/client.ts';
+	import {
+		VIDEO_BACKEND_LABEL,
+		addVideoModel,
+		moveVideoModel,
+		removeVideoModel,
+		videoEntries
+	} from '#lib/videogen/entries.ts';
+	import { videoCapabilityLine } from '#lib/videogen/capabilityLine.ts';
+	import { videoBackendKinds } from '#lib/videogen/index.ts';
+	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
+	import type { VideoModelEntry } from '#lib/videogen/types.ts';
 
-	type Kind = 'none' | 'llama-toolchest';
+	let entries = $state<VideoModelEntry[]>(videoEntries());
+	const refresh = () => (entries = videoEntries());
+	let openId = $state<string | null>(null);
 
-	/**
-	 * Write the single-instance fields and the list seeded from them, so the
-	 * video tools (which read the list) follow what this section shows.
-	 */
-	function saveFields(patch: Partial<AppSettings>): void {
-		const s = getSettings();
-		updateSettings({
-			...patch,
-			videoModels: videoModelsFromFields({ ...s, ...patch }, s.videoModels)
-		});
-	}
-
-	let kind = $state<Kind>(getSettings().videoGenBackendKind);
-	let baseUrl = $state(getSettings().videoGenToolchestBaseUrl);
-	let apiKeyId = $state<string | null>(getSettings().videoGenToolchestApiKeyId);
-	let modelId = $state(getSettings().videoGenToolchestModelId);
-
-	const isToolchest = $derived(kind === 'llama-toolchest');
-
-	let probing = $state(false);
-	let probeResult = $state<ProbeResult | null>(null);
-	let serverModels = $state<ModelOption[]>([]);
-	let instances = $state<ToolchestInstance[]>([]);
-	const modelOptions = $derived(withSavedModel(modelId, serverModels));
-	const chosen = $derived(instances.find((i) => i.id === modelId));
-
+	/** "llama-toolchest on host has video models", while there are none here. */
 	let hint = $state<{ host: string; count: number } | null>(null);
 	void toolchestHint('video').then((h) => (hint = h));
 
-	function persistKind(e: Event) {
-		kind = (e.currentTarget as HTMLSelectElement).value as Kind;
-		saveFields({ videoGenBackendKind: kind });
-		const found = kind === 'llama-toolchest' ? prefillFromInference('video') : null;
-		if (found) {
-			baseUrl = found.baseUrl;
-			apiKeyId = found.apiKeyId;
-		}
-		probeResult = null;
-		serverModels = [];
-		if (isToolchest && baseUrl.trim()) void probe();
+	function place(e: VideoModelEntry): string {
+		const host = e.url.trim() ? hostOf(e.url) : 'no address';
+		return `${VIDEO_BACKEND_LABEL[e.backend]} on ${host}`;
 	}
 
-	async function probe() {
-		probing = true;
-		probeResult = null;
-		try {
-			probeResult = await probeVideo();
-			if (probeResult.models) serverModels = probeResult.models;
-			instances = seenVideoInstances();
-			// It answered, so it is worth keeping in the saved list.
-			if (probeResult.ok || probeResult.models?.length) {
-				rememberServer('llama-toolchest', baseUrl, apiKeyId);
-			}
-			// With one instance there is nothing to choose.
-			if (!modelId && instances.length === 1) {
-				modelId = instances[0].id;
-				saveFields({ videoGenToolchestModelId: modelId });
-				probeResult = await probeVideo();
-			}
-		} catch (e) {
-			probeResult = { ok: false, detail: errMessage(e) };
-		} finally {
-			probing = false;
-		}
+	function add() {
+		// The inference server, when it is a toolchest, usually has the video models too.
+		const found = inferenceToolchest();
+		openId = found
+			? addVideoModel('llama-toolchest', { url: found.baseUrl, keyId: found.apiKeyId })
+			: addVideoModel(videoBackendKinds().includes('comfyui') ? 'comfyui' : 'llama-toolchest');
+		refresh();
+		invalidateTypeAvailability();
 	}
 
-	function pickServer(saved: GenerationServer | null) {
-		baseUrl = saved?.url ?? '';
-		apiKeyId = saved?.keyId ?? apiKeyId;
-		saveFields({ videoGenToolchestBaseUrl: baseUrl, videoGenToolchestApiKeyId: apiKeyId });
-		probeResult = null;
-		if (baseUrl) void probe();
+	function remove(e: VideoModelEntry) {
+		removeVideoModel(e.id);
+		refresh();
+		if (openId === e.id) openId = null;
+		invalidateTypeAvailability();
 	}
-
-	function saveUrl() {
-		const next = baseUrl.trim();
-		const changed = next !== getSettings().videoGenToolchestBaseUrl;
-		saveFields({ videoGenToolchestBaseUrl: next });
-		if (changed && next) void probe();
-	}
-
-	function chooseKey(id: string | null) {
-		apiKeyId = id;
-		saveFields({ videoGenToolchestApiKeyId: id });
-		if (baseUrl.trim()) void probe();
-	}
-
-	function chooseModel(e: Event) {
-		modelId = (e.currentTarget as HTMLSelectElement).value;
-		saveFields({ videoGenToolchestModelId: modelId });
-		void probe();
-	}
-
-	let probedOnOpen = false;
-	$effect(() => {
-		if (!probedOnOpen && isToolchest && baseUrl.trim()) {
-			probedOnOpen = true;
-			void probe();
-		}
-	});
 </script>
 
 <section class="settings-section">
-	<h2>Video generation backend</h2>
-	<div class="fields">
-		<label for="videogen-backend">Backend:</label>
-		<select id="videogen-backend" value={kind} onchange={persistKind}>
-			<option value="none">None</option>
-			<option value="llama-toolchest">llama-toolchest</option>
-		</select>
-	</div>
-	<p class="help">Off until you pick one.</p>
-	{#if hint && kind === 'none'}
-		<p class="help">llama-toolchest on {hint.host} has video models.</p>
+	<h2>Video models</h2>
+	<p
+		class="help"
+		title="A model that doesn't answer is passed over for the next one that can make the clip. The chat model can also name one."
+	>
+		Video generation uses the first model in this list that can make the clip.
+	</p>
+	{#if entries.length === 0}
+		<p class="help">None yet; video generation is off until you add one.</p>
+		{#if hint}
+			<p class="help">llama-toolchest on {hint.host} has video models.</p>
+		{/if}
 	{/if}
+
+	<GenerationModelList
+		{entries}
+		{place}
+		capsLine={(e) => (e.caps ? videoCapabilityLine(e.caps) : null)}
+		onMove={(id, delta) => (moveVideoModel(id, delta), refresh())}
+		onRemove={remove}
+		bind:openId
+	>
+		{#snippet editor(e: VideoModelEntry)}
+			<VideoEntryEditor entry={e} onChange={refresh} />
+		{/snippet}
+	</GenerationModelList>
+
+	<div class="actions">
+		<button onclick={add}>Add model</button>
+	</div>
 </section>
 
-{#if isToolchest}
-	<section class="settings-section">
-		<h2>Connection</h2>
-		<div class="fields">
-			<ServerAddress
-				kind="llama-toolchest"
-				id="videogen-url"
-				placeholder="http://host:3000"
-				keyId={apiKeyId}
-				bind:value={baseUrl}
-				onCommit={saveUrl}
-				onPick={pickServer}
-			/>
-
-			<label for="videogen-key">API key:</label>
-			<div id="videogen-key" title="Keys are kept in Settings → Inference → API Keys.">
-				<ApiKeyPicker selectedId={apiKeyId} onSelect={chooseKey} />
-			</div>
-
-			<label for="videogen-model">
-				Model:
-				<Tooltip
-					label="About the model"
-					text="The server's video instances, listed by Probe. A stopped one starts when it is first used."
-				/>
-			</label>
-			<select
-				id="videogen-model"
-				value={modelId}
-				onchange={chooseModel}
-				disabled={modelOptions.length === 0}
-			>
-				{#if modelOptions.length === 0}
-					<option value="">Probe to list the server's models</option>
-				{:else if !modelId}
-					<option value="" disabled>Choose a model</option>
-				{/if}
-				{#each modelOptions as m (m.name)}
-					<option value={m.name}>{m.label}</option>
-				{/each}
-			</select>
-		</div>
-		<div class="actions">
-			<button onclick={probe} disabled={probing}>{probing ? 'Probing…' : 'Probe'}</button>
-			{#if probeResult}
-				<span class="detail" class:bad={!probeResult.ok}>{probeResult.detail}</span>
-			{/if}
-		</div>
-		{#if chosen?.video}
-			<p
-				class="help"
-				title="Measure the instance at a larger size on llama-toolchest's Server page for longer clips."
-			>
-				{chosen.id} makes {chosen.video.defaultSize} at {chosen.video.defaultFps} fps{chosen.video
-					.maxPixelFrames
-					? `, up to ${Math.floor(chosen.video.maxPixelFrames / sizeArea(chosen.video.defaultSize))} frames at that size`
-					: ''}.
-			</p>
-		{/if}
-	</section>
-
-	{#if probeResult?.models}
-		<ToolchestModels kind="video" {instances} baseUrl={baseUrl.trim()} />
-	{/if}
-{/if}
-
 <style>
-	.fields {
-		display: grid;
-		grid-template-columns: max-content minmax(0, 1fr);
-		align-items: center;
-		gap: 8px 12px;
-		margin-top: 8px;
-	}
-
-	.fields select {
-		width: 100%;
-		min-width: 0;
-	}
-
 	.actions {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		flex-wrap: wrap;
-		margin-top: 6px;
-	}
-
-	.detail {
-		font-size: 0.85em;
-		color: var(--text-muted, #888);
-	}
-
-	.detail.bad {
-		color: var(--error, #c33);
+		margin-top: 8px;
 	}
 </style>
