@@ -5,7 +5,7 @@ description: Having agents make, read and change notebooks — a notebook's own 
 
 # Notebook agents
 
-Agents can do in a notebook what you can: make one, read it, add cards, change a table a row at a time, and move or delete cards. Every change they make shows where it came from on the card, and **⋯ → History…** undoes it (see the `notebooks` page).
+Agents can do in a notebook what you can: make one, read it, add cards, change a table a row at a time, write Python cards, and move or delete cards. A Python card an agent writes runs once, after the same approval prompt as any agent's Python (Settings → Chat → Approval prompt). Every change they make shows where it came from on the card, and **⋯ → History…** undoes it (see the `notebooks` page).
 
 ## Ask about this notebook
 
@@ -18,5 +18,5 @@ In Chat, Shell or Code, ask in your own words: "make a notebook called speakers 
 ## What agents don't do with notebooks
 
 - They don't look in your notebooks unless you ask, and Memory never reads them (see the `memory` page).
-- They can't run Python cards or open the files in them.
+- They can't open the files a notebook keeps.
 - With Settings → General → **Show the Notebooks tab** off, agents have no notebook tools.

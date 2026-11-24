@@ -11,6 +11,7 @@
  */
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
+import { runCardForAgent } from '#lib/agent/tools/_notebookPython.ts';
 import * as api from '#lib/notebooks/api.ts';
 import {
 	PAGE_ROWS,
@@ -191,19 +192,20 @@ registerTool({
 		function: {
 			name: 'notebook_add_card',
 			description:
-				'Add a card to a notebook. kind text: give text (Markdown, links allowed). kind table: give csv with a header row; a header may name its type as Name:type (text, number, currency, url, date, checkbox, status). kind checklist: give items, one per line, "[x] " in front of done ones. kind attachment or image: give path to a file.',
+				'Add a card to a notebook. kind text: give text (Markdown, links allowed). kind table: give csv with a header row; a header may name its type as Name:type (text, number, currency, url, date, checkbox, status). kind checklist: give items, one per line, "[x] " in front of done ones. kind python: give code; it runs once (the notebook tables are pandas DataFrames in tables["Title"]; leave a DataFrame in result to offer it as a table). kind attachment or image: give path to a file.',
 			parameters: {
 				type: 'object',
 				properties: {
 					notebook: NOTEBOOK_ARG,
 					kind: {
 						type: 'string',
-						enum: ['text', 'table', 'checklist', 'attachment', 'image']
+						enum: ['text', 'table', 'checklist', 'python', 'attachment', 'image']
 					},
 					title: { type: 'string', description: "The card's title." },
 					text: { type: 'string', description: 'kind text: the Markdown.' },
 					csv: { type: 'string', description: 'kind table: CSV with a header row.' },
 					items: { type: 'string', description: 'kind checklist: one item per line.' },
+					code: { type: 'string', description: 'kind python: the Python code.' },
 					path: {
 						type: 'string',
 						description:
@@ -238,6 +240,9 @@ registerTool({
 				card.rows = t.rows;
 			} else if (kind === 'checklist') {
 				card.rows = checklistRows(str(args.items));
+			} else if (kind === 'python') {
+				card.body = str(args.code);
+				if (!card.body.trim()) throw new Error('Give code for a python card.');
 			} else if (kind === 'attachment' || kind === 'image') {
 				const file = await fileForCard(args, ctx);
 				card.meta = JSON.stringify(file);
@@ -245,14 +250,16 @@ registerTool({
 			} else {
 				throw new Error(`Unknown kind "${kind}".`);
 			}
-			const added = await api.addCard(nb.id, card, await sourceOf(ctx), str(args.after) || null);
+			const source = await sourceOf(ctx);
+			const added = await api.addCard(nb.id, card, source, str(args.after) || null);
 			const what = kind === 'table' || kind === 'checklist' ? ` with ${added.row_count} rows` : '';
 			// The rows with their ids, so a later change names real ones.
 			const rows = kind === 'table' || kind === 'checklist' ? `\n${cardOutline(added)}` : '';
+			const ran = kind === 'python' ? `\n${await runCardForAgent(added, ctx, source)}` : '';
 			return done(
 				nb.id,
 				[added.id],
-				`Added ${kind} card ${added.id}${what} to "${nb.title}". Link: [${nb.title}](notebook:${nb.id}#${added.id})${rows}`
+				`Added ${kind} card ${added.id}${what} to "${nb.title}". Link: [${nb.title}](notebook:${nb.id}#${added.id})${rows}${ran}`
 			);
 		})
 });
@@ -287,14 +294,15 @@ registerTool({
 		function: {
 			name: 'notebook_edit_card',
 			description:
-				"Change a card: its title, or a text card's Markdown (text replaces it, append_text adds to the end). For table rows use notebook_table_rows.",
+				"Change a card: its title, a text card's Markdown (text replaces it, append_text adds to the end), or a python card's code (it runs again). For table rows use notebook_table_rows.",
 			parameters: {
 				type: 'object',
 				properties: {
 					card: CARD_ARG,
 					title: { type: 'string' },
 					text: { type: 'string', description: 'Text cards: the new Markdown, whole.' },
-					append_text: { type: 'string', description: 'Text cards: Markdown to add at the end.' }
+					append_text: { type: 'string', description: 'Text cards: Markdown to add at the end.' },
+					code: { type: 'string', description: 'Python cards: the new code, whole.' }
 				},
 				required: ['card']
 			}
@@ -313,13 +321,23 @@ registerTool({
 					throw new Error(`Card ${card.id} is a ${card.kind} card; only text cards take text.`);
 				}
 				if (text !== null) patch.body = text;
+				if (args.code !== undefined) {
+					if (card.kind !== 'python') {
+						throw new Error(`Card ${card.id} is a ${card.kind} card; only python cards take code.`);
+					}
+					patch.body = str(args.code);
+				}
 				if (append !== null) patch.body = `${(patch.body ?? card.body).trimEnd()}\n\n${append}`;
 				if (patch.title === undefined && patch.body === undefined) {
-					throw new Error('Nothing to change: give title, text or append_text.');
+					throw new Error('Nothing to change: give title, text, append_text or code.');
 				}
 				return api.updateCard(card.id, card.version, patch, source);
 			});
-			return done(saved.notebook_id, [saved.id], `Changed card ${saved.id}.`);
+			const ran =
+				saved.kind === 'python' && args.code !== undefined
+					? `\n${await runCardForAgent(saved, ctx, source)}`
+					: '';
+			return done(saved.notebook_id, [saved.id], `Changed card ${saved.id}.${ran}`);
 		})
 });
 

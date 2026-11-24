@@ -33,6 +33,10 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 Agents in Chat, Shell, Code and each notebook's own chat can make and change notebooks for you; see the `notebook-agents` page.
 
+## Work with tables in Python
+
+**+ Add card → Python** holds code that runs in the Python sandbox (Settings → Chat → Enable Python sandbox). The notebook's tables are pandas DataFrames in `tables["Title"]`; code reads them but never changes them. **▶ Run** (or Ctrl / ⌘ + S) runs it and keeps the output, plots included; "stale" means a table it read has changed since. Put a DataFrame in `result` and **Save as table card** keeps it as a new table. The cards of one notebook share variables; **Reset** clears them.
+
 ## Keep files and pictures
 
 **+ Add card → Picture…** or **File…** picks files to keep in the notebook; dropping files onto a notebook does the same, placing them after the card under the pointer. Pictures show in the card, and clicking one enlarges it. Other files show their name and size: **Open** opens them in the app your computer uses for that type, **Save a copy…** saves them where you choose, and PDFs have **Preview**. Programs and scripts aren't opened from a notebook; save a copy instead. **Replace…** swaps in another file. Files up to 200 MB can be kept, and they stay on this computer.

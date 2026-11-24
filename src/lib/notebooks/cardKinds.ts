@@ -10,6 +10,7 @@ import TableCard from '#lib/components/notebooks/cards/TableCard.svelte';
 import ChecklistCard from '#lib/components/notebooks/cards/ChecklistCard.svelte';
 import AttachmentCard from '#lib/components/notebooks/cards/AttachmentCard.svelte';
 import ImageCard from '#lib/components/notebooks/cards/ImageCard.svelte';
+import PythonCard from '#lib/components/notebooks/cards/PythonCard.svelte';
 
 export interface CardViewProps {
 	card: NotebookCard;
@@ -60,6 +61,18 @@ const KINDS: CardKindDef[] = [
 			body: '',
 			meta: '{}',
 			rows: [JSON.stringify({ text: '', done: false })]
+		})
+	},
+	{
+		kind: 'python',
+		label: 'Python',
+		component: PythonCard,
+		create: () => ({
+			kind: 'python',
+			title: '',
+			body: '# The notebook\'s tables are in tables["Title"].\n',
+			meta: '{}',
+			rows: null
 		})
 	},
 	// Both pick files first: NotebookView's onpickkind opens the dialog.

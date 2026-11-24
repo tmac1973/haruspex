@@ -4,7 +4,7 @@
 	 * it in a markdown editor; changes save a second after typing stops and
 	 * when the editor loses focus.
 	 */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { renderMarkdown } from '#lib/markdown.ts';
 	import { createEditor, type EditorHandle } from '#lib/editor/codemirror.ts';
 	import { saveCard } from '#lib/stores/notebooks.svelte.ts';
@@ -37,10 +37,12 @@
 
 	$effect(() => {
 		if (!editing || !host) return;
-		draft = card.body;
+		// Made once per edit: a save changing card.body must not rebuild it.
+		const body = untrack(() => card.body);
+		draft = body;
 		editor = createEditor(host, {
 			path: 'card.md',
-			doc: card.body,
+			doc: body,
 			onChange(value) {
 				draft = value;
 				if (timer) clearTimeout(timer);
