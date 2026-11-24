@@ -31,30 +31,32 @@ import {
 } from '#lib/toolchest/client.ts';
 import type { JobLike } from '#lib/toolchest/jobs.ts';
 
-/** Each kind's settings fields, its noun, and the section that sets it. */
-const KINDS = {
-	image: {
-		url: 'imageToolchestBaseUrl',
-		key: 'imageToolchestApiKeyId',
-		model: 'imageToolchestModelId',
-		section: 'Settings → Image'
-	},
+/** The section that sets each kind. */
+const SECTIONS: Record<GenerationKind, string> = {
+	image: 'Settings → Image',
+	music: 'Settings → Music',
+	video: 'Settings → Video generation'
+};
+
+/**
+ * The kinds kept as one server in their own settings fields. An image model
+ * names its server in its entry instead (`#lib/image/entries.ts`).
+ */
+export type FieldKind = Exclude<GenerationKind, 'image'>;
+
+/** Each such kind's settings fields. */
+const FIELDS = {
 	music: {
 		url: 'musicToolchestBaseUrl',
 		key: 'musicToolchestApiKeyId',
-		model: 'musicToolchestModelId',
-		section: 'Settings → Music'
+		model: 'musicToolchestModelId'
 	},
 	video: {
 		url: 'videoGenToolchestBaseUrl',
 		key: 'videoGenToolchestApiKeyId',
-		model: 'videoGenToolchestModelId',
-		section: 'Settings → Video generation'
+		model: 'videoGenToolchestModelId'
 	}
-} as const satisfies Record<
-	GenerationKind,
-	{ url: string; key: ApiKeyIdField; model: string; section: string }
->;
+} as const satisfies Record<FieldKind, { url: string; key: ApiKeyIdField; model: string }>;
 
 /** The `/v1/models` route every toolchest build serves. */
 const MODELS_ROUTE = '/v1/models';
@@ -88,8 +90,8 @@ export function withSavedModel(current: string, models: ModelOption[]): ModelOpt
  * inference server, when that is a toolchest: usually the same machine and
  * key. Returns what it filled in, or null when it left the section alone.
  */
-export function prefillFromInference(kind: GenerationKind): FoundToolchest | null {
-	const k = KINDS[kind];
+export function prefillFromInference(kind: FieldKind): FoundToolchest | null {
+	const k = FIELDS[kind];
 	const found = inferenceToolchest();
 	if (!found || getSettings()[k.url].trim()) return null;
 	updateSettings({ [k.url]: found.baseUrl, [k.key]: found.apiKeyId });
@@ -136,8 +138,8 @@ export interface ToolchestSource {
 }
 
 /** One kind's view of its toolchest server, from its section of the settings. */
-export function toolchestKind(kind: GenerationKind) {
-	const k = KINDS[kind];
+export function toolchestKind(kind: FieldKind) {
+	const k = FIELDS[kind];
 	return toolchestServer(kind, () => {
 		const s = getSettings();
 		return { baseUrl: s[k.url] ?? '', keyId: s[k.key] ?? null, modelId: s[k.model] ?? '' };
@@ -150,7 +152,7 @@ export function toolchestKind(kind: GenerationKind) {
  * or two instances on one, never mix theirs up.
  */
 export function toolchestServer(kind: GenerationKind, source: () => ToolchestSource) {
-	const k = KINDS[kind];
+	const section = SECTIONS[kind];
 	/** What a probe or a generation last saw, for the sync questions asked after. */
 	let lastInstances: ToolchestInstance[] = [];
 	/** The server's upscalers, from the same read; kept for the image kind only. */
@@ -216,15 +218,15 @@ export function toolchestServer(kind: GenerationKind, source: () => ToolchestSou
 		wanted?: string
 	): Promise<ToolchestInstance> {
 		if (!cfg.baseUrl) {
-			throw new ToolchestError('unconfigured', `No llama-toolchest server is set — ${k.section}.`);
+			throw new ToolchestError('unconfigured', `No llama-toolchest server is set — ${section}.`);
 		}
 		const id = wanted?.trim() || chosenId();
-		if (!id) throw new ToolchestError('unconfigured', `No ${kind} model is chosen — ${k.section}.`);
+		if (!id) throw new ToolchestError('unconfigured', `No ${kind} model is chosen — ${section}.`);
 		const instance = (await instances(cfg, signal)).find((i) => i.id === id);
 		if (!instance) {
 			throw new ToolchestError(
 				'unconfigured',
-				`${id} is not on ${hostOf(cfg.baseUrl)} any more — ${k.section}.`
+				`${id} is not on ${hostOf(cfg.baseUrl)} any more — ${section}.`
 			);
 		}
 		if (!usable(instance)) {
@@ -265,7 +267,7 @@ async function probeServer(
 	chosenId: string,
 	how?: (chosen: ToolchestInstance) => string
 ): Promise<ProbeResult> {
-	const section = KINDS[kind].section;
+	const section = SECTIONS[kind];
 	if (!cfg.baseUrl) return { ok: false, detail: `No server address — ${section}.` };
 	const host = hostOf(cfg.baseUrl);
 	let all: ToolchestInstance[];

@@ -1,7 +1,12 @@
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
+import type { ImageBackendKind } from '#lib/image/types.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ backend: 'none', generate: vi.fn() }));
+const state = vi.hoisted(() => ({
+	backend: 'none' as ImageBackendKind | 'none',
+	generate: vi.fn()
+}));
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
@@ -10,7 +15,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 		overDefaults: true,
 		settings: () => ({
 			videoEditingEnabled: true,
-			imageBackendKind: state.backend
+			imageModels: imageModelsFor(state.backend)
 		})
 	})
 );

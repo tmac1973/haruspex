@@ -325,7 +325,7 @@ describe('jobs runner — asset generation', () => {
 		// the history. The pipeline keeps its own check for the case this
 		// cannot cover — a run that was queued while a backend was configured
 		// and reaches the front of a twelve-hour queue after it was removed.
-		settingsState.imageBackendKind = 'none';
+		settingsState.imageModels = [];
 		imageState.kind = 'none';
 		mocks.getJob.mockResolvedValueOnce(assetJob());
 		wireFs(goodSpec());

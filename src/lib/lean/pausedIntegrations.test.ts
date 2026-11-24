@@ -19,10 +19,11 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 );
 
 import { pausedIntegrations } from './pausedIntegrations';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 
 const NOTHING = {
 	screenCaptureEnabled: false,
-	imageBackendKind: 'none',
+	imageModels: imageModelsFor('none'),
 	musicBackendKind: 'none',
 	videoGenBackendKind: 'none',
 	sandboxEnabled: false
@@ -42,7 +43,7 @@ describe('pausedIntegrations', () => {
 		Object.assign(state, { email: true, calendar: true, contacts: true });
 		state.settings = {
 			screenCaptureEnabled: true,
-			imageBackendKind: 'comfyui',
+			imageModels: imageModelsFor('comfyui'),
 			musicBackendKind: 'toolchest',
 			videoGenBackendKind: 'toolchest',
 			sandboxEnabled: true

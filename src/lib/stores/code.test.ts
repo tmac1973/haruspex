@@ -248,7 +248,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 			codeAutoApprove: false,
 			maxResponseTokensFileWrite: 8192,
 			codeRunCommandTimeoutSecs: 30,
-			imageBackendKind: 'none',
+			imageModels: [],
 			codeCustomSystemPrompt: ''
 		}
 	})

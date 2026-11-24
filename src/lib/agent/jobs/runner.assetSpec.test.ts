@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 
 const {
 	mocks,
@@ -45,7 +46,7 @@ describe('jobs runner — asset generation', () => {
 		// below its native 1024 just as SD1.5 degrades above its 512. A
 		// shipped default of 16 silently halves SDXL's resolution and the
 		// user finds out by looking at bad sprites.
-		settingsState.imageComfyCheckpoint = 'sd_xl_base_1.0.safetensors';
+		settingsState.imageModels = imageModelsFor('comfyui', { model: 'sd_xl_base_1.0.safetensors' });
 		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a roguelike' }));
 		const written = wireFs(null, { recipe: goodRecipe() });
 		mocks.runEphemeralTurn.mockImplementation(
@@ -64,7 +65,9 @@ describe('jobs runner — asset generation', () => {
 	it('keeps the default upscale for a checkpoint it does not recognise', async () => {
 		// Never a guess: inferring a native edge from a filename would be
 		// wrong exactly when it matters.
-		settingsState.imageComfyCheckpoint = 'someones-pixel-mix-v4.safetensors';
+		settingsState.imageModels = imageModelsFor('comfyui', {
+			model: 'someones-pixel-mix-v4.safetensors'
+		});
 		mocks.getJob.mockResolvedValueOnce(assetJob({ description: 'a roguelike' }));
 		const written = wireFs(null, { recipe: goodRecipe() });
 		mocks.runEphemeralTurn.mockImplementation(

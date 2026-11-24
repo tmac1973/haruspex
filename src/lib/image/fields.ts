@@ -1,35 +1,64 @@
 /**
- * Settings → Image's old single-backend fields as image model entries: how
- * the saved list (`imageModels`) is seeded from them, once, and what settings
- * from before the list read as. Reads no settings itself, so the settings
- * store can use it.
+ * Settings → Image's single-backend fields from before the list (v0.2.14 and
+ * older), as an install may still have them stored: the saved list
+ * (`imageModels`) is seeded from them once, and `#lib/image/keys.ts` moves
+ * their keys to named keys and then drops them. Nothing else reads them.
+ * Reads no settings itself, so the settings store can use it.
  */
 
 import { entryConfigKey } from '#lib/generation/entry.ts';
-import type { AppSettings } from '#lib/stores/settings.ts';
 import type { ImageModelEntry } from '#lib/image/types.ts';
 
-/** The id of the entry these fields describe, so a backend built from it is kept. */
+/** The id of the entry these fields describe, kept by the entry seeded from them. */
 export const LEGACY_ENTRY_ID = 'legacy';
 
 type EntryKind = ImageModelEntry['backend'];
 
-/** The fields that describe the entry; changing one changes it. */
+/** The old fields, as stored. None is in `AppSettings` any more. */
+export interface LegacyImageFields {
+	imageBackendKind?: EntryKind | 'none';
+	/** ComfyUI's address. */
+	imageBackendBaseUrl?: string;
+	/** ComfyUI's key, inline where no secret store worked; else in `comfy:key`. */
+	imageBackendApiKey?: string;
+	imageBackendApiKeySaved?: boolean;
+	imageComfyCheckpoint?: string;
+	imageComfyWorkflowPath?: string;
+	imageComfyFieldMapPath?: string;
+	imageLocalModelId?: string;
+	imageLocalModelPath?: string;
+	imageLemonadeBaseUrl?: string;
+	/** Lemonade's key, inline as ComfyUI's; else in `lemonade:key`. */
+	imageLemonadeApiKey?: string;
+	imageLemonadeApiKeySaved?: boolean;
+	imageLemonadeModelId?: string;
+	imageToolchestBaseUrl?: string;
+	imageToolchestApiKeyId?: string | null;
+	imageToolchestModelId?: string;
+	/** Set by v0.2.15 and later once a first, partial key migration ran. */
+	imageKeysMigrated?: boolean;
+}
+
+/** Every old field's name: what is dropped once their keys are moved. */
 export const LEGACY_IMAGE_FIELDS = [
 	'imageBackendKind',
 	'imageBackendBaseUrl',
+	'imageBackendApiKey',
+	'imageBackendApiKeySaved',
 	'imageComfyCheckpoint',
 	'imageComfyWorkflowPath',
 	'imageComfyFieldMapPath',
 	'imageLocalModelId',
+	'imageLocalModelPath',
 	'imageLemonadeBaseUrl',
+	'imageLemonadeApiKey',
+	'imageLemonadeApiKeySaved',
 	'imageLemonadeModelId',
 	'imageToolchestBaseUrl',
 	'imageToolchestApiKeyId',
-	'imageToolchestModelId'
-] as const satisfies readonly (keyof AppSettings)[];
-
-export type LegacyImageFields = Partial<Pick<AppSettings, (typeof LEGACY_IMAGE_FIELDS)[number]>>;
+	'imageToolchestModelId',
+	'imageKeysMigrated'
+] as const satisfies readonly (keyof LegacyImageFields)[];
 
 /** What each backend is called where no model names it. */
 export const IMAGE_BACKEND_LABEL: Record<EntryKind, string> = {
@@ -86,8 +115,8 @@ function fieldsOf(
 	}
 }
 
-/** The entry `kind`'s fields describe, whether or not it is the chosen kind. */
-export function entryFromFields(s: LegacyImageFields, kind: EntryKind): ImageModelEntry {
+/** The entry `kind`'s fields describe. */
+function entryFromFields(s: LegacyImageFields, kind: EntryKind): ImageModelEntry {
 	const f = fieldsOf(s, kind);
 	const model = f.model.trim();
 	return {
@@ -105,9 +134,9 @@ export function entryFromFields(s: LegacyImageFields, kind: EntryKind): ImageMod
 }
 
 /**
- * The saved list as the fields describe it: none for None, else the one
- * entry. What `previous` already knew of that entry (its name, if the user
- * set it, and what a probe saw, if its config is unchanged) is kept.
+ * The list as the old fields describe it: none for None, else the one entry.
+ * What `previous` already knew of that entry (its name, if the user set it,
+ * and what a probe saw, if its config is unchanged) is kept.
  */
 export function imageModelsFromFields(
 	s: LegacyImageFields,

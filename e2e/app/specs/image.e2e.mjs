@@ -56,13 +56,24 @@ describe('a test image from ComfyUI', () => {
 	it('generates, stores and shows the picture', async () => {
 		await seed({
 			...REMOTE,
-			imageBackendKind: 'comfyui',
-			imageBackendBaseUrl: `http://127.0.0.1:${port}`,
-			imageComfyCheckpoint: CHECKPOINT
+			imageModels: [
+				{
+					id: 'e2e-comfy',
+					name: 'e2e',
+					backend: 'comfyui',
+					url: `http://127.0.0.1:${port}`,
+					keyId: null,
+					model: CHECKPOINT,
+					options: {},
+					caps: null,
+					capsAt: null,
+					renamed: false
+				}
+			]
 		});
 		await (await $('button[aria-label="Settings"]')).click();
 		await (await $('button=Image')).click();
-		// The backend seeded above is the first image model; open it.
+		// Open the image model seeded above.
 		await (await $('button.entry-name')).click();
 		await clickWhenStill(await $('button=Generate a test image'));
 

@@ -27,7 +27,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 			codeAutoApprove: false,
 			codeRunCommandTimeoutSecs: 30,
 			codeSubtasks: 'read',
-			imageBackendKind: 'none',
+			imageModels: [],
 			codeCustomSystemPrompt: ''
 		}),
 		getChatTemplateKwargs: () => ({})

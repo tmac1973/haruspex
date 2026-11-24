@@ -24,6 +24,7 @@ import {
 } from '#lib/stores/settings.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { imageModel } from '#lib/testing/imageModels.ts';
 import {
 	__resetOpenRouterCatalogForTests,
 	getOpenRouterCatalog,
@@ -1027,12 +1028,12 @@ describe('response token ceilings', () => {
 });
 
 describe('include images setting', () => {
-	let prior: Pick<ReturnType<typeof getSettings>, 'includeImages' | 'imageBackendKind'>;
+	let prior: Pick<ReturnType<typeof getSettings>, 'includeImages' | 'imageModels'>;
 
 	beforeEach(() => {
 		localStorage.clear();
-		const { includeImages, imageBackendKind } = getSettings();
-		prior = { includeImages, imageBackendKind };
+		const { includeImages, imageModels } = getSettings();
+		prior = { includeImages, imageModels };
 	});
 
 	afterEach(() => {
@@ -1063,13 +1064,13 @@ describe('include images setting', () => {
 	// A drawn picture of an animal is still "about something visual", so
 	// without this line the model goes looking for photos to add to it.
 	it('says a drawn picture is the image only when it can draw', () => {
-		updateSettings({ includeImages: true, imageBackendKind: 'none' });
+		updateSettings({ includeImages: true, imageModels: [] });
 		expect(getIncludeImagesPrompt()).not.toContain('you drew');
-		updateSettings({ imageBackendKind: 'comfyui' });
+		updateSettings({ imageModels: [imageModel('comfyui')] });
 		expect(getIncludeImagesPrompt()).toContain(
 			'A picture you drew, edited or upscaled is the image'
 		);
-		updateSettings({ imageBackendKind: 'none' });
+		updateSettings({ imageModels: [] });
 	});
 });
 
@@ -1136,60 +1137,32 @@ describe('MCP servers', () => {
 });
 
 /**
- * Image generation is entirely opt-in. An install that has never touched it
- * must see `'none'` — no backend resolved, no process started, no weights
- * downloaded. That is why these fields need no migration flag: absent reads as
- * off, which is the correct state.
+ * Image generation is off until Settings → Image has a model: nothing is
+ * resolved, started or downloaded for an install that never opted in.
  */
-describe('image backend settings', () => {
-	it('defaults to no backend and empty connection details', () => {
-		const s = getSettings();
-		expect(s.imageBackendKind).toBe('none');
-		expect(s.imageBackendBaseUrl).toBe('');
-		expect(s.imageBackendApiKey).toBe('');
-		expect(s.imageComfyCheckpoint).toBe('');
+describe('image model settings', () => {
+	it('default to no model', () => {
+		expect(getSettings().imageModels).toEqual([]);
 	});
 
-	it('defaults both custom-workflow paths to empty', () => {
-		// Half-configured is a probe-time error, so the shipped state must be
-		// neither-configured rather than one of the two.
-		const s = getSettings();
-		expect(s.imageComfyWorkflowPath).toBe('');
-		expect(s.imageComfyFieldMapPath).toBe('');
-	});
-
-	it('defaults both local-model fields to empty', () => {
-		const s = getSettings();
-		expect(s.imageLocalModelId).toBe('');
-		expect(s.imageLocalModelPath).toBe('');
-	});
-
-	it('persists a configured backend', () => {
-		updateSettings({ imageBackendKind: 'comfyui', imageBackendBaseUrl: 'http://box:8188' });
-		expect(getSettings().imageBackendKind).toBe('comfyui');
-		expect(getSettings().imageBackendBaseUrl).toBe('http://box:8188');
-		updateSettings({ imageBackendKind: 'none', imageBackendBaseUrl: '' });
-	});
-
-	it('leaves a saved image model list alone when an old backend field changes', () => {
-		const list = [
-			{
-				id: 'x',
-				name: 'klein',
-				backend: 'llama-toolchest' as const,
-				url: 'http://box:3000',
-				keyId: null,
-				model: 'klein',
-				options: {},
-				caps: null,
-				capsAt: null,
-				renamed: false
-			}
-		];
-		updateSettings({ imageModels: list });
-		updateSettings({ imageBackendKind: 'comfyui', imageBackendBaseUrl: 'http://c:8188' });
-		expect(getSettings().imageModels).toEqual(list);
-		updateSettings({ imageModels: undefined, imageBackendKind: 'none', imageBackendBaseUrl: '' });
+	it('drop the old single-backend fields once asked, and write nothing when there are none', async () => {
+		localStorage.setItem(
+			SETTINGS_KEY,
+			JSON.stringify({ imageBackendKind: 'comfyui', imageBackendApiKey: 'k', theme: 'dark' })
+		);
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		fresh.forgetLegacyImageFields();
+		const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY)!);
+		expect(stored).not.toHaveProperty('imageBackendKind');
+		expect(stored).not.toHaveProperty('imageBackendApiKey');
+		expect(stored.theme).toBe('dark');
+		expect(stored.imageModels).toMatchObject([{ id: 'legacy', backend: 'comfyui' }]);
+		localStorage.setItem(SETTINGS_KEY, 'untouched');
+		fresh.forgetLegacyImageFields();
+		expect(localStorage.getItem(SETTINGS_KEY)).toBe('untouched');
+		localStorage.removeItem(SETTINGS_KEY);
+		vi.resetModules();
 	});
 });
 

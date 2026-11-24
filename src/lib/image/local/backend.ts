@@ -333,5 +333,5 @@ async function upscale(
 export { ROUTES };
 registerImageBackendKind('local', localFor);
 
-/** Settings → Image's bundled engine as a backend, for what has no entry of its own yet. */
+/** The first bundled engine image model as a backend, read again on every call. */
 export const localBackend = legacyBackend('local');

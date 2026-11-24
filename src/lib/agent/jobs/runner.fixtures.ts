@@ -22,6 +22,8 @@ import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
 import { invokeRouter, mockTauriCore, type InvokeRoute } from '#lib/testing/invoke.ts';
 import { mockSettingsModule } from '#lib/testing/settings.ts';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
+import type { ImageModelEntry } from '#lib/image/types.ts';
 
 /** The slot the stand-in `withInferenceSlot` hands each turn. */
 export const fakeSlot = { held: true, release: () => {}, reacquire: async () => {} };
@@ -69,9 +71,7 @@ export const mocks = {
  * gate reads it, so a run cannot even start without it.
  */
 export const settingsState = {
-	imageBackendKind: 'none' as string,
-	imageComfyCheckpoint: '' as string,
-	imageLocalModelId: '' as string,
+	imageModels: [] as ImageModelEntry[],
 	codeSubtasks: 'read' as 'off' | 'read' | 'write',
 	agentFeedbackEnabled: false,
 	leanMode: false,
@@ -166,9 +166,7 @@ function settingsModule(importOriginal: <T>() => Promise<T>) {
 		}),
 		settings: () => ({
 			contextSize: 8192,
-			imageBackendKind: settingsState.imageBackendKind,
-			imageComfyCheckpoint: settingsState.imageComfyCheckpoint,
-			imageLocalModelId: settingsState.imageLocalModelId,
+			imageModels: settingsState.imageModels,
 			codeSubtasks: settingsState.codeSubtasks,
 			agentFeedbackEnabled: settingsState.agentFeedbackEnabled,
 			inferenceBackend: { mode: 'local' as const },
@@ -537,12 +535,10 @@ export function useAssetBackend() {
 			loras: true,
 			maxLoras: 2
 		};
-		settingsState.imageBackendKind = 'comfyui';
-		settingsState.imageComfyCheckpoint = '';
-		settingsState.imageLocalModelId = '';
+		settingsState.imageModels = imageModelsFor('comfyui');
 	});
 	afterEach(() => {
-		settingsState.imageBackendKind = 'none';
+		settingsState.imageModels = [];
 	});
 }
 

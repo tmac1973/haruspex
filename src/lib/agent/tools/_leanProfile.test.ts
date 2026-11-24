@@ -1,3 +1,4 @@
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Every integration on, so a lean turn has every reason to offer more than it
@@ -12,7 +13,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 			leanMode: lean.on,
 			leanFileWrites: lean.files,
 			screenCaptureEnabled: true,
-			imageBackendKind: 'comfyui',
+			imageModels: imageModelsFor('comfyui'),
 			musicBackendKind: 'toolchest',
 			videoGenBackendKind: 'toolchest',
 			sandboxEnabled: true,

@@ -23,13 +23,14 @@ vi.mock('#lib/inference/descriptor.ts', () => ({
 }));
 vi.mock('#lib/skills/client.ts', () => ({ skillsAutonomous: () => true }));
 vi.mock('#lib/stores/memory.svelte.ts', () => ({ memoryActive: () => true }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
-	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const { imageModelsFor } = await import('#lib/testing/imageModels.ts');
+	return (await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({
 			leanMode: settingsBackend.lean,
 			leanFileWrites: settingsBackend.files,
 			sandboxEnabled: false,
-			imageBackendKind: 'comfyui',
+			imageModels: imageModelsFor('comfyui'),
 			screenCaptureEnabled: true,
 			commandMemoryLimitPercent: 0,
 			allowSpillToSystemRam: true,
@@ -48,8 +49,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 			{ address: 'https://dav.secret.example', username: 'tim', password: 'hunter2' }
 		],
 		startableMcpServers: () => [{ label: 'GitHub', env: { TOKEN: 'ghp_SECRET' } }]
-	})
-);
+	});
+});
 
 import { guideStatus } from './status';
 

@@ -52,7 +52,6 @@ import {
 	type TransitionOutcome
 } from '#lib/agent/jobs/types/asset-generation/transitions.ts';
 import { resolveImageBackend, routedImageBackend } from '#lib/image/index.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { drawingEntry } from '#lib/image/route.ts';
 import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
@@ -174,11 +173,7 @@ async function resolveLicensing(spec: AssetSpec): Promise<Licensing> {
 
 /** The model a drawing goes to when a spec names none. */
 function configuredModelName(): string {
-	const entry = drawingEntry();
-	if (!entry) return '';
-	// A bundled-engine setup from before catalogue ids named a file.
-	if (entry.backend === 'local' && !entry.model) return getSettings().imageLocalModelPath.trim();
-	return entry.model;
+	return drawingEntry()?.model ?? '';
 }
 
 /**

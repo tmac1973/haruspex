@@ -12,24 +12,16 @@ import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
 import { uniqueName } from '#lib/generation/entry.ts';
 import { imageKeysReady } from '#lib/image/keys.ts';
-import {
-	LEGACY_ENTRY_ID,
-	defaultImageName,
-	entryFromFields,
-	imageModelsFromFields
-} from '#lib/image/fields.ts';
+import { defaultImageName } from '#lib/image/fields.ts';
 
-export { IMAGE_BACKEND_LABEL, LEGACY_ENTRY_ID, defaultImageName } from '#lib/image/fields.ts';
+export { IMAGE_BACKEND_LABEL, defaultImageName } from '#lib/image/fields.ts';
 
 type EntryKind = ImageModelEntry['backend'];
 
-/**
- * The image models, in the order they are tried. Settings from before the
- * list (as some tests still hand in) are read through their old fields.
- */
+/** The image models, in the order they are tried. */
 export function imageEntries(): ImageModelEntry[] {
-	const s = getSettings();
-	return Array.isArray(s.imageModels) ? s.imageModels : imageModelsFromFields(s);
+	const list = getSettings().imageModels;
+	return Array.isArray(list) ? list : [];
 }
 
 /** The first image model, or null when there is none. */
@@ -78,12 +70,33 @@ export function entryById(id: string): ImageModelEntry | undefined {
 	return imageEntries().find((e) => e.id === id);
 }
 
+/** An entry for `kind` with nothing set, apart from `fill`. */
+function blankEntry(
+	kind: EntryKind,
+	fill: Partial<Omit<ImageModelEntry, 'backend'>> = {}
+): ImageModelEntry {
+	const model = fill.model ?? '';
+	return {
+		id: fill.id ?? kind,
+		name: fill.name ?? defaultImageName({ backend: kind, model }),
+		backend: kind,
+		url: fill.url ?? '',
+		keyId: fill.keyId ?? null,
+		model,
+		options: fill.options ?? {},
+		caps: fill.caps ?? null,
+		capsAt: fill.capsAt ?? null,
+		renamed: fill.renamed ?? false
+	};
+}
+
 /**
- * The entry `kind`'s old single-backend fields describe: for a job handle
- * from before the list, and the one-backend-per-kind exports tests use.
+ * The first image model on a `kind` backend, or a blank one when there is
+ * none: for the one-backend-per-kind exports (`legacyBackend`) and the
+ * toolchest views that default to one.
  */
-export function legacyEntryFor(kind: EntryKind): ImageModelEntry {
-	return entryFromFields(getSettings(), kind);
+export function entryOfKind(kind: EntryKind): ImageModelEntry {
+	return imageEntries().find((e) => e.backend === kind) ?? blankEntry(kind);
 }
 
 function save(list: ImageModelEntry[]): void {
@@ -110,18 +123,12 @@ export function addImageModel(
 ): string {
 	const id = crypto.randomUUID();
 	const draft = { id, url: fill.url ?? '' };
-	const entry: ImageModelEntry = {
+	const entry = blankEntry(backend, {
 		id,
 		name: freeName(defaultImageName({ backend, model: '' }), draft),
-		backend,
 		url: fill.url ?? '',
-		keyId: fill.keyId ?? null,
-		model: '',
-		options: {},
-		caps: null,
-		capsAt: null,
-		renamed: false
-	};
+		keyId: fill.keyId ?? null
+	});
 	save([...imageEntries(), entry]);
 	return id;
 }
@@ -210,27 +217,18 @@ export async function entryApiKey(e: ImageModelEntry): Promise<string> {
 
 /**
  * The entry a job `handle` was sent for, for `resume`: the saved one with its
- * id; for a handle from before the list, the one the old fields for its
- * backend describe; else one made from the handle alone. Either way `resume`
- * asks the server and key the handle names.
+ * id, else one made from the handle alone (a model since removed, or a handle
+ * from before the list, which names none). Either way `resume` asks the
+ * server and key the handle names.
  */
 export function entryForHandle(handle: ImageJobHandle): ImageModelEntry | null {
 	if (handle.backend === 'none') return null;
 	const saved = imageEntries().find((e) => e.id === handle.entryId && e.backend === handle.backend);
 	if (saved) return saved;
-	if (!handle.entryId || handle.entryId === LEGACY_ENTRY_ID) {
-		return legacyEntryFor(handle.backend);
-	}
-	return {
-		id: handle.entryId,
-		name: defaultImageName({ backend: handle.backend, model: handle.model }),
-		backend: handle.backend,
+	return blankEntry(handle.backend, {
+		id: handle.entryId || handle.backend,
 		url: handle.baseUrl,
 		keyId: handle.extra?.keyId ?? null,
-		model: handle.model,
-		options: {},
-		caps: null,
-		capsAt: null,
-		renamed: false
-	};
+		model: handle.model
+	});
 }

@@ -3,27 +3,24 @@ import { addApiKey, deleteApiKey, getSettings, updateSettings } from '#lib/store
 import { comfyUiBackend, DEFAULT_SAMPLER } from './backend';
 import { TEMPLATES } from './templates';
 import type { ImageRequest } from '../types';
+import { imageModel } from '#lib/testing/imageModels.ts';
 
-const saved = {
-	url: getSettings().imageBackendBaseUrl,
-	key: getSettings().imageBackendApiKey,
-	ckpt: getSettings().imageComfyCheckpoint,
-	wf: getSettings().imageComfyWorkflowPath,
-	fm: getSettings().imageComfyFieldMapPath
-};
+const saved = getSettings().imageModels;
+
+/** The one ComfyUI entry, as the test names it; anything unnamed is the default. */
+const setComfy = (fill: Parameters<typeof imageModel>[1] = {}) =>
+	updateSettings({
+		imageModels: [
+			imageModel('comfyui', { url: 'http://box:8188', model: 'sd15.safetensors', ...fill })
+		]
+	});
 
 const MING = 'ming_image_0.1_design_int8_convrot.safetensors';
 const QWEN21 = 'qwen_image_2.1_int8_convrot.safetensors';
 
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-	updateSettings({
-		imageBackendBaseUrl: 'http://box:8188',
-		imageBackendApiKey: '',
-		imageComfyCheckpoint: 'sd15.safetensors',
-		imageComfyWorkflowPath: '',
-		imageComfyFieldMapPath: ''
-	});
+	setComfy();
 	fetchMock = vi.fn();
 	vi.stubGlobal('fetch', fetchMock);
 	vi.stubGlobal(
@@ -36,13 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
-	updateSettings({
-		imageBackendBaseUrl: saved.url,
-		imageBackendApiKey: saved.key,
-		imageComfyCheckpoint: saved.ckpt,
-		imageComfyWorkflowPath: saved.wf,
-		imageComfyFieldMapPath: saved.fm
-	});
+	updateSettings({ imageModels: saved });
 });
 
 const req = (over: Partial<ImageRequest> = {}): ImageRequest => ({
@@ -114,7 +105,7 @@ describe('capabilities', () => {
 	});
 
 	it('change with the model: Ming gives alpha and tiles, but takes no LoRAs', async () => {
-		updateSettings({ imageComfyCheckpoint: MING });
+		setComfy({ model: MING });
 		expect(await comfyUiBackend.capabilities()).toEqual({
 			transparency: true,
 			seamlessTiling: true,
@@ -130,7 +121,7 @@ describe('capabilities', () => {
 
 describe('probe', () => {
 	it('fails with one sentence when no URL is set', async () => {
-		updateSettings({ imageBackendBaseUrl: '' });
+		setComfy({ url: '' });
 		expect(await comfyUiBackend.probe()).toEqual({
 			ok: false,
 			detail: 'No backend URL is set — Settings → Image.'
@@ -139,7 +130,7 @@ describe('probe', () => {
 
 	it('fails when no model is set, before any run starts', async () => {
 		// A missing model must surface at Probe, not forty images in.
-		updateSettings({ imageComfyCheckpoint: '' });
+		setComfy({ model: '' });
 		happyServer();
 		const r = await comfyUiBackend.probe();
 		expect(r.ok).toBe(false);
@@ -151,7 +142,7 @@ describe('probe', () => {
 		// model of a family no bundled workflow runs is left out: it would be
 		// run as an SD checkpoint and fail.
 		LISTS.UNETLoader[1].push('z_image_turbo_int8_convrot.safetensors');
-		updateSettings({ imageComfyCheckpoint: '' });
+		setComfy({ model: '' });
 		happyServer();
 		const r = await comfyUiBackend.probe();
 		LISTS.UNETLoader[1].pop();
@@ -173,25 +164,25 @@ describe('probe', () => {
 	});
 
 	it('checks a DiT model and its companion files, naming what is missing', async () => {
-		updateSettings({ imageComfyCheckpoint: MING });
+		setComfy({ model: MING });
 		happyServer();
 		expect((await comfyUiBackend.probe()).ok).toBe(true);
 
-		updateSettings({ imageComfyCheckpoint: 'ming_image_missing.safetensors' });
+		setComfy({ model: 'ming_image_missing.safetensors' });
 		const r = await comfyUiBackend.probe();
 		expect(r.ok).toBe(false);
 		expect(r.detail).toMatch(/diffusion model called/);
 	});
 
 	it('refuses a half-configured custom workflow, naming the missing half', async () => {
-		updateSettings({ imageComfyWorkflowPath: '/tmp/wf.json' });
+		setComfy({ options: { workflowPath: '/tmp/wf.json' } });
 		const r = await comfyUiBackend.probe();
 		expect(r.ok).toBe(false);
 		expect(r.detail).toMatch(/field map is not/);
 	});
 
 	it('refuses the mirror case too', async () => {
-		updateSettings({ imageComfyFieldMapPath: '/tmp/map.json' });
+		setComfy({ options: { fieldMapPath: '/tmp/map.json' } });
 		const r = await comfyUiBackend.probe();
 		expect(r.ok).toBe(false);
 		expect(r.detail).toMatch(/workflow is not/);
@@ -232,7 +223,7 @@ describe('generate', () => {
 			extra: { outputNode: '9' }
 		});
 
-		updateSettings({ imageBackendBaseUrl: 'http://elsewhere:8188' });
+		setComfy({ url: 'http://elsewhere:8188' });
 		fetchMock.mockClear();
 		const result = await comfyUiBackend.resume!(handle);
 		const urls = fetchMock.mock.calls.map((c) => String(c[0]));
@@ -245,7 +236,8 @@ describe('generate', () => {
 	it('follows a job with the named key it was sent with, not the one set now', async () => {
 		happyServer();
 		const keyId = addApiKey('ComfyUI', 'sent-with');
-		updateSettings({ imageBackendApiKey: 'set-now' });
+		const nowId = addApiKey('Now', 'set-now');
+		setComfy({ keyId: nowId });
 		await comfyUiBackend.resume!({
 			backend: 'comfyui',
 			baseUrl: 'http://box:8188',
@@ -262,6 +254,7 @@ describe('generate', () => {
 		expect(auth.map((h) => h?.Authorization)).toContain('Bearer sent-with');
 		expect(auth.map((h) => h?.Authorization)).not.toContain('Bearer set-now');
 		deleteApiKey(keyId);
+		deleteApiKey(nowId);
 	});
 
 	it('says so when ComfyUI no longer has the prompt', async () => {
@@ -327,7 +320,7 @@ describe('generate', () => {
 	});
 
 	it('runs a transparent Ming request from a transparent canvas of the requested size', async () => {
-		updateSettings({ imageComfyCheckpoint: MING });
+		setComfy({ model: MING });
 		happyServer();
 		const r = await comfyUiBackend.generate(req({ transparent: true, width: 1024, height: 768 }));
 		const g = submitted();
@@ -348,7 +341,7 @@ describe('generate', () => {
 	});
 
 	it('runs an opaque Ming request from an empty latent at full denoise', async () => {
-		updateSettings({ imageComfyCheckpoint: MING });
+		setComfy({ model: MING });
 		happyServer();
 		await comfyUiBackend.generate(req());
 		const g = submitted();
@@ -357,7 +350,7 @@ describe('generate', () => {
 	});
 
 	it('wraps the prompt for a transparent Qwen-Image-2.1 request, and only then', async () => {
-		updateSettings({ imageComfyCheckpoint: QWEN21 });
+		setComfy({ model: QWEN21 });
 		happyServer();
 		await comfyUiBackend.generate(req({ transparent: true }));
 		await comfyUiBackend.generate(req());

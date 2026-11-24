@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import { registerImageBackend } from './registry';
 import { resolveImageBackend } from './backend';
 import { noneBackend } from './none';
 import { ImageBackendError } from './types';
 import type { ImageBackend } from './backend';
 
-const original = getSettings().imageBackendKind;
-afterEach(() => updateSettings({ imageBackendKind: original }));
+const original = getSettings().imageModels;
+afterEach(() => updateSettings({ imageModels: original }));
 beforeEach(() => vi.restoreAllMocks());
 
 const stub: ImageBackend = {
@@ -26,20 +27,20 @@ const stub: ImageBackend = {
 
 describe('resolveImageBackend', () => {
 	it('is the none backend when nothing is configured', () => {
-		updateSettings({ imageBackendKind: 'none' });
+		updateSettings({ imageModels: imageModelsFor('none') });
 		expect(resolveImageBackend()).toBe(noneBackend);
 	});
 
 	it('is the none backend when the configured kind is not registered', () => {
 		// A settings blob written by a newer build names a backend this one does
 		// not have. That must degrade to "nothing configured", not throw.
-		updateSettings({ imageBackendKind: 'local' });
+		updateSettings({ imageModels: imageModelsFor('local') });
 		expect(resolveImageBackend()).toBe(noneBackend);
 	});
 
 	it('returns the registered backend for the configured kind', () => {
 		registerImageBackend(stub);
-		updateSettings({ imageBackendKind: 'comfyui' });
+		updateSettings({ imageModels: imageModelsFor('comfyui') });
 		expect(resolveImageBackend()).toBe(stub);
 	});
 });

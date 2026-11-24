@@ -11,8 +11,9 @@
 //! frontend can ask whether a store exists, put a value in and delete one;
 //! it can read one back only for the two kinds of secret the webview itself
 //! uses ([`READABLE`]): inference API keys, sent by the webview's own chat
-//! requests, and the remote-access token, shown as a link and QR code. Every
-//! other stored password never reaches the webview again.
+//! requests, and the remote-access token, shown as a link and QR code (and,
+//! once, the image servers' old keys, [`MOVING`]). Every other stored
+//! password never reaches the webview again.
 //!
 //! **Every call runs on a thread of its own, with a time limit.** The Secret
 //! Service store drives zbus on tokio, and called from a tokio thread it can
@@ -593,6 +594,7 @@ const NAMESPACES: &[&str] = &[
     "apikey:",
     "proxy:",
     "brave:",
+    // Only read and deleted now, by the move in [`MOVING`].
     "comfy:",
     "lemonade:",
     "remote:",
@@ -615,11 +617,17 @@ const NAMESPACES: &[&str] = &[
 /// the webview.
 const READABLE: &[&str] = &["apikey:", "remote:"];
 
+/// ComfyUI's and Lemonade's keys from before the image model list, readable so
+/// the webview can make each a named key (an `apikey:` secret, which it reads
+/// anyway) and then delete it (`src/lib/image/keys.ts`). Exact keys, not
+/// namespaces. Goes when that move does.
+const MOVING: &[&str] = &["comfy:key", "lemonade:key"];
+
 /// Read a secret the webview itself needs. Refused for every other kind.
 #[tauri::command]
 pub async fn secret_get(key: String) -> Result<Option<String>, String> {
     check_key(&key)?;
-    if !READABLE.iter().any(|ns| key.starts_with(ns)) {
+    if !READABLE.iter().any(|ns| key.starts_with(ns)) && !MOVING.contains(&key.as_str()) {
         return Err(format!("{key:?} is not readable from the webview"));
     }
     get(&key).await
@@ -885,6 +893,8 @@ mod tests {
             assert!(check_key(bad).is_err(), "{bad}");
         }
         for unreadable in [
+            "comfy:other",
+            "lemonade:keys",
             "email:a",
             "dav:a",
             "mcp:s:t",

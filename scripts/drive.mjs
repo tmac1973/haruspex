@@ -46,7 +46,7 @@ A long-lived app, driven step by step:
   click <selector>          click something in the main window (CSS, or button=Text)
   fill <selector> <text>    fill a field in the main window (quote the selector)
   select <selector> <label> choose a <select>'s option by the text it shows
-  settings <json>           merge a patch into the app's settings, e.g. '{"imageBackendKind":"none"}'
+  settings <json>           merge a patch into the app's settings, e.g. '{"imageModels":[]}'
                             (these three act on the one match on screen;
                             --nth N picks among several, --nth last the last)
   chats                     the desktop's chats (through the engine)
@@ -497,7 +497,7 @@ async function client(cmd, values, positionals) {
 			try {
 				args = { patch: JSON.parse(positionals.join(' ')) };
 			} catch {
-				fail('the patch must be JSON, e.g. \'{"imageBackendKind":"none"}\'');
+				fail('the patch must be JSON, e.g. \'{"imageModels":[]}\'');
 			}
 			break;
 		case 'access':

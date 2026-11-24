@@ -12,9 +12,13 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
-import type { ImageBackendKind, ImageModelEntry } from '#lib/image/types.ts';
+import type { ImageModelEntry } from '#lib/image/types.ts';
 import type { SpecialistEntry } from '#lib/specialists/types.ts';
-import { imageModelsFromFields } from '#lib/image/fields.ts';
+import {
+	LEGACY_IMAGE_FIELDS,
+	imageModelsFromFields,
+	type LegacyImageFields
+} from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
 import type { Format } from '#lib/ipc/gen/Format.ts';
@@ -413,7 +417,9 @@ export interface GenerationServer {
  * The saved list for an install from before it existed: every address the
  * generation settings hold, so the dropdowns are not empty after the update.
  */
-export function seedGenerationServers(s: Partial<AppSettings>): GenerationServer[] {
+export function seedGenerationServers(
+	s: Partial<AppSettings> & LegacyImageFields
+): GenerationServer[] {
 	const found: GenerationServer[] = [
 		{ kind: 'comfyui', url: s.imageBackendBaseUrl ?? '', keyId: null },
 		{ kind: 'lemonade', url: s.imageLemonadeBaseUrl ?? '', keyId: null },
@@ -925,65 +931,6 @@ export interface AppSettings {
 	 */
 	commandMemoryLimitPercent: number;
 	/**
-	 * Which image backend generates pictures, if any. `'none'` is not a
-	 * placeholder — it is the shipped default and the correct state for every
-	 * install that has never opted in. Nothing is downloaded and no process
-	 * starts until this moves off it.
-	 */
-	imageBackendKind: ImageBackendKind;
-	/** Base URL of the configured image backend (ComfyUI). */
-	imageBackendBaseUrl: string;
-	/**
-	 * Optional bearer token for the image backend. Sent as an Authorization
-	 * header on HTTP requests and never anywhere else — in particular never in
-	 * a URL, which would write it into logs and histories.
-	 */
-	/** Inline only where no secret store works; otherwise empty, with the key
-	 *  kept under `comfy:key` and `imageBackendApiKeySaved` set. */
-	imageBackendApiKey: string;
-	imageBackendApiKeySaved: boolean;
-	/** Checkpoint a request with no explicit model resolves to. */
-	imageComfyCheckpoint: string;
-	/**
-	 * A user-exported ComfyUI workflow and the field map that says which node
-	 * input carries each parameter. Both or neither: one without the other is
-	 * a configuration error the backend's probe reports.
-	 */
-	imageComfyWorkflowPath: string;
-	imageComfyFieldMapPath: string;
-	/**
-	 * Weights for the locally managed engine. The id refers to a catalogue
-	 * entry and WINS when both are set; the path is the escape hatch for a file
-	 * the catalogue does not know about.
-	 */
-	imageLocalModelId: string;
-	imageLocalModelPath: string;
-	/**
-	 * A Lemonade server, apart from ComfyUI's address and key: the two run on
-	 * different ports, often side by side, and switching backends should not
-	 * lose either. The key is kept under `lemonade:key` like ComfyUI's.
-	 */
-	imageLemonadeBaseUrl: string;
-	imageLemonadeApiKey: string;
-	imageLemonadeApiKeySaved: boolean;
-	/**
-	 * The ComfyUI and Lemonade keys above were made named keys and given to the
-	 * image models that use them (`#lib/image/keys.ts`). Once only: a model added
-	 * later without a key keeps none.
-	 */
-	imageKeysMigrated: boolean;
-	/** The bundled engine's catalogue id it runs, installed on the server. */
-	imageLemonadeModelId: string;
-	/**
-	 * A llama-toolchest server's image instances. The key is a named key from
-	 * Settings → Inference → API Keys (often the one its chat models use),
-	 * so it has no secret of its own; the model is an instance id from its
-	 * `/v1/models`.
-	 */
-	imageToolchestBaseUrl: string;
-	imageToolchestApiKeyId: string | null;
-	imageToolchestModelId: string;
-	/**
 	 * Which server makes music, if any. `'none'` is the shipped default, and
 	 * the `generate_music` tool is offered only off it.
 	 */
@@ -1017,12 +964,11 @@ export interface AppSettings {
 	generationServers: GenerationServer[];
 	/**
 	 * The image models the image tools use, in the order they are tried (see
-	 * `#lib/image/entries.ts`), edited in Settings → Image. Seeded once from the
-	 * single-backend fields above, which are no longer written; a downgrade
-	 * reads them as they were before the list. Absent from a fresh install
-	 * until the first model is added, and then read through those fields.
+	 * `#lib/image/entries.ts`), edited in Settings → Image. An install from
+	 * before the list is seeded once from its old single-backend fields
+	 * (`#lib/image/fields.ts`).
 	 */
-	imageModels?: ImageModelEntry[];
+	imageModels: ImageModelEntry[];
 	/**
 	 * The specialist models the Code tab's model can hand a job to, edited in
 	 * Settings → Code → Specialists (see `#lib/specialists/entries.ts`).
@@ -1359,23 +1305,6 @@ const defaults: AppSettings = {
 	skills: defaultSkills,
 	// Image generation is entirely opt-in: 'none' means no process, no
 	// download and no startup cost for anyone who never turns it on.
-	imageBackendKind: 'none',
-	imageBackendBaseUrl: '',
-	imageBackendApiKey: '',
-	imageBackendApiKeySaved: false,
-	imageComfyCheckpoint: '',
-	imageComfyWorkflowPath: '',
-	imageComfyFieldMapPath: '',
-	imageLocalModelId: '',
-	imageLocalModelPath: '',
-	imageLemonadeBaseUrl: '',
-	imageLemonadeApiKey: '',
-	imageLemonadeApiKeySaved: false,
-	imageKeysMigrated: false,
-	imageLemonadeModelId: '',
-	imageToolchestBaseUrl: '',
-	imageToolchestApiKeyId: null,
-	imageToolchestModelId: '',
 	musicBackendKind: 'none',
 	musicToolchestBaseUrl: '',
 	musicToolchestApiKeyId: null,
@@ -1388,6 +1317,7 @@ const defaults: AppSettings = {
 	videoGenToolchestApiKeyId: null,
 	videoGenToolchestModelId: '',
 	generationServers: [],
+	imageModels: [],
 	specialists: [],
 	codeHelpers: {},
 	codeHelperConfig: {},
@@ -1597,7 +1527,7 @@ function load(): AppSettings {
 					: seedGenerationServers(rest),
 				imageModels: Array.isArray(rest.imageModels)
 					? rest.imageModels
-					: imageModelsFromFields({ ...defaults, ...rest }),
+					: imageModelsFromFields(rest as LegacyImageFields),
 				specialists: Array.isArray(rest.specialists)
 					? rest.specialists.map((e: SpecialistEntry) => ({
 							...e,
@@ -1722,6 +1652,19 @@ export function reloadSettingsFromStorage(): void {
 
 export function updateSettings(partial: Partial<AppSettings>): void {
 	commit({ ...settings, ...partial });
+}
+
+/**
+ * Drop Settings → Image's fields from before the image model list, which an
+ * older install still has stored. For `#lib/image/keys.ts`, once it has moved
+ * their keys; nothing is written when none is there.
+ */
+export function forgetLegacyImageFields(): void {
+	const stored = settings as AppSettings & LegacyImageFields;
+	if (!LEGACY_IMAGE_FIELDS.some((f) => f in stored)) return;
+	const next: Record<string, unknown> = { ...stored };
+	for (const f of LEGACY_IMAGE_FIELDS) delete next[f];
+	commit(next as unknown as AppSettings);
 }
 
 /** Turn a helper on or off (Settings → Code → Helpers). */
@@ -2472,7 +2415,7 @@ export function getSamplingParams(
 export function getIncludeImagesPrompt(opts: { lean?: boolean } = {}): string {
 	if (!settings.includeImages) return '';
 	const drawn =
-		(settings.imageModels ?? imageModelsFromFields(settings)).length > 0 && !opts.lean
+		settings.imageModels.length > 0 && !opts.lean
 			? '\n- A picture you drew, edited or upscaled is the image. Add no found ones unless the user asks.'
 			: '';
 	return `

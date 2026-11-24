@@ -13,6 +13,7 @@ vi.mock('#lib/image/index.ts', () => ({
 
 import { LEAN_UNMET, MODELS_NOTE, needsNotes, unmetFor, unmetNeed } from './needs';
 import { updateSettings } from '#lib/stores/settings.ts';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 
 const CAPS = {
 	transparency: true,
@@ -26,8 +27,7 @@ const CAPS = {
 
 beforeEach(() => {
 	updateSettings({
-		imageBackendKind: 'none',
-		imageModels: undefined,
+		imageModels: [],
 		musicBackendKind: 'none',
 		leanMode: false
 	});
@@ -42,7 +42,7 @@ describe('unmetNeed', () => {
 
 	it('names the settings path of the first need that is off', () => {
 		expect(unmetNeed(['image'])).toBe('Needs an image backend: Settings → Image.');
-		updateSettings({ imageBackendKind: 'comfyui' });
+		updateSettings({ imageModels: imageModelsFor('comfyui') });
 		expect(unmetNeed(['image'])).toBeNull();
 		expect(unmetNeed(['image', 'music'])).toBe('Needs a music backend: Settings → Music.');
 		updateSettings({ musicBackendKind: 'ace-server' });
@@ -78,7 +78,7 @@ describe('needsNotes', () => {
 	});
 
 	it('says what the image backend can do, and how to get the rest', async () => {
-		updateSettings({ imageBackendKind: 'lemonade' });
+		updateSettings({ imageModels: imageModelsFor('lemonade') });
 		const [note] = await needsNotes(['image']);
 		expect(note).toContain('The image backend, Lemonade (Settings → Image).');
 		expect(note).toContain('Can: draw pictures, edit pictures, upscale pictures');
@@ -89,7 +89,7 @@ describe('needsNotes', () => {
 	it('is empty for other skills, with no backend, or when the backend fails', async () => {
 		expect(await needsNotes(['music'])).toEqual([]);
 		expect(await needsNotes(['image'])).toEqual([]);
-		updateSettings({ imageBackendKind: 'lemonade' });
+		updateSettings({ imageModels: imageModelsFor('lemonade') });
 		image.capabilities.mockRejectedValue(new Error('unreachable'));
 		expect(await needsNotes(['image'])).toEqual([]);
 	});

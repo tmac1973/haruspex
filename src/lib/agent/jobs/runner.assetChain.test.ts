@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { imageModelsFor } from '#lib/testing/imageModels.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 
 const {
@@ -123,11 +124,11 @@ describe('guided_planning — asset chain', () => {
 	}
 
 	beforeEach(() => {
-		settingsState.imageBackendKind = 'comfyui';
+		settingsState.imageModels = imageModelsFor('comfyui');
 		imageState.kind = 'comfyui';
 	});
 	afterEach(() => {
-		settingsState.imageBackendKind = 'none';
+		settingsState.imageModels = [];
 		imageState.kind = 'none';
 	});
 
@@ -267,7 +268,7 @@ describe('guided_planning — asset chain', () => {
 
 	it('starts the coding job directly when there is no image backend', async () => {
 		// A night's work must not be lost to a setting.
-		settingsState.imageBackendKind = 'none';
+		settingsState.imageModels = [];
 		imageState.kind = 'none';
 		wireWrites();
 		await run(planningJob(), turns());

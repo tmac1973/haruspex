@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from './backend';
+import { imageModel } from '#lib/testing/imageModels.ts';
 import type { ImageRequest } from '../types';
 
-const saved = {
-	url: getSettings().imageBackendBaseUrl,
-	ckpt: getSettings().imageComfyCheckpoint
+const saved = getSettings().imageModels;
+
+/** Change what the one ComfyUI entry names; whatever is not named stays. */
+const setComfy = (fill: { url?: string; model?: string }) => {
+	const now = getSettings().imageModels[0];
+	updateSettings({
+		imageModels: [imageModel('comfyui', { url: now?.url ?? '', model: now?.model ?? '', ...fill })]
+	});
 };
 
 const MING = 'ming_image_0.1_design_int8_convrot.safetensors';
@@ -117,7 +123,7 @@ const edit = (over: Partial<ImageRequest> = {}): ImageRequest => ({
 });
 
 beforeEach(() => {
-	updateSettings({ imageBackendBaseUrl: 'http://box:8188', imageComfyCheckpoint: QWEN21 });
+	setComfy({ url: 'http://box:8188', model: QWEN21 });
 	fetchMock = vi.fn();
 	vi.stubGlobal('fetch', fetchMock);
 	vi.stubGlobal(
@@ -130,19 +136,19 @@ beforeEach(() => {
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
-	updateSettings({ imageBackendBaseUrl: saved.url, imageComfyCheckpoint: saved.ckpt });
+	updateSettings({ imageModels: saved });
 });
 
 describe('ComfyUI edits', () => {
 	it('edits with Qwen-Image-2.1 only when the server’s encoder takes pictures', async () => {
 		// A different address each time: the answer is remembered per server.
-		updateSettings({ imageBackendBaseUrl: 'http://new:8188' });
+		setComfy({ url: 'http://new:8188' });
 		server({ encoderTakesImages: true });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 3 });
-		updateSettings({ imageBackendBaseUrl: 'http://old:8188' });
+		setComfy({ url: 'http://old:8188' });
 		server({ encoderTakesImages: false });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: false, maxEditImages: 0 });
-		updateSettings({ imageComfyCheckpoint: MING });
+		setComfy({ model: MING });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: false });
 	});
 
@@ -172,7 +178,7 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('uses the Turbo edit graph for Turbo', async () => {
-		updateSettings({ imageComfyCheckpoint: TURBO });
+		setComfy({ model: TURBO });
 		server({ encoderTakesImages: true });
 		await comfyUiBackend.generate(edit());
 		const g = submitted();
@@ -181,16 +187,16 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('edits with FLUX.2 klein, up to four pictures, when the server has ReferenceLatent', async () => {
-		updateSettings({ imageBackendBaseUrl: 'http://klein:8188', imageComfyCheckpoint: KLEIN });
+		setComfy({ url: 'http://klein:8188', model: KLEIN });
 		server({ referenceLatent: true });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 4 });
-		updateSettings({ imageBackendBaseUrl: 'http://older:8188' });
+		setComfy({ url: 'http://older:8188' });
 		server({ referenceLatent: false });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: false });
 	});
 
 	it('chains each klein picture onto both conditionings, sized from the first', async () => {
-		updateSettings({ imageComfyCheckpoint: KLEIN });
+		setComfy({ model: KLEIN });
 		server({ referenceLatent: true });
 		await comfyUiBackend.generate(edit());
 		const g = submitted();
@@ -215,7 +221,7 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('draws with klein at the size asked for', async () => {
-		updateSettings({ imageComfyCheckpoint: KLEIN });
+		setComfy({ model: KLEIN });
 		server();
 		await comfyUiBackend.generate(edit({ edit: undefined }));
 		const g = submitted();
@@ -225,16 +231,16 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('edits with Qwen-Image-Edit-2511, up to three pictures, when the server has its encoder', async () => {
-		updateSettings({ imageBackendBaseUrl: 'http://e2511:8188', imageComfyCheckpoint: EDIT_2511 });
+		setComfy({ url: 'http://e2511:8188', model: EDIT_2511 });
 		server({ editPlus: true });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 3 });
-		updateSettings({ imageBackendBaseUrl: 'http://pre2511:8188' });
+		setComfy({ url: 'http://pre2511:8188' });
 		server({ editPlus: false });
 		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: false });
 	});
 
 	it('gives 2511 its pictures on both conditionings, the first through the scaler', async () => {
-		updateSettings({ imageComfyCheckpoint: EDIT_2511 });
+		setComfy({ model: EDIT_2511 });
 		server({ editPlus: true });
 		await comfyUiBackend.generate(edit());
 		const g = submitted();
@@ -261,7 +267,7 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('draws with 2511 from an empty latent at the size asked for', async () => {
-		updateSettings({ imageComfyCheckpoint: EDIT_2511 });
+		setComfy({ model: EDIT_2511 });
 		server();
 		await comfyUiBackend.generate(edit({ edit: undefined }));
 		const g = submitted();
@@ -273,7 +279,7 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('says what to install when 2511 has no Lightning LoRA', async () => {
-		updateSettings({ imageComfyCheckpoint: EDIT_2511 });
+		setComfy({ model: EDIT_2511 });
 		const loras = LISTS.LoraLoaderModelOnly[1].splice(0);
 		server({ editPlus: true });
 		await expect(comfyUiBackend.generate(edit())).rejects.toThrow(
@@ -283,7 +289,7 @@ describe('ComfyUI edits', () => {
 	});
 
 	it('refuses an edit for a model with no edit workflow, before uploading', async () => {
-		updateSettings({ imageComfyCheckpoint: MING });
+		setComfy({ model: MING });
 		server();
 		await expect(comfyUiBackend.generate(edit())).rejects.toMatchObject({
 			kind: 'unconfigured',
@@ -301,7 +307,7 @@ describe('ComfyUI inpaints', () => {
 	};
 
 	it('starts the drawing graph from the canvas under a noise mask', async () => {
-		updateSettings({ imageComfyCheckpoint: KLEIN });
+		setComfy({ model: KLEIN });
 		server();
 		await comfyUiBackend.generate(edit({ edit: undefined, inpaint }));
 		const uploads = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/upload/image'));
@@ -328,7 +334,7 @@ describe('ComfyUI inpaints', () => {
 	});
 
 	it('takes an SD checkpoint’s VAE from the checkpoint', async () => {
-		updateSettings({ imageComfyCheckpoint: 'sd15.safetensors' });
+		setComfy({ model: 'sd15.safetensors' });
 		server();
 		await comfyUiBackend.generate(edit({ edit: undefined, inpaint }));
 		const g = submitted();
@@ -338,7 +344,7 @@ describe('ComfyUI inpaints', () => {
 
 	it('says every family can', async () => {
 		for (const ckpt of [MING, QWEN21, TURBO, KLEIN, EDIT_2511, 'sd15.safetensors']) {
-			updateSettings({ imageComfyCheckpoint: ckpt });
+			setComfy({ model: ckpt });
 			server();
 			expect((await comfyUiBackend.capabilities()).inpaint).toBe(true);
 		}

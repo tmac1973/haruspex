@@ -3,11 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-const settings = vi.hoisted(() => ({
-	imageToolchestBaseUrl: 'http://box:3000',
-	imageToolchestApiKeyId: 'k1' as string | null,
-	imageToolchestModelId: 'qwen-turbo-local'
-}));
+const settings = vi.hoisted(() => ({ imageModels: [] as ImageModelEntry[] }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings,
@@ -33,6 +29,12 @@ import {
 	type HttpCall
 } from '#lib/testing/invoke.ts';
 import { ImageBackendError, type ImageModelEntry, type ImageProgress } from '#lib/image/types.ts';
+import { imageModel } from '#lib/testing/imageModels.ts';
+
+/** Change the one toolchest entry, as a user editing it in Settings → Image would. */
+const editEntry = (over: Partial<ImageModelEntry>) => {
+	settings.imageModels = [{ ...settings.imageModels[0], ...over }];
+};
 
 interface Call extends HttpCall {
 	api_key: string;
@@ -88,9 +90,13 @@ const request = { prompt: 'a fox', width: 512, height: 512, seed: 5 };
 
 describe('llama-toolchest image backend', () => {
 	beforeEach(() => {
-		settings.imageToolchestBaseUrl = 'http://box:3000';
-		settings.imageToolchestApiKeyId = 'k1';
-		settings.imageToolchestModelId = 'qwen-turbo-local';
+		settings.imageModels = [
+			imageModel('llama-toolchest', {
+				url: 'http://box:3000',
+				keyId: 'k1',
+				model: 'qwen-turbo-local'
+			})
+		];
 		use(jobRoutes());
 		_resetForTests();
 	});
@@ -107,19 +113,19 @@ describe('llama-toolchest image backend', () => {
 	});
 
 	it('says what is wrong rather than failing quietly', async () => {
-		settings.imageToolchestModelId = '';
+		editEntry({ model: '' });
 		expect((await toolchestBackend.probe()).detail).toBe('No model is chosen — Settings → Image.');
 
 		// Gone from the server, or not an image model (an upscaler's id).
-		settings.imageToolchestModelId = 'real-esrgan';
+		editEntry({ model: 'real-esrgan' });
 		expect((await toolchestBackend.probe()).detail).toBe(
 			'box:3000 has no image model called real-esrgan — Settings → Image.'
 		);
 
-		settings.imageToolchestBaseUrl = '';
+		editEntry({ url: '' });
 		expect((await toolchestBackend.probe()).detail).toBe('No server address — Settings → Image.');
 
-		settings.imageToolchestBaseUrl = 'http://box:3000';
+		editEntry({ url: 'http://box:3000' });
 		use({
 			'GET /v1/models': () => {
 				throw { kind: 'rejected', status: 401, body: '' };
@@ -221,7 +227,7 @@ describe('llama-toolchest image backend', () => {
 		);
 		await expect(toolchestBackend.generate(request)).rejects.toThrow(/queue is full/);
 
-		settings.imageToolchestModelId = 'ace-xl';
+		editEntry({ model: 'ace-xl' });
 		use({ 'GET /v1/models': asmodean });
 		const err = await toolchestBackend.generate(request).catch((e) => e);
 		expect(err).toBeInstanceOf(ImageBackendError);
@@ -229,7 +235,7 @@ describe('llama-toolchest image backend', () => {
 	});
 
 	it('starts Ming from a clear canvas for a transparent picture', async () => {
-		settings.imageToolchestModelId = 'ming-gpu1';
+		editEntry({ model: 'ming-gpu1' });
 		let body: Record<string, unknown> | null = null;
 		use(
 			jobRoutes({
@@ -258,7 +264,7 @@ describe('llama-toolchest image backend', () => {
 		expect(onHandle).toHaveBeenCalledWith({
 			backend: 'llama-toolchest',
 			baseUrl: 'http://box:3000',
-			entryId: 'legacy',
+			entryId: 'test-llama-toolchest',
 			id: 'j1',
 			seed: 5,
 			model: 'qwen-turbo-local',
@@ -268,7 +274,7 @@ describe('llama-toolchest image backend', () => {
 		});
 
 		// Settings have moved to another server since; the job is followed where it went.
-		settings.imageToolchestBaseUrl = 'http://elsewhere:3000';
+		editEntry({ url: 'http://elsewhere:3000' });
 		use(jobRoutes());
 		const result = await toolchestBackend.resume!(onHandle.mock.calls[0][0]);
 		expect(calls()).not.toContain('POST /v1/images/jobs');
@@ -310,10 +316,10 @@ describe('llama-toolchest image backend', () => {
 		const b64 = btoa(String.fromCharCode(137, 80, 78, 71));
 
 		it('says a set that edits can, with up to four pictures, and one that doesn’t can’t', async () => {
-			settings.imageToolchestModelId = 'klein';
+			editEntry({ model: 'klein' });
 			use({ 'GET /v1/models': klein });
 			expect(await toolchestBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 4 });
-			settings.imageToolchestModelId = 'ming-image';
+			editEntry({ model: 'ming-image' });
 			use({ 'GET /v1/models': klein });
 			await toolchestBackend.probe();
 			expect(await toolchestBackend.capabilities()).toMatchObject({
@@ -323,7 +329,7 @@ describe('llama-toolchest image backend', () => {
 		});
 
 		it('takes as many pictures as the server says the set does', async () => {
-			settings.imageToolchestModelId = 'klein';
+			editEntry({ model: 'klein' });
 			const models = structuredClone(klein);
 			for (const m of models.data) {
 				if (m.id === 'klein') Object.assign(m.meta, { max_edit_images: 10 });
@@ -334,7 +340,7 @@ describe('llama-toolchest image backend', () => {
 		});
 
 		it('takes 3 for a Qwen-Image set from a build that doesn’t say', async () => {
-			settings.imageToolchestModelId = 'klein';
+			editEntry({ model: 'klein' });
 			const models = structuredClone(klein);
 			for (const m of models.data) {
 				if (m.id === 'klein') m.meta.recipe = 'qwen-image-edit-2511';
@@ -345,7 +351,7 @@ describe('llama-toolchest image backend', () => {
 		});
 
 		it('sends the edit form with each field as a part and the picture from the cache', async () => {
-			settings.imageToolchestModelId = 'klein';
+			editEntry({ model: 'klein' });
 			use({ 'GET /v1/models': klein, 'POST /v1/images/edits': { data: [{ b64_json: b64 }] } });
 			const result = await toolchestBackend.generate(edit);
 			expect(result.images[0]).toMatchObject({ width: 1024, height: 768 });
@@ -374,7 +380,7 @@ describe('llama-toolchest image backend', () => {
 		});
 
 		it('sends the edit form as a job where the build lists images.jobs.edits', async () => {
-			settings.imageToolchestModelId = 'klein';
+			editEntry({ model: 'klein' });
 			const models = structuredClone(klein);
 			for (const m of models.data) {
 				if (m.meta.api.includes('images.edits')) m.meta.api.push('images.jobs.edits');
@@ -399,7 +405,7 @@ describe('llama-toolchest image backend', () => {
 		});
 
 		it('refuses an edit on a set that can’t', async () => {
-			settings.imageToolchestModelId = 'ming-image';
+			editEntry({ model: 'ming-image' });
 			use({ 'GET /v1/models': klein });
 			await expect(toolchestBackend.generate(edit)).rejects.toMatchObject({
 				kind: 'unconfigured',
@@ -454,7 +460,7 @@ describe('llama-toolchest image backend', () => {
 		const picture = { name: 'p.png', bytes: [1, 2, 3] };
 
 		it('can upscale when the server runs an upscaler, whichever model is chosen', async () => {
-			settings.imageToolchestModelId = 'klein';
+			editEntry({ model: 'klein' });
 			use({ 'GET /v1/models': klein });
 			await toolchestBackend.probe();
 			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: false });
