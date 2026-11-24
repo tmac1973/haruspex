@@ -126,6 +126,9 @@ pub struct EditorWatches {
     state: Arc<Mutex<State>>,
     emit: Arc<EmitFn>,
     debounce: Duration,
+    /// `MAX_WAIT`, or longer for a long test debounce: a cap no longer than
+    /// the debounce would split one burst whenever a write stalls.
+    max_wait: Duration,
 }
 
 impl EditorWatches {
@@ -142,6 +145,7 @@ impl EditorWatches {
             state: Arc::new(Mutex::new(State::default())),
             emit: Arc::new(emit),
             debounce,
+            max_wait: MAX_WAIT.max(debounce * 5),
         }
     }
 
@@ -321,7 +325,7 @@ impl EditorWatches {
             let started = Instant::now();
             let mut pending: HashSet<PathBuf> = HashSet::from([first]);
             loop {
-                if started.elapsed() >= MAX_WAIT {
+                if started.elapsed() >= self.max_wait {
                     break;
                 }
                 match rx.recv_timeout(self.debounce) {
@@ -823,7 +827,8 @@ mod tests {
         std::fs::write(&file, "0").unwrap();
         // The writes are one burst only while each gap stays under the
         // debounce. A loaded CI runner once stalled a 20 ms gap past 200 ms,
-        // so the debounce here is far longer than any gap should take.
+        // so the debounce here is far longer than any gap should take, and
+        // the cap on a burst (`max_wait`) grows with it.
         let debounce = Duration::from_secs(1);
         let (w, rx) = recorder(debounce);
         w.watch("editor-1", &file, disk_hash(&file));

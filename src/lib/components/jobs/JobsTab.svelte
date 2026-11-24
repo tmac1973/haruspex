@@ -45,6 +45,7 @@
 	/** What the editor exposes to this tab. See JobEditor's exported functions. */
 	interface EditorApi {
 		hasUnsavedChanges: () => boolean;
+		isUntouchedDraft: () => boolean;
 		saveNow: () => Promise<boolean>;
 	}
 	let editor = $state<EditorApi | null>(null);
@@ -136,7 +137,10 @@
 			const picked = takePendingSelection();
 			if (!picked) return;
 			if (picked.kind === 'draft') {
-				if (guard({ kind: 'select', id: 'new', draft: picked.draft })) return;
+				// A newer draft replaces one nobody has touched (a model that
+				// proposed a job twice); an edited one still asks.
+				const replacing = editor?.isUntouchedDraft() ?? false;
+				if (!replacing && guard({ kind: 'select', id: 'new', draft: picked.draft })) return;
 				applySelect('new', null, picked.draft);
 				return;
 			}

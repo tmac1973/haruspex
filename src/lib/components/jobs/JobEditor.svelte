@@ -140,6 +140,18 @@
 		return dirty;
 	}
 
+	/**
+	 * A drafted job as it was handed over, before anyone touched it. Such a
+	 * draft is still unsaved, but a newer draft can replace it without
+	 * asking: it is the same unsaved proposal, only newer.
+	 */
+	let draftOpenedAs = $state<string | null>(null);
+
+	/** Read by the Jobs tab when another draft arrives. */
+	export function isUntouchedDraft(): boolean {
+		return draftOpenedAs !== null && !loading && formSignature() === draftOpenedAs;
+	}
+
 	/** Save on the parent's behalf. False when validation rejected the form. */
 	export async function saveNow(): Promise<boolean> {
 		return save();
@@ -167,6 +179,7 @@
 	async function loadIntoForm(id: number | 'new') {
 		error = null;
 		attempted = false;
+		draftOpenedAs = null;
 		// A new job starts at its type and name; a saved one at what it does.
 		openSection = id === 'new' ? 'basics' : 'type';
 		if (id === 'new') {
@@ -193,6 +206,11 @@
 				openSection = 'type';
 				// Nothing is saved yet: leaving asks first, as for any unsaved edit.
 				baseline = '';
+				// After a tick, like captureBaseline: a type editor's mount
+				// effects are not the user's edits.
+				void tick().then(() => {
+					draftOpenedAs = formSignature();
+				});
 				return;
 			}
 			void captureBaseline();
