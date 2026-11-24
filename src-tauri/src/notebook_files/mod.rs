@@ -3,6 +3,7 @@
 //! nothing here is evicted while a card, live or in Trash, or a revision
 //! of one refers to it; `sweep` removes the rest at startup.
 
+pub mod backup;
 pub mod protocol;
 pub mod transfer;
 

@@ -1254,6 +1254,7 @@ mod images;
 mod jobs;
 mod memories;
 mod memory_commands;
+mod notebook_backup;
 mod notebook_commands;
 mod notebook_revisions;
 mod notebook_rows;
@@ -1275,6 +1276,7 @@ pub use email_requests::{EmailRequestPatch, EmailRequestRow, NewEmailRequest};
 pub use home_cards::{HomeCard, RecentRun};
 pub use images::ImageRow;
 pub use memory_commands::*;
+pub use notebook_backup::{BackupNotebook, RestoreCounts, RestoreMode};
 pub use notebook_commands::*;
 #[cfg(test)]
 pub use notebooks::NewCard;

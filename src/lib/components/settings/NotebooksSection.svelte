@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
-	 * Settings → Notebooks: semantic search. On downloads the embedding model
-	 * Memory uses (once), then indexes notebooks in the background.
+	 * Settings → Notebooks: semantic search, and backing up and restoring
+	 * every notebook. Semantic search downloads the embedding model Memory
+	 * uses (once), then indexes notebooks in the background.
 	 */
 	import { onMount } from 'svelte';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
@@ -12,6 +13,18 @@
 		refreshModelStatus
 	} from '#lib/stores/memory.svelte.ts';
 	import { getIndexPending, indexNow } from '#lib/notebooks/indexer.svelte.ts';
+	import {
+		backUpNotebooks,
+		describeCounts,
+		describeRestore,
+		pickBackup,
+		restoreBackup,
+		type NotebookBackupInfo,
+		type NotebookRestoreMode
+	} from '#lib/notebooks/backup.ts';
+	import { reloadAllNotebooks } from '#lib/stores/notebooks.svelte.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let on = $state(getSettings().notebooks.semanticSearch);
 	const status = $derived(getModelStatus());
@@ -28,6 +41,57 @@
 		if (!next) return;
 		if (getModelStatus() !== 'ready') await downloadModel();
 		void indexNow();
+	}
+
+	let busy = $state(false);
+	let picked = $state<{ path: string; info: NotebookBackupInfo } | null>(null);
+
+	async function backUp() {
+		busy = true;
+		try {
+			const counts = await backUpNotebooks();
+			if (counts) showToast(`Backed up ${describeCounts(counts)}.`, { kind: 'success' });
+		} catch (e) {
+			showToast(`The backup failed: ${errMessage(e)}`, { kind: 'error' });
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function choose() {
+		busy = true;
+		try {
+			picked = await pickBackup();
+		} catch (e) {
+			showToast(errMessage(e), { kind: 'error' });
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function restore(mode: NotebookRestoreMode) {
+		if (!picked) return;
+		if (
+			mode === 'replace' &&
+			!confirm(
+				'Replace your notebooks with the backup? Notebooks not in it move to Trash, and the ones in it lose changes made since. A copy of what is here now is saved first.'
+			)
+		)
+			return;
+		busy = true;
+		try {
+			const result = await restoreBackup(picked.path, mode);
+			picked = null;
+			await reloadAllNotebooks();
+			if (on) void indexNow();
+			let text = describeRestore(result);
+			if (result.saved_before) text += ` What was here is saved in ${result.saved_before}.`;
+			showToast(text, { kind: result.missing_files ? 'error' : 'success' });
+		} catch (e) {
+			showToast(`The restore failed: ${errMessage(e)}`, { kind: 'error' });
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
@@ -54,7 +118,80 @@
 	{/if}
 </section>
 
+<section class="settings-section">
+	<h2>Backup</h2>
+	<p class="lede">Save every notebook, with its files and history, to one file.</p>
+	<div class="actions">
+		<button
+			class="btn"
+			onclick={() => void backUp()}
+			disabled={busy}
+			title="Notebooks in Trash and earlier card versions are included; notebook chats aren't."
+		>
+			Back up…
+		</button>
+		<button class="btn" onclick={() => void choose()} disabled={busy}>Restore…</button>
+	</div>
+	{#if picked}
+		{@const info = picked.info}
+		<div class="restore">
+			<p>
+				Backup from {new Date(info.created_at).toLocaleString()}: {describeCounts(info.counts)}.
+				{#if info.already_here}
+					{info.already_here === info.counts.notebooks ? 'All' : info.already_here} of its notebooks are
+					here already.
+				{/if}
+			</p>
+			<div class="actions">
+				<button
+					class="btn btn-primary"
+					onclick={() => void restore('add')}
+					disabled={busy}
+					title="Notebooks already here are left as they are."
+				>
+					{info.already_here ? 'Add the missing ones' : 'Restore'}
+				</button>
+				{#if info.already_here}
+					<button
+						class="btn btn-danger"
+						onclick={() => void restore('replace')}
+						disabled={busy}
+						title="The backup's notebooks replace the ones here; notebooks not in it move to Trash. What is here now is saved to a file first."
+					>
+						Replace with the backup
+					</button>
+				{/if}
+				<button class="btn" onclick={() => (picked = null)} disabled={busy}>Cancel</button>
+			</div>
+		</div>
+	{/if}
+</section>
+
 <style>
+	.lede {
+		margin: 0 0 10px;
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+	}
+
+	.actions {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.restore {
+		margin-top: 12px;
+		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+	}
+
+	.restore p {
+		margin: 0 0 10px;
+		font-size: 0.9rem;
+	}
+
 	.hint {
 		margin: 6px 0 0;
 		color: var(--text-secondary);
