@@ -847,6 +847,66 @@ impl Database {
         Ok(hashes.into_iter().collect())
     }
 
+    /// Keep link-check verdicts and note when the notebook was checked.
+    pub fn notebook_link_status_save(
+        &self,
+        notebook_id: &str,
+        results: &[crate::notebook_links::LinkStatus],
+    ) -> Result<(), String> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(db_err("Transaction"))?;
+        let t = now();
+        for r in results {
+            let ok = match r.state.as_str() {
+                "ok" => 1,
+                "broken" => 0,
+                _ => 2,
+            };
+            tx.execute(
+                "INSERT INTO notebook_link_status (notebook_id, url, ok, status, checked_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(notebook_id, url) DO UPDATE SET
+                   ok = excluded.ok, status = excluded.status, checked_at = excluded.checked_at",
+                params![notebook_id, r.url, ok, r.status, t],
+            )
+            .map_err(db_err("Link status save"))?;
+        }
+        tx.execute(
+            "UPDATE notebooks SET links_checked_at = ?2 WHERE id = ?1",
+            params![notebook_id, t],
+        )
+        .map_err(db_err("Link check stamp"))?;
+        tx.commit().map_err(db_err("Commit"))
+    }
+
+    pub fn notebook_link_status_get(
+        &self,
+        notebook_id: &str,
+    ) -> Result<Vec<crate::notebook_links::LinkStatus>, String> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT url, ok, status FROM notebook_link_status WHERE notebook_id = ?1")
+            .map_err(db_err("Link status query"))?;
+        let rows = stmt
+            .query_map(params![notebook_id], |r| {
+                let ok: i64 = r.get(1)?;
+                Ok(crate::notebook_links::LinkStatus {
+                    url: r.get(0)?,
+                    state: match ok {
+                        1 => "ok",
+                        0 => "broken",
+                        _ => "skipped",
+                    }
+                    .to_string(),
+                    status: r.get(2)?,
+                })
+            })
+            .map_err(db_err("Link status query"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_err("Link status read"));
+        rows
+    }
+
     /// The MIME type stored with a notebook file, if any card has it.
     pub fn notebook_file_mime(&self, hash: &str) -> Result<Option<String>, String> {
         self.conn()

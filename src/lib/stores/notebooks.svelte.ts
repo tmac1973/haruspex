@@ -21,6 +21,13 @@ import type {
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { localBackend, onlyThere, type NotebookBackend } from '#lib/notebooks/backend.svelte.ts';
 import type { EngineClient } from '#lib/engine/client.svelte.ts';
+import {
+	checkLinks,
+	collectLinks,
+	linkStatuses,
+	shouldAutoCheck,
+	type LinkStatus
+} from '#lib/notebooks/links.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 let list = $state<NotebookSummary[]>([]);
@@ -35,6 +42,9 @@ let tagFilter = $state<string | null>(null);
 /** Where the open notebook lives: here, or a paired computer. */
 let backend = $state.raw<NotebookBackend>(localBackend);
 let stopPeerWatch: (() => void) | null = null;
+/** The open notebook's link-check verdicts, by URL. */
+let links = $state<Record<string, LinkStatus>>({});
+let checkingLinks = $state(false);
 
 export const getNotebookList = () => list;
 export const isNotebookListLoaded = () => listLoaded;
@@ -45,6 +55,53 @@ export const isTrashShown = () => showTrash;
 export const getTrash = () => trash;
 export const getTagFilter = () => tagFilter;
 export const getOpenBackend = () => backend;
+export const getLinkStatus = (url: string): LinkStatus | undefined => links[url];
+export const getLinkStatuses = () => links;
+export const isCheckingLinks = () => checkingLinks;
+
+/** Check the open notebook's links now (this computer's notebooks only). */
+export async function checkOpenLinks(quiet = false): Promise<void> {
+	if (!open || backend.kind !== 'local' || checkingLinks) return;
+	const id = open.notebook.id;
+	const urls = collectLinks(open.cards);
+	if (urls.length === 0) {
+		if (!quiet) showToast('This notebook has no web links.', { kind: 'info' });
+		return;
+	}
+	checkingLinks = true;
+	try {
+		const found = await checkLinks(id, urls);
+		if (openId !== id) return;
+		links = Object.fromEntries(found.map((l) => [l.url, l]));
+		const broken = found.filter((l) => l.state === 'broken').length;
+		if (!quiet || broken) {
+			showToast(
+				broken ? `${broken} broken ${broken === 1 ? 'link' : 'links'}.` : 'Every link works.',
+				{ kind: broken ? 'info' : 'success' }
+			);
+		}
+	} catch (e) {
+		if (!quiet) fail('Checking links', e);
+		else console.warn('notebooks: link check failed', e);
+	} finally {
+		checkingLinks = false;
+	}
+}
+
+/** Read the last verdicts, and check again when a week has passed. */
+async function linksOnOpen(nb: NotebookDetail): Promise<void> {
+	links = {};
+	if (backend.kind !== 'local') return;
+	try {
+		const kept = await linkStatuses(nb.notebook.id);
+		if (openId === nb.notebook.id) links = Object.fromEntries(kept.map((l) => [l.url, l]));
+	} catch (e) {
+		console.warn('notebooks: reading link status failed', e);
+	}
+	if (shouldAutoCheck(nb.notebook, collectLinks(nb.cards).length > 0)) {
+		void checkOpenLinks(true).catch((e) => console.warn('notebooks: link check failed', e));
+	}
+}
 
 /** Refuse what only the computer the open notebook is on can do. */
 function here(able: boolean): boolean {
@@ -119,6 +176,7 @@ export async function openNotebookOn(
 	openId = id;
 	try {
 		open = await be.get(id);
+		void linksOnOpen(open);
 	} catch (e) {
 		console.warn('notebooks: open failed', e);
 		open = null;

@@ -810,6 +810,17 @@ body[data-notebooks-off] .notebook-save {
 	display: none;
 }
 
+/* A link the notebook dead-link check found broken. */
+.link-broken {
+	text-decoration-style: wavy;
+	text-decoration-color: var(--warning);
+}
+
+.link-broken::after {
+	content: ' ⚠';
+	color: var(--warning);
+}
+
 /* A `notebook:` link: a button (markdownActions routes it) that reads as a link. */
 .notebook-link {
 	display: inline;

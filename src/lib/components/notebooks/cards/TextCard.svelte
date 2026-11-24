@@ -7,7 +7,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { renderMarkdown } from '#lib/markdown.ts';
 	import { createEditor, type EditorHandle } from '#lib/editor/codemirror.ts';
-	import { saveCard } from '#lib/stores/notebooks.svelte.ts';
+	import { getLinkStatuses, saveCard } from '#lib/stores/notebooks.svelte.ts';
 	import type { CardViewProps } from '#lib/notebooks/cardKinds.ts';
 
 	let { card, readonly = false }: CardViewProps = $props();
@@ -19,6 +19,21 @@
 	let draft = '';
 
 	const html = $derived(renderMarkdown(card.body));
+	let view = $state<HTMLDivElement | null>(null);
+
+	// Broken links (the dead-link check) get a mark, the reason in its tooltip.
+	$effect(() => {
+		void html;
+		const statuses = getLinkStatuses();
+		if (!view) return;
+		for (const a of view.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+			const s = statuses[a.getAttribute('href') ?? ''];
+			const broken = s?.state === 'broken';
+			a.classList.toggle('link-broken', broken);
+			if (broken) a.title = `Broken link: ${s.status}`;
+			else a.removeAttribute('title');
+		}
+	});
 
 	async function flush() {
 		if (timer) clearTimeout(timer);
@@ -91,6 +106,7 @@
 {:else if card.body.trim()}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
+		bind:this={view}
 		class="markdown view"
 		class:readonly
 		ondblclick={startEditing}

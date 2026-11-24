@@ -39,6 +39,7 @@ mod memory;
 mod models;
 mod net_util;
 mod notebook_files;
+mod notebook_links;
 mod orphans;
 mod owner;
 mod peers;
@@ -760,6 +761,8 @@ pub fn run() {
             notebook_files::transfer::notebook_export_bytes,
             notebook_files::transfer::notebook_import_xlsx,
             notebook_files::transfer::notebook_import_text,
+            notebook_links::notebook_links_check,
+            notebook_links::notebook_link_status_get,
             notebook_files::notebook_file_open,
             notebook_files::notebook_file_from_image,
             db::db_email_requests_get,

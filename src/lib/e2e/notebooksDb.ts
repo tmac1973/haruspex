@@ -209,6 +209,10 @@ export const NOTEBOOKS_DB: Record<string, (a: Args) => unknown> = {
 		return cardOut(c);
 	},
 	notebook_card_history: () => [],
+	notebook_link_status_get: () => [],
+	// Every link works here; nothing leaves the machine in these tests.
+	notebook_links_check: (a) =>
+		((a?.urls as string[]) ?? []).map((url) => ({ url, state: 'ok', status: '200' })),
 	notebook_card_get: (a) => cardOut(card(String(a?.cardId))),
 	notebook_conversation: (a) => `notebook-${String(a?.notebookId)}`,
 	// A notebook chat starts empty; its messages are written, never read back.

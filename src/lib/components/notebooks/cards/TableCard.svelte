@@ -22,7 +22,7 @@
 		type ColumnType
 	} from '#lib/notebooks/columns.ts';
 	import { columnId, parseCsv } from '#lib/notebooks/csv.ts';
-	import { applyRows, loadRows, setColumns } from '#lib/stores/notebooks.svelte.ts';
+	import { applyRows, getLinkStatus, loadRows, setColumns } from '#lib/stores/notebooks.svelte.ts';
 	import type { CardViewProps } from '#lib/notebooks/cardKinds.ts';
 	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
 
@@ -379,9 +379,17 @@
 									{/if}
 								{:else if isUrl(col, v)}
 									<span class="cell-wrap">
-										<a href={v} target="_blank" rel="noopener noreferrer">
+										<a
+											class:link-broken={getLinkStatus(v)?.state === 'broken'}
+											href={v}
+											target="_blank"
+											rel="noopener noreferrer"
+										>
 											{v.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
 										</a>
+										{#if getLinkStatus(v)?.state === 'broken'}
+											<span class="broken" title="Broken link: {getLinkStatus(v)?.status}">⚠</span>
+										{/if}
 										{#if !readonly}
 											<button
 												class="edit-url"
@@ -665,5 +673,10 @@
 
 	.danger:hover {
 		color: var(--error-text);
+	}
+
+	.broken {
+		color: var(--warning);
+		cursor: help;
 	}
 </style>

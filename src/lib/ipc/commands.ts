@@ -412,6 +412,8 @@ export const IPC = {
 	notebook_get: 'notebook_get',
 	notebook_import_text: 'notebook_import_text',
 	notebook_import_xlsx: 'notebook_import_xlsx',
+	notebook_link_status_get: 'notebook_link_status_get',
+	notebook_links_check: 'notebook_links_check',
 	notebook_list: 'notebook_list',
 	notebook_purge: 'notebook_purge',
 	notebook_restore: 'notebook_restore',

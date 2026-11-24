@@ -21,6 +21,9 @@
 	import {
 		emitNotebookChanged,
 		openNotebook,
+		checkOpenLinks,
+		getLinkStatuses,
+		isCheckingLinks,
 		getOpenBackend,
 		getOpenNotebook,
 		isNotebookListLoaded,
@@ -67,6 +70,10 @@
 				label: `Export as ${name}…`,
 				run: () => void exportNotebook(id, format)
 			})),
+			{
+				label: isCheckingLinks() ? 'Checking links…' : 'Check links',
+				run: () => void checkOpenLinks()
+			},
 			{
 				label: 'Refresh on a schedule…',
 				run: () =>
@@ -115,6 +122,16 @@
 		}
 	}
 
+	const brokenCount = $derived(
+		Object.values(getLinkStatuses()).filter((l) => l.state === 'broken').length
+	);
+
+	function showFirstBroken() {
+		document
+			.querySelector('.notebooks .link-broken')
+			?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+	}
+
 	/** The open notebook's chat when it's on another computer. */
 	let peerChat = $state<PeerNotebookChat | null>(null);
 	$effect(() => {
@@ -149,6 +166,7 @@
 				if (kind === 'image' || kind === 'attachment') void pickFilesAsCards(kind, after);
 			}}
 			{cardMenu}
+			banner={brokenCount > 0 ? brokenBanner : undefined}
 			menuItems={getOpenBackend().kind === 'local' ? notebookMenu(open.notebook.id) : []}
 		>
 			{#snippet cardBadge(card)}
@@ -173,6 +191,11 @@
 		</div>
 	{/if}
 </div>
+{#snippet brokenBanner()}
+	<button class="broken-banner" onclick={showFirstBroken} title="Show the first one">
+		⚠ {brokenCount} broken {brokenCount === 1 ? 'link' : 'links'}
+	</button>
+{/snippet}
 {#if historyFor}
 	<CardHistory card={historyFor} onclose={() => (historyFor = null)} />
 {/if}
@@ -203,5 +226,18 @@
 		align-items: center;
 		justify-content: center;
 		color: var(--text-secondary);
+	}
+
+	.broken-banner {
+		display: block;
+		max-width: 860px;
+		margin: 0 auto 8px;
+		border: 1px solid var(--warning);
+		border-radius: 6px;
+		background: none;
+		color: var(--warning);
+		cursor: pointer;
+		padding: 4px 10px;
+		font-size: 0.85rem;
 	}
 </style>

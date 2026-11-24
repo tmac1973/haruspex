@@ -41,6 +41,10 @@ Pictures, files, Python cards, and exporting a notebook to PDF, Word, a web page
 
 Agents in Chat, Shell, Code and each notebook's own chat can make and change notebooks for you; see the `notebook-agents` page.
 
+## Find broken links
+
+**⋯ → Check links** asks for every web link in the notebook (in text and Link columns) and marks those that no longer load with ⚠; point at one to see why. A notebook is checked again by itself when you open it a week after the last check. Links to this computer or your local network aren't checked, and a site that doesn't answer in time isn't marked. Checks use your proxy (see `search-and-network`).
+
 ## Link to a notebook
 
 A link written `[speakers](notebook:<id>)` opens that notebook in this tab, and `notebook:<id>#<card>` scrolls to one of its cards. Agents use these links when they tell you about a notebook they made.
