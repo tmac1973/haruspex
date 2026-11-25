@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
 	addCall,
+	addSessionCall,
+	callCostUsd,
 	catalogPrices,
 	emptyUsage,
 	formatCost,
@@ -71,5 +73,35 @@ describe('session usage totals', () => {
 		expect(formatCost(0)).toBe('$0.00');
 		expect(formatCost(0.004)).toBe('<$0.01');
 		expect(formatCost(12.3)).toBe('$12.30');
+	});
+});
+
+describe('callCostUsd', () => {
+	it('is the reported cost, else the catalogue estimate, else nothing', () => {
+		const prices = { prompt: 0.001, completion: 0.002 };
+		expect(callCostUsd(call(100, 10, 0.5), prices)).toBe(0.5);
+		expect(callCostUsd(call(100, 10), prices)).toBeCloseTo(0.12);
+		expect(callCostUsd(call(100, 10), null)).toBe(0);
+	});
+});
+
+describe('addSessionCall', () => {
+	const prices = { prompt: 0.001, completion: 0.002 };
+	const openrouter = { openrouter: true, prices: () => prices };
+	const local = { openrouter: false, prices: () => null };
+
+	it('prices the session’s own calls, and a sub-agent on its model, by the session', () => {
+		expect(addSessionCall(emptyUsage(), call(100, 10), openrouter).costUsd).toBeCloseTo(0.12);
+		const sub = addSessionCall(emptyUsage(), call(100, 10), openrouter, { subagent: true });
+		expect(sub.costUsd).toBeCloseTo(0.12);
+		expect(sub.subagentCalls).toBe(1);
+	});
+
+	it('never prices a sub-agent on its own model by the session’s catalogue entry', () => {
+		const own = { subagent: true, ownModel: true };
+		const unpriced = addSessionCall(emptyUsage(), call(100, 10), openrouter, own);
+		expect(unpriced).toMatchObject({ costUsd: null, estimated: false, subagentTokens: 110 });
+		const priced = addSessionCall(emptyUsage(), call(100, 10, 0.5), local, own);
+		expect(priced.costUsd).toBe(0.5);
 	});
 });

@@ -17,6 +17,7 @@ import {
 	BackgroundSubtasks,
 	buildSubtaskNotification,
 	isSubtaskNotification,
+	perWriteGuard,
 	type BackgroundSubtaskHost,
 	type CompletedSubtask
 } from '#lib/code/backgroundSubtasks.ts';
@@ -155,6 +156,88 @@ describe('BackgroundSubtasks', () => {
 		bg.start(spec('r'), newSubtaskState('r', 'l', 't'));
 		await bg.settle();
 		expect(leaseDone).toHaveBeenCalledTimes(1);
+	});
+
+	it('runs a profiled spec with its profile, and reports what its finish said', async () => {
+		const { h, done } = host();
+		const profile = {
+			backend: { baseUrl: 'https://openrouter.ai/api', modelId: 'vendor/big' },
+			writablePaths: ['a.js', 'a.anim.js', 'a.glb']
+		} as unknown as NonNullable<SubtaskSpec['profile']>;
+		mocks.runSubtaskSpec.mockResolvedValue({
+			text: '3D delegate "3D: a.glb" (done, 4 tool calls):\n\nBuilt it.\n\nFinal check: clean.',
+			failed: false,
+			state: {},
+			png: 'data:image/png;base64,AA'
+		});
+		const bg = new BackgroundSubtasks(h);
+		bg.start({ ...spec('d3'), mode: 'write', profile }, newSubtaskState('d3', 'l', 't', 'write'));
+		await bg.settle();
+		expect(mocks.runSubtaskSpec.mock.calls[0][0].profile).toBe(profile);
+		expect(done[0].text).toContain('Final check: clean.');
+		expect(buildSubtaskNotification(done)).toContain('Built it.');
+	});
+});
+
+describe('a profiled background subtask’s writes', () => {
+	function leases() {
+		const made: {
+			acquire: ReturnType<typeof vi.fn>;
+			changed: ReturnType<typeof vi.fn>;
+			done: ReturnType<typeof vi.fn>;
+		}[] = [];
+		const lease = () => {
+			const l = {
+				acquire: vi.fn(async () => null as string | null),
+				changed: vi.fn(),
+				done: vi.fn(async () => {})
+			};
+			made.push(l);
+			return { guard: { acquire: l.acquire, changed: l.changed }, done: l.done };
+		};
+		return { made, lease };
+	}
+
+	it('take the lease for each write and give it back with what changed', async () => {
+		const { made, lease } = leases();
+		const { guard, settle } = perWriteGuard(lease);
+		expect(await guard.acquire()).toBeNull();
+		guard.changed(['a.js']);
+		expect(made[0].changed).toHaveBeenCalledWith(['a.js']);
+		expect(made[0].done).toHaveBeenCalledTimes(1);
+		await guard.acquire();
+		guard.changed(['a.glb']);
+		expect(made).toHaveLength(2);
+		expect(made[1].changed).toHaveBeenCalledWith(['a.glb']);
+		await settle();
+		expect(made[1].done).toHaveBeenCalledTimes(1);
+	});
+
+	it('give back a refused or unfinished write’s lease', async () => {
+		const { made, lease } = leases();
+		const { guard, settle } = perWriteGuard(lease);
+		await guard.acquire();
+		await guard.acquire();
+		expect(made[0].done).toHaveBeenCalledTimes(1);
+		await settle();
+		expect(made[1].done).toHaveBeenCalledTimes(1);
+	});
+
+	it('are what a profiled spec runs with', async () => {
+		const { h } = host();
+		const leaseSpy = vi.spyOn(h, 'lease');
+		mocks.runSubtaskSpec.mockImplementation(async (_s: SubtaskSpec, env: SubtaskEnv) => {
+			for (const path of ['a.js', 'a.glb']) {
+				await env.guard!.acquire();
+				env.guard!.changed([path]);
+			}
+			return { text: 'ok', failed: false, state: {} };
+		});
+		const profile = {} as NonNullable<SubtaskSpec['profile']>;
+		const bg = new BackgroundSubtasks(h);
+		bg.start({ ...spec('p'), mode: 'write', profile }, newSubtaskState('p', 'l', 't', 'write'));
+		await bg.settle();
+		expect(leaseSpy).toHaveBeenCalledTimes(2);
 	});
 });
 

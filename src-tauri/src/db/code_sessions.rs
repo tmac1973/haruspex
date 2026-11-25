@@ -92,9 +92,6 @@ pub struct CodeSessionRow {
     /// The checked-out branch the agent was last told or saw. `null`: never
     /// told; `''`: told there was none (not a repo).
     pub agent_branch: Option<String>,
-    /// JSON array of the specialist entry ids this session offers; `null`
-    /// means the entries marked on by default.
-    pub specialists: Option<String>,
     /// JSON array of the helper ids this session offers; `null` means the
     /// ones switched on in Settings → Code → Helpers.
     pub helpers: Option<String>,
@@ -113,8 +110,6 @@ pub struct CodeSessionMetaPatch {
     #[serde(default, deserialize_with = "present")]
     pub effort: Option<Option<String>>,
     #[serde(default, deserialize_with = "present")]
-    pub specialists: Option<Option<String>>,
-    #[serde(default, deserialize_with = "present")]
     pub helpers: Option<Option<String>>,
 }
 
@@ -130,7 +125,7 @@ where
 
 const ROW_COLUMNS: &str = "id, title, root, backend, reasoning_effort, thread, \
      forked_from, forked_at, created_at, updated_at, read_only, worktree, \
-     notices_seen_at, agent_branch, wsl_distro, specialists, helpers";
+     notices_seen_at, agent_branch, wsl_distro, helpers";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
     Ok(CodeSessionRow {
@@ -149,8 +144,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
         notices_seen_at: row.get(12)?,
         agent_branch: row.get(13)?,
         wsl_distro: row.get(14)?,
-        specialists: row.get(15)?,
-        helpers: row.get(16)?,
+        helpers: row.get(15)?,
     })
 }
 
@@ -369,7 +363,6 @@ impl Database {
             worktree: worktree.map(str::to_string),
             notices_seen_at: None,
             agent_branch: None,
-            specialists: None,
             helpers: None,
         };
         self.insert_code_session(&row)?;
@@ -381,7 +374,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO code_sessions ({ROW_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
             ),
             params![
                 row.id,
@@ -399,7 +392,6 @@ impl Database {
                 row.notices_seen_at,
                 row.agent_branch,
                 row.wsl_distro,
-                row.specialists,
                 row.helpers
             ],
         )
@@ -457,8 +449,7 @@ impl Database {
                     title = COALESCE(?2, title),
                     backend = CASE WHEN ?3 THEN ?4 ELSE backend END,
                     reasoning_effort = CASE WHEN ?5 THEN ?6 ELSE reasoning_effort END,
-                    specialists = CASE WHEN ?7 THEN ?8 ELSE specialists END,
-                    helpers = CASE WHEN ?9 THEN ?10 ELSE helpers END
+                    helpers = CASE WHEN ?7 THEN ?8 ELSE helpers END
                  WHERE id = ?1",
                 params![
                     id,
@@ -467,8 +458,6 @@ impl Database {
                     patch.backend.clone().flatten(),
                     patch.effort.is_some(),
                     patch.effort.clone().flatten(),
-                    patch.specialists.is_some(),
-                    patch.specialists.clone().flatten(),
                     patch.helpers.is_some(),
                     patch.helpers.clone().flatten()
                 ],
@@ -588,7 +577,6 @@ impl Database {
             // its agent is told the branch afresh.
             notices_seen_at: None,
             agent_branch: None,
-            specialists: source.specialists,
             helpers: source.helpers,
         };
         self.insert_code_session(&row)?;

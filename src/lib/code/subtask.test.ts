@@ -5,8 +5,10 @@ import {
 	newSubtaskState,
 	startedSubtask,
 	subtaskActive,
+	latestThumbOnly,
 	SubtaskStops,
-	withChildSteps
+	withChildSteps,
+	withUsage
 } from '#lib/code/subtask.ts';
 
 const step: SearchStep = { id: 'c1', toolName: 'code_grep', query: 'foo', status: 'done' };
@@ -56,5 +58,38 @@ describe('SubtaskStops', () => {
 		expect(b.signal.aborted).toBe(true);
 		expect(c.signal.aborted).toBe(false);
 		expect(stops.size).toBe(0);
+	});
+});
+
+describe('subtask usage and pictures', () => {
+	const usage = (total: number) => ({
+		prompt_tokens: total,
+		completion_tokens: 0,
+		total_tokens: total
+	});
+
+	it('adds tokens on each call, and cost only when it is known', () => {
+		let s = newSubtaskState('d1', 'crate', 'Make a crate.');
+		s = withUsage(s, usage(100), null);
+		expect(s.tokens).toBe(100);
+		expect(s.costUsd).toBeUndefined();
+		s = withUsage(s, usage(50), 0.2);
+		s = withUsage(s, usage(50), 0.1);
+		expect(s).toMatchObject({ tokens: 200 });
+		expect(s.costUsd).toBeCloseTo(0.3);
+	});
+
+	it('keeps the thumbnail on the newest step that has one', () => {
+		const steps: SearchStep[] = [
+			{ ...step, id: 'a', thumbDataUrl: 'data:a' },
+			{ ...step, id: 'b' },
+			{ ...step, id: 'c', thumbDataUrl: 'data:c' }
+		];
+		expect(latestThumbOnly(steps).map((s) => s.thumbDataUrl)).toEqual([
+			undefined,
+			undefined,
+			'data:c'
+		]);
+		expect(latestThumbOnly([step])).toEqual([step]);
 	});
 });

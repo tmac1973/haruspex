@@ -5,7 +5,7 @@ description: What check_3d does in detail — the build and animation modules it
 
 # The 3D helper
 
-The 3D helper gives the Code tab's agent one tool, `check_3d`. The agent writes code that builds a model; the helper runs it, saves a `.glb`, measures and renders it. Turn it on in Settings → Code → Helpers → 3D. See the `helpers` page for all helpers, and the `3d-models` page for jobs.
+The 3D helper gives the Code tab's agent `check_3d`. The agent writes code that builds a model; the helper runs, saves, measures and renders it. Turn it on in Settings → Code → Helpers → 3D. With a delegate model set there, it also gets `delegate_3d`: see the `3d-delegate` page. See the `helpers` page for all helpers, and `3d-models` for jobs.
 
 ## What the agent writes
 
@@ -34,7 +34,7 @@ Checking a `.glb` writes nothing unless `height` or `ground` asks for a copy at 
 
 ## What it checks
 
-A build error stops the check and reports the error with its line and file. So does a clip track whose values don't match its times, named by clip and track. Otherwise:
+A build error stops the check and is reported with its line and file. So is a clip track whose values don't match its times. Otherwise:
 
 - **Problems**: no meshes, zero size, broken vertex positions.
 - **Warnings**: missing normals, faces that vanish from behind, faces pointing inward, textures over 2048 px, more triangles than `max_triangles`, a height off `spec_height`.
@@ -56,7 +56,7 @@ Each clip is sampled at 16 frames. Idle, Walk, Run, Swim and flight (Fly, Hover,
 - a knee or elbow bending the wrong way by over 10° (not in a wing);
 - a joint turning over 90° between keys, and tracks that never move;
 - how far it ends from where it started, how far its key pose reaches, and how far it drifts;
-- as notes that never fail it: keys over 0.3 s apart, which move in straight lines, and over 60 keys a second, which bloat the file.
+- as notes that never fail it: keys over 0.3 s apart (straight-line moves) and over 60 keys a second (bloat).
 
 ## What it returns
 
@@ -71,6 +71,6 @@ The agent sees the sheets only if its model reads images.
 
 - It can't tell whether a model looks right or a walk reads as a walk, only what is physically wrong.
 - It doesn't decide when the agent is done.
-- It keeps no history: each check replaces the `.glb` at `out`.
+- It keeps no history: each check replaces the `.glb`.
 - It finds knees, elbows and walks by name only.
 - It doesn't rig, skin, unwrap UVs or make lower-detail copies.

@@ -2,8 +2,8 @@
 	import { ioRoot } from '#lib/code/paths.ts';
 	/**
 	 * One session's header: its folder and git branch, whether it is
-	 * read-only, its model (see CodeModelPicker), reasoning effort, specialists and
-	 * helpers (ExtrasMenu), the repo's AGENTS.md, how full the context is, the
+	 * read-only, its model (see CodeModelPicker), reasoning effort, helpers
+	 * (ExtrasMenu), the repo's AGENTS.md, how full the context is, the
 	 * tokens and cost so far, and its background processes.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
@@ -133,7 +133,7 @@
 		{/each}
 	</select>
 
-	{#if session.capabilities.helpers || session.capabilities.specialists}
+	{#if session.capabilities.helpers}
 		<ExtrasMenu {session} />
 	{/if}
 

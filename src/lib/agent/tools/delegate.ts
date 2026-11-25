@@ -22,7 +22,12 @@ import { getSettings } from '#lib/stores/settings.ts';
 // A cycle (the runner reaches the agent loop, which imports every tool
 // module, this one included) that is safe: neither side uses the other until
 // a call runs.
-import { runSubtaskSpec, worktreeForSubtask, type SubtaskSpec } from '#lib/code/subtaskRun.ts';
+import {
+	runSubtaskSpec,
+	worktreeForSubtask,
+	type SubtaskRunResult,
+	type SubtaskSpec
+} from '#lib/code/subtaskRun.ts';
 import { newSubtaskState, type SubtaskMode, type SubtaskState } from '#lib/code/subtask.ts';
 
 /** The most subtasks one parent turn may start. */
@@ -98,7 +103,7 @@ function refusal(args: Record<string, unknown>, ctx: ToolContext): string | null
 }
 
 /** Hand a background subtask to the session, and tell the parent it has. */
-function startInBackground(
+export function startInBackground(
 	ctx: ToolContext,
 	spec: SubtaskSpec,
 	initial: SubtaskState
@@ -135,22 +140,36 @@ export async function executeDelegate(
 	const initial = newSubtaskState(spec.id, spec.label, spec.task, mode, background);
 	if (background) return startInBackground(ctx, spec, initial);
 
-	// Its own stop, which the turn's stop also pulls.
+	const res = await runInForeground(ctx, spec, initial, folder);
+	return toolResult(res.failed ? toolError(res.text) : res.text);
+}
+
+/**
+ * Run `spec` while the tool call waits, with a stop of its own that the
+ * turn's Stop also pulls. Shared with `delegate_3d`.
+ */
+export async function runInForeground(
+	ctx: ToolContext,
+	spec: SubtaskSpec,
+	initial: SubtaskState,
+	folder: string
+): Promise<SubtaskRunResult> {
 	const stop = childController(ctx.signal);
 	ctx.subtaskStops?.register(spec.id, stop.controller);
 	ctx.onSubtask?.(initial);
 	try {
-		const res = await runSubtaskSpec(
+		return await runSubtaskSpec(
 			spec,
 			{
 				sessionId: ctx.codeSessionId,
 				folder,
-				wslDistro,
+				wslDistro: ctx.wslDistro ?? null,
 				backend: ctx.backend ?? null,
 				effort: ctx.codeEffort ?? null,
 				job: ctx.jobSubtasks,
 				requester: ctx.requester,
 				runInSlot: ctx.runInSlot,
+				parentSlot: ctx.turnSlot,
 				guard: ctx.codeWriteGuard,
 				signal: stop.controller.signal,
 				// The subtask's own stop button, not the turn's Stop.
@@ -160,7 +179,6 @@ export async function executeDelegate(
 			},
 			initial
 		);
-		return toolResult(res.failed ? toolError(res.text) : res.text);
 	} finally {
 		stop.release();
 		ctx.subtaskStops?.delete(spec.id);

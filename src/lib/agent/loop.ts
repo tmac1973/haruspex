@@ -54,9 +54,12 @@ export interface StreamChunkMeta {
  *                      "giving up" but is really the turn-count cap.
  *  - 'forced_stop'     the loop broke early because output degraded (a bare
  *                      URL, a naked tool call, or the same command repeated).
- * Only the latter two are surfaced as a "stopped" indicator in the chat log.
+ *  - 'capped'          `stopBeforeRound` ended it before a model call: a
+ *                      caller's own cap (a subtask profile's rounds or
+ *                      spend). No wrap-up call is made; the caller makes its own.
+ * Only the latter three are surfaced as a "stopped" indicator in the chat log.
  */
-export type AgentStopReason = 'complete' | 'max_iterations' | 'forced_stop';
+export type AgentStopReason = 'complete' | 'max_iterations' | 'forced_stop' | 'capped';
 
 /**
  * Timing and token accounting for one model call, split into the reasoning
@@ -211,16 +214,16 @@ export interface AgentLoopOptions {
 	codeWriteGuard?: CodeWriteGuard;
 	/** The session's effort, for the subtasks it starts; see ToolContext.codeEffort. */
 	codeEffort?: string | null;
-	/** The Code session's specialists; see ToolContext.codeSpecialists. */
-	codeSpecialists?: string[] | null;
 	/** The Code session's helpers; see ToolSchemaOpts.codeHelpers. */
 	codeHelpers?: string[] | null;
 	/** The turn is a subtask's; see ToolContext.subtask. */
 	subtask?: { depth: 1 };
+	/** Helpers whose tools the subtask may have; see ToolSchemaOpts.subtaskHelpers. */
+	subtaskHelpers?: string[];
 	/** A `delegate` call's subtask changed: its card's state, for `call`'s step. */
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
 	/** See ToolContext.onSubtaskUsage. */
-	onSubtaskUsage?: (usage: Usage) => void;
+	onSubtaskUsage?: (usage: Usage, ownModel?: boolean) => void;
 	/** Stop handles for the turn's subtasks; see ToolContext.subtaskStops. */
 	subtaskStops?: SubtaskStops;
 	/** See ToolContext.startBackgroundSubtask. */
@@ -389,6 +392,8 @@ export interface AgentLoopOptions {
 	 * guided-planning runs to keep the agent inside its plan output folder.
 	 */
 	writeRoot?: string | null;
+	/** The only files this turn may write; see ToolContext.writablePaths. */
+	writablePaths?: string[];
 	/**
 	 * Companion flag to codeMode: when true, `run_command` runs risky
 	 * commands without prompting. Defaults to false (the user opts in via
@@ -463,6 +468,13 @@ export interface AgentLoopOptions {
 	 * iteration cap.
 	 */
 	endTurnWhen?: (calls: ResolvedToolCall[]) => boolean | Promise<boolean>;
+	/**
+	 * Asked before each model call after the first: true ends the turn there,
+	 * with stop reason 'capped' and no further call, not even a wrap-up. For a
+	 * caller with a cap of its own (a subtask profile's rounds or spend) that
+	 * asks for the report itself.
+	 */
+	stopBeforeRound?: () => boolean;
 	/**
 	 * Remote backend override applied to every model call in this turn. When
 	 * set, requests route to this server/model instead of the global Settings
@@ -552,6 +564,11 @@ async function runLoop(options: AgentLoopOptions): Promise<void> {
 	let iteration = 0;
 	while (consumed < ctx.maxIterations) {
 		if (ctx.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (iteration > 0 && options.stopBeforeRound?.()) {
+			logDebug('agent', 'branch=capped stop', { iteration });
+			options.onComplete({ stopReason: 'capped' });
+			return;
+		}
 		iteration++;
 		const outcome = await runIteration(ctx, state, nudges, iteration);
 		if (outcome === 'complete') return;

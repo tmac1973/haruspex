@@ -56,6 +56,32 @@ beforeEach(() => {
 		.mockResolvedValue({ bytes: GLB, report: {}, text: 'Size: 1 m', png: PNG });
 });
 
+describe('check_3d under writablePaths', () => {
+	it('reports on the model but does not write a GLB left off the list', async () => {
+		files.set('/proj/assets/crate.js', enc(MODULE));
+		const out = await call(
+			{ path: 'assets/crate.js' },
+			ctx({ writablePaths: ['assets/crate.js', 'assets/crate.anim.js'] })
+		);
+		expect(io.write).not.toHaveBeenCalled();
+		expect(files.has('/proj/assets/crate.glb')).toBe(false);
+		expect(out.result.split('\n')[0]).toBe(
+			"Did not write assets/crate.glb: You may write only: assets/crate.js, assets/crate.anim.js. Write assets/crate.glb's content into one of those instead."
+		);
+		expect(out.result).toContain('Size: 1 m');
+	});
+
+	it('writes a GLB on the list', async () => {
+		files.set('/proj/assets/crate.js', enc(MODULE));
+		const out = await call(
+			{ path: 'assets/crate.js' },
+			ctx({ writablePaths: ['assets/crate.js', 'assets/crate.glb'] })
+		);
+		expect(files.get('/proj/assets/crate.glb')).toEqual([...GLB]);
+		expect(out.result.split('\n')[0]).toBe('Wrote assets/crate.glb.');
+	});
+});
+
 describe('check_3d', () => {
 	it('builds a module, writes its GLB beside it and attaches the sheet', async () => {
 		files.set('/proj/assets/crate.js', enc(MODULE));

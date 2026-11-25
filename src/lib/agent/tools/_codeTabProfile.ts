@@ -19,8 +19,7 @@ export const CODE_TAB_ONLY: ReadonlySet<string> = new Set([
 	'command_stop',
 	'open_in_shell',
 	'open_in_editor',
-	'delegate',
-	'ask_specialist'
+	'delegate'
 ]);
 
 /**

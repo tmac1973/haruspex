@@ -3,6 +3,7 @@ import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { coerceArgsToSchema } from '#lib/agent/tools/_coerce.ts';
+import { writeOutsideLimit } from '#lib/agent/tools/_helpers.ts';
 import { imageEntries } from '#lib/image/entries.ts';
 import { videoEntries } from '#lib/videogen/entries.ts';
 import {
@@ -32,8 +33,8 @@ import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
-import { sessionSpecialists } from '#lib/specialists/session.ts';
-import { helperForTool, sessionHelpers } from '#lib/helpers/registry.ts';
+import { helperForTool, sessionHelpers, type HelperDef } from '#lib/helpers/registry.ts';
+import { delegate3dConfig } from '#lib/helpers/three/delegateConfig.ts';
 import { cameraAccessRefusal, camerasUsable } from '#lib/agent/tools/_cameraGate.ts';
 
 const tools = new Map<string, ToolRegistration>();
@@ -125,12 +126,12 @@ interface ToolFilterOpts {
 	codeReadOnly: boolean;
 	/** A Code turn started from another computer: no hand-off to a Shell tab. */
 	codeRemote: boolean;
-	/** A Code tab session with at least one specialist on: `ask_specialist`. */
-	specialists: boolean;
 	/** The helper ids whose tools the turn offers (`ToolSchemaOpts.codeHelpers`). */
 	helpers: Set<string>;
 	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
 	subtask: boolean;
+	/** The helpers whose tools a subtask may still have (`ToolSchemaOpts.subtaskHelpers`). */
+	subtaskHelpers: Set<string>;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
@@ -367,14 +368,16 @@ function isCodeTab(opts: ToolFilterOpts): boolean {
 /**
  * What a subtask never gets: another subtask, anything that asks the user or
  * opens something for them, anything left running after it ends, and art.
+ * A helper's tools only when its profile names the helper (`subtaskHelpers`).
  */
-function subtaskExcludes(reg: ToolRegistration): boolean {
+function subtaskExcludes(reg: ToolRegistration, subtaskHelpers: Set<string>): boolean {
 	const name = reg.schema.function.name;
+	const helper = helperForTool(name);
 	return (
 		name === 'delegate' ||
+		name === 'delegate_3d' ||
 		name === 'make_asset' ||
-		reg.category === 'specialist' ||
-		helperForTool(name) !== undefined ||
+		(helper !== undefined && !subtaskHelpers.has(helper.id)) ||
 		SONG_TOOLS.has(name) ||
 		reg.category === 'speech' ||
 		reg.category === 'video-gen' ||
@@ -388,21 +391,24 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 	);
 }
 
+/** Whether a helper's tool is offered: see `shouldIncludeTool`. */
+function helperToolOffered(name: string, helper: HelperDef, opts: ToolFilterOpts): boolean {
+	// delegate_3d hands work to the model set in Settings → Code → Helpers → 3D: none set, none offered.
+	if (name === 'delegate_3d' && !delegate3dConfig().backend) return false;
+	return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
+}
+
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
-	if (opts.subtask && subtaskExcludes(reg)) return false;
+	if (opts.subtask && subtaskExcludes(reg, opts.subtaskHelpers)) return false;
 	// Checking or cancelling a background task: only an owner that has one.
 	if (reg.category === 'tasks') {
 		return !!opts.taskOwner && opts.interactive && getTasks(opts.taskOwner).length > 0;
 	}
-	// A session's specialists are the user's to turn on (the Code tab header).
-	if (reg.category === 'specialist' && !opts.specialists) return false;
 	// A helper's tools: the Code tab only, while the session has it on (by
 	// default, its switch in Settings → Code → Helpers), and not the writing
 	// ones in a read-only session.
 	const helper = helperForTool(reg.schema.function.name);
-	if (helper) {
-		return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
-	}
+	if (helper) return helperToolOffered(reg.schema.function.name, helper, opts);
 	// A job's draft opens in the Jobs tab for someone at this computer to run.
 	// Chat and the Code tab; Shell has no conversation a job grows out of.
 	if (reg.category === 'job-proposal') {
@@ -444,17 +450,17 @@ export interface ToolSchemaOpts {
 	/** A Code turn started from another computer: `open_in_shell` is left out. */
 	codeRemote?: boolean;
 	/**
-	 * The Code tab session's specialist entry ids; null: the ones on by
-	 * default. Undefined outside the Code tab, which offers none.
-	 */
-	codeSpecialists?: string[] | null;
-	/**
 	 * The Code tab session's helper ids; null or undefined: the ones switched
 	 * on in Settings → Code → Helpers.
 	 */
 	codeHelpers?: string[] | null;
 	/** A subtask's turn: no `delegate`, and nothing that needs the user. */
 	subtask?: boolean;
+	/**
+	 * Helper ids whose tools a subtask may still have (a subtask profile's).
+	 * Without it a subtask gets no helper tools. Holds with an allowlist too.
+	 */
+	subtaskHelpers?: string[];
 	/** A live user is present. Gates tools that only make sense for one. */
 	interactive?: boolean;
 	/**
@@ -507,9 +513,12 @@ export function getToolSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
+		const subtaskHelpers = new Set(opts.subtaskHelpers);
 		const schemas: ToolDefinition[] = [];
 		for (const reg of tools.values()) {
 			const name = reg.schema.function.name;
+			// A subtask's allowlist narrows what a subtask gets; it never adds to it.
+			if (opts.subtask && subtaskExcludes(reg, subtaskHelpers)) continue;
 			if (reg.category === 'harness-feedback') {
 				// Beside a tool that does work, or where the allowlist names it
 				// (the reflection after a job run). Offered alone, or with only
@@ -544,10 +553,9 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		codeMode: opts.codeMode ?? false,
 		codeReadOnly: opts.codeReadOnly ?? false,
 		codeRemote: opts.codeRemote ?? false,
-		specialists:
-			opts.codeSpecialists !== undefined && sessionSpecialists(opts.codeSpecialists).length > 0,
 		helpers: new Set(sessionHelpers(opts.codeHelpers).map((h) => h.id)),
 		subtask: opts.subtask ?? false,
+		subtaskHelpers: new Set(opts.subtaskHelpers),
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
@@ -828,6 +836,9 @@ export async function executeTool(
 	return runTool(call.name, call.args, ctx);
 }
 
+/** The writes `ToolContext.writablePaths` limits by their `path` (check_3d's is its host's). */
+const LIMITED_WRITES = new Set(['fs_write_text', 'fs_edit_text']);
+
 async function runTool(
 	name: string,
 	args: Record<string, unknown>,
@@ -959,6 +970,11 @@ async function runTool(
 	// an integer, ...) before the executor's own validation runs — see
 	// _coerce.ts. Saves a whole model round-trip per avoided error.
 	const coerced = coerceArgsToSchema(reg.schema.function.parameters, args);
+
+	// A turn limited to named files (`writablePaths`) is refused here, before
+	// the folder's lease below, so a refused write holds nothing.
+	const limited = LIMITED_WRITES.has(name) ? writeOutsideLimit(ctx, coerced.path) : null;
+	if (limited) return toolResult(toolError(limited));
 
 	// One writer per folder: a Code session's write takes the folder first,
 	// and reports what it changed to the sessions sharing it.

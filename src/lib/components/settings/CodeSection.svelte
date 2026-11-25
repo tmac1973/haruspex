@@ -9,7 +9,6 @@
 	import { agentPowershell } from '#lib/code/powershell.ts';
 	import type { AgentPowershell } from '#lib/ipc/gen/AgentPowershell.ts';
 	import { onMount } from 'svelte';
-	import SpecialistsSection from '#lib/components/settings/SpecialistsSection.svelte';
 	import HelpersSection from '#lib/components/settings/HelpersSection.svelte';
 
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
@@ -108,8 +107,6 @@
 	</label>
 	<p class="help">Let the agent hand parts of a task to sub-agents.</p>
 </section>
-
-<SpecialistsSection />
 
 <HelpersSection />
 

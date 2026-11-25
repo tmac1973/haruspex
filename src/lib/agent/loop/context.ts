@@ -134,6 +134,7 @@ export interface LoopContext {
 	skills: ToolContext['skills'];
 	/** Confine file writes to this dir (relative to workingDir); null = no extra limit. */
 	writeRoot: string | null;
+	writablePaths?: string[];
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
 	thinkingEnabled: boolean | null;
 	/** Per-turn reasoning effort; null = use the global reasoningEffort. */
@@ -153,7 +154,6 @@ export interface LoopContext {
 	codeRemote: boolean;
 	codeWriteGuard?: ToolContext['codeWriteGuard'];
 	codeEffort: string | null;
-	codeSpecialists?: string[] | null;
 	subtask?: ToolContext['subtask'];
 	subtasksStartedThisTurn: { count: number };
 	/** How many `haruspex_feedback` reports this turn has made (capped). */
@@ -289,6 +289,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			covers: coveredTools(options.skills.catalog)
 		},
 		writeRoot: options.writeRoot ?? null,
+		writablePaths: options.writablePaths,
 		thinkingEnabled: options.thinkingEnabled ?? null,
 		reasoningEffort: options.reasoningEffort ?? null,
 		samplingSource: options.samplingSource ?? 'profile',
@@ -303,7 +304,6 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeRemote: options.codeRemote ?? false,
 		codeWriteGuard: options.codeWriteGuard,
 		codeEffort: options.codeEffort ?? null,
-		codeSpecialists: options.codeSpecialists,
 		subtask: options.subtask,
 		subtasksStartedThisTurn: { count: 0 },
 		feedbackThisTurn: { count: 0 },
