@@ -24,11 +24,40 @@ function looksLikeReviewQuery(content: string): boolean {
 	return REVIEW_PATTERNS.test(content);
 }
 
-const FILE_OUTPUT_PATTERNS =
-	/\b(pdf|docx|xlsx|odt|ods|odp|pptx|spreadsheet|word\s+doc(?:ument)?|excel\s+(?:file|spreadsheet|sheet)|open\s*document|libreoffice|presentation|powerpoint|slide\s*deck)\b/i;
+/** A document format a request can ask to have made. */
+const FILE_FORMAT = String.raw`(?:pdf|docx|xlsx|odt|ods|odp|pptx|spreadsheet|word\s+doc(?:ument)?|excel\s+(?:file|spreadsheet|sheet)|open\s*document|libreoffice\s+\w+|presentation|powerpoint|slide\s*deck|deck)`;
+
+/** A verb that makes a file, rather than reads, sends or mentions one. */
+const MAKING_VERB = String.raw`\b(?:make|create|write|save|export|generate|produce|draft|prepare|build|convert|turn|put)\b`;
+
+/**
+ * The format is the thing made: after a / an and up to three words describing
+ * it ("a one-page PDF", "a short slide deck"), or after as / into / to ("save
+ * it as report.docx", "turn it into a PDF"). "Summarise report.pdf" and "a
+ * summary of the PDF" name a file that exists, not one to make.
+ */
+/** Words that link to another thing rather than describe the format. */
+const NOT_DESCRIBING = String.raw`(?:of|the|this|that|my|your|its|their|from|in|on|about|for|with|holding|containing)`;
+
+const MADE_FORMAT = String.raw`\b(?:a|an|as|into|to)\s+(?:(?!${NOT_DESCRIBING}\b)[\w-]+\s+){0,3}?(?:[\w-]+\.)?${FILE_FORMAT}\b`;
+
+/**
+ * A making verb, then within the same sentence the format it makes. A format
+ * named on its own isn't enough: the nudge this drives keeps a turn going
+ * until a file is written, so a false match writes a file nobody asked for
+ * ("email that notebook as a PDF", "find the email about the PDF").
+ */
+const FILE_OUTPUT_PATTERNS = new RegExp(
+	// A dot inside a file name ("notes.txt") doesn't end the sentence.
+	`${MAKING_VERB}(?:[^.?!\\n]|\\.(?=\\w)){0,120}?${MADE_FORMAT}`,
+	'i'
+);
+
+/** A request that opens by sending its result: email_compose makes the file. */
+const SENDS = /^\s*(?:please\s+)?(?:e-?mail|send|mail|forward)\b/i;
 
 export function looksLikeFileOutputRequest(content: string): boolean {
-	return FILE_OUTPUT_PATTERNS.test(content);
+	return !SENDS.test(content) && FILE_OUTPUT_PATTERNS.test(content);
 }
 
 export interface SystemPromptOptions {
