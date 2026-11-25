@@ -11,6 +11,7 @@
 	import { cardKind } from '#lib/notebooks/cardKinds.ts';
 	import { addFilesAsCards } from '#lib/notebooks/files.ts';
 	import { fileDropTarget } from '#lib/utils/fileDrop.ts';
+	import { startDragAutoScroll } from '#lib/utils/dragAutoScroll.ts';
 	import type { NotebookCard, NotebookDetail } from '#lib/notebooks/api.ts';
 	import {
 		getFocusCard,
@@ -48,6 +49,17 @@
 	let flashId = $state<string | null>(null);
 	let dragId: string | null = null;
 	let dropTarget = $state<string | null>(null);
+	let stopAutoScroll: (() => void) | null = null;
+	let viewEl: HTMLDivElement | undefined = $state();
+
+	function endDrag() {
+		stopAutoScroll?.();
+		stopAutoScroll = null;
+		dragId = null;
+		dropTarget = null;
+	}
+
+	$effect(() => () => stopAutoScroll?.());
 
 	function saveTitle() {
 		const t = title.trim();
@@ -97,8 +109,7 @@
 
 	function onDrop(targetId: string) {
 		const id = dragId;
-		dragId = null;
-		dropTarget = null;
+		endDrag();
 		if (!id || id === targetId) return;
 		void moveCard(id, targetId);
 	}
@@ -112,6 +123,7 @@
 
 <div
 	class="view"
+	bind:this={viewEl}
 	class:file-over={fileOver}
 	use:fileDropTarget={{ onFiles, onDragChange: (o) => (fileOver = o) }}
 >
@@ -215,7 +227,10 @@
 					ondragstart={(e) => {
 						dragId = card.id;
 						e.dataTransfer?.setData('text/plain', card.id);
+						stopAutoScroll?.();
+						if (viewEl) stopAutoScroll = startDragAutoScroll(viewEl);
 					}}
+					ondragend={endDrag}
 				>
 					{#snippet badge()}
 						{#if cardBadge}{@render cardBadge(card)}{/if}

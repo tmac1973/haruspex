@@ -19,6 +19,8 @@
 		children: Snippet;
 		/** A drag to reorder starts here. */
 		ondragstart?: (e: DragEvent) => void;
+		/** The drag ended, dropped anywhere or cancelled. */
+		ondragend?: (e: DragEvent) => void;
 	}
 
 	let {
@@ -29,7 +31,8 @@
 		menuItems = [],
 		badge,
 		children,
-		ondragstart
+		ondragstart,
+		ondragend
 	}: Props = $props();
 
 	let menuOpen = $state(false);
@@ -58,6 +61,7 @@
 			class="handle"
 			draggable="true"
 			{ondragstart}
+			{ondragend}
 			role="button"
 			tabindex="-1"
 			aria-label="Drag to move"
