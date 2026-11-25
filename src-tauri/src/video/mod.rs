@@ -55,6 +55,45 @@ pub(crate) fn prepare_child(cmd: &mut tokio::process::Command) {
     crate::shell::platform::apply_no_window(cmd.as_std_mut());
 }
 
+/// Why ffmpeg failed, from its stderr: a codec or format this ffmpeg
+/// lacks, said in words, or else its first line (`fallback` when it said
+/// nothing).
+pub(crate) fn ffmpeg_error(stderr: &str, fallback: &str) -> String {
+    const CHOOSE: &str = "Update Haruspex, or choose another ffmpeg under \
+                          Settings → Video editing → ffmpeg and ffprobe.";
+    let between = |line: &str, start: &str, end: &str| -> Option<String> {
+        let rest = &line[line.find(start)? + start.len()..];
+        Some(rest[..rest.find(end)?].to_string())
+    };
+    for line in stderr.lines() {
+        // The native av1 decoder, with no hardware decoder to hand it to.
+        if let Some(codec) = between(line, "support hardware accelerated ", " decoding") {
+            return format!(
+                "this ffmpeg can't decode {} video without a hardware decoder. {CHOOSE}",
+                codec.to_uppercase()
+            );
+        }
+        if let Some(codec) = between(line, "Decoder (codec ", ") not found") {
+            return format!("this ffmpeg can't decode {codec}. {CHOOSE}");
+        }
+        if let Some(name) = between(line, "Unknown encoder '", "'") {
+            return format!("this ffmpeg has no {name} encoder. {CHOOSE}");
+        }
+        if let Some(name) = between(line, "Unknown decoder '", "'") {
+            return format!("this ffmpeg has no {name} decoder. {CHOOSE}");
+        }
+        if let Some(format) = between(line, "Requested output format '", "'") {
+            return format!("this ffmpeg can't write {format} files. {CHOOSE}");
+        }
+    }
+    stderr
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::copy_file;
@@ -77,5 +116,24 @@ mod tests {
         let to = dir.join("b.kdenlive");
         assert!(copy_file(&dir.join("missing.kdenlive"), &to).is_err());
         assert!(!to.exists());
+    }
+
+    #[test]
+    fn ffmpeg_error_names_what_this_ffmpeg_lacks() {
+        use super::ffmpeg_error;
+        let hw =
+            "[av1 @ 0x5581] Your platform doesn't support hardware accelerated AV1 decoding.\n\
+                  [av1 @ 0x5581] Failed to get pixel format.";
+        assert!(ffmpeg_error(hw, "x").starts_with("this ffmpeg can't decode AV1 video"));
+        let muxer = "[AVFormatContext @ 0x55] Requested output format 'webm' is not known.";
+        assert!(ffmpeg_error(muxer, "x").starts_with("this ffmpeg can't write webm files."));
+        let enc = "[aost#0:1 @ 0x55] Unknown encoder 'libopus'";
+        assert!(ffmpeg_error(enc, "x").starts_with("this ffmpeg has no libopus encoder."));
+        assert!(ffmpeg_error(enc, "x").contains("Settings → Video editing → ffmpeg and ffprobe"));
+        assert_eq!(
+            ffmpeg_error("\n  clip.mp4: No such file\nmore", "x"),
+            "clip.mp4: No such file"
+        );
+        assert_eq!(ffmpeg_error("", "past the end?"), "past the end?");
     }
 }

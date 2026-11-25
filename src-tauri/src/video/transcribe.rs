@@ -147,7 +147,7 @@ async fn run_ffmpeg(ffmpeg: &str, args: &[&str], what: &str) -> Result<Vec<u8>, 
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(format!(
             "{what} failed: {}",
-            err.lines().next().unwrap_or("ffmpeg failed")
+            super::ffmpeg_error(&err, "ffmpeg failed")
         ));
     }
     Ok(out.stdout)

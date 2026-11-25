@@ -21,20 +21,24 @@ FFMPEG="$DIR/haruspex-ffmpeg-$TARGET$EXT"
 "$FFMPEG" -hide_banner -buildconf | head -5
 
 fail=0
-# The codecs and formats the video tools rely on, beyond MP4 and H.264:
-# dav1d for AV1 (ComfyUI's clips), and WebM with VP8/VP9 and Opus
-# (video_mux_audio writes WebM with Opus).
+# The codecs and formats the video tools rely on: dav1d for AV1 (ComfyUI's
+# clips), WebM with VP8/VP9 and Opus (video_mux_audio writes WebM with Opus),
+# and MJPEG AVI with PCM (what the video upscalers read).
 DECODERS="$("$FFMPEG" -hide_banner -decoders 2>&1 || true)"
 ENCODERS="$("$FFMPEG" -hide_banner -encoders 2>&1 || true)"
 MUXERS="$("$FFMPEG" -hide_banner -muxers 2>&1 || true)"
-for want in decoder:libdav1d decoder:vp8 decoder:vp9 decoder:opus \
+DEMUXERS="$("$FFMPEG" -hide_banner -demuxers 2>&1 || true)"
+for want in decoder:libdav1d decoder:vp8 decoder:vp9 decoder:opus decoder:h264 \
     encoder:libx264 encoder:aac encoder:libopus encoder:libvpx encoder:libvpx-vp9 \
-    muxer:mp4 muxer:webm muxer:matroska; do
+    encoder:mjpeg encoder:pcm_s16le encoder:png \
+    muxer:mp4 muxer:webm muxer:matroska muxer:avi muxer:wav \
+    demuxer:matroska,webm demuxer:mov,mp4,m4a,3gp,3g2,mj2 demuxer:avi; do
     name="${want#*:}"
     case "${want%%:*}" in
         decoder) list="$DECODERS" ;;
         encoder) list="$ENCODERS" ;;
         muxer) list="$MUXERS" ;;
+        demuxer) list="$DEMUXERS" ;;
     esac
     if ! echo "$list" | grep -Eq "^ +[A-Z.]+ +$name( |\$)"; then
         echo "::error::ffmpeg has no ${want%%:*} $name"
@@ -55,12 +59,15 @@ command -v cygpath >/dev/null 2>&1 && AV1="$(cygpath -m "$AV1")"
 "$FFMPEG" -v error -y -f lavfi -i "sine=frequency=220:duration=1" "$CONV/speech.wav"
 "$FFMPEG" -v error -y -i "$AV1" -i "$CONV/speech.wav" -map 0:v:0 -map 1:a:0 \
     -c:v copy -c:a libopus -b:a 96k -shortest -f webm "$CONV/muxed.webm"
-for f in from-av1.mp4 to.webm muxed.webm; do
+# What upscale_input_args writes for the video upscalers.
+"$FFMPEG" -v error -y -i "$CONV/muxed.webm" -map 0:v:0 -map "0:a:0?" -c:v mjpeg -q:v 2 \
+    -pix_fmt yuvj420p -c:a pcm_s16le -f avi "$CONV/upscale.avi"
+for f in from-av1.mp4 to.webm muxed.webm upscale.avi; do
     [ -s "$CONV/$f" ] || { echo "::error::ffmpeg wrote no $f"; exit 1; }
 done
 FRAMES="$("$FFMPEG" -v error -i "$CONV/from-av1.mp4" -map 0:v:0 -f null - -stats 2>&1 | grep -o 'frame= *[0-9]*' | tail -1 | tr -dc 0-9)"
 [ "${FRAMES:-0}" -gt 0 ] || { echo "::error::the AV1 clip converted to an MP4 with no frames"; exit 1; }
-echo "Conversions passed: AV1 WebM to MP4 ($FRAMES frames), MP4 to WebM, Opus speech muxed into WebM."
+echo "Conversions passed: AV1 WebM to MP4 ($FRAMES frames), MP4 to WebM, Opus speech muxed into WebM, MJPEG AVI."
 
 # Captured first: grep -q stopping early would SIGPIPE melt under pipefail.
 # (No associative arrays: macOS's bash is 3.2.)

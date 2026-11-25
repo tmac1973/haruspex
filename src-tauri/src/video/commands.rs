@@ -512,7 +512,7 @@ pub async fn audio_crossfade_join(
         let err = String::from_utf8_lossy(&done.stderr);
         return Err(format!(
             "could not join the sound: {}",
-            err.lines().next().unwrap_or("ffmpeg failed").trim()
+            super::ffmpeg_error(&err, "ffmpeg failed")
         ));
     }
     Ok(())
@@ -919,7 +919,7 @@ async fn ffmpeg_run(ffmpeg: &str, args: &[std::ffi::OsString], what: &str) -> Re
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(format!(
             "{what} failed: {}",
-            err.lines().next().unwrap_or("ffmpeg failed")
+            super::ffmpeg_error(&err, "ffmpeg failed")
         ));
     }
     Ok(())
@@ -1552,6 +1552,62 @@ mod tests {
             "{}",
             info.duration_secs
         );
+    }
+
+    /// The still, the contact sheet and the speech mux on a real generated
+    /// clip (ComfyUI's are AV1 WebM), with the ffmpeg the app would use:
+    /// `HARUSPEX_FFMPEG=src-tauri/binaries/haruspex-ffmpeg-<triple>
+    /// HARUSPEX_FFPROBE=… HARUSPEX_VIDEO_CLIP=clip.webm HARUSPEX_SPEECH=speech.wav
+    /// cargo test -- --ignored generated_clip_stills_sheet_and_speech`
+    #[tokio::test]
+    #[ignore = "needs a clip, a WAV and the ffmpeg to test"]
+    async fn generated_clip_stills_sheet_and_speech() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
+        let (ffmpeg, ffprobe) = (var("HARUSPEX_FFMPEG"), var("HARUSPEX_FFPROBE"));
+        let clip = std::path::PathBuf::from(var("HARUSPEX_VIDEO_CLIP"));
+        let speech = std::path::PathBuf::from(var("HARUSPEX_SPEECH"));
+        let dir = temp_dir("generated_clip");
+
+        let last = dir.join("last.png");
+        let (w, h) = crate::video::frames::extract_still(
+            &ffmpeg,
+            &clip,
+            crate::video::frames::StillAt::Last,
+            &last,
+        )
+        .await
+        .unwrap();
+        assert!(w > 0 && h > 0);
+
+        let info = probe::probe_file(&ffprobe, &clip, "clip".into())
+            .await
+            .unwrap();
+        let mut pngs = Vec::new();
+        for i in 0..4 {
+            let at = info.duration_secs * i as f64 / 4.0;
+            pngs.push(
+                crate::video::frames::extract_frame(&ffmpeg, &clip, at, 960)
+                    .await
+                    .unwrap(),
+            );
+        }
+        assert!(!crate::video::frames::contact_sheet(&pngs)
+            .unwrap()
+            .is_empty());
+
+        let out = dir.join("spoken.webm");
+        ffmpeg_run(
+            &ffmpeg,
+            &mux_args(&clip, &speech, &out, true),
+            "Adding the sound",
+        )
+        .await
+        .unwrap();
+        let muxed = probe::probe_file(&ffprobe, &out, "out".into())
+            .await
+            .unwrap();
+        assert!(muxed.video.is_some());
+        assert_eq!(muxed.audio[0].codec, "opus");
     }
     use std::time::{Duration, SystemTime};
 

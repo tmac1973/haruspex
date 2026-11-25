@@ -53,7 +53,7 @@ pub async fn extract_frame(
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(format!(
             "no frame at {at:.1} s: {}",
-            err.lines().next().unwrap_or("past the end of the clip?")
+            super::ffmpeg_error(&err, "past the end of the clip?")
         ));
     }
     Ok(out.stdout)
@@ -108,12 +108,10 @@ async fn run_still(ffmpeg: &str, args: Vec<std::ffi::OsString>, out: &Path) -> R
     let written = std::fs::metadata(out).map(|m| m.len() > 0).unwrap_or(false);
     if !written {
         let err = String::from_utf8_lossy(&done.stderr);
-        return Err(err
-            .lines()
-            .next()
-            .unwrap_or("no frame there; past the end of the clip?")
-            .trim()
-            .to_string());
+        return Err(super::ffmpeg_error(
+            &err,
+            "no frame there; past the end of the clip?",
+        ));
     }
     Ok(())
 }
@@ -164,7 +162,7 @@ pub async fn still_clip(
         let err = String::from_utf8_lossy(&done.stderr);
         return Err(format!(
             "could not make the hold: {}",
-            err.lines().next().unwrap_or("ffmpeg failed").trim()
+            super::ffmpeg_error(&err, "ffmpeg failed")
         ));
     }
     Ok(())

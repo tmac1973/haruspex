@@ -477,7 +477,7 @@ if [ ! -x "$PREFIX/bin/ffmpeg$EXT" ]; then
             --disable-encoders \
             --enable-encoder=png,mjpeg,rawvideo,wrapped_avframe,pcm_s16le,flac,aac,libx264,libmp3lame,libopus,libvpx_vp8,libvpx_vp9${HW_ENCODERS:+,$HW_ENCODERS} \
             --disable-muxers \
-            --enable-muxer=image2,image2pipe,rawvideo,segment,wav,flac,mp3,adts,mp4,mov,webm,matroska,null \
+            --enable-muxer=image2,image2pipe,rawvideo,segment,wav,flac,mp3,adts,mp4,mov,webm,matroska,avi,null \
             --disable-protocols \
             --enable-protocol=file,pipe,rtp,tcp,udp,http,https,tls,httpproxy \
             --disable-indevs \
