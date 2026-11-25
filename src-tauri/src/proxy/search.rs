@@ -880,11 +880,6 @@ pub(super) fn parse_yahoo_html(html: &str) -> Result<Vec<SearchResult>, String> 
         Selector::parse("div.compText").map_err(|_| "Failed to parse yahoo snippet selector")?;
 
     Ok(scrape_results(&document, &result_selector, |element| {
-        // Sponsored results sit in a `.result--ad` wrapper around the same
-        // `.result__body` markup as organic ones.
-        if is_ddg_ad(element) {
-            return None;
-        }
         let title = element
             .select(&title_selector)
             .next()
