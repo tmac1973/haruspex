@@ -34,6 +34,11 @@ export interface Check3dHost {
 	read(path: string): Promise<number[]>;
 	/** Write the GLB to its resolved path; the refusal, or null. */
 	write(path: string, bytes: Uint8Array): Promise<string | null>;
+	/**
+	 * Why the turn may not write this resolved path at all, or null. A refused
+	 * GLB is not written, and the call still reports on the model.
+	 */
+	writeLimit?(path: string): string | null;
 	/** The folder paths resolve against; null leaves them as given. */
 	cwd: string | null;
 	/** The sandboxed frame build modules run in. */
@@ -308,13 +313,11 @@ export async function runCheck3d(
 	if ('problems' in checked) return { text: checkFailed(checked, a.path) };
 
 	const target = MODULE.test(a.path) || checked.normalisedFrom ? a.out : undefined;
-	if (target) {
-		const refused = await host.write(resolveShellPath(target, host.cwd), checked.bytes);
-		if (refused) return { error: refused };
-	}
+	const wrote = await writeGlb(a.path, target, checked.bytes, host);
+	if ('error' in wrote) return wrote;
 	const sees = checked.png !== null && host.attachSheet(target ?? a.path, checked.png);
 	const lines = [
-		target ? `Wrote ${target}.` : `Checked ${a.path} (nothing written).`,
+		wrote.line,
 		...missingLine(got.missing),
 		...clampedLine(got.clamped),
 		checked.text,
@@ -323,6 +326,24 @@ export async function runCheck3d(
 		...(sees ? [sheetNote(checked)] : [])
 	];
 	return { text: lines.join('\n'), png: checked.png ?? undefined };
+}
+
+/**
+ * Write the GLB to `target`, when the call has one: the report's first line
+ * (what was written, or why the turn may not write it), or the write's error.
+ */
+async function writeGlb(
+	path: string,
+	target: string | undefined,
+	bytes: Uint8Array,
+	host: Check3dHost
+): Promise<{ line: string } | { error: string }> {
+	if (!target) return { line: `Checked ${path} (nothing written).` };
+	const resolved = resolveShellPath(target, host.cwd);
+	const limited = host.writeLimit?.(resolved);
+	if (limited) return { line: `Did not write ${target}: ${limited}` };
+	const refused = await host.write(resolved, bytes);
+	return refused ? { error: refused } : { line: `Wrote ${target}.` };
 }
 
 /** What a failed check says: its problems, and the argument or file to fix. */

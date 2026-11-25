@@ -7,7 +7,7 @@
  * files, its sandboxed frame and the agent's pending images.
  */
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
-import { ctxCwd } from '#lib/agent/tools/_helpers.ts';
+import { ctxCwd, writeOutsideLimit } from '#lib/agent/tools/_helpers.ts';
 import { READ_ONLY_REFUSAL } from '#lib/agent/tools/_codeTabProfile.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
@@ -24,12 +24,18 @@ import { runHiddenFrame } from '#lib/sandbox/hiddenFrame.ts';
 
 export { MOTION_NOTE, SHEET_NOTE };
 
-/** The app as `check_3d`'s host. */
-function appHost(ctx: ToolContext): Check3dHost {
+/**
+ * The app as `check_3d`'s host, for a turn's `ToolContext`. A write outside
+ * `ctx.writablePaths` is refused; other code builds a host with a limit of
+ * its own by passing a `ctx` that sets one.
+ */
+export function check3dHost(ctx: ToolContext): Check3dHost {
 	const io = assetIo(ctx);
+	const writeLimit = (path: string) => writeOutsideLimit(ctx, path);
 	return {
 		read: (path) => io.read(path),
-		write: (path, bytes) => writeAsset(path, bytes, true, false, io),
+		write: async (path, bytes) => writeLimit(path) ?? writeAsset(path, bytes, true, false, io),
+		writeLimit,
 		cwd: ctxCwd(ctx),
 		runFrame: runHiddenFrame,
 		attachSheet: (path, png) => attachSheet(ctx, path, png),
@@ -40,7 +46,7 @@ function appHost(ctx: ToolContext): Check3dHost {
 
 async function executeCheck3d(args: Record<string, unknown>, ctx: ToolContext) {
 	if (ctx.codeReadOnly) return toolResult(toolError(READ_ONLY_REFUSAL));
-	const reply = await runCheck3d(args, appHost(ctx));
+	const reply = await runCheck3d(args, check3dHost(ctx));
 	if ('error' in reply) return toolResult(toolError(reply.error));
 	return toolResult(reply.text, reply.png);
 }

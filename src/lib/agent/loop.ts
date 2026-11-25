@@ -387,6 +387,8 @@ export interface AgentLoopOptions {
 	 * guided-planning runs to keep the agent inside its plan output folder.
 	 */
 	writeRoot?: string | null;
+	/** The only files this turn may write; see ToolContext.writablePaths. */
+	writablePaths?: string[];
 	/**
 	 * Companion flag to codeMode: when true, `run_command` runs risky
 	 * commands without prompting. Defaults to false (the user opts in via

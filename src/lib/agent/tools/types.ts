@@ -214,6 +214,13 @@ export interface ToolContext {
 	 */
 	writeRoot?: string | null;
 	/**
+	 * When set, the only files this turn may write: paths relative to the
+	 * working folder, normalised. `fs_write_text`, `fs_edit_text` and
+	 * `check_3d` refuse any other path (`writeOutsideLimit`). Unset means no
+	 * limit beyond the folder. Set by a subtask profile (the 3D delegate).
+	 */
+	writablePaths?: string[];
+	/**
 	 * The Shell tab's current working directory, captured at turn start.
 	 * Lets shell-mode fs_* tools resolve relative path arguments (the bare
 	 * `snake_game.py` a model naturally emits) against it instead of

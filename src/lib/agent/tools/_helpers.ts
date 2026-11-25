@@ -7,7 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { ioRoot } from '#lib/code/paths.ts';
+import { ioRoot, relativeToRoot } from '#lib/code/paths.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { chatCompletion, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import {
@@ -137,6 +137,39 @@ export function ctxCwd(ctx: {
 	workingDir?: string | null;
 }): string | null {
 	return ctx.shellMode ? (ctx.shellCwd ?? null) : (ctx.workingDir ?? null);
+}
+
+/** Stands in for the folder when a turn has none, so relative paths still normalise. */
+const NO_FOLDER = '/\u0000';
+
+/**
+ * A path as `writablePaths` holds it: relative to the turn's folder, forward
+ * slashes, no `./`, `..` resolved, case kept. An absolute path inside the
+ * folder becomes relative; one outside it (or the folder itself) is null.
+ */
+export function writableKey(
+	ctx: Pick<ToolContext, 'shellMode' | 'shellCwd' | 'workingDir'>,
+	path: string
+): string | null {
+	return relativeToRoot(ctxCwd(ctx) ?? NO_FOLDER, path);
+}
+
+/**
+ * Why a write to `relPath` is refused under `ctx.writablePaths`, or null when
+ * the turn has no limit or the path is on it. Compared after normalising both
+ * sides (`writableKey`), so `./a/b.js` matches `a/b.js`.
+ */
+export function writeOutsideLimit(
+	ctx: Pick<ToolContext, 'shellMode' | 'shellCwd' | 'workingDir' | 'writablePaths'>,
+	relPath: unknown
+): string | null {
+	const limit = ctx.writablePaths;
+	if (!limit) return null;
+	const path = typeof relPath === 'string' ? relPath.trim() : '';
+	const key = path ? writableKey(ctx, path) : null;
+	if (key !== null && limit.some((p) => writableKey(ctx, p) === key)) return null;
+	const list = limit.length ? limit.join(', ') : 'nothing';
+	return `You may write only: ${list}. Write ${key ?? (path || '(empty path)')}'s content into one of those instead.`;
 }
 
 /** What Rust says when a path leaves the folder the file tools are confined to. */

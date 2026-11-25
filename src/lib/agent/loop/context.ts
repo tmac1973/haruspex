@@ -134,6 +134,7 @@ export interface LoopContext {
 	skills: ToolContext['skills'];
 	/** Confine file writes to this dir (relative to workingDir); null = no extra limit. */
 	writeRoot: string | null;
+	writablePaths?: string[];
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
 	thinkingEnabled: boolean | null;
 	/** Per-turn reasoning effort; null = use the global reasoningEffort. */
@@ -288,6 +289,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			covers: coveredTools(options.skills.catalog)
 		},
 		writeRoot: options.writeRoot ?? null,
+		writablePaths: options.writablePaths,
 		thinkingEnabled: options.thinkingEnabled ?? null,
 		reasoningEffort: options.reasoningEffort ?? null,
 		samplingSource: options.samplingSource ?? 'profile',

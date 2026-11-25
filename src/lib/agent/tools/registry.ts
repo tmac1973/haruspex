@@ -3,6 +3,7 @@ import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { coerceArgsToSchema } from '#lib/agent/tools/_coerce.ts';
+import { writeOutsideLimit } from '#lib/agent/tools/_helpers.ts';
 import { imageEntries } from '#lib/image/entries.ts';
 import { videoEntries } from '#lib/videogen/entries.ts';
 import {
@@ -806,6 +807,9 @@ export async function executeTool(
 	return runTool(call.name, call.args, ctx);
 }
 
+/** The writes `ToolContext.writablePaths` limits by their `path` (check_3d's is its host's). */
+const LIMITED_WRITES = new Set(['fs_write_text', 'fs_edit_text']);
+
 async function runTool(
 	name: string,
 	args: Record<string, unknown>,
@@ -937,6 +941,11 @@ async function runTool(
 	// an integer, ...) before the executor's own validation runs — see
 	// _coerce.ts. Saves a whole model round-trip per avoided error.
 	const coerced = coerceArgsToSchema(reg.schema.function.parameters, args);
+
+	// A turn limited to named files (`writablePaths`) is refused here, before
+	// the folder's lease below, so a refused write holds nothing.
+	const limited = LIMITED_WRITES.has(name) ? writeOutsideLimit(ctx, coerced.path) : null;
+	if (limited) return toolResult(toolError(limited));
 
 	// One writer per folder: a Code session's write takes the folder first,
 	// and reports what it changed to the sessions sharing it.

@@ -202,6 +202,7 @@ export async function executeToolCalls(
 				deferredTools: ctx.deferredTools,
 				skills: ctx.skills,
 				writeRoot: ctx.writeRoot,
+				writablePaths: ctx.writablePaths,
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,
 				codeSessionId: ctx.codeSessionId,
