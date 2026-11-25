@@ -16,6 +16,7 @@
 import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 import {
 	ToolchestError,
+	hostOf,
 	toolchestJson,
 	toolchestUpload,
 	type ToolchestConfig
@@ -39,13 +40,17 @@ import type {
 	VideoModelEntry,
 	VideoProgress,
 	VideoRequest,
-	VideoResult
+	VideoResult,
+	VideoUpscaler,
+	VideoUpscaleRequest
 } from '#lib/videogen/types.ts';
 
 export const ROUTES = {
 	models: '/v1/models',
 	jobs: '/v1/videos/jobs',
-	job: (id: string) => `/v1/videos/jobs/${encodeURIComponent(id)}`
+	job: (id: string) => `/v1/videos/jobs/${encodeURIComponent(id)}`,
+	upscaleJobs: '/v1/videos/upscale/jobs',
+	upscaleJob: (id: string) => `/v1/videos/upscale/jobs/${encodeURIComponent(id)}`
 } as const;
 
 /** A video job, as Haruspex reads it. */
@@ -96,6 +101,18 @@ export function readVideoJob(v: unknown): VideoJob | null {
 		fps: int(video.fps),
 		error: text(j.error) || text(error.message) || null
 	};
+}
+
+/**
+ * A video upscale job, read into the same shape: its progress counts
+ * `completed` of `total` (windows), and its video has no frame rate.
+ */
+export function readUpscaleJob(v: unknown): VideoJob | null {
+	const j = obj(v);
+	const job = readVideoJob(v);
+	if (!job) return null;
+	const progress = obj(j.progress);
+	return { ...job, step: int(progress.completed), totalSteps: int(progress.total) };
 }
 
 export function videoProgressOf(job: VideoJob): VideoProgress {
@@ -192,7 +209,50 @@ async function finish(
 	};
 }
 
+/** The upscale job's text fields. */
+export function buildUpscaleBody(req: VideoUpscaleRequest): Json {
+	return { model: req.upscaler, output_format: 'webm', seed: req.seed };
+}
+
+/** Follow an upscale job to its end and keep the clip. */
+async function finishUpscale(
+	cfg: ToolchestConfig,
+	created: VideoJob,
+	req: VideoUpscaleRequest,
+	opts: VideoGenerateOptions
+): Promise<VideoResult> {
+	const job = settleJob(
+		await followJob(cfg, created, ROUTES.upscaleJob, readUpscaleJob, {
+			signal: opts.signal,
+			onJob: (j) => opts.onProgress?.(videoProgressOf(j))
+		})
+	);
+	if (!job.videoUrl) throw new ToolchestError('rejected', 'llama-toolchest gave no video.');
+	opts.onProgress?.({ phase: 'saving' });
+	const stored = await storeJobFile(cfg, job.videoUrl, job.mime, {
+		title: req.title,
+		conversationId: opts.conversationId,
+		codeSessionId: opts.codeSessionId
+	});
+	removeJob(cfg, ROUTES.upscaleJob(job.id));
+	return {
+		hash: stored.hash,
+		url: videoSrc(stored.hash) ?? '',
+		mime: stored.mime,
+		width: job.width || req.input.width * req.scale,
+		height: job.height || req.input.height * req.scale,
+		frames: job.frames || req.input.frames,
+		fps: req.input.fps,
+		seed: req.seed,
+		model: req.upscaler,
+		hasAudio: false
+	};
+}
+
 type Server = ReturnType<typeof toolchestServer>;
+
+/** A clip may be up to 512 MiB; give its upload ten minutes. */
+const UPLOAD_MS = 600_000;
 
 /** Each entry's view of its server, kept while the entry's config is unchanged. */
 const servers = new Map<string, { key: string; server: Server }>();
@@ -208,6 +268,48 @@ function serverFor(entry: VideoModelEntry): Server {
 	}));
 	servers.set(entry.id, { key, server });
 	return server;
+}
+
+/** Send `req` to its upscaler on `server` and follow the job to its end. */
+async function upscaleOn(
+	server: Server,
+	req: VideoUpscaleRequest,
+	opts: VideoGenerateOptions
+): Promise<VideoResult> {
+	const cfg = await server.config();
+	// Fresh, since an upscaler may have been added or stopped since the last read.
+	await server.instances(cfg, opts.signal);
+	if (!server.upscalers().some((i) => i.id === req.upscaler)) {
+		throw new ToolchestError(
+			'unconfigured',
+			`${req.upscaler} is not a video upscaler on ${hostOf(cfg.baseUrl)} any more.`
+		);
+	}
+	const file = {
+		field: 'video',
+		filename: 'clip.avi',
+		hash: req.input.hash,
+		cache: 'audio' as const,
+		bytes: null
+	};
+	const created = readUpscaleJob(
+		await toolchestUpload(
+			cfg,
+			{ path: ROUTES.upscaleJobs, body: buildUpscaleBody(req), timeoutMs: UPLOAD_MS },
+			[file],
+			opts.signal,
+			true
+		)
+	);
+	if (!created) throw new ToolchestError('rejected', 'llama-toolchest made no job.');
+	opts.onHandle?.({
+		backend: 'llama-toolchest',
+		baseUrl: cfg.baseUrl,
+		id: created.id,
+		model: req.upscaler,
+		keyId: server.keyId()
+	});
+	return finishUpscale(cfg, created, req, opts);
 }
 
 /** Toolchest's error as a video backend's, so routing knows which ones to pass over. */
@@ -240,10 +342,18 @@ export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
 		kind: 'llama-toolchest',
 		probe: () => mapped(() => server.probe()),
 		capabilities: (signal) =>
-			mapped(
-				async () =>
-					capsFromInstance(await ready(signal)) as NonNullable<ReturnType<typeof capsFromInstance>>
-			),
+			mapped(async () => {
+				const caps = capsFromInstance(await ready(signal))!;
+				return { ...caps, upscale: server.upscalers().length > 0 };
+			}),
+		upscalers: (): VideoUpscaler[] =>
+			server.upscalers().flatMap((i) => (i.vupscale ? [{ id: i.id, limits: i.vupscale }] : [])),
+		upscale: (req, opts = {}) => mapped(() => upscaleOn(server, req, opts)),
+		resumeUpscale: (handle, req, opts = {}) =>
+			mapped(async () => {
+				const cfg = await server.configFor(handle.baseUrl, handle.keyId);
+				return finishUpscale(cfg, readUpscaleJob({ id: handle.id })!, req, opts);
+			}),
 		models: (signal) =>
 			mapped(async () =>
 				(await server.instances(await server.config(), signal))

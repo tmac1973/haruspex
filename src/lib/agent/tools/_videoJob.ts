@@ -1,6 +1,6 @@
 /**
- * A clip made in the background: `generate_video`, which always runs this way,
- * since a clip takes minutes.
+ * A clip made in the background: `generate_video` and `upscale_video`, which
+ * always run this way, since a clip takes minutes.
  *
  * The tool settles everything a turn can (the size and frame count the
  * instance takes, the seed, the picture it starts from, where to save) and
@@ -21,10 +21,12 @@ import { firstVideoEntry, videoEntryById, videoEntryForHandle } from '#lib/video
 import { NOT_SET_UP } from '#lib/videogen/route.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
 import type {
+	VideoGenerateOptions,
 	VideoJobHandle,
 	VideoProgress,
 	VideoRequest,
-	VideoResult
+	VideoResult,
+	VideoUpscaleRequest
 } from '#lib/videogen/types.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { clipSeconds } from '#lib/videogen/fit.ts';
@@ -33,10 +35,24 @@ import { videoOverrides } from '#lib/video/binaries.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
+import type { VideoBackend } from '#lib/videogen/backend.ts';
 
-/** A `video` task's spec. */
-export interface VideoTaskSpec {
+/** A `video` task's spec: a clip to make, or (`op: 'upscale'`) one to make larger. */
+export type VideoTaskSpec = VideoGenTaskSpec | VideoUpscaleTaskSpec;
+
+/** A clip to make; tasks recorded before upscaling have no `op`. */
+export interface VideoGenTaskSpec extends VideoTaskCommon {
+	op?: 'generate';
 	request: VideoRequest;
+}
+
+export interface VideoUpscaleTaskSpec extends VideoTaskCommon {
+	op: 'upscale';
+	request: VideoUpscaleRequest;
+	entryId: string;
+}
+
+interface VideoTaskCommon {
 	/** What was changed on the way in ("Shortened to 33 frames…"). */
 	notes: string[];
 	/** A folder target: the runner writes with no turn behind it. */
@@ -63,6 +79,8 @@ export interface VideoTaskResult {
 	notes: string[];
 	/** How saving went, as the answer says it; null when nothing was saved. */
 	saved: string | null;
+	/** The size it was before, for an upscaled clip. */
+	upscaledFrom?: { width: number; height: number };
 }
 
 export interface VideoJobEnv {
@@ -85,11 +103,15 @@ export function videoAnswerText(o: {
 	title: string;
 	saved: string | null;
 	notes: string[];
+	upscaledFrom?: { width: number; height: number };
 }): string {
 	const m = o.made;
 	const sound = m.hasAudio === undefined ? '' : m.hasAudio ? ', with sound' : ', no sound';
+	const from = o.upscaledFrom;
 	const lines = [
-		`Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}${sound}).`,
+		from
+			? `Upscaled clip ready (${from.width}×${from.height} → ${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}${sound}).`
+			: `Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}${sound}).`,
 		`Put ![${o.title}](${m.url}) in your answer.`
 	];
 	if (o.saved) lines.push(o.saved);
@@ -110,8 +132,14 @@ async function withSpeech(
 	made: VideoResult,
 	spec: VideoTaskSpec
 ): Promise<{ made: VideoResult; notes: string[] }> {
-	const audio = spec.request.audio;
+	const audio =
+		spec.op === 'upscale'
+			? spec.request.input.hasAudio
+				? spec.request.input
+				: undefined
+			: spec.request.audio;
 	if (!audio) return { made, notes: spec.notes };
+	const what = spec.op === 'upscale' ? 'The sound' : 'The speech';
 	try {
 		const stored = await invoke<StoredAudio>('video_mux_audio', {
 			videoHash: made.hash,
@@ -134,7 +162,7 @@ async function withSpeech(
 	} catch (e) {
 		return {
 			made,
-			notes: [...spec.notes, `The speech could not be put under the clip: ${errMessage(e)}`]
+			notes: [...spec.notes, `${what} could not be put under the clip: ${errMessage(e)}`]
 		};
 	}
 }
@@ -167,9 +195,7 @@ export async function runVideoJob(
 	}
 	const backend = videoBackendForEntry(entry);
 	if (!backend) throw new Error(`${entry.name} is not a kind this build can use.`);
-	const generated = handle
-		? await backend.resume(handle, spec.request, opts)
-		: await backend.generate(spec.request, opts);
+	const generated = await makeOrFollow(backend, spec, opts, handle);
 	const { made, notes } = await withSpeech(generated, spec);
 	return {
 		hash: made.hash,
@@ -183,8 +209,31 @@ export async function runVideoJob(
 		model: made.model,
 		hasAudio: made.hasAudio,
 		notes,
-		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null
+		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null,
+		...(spec.op === 'upscale'
+			? { upscaledFrom: { width: spec.request.input.width, height: spec.request.input.height } }
+			: {})
 	};
+}
+
+/** The clip the spec asks for, made or followed on `backend`. */
+async function makeOrFollow(
+	backend: VideoBackend,
+	spec: VideoTaskSpec,
+	opts: VideoGenerateOptions,
+	handle?: VideoJobHandle
+): Promise<VideoResult> {
+	if (spec.op !== 'upscale') {
+		return handle
+			? backend.resume(handle, spec.request, opts)
+			: backend.generate(spec.request, opts);
+	}
+	if (!backend.upscale || !backend.resumeUpscale) {
+		throw new Error('That video model has no video upscaler.');
+	}
+	return handle
+		? backend.resumeUpscale(handle, spec.request, opts)
+		: backend.upscale(spec.request, opts);
 }
 
 /** Record the clip as a task for the runner, and answer for the turn. */
@@ -195,7 +244,7 @@ export async function startVideoTask(
 	ctx: ToolContext,
 	entryId?: string
 ): Promise<ToolExecOutput> {
-	const spec: VideoTaskSpec = {
+	const spec: VideoGenTaskSpec = {
 		request,
 		notes,
 		save: save && detachedTarget(save, ctx),
@@ -216,6 +265,42 @@ export async function startVideoTask(
 			`Started in the background (task ${task.id}).${changed} A clip takes minutes; you'll get a ` +
 				'notification turn here when it finishes, with the player line to place — do NOT poll ' +
 				'for it; continue with other work or wrap up.'
+		),
+		artifacts: [{ kind: 'task' as const, taskId: task.id, label: task.label }]
+	};
+}
+
+/** Record an upscale as a task for the runner, and answer for the turn. */
+export async function startVideoUpscaleTask(
+	request: VideoUpscaleRequest,
+	notes: string[],
+	save: SaveTarget | null,
+	ctx: ToolContext,
+	entryId: string
+): Promise<ToolExecOutput> {
+	const spec: VideoUpscaleTaskSpec = {
+		op: 'upscale',
+		request,
+		notes,
+		save: save && detachedTarget(save, ctx),
+		conversationId: ctx.conversationId ?? null,
+		codeSessionId: ctx.codeSessionId ?? null,
+		entryId
+	};
+	const task = await invoke<BackgroundTask>('task_create', {
+		kind: 'video',
+		owner: taskOwner(ctx),
+		label: `Upscaling ${request.title}`,
+		spec
+	});
+	upsertTask(task);
+	const { width, height, scale } = { ...request.input, scale: request.scale };
+	return {
+		...toolResult(
+			`Started in the background (task ${task.id}): ${width}×${height} to ` +
+				`${width * scale}×${height * scale} with ${request.upscaler}. An upscale takes minutes; ` +
+				"you'll get a notification turn here when it finishes, with the player line to place — " +
+				'do NOT poll for it; continue with other work or wrap up.'
 		),
 		artifacts: [{ kind: 'task' as const, taskId: task.id, label: task.label }]
 	};

@@ -7,7 +7,7 @@ description: Video models on ComfyUI or llama-toolchest, installing them, which 
 
 Haruspex can have a ComfyUI or llama-toolchest server make short video clips. It is off until you add a video model in Settings → Video generation.
 
-This page is about making new clips. Cutting and rendering your own footage is on the `video-editing` page.
+This page is about making new clips. Cutting and rendering your own footage is on the `video-editing` page, and making a clip larger is on the `video-upscaling` page.
 
 ## Add a video model
 

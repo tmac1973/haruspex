@@ -60,6 +60,25 @@ The speech is made first, then the clip plays in the conversation with the speec
 
 Read more: video-generation, speech
 
+## Upscale a clip
+
+Make a short clip two or four times larger and sharper with a video upscaler on llama-toolchest. It keeps the clip's sound.
+
+Tab: Chat or Code
+Required settings: Settings → Video generation → a video model on a llama-toolchest server (a server you run) that also has a RelayVSR or SeedVR2 instance
+
+Prompt:
+
+> Upscale that fox clip to twice the size and save it as fox-2x.webm.
+
+Example output:
+
+A card shows the upscale's progress and **Cancel**. When it's done, the larger clip plays in the conversation, and the answer gives its old and new size.
+
+<!-- media: an upscaled fox clip playing in a Chat answer -->
+
+Read more: video-upscaling
+
 ## Cut a project from your clips
 
 The assistant lays your clips end to end in a Shotcut or Kdenlive project you can open and change, with even sound and crossfades if you ask.

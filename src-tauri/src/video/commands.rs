@@ -1050,6 +1050,138 @@ pub async fn video_still_extract(
     })
 }
 
+/// A clip ready for a video upscaler: MJPEG AVI in the audio cache, and
+/// what the upscaler checks it against.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UpscaleInput {
+    /// The AVI's hash in the audio cache: what the upscale job is sent.
+    pub hash: String,
+    /// As shown, after any rotation the file asks for.
+    pub width: u32,
+    pub height: u32,
+    pub frames: u32,
+    pub fps: f64,
+    pub has_audio: bool,
+    pub duration_secs: f64,
+}
+
+/// The ffmpeg arguments that turn `clip` into what llama-toolchest's video
+/// upscalers read: MJPEG AVI with PCM sound, the sound only when there is
+/// some. MP4, VP9 and ordinary VP8 are all refused there.
+pub fn upscale_input_args(clip: &Path, out: &Path) -> Vec<std::ffi::OsString> {
+    let mut a: Vec<std::ffi::OsString> = vec!["-i".into(), clip.into()];
+    for s in [
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-c:v",
+        "mjpeg",
+        "-q:v",
+        "2",
+        "-pix_fmt",
+        "yuvj420p",
+        "-c:a",
+        "pcm_s16le",
+        "-f",
+        "avi",
+    ] {
+        a.push(s.into());
+    }
+    a.push(out.into());
+    a
+}
+
+/// The frame count of a clip `secs` long at `fps`, at least one.
+pub fn frame_count(secs: f64, fps: f64) -> u32 {
+    if !(secs.is_finite() && fps.is_finite()) || secs <= 0.0 || fps <= 0.0 {
+        return 1;
+    }
+    ((secs * fps).round() as u32).max(1)
+}
+
+/// A clip for `upscale_video`: a generated one by `hash`, or a file in the
+/// working folder by `path`, converted to MJPEG AVI and kept in the audio
+/// cache, linked to the chat or Code session, with its size and length.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn video_upscale_input(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    working_dir: Option<String>,
+    path: Option<String>,
+    hash: Option<String>,
+    conversation_id: Option<String>,
+    code_session_id: Option<String>,
+    settings: super::project::VideoSettings,
+) -> Result<UpscaleInput, String> {
+    let (file, shown) = match (hash.as_deref(), path.as_deref()) {
+        (Some(h), _) => (cached_clip(&app, h)?, "the clip".to_string()),
+        (None, Some(p)) => {
+            let dir = working_dir.ok_or("There is no working folder to read the clip from.")?;
+            let file = crate::fs_tools::resolve_in_workdir(Path::new(&dir), p)?;
+            if !file.is_file() {
+                return Err(format!("No file named {} in the working folder.", p.trim()));
+            }
+            (file, p.trim().to_string())
+        }
+        (None, None) => return Err("Name a clip: its path or its haruspex-video:// URL.".into()),
+    };
+    let found = binaries::resolve(&settings.overrides).await;
+    let ffprobe = found.require(Tool::Ffprobe)?.to_string();
+    let ffmpeg = found.require(Tool::Ffmpeg)?.to_string();
+    let info = probe::probe_file(&ffprobe, &file, shown.clone()).await?;
+    let video = info
+        .video
+        .as_ref()
+        .ok_or_else(|| format!("{shown} has no picture."))?;
+    let fps = if video.fps_den > 0 {
+        video.fps_num as f64 / video.fps_den as f64
+    } else {
+        0.0
+    };
+    // ffmpeg turns the picture upright as it converts.
+    let (width, height) = if video.rotation.abs() % 180 == 90 {
+        (video.height, video.width)
+    } else {
+        (video.width, video.height)
+    };
+    let dir = crate::audio_cache::cache_dir(&app)?;
+    let temp = dir.join(crate::audio_cache::commands::temp_name());
+    if let Err(e) = ffmpeg_run(
+        &ffmpeg,
+        &upscale_input_args(&file, &temp),
+        "Converting the clip",
+    )
+    .await
+    {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e);
+    }
+    let stored = crate::audio_cache::commands::store_file(
+        &db,
+        &dir,
+        &temp,
+        "video/x-msvideo",
+        None,
+        None,
+        conversation_id.as_deref(),
+        code_session_id.as_deref(),
+    )
+    .await?;
+    Ok(UpscaleInput {
+        hash: stored.hash,
+        width,
+        height,
+        frames: frame_count(info.duration_secs, fps),
+        fps,
+        has_audio: !info.audio.is_empty(),
+        duration_secs: info.duration_secs,
+    })
+}
+
 /// ffprobe a generated clip in the cache: its length, picture and sound.
 #[tauri::command]
 pub async fn video_probe_cached(
@@ -1726,5 +1858,35 @@ mod tests {
         assert!(err.contains("at least 3 chapters"), "{err}");
         assert!(err.contains("must start at 0:00"), "{err}");
         assert!(!dir.join("ep010/cut.chapters.txt").exists());
+    }
+}
+
+#[cfg(test)]
+mod upscale_tests {
+    use super::*;
+
+    #[test]
+    fn upscale_input_is_mjpeg_avi_with_optional_sound() {
+        let args: Vec<String> = upscale_input_args(Path::new("in.mp4"), Path::new("out.tmp"))
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let joined = args.join(" ");
+        assert!(joined.starts_with("-i in.mp4 "));
+        assert!(
+            joined.contains("-map 0:a:0?"),
+            "a clip without sound still converts"
+        );
+        assert!(joined.contains("-c:v mjpeg"));
+        assert!(joined.contains("-c:a pcm_s16le"));
+        assert!(joined.ends_with("-f avi out.tmp"));
+    }
+
+    #[test]
+    fn frame_count_rounds_and_never_is_zero() {
+        assert_eq!(frame_count(5.0625, 16.0), 81);
+        assert_eq!(frame_count(0.0, 24.0), 1);
+        assert_eq!(frame_count(f64::NAN, 24.0), 1);
+        assert_eq!(frame_count(2.0, 0.0), 1);
     }
 }

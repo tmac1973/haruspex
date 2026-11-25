@@ -65,6 +65,8 @@ pub fn normalize_mime(mime: &str) -> Option<&'static str> {
         "audio/flac" | "audio/x-flac" => Some("audio/flac"),
         "video/webm" => Some("video/webm"),
         "video/mp4" => Some("video/mp4"),
+        // A clip converted for a video upscaler; never played.
+        "video/x-msvideo" | "video/avi" => Some("video/x-msvideo"),
         _ => None,
     }
 }
