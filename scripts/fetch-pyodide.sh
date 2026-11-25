@@ -325,3 +325,36 @@ print('\n'.join(sorted(set(out))))
     total_mb=$((total_bytes / 1024 / 1024))
     echo "   Chat sandbox stack ready (${new_count} new, ~${total_mb} MB total) in static/pyodide/"
 fi
+
+# --- BokehJS (offline interactive rendering) ---
+# Same idea as plotly.min.js above: the chat worker renders bokeh figures
+# with server-mode resources rooted at /bokeh/, so their scripts load from
+# the app instead of cdn.bokeh.org. Extract the exact build the vendored
+# bokeh wheel ships, keyed by the wheel's name so the JS always matches.
+BOKEH_JS_DIR="$PROJECT_ROOT/static/bokeh/static/js"
+BOKEH_JS_MARKER="$PROJECT_ROOT/static/bokeh/.haruspex-bokehjs-wheel"
+BOKEH_WHEEL_FILE="$(ls "$DEST_DIR"/bokeh-*.whl 2>/dev/null | head -1)"
+if [ -z "$BOKEH_WHEEL_FILE" ]; then
+    echo "   ERROR: no bokeh wheel in $DEST_DIR — cannot extract BokehJS"
+    exit 1
+elif [ -f "$BOKEH_JS_MARKER" ] && [ "$(cat "$BOKEH_JS_MARKER")" = "$(basename "$BOKEH_WHEEL_FILE")" ]; then
+    echo ">> BokehJS from $(basename "$BOKEH_WHEEL_FILE") already present at static/bokeh/"
+else
+    echo ">> Extracting BokehJS from $(basename "$BOKEH_WHEEL_FILE") into static/bokeh/..."
+    rm -rf "$BOKEH_JS_DIR"
+    mkdir -p "$BOKEH_JS_DIR"
+    BOKEH_WHEEL_FILE="$BOKEH_WHEEL_FILE" BOKEH_JS_DIR="$BOKEH_JS_DIR" "$PYTHON_BIN" -c "
+import os, zipfile
+z = zipfile.ZipFile(os.environ['BOKEH_WHEEL_FILE'])
+prefix = 'bokeh/server/static/js/'
+total = 0
+for name in z.namelist():
+    base = name[len(prefix):]
+    if name.startswith(prefix) and '/' not in base and base.endswith('.min.js'):
+        data = z.read(name)
+        open(os.path.join(os.environ['BOKEH_JS_DIR'], base), 'wb').write(data)
+        total += len(data)
+print('   BokehJS: %.1f MB' % (total / 1e6))
+"
+    basename "$BOKEH_WHEEL_FILE" > "$BOKEH_JS_MARKER"
+fi
