@@ -5,9 +5,9 @@
  * session store has to tell "no sessions" from "the save did not happen",
  * since the thread is written after every turn to survive a power cut.
  *
- * The translations done here are the backend and the helper list: Rust
- * stores them as opaque JSON, callers deal in `BackendOverride` and a list
- * of ids. The thread stays a string; it is
+ * The translations done here are the backend, the helper list and the
+ * session's helper settings: Rust stores them as opaque JSON, callers deal in
+ * `BackendOverride`, a list of ids and an object keyed by helper id. The thread stays a string; it is
  * `#lib/code/session.ts`'s to encode and decode.
  */
 import { invoke } from '@tauri-apps/api/core';
@@ -19,11 +19,19 @@ import type { CodeLocation } from '#lib/ipc/gen/CodeLocation.ts';
 
 export type { CodeSessionSummary, CodeLocation };
 
-/** A session row with its backend and helpers decoded. */
-export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'helpers'> & {
+/**
+ * A session's own helper settings, keyed by helper id. A helper absent from it
+ * follows Settings → Code → Helpers; each helper parses its own entry.
+ */
+export type SessionHelperConfig = Record<string, unknown>;
+
+/** A session row with its backend, helpers and helper settings decoded. */
+export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'helpers' | 'helper_config'> & {
 	backend: BackendOverride | null;
 	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
 	helpers: string[] | null;
+	/** Its own helper settings; null: Settings → Code → Helpers for every helper. */
+	helperConfig: SessionHelperConfig | null;
 };
 
 /**
@@ -36,6 +44,8 @@ export interface CodeSessionMetaPatch {
 	effort?: string | null;
 	/** Null puts the session back on the helpers switched on in Settings. */
 	helpers?: string[] | null;
+	/** Null puts every helper back on its settings in Settings → Code → Helpers. */
+	helperConfig?: SessionHelperConfig | null;
 }
 
 /** A stored backend that no longer parses falls back to the global one. */
@@ -62,11 +72,28 @@ function decodeIds(json: string | null | undefined, what: string): string[] | nu
 	return null;
 }
 
+/** Stored helper settings that no longer parse fall back to Settings. */
+function decodeHelperConfig(json: string | null | undefined): SessionHelperConfig | null {
+	if (!json) return null;
+	try {
+		const parsed: unknown = JSON.parse(json);
+		if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+			return parsed as SessionHelperConfig;
+		}
+	} catch {
+		// Falls through to the warning.
+	}
+	console.warn('A Code session has helper settings that do not parse; using Settings.');
+	return null;
+}
+
 function toRecord(row: CodeSessionRow): CodeSessionRecord {
+	const { helper_config, ...rest } = row;
 	return {
-		...row,
+		...rest,
 		backend: decodeBackend(row.backend),
-		helpers: decodeIds(row.helpers, 'helper')
+		helpers: decodeIds(row.helpers, 'helper'),
+		helperConfig: decodeHelperConfig(helper_config)
 	};
 }
 
@@ -201,6 +228,9 @@ export function updateCodeSessionMeta(id: string, patch: CodeSessionMetaPatch): 
 	if (patch.effort !== undefined) wire.effort = patch.effort;
 	if (patch.helpers !== undefined) {
 		wire.helpers = patch.helpers === null ? null : JSON.stringify(patch.helpers);
+	}
+	if (patch.helperConfig !== undefined) {
+		wire.helperConfig = patch.helperConfig === null ? null : JSON.stringify(patch.helperConfig);
 	}
 	return invoke<void>('code_session_update_meta', { id, patch: wire });
 }

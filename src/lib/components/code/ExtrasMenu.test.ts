@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
 const settings = vi.hoisted(() => ({
-	codeHelpers: {} as Record<string, boolean>
+	codeHelpers: {} as Record<string, boolean>,
+	codeHelperConfig: {} as Record<string, unknown>
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings,
+		overDefaults: true,
+		settings: () => settings,
 		getLiveSettings: () => settings
 	})
 );
@@ -16,7 +18,7 @@ vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 import { helpers } from '#lib/helpers/registry.ts';
 import ExtrasMenu from './ExtrasMenu.svelte';
 
-function session(over: Record<string, unknown> = {}) {
+function session<T extends Record<string, unknown>>(over: T = {} as T) {
 	return {
 		helpers: null as string[] | null,
 		readOnly: false,
@@ -35,6 +37,7 @@ const box = (name: string) => screen.getByLabelText(name) as HTMLInputElement;
 
 beforeEach(() => {
 	settings.codeHelpers = {};
+	settings.codeHelperConfig = {};
 	toasts.showToast.mockReset();
 });
 
@@ -88,5 +91,77 @@ describe('the Extras menu', () => {
 		await fireEvent.click(box('3D'));
 		await vi.waitFor(() => expect(toasts.showToast).toHaveBeenCalled());
 		expect(toasts.showToast.mock.calls[0][0]).toMatch(/Couldn't change the helpers: db/);
+	});
+});
+
+describe('the Extras menu’s 3D delegate', () => {
+	const settingsModel = { baseUrl: 'https://openrouter.ai/api', modelId: 'vendor/big' };
+	const own = { baseUrl: 'http://gpu-box:8080', modelId: 'qwen-big' };
+
+	function delegateSession(over: Record<string, unknown> = {}) {
+		return session({
+			helpers: ['3d'],
+			helperConfig: null,
+			setSessionHelperConfig: vi.fn<(config: unknown) => Promise<void>>(async () => {}),
+			...over
+		});
+	}
+
+	it('is shown only while the session has the 3D helper on', async () => {
+		await open(delegateSession({ helpers: ['preview'] }));
+		expect(screen.queryByText('3D delegate')).toBeNull();
+	});
+
+	it('shows the Settings model, then the session’s own', async () => {
+		settings.codeHelperConfig = { '3d': { backend: settingsModel } };
+		await open(delegateSession());
+		screen.getByText('3D delegate');
+		screen.getByText('vendor/big · OpenRouter');
+	});
+
+	it('marks a model set for this session only', async () => {
+		settings.codeHelperConfig = { '3d': { backend: settingsModel } };
+		await open(delegateSession({ helperConfig: { '3d': { backend: own } } }));
+		screen.getByText('qwen-big · gpu-box:8080 · this session');
+	});
+
+	it('sets none for this session, keeping the other helpers’ settings', async () => {
+		settings.codeHelperConfig = { '3d': { backend: settingsModel } };
+		const s = delegateSession({ helperConfig: { search: { a: 1 } } });
+		await open(s);
+		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
+		// Settings' model fills the picker; this session has none of its own yet.
+		expect(screen.queryByRole('button', { name: 'Use Settings' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'None' }));
+		await vi.waitFor(() =>
+			expect(s.setSessionHelperConfig).toHaveBeenCalledWith({
+				search: { a: 1 },
+				'3d': { backend: null }
+			})
+		);
+	});
+
+	it('goes back to the Settings model', async () => {
+		const s = delegateSession({ helperConfig: { '3d': { backend: own } } });
+		await open(s);
+		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use Settings' }));
+		await vi.waitFor(() => expect(s.setSessionHelperConfig).toHaveBeenCalledWith(null));
+	});
+
+	it('saves the picked model for this session', async () => {
+		settings.codeHelperConfig = { '3d': { backend: own } };
+		const s = delegateSession();
+		await open(s);
+		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
+		// The picker starts on Settings' model; Save makes it this session's own.
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+		await vi.waitFor(() =>
+			expect(s.setSessionHelperConfig).toHaveBeenCalledWith({
+				'3d': { backend: expect.objectContaining(own) }
+			})
+		);
+		const saved = s.setSessionHelperConfig.mock.calls[0][0];
+		expect(() => structuredClone(saved)).not.toThrow();
 	});
 });

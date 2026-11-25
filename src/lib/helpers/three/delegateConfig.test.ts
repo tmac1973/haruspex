@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setCodeHelperConfig } from '#lib/stores/settings.ts';
-import { DELEGATE_3D_DEFAULTS, delegate3dConfig, parseDelegate3dConfig } from './delegateConfig';
+import {
+	DELEGATE_3D_DEFAULTS,
+	delegate3dConfig,
+	parseDelegate3dConfig,
+	sessionDelegateBackend,
+	withSessionDelegate
+} from './delegateConfig';
 
 const backend = { baseUrl: 'https://openrouter.ai/api', modelId: 'anthropic/claude-x' };
 
@@ -43,5 +49,45 @@ describe('delegate3dConfig', () => {
 		expect(delegate3dConfig().backend).toBeNull();
 		setCodeHelperConfig('3d', { backend, maxRounds: 40, maxCostUsd: 1 });
 		expect(delegate3dConfig()).toEqual({ backend, maxRounds: 40, maxCostUsd: 1 });
+	});
+
+	it('takes the session’s own model, or none, but always the Settings caps', () => {
+		setCodeHelperConfig('3d', { backend, maxRounds: 40, maxCostUsd: 1 });
+		const own = { baseUrl: 'http://gpu-box:8080', modelId: 'qwen-big' };
+		expect(delegate3dConfig({ '3d': { backend: own } })).toEqual({
+			backend: own,
+			maxRounds: 40,
+			maxCostUsd: 1
+		});
+		expect(delegate3dConfig({ '3d': { backend: null } }).backend).toBeNull();
+		// No entry for the 3D helper follows Settings.
+		expect(delegate3dConfig({ search: {} }).backend).toEqual(backend);
+		expect(delegate3dConfig(null).backend).toEqual(backend);
+	});
+});
+
+describe('a session’s own delegate', () => {
+	const own = { baseUrl: 'http://gpu-box:8080', modelId: 'qwen-big' };
+
+	it('reads a model, none, or nothing (Settings)', () => {
+		expect(sessionDelegateBackend({ '3d': { backend: own } })).toEqual(own);
+		expect(sessionDelegateBackend({ '3d': { backend: null } })).toBeNull();
+		expect(sessionDelegateBackend({ '3d': {} })).toBeUndefined();
+		expect(sessionDelegateBackend(null)).toBeUndefined();
+		// A model with no server is none, not Settings'.
+		expect(sessionDelegateBackend({ '3d': { backend: { modelId: 'x' } } })).toBeNull();
+	});
+
+	it('sets and clears its entry, keeping other helpers’', () => {
+		expect(withSessionDelegate(null, own)).toEqual({ '3d': { backend: own } });
+		expect(withSessionDelegate({ search: { a: 1 } }, null)).toEqual({
+			search: { a: 1 },
+			'3d': { backend: null }
+		});
+		expect(withSessionDelegate({ search: { a: 1 }, '3d': { backend: own } }, undefined)).toEqual({
+			search: { a: 1 }
+		});
+		// Nothing left: back to Settings for every helper.
+		expect(withSessionDelegate({ '3d': { backend: own } }, undefined)).toBeNull();
 	});
 });

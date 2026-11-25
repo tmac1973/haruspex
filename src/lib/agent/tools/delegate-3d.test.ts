@@ -117,7 +117,13 @@ describe('delegate_3d refuses', () => {
 	it('with no delegate model set, naming the setting', async () => {
 		m.config = {};
 		expect(errorOf(await call({}))).toBe(
-			'No 3D delegate model is set. Set one in Settings → Code → Helpers → 3D.'
+			'No 3D delegate model is set. Set one in Settings → Code → Helpers → 3D, or for this session under Extras.'
+		);
+	});
+
+	it('when the session has set none, whatever Settings says', async () => {
+		expect(errorOf(await call({}, ctx({ codeHelperConfig: { '3d': { backend: null } } })))).toMatch(
+			/No 3D delegate model is set/
 		);
 	});
 
@@ -129,6 +135,12 @@ describe('delegate_3d refuses', () => {
 });
 
 describe('delegate_3d’s profile', () => {
+	it('runs on the session’s own model when it has one', async () => {
+		const own = { baseUrl: 'http://gpu-box:8080', modelId: 'qwen-big' };
+		await call({}, ctx({ codeHelperConfig: { '3d': { backend: own } } }));
+		expect(lastSpec().profile).toMatchObject({ backend: own, maxRounds: 40, maxCostUsd: 2 });
+	});
+
 	it('carries the config’s model, caps, tools and the three writable files', async () => {
 		await call({});
 		const spec = lastSpec();

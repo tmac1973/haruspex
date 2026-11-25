@@ -28,6 +28,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
+import type { SessionHelperConfig } from '#lib/code/db.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import {
 	runAgentLoop,
@@ -94,6 +95,8 @@ export interface CodeTurnOptions {
 	effort: string | null;
 	/** The helper ids the session offers; null: the ones on in Settings. */
 	helpers?: string[] | null;
+	/** The session's own helper settings; null: Settings → Code → Helpers. */
+	helperConfig?: SessionHelperConfig | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
 	readOnly?: boolean;
 	/** Started from another computer (Settings → Remote control): nothing that needs a person at this one, so no `open_in_shell`. */
@@ -240,6 +243,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 			codeRemote: o.remote ?? false,
 			codeSessionId: o.sessionId,
 			codeHelpers: o.helpers ?? null,
+			codeHelperConfig: o.helperConfig ?? null,
 			visionSupported: descriptor.vision,
 			interactive: true,
 			backend
@@ -287,6 +291,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeWriteGuard: o.writeGuard,
 					codeEffort: o.effort,
 					codeHelpers: o.helpers ?? null,
+					codeHelperConfig: o.helperConfig ?? null,
 					onSubtaskUpdate: o.onSubtaskUpdate,
 					onSubtaskUsage: o.onSubtaskUsage,
 					subtaskStops: o.subtaskStops,
@@ -420,7 +425,14 @@ function batchLeads(messages: () => ChatMessage[]): {
 /** What `prepareSystem` needs of a turn. */
 export type SystemPromptInput = Pick<
 	CodeTurnOptions,
-	'root' | 'readOnly' | 'remote' | 'worktree' | 'wslDistro' | 'onProject' | 'helpers'
+	| 'root'
+	| 'readOnly'
+	| 'remote'
+	| 'worktree'
+	| 'wslDistro'
+	| 'onProject'
+	| 'helpers'
+	| 'helperConfig'
 > & {
 	/** The turn is a subtask's, handed this task (`delegate`); see `BuildCodePromptOpts.subtask`. */
 	subtask?: BuildCodePromptOpts['subtask'];
@@ -480,7 +492,7 @@ export async function prepareSystem(
 		delegate: delegateModes(o),
 		subtask: o.subtask,
 		deferred: turnTools?.deferredTools,
-		helpers: helperPrompts(helpers, o.readOnly),
+		helpers: helperPrompts(helpers, o.readOnly, o.helperConfig ?? null),
 		searchFirst: helpers.some((h) => h.id === 'search') && searchReranked()
 	});
 	return { system, skills, turnTools };

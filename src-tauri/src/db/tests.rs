@@ -2658,6 +2658,31 @@ fn code_session_helpers_start_unset_are_patched_apart_and_follow_a_fork() {
 }
 
 #[test]
+fn code_session_helper_config_is_patched_apart_and_follows_a_fork() {
+    let db = test_db();
+    let dir = TempDir::new("helper-config");
+    let s = db.create_code_session(dir.path(), None, None).unwrap();
+    // Unset: Settings → Code → Helpers.
+    assert_eq!(s.helper_config, None);
+
+    let config = r#"{"3d":{"backend":null}}"#;
+    let patch: CodeSessionMetaPatch =
+        serde_json::from_value(serde_json::json!({ "helperConfig": config })).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.helper_config.as_deref(), Some(config));
+    // The helper list is left alone.
+    assert_eq!(row.helpers, None);
+
+    let fork = db.fork_code_session(&s.id, 0).unwrap();
+    assert_eq!(fork.helper_config.as_deref(), Some(config));
+
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"helperConfig":null}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    assert_eq!(db.load_code_session(&s.id).unwrap().helper_config, None);
+}
+
+#[test]
 fn fork_thread_drops_the_usage_count() {
     let thread = serde_json::json!({
         "version": 1,

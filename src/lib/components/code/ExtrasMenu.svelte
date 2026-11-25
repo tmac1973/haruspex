@@ -1,11 +1,21 @@
 <script lang="ts">
 	/**
 	 * The session header's Extras menu: which helpers (Settings → Code →
-	 * Helpers) this session offers its agent. Hidden while there are none.
+	 * Helpers) this session offers its agent, and, with the 3D helper on, the
+	 * model its `delegate_3d` hands work to. Hidden while there are no helpers.
 	 * Applies from the next turn.
 	 */
+	import type { BackendOverride } from '#lib/api.ts';
 	import { helpers, sessionHelpers } from '#lib/helpers/registry.ts';
 	import '#lib/helpers/index.ts';
+	import DelegateModelPicker from '#lib/helpers/three/DelegateModelPicker.svelte';
+	import {
+		delegate3dConfig,
+		sessionDelegateBackend,
+		withSessionDelegate
+	} from '#lib/helpers/three/delegateConfig.ts';
+	import { overrideModelLabel } from '#lib/code/backends.ts';
+	import type { SessionHelperConfig } from '#lib/code/db.ts';
 	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -25,6 +35,32 @@
 
 	let open = $state(false);
 	let wrap = $state<HTMLElement>();
+
+	// The 3D delegate: the session's own model (null: none here), else Settings'.
+	const has3d = $derived(helpersOn.has('3d') && !!session.setSessionHelperConfig);
+	const ownDelegate = $derived(sessionDelegateBackend(session.helperConfig ?? null));
+	const delegate = $derived.by(() => {
+		void settings;
+		return delegate3dConfig(session.helperConfig ?? null).backend;
+	});
+	const delegateLabel = $derived(delegate ? overrideModelLabel(delegate).label : 'None');
+	let picking = $state(false);
+
+	/** A model or null (none) for this session; undefined goes back to Settings. */
+	async function storeDelegate(backend: BackendOverride | null | undefined) {
+		picking = false;
+		const current = $state.snapshot(session.helperConfig ?? null) as SessionHelperConfig | null;
+		try {
+			await session.setSessionHelperConfig?.(withSessionDelegate(current, backend));
+		} catch (e) {
+			showToast(`Couldn't change the 3D delegate: ${errMessage(e)}`, { kind: 'error' });
+		}
+	}
+
+	function openPicker() {
+		open = false;
+		picking = true;
+	}
 
 	async function store(ids: string[] | null) {
 		try {
@@ -83,6 +119,22 @@
 						</label>
 					{/each}
 				{/if}
+				{#if has3d}
+					<div class="heading" title="The model delegate_3d hands 3D assets to in this session.">
+						3D delegate
+					</div>
+					<div class="delegate">
+						<span
+							class="delegate-model"
+							title={ownDelegate === undefined
+								? 'From Settings → Code → Helpers → 3D.'
+								: 'Set for this session only.'}
+						>
+							{delegateLabel}{ownDelegate === undefined ? '' : ' · this session'}
+						</span>
+						<button class="change" onclick={openPicker}>Change…</button>
+					</div>
+				{/if}
 				<button
 					class="defaults"
 					disabled={session.busy || !custom}
@@ -94,6 +146,15 @@
 			</div>
 		{/if}
 	</span>
+	{#if picking}
+		<DelegateModelPicker
+			title="3D delegate for this session"
+			backend={ownDelegate ?? delegate}
+			onchoose={(b) => void storeDelegate(b)}
+			onusesettings={ownDelegate === undefined ? undefined : () => void storeDelegate(undefined)}
+			onclose={() => (picking = false)}
+		/>
+	{/if}
 {/if}
 
 <style>
@@ -157,6 +218,32 @@
 
 	.item:hover {
 		background: var(--bg-secondary);
+	}
+
+	.delegate {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 6px;
+		font-size: 0.8rem;
+	}
+
+	.delegate-model {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.change {
+		padding: 2px 6px;
+		font-size: 0.74rem;
+		border: 1px solid var(--border-strong);
+		border-radius: 5px;
+		background: var(--bg-input);
+		color: var(--text-primary);
+		cursor: pointer;
 	}
 
 	.defaults {

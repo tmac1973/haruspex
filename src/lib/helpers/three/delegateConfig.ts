@@ -1,9 +1,12 @@
 /**
  * The 3D delegate's settings (Settings → Code → Helpers → 3D), stored as plain
  * JSON under the 3D helper's id in `codeHelperConfig`: the model `delegate_3d`
- * hands assets to, and the caps on one call.
+ * hands assets to, and the caps on one call. A Code session can name its own
+ * model (Extras → 3D delegate), stored as `{ backend }` under `'3d'` in the
+ * session's helper settings; the caps always come from Settings.
  */
 import type { BackendOverride } from '#lib/api.ts';
+import type { SessionHelperConfig } from '#lib/code/db.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 
 export interface Delegate3dConfig {
@@ -62,10 +65,36 @@ export function parseDelegate3dConfig(raw: unknown): Delegate3dConfig {
 }
 
 /**
- * The 3D delegate's settings as stored now. Read straight from the store, not
- * through `helperConfig`, so the tool filter gets them whether or not the 3D
- * helper's module is loaded.
+ * A session's own delegate model from its helper settings: a model, null for
+ * none in this session, or undefined when it follows Settings.
  */
-export function delegate3dConfig(): Delegate3dConfig {
-	return parseDelegate3dConfig(getSettings().codeHelperConfig?.['3d']);
+export function sessionDelegateBackend(
+	session: SessionHelperConfig | null | undefined
+): BackendOverride | null | undefined {
+	const entry = session?.['3d'];
+	if (!isRecord(entry) || !('backend' in entry)) return undefined;
+	return parseBackend(entry.backend);
+}
+
+/** `session` with its own delegate model set, or cleared back to Settings (`undefined`). */
+export function withSessionDelegate(
+	session: SessionHelperConfig | null,
+	backend: BackendOverride | null | undefined
+): SessionHelperConfig | null {
+	const rest = { ...session };
+	delete rest['3d'];
+	const next = backend === undefined ? rest : { ...rest, '3d': { backend } };
+	return Object.keys(next).length > 0 ? next : null;
+}
+
+/**
+ * The 3D delegate's settings as stored now, with `session`'s own model in
+ * place of the Settings one when it names one. Read straight from the store,
+ * not through `helperConfig`, so the tool filter gets them whether or not the
+ * 3D helper's module is loaded.
+ */
+export function delegate3dConfig(session?: SessionHelperConfig | null): Delegate3dConfig {
+	const config = parseDelegate3dConfig(getSettings().codeHelperConfig?.['3d']);
+	const own = sessionDelegateBackend(session);
+	return own === undefined ? config : { ...config, backend: own };
 }

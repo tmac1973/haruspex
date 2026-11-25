@@ -102,6 +102,8 @@ export interface CodeSessionView {
 	refreshGit?: S['refreshGit'];
 	readonly helpers?: S['helpers'];
 	setSessionHelpers?: S['setSessionHelpers'];
+	readonly helperConfig?: S['helperConfig'];
+	setSessionHelperConfig?: S['setSessionHelperConfig'];
 	readonly agentsMd?: S['agentsMd'];
 	/** Stop reading the project's AGENTS.md (the owner untrusted it). */
 	ignoreProject?: S['ignoreProject'];

@@ -24,6 +24,7 @@ import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
+import type { SessionHelperConfig } from '#lib/code/db.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { isAbortError } from '#lib/utils/error.ts';
@@ -216,6 +217,8 @@ export interface AgentLoopOptions {
 	codeEffort?: string | null;
 	/** The Code session's helpers; see ToolSchemaOpts.codeHelpers. */
 	codeHelpers?: string[] | null;
+	/** The Code session's own helper settings; see ToolSchemaOpts.codeHelperConfig. */
+	codeHelperConfig?: SessionHelperConfig | null;
 	/** The turn is a subtask's; see ToolContext.subtask. */
 	subtask?: { depth: 1 };
 	/** Helpers whose tools the subtask may have; see ToolSchemaOpts.subtaskHelpers. */

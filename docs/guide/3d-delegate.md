@@ -17,6 +17,10 @@ Turn on the 3D switch in Settings → Code → Helpers, then set:
 
 With no delegate model, the agent has no `delegate_3d` and uses `check_3d` itself, as before. The delegate's model must call tools, or it can't run its checks.
 
+## Use a different delegate in one session
+
+With the 3D helper on, a session's **Extras** menu shows its **3D delegate**. **Change…** opens the same picker and sets a model for that session only, marked "this session"; **None** turns the delegate off there. **Use Settings** puts the session back on Settings → Code → Helpers → 3D. Two sessions can each hand work to a different model. The round and cost limits always come from Settings, and a change applies from the next message.
+
 ## Ask for an asset
 
 Ask as usual: "make a goblin with a walk cycle for assets/goblin.glb". The agent calls `delegate_3d` with:
@@ -48,7 +52,6 @@ It counts toward the 8 subtasks a turn may start, but follows Settings → Code 
 ## What it doesn't do
 
 - Only the Code tab: not Chat, the Shell, jobs or the 3D models job.
-- One delegate model for every session; a session can't pick its own.
 - It writes no textures, but can use PNGs already in the project.
 - It keeps nothing between calls: each starts fresh from the files.
 - The cost limit counts only what the server reports, or OpenRouter's prices; a server with neither has no cost to limit.

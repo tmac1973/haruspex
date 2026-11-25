@@ -11,6 +11,7 @@
  */
 import type { Component } from 'svelte';
 import { getSettings } from '#lib/stores/settings.ts';
+import type { SessionHelperConfig } from '#lib/code/db.ts';
 
 /** A helper's own settings, stored as plain JSON under its id (`codeHelperConfig`). */
 export interface HelperSettings<T> {
@@ -35,9 +36,10 @@ export interface HelperDef {
 	/**
 	 * Its line in the Code system prompt's TOOLS list (`- tool — …`), while a
 	 * session offers it, or a function that picks it from the helper's settings
-	 * as each turn starts. Without one the model has only the tool's schema.
+	 * (and the session's own, `session`) as each turn starts. Without one the
+	 * model has only the tool's schema.
 	 */
-	prompt?: string | (() => string);
+	prompt?: string | ((session: SessionHelperConfig | null) => string);
 	/** Its own settings, if it has any. A lazy component, so this file pulls in no Svelte. */
 	settings?: HelperSettings<unknown>;
 	/** On until the user switches it off (most helpers start off). */
@@ -92,9 +94,12 @@ export function helperConfig<T>(id: string): T | undefined {
 	return def.settings.parse(getSettings().codeHelperConfig?.[id]) as T;
 }
 
-/** Helper `def`'s TOOLS line for a turn starting now. */
-export function helperPrompt(def: Pick<HelperDef, 'prompt'>): string | undefined {
-	return typeof def.prompt === 'function' ? def.prompt() : def.prompt;
+/** Helper `def`'s TOOLS line for a turn starting now, in a session with `session`'s settings. */
+export function helperPrompt(
+	def: Pick<HelperDef, 'prompt'>,
+	session: SessionHelperConfig | null = null
+): string | undefined {
+	return typeof def.prompt === 'function' ? def.prompt(session) : def.prompt;
 }
 
 /**
@@ -103,11 +108,12 @@ export function helperPrompt(def: Pick<HelperDef, 'prompt'>): string | undefined
  */
 export function helperPrompts(
 	defs: HelperDef[],
-	readOnly: boolean | undefined
+	readOnly: boolean | undefined,
+	session: SessionHelperConfig | null = null
 ): { id: string; prompt?: string }[] {
 	return defs.map((h) => ({
 		id: h.id,
-		prompt: readOnly && h.writes ? undefined : helperPrompt(h)
+		prompt: readOnly && h.writes ? undefined : helperPrompt(h, session)
 	}));
 }
 
