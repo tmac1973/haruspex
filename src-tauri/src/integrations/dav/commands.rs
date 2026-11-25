@@ -336,7 +336,7 @@ pub struct ContactQueryResult {
 }
 
 /// Every contact every usable account can see.
-async fn collect_contacts(
+pub(super) async fn collect_contacts(
     accounts: &[DavAccount],
     proxy: Option<&ProxyConfig>,
 ) -> ContactQueryResult {

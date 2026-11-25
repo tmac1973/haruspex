@@ -11,6 +11,8 @@
 	import { tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Modal from '#lib/components/Modal.svelte';
+	import AddressField from '#lib/components/AddressField.svelte';
+	import { loadContactAddresses, type ContactAddress } from '#lib/email/contacts.ts';
 	import {
 		composedBody,
 		getPendingEmailReview,
@@ -44,10 +46,16 @@
 	let built: Record<number, { id: string; name: string }> = {};
 	let preview = $state(false);
 
+	/** Contacts' addresses for the To and Cc suggestions; empty until loaded, or with none. */
+	let contacts = $state<ContactAddress[]>([]);
+
 	// Load each new draft into the fields.
 	$effect(() => {
 		const p = pending;
 		if (!p) return;
+		void loadContactAddresses()
+			.then((r) => (contacts = r.addresses))
+			.catch((e: unknown) => console.warn('email: contacts not loaded', e));
 		untrack(() => {
 			accountId = p.draft.accountId;
 			to = p.draft.to.join(', ');
@@ -174,14 +182,8 @@
 			{:else if from}
 				<p class="from">From {from.emailAddress}</p>
 			{/if}
-			<label>
-				<span>To</span>
-				<input type="text" bind:this={toEl} bind:value={to} disabled={sending} />
-			</label>
-			<label>
-				<span>Cc</span>
-				<input type="text" bind:value={cc} disabled={sending} />
-			</label>
+			<AddressField label="To" bind:value={to} bind:input={toEl} {contacts} disabled={sending} />
+			<AddressField label="Cc" bind:value={cc} {contacts} disabled={sending} />
 			{#if badAddress}
 				<p class="error-text">"{badAddress}" is not an email address.</p>
 			{/if}

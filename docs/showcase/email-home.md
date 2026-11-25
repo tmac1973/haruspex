@@ -187,3 +187,20 @@ Example output:
 A Review email window opens, addressed to sam@example.com, with the note as its text and **📎 Speakers.pdf** under it. Click **Send**, and the assistant says: "Sent to sam@example.com. Attached: Speakers.pdf."
 
 Read more: email, notebook-agents
+
+## Email someone by name
+
+Say who the mail is for, and Haruspex finds their address in your contacts. In Review email, To and Cc suggest contacts as you type.
+
+Tab: Chat
+Required settings: An email account with Allow sending on, and a contacts account (Settings → Integrations)
+
+Prompt:
+
+> Email Sam Lee a short note saying the Thursday meeting moved to 3 pm.
+
+Example output:
+
+A Review email window opens addressed to **Sam Lee <sam@example.com>**, with the note ready to send. Had two contacts been called Sam, the assistant would have asked which one first.
+
+Read more: email

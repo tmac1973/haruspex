@@ -10,11 +10,15 @@
 import type { EmailAccount } from '#lib/stores/settings.ts';
 import {
 	askEmailReview,
+	isAddress,
+	parseAddresses,
 	stagedIds,
 	type EmailDraft,
 	type EmailReviewOutcome
 } from '#lib/stores/emailReview.svelte.ts';
 import { sendableAccounts } from '#lib/share/email.ts';
+import { loadContactAddresses, resolveRecipient } from '#lib/email/contacts.ts';
+import { errMessage } from '#lib/utils/error.ts';
 import { dropParts, type StagedFile } from '#lib/email/parts.ts';
 import { ATTACH_FORMATS, composeAttachment } from '#lib/agent/tools/_emailAttach.ts';
 import type { ReplyContext } from '#lib/ipc/gen/ReplyContext.ts';
@@ -26,8 +30,23 @@ import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 /** Addresses from an argument that may be a list or one comma-separated string. */
 function addressList(raw: unknown): string[] | undefined {
 	if (raw == null) return undefined;
-	const items = Array.isArray(raw) ? raw.map(String) : String(raw).split(/[,;]/);
+	const items = Array.isArray(raw) ? raw.map(String) : parseAddresses(String(raw));
 	return items.map((a) => a.trim()).filter(Boolean);
+}
+
+/**
+ * Recipients with any contact name swapped for that contact's address
+ * (`#lib/email/contacts.ts`). The address book is read only when a name is
+ * there. A string says which name could not be settled.
+ */
+async function resolveNames(list: string[] | undefined): Promise<string[] | undefined | string> {
+	if (!list || list.every(isAddress)) return list;
+	const { addresses } = await loadContactAddresses();
+	try {
+		return list.map((entry) => resolveRecipient(entry, addresses));
+	} catch (e) {
+		return errMessage(e);
+	}
 }
 
 /** Which account a draft goes from, or why none can be chosen. */
@@ -48,6 +67,27 @@ function composeAccount(selector: string | undefined): EmailAccount | string {
 	);
 }
 
+/** The draft's text arguments, each '' when missing. */
+function textArgs(args: Record<string, unknown>) {
+	const text = (v: unknown) => (typeof v === 'string' ? v : '');
+	return {
+		subject: text(args.subject),
+		body: text(args.body),
+		replyTo: text(args.reply_to).trim()
+	};
+}
+
+/** `to` and `cc` with names looked up, or why one could not be. */
+async function recipients(
+	args: Record<string, unknown>
+): Promise<{ to?: string[]; cc?: string[] } | string> {
+	const to = await resolveNames(addressList(args.to));
+	if (typeof to === 'string') return to;
+	const cc = await resolveNames(addressList(args.cc));
+	if (typeof cc === 'string') return cc;
+	return { to, cc };
+}
+
 /**
  * The draft the tool's arguments describe: a reply filled in from the
  * original, or a new message. A string says what is missing.
@@ -57,11 +97,10 @@ async function buildDraft(
 	account: EmailAccount,
 	signal?: AbortSignal
 ): Promise<EmailDraft | string> {
-	const to = addressList(args.to);
-	const cc = addressList(args.cc);
-	const subject = typeof args.subject === 'string' ? args.subject : '';
-	const body = typeof args.body === 'string' ? args.body : '';
-	const replyTo = typeof args.reply_to === 'string' ? args.reply_to.trim() : '';
+	const who = await recipients(args);
+	if (typeof who === 'string') return who;
+	const { to, cc } = who;
+	const { subject, body, replyTo } = textArgs(args);
 
 	if (!replyTo) {
 		if (!to?.length || !subject.trim()) return 'A new message needs "to" and "subject".';
@@ -114,9 +153,14 @@ registerTool({
 					to: {
 						type: 'array',
 						items: { type: 'string' },
-						description: 'Recipients. Required for a new message; overrides a reply’s.'
+						description:
+							"Recipients: email addresses, or names from the user's contacts (looked up for you). Required for a new message; overrides a reply’s."
 					},
-					cc: { type: 'array', items: { type: 'string' } },
+					cc: {
+						type: 'array',
+						items: { type: 'string' },
+						description: 'Addresses or contact names, as for to.'
+					},
 					subject: {
 						type: 'string',
 						description: 'Required for a new message; a reply gets "Re: …".'
