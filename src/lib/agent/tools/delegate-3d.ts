@@ -394,7 +394,7 @@ registerTool({
 					wait: {
 						type: 'boolean',
 						description:
-							'Wait for its report in this turn instead. Only when your next step needs the finished .glb. Default false.'
+							'Wait for its report in this turn instead. Only when a step in this turn uses the finished .glb, such as placing it in a scene; never just to see or report the result, which comes to you anyway. Default false.'
 					}
 				},
 				required: ['path', 'task']
