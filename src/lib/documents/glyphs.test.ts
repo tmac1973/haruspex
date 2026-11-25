@@ -34,6 +34,15 @@ describe('drawable', () => {
 		expect(draw('Launch 🚀 漢字')).toEqual({ text: 'Launch  ', missing: ['🚀', '漢', '字'] });
 	});
 
+	it('keeps a polytonic Greek letter without the breathing Roboto lacks, and says so', () => {
+		const { text, missing } = draw('ἀρετή, λόγος, aretḗ');
+		expect(text).toBe('αρετή, λόγος, aretē');
+		expect(missingNote(new Set(missing))).toBe(
+			'Its fonts lack some accents, so these printed without them: ἀ as α ḗ as ē. ' +
+				'Its fonts cover Latin, Cyrillic and modern Greek.'
+		);
+	});
+
 	it('draws a code tree in Courier with ASCII boxes', () => {
 		expect(draw('├── src\n│   └── a.ts', 'winansi').text).toBe('+-- src\n|   +-- a.ts');
 	});
@@ -47,6 +56,14 @@ describe('drawable', () => {
 describe('missingNote', () => {
 	it('says nothing when nothing was left out', () => {
 		expect(missingNote(new Set())).toBe('');
+	});
+
+	it('names what was left out and what lost its accents, apart', () => {
+		const missing = new Set<string>();
+		drawable('ἀρετή 道', roboto, missing);
+		const note = missingNote(missing);
+		expect(note).toContain('no glyph for 道, so they were left out.');
+		expect(note).toContain('printed without them: ἀ as α.');
 	});
 
 	it('names a dozen at most', () => {

@@ -30,6 +30,8 @@ export interface DraftKind {
 
 interface Draft {
 	signature: string[];
+	/** How the signature compares; absent for a draft noted without one. */
+	kind?: DraftKind;
 	/** The file did not exist before the turn wrote it. */
 	created: boolean;
 	/** The model was shown it, so a rewrite fixes what it saw. */
@@ -157,16 +159,32 @@ export function noteDraft(
 	turn: Set<string>,
 	path: string,
 	signature: string[],
-	overwrite: boolean
+	overwrite: boolean,
+	kind?: DraftKind
 ): void {
 	const map = turnMap(turn);
 	const seen = map.get(path);
 	map.set(path, {
 		signature,
+		kind,
 		created: seen ? seen.created : !overwrite,
 		previewed: seen?.previewed ?? false,
-		rewrites: seen ? seen.rewrites + 1 : 0
+		rewrites: seen ? seen.rewrites + 1 : carriedRewrites(map, signature, kind)
 	});
+}
+
+/**
+ * The rewrites a new file inherits when it is the same document as one the
+ * turn already wrote under another name. Seen live: a model out of rewrites on
+ * summary.pdf wrote summary-2.pdf four times and summary-3.pdf three times.
+ */
+function carriedRewrites(map: Map<string, Draft>, signature: string[], kind?: DraftKind): number {
+	if (!kind) return 0;
+	let most = -1;
+	for (const d of map.values()) {
+		if (d.kind === kind && kind.keeps(d.signature, signature)) most = Math.max(most, d.rewrites);
+	}
+	return most + 1;
 }
 
 /**
@@ -174,6 +192,14 @@ export function noteDraft(
  * while the turn created it and it has rewrites left. Empty otherwise.
  */
 export function draftRewriteHint(turn: Set<string>, path: string, kind: DraftKind): string {
+	const draft = drafts.get(turn)?.get(path);
+	if (draft && (draft.created || draft.previewed) && draft.rewrites >= MAX_DRAFT_REWRITES) {
+		// Offering a new name here let a turn rewrite the same document without end.
+		return (
+			`It has been rewritten as many times as it can be this turn. Don't write it ` +
+			`again under another name: tell the user what still needs fixing. `
+		);
+	}
 	if (!revisable(turn, path)) return '';
 	return (
 		`This write starts differently from the one before, so it was taken for a ` +

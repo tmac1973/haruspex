@@ -254,7 +254,21 @@ describe('rewriting a document in the same turn', () => {
 		const error = JSON.parse(out.result).error;
 		expect(error).toContain('already written in this turn');
 		expect(error).not.toContain('first heading or first line');
-		expect(error).toContain('"r-2.pdf"');
+		expect(error).toContain('tell the user what still needs fixing');
+		expect(error).not.toContain('"r-2.pdf"');
+	});
+
+	it('counts a draft carried on under another name against the same limit', async () => {
+		await write({ path: 'r.pdf', content: DRAFT });
+		for (let i = 0; i < MAX_DRAFT_REWRITES; i++) {
+			await write({ path: 'r.pdf', content: `${SHORTER} ${i}` });
+		}
+		// The same document under a new name is written once, then not again.
+		expect((await write({ path: 'r-2.pdf', content: `${SHORTER} new` })).result).toContain(
+			'Wrote: r-2.pdf'
+		);
+		const again = await write({ path: 'r-2.pdf', content: `${SHORTER} newer` });
+		expect(JSON.parse(again.result).error).toContain('tell the user what still needs fixing');
 	});
 
 	it('asks before overwriting a file that was there before the turn', async () => {

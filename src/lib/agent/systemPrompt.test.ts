@@ -362,4 +362,17 @@ describe('looksLikeFileOutputRequest', () => {
 	])('leaves "%s" alone', (text) => {
 		expect(looksLikeFileOutputRequest(text)).toBe(false);
 	});
+
+	it('in lean mode, takes only what Lean + files can write', () => {
+		const lean = { lean: true };
+		expect(looksLikeFileOutputRequest('Save it as report.docx.', lean)).toBe(true);
+		expect(looksLikeFileOutputRequest('Make a one-page PDF summary.', lean)).toBe(true);
+		expect(
+			looksLikeFileOutputRequest(
+				'Now make a short slide deck from that report, as rosetta.pptx.',
+				lean
+			)
+		).toBe(false);
+		expect(looksLikeFileOutputRequest('Create a spreadsheet of the prices', lean)).toBe(false);
+	});
 });

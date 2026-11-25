@@ -1,9 +1,10 @@
 /**
  * Which characters a PDF's fonts can draw. Body text is Roboto, embedded,
- * which covers Latin, Greek and Cyrillic; code is the built-in Courier, which
- * has only WinAnsi. A character a font lacks prints as nothing, so the
- * common ones are swapped for a stand-in first (`→` as `->`) and the rest
- * are left out and named in the tool result, rather than lost unseen.
+ * which covers Latin, Cyrillic and modern Greek; code is the built-in Courier,
+ * which has only WinAnsi. A character a font lacks prints as nothing, so the
+ * common ones are swapped for a stand-in first (`→` as `->`), an accented
+ * letter loses only the accents it lacks (polytonic `ἀ` as `α`), and the rest
+ * are left out. Both are named in the tool result, rather than lost unseen.
  */
 
 /** Stand-ins for characters models write that the fonts may lack. */
@@ -161,17 +162,63 @@ export function drawable(text: string, repertoire: Repertoire, missing: Set<stri
 			out += stand;
 			continue;
 		}
+		const plain = withoutMissingMarks(ch, has);
+		if (plain) {
+			out += plain;
+			missing.add(`${ch}${SIMPLIFIED}${plain}`);
+			continue;
+		}
 		missing.add(ch);
 	}
 	return out;
 }
 
+/**
+ * Joins a character and what it printed as, in `missing`: one entry for a
+ * letter kept without the marks the font lacks, beside the single characters
+ * left out.
+ */
+const SIMPLIFIED = '→';
+
+/**
+ * `ch` without the accents the font can't draw, when its letter can be:
+ * polytonic Greek's ἀ as α (Roboto has no breathing marks), ḗ as ē. Null when
+ * the letter itself is missing.
+ */
+function withoutMissingMarks(ch: string, has: (cp: number) => boolean): string | null {
+	const [base, ...marks] = [...ch.normalize('NFD')];
+	if (marks.length === 0 || !has(base.codePointAt(0)!)) return null;
+	const drawn = (t: string) => [...t].every((c) => has(c.codePointAt(0)!));
+	// A mark stays when the letter with it can still be drawn, composed: ḗ's
+	// macron makes ē, which Roboto has, and its acute would make ḗ, which it hasn't.
+	let kept = base;
+	for (const mark of marks) {
+		const next = (kept + mark).normalize('NFC');
+		if (drawn(next)) kept = next;
+	}
+	return kept;
+}
+
 /** The tool result's note on characters left out, or '' when none were. */
 export function missingNote(missing: Set<string>): string {
-	if (missing.size === 0) return '';
-	const shown = [...missing].slice(0, 12).join(' ');
-	const more = missing.size > 12 ? ` and ${missing.size - 12} more` : '';
-	return `The PDF's fonts have no glyph for ${shown}${more}, so they were left out. Its fonts cover Latin, Greek and Cyrillic.`;
+	const left: string[] = [];
+	const simplified: string[] = [];
+	for (const entry of missing) {
+		(entry.includes(SIMPLIFIED) && [...entry].length > 1 ? simplified : left).push(entry);
+	}
+	const list = (items: string[]) =>
+		items.slice(0, 12).join(' ') + (items.length > 12 ? ` and ${items.length - 12} more` : '');
+	const notes: string[] = [];
+	if (left.length > 0)
+		notes.push(`The PDF's fonts have no glyph for ${list(left)}, so they were left out.`);
+	if (simplified.length > 0) {
+		notes.push(
+			`Its fonts lack some accents, so these printed without them: ${list(simplified.map((e) => e.replace(SIMPLIFIED, ' as ')))}.`
+		);
+	}
+	if (notes.length === 0) return '';
+	// Roboto's Greek is modern (monotonic): breathings and other polytonic marks are missing.
+	return `${notes.join(' ')} Its fonts cover Latin, Cyrillic and modern Greek.`;
 }
 
 /** How wide text is in a font, in points, at a size in points. */

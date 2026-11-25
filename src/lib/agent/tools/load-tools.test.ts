@@ -51,8 +51,14 @@ describe('load_tools', () => {
 
 describe('use_tool', () => {
 	it('says what it needs when the call could not be unwrapped', async () => {
-		const out = await executeTool('use_tool', { arguments: {} }, ctx([VIDEO]));
+		const out = await executeTool(
+			'use_tool',
+			{ arguments: { arguments: { path: 'a.pdf' } } },
+			ctx([VIDEO])
+		);
 		expect(out.result).toContain('needs name');
+		expect(out.result).toContain('It got no name.');
+		expect(out.result).toContain('wrapped once');
 	});
 
 	it("shows the named tool's label", () => {

@@ -57,7 +57,9 @@ pub async fn proxy_fetch_url_images(
 
     let client = super::extract::build_fetch_client(proxy.as_ref())?;
 
-    let response = super::extract::fetch_ok(&client, &url).await?;
+    let response = super::extract::fetch_ok(&client, &url)
+        .await
+        .map_err(|e| super::extract::through_proxy(e, proxy.as_ref()))?;
 
     // Capture the final URL after any redirects so we resolve relative
     // `src` attributes against the page the browser actually landed on,

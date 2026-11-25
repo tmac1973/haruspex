@@ -13,6 +13,13 @@ export function placeLine(markdown: string): string {
 	return `Put ${markdown} in your answer where it belongs; it needs no other images.`;
 }
 
+/**
+ * Said when nothing was written to a file. Without it the model once told
+ * the user a background picture and song were "in the working folder" when
+ * they were only in the caches.
+ */
+export const NOT_SAVED_LINE = 'It is only in the chat: no file was saved.';
+
 /** The line saying a picture was saved, or why it wasn't. */
 export function savedLineOf(path: string, failed: string | null): string {
 	return failed ? `It is in the chat, but ${failed}` : `Wrote ${path}.`;
@@ -40,7 +47,7 @@ export function imageAnswerText(a: {
 						'shows, not what was asked for.'
 				]
 			: []),
-		...(a.saved ? [a.saved] : []),
+		a.saved ?? NOT_SAVED_LINE,
 		...a.notes
 	].join(' ');
 }
@@ -56,7 +63,7 @@ export function upscaleAnswerText(a: {
 	return [
 		`Upscaled to ${a.width}×${a.height}.`,
 		placeLine(`![upscaled picture](${a.url})`),
-		...(a.saved ? [a.saved] : []),
+		a.saved ?? NOT_SAVED_LINE,
 		...(a.note ? [a.note] : [])
 	].join(' ');
 }

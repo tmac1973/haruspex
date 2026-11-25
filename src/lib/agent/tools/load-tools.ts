@@ -49,12 +49,18 @@ registerTool({
 registerTool({
 	category: 'tools-load',
 	schema: USE_TOOL_SCHEMA,
-	execute: async () =>
-		toolResult(
+	execute: async (args) => {
+		const named = typeof args.name === 'string' && args.name.trim() !== '';
+		// Seen live: `{"arguments": {"arguments": {...}}}`, the tool's own
+		// arguments wrapped twice and no name, so say which part was missing.
+		const missing = named ? '' : ' It got no name.';
+		return toolResult(
 			toolError(
-				`${USE_TOOL} needs name, a tool that load_tools gave you, and arguments, an object of its parameters.`
+				`${USE_TOOL} needs name, a tool that load_tools gave you, and arguments, an object of its parameters.${missing} ` +
+					`Call it as ${USE_TOOL} {"name": "<tool>", "arguments": {…}}, with the arguments wrapped once.`
 			)
-		),
+		);
+	},
 	displayLabel: (args) =>
 		typeof args.name === 'string' && args.name !== USE_TOOL
 			? getDisplayLabel(args.name, unwrapArgs(args.arguments))

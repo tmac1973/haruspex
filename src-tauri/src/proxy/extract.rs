@@ -214,10 +214,12 @@ pub(super) async fn fetch_and_extract(
             if is_refusal(&e) {
                 REDDIT_BLOCKED.to_string()
             } else {
-                e
+                through_proxy(e, proxy)
             }
         })?,
-        None => fetch_ok(&client, url).await?,
+        None => fetch_ok(&client, url)
+            .await
+            .map_err(|e| through_proxy(e, proxy))?,
     };
 
     // Check content type
@@ -354,6 +356,32 @@ pub(crate) fn public_only_resolver(proxy: Option<&ProxyConfig>) -> PublicOnly {
         .filter(|p| p.mode == "manual")
         .and_then(|p| super::public_dns::proxy_host(p.url.trim()));
     PublicOnly::new(host)
+}
+
+/// A fetch error, saying a proxy was in the path when one is set. A dead
+/// proxy and a site that refuses look the same ("Connection refused"), so
+/// without this the model can't tell its own setting from the site.
+pub(crate) fn through_proxy(err: String, proxy: Option<&ProxyConfig>) -> String {
+    let Some(p) = proxy.filter(|p| p.mode == "manual" && !p.url.trim().is_empty()) else {
+        return err;
+    };
+    // A status came back, so the proxy answered.
+    if !err.starts_with("Fetch failed: ") {
+        return err;
+    }
+    let at = reqwest::Url::parse(p.url.trim())
+        .ok()
+        .and_then(|u| {
+            let host = u.host_str()?.to_string();
+            Some(match u.port() {
+                Some(port) => format!(" at {host}:{port}"),
+                None => format!(" at {host}"),
+            })
+        })
+        .unwrap_or_default();
+    format!(
+        "{err}. It went through the proxy{at} in Settings → Network → Web Search Proxy: if that proxy isn't running, no site will answer."
+    )
 }
 
 /// A reqwest error with its root cause: reqwest's own message stops at
@@ -627,6 +655,29 @@ mod tests {
         let client = build_fetch_client(None).unwrap();
         let err = fetch_ok(&client, "http://localhost.:9/").await.unwrap_err();
         assert!(err.contains("resolves to this computer"), "{err}");
+    }
+
+    #[test]
+    fn a_connect_failure_names_the_proxy_it_went_through() {
+        let proxy = ProxyConfig {
+            mode: "manual".into(),
+            url: "http://user@127.0.0.1:9".into(),
+            ..Default::default()
+        };
+        let refused = "Fetch failed: error sending request: Connection refused (os error 111)";
+        let said = through_proxy(refused.into(), Some(&proxy));
+        assert!(said.starts_with(refused), "{said}");
+        assert!(said.contains("proxy at 127.0.0.1:9"), "{said}");
+        assert!(!said.contains("user"), "no login in the message: {said}");
+        // A status means the proxy answered; no proxy means nothing to name.
+        let status = "Fetch failed with status: 404 Not Found";
+        assert_eq!(through_proxy(status.into(), Some(&proxy)), status);
+        assert_eq!(through_proxy(refused.into(), None), refused);
+        let off = ProxyConfig {
+            mode: "none".into(),
+            ..proxy
+        };
+        assert_eq!(through_proxy(refused.into(), Some(&off)), refused);
     }
 
     #[test]
