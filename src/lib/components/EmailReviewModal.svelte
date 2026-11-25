@@ -337,6 +337,31 @@
 		border-radius: 6px;
 		background: #fff;
 		color: #222;
+		/* The mail's own <body> style, which {@html} drops. */
+		font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+		font-size: 15px;
+		line-height: 1.5;
+	}
+
+	/* Modal styles every h2 and p in a dialog with the theme's text colour,
+	   light in the dark theme; the preview is a white page. `.form` makes
+	   these outrank `.modal :global(p)`. */
+	.form .preview :global(:is(h1, h2, h3, h4, p, li, td, th, blockquote, strong, em)) {
+		color: inherit;
+	}
+
+	.form .preview :global(h2) {
+		font-size: 1.5em;
+		margin: 0.83em 0;
+	}
+
+	.form .preview :global(p) {
+		font-size: inherit;
+		margin: 1em 0;
+	}
+
+	.form .preview :global(a) {
+		color: #1a5fb4;
 	}
 
 	.body-tools {
