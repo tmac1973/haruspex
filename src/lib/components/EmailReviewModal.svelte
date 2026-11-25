@@ -79,7 +79,8 @@
 			subject: subject.trim(),
 			body: composedBody(body, pending.draft.quoted),
 			inReplyTo: pending.draft.inReplyTo,
-			references: pending.draft.references
+			references: pending.draft.references,
+			parts: []
 		};
 		try {
 			const out = await invoke<SendOutcome>('email_send', { account: from, message });

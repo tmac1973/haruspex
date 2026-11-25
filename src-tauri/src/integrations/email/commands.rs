@@ -285,6 +285,8 @@ pub async fn email_send(
     message: OutgoingMessage,
 ) -> Result<SendOutcome, String> {
     let sent = smtp_client::send_message(&account, &message).await?;
+    // Sent: its files are done with. A failed send keeps them for a retry.
+    super::parts::forget(&message.parts);
     let sent_copy_error = if saves_sent_copy(account.provider) {
         None
     } else {

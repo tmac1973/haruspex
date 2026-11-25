@@ -8,9 +8,10 @@
 //! and sanitises it.
 
 use lettre::message::header::{HeaderName, HeaderValue};
-use lettre::message::{Mailbox, Message, MultiPart, SinglePart};
+use lettre::message::{Mailbox, Message};
 use serde::Deserialize;
 
+use super::body::{self, Content};
 use super::requests::{is_valid_message_id, REPLY_HEADER};
 use super::smtp_client::reply_subject;
 
@@ -78,7 +79,7 @@ pub fn build(from: &str, message_id: &str, input: &ReplyInput) -> Result<Message
 
     let references = references(&input.references, request_id);
 
-    Message::builder()
+    let builder = Message::builder()
         .from(me.clone())
         .to(me)
         .subject(subject)
@@ -93,13 +94,14 @@ pub fn build(from: &str, message_id: &str, input: &ReplyInput) -> Result<Message
         .raw_header(HeaderValue::new(
             HeaderName::new_from_ascii_str("Auto-Submitted"),
             "auto-replied".into(),
-        ))
-        .multipart(
-            MultiPart::alternative()
-                .singlepart(SinglePart::plain(input.text.clone()))
-                .singlepart(SinglePart::html(input.html.clone())),
-        )
-        .map_err(|e| format!("The reply could not be built: {e}"))
+        ));
+    body::finish_plain_auto(
+        builder,
+        &Content {
+            html: Some(input.html.clone()),
+            ..Content::text(input.text.clone())
+        },
+    )
 }
 
 /// A Message-ID that passes the shared check and is plain ASCII, without
