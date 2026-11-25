@@ -6,15 +6,8 @@
 	 * plain JSON under `codeHelperConfig['3d']`.
 	 */
 	import type { BackendOverride } from '#lib/api.ts';
-	import Modal from '#lib/components/Modal.svelte';
-	import ModalButton from '#lib/components/ModalButton.svelte';
-	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
-	import { emptyModelForm, type JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
-	import {
-		backendFromModelForm,
-		modelFormFromBackend,
-		overrideModelLabel
-	} from '#lib/code/backends.ts';
+	import DelegateModelPicker from '#lib/helpers/three/DelegateModelPicker.svelte';
+	import { overrideModelLabel } from '#lib/code/backends.ts';
 	import {
 		clampDelegateRounds,
 		MAX_DELEGATE_ROUNDS,
@@ -32,8 +25,6 @@
 	let cost = $state<number>(stored.maxCostUsd ?? 1);
 
 	let open = $state(false);
-	let form = $state<JobModelForm>(emptyModelForm('openrouter'));
-	const picked = $derived(backendFromModelForm($state.snapshot(form)));
 
 	const modelLabel = $derived(backend ? overrideModelLabel(backend).label : 'None');
 
@@ -45,11 +36,6 @@
 		};
 		// Plain JSON: no proxies and no undefined fields reach the store.
 		setCodeHelperConfig(helperId, JSON.parse(JSON.stringify(value)));
-	}
-
-	function openPicker() {
-		form = backend ? modelFormFromBackend($state.snapshot(backend)) : emptyModelForm('openrouter');
-		open = true;
 	}
 
 	function choose(next: BackendOverride | null) {
@@ -83,7 +69,7 @@
 				type="button"
 				class="btn btn-small"
 				aria-label="Delegate to: {modelLabel}"
-				onclick={openPicker}
+				onclick={() => (open = true)}
 			>
 				{modelLabel}
 			</button>
@@ -127,25 +113,12 @@
 </div>
 
 {#if open}
-	<Modal open title="3D delegate model" maxWidth={560} dismissable onclose={() => (open = false)}>
-		<JobModelFields
-			bind:form
-			name="three-delegate-model-source"
-			allowSettings={false}
-			showAdvanced={false}
-		/>
-		<div class="button-row">
-			<ModalButton onclick={() => choose(picked)} disabled={!picked?.modelId}>
-				{#snippet title()}Save{/snippet}
-			</ModalButton>
-			<ModalButton variant="subtle" onclick={() => choose(null)}>
-				{#snippet title()}None{/snippet}
-			</ModalButton>
-			<ModalButton variant="subtle" onclick={() => (open = false)}>
-				{#snippet title()}Cancel{/snippet}
-			</ModalButton>
-		</div>
-	</Modal>
+	<DelegateModelPicker
+		title="3D delegate model"
+		{backend}
+		onchoose={choose}
+		onclose={() => (open = false)}
+	/>
 {/if}
 
 <style>
@@ -199,9 +172,5 @@
 		margin: 0 0 6px;
 		color: var(--text-secondary);
 		font-size: 0.8rem;
-	}
-
-	.button-row {
-		margin-top: 16px;
 	}
 </style>

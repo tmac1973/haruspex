@@ -77,6 +77,17 @@ describe('delegate_3d', () => {
 		expect(offered('delegate_3d', codeTab)).toBe(false);
 	});
 
+	it('follows the session’s own delegate model over the Settings one', () => {
+		setCodeHelper('3d', true);
+		expect(
+			offered('delegate_3d', { ...codeTab, codeHelperConfig: { '3d': { backend: delegateModel } } })
+		).toBe(true);
+		setCodeHelperConfig('3d', { backend: delegateModel });
+		expect(
+			offered('delegate_3d', { ...codeTab, codeHelperConfig: { '3d': { backend: null } } })
+		).toBe(false);
+	});
+
 	it('is never offered to a subtask, even one with the 3D helper', () => {
 		setCodeHelper('3d', true);
 		setCodeHelperConfig('3d', { backend: delegateModel });

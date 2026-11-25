@@ -60,7 +60,8 @@ import {
 	saveCodeSession,
 	setCodeSessionRoot,
 	updateCodeSessionMeta,
-	type CodeSessionRecord
+	type CodeSessionRecord,
+	type SessionHelperConfig
 } from '#lib/code/db.ts';
 import {
 	decodeCodeSession,
@@ -201,6 +202,8 @@ export class CodeSession implements CodeSessionView {
 	effort = $state<string | null>(null);
 	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
 	helpers = $state<string[] | null>(null);
+	/** Its own helper settings (the 3D delegate's model); null: Settings for all. */
+	helperConfig = $state<SessionHelperConfig | null>(null);
 
 	messages = $state<ChatMessage[]>([]);
 	/** Index-keyed sidecars, as the shell store keeps them. */
@@ -330,6 +333,7 @@ export class CodeSession implements CodeSessionView {
 		this.backend = record.backend;
 		this.effort = record.reasoning_effort;
 		this.helpers = record.helpers;
+		this.helperConfig = record.helperConfig;
 		// A new session, or a fork at its first message, stores an empty thread,
 		// which decodes as null: that is an empty session, not a broken one.
 		const thread = decodeCodeSession(record.thread);
@@ -744,6 +748,18 @@ export class CodeSession implements CodeSessionView {
 		}
 	};
 
+	/** Null puts every helper back on Settings → Code → Helpers. Applies from the next turn. */
+	setSessionHelperConfig = async (config: SessionHelperConfig | null): Promise<void> => {
+		const prev = this.helperConfig;
+		this.helperConfig = config;
+		try {
+			await updateCodeSessionMeta(this.id, { helperConfig: config });
+		} catch (e) {
+			this.helperConfig = prev;
+			throw e;
+		}
+	};
+
 	rename = async (title: string): Promise<void> => {
 		const next = title.trim();
 		if (!next || next === this.title) return;
@@ -974,6 +990,9 @@ export class CodeSession implements CodeSessionView {
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
 				helpers: this.helpers ? [...this.helpers] : null,
+				helperConfig: this.helperConfig
+					? ($state.snapshot(this.helperConfig) as SessionHelperConfig)
+					: null,
 				readOnly: this.readOnly,
 				remote: this.remote,
 				wslDistro: this.wslDistro,

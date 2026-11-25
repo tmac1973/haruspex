@@ -1087,6 +1087,10 @@ impl Database {
             // The helper ids a Code session offers, as a JSON array; NULL
             // means the ones switched on in Settings → Code → Helpers.
             "ALTER TABLE code_sessions ADD COLUMN helpers TEXT",
+            // A Code session's own helper settings, as a JSON object keyed by
+            // helper id (the 3D delegate's model); NULL means Settings → Code
+            // → Helpers for all of them.
+            "ALTER TABLE code_sessions ADD COLUMN helper_config TEXT",
             // Camera alerts (camera_events::): the judgement of an event,
             // 'normal', 'unusual' or 'urgent' (NULL until judged), why, and
             // when the user dismissed it, with their note.

@@ -7,6 +7,7 @@ import type { FileDiff } from '#lib/code/diff.ts';
 import type { FeedbackTurn } from '#lib/harnessFeedback/report.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { ToolSchemaOpts } from '#lib/agent/tools/registry.ts';
+import type { SessionHelperConfig } from '#lib/code/db.ts';
 
 export type { Artifact, LintIssue };
 
@@ -290,6 +291,8 @@ export interface ToolContext {
 	subtask?: { depth: 1 };
 	/** How many subtasks this turn has started, shared by its calls (`delegate`'s cap). */
 	subtasksStartedThisTurn?: { count: number };
+	/** The Code session's own helper settings (`delegate_3d`'s model); null: Settings. */
+	codeHelperConfig?: SessionHelperConfig | null;
 	/** The turn's messages so far: `haruspex_feedback` attaches the calls behind a report. */
 	transcript?: () => readonly ChatMessage[];
 	/** How many reports this turn has made; `haruspex_feedback` stops at a few. */

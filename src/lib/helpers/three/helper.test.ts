@@ -18,6 +18,17 @@ describe('the 3D helper’s TOOLS line', () => {
 		);
 	});
 
+	it('names the session’s own model, or none, over the Settings one', () => {
+		setCodeHelperConfig('3d', {
+			backend: { baseUrl: 'https://openrouter.ai/api', modelId: 'vendor/big' }
+		});
+		const own = {
+			'3d': { backend: { baseUrl: 'https://openrouter.ai/api', modelId: 'other/one' } }
+		};
+		expect(helperPrompts([three()], false, own)[0].prompt).toMatch(/to other\/one · OpenRouter;/);
+		expect(helperPrompt(three(), { '3d': { backend: null } })).toBe('');
+	});
+
 	it('is left out of a read-only turn, which is offered neither tool', () => {
 		setCodeHelperConfig('3d', {
 			backend: { baseUrl: 'https://openrouter.ai/api', modelId: 'vendor/big' }

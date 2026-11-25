@@ -215,6 +215,7 @@ export async function executeToolCalls(
 				codeEffort: ctx.codeEffort,
 				subtask: ctx.subtask,
 				subtasksStartedThisTurn: ctx.subtasksStartedThisTurn,
+				codeHelperConfig: options.codeHelperConfig ?? null,
 				transcript: () => ctx.messages,
 				feedbackThisTurn: ctx.feedbackThisTurn,
 				feedback: options.feedback,

@@ -62,7 +62,8 @@ export const DELEGATE_3D_TOOLS = [
 	'check_3d'
 ];
 
-const NO_DELEGATE = 'No 3D delegate model is set. Set one in Settings → Code → Helpers → 3D.';
+const NO_DELEGATE =
+	'No 3D delegate model is set. Set one in Settings → Code → Helpers → 3D, or for this session under Extras.';
 
 /** The label shown for a call: the model's, else "3D: <file name>". */
 export function delegate3dLabel(args: Record<string, unknown>): string {
@@ -77,7 +78,7 @@ function refusal(args: Record<string, unknown>, ctx: ToolContext): string | null
 	if (ctx.subtask) return 'A subtask cannot start subtasks of its own.';
 	if (!ctx.workingDir) return 'No project folder set.';
 	if (ctx.codeReadOnly) return 'This session is read-only: delegate_3d writes files.';
-	if (!delegate3dConfig().backend) return NO_DELEGATE;
+	if (!delegate3dConfig(ctx.codeHelperConfig).backend) return NO_DELEGATE;
 	if (args.background === true && !ctx.startBackgroundSubtask) {
 		return 'Background calls are not available here; leave background off.';
 	}
@@ -291,7 +292,7 @@ export async function executeDelegate3d(
 	if (!task) return toolResult(toolError('delegate_3d requires a task.'));
 	const images = await loadImages(args.images, ctx);
 	if (typeof images === 'string') return toolResult(toolError(images));
-	const config = delegate3dConfig();
+	const config = delegate3dConfig(ctx.codeHelperConfig);
 	if (!config.backend) return toolResult(toolError(NO_DELEGATE));
 	const foreign = await notBuildModules(ctx, files);
 	if (foreign) return toolResult(toolError(foreign));

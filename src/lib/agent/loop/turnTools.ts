@@ -41,6 +41,7 @@ export type TurnToolsInput = Pick<
 	| 'skills'
 	| 'codeSessionId'
 	| 'codeHelpers'
+	| 'codeHelperConfig'
 	| 'conversationId'
 	| 'keepFamilies'
 	| 'backend'
@@ -68,6 +69,7 @@ export function resolveTurnTools(options: TurnToolsInput): TurnTools {
 		codeReadOnly: options.codeReadOnly ?? false,
 		codeRemote: options.codeRemote ?? false,
 		codeHelpers: options.codeHelpers,
+		codeHelperConfig: options.codeHelperConfig,
 		interactive: options.interactive ?? false,
 		subtask: options.subtask !== undefined,
 		subtaskHelpers: options.subtaskHelpers,

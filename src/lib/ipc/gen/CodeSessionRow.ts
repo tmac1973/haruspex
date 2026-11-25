@@ -58,4 +58,9 @@ agent_branch: string | null,
  * JSON array of the helper ids this session offers; `null` means the
  * ones switched on in Settings → Code → Helpers.
  */
-helpers: string | null, };
+helpers: string | null, 
+/**
+ * JSON object of this session's own helper settings, keyed by helper id
+ * (`{"3d":{"backend":…}}`); `null` means Settings → Code → Helpers.
+ */
+helper_config: string | null, };

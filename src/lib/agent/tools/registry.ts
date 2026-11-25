@@ -35,6 +35,7 @@ import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
 import { helperForTool, sessionHelpers, type HelperDef } from '#lib/helpers/registry.ts';
 import { delegate3dConfig } from '#lib/helpers/three/delegateConfig.ts';
+import type { SessionHelperConfig } from '#lib/code/db.ts';
 import { cameraAccessRefusal, camerasUsable } from '#lib/agent/tools/_cameraGate.ts';
 
 const tools = new Map<string, ToolRegistration>();
@@ -128,6 +129,8 @@ interface ToolFilterOpts {
 	codeRemote: boolean;
 	/** The helper ids whose tools the turn offers (`ToolSchemaOpts.codeHelpers`). */
 	helpers: Set<string>;
+	/** The session's own helper settings (`ToolSchemaOpts.codeHelperConfig`). */
+	helperConfig: SessionHelperConfig | null;
 	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
 	subtask: boolean;
 	/** The helpers whose tools a subtask may still have (`ToolSchemaOpts.subtaskHelpers`). */
@@ -393,8 +396,9 @@ function subtaskExcludes(reg: ToolRegistration, subtaskHelpers: Set<string>): bo
 
 /** Whether a helper's tool is offered: see `shouldIncludeTool`. */
 function helperToolOffered(name: string, helper: HelperDef, opts: ToolFilterOpts): boolean {
-	// delegate_3d hands work to the model set in Settings → Code → Helpers → 3D: none set, none offered.
-	if (name === 'delegate_3d' && !delegate3dConfig().backend) return false;
+	// delegate_3d hands work to the session's delegate model, else the one in
+	// Settings → Code → Helpers → 3D: none set, none offered.
+	if (name === 'delegate_3d' && !delegate3dConfig(opts.helperConfig).backend) return false;
 	return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
 }
 
@@ -454,6 +458,8 @@ export interface ToolSchemaOpts {
 	 * on in Settings → Code → Helpers.
 	 */
 	codeHelpers?: string[] | null;
+	/** The Code tab session's own helper settings; null or undefined: Settings. */
+	codeHelperConfig?: SessionHelperConfig | null;
 	/** A subtask's turn: no `delegate`, and nothing that needs the user. */
 	subtask?: boolean;
 	/**
@@ -554,6 +560,7 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		codeReadOnly: opts.codeReadOnly ?? false,
 		codeRemote: opts.codeRemote ?? false,
 		helpers: new Set(sessionHelpers(opts.codeHelpers).map((h) => h.id)),
+		helperConfig: opts.codeHelperConfig ?? null,
 		subtask: opts.subtask ?? false,
 		subtaskHelpers: new Set(opts.subtaskHelpers),
 		hasEmail: hasEnabledEmailAccount(),
