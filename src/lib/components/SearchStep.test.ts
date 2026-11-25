@@ -149,3 +149,22 @@ describe('SearchStep artifacts', () => {
 		expect(document.querySelector('.search-steps')).toBeNull();
 	});
 });
+
+describe('SearchStep subtasks', () => {
+	it('draws a subtask card for any tool that carries one', async () => {
+		const { finishedSubtask, newSubtaskState } = await import('#lib/code/subtask.ts');
+		for (const toolName of ['delegate', 'delegate_3d']) {
+			const subtask = finishedSubtask(newSubtaskState('s1', 'Spaceship', 'Make it.', 'write'), {
+				status: 'done',
+				report: `report from ${toolName}`,
+				steps: []
+			});
+			const { unmount } = render(SearchStep, {
+				steps: [makeStep([], { id: 's1', toolName, query: 'Spaceship', subtask })]
+			});
+			screen.getByTestId('subtask-card');
+			screen.getByText(`report from ${toolName}`);
+			unmount();
+		}
+	});
+});

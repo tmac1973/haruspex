@@ -633,6 +633,31 @@ describe('CodeTranscript subtasks', () => {
 		screen.getByText('foo is called from bar.ts:3');
 	});
 
+	it('shows a running delegate_3d call as its card, not a tool row', async () => {
+		const { newSubtaskState, startedSubtask } = await import('#lib/code/subtask.ts');
+		const subtask = startedSubtask(
+			newSubtaskState('s1', 'Menacing spaceship', 'Make a spaceship.', 'write')
+		);
+		render(CodeTranscript, {
+			session: fakeSession({
+				status: 'running',
+				busy: true,
+				messages: [{ role: 'user', content: 'make a spaceship' }],
+				searchSteps: [
+					{
+						id: 's1',
+						toolName: 'delegate_3d',
+						query: 'Menacing spaceship',
+						status: 'running',
+						subtask
+					}
+				]
+			})
+		});
+		screen.getByTestId('subtask-card');
+		screen.getByText('Menacing spaceship');
+	});
+
 	it('stops a running subtask through the session', async () => {
 		const { newSubtaskState, startedSubtask } = await import('#lib/code/subtask.ts');
 		const stopSubtask = vi.fn();
