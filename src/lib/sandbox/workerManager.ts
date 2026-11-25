@@ -94,14 +94,15 @@ const defaultWorkerFactory: WorkerFactory = () =>
 	new Worker(new URL('./python.worker.ts', import.meta.url), { type: 'module' });
 
 // Tauri serves COOP `same-origin` + COEP `credentialless` (see
-// tauri.conf.json and vite.config.ts), but as of haruspex 0.1.30 the
-// WebKitGTK build shipped with Tauri on Linux does not flip
-// crossOriginIsolated to true even with the headers honored — likely a
-// process-model gate that's not enabled by default. The cooperative
-// interrupt path activates wherever crossOriginIsolated does work
-// (probably macOS/Windows), and degrades to terminate-and-respawn
-// elsewhere. The feature is functional either way; the only loss is
-// session state on a timeout.
+// tauri.conf.json and vite.config.ts). WebKitGTK 2.54 does not honour
+// `credentialless` (checked 2026-11), so crossOriginIsolated stays false and
+// there is no SharedArrayBuffer for the cooperative interrupt. `require-corp`
+// does isolate the page there, but SharedArrayBuffer is still undefined, and
+// it would make every cross-origin image and script need a CORP header.
+// WKWebView on macOS is the same engine and presumably behaves the same;
+// WebView2 on Windows is Chromium, which supports `credentialless`. Where
+// there is no interrupt, a timeout terminates the worker and its state is
+// lost, which the timeout error tells the model (STATE_LOST).
 /**
  * Convert an artifact protocol message into the Artifact union the rest of the
  * app consumes. Image bytes become a data URL so consumers can drop them

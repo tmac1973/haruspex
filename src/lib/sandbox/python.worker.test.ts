@@ -173,6 +173,18 @@ afterEach(() => {
 });
 
 describe('python.worker boot', () => {
+	it('loads only what every run needs, not the scientific stack', async () => {
+		// Each eager numpy/pandas/scipy/sympy/matplotlib cost a worker ~350 MB.
+		const loaded: unknown[] = [];
+		py.api.loadPackage = async (p: unknown) => void loaded.push(...[p].flat());
+		await boot();
+		expect(loaded).toEqual(
+			expect.arrayContaining(['micropip', 'requests', 'Pillow', 'lxml', 'typing_extensions'])
+		);
+		for (const heavy of ['numpy', 'pandas', 'matplotlib', 'scipy', 'sympy'])
+			expect(loaded).not.toContain(heavy);
+	});
+
 	it('asks main for its config, records it, then reports ready', async () => {
 		await load();
 		expect(kinds()).toEqual(['get_runtime_config']);
@@ -312,6 +324,49 @@ describe('python.worker run', () => {
 		// Back to the install phase for the retry, then exec again.
 		expect(kinds().filter((k) => k === 'pkg_phase_start')).toHaveLength(2);
 		expect(kinds().filter((k) => k === 'exec_start')).toHaveLength(2);
+	});
+
+	it('loads a lockfile package by its import name, and only then reaches for micropip', async () => {
+		// pandas plotting imports matplotlib lazily; micropip can't map import
+		// names like PIL to their lockfile package, loadPackagesFromImports can.
+		await boot();
+		const asked: string[] = [];
+		(py.api as { loadPackagesFromImports: (c: string) => Promise<void> }).loadPackagesFromImports =
+			async (c: string) => void asked.push(c);
+		const inner = py.api.runPythonAsync as (c: string) => Promise<unknown>;
+		py.api.runPythonAsync = async (c: string) =>
+			c.includes('find_spec(_haruspex_retry_pkg)') ? true : inner(c);
+		let calls = 0;
+		py.userCode = () => {
+			if (calls++ === 0)
+				throw new Error(
+					'ImportError: matplotlib is required for plotting when the default backend "matplotlib" is selected.'
+				);
+			return 'plotted';
+		};
+		const result = await run('USER df.plot()');
+		expect(result.error).toBeNull();
+		expect(asked).toContain('import matplotlib');
+		expect(py.internalScripts.some((c) => c.includes('_mp.install'))).toBe(false);
+		// The hooks go in again, now that matplotlib exists.
+		const hooks = py.internalScripts.filter((c) =>
+			c.startsWith('_haruspex_install_matplotlib_hook()')
+		);
+		expect(hooks.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("reads pandas' missing optional dependency", async () => {
+		await boot();
+		let calls = 0;
+		py.userCode = () => {
+			if (calls++ === 0)
+				throw new Error(
+					"ImportError: Missing optional dependency 'openpyxl'.  Use pip or conda to install openpyxl."
+				);
+			return 1;
+		};
+		await run('USER pd.read_excel("a.xlsx")');
+		expect(py.globals.get('_haruspex_retry_pkg')).toBe('openpyxl');
 	});
 
 	it('reads the package from a pip-install hint in a custom ImportError', async () => {
