@@ -37,3 +37,23 @@ describe('the shipped helpers’ tools', () => {
 		expect(offered('check_3d', readOnly)).toBe(false);
 	});
 });
+
+describe('a subtask’s helper tools', () => {
+	const subtask = { ...codeTab, interactive: false, subtask: true, codeHelpers: ['3d'] };
+
+	it('gets none unless its profile names the helper', () => {
+		expect(offered('check_3d', subtask)).toBe(false);
+		expect(offered('check_3d', { ...subtask, subtaskHelpers: ['3d'] })).toBe(true);
+		expect(offered('check_3d', { ...subtask, subtaskHelpers: ['search'] })).toBe(false);
+	});
+
+	it('holds under an allowlist, which only narrows what a subtask gets', () => {
+		const allowlist = ['fs_read_text', 'check_3d', 'delegate'];
+		const listed = { ...subtask, toolAllowlist: allowlist };
+		expect(offered('check_3d', listed)).toBe(false);
+		expect(offered('check_3d', { ...listed, subtaskHelpers: ['3d'] })).toBe(true);
+		expect(offered('fs_read_text', listed)).toBe(true);
+		expect(offered('delegate', { ...listed, subtaskHelpers: ['3d'] })).toBe(false);
+		expect(offered('code_grep', { ...listed, subtaskHelpers: ['3d'] })).toBe(false);
+	});
+});

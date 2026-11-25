@@ -129,6 +129,8 @@ interface ToolFilterOpts {
 	helpers: Set<string>;
 	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
 	subtask: boolean;
+	/** The helpers whose tools a subtask may still have (`ToolSchemaOpts.subtaskHelpers`). */
+	subtaskHelpers: Set<string>;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
@@ -365,13 +367,15 @@ function isCodeTab(opts: ToolFilterOpts): boolean {
 /**
  * What a subtask never gets: another subtask, anything that asks the user or
  * opens something for them, anything left running after it ends, and art.
+ * A helper's tools only when its profile names the helper (`subtaskHelpers`).
  */
-function subtaskExcludes(reg: ToolRegistration): boolean {
+function subtaskExcludes(reg: ToolRegistration, subtaskHelpers: Set<string>): boolean {
 	const name = reg.schema.function.name;
+	const helper = helperForTool(name);
 	return (
 		name === 'delegate' ||
 		name === 'make_asset' ||
-		helperForTool(name) !== undefined ||
+		(helper !== undefined && !subtaskHelpers.has(helper.id)) ||
 		SONG_TOOLS.has(name) ||
 		reg.category === 'speech' ||
 		reg.category === 'video-gen' ||
@@ -386,7 +390,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 }
 
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
-	if (opts.subtask && subtaskExcludes(reg)) return false;
+	if (opts.subtask && subtaskExcludes(reg, opts.subtaskHelpers)) return false;
 	// Checking or cancelling a background task: only an owner that has one.
 	if (reg.category === 'tasks') {
 		return !!opts.taskOwner && opts.interactive && getTasks(opts.taskOwner).length > 0;
@@ -445,6 +449,11 @@ export interface ToolSchemaOpts {
 	codeHelpers?: string[] | null;
 	/** A subtask's turn: no `delegate`, and nothing that needs the user. */
 	subtask?: boolean;
+	/**
+	 * Helper ids whose tools a subtask may still have (a subtask profile's).
+	 * Without it a subtask gets no helper tools. Holds with an allowlist too.
+	 */
+	subtaskHelpers?: string[];
 	/** A live user is present. Gates tools that only make sense for one. */
 	interactive?: boolean;
 	/**
@@ -496,9 +505,12 @@ export function getToolSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
+		const subtaskHelpers = new Set(opts.subtaskHelpers);
 		const schemas: ToolDefinition[] = [];
 		for (const reg of tools.values()) {
 			const name = reg.schema.function.name;
+			// A subtask's allowlist narrows what a subtask gets; it never adds to it.
+			if (opts.subtask && subtaskExcludes(reg, subtaskHelpers)) continue;
 			// Sending, and writing a skill, are reviewed by a person at the
 			// keyboard, and an allowlisted turn is a job's: no allowlist can
 			// grant them.
@@ -527,6 +539,7 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		codeRemote: opts.codeRemote ?? false,
 		helpers: new Set(sessionHelpers(opts.codeHelpers).map((h) => h.id)),
 		subtask: opts.subtask ?? false,
+		subtaskHelpers: new Set(opts.subtaskHelpers),
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),

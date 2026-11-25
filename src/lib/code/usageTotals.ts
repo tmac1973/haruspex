@@ -67,15 +67,26 @@ export function addCall(
 		next.subagentCalls = totals.subagentCalls + 1;
 	}
 	if (!paid) return next;
-	if (typeof usage.cost === 'number' && Number.isFinite(usage.cost)) {
-		next.costUsd = (totals.costUsd ?? 0) + usage.cost;
-	} else {
-		// Unpriced too: the total is short, so it is marked as an estimate.
-		const cost = prices ? prompt * prices.prompt + completion * prices.completion : 0;
-		next.costUsd = (totals.costUsd ?? 0) + cost;
-		next.estimated = true;
-	}
+	next.costUsd = (totals.costUsd ?? 0) + callCostUsd(usage, prices);
+	// Unpriced too: the total is short, so it is marked as an estimate.
+	if (!reportedCost(usage)) next.estimated = true;
 	return next;
+}
+
+/** Whether the server reported what the call cost. */
+function reportedCost(usage: Usage): boolean {
+	return typeof usage.cost === 'number' && Number.isFinite(usage.cost);
+}
+
+/**
+ * What one paid call cost in USD: the price the server reported, else one
+ * worked out from the model's catalogue `prices` (0 without them).
+ */
+export function callCostUsd(usage: Usage, prices: TokenPrices | null): number {
+	if (reportedCost(usage)) return usage.cost as number;
+	const prompt = usage.prompt_tokens || 0;
+	const completion = usage.completion_tokens || 0;
+	return prices ? prompt * prices.prompt + completion * prices.completion : 0;
 }
 
 /** A saved count, or null when there is none or it doesn't parse. */

@@ -140,9 +140,10 @@ export interface BuildCodePromptOpts {
 	/**
 	 * The turn is a subtask's: `task` is what the parent agent handed it.
 	 * With `worktree` it writes, in that copy of the project, sharing the
-	 * `linked` dependency folders with it.
+	 * `linked` dependency folders with it. `system`, a subtask profile's
+	 * prompt, replaces the generic subtask prompt whole.
 	 */
-	subtask?: { task: string; worktree?: { root: string; linked: string[] } };
+	subtask?: { task: string; worktree?: { root: string; linked: string[] }; system?: string };
 	/**
 	 * The families this turn lists but does not send (`resolveTurnTools`): the
 	 * prompt lists them, and their TOOLS lines go in the `load_tools` result.
@@ -306,6 +307,8 @@ function subtaskSession(worktree: { root: string; linked: string[] } | undefined
 
 /** A subtask's prompt: the parent's task, its tools, a report at the end. */
 function buildSubtaskPrompt(opts: BuildCodePromptOpts, task: string): ChatMessage {
+	const own = opts.subtask?.system;
+	if (own !== undefined) return { role: 'system', content: own };
 	const timeout = getSettings().codeRunCommandTimeoutSecs;
 	const worktree = opts.subtask?.worktree;
 	const session = subtaskSession(worktree);

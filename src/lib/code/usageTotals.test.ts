@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	addCall,
+	callCostUsd,
 	catalogPrices,
 	emptyUsage,
 	formatCost,
@@ -71,5 +72,14 @@ describe('session usage totals', () => {
 		expect(formatCost(0)).toBe('$0.00');
 		expect(formatCost(0.004)).toBe('<$0.01');
 		expect(formatCost(12.3)).toBe('$12.30');
+	});
+});
+
+describe('callCostUsd', () => {
+	it('is the reported cost, else the catalogue estimate, else nothing', () => {
+		const prices = { prompt: 0.001, completion: 0.002 };
+		expect(callCostUsd(call(100, 10, 0.5), prices)).toBe(0.5);
+		expect(callCostUsd(call(100, 10), prices)).toBeCloseTo(0.12);
+		expect(callCostUsd(call(100, 10), null)).toBe(0);
 	});
 });

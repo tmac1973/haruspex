@@ -1224,7 +1224,8 @@ export class CodeSession implements CodeSessionView {
 	/** Add one model call of the session's agent, or of a sub-agent, to `totals`. */
 	private countCall(usage: Usage, subagent = false): void {
 		const descriptor = resolveBackendDescriptor(this.backend ?? undefined);
-		const paid = descriptor.kind === 'openrouter';
+		// A sub-agent on a model of its own (a subtask profile's) brings its price.
+		const paid = descriptor.kind === 'openrouter' || (subagent && typeof usage.cost === 'number');
 		const prices =
 			paid && usage.cost === undefined
 				? catalogPrices(getOpenRouterCatalog(), descriptor.modelId)

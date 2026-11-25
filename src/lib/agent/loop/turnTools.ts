@@ -34,6 +34,7 @@ export type TurnToolsInput = Pick<
 	| 'codeRemote'
 	| 'interactive'
 	| 'subtask'
+	| 'subtaskHelpers'
 	| 'toolAllowlist'
 	| 'forceFinalTool'
 	| 'feedback'
@@ -69,6 +70,7 @@ export function resolveTurnTools(options: TurnToolsInput): TurnTools {
 		codeHelpers: options.codeHelpers,
 		interactive: options.interactive ?? false,
 		subtask: options.subtask !== undefined,
+		subtaskHelpers: options.subtaskHelpers,
 		// The forced final tool is always offered. A stage once listed its
 		// read tools but not its submit tool: the model, correctly, never
 		// called a tool it was not given, and the forced call then named a
