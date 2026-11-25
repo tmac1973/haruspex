@@ -80,6 +80,9 @@ build recipe:
 | FFmpeg (libav*, ffmpeg, ffprobe) | <https://github.com/FFmpeg/FFmpeg> | [GPL v3 or later](https://www.gnu.org/licenses/gpl-3.0.html): built with `--enable-gpl --enable-version3`, no `--enable-nonfree` |
 | x264 | <https://code.videolan.org/videolan/x264> | GPL v2 or later |
 | LAME | <https://sourceforge.net/projects/lame/> | LGPL v2 or later |
+| dav1d | <https://code.videolan.org/videolan/dav1d> | BSD 2-Clause |
+| Opus | <https://opus-codec.org/> | BSD 3-Clause |
+| libvpx | <https://chromium.googlesource.com/webm/libvpx> | BSD 3-Clause, with Google's VP8/VP9 patent grant |
 | MLT (libmlt, melt and its modules) | <https://github.com/mltframework/mlt> | LGPL v2.1 or later; the qt6, plusgpl and normalize modules are GPL |
 | Qt 6 (qtbase, qtsvg) | <https://download.qt.io/archive/qt/> | LGPL v3 |
 | libxml2 | <https://gitlab.gnome.org/GNOME/libxml2> | MIT |

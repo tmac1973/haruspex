@@ -77,9 +77,10 @@ with llama.cpp's; see `docs/image-generation.md`.
 `ffmpeg`, `ffprobe` and `melt` are the media bundle, DOWNLOADED from this repo's
 `media-<tag>` release by `./scripts/fetch-media.sh` (checked against its
 `SHA256SUMS`). That release is built by the `Build media tools` workflow
-(`scripts/build-media.sh`): shared libav* (a GPL build with x264, nothing
-nonfree), MLT with only the modules Shotcut and Kdenlive projects use, and a
-cut-down Qt 6 for melt's `qtblend`. The versions are in
+(`scripts/build-media.sh`): shared libav* (a GPL build with x264, dav1d for
+AV1, and libvpx and Opus for WebM; nothing nonfree), MLT with only the
+modules Shotcut and Kdenlive projects use, and a cut-down Qt 6 for melt's
+`qtblend`. The versions are in
 `scripts/media-versions.sh`; run the workflow when one changes, before an app
 release. The libraries, MLT's modules and Qt's plugins live in
 `binaries/media/`, apart from `binaries/libs/`, and `src-tauri/src/media_env.rs`

@@ -55,7 +55,7 @@ jobs:
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install nasm pkg-config ninja cmake
+        run: brew install nasm pkg-config ninja cmake meson
 
       - name: Set up MSYS2
         if: runner.os == 'Windows'
@@ -76,6 +76,7 @@ jobs:
             mingw-w64-x86_64-libvpl
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-meson
             mingw-w64-x86_64-dlfcn
 
       - name: Build
@@ -137,6 +138,7 @@ jobs:
             - MLT ${{ env.MLT_VERSION }} (LGPL-2.1-or-later; the qt6, plusgpl and normalize modules are GPL)
             - Qt ${{ env.QT_VERSION }} qtbase and qtsvg (LGPL-3.0)
             - libxml2 (MIT), lame (LGPL)
+            - dav1d (BSD-2-Clause) for AV1 decoding; opus and libvpx (BSD-3-Clause) for WebM
 
             Each archive's `media/LICENSES/` holds every licence text.
             Sources: https://github.com/FFmpeg/FFmpeg/tree/${{ env.FFMPEG_TAG }},

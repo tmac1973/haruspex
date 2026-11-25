@@ -21,6 +21,47 @@ FFMPEG="$DIR/haruspex-ffmpeg-$TARGET$EXT"
 "$FFMPEG" -hide_banner -buildconf | head -5
 
 fail=0
+# The codecs and formats the video tools rely on, beyond MP4 and H.264:
+# dav1d for AV1 (ComfyUI's clips), and WebM with VP8/VP9 and Opus
+# (video_mux_audio writes WebM with Opus).
+DECODERS="$("$FFMPEG" -hide_banner -decoders 2>&1 || true)"
+ENCODERS="$("$FFMPEG" -hide_banner -encoders 2>&1 || true)"
+MUXERS="$("$FFMPEG" -hide_banner -muxers 2>&1 || true)"
+for want in decoder:libdav1d decoder:vp8 decoder:vp9 decoder:opus \
+    encoder:libx264 encoder:aac encoder:libopus encoder:libvpx encoder:libvpx-vp9 \
+    muxer:mp4 muxer:webm muxer:matroska; do
+    name="${want#*:}"
+    case "${want%%:*}" in
+        decoder) list="$DECODERS" ;;
+        encoder) list="$ENCODERS" ;;
+        muxer) list="$MUXERS" ;;
+    esac
+    if ! echo "$list" | grep -Eq "^ +[A-Z.]+ +$name( |\$)"; then
+        echo "::error::ffmpeg has no ${want%%:*} $name"
+        fail=1
+    fi
+done
+[ "$fail" = 0 ] || exit 1
+
+# An AV1 WebM (as ComfyUI writes) to MP4, that MP4 to WebM, and speech put
+# under the AV1 clip the way video_mux_audio does.
+CONV="$DIR/conv"
+mkdir -p "$CONV"
+command -v cygpath >/dev/null 2>&1 && CONV="$(cygpath -m "$CONV")"
+AV1="$SCRIPT_DIR/fixtures/av1-smoke.webm"
+command -v cygpath >/dev/null 2>&1 && AV1="$(cygpath -m "$AV1")"
+"$FFMPEG" -v error -y -i "$AV1" -c:v libx264 -c:a aac "$CONV/from-av1.mp4"
+"$FFMPEG" -v error -y -i "$CONV/from-av1.mp4" "$CONV/to.webm"
+"$FFMPEG" -v error -y -f lavfi -i "sine=frequency=220:duration=1" "$CONV/speech.wav"
+"$FFMPEG" -v error -y -i "$AV1" -i "$CONV/speech.wav" -map 0:v:0 -map 1:a:0 \
+    -c:v copy -c:a libopus -b:a 96k -shortest -f webm "$CONV/muxed.webm"
+for f in from-av1.mp4 to.webm muxed.webm; do
+    [ -s "$CONV/$f" ] || { echo "::error::ffmpeg wrote no $f"; exit 1; }
+done
+FRAMES="$("$FFMPEG" -v error -i "$CONV/from-av1.mp4" -map 0:v:0 -f null - -stats 2>&1 | grep -o 'frame= *[0-9]*' | tail -1 | tr -dc 0-9)"
+[ "${FRAMES:-0}" -gt 0 ] || { echo "::error::the AV1 clip converted to an MP4 with no frames"; exit 1; }
+echo "Conversions passed: AV1 WebM to MP4 ($FRAMES frames), MP4 to WebM, Opus speech muxed into WebM."
+
 # Captured first: grep -q stopping early would SIGPIPE melt under pipefail.
 # (No associative arrays: macOS's bash is 3.2.)
 TRANSITIONS="$("$MELT" -query transitions 2>&1 || true)"
