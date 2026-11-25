@@ -62,7 +62,7 @@ describe('jobs runner — model feedback on tools', () => {
 		expect(run.status).toBe('succeeded');
 		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(2);
 		const review = mocks.runEphemeralTurn.mock.calls[1][0] as EphemeralTurnOptions;
-		expect(review.toolAllowlist).toEqual([]);
+		expect(review.toolAllowlist).toEqual(['haruspex_feedback']);
 		expect(review.slot).toBe(fakeSlot);
 		expect(review.workingDir).toBeNull();
 		expect(review.systemPrompt).toContain('haruspex_feedback');

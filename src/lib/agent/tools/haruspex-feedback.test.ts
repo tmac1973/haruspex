@@ -85,6 +85,28 @@ describe('who gets haruspex_feedback', () => {
 		expect(offered({ hasWorkingDir: false, toolAllowlist: REMOTE_TOOLS })).toBe(false);
 		expect(offered({ hasWorkingDir: false, toolAllowlist: ['memory_search'] })).toBe(false);
 	});
+
+	it('not a job turn with no tools, or only submit_* ones', () => {
+		updateSettings({ agentFeedbackEnabled: true });
+		const job = (toolAllowlist: string[]) =>
+			offered({ hasWorkingDir: false, toolAllowlist, harnessFeedback: true });
+		expect(job([])).toBe(false);
+		expect(job(['submit_clip_check'])).toBe(false);
+		expect(job(['submit_clip_check', 'fs_read_text'])).toBe(true);
+	});
+
+	it('the reflection after a job run, whose allowlist names it', () => {
+		updateSettings({ agentFeedbackEnabled: true });
+		expect(offered({ hasWorkingDir: false, toolAllowlist: [NAME], harnessFeedback: true })).toBe(
+			true
+		);
+		// Naming it doesn't get round the setting, or a turn that may not have it.
+		expect(offered({ hasWorkingDir: false, toolAllowlist: [NAME] })).toBe(false);
+		updateSettings({ agentFeedbackEnabled: false });
+		expect(offered({ hasWorkingDir: false, toolAllowlist: [NAME], harnessFeedback: true })).toBe(
+			false
+		);
+	});
 });
 
 describe('a report', () => {
@@ -133,6 +155,25 @@ describe('a report', () => {
 			source: 'job "x", run 3',
 			trace
 		});
+	});
+
+	it('is refused when it names no tool and no kind of problem', async () => {
+		updateSettings({ agentFeedbackEnabled: true });
+		const allWell = {
+			kind: 'other',
+			what_happened: 'Picked the stories; every tool worked.',
+			expected: 'Nothing; no tool issues.'
+		};
+		for (const tool of ['none', 'None', '', undefined]) {
+			const out = await executeTool(NAME, { ...allWell, tool }, makeToolContext());
+			expect(JSON.parse(out.result).error).toContain(
+				'Report only a tool that failed, misled you, or was missing'
+			);
+		}
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+		// A missing capability may still leave the tool unnamed.
+		const missing = { ...allWell, tool: 'none', kind: 'missing_capability' };
+		expect((await executeTool(NAME, missing, makeToolContext())).result).toContain('Recorded');
 	});
 
 	it(`stops after ${MAX_REPORTS_PER_TURN} in a turn`, async () => {

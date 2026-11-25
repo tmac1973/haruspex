@@ -27,7 +27,6 @@ import { errMessage } from '#lib/utils/error.ts';
 const REMOTE: Readonly<CodeSessionCapabilities> = Object.freeze({
 	git: false,
 	helpers: false,
-	specialists: false,
 	detachWindow: false,
 	openInShell: false,
 	openInEditor: false,

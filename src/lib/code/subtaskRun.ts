@@ -9,6 +9,7 @@ import type { BackendOverride, Usage } from '#lib/api.ts';
 import type { CallStats } from '#lib/agent/loop.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
+import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { spillIfLarge } from '#lib/agent/tools/_ptyExec.ts';
 import { runSubtask, type SubtaskResult } from '#lib/code/runSubtask.ts';
 import {
@@ -17,6 +18,7 @@ import {
 	startedSubtask,
 	withApply,
 	withChildSteps,
+	withUsage,
 	type SubtaskMode,
 	type SubtaskState
 } from '#lib/code/subtask.ts';
@@ -27,6 +29,7 @@ import {
 	type SubtaskApplyOutcome
 } from '#lib/code/subtaskApply.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { subtaskCallCost, type SubtaskProfile } from '#lib/code/subtaskProfile.ts';
 
 /** What the parent asked for, once `delegate` has accepted it. */
 export interface SubtaskSpec {
@@ -35,8 +38,14 @@ export interface SubtaskSpec {
 	label: string;
 	task: string;
 	mode: SubtaskMode;
-	/** A writer's worktree, made before it starts; null for read mode. */
+	/** A writer's worktree, made before it starts; null for read mode, and with a profile. */
 	wt: SubtaskWorktree | null;
+	/**
+	 * Run it with its own model, prompt, tools and caps. It works in the
+	 * session's folder itself, limited to the profile's files, and never in a
+	 * worktree, whatever `mode` says.
+	 */
+	profile?: SubtaskProfile;
 }
 
 /**
@@ -65,6 +74,8 @@ export interface SubtaskEnv {
 	/** Names the session in approval prompts; the subtask adds its label. */
 	requester?: () => string;
 	runInSlot?: SlotLender;
+	/** The parent turn's own slot (`SubtaskOptions.parentSlot`); absent in the background. */
+	parentSlot?: HeldSlot;
 	/** The session's write lease, for applying a writer's changes. */
 	guard?: CodeWriteGuard;
 	/** The subtask's own stop. */
@@ -74,7 +85,8 @@ export interface SubtaskEnv {
 	/** The card changed. */
 	onState: (state: SubtaskState) => void;
 	/** Each model call the subtask makes. */
-	onUsage?: (usage: Usage) => void;
+	/** Each model call the subtask makes; `ownModel` when it ran on a profile's model. */
+	onUsage?: (usage: Usage, ownModel?: boolean) => void;
 }
 
 export interface SubtaskRunResult {
@@ -83,6 +95,8 @@ export interface SubtaskRunResult {
 	/** It failed, so `text` is an error. */
 	failed: boolean;
 	state: SubtaskState;
+	/** The picture a profile's `finish` returned, also on the card as `state.sheet`. */
+	png?: string;
 }
 
 /** A worktree for a writing subtask, or the reason there can't be one. */
@@ -186,9 +200,13 @@ export async function runSubtaskSpec(
 		env.onState(state);
 	};
 	const parent = env.requester;
+	const profile = spec.profile;
+	// A profile works in the folder itself; only a plain writer has a copy.
+	const wt = profile ? null : spec.wt;
+	const callBackend = profile ? profile.backend : env.backend;
 	const res = await runSubtask({
 		sessionId: env.sessionId,
-		root: spec.wt ? spec.wt.root : env.folder,
+		root: wt ? wt.root : env.folder,
 		wslDistro: env.wslDistro,
 		backend: env.backend,
 		effort: env.effort,
@@ -196,17 +214,30 @@ export async function runSubtaskSpec(
 		task: spec.task,
 		label: spec.label,
 		mode: spec.mode,
-		worktree: spec.wt ? { root: spec.wt.root, linked: spec.wt.linked } : undefined,
+		worktree: wt ? { root: wt.root, linked: wt.linked } : undefined,
 		runInSlot: env.runInSlot,
+		parentSlot: env.parentSlot,
 		requester: () => `${parent?.() ?? 'Code'} · subtask "${spec.label}"`,
 		signal: env.signal,
+		profile,
+		guard: profile ? env.guard : undefined,
 		onAdmitted: () => publish(startedSubtask(state)),
 		onStep: (steps) => publish(withChildSteps(state, steps)),
 		onApprovalWait: (waiting) => publish(awaitingApproval(state, waiting)),
-		onUsage: env.onUsage
+		onUsage: (usage) => {
+			publish(withUsage(state, usage, subtaskCallCost(usage, callBackend)));
+			env.onUsage?.(usage, profile !== undefined);
+		}
 	});
-	const applied = spec.wt ? await bringBack(spec.wt, res, env) : null;
+	const applied = wt ? await bringBack(wt, res, env) : null;
 	if (applied) state = withApply(state, applied.state);
+	const finished = profile?.finish
+		? await finishProfile(profile, res, state, {
+				guard: env.guard,
+				stoppedByUser: env.stoppedByUser()
+			})
+		: { text: await resultText(spec.label, res, env.stoppedByUser(), applied) };
+	if (finished.png) state = { ...state, sheet: finished.png };
 	publish(
 		finishedSubtask(state, {
 			status: res.outcome,
@@ -215,6 +246,27 @@ export async function runSubtaskSpec(
 			steps: res.steps
 		})
 	);
-	const text = await resultText(spec.label, res, env.stoppedByUser(), applied);
-	return { text, failed: res.outcome === 'failed', state };
+	return {
+		text: finished.text,
+		failed: res.outcome === 'failed',
+		state,
+		...(finished.png ? { png: finished.png } : {})
+	};
+}
+
+/** What a profile's `finish` makes of the run; its failure is the parent's to read. */
+async function finishProfile(
+	profile: SubtaskProfile,
+	res: SubtaskResult,
+	state: SubtaskState,
+	run: Parameters<NonNullable<SubtaskProfile['finish']>>[2]
+): Promise<{ text: string; png?: string }> {
+	try {
+		const finish = profile.finish as NonNullable<SubtaskProfile['finish']>;
+		return await finish(res, { tokens: state.tokens ?? 0, costUsd: state.costUsd ?? null }, run);
+	} catch (e) {
+		return {
+			text: `The subtask ended, but its result could not be put together: ${errMessage(e)}`
+		};
+	}
 }

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { SubtaskResult } from '#lib/code/runSubtask.ts';
+import type { SubtaskProfile } from '#lib/code/subtaskProfile.ts';
 import type { SubtaskWorktree } from '#lib/code/subtaskGit.ts';
 import { invokeRouter, unexpectedInvoke, type InvokeRoute } from '#lib/testing/invoke.ts';
 
@@ -341,5 +342,96 @@ describe('runSubtaskSpec in write mode', () => {
 		const got = await runSubtaskSpec(writer(), env(), initial('write'));
 		expect(got.text).toContain('stopped before it finished');
 		expect(got.state.apply?.status).toBe('discarded');
+	});
+});
+
+const usage = (cost?: number) => ({
+	prompt_tokens: 100,
+	completion_tokens: 20,
+	total_tokens: 120,
+	...(cost === undefined ? {} : { cost })
+});
+
+describe('runSubtaskSpec usage', () => {
+	it('counts tokens and cost on the card of a plain subtask, and passes every call up', async () => {
+		child.runSubtask.mockImplementation(async (o) => {
+			o.onUsage(usage(0.25));
+			o.onUsage(usage(0.5));
+			o.onUsage(usage());
+			return result();
+		});
+		const onUsage = vi.fn();
+		const e = env({ onUsage });
+		const out = await runSubtaskSpec(spec(), e, initial());
+		expect(out.state).toMatchObject({ tokens: 360, costUsd: 0.75 });
+		expect(e.states[0]).toMatchObject({ tokens: 120, costUsd: 0.25 });
+		expect(onUsage).toHaveBeenCalledTimes(3);
+	});
+
+	it('leaves the cost off while no call had a price', async () => {
+		child.runSubtask.mockImplementation(async (o) => {
+			o.onUsage(usage());
+			return result();
+		});
+		const out = await runSubtaskSpec(spec(), env(), initial());
+		expect(out.state.tokens).toBe(120);
+		expect(out.state.costUsd).toBeUndefined();
+	});
+});
+
+describe('runSubtaskSpec with a profile', () => {
+	const profile = (over: Partial<SubtaskProfile> = {}): SubtaskProfile => ({
+		backend: { baseUrl: 'https://openrouter.ai', modelId: 'frontier/3d' },
+		system: 'You build 3D assets.',
+		firstMessage: 'Make a crate.',
+		images: [],
+		tools: ['check_3d'],
+		helpers: ['3d'],
+		writablePaths: ['assets/crate.js'],
+		maxRounds: 80,
+		maxCostUsd: null,
+		finalReport: () => 'Report now.',
+		...over
+	});
+
+	it('works in the session folder itself, with its lease, and makes no worktree', async () => {
+		child.runSubtask.mockResolvedValue(result());
+		const guard = { acquire: vi.fn(async () => null), changed: vi.fn() };
+		const p = profile();
+		// Any git call would fail the test: routes are empty.
+		await runSubtaskSpec(spec({ mode: 'write', wt, profile: p }), env({ guard }), initial());
+		const opts = child.runSubtask.mock.calls[0][0];
+		expect(opts.root).toBe('/repo/app');
+		expect(opts.worktree).toBeUndefined();
+		expect(opts.profile).toBe(p);
+		expect(opts.guard).toBe(guard);
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it('tells the parent what finish says, with the run’s totals, and keeps its picture', async () => {
+		child.runSubtask.mockImplementation(async (o) => {
+			o.onUsage(usage(0.1));
+			return result({ report: 'Crate built.' });
+		});
+		const finish = vi.fn(async () => ({
+			text: 'Wrote assets/crate.glb.',
+			png: 'data:image/png;base64,AA'
+		}));
+		const out = await runSubtaskSpec(spec({ profile: profile({ finish }) }), env(), initial());
+		expect(finish).toHaveBeenCalledWith(
+			expect.objectContaining({ report: 'Crate built.' }),
+			{ tokens: 120, costUsd: 0.1 },
+			{ guard: undefined, stoppedByUser: false }
+		);
+		expect(out.text).toBe('Wrote assets/crate.glb.');
+		expect(out.png).toBe('data:image/png;base64,AA');
+		expect(out.state).toMatchObject({ status: 'done', sheet: 'data:image/png;base64,AA' });
+	});
+
+	it('uses the generic text without a finish', async () => {
+		child.runSubtask.mockResolvedValue(result({ report: 'Crate built.' }));
+		const out = await runSubtaskSpec(spec({ profile: profile() }), env(), initial());
+		expect(out.text).toContain('Crate built.');
+		expect(out.png).toBeUndefined();
 	});
 });

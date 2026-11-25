@@ -168,6 +168,12 @@ export interface ToolContext {
 	 */
 	releaseSlot?: () => void;
 	/**
+	 * The turn's own inference slot, held while this tool runs. A tool whose
+	 * model call runs on another lane (`delegate_3d`) gives it back meanwhile
+	 * (`onOwnLane`); the loop takes it back after the batch in any case.
+	 */
+	turnSlot?: HeldSlot;
+	/**
 	 * The tool families this turn lists but does not send, for `load_tools`.
 	 * Absent when deferred loading is off for the turn.
 	 */
@@ -213,6 +219,13 @@ export interface ToolContext {
 	 * everywhere else (no restriction beyond the working dir).
 	 */
 	writeRoot?: string | null;
+	/**
+	 * When set, the only files this turn may write: paths relative to the
+	 * working folder, normalised. `fs_write_text`, `fs_edit_text` and
+	 * `check_3d` refuse any other path (`writeOutsideLimit`). Unset means no
+	 * limit beyond the folder. Set by a subtask profile (the 3D delegate).
+	 */
+	writablePaths?: string[];
 	/**
 	 * The Shell tab's current working directory, captured at turn start.
 	 * Lets shell-mode fs_* tools resolve relative path arguments (the bare
@@ -270,11 +283,6 @@ export interface ToolContext {
 	/** The Code session's reasoning effort, for the subtasks it starts. Null follows Settings. */
 	codeEffort?: string | null;
 	/**
-	 * The Code tab session's specialist entry ids (`ask_specialist`). Null:
-	 * the ones on by default. Undefined outside the Code tab.
-	 */
-	codeSpecialists?: string[] | null;
-	/**
 	 * Set on the tools of a subtask (`delegate`'s child agent): it may not
 	 * start subtasks of its own, ask the user anything, or leave anything
 	 * running.
@@ -293,7 +301,11 @@ export interface ToolContext {
 	/** A subtask's card changed (`delegate`); the loop routes it to the call's step. */
 	onSubtask?: (state: SubtaskState) => void;
 	/** Each model call a `delegate` subtask makes, for the Code session's token count. */
-	onSubtaskUsage?: (usage: Usage) => void;
+	/**
+	 * `ownModel`: the call was on a subtask profile's own model, not the
+	 * session's, so the session's prices never apply to it.
+	 */
+	onSubtaskUsage?: (usage: Usage, ownModel?: boolean) => void;
 	/** Where a Code session keeps its running subtasks' stop handles. */
 	subtaskStops?: SubtaskStops;
 	/**
@@ -396,8 +408,6 @@ export interface ToolRegistration {
 		/** Checking and cancelling background tasks. Only for a Chat or Code turn
 		 *  whose owner has started one. */
 		| 'tasks'
-		/** `ask_specialist`: the Code tab, when the session has a specialist on. */
-		| 'specialist'
 		/** `propose_job`: drafts a job for the user to save and run. Interactive
 		 *  Chat and Code-tab turns, from this computer. */
 		| 'job-proposal'

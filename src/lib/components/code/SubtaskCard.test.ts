@@ -120,4 +120,38 @@ describe('SubtaskCard in the background', () => {
 		render(SubtaskCard, { subtask: newSubtaskState('b1', 'review', 't', 'read', true) });
 		screen.getByText('Background subtask');
 	});
+
+	it('shows its tokens, and its cost only when known', () => {
+		const { unmount } = render(SubtaskCard, {
+			subtask: { ...startedSubtask(base), tokens: 12_300, costUsd: 0.42 }
+		});
+		expect(screen.getByTestId('subtask-usage').textContent).toBe('12k tokens · $0.42');
+		unmount();
+		render(SubtaskCard, { subtask: { ...startedSubtask(base), tokens: 4200 } });
+		expect(screen.getByTestId('subtask-usage').textContent).toBe('4.2k tokens');
+		expect(screen.queryByText(/\$/)).toBeNull();
+	});
+
+	it('shows no usage line before the first call', () => {
+		render(SubtaskCard, { subtask: startedSubtask(base) });
+		expect(screen.queryByTestId('subtask-usage')).toBeNull();
+	});
+
+	it('shows the newest step’s picture, and the sheet in its place once there is one', () => {
+		const steps: SearchStep[] = [
+			{ ...child, id: 'a', thumbDataUrl: 'data:image/png;base64,A' },
+			{ ...child, id: 'b', thumbDataUrl: 'data:image/png;base64,B' },
+			{ ...child, id: 'c' }
+		];
+		const running = withChildSteps(startedSubtask(base), steps);
+		const { unmount } = render(SubtaskCard, { subtask: running });
+		const img = screen.getByTestId('subtask-picture');
+		expect(img.getAttribute('src')).toBe('data:image/png;base64,B');
+		expect(img.getAttribute('alt')).toBe('foo callers');
+		unmount();
+		render(SubtaskCard, { subtask: { ...running, sheet: 'data:image/png;base64,S' } });
+		expect(screen.getByTestId('subtask-picture').getAttribute('src')).toBe(
+			'data:image/png;base64,S'
+		);
+	});
 });

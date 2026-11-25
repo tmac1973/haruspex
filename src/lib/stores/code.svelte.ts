@@ -71,7 +71,12 @@ import {
 import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
 import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
-import { addCall, catalogPrices, emptyUsage, type SessionUsage } from '#lib/code/usageTotals.ts';
+import {
+	addSessionCall,
+	catalogPrices,
+	emptyUsage,
+	type SessionUsage
+} from '#lib/code/usageTotals.ts';
 import { getOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { registerCodeOpener } from '#lib/code/bridge.ts';
@@ -194,8 +199,6 @@ export class CodeSession implements CodeSessionView {
 	backend = $state<BackendOverride | null>(null);
 	/** Null follows the global reasoning effort. */
 	effort = $state<string | null>(null);
-	/** The specialist entry ids it offers; null: the ones on by default. */
-	specialists = $state<string[] | null>(null);
 	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
 	helpers = $state<string[] | null>(null);
 
@@ -326,7 +329,6 @@ export class CodeSession implements CodeSessionView {
 		this.title = isUnsetTitle(record.title) ? '' : record.title;
 		this.backend = record.backend;
 		this.effort = record.reasoning_effort;
-		this.specialists = record.specialists;
 		this.helpers = record.helpers;
 		// A new session, or a fork at its first message, stores an empty thread,
 		// which decodes as null: that is an empty session, not a broken one.
@@ -360,7 +362,7 @@ export class CodeSession implements CodeSessionView {
 				this.backgroundSubtaskCount = this.backgroundSubtasks.active;
 				void this.flushWatchNotifications();
 			},
-			onUsage: (usage) => this.countCall(usage, true)
+			onUsage: (usage, own) => this.countCall(usage, true, own)
 		});
 		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
 		this.unwatchTasks = setTaskHandler(`code:${this.id}`, () => {
@@ -730,18 +732,6 @@ export class CodeSession implements CodeSessionView {
 		}
 	};
 
-	/** Null puts the session back on the defaults. Applies from the next turn. */
-	setSessionSpecialists = async (ids: string[] | null): Promise<void> => {
-		const prev = this.specialists;
-		this.specialists = ids;
-		try {
-			await updateCodeSessionMeta(this.id, { specialists: ids });
-		} catch (e) {
-			this.specialists = prev;
-			throw e;
-		}
-	};
-
 	/** Null puts the session back on the Settings switches. Applies from the next turn. */
 	setSessionHelpers = async (ids: string[] | null): Promise<void> => {
 		const prev = this.helpers;
@@ -983,7 +973,6 @@ export class CodeSession implements CodeSessionView {
 				},
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
-				specialists: this.specialists ? [...this.specialists] : null,
 				helpers: this.helpers ? [...this.helpers] : null,
 				readOnly: this.readOnly,
 				remote: this.remote,
@@ -1037,7 +1026,7 @@ export class CodeSession implements CodeSessionView {
 					};
 					this.countCall(usage);
 				},
-				onSubtaskUsage: (usage) => this.countCall(usage, true),
+				onSubtaskUsage: (usage, own) => this.countCall(usage, true, own),
 				onContextManaged: (info) => {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
 				},
@@ -1238,14 +1227,13 @@ export class CodeSession implements CodeSessionView {
 	}
 
 	/** Add one model call of the session's agent, or of a sub-agent, to `totals`. */
-	private countCall(usage: Usage, subagent = false): void {
+	private countCall(usage: Usage, subagent = false, ownModel = false): void {
 		const descriptor = resolveBackendDescriptor(this.backend ?? undefined);
-		const paid = descriptor.kind === 'openrouter';
-		const prices =
-			paid && usage.cost === undefined
-				? catalogPrices(getOpenRouterCatalog(), descriptor.modelId)
-				: null;
-		this.totals = addCall(this.totals, usage, paid, prices, subagent);
+		const session = {
+			openrouter: descriptor.kind === 'openrouter',
+			prices: () => catalogPrices(getOpenRouterCatalog(), descriptor.modelId)
+		};
+		this.totals = addSessionCall(this.totals, usage, session, { subagent, ownModel });
 	}
 
 	/**

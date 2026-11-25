@@ -18,9 +18,12 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import {
 	cutPage,
 	fetchCutNote,
+	fetchLinks,
 	fetchUrlBudget,
 	researchBudget,
-	researchNote
+	researchLinks,
+	researchNote,
+	selectJsonFields
 } from '#lib/agent/tools/_webPage.ts';
 import { fetchResult, toolError, toolResult, type ToolExecOutput } from '#lib/agent/tools/types.ts';
 
@@ -132,11 +135,16 @@ registerTool({
 		function: {
 			name: 'fetch_url',
 			description:
-				'Fetch a URL and return its text: the visible text of a web page, or the body of a JSON, XML, CSV or plain-text response as it is (so it works for APIs and feeds). Use this when you need to see the content yourself — structured data, code samples, or content where you cannot describe in advance what is relevant. Long pages are cut, and the result says where. For research questions where you only need the parts of a page that answer a specific question, prefer research_url instead — it is much cheaper on context.',
+				"Fetch a URL and return its text: a page's title, visible text and same-site links, or a JSON, XML, CSV or plain-text body as it is (APIs, feeds). Use it to see the content itself: data, code, or anything you cannot describe in advance. Long pages are cut, and the result says where. To answer one question from a page or JSON, prefer research_url with a focus: it costs far less context.",
 			parameters: {
 				type: 'object',
 				properties: {
-					url: { type: 'string', description: 'The URL to fetch' }
+					url: { type: 'string', description: 'The URL to fetch' },
+					fields: {
+						type: 'string',
+						description:
+							'JSON only: comma-separated dotted paths to keep ("name,owner.login", "items.url"); arrays are picked per item.'
+					}
 				},
 				required: ['url']
 			}
@@ -153,8 +161,17 @@ registerTool({
 			if (paywall.paywalled) {
 				return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
 			}
-			const cut = cutPage(page, fetchUrlBudget(ctx.backend));
-			return fetchResult(cut.text + fetchCutNote(cut), page.hero_image ?? undefined);
+			const budget = fetchUrlBudget(ctx.backend);
+			const fields = typeof args.fields === 'string' ? args.fields : '';
+			const picked = fields ? selectJsonFields(page.text, fields) : null;
+			// A selection is shorter than the response, so its own length is the one to report.
+			const body = picked === null ? page : { ...page, text: picked, full_length: picked.length };
+			const cut = cutPage(body, budget);
+			const text = cut.text + fetchCutNote(cut);
+			return fetchResult(
+				text + fetchLinks(page, budget - text.length),
+				page.hero_image ?? undefined
+			);
 		} catch (e) {
 			// Plain text, not toolError(): the "Failed to fetch" prefix is how the
 			// loop and the chat store spot an unreadable page (FETCH_FAILURE_PREFIXES).
@@ -247,7 +264,11 @@ registerTool({
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
 			}
 			const note = researchNote(cut, findings.trim().startsWith(NOTHING_FOUND));
-			return fetchResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}${note}`, heroImage);
+			const links = researchLinks(page, findings, focus);
+			return fetchResult(
+				`Source: ${url}\nFocus: ${focus}\n\n${findings}${note}${links}`,
+				heroImage
+			);
 		} catch (e) {
 			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError(`research_url sub-agent for ${url}`, e));

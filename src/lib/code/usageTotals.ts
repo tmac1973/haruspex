@@ -2,8 +2,7 @@
  * A Code session's running count of tokens and cost: every model call its
  * agent and its sub-agents (`delegate`, in a turn or in the background) make,
  * summed across turns and saved with the thread (see
- * `CodeSessionSnapshot.usage`). Specialists and compaction calls are not
- * counted.
+ * `CodeSessionSnapshot.usage`). Compaction calls are not counted.
  *
  * Cost is known only for OpenRouter: the price it reports with each call,
  * or, when a call carries none, one worked out from the model's catalogue
@@ -68,15 +67,49 @@ export function addCall(
 		next.subagentCalls = totals.subagentCalls + 1;
 	}
 	if (!paid) return next;
-	if (typeof usage.cost === 'number' && Number.isFinite(usage.cost)) {
-		next.costUsd = (totals.costUsd ?? 0) + usage.cost;
-	} else {
-		// Unpriced too: the total is short, so it is marked as an estimate.
-		const cost = prices ? prompt * prices.prompt + completion * prices.completion : 0;
-		next.costUsd = (totals.costUsd ?? 0) + cost;
-		next.estimated = true;
-	}
+	next.costUsd = (totals.costUsd ?? 0) + callCostUsd(usage, prices);
+	// Unpriced too: the total is short, so it is marked as an estimate.
+	if (!reportedCost(usage)) next.estimated = true;
 	return next;
+}
+
+/**
+ * `totals` with one call of the session: its agent's, or a sub-agent's.
+ * `session` is how the session's own model is priced: whether it is on
+ * OpenRouter, and its catalogue prices. A sub-agent on the session's model
+ * is priced as the session is. One on a model of its own (`ownModel`, a
+ * subtask profile's) brings its cost with the call, or has none: the
+ * session's prices are another model's.
+ */
+export function addSessionCall(
+	totals: SessionUsage,
+	usage: Usage,
+	session: { openrouter: boolean; prices: () => TokenPrices | null },
+	opts: { subagent?: boolean; ownModel?: boolean } = {}
+): SessionUsage {
+	const subagent = opts.subagent === true;
+	if (subagent && opts.ownModel) {
+		return addCall(totals, usage, reportedCost(usage), null, true);
+	}
+	const paid = session.openrouter || (subagent && reportedCost(usage));
+	const prices = paid && usage.cost === undefined ? session.prices() : null;
+	return addCall(totals, usage, paid, prices, subagent);
+}
+
+/** Whether the server reported what the call cost. */
+function reportedCost(usage: Usage): boolean {
+	return typeof usage.cost === 'number' && Number.isFinite(usage.cost);
+}
+
+/**
+ * What one paid call cost in USD: the price the server reported, else one
+ * worked out from the model's catalogue `prices` (0 without them).
+ */
+export function callCostUsd(usage: Usage, prices: TokenPrices | null): number {
+	if (reportedCost(usage)) return usage.cost as number;
+	const prompt = usage.prompt_tokens || 0;
+	const completion = usage.completion_tokens || 0;
+	return prices ? prompt * prices.prompt + completion * prices.completion : 0;
 }
 
 /** A saved count, or null when there is none or it doesn't parse. */

@@ -15,7 +15,6 @@ import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageModelEntry } from '#lib/image/types.ts';
 import type { VideoModelEntry } from '#lib/videogen/types.ts';
 import { videoModelsFromFields, type LegacyVideoFields } from '#lib/videogen/fields.ts';
-import type { SpecialistEntry } from '#lib/specialists/types.ts';
 import {
 	LEGACY_IMAGE_FIELDS,
 	imageModelsFromFields,
@@ -983,11 +982,6 @@ export interface AppSettings {
 	 */
 	videoModels: VideoModelEntry[];
 	/**
-	 * The specialist models the Code tab's model can hand a job to, edited in
-	 * Settings → Code → Specialists (see `#lib/specialists/entries.ts`).
-	 */
-	specialists: SpecialistEntry[];
-	/**
 	 * Which helpers are on (Settings → Code → Helpers), by helper id; absent
 	 * or false is off. See `#lib/helpers/registry.ts`.
 	 */
@@ -1336,7 +1330,6 @@ const defaults: AppSettings = {
 	generationServers: [],
 	imageModels: [],
 	videoModels: [],
-	specialists: [],
 	codeHelpers: {},
 	codeHelperConfig: {},
 	videoEditingEnabled: false,
@@ -1515,6 +1508,8 @@ function load(): AppSettings {
 				videoGenToolchestModelId,
 				...rest
 			} = parsed;
+			// Specialists were removed; an old list is dropped on the next save.
+			delete rest.specialists;
 			const shellFullAccessDefault: boolean =
 				rest.shellFullAccessDefault ??
 				(typeof shellCodeModeDefault === 'boolean'
@@ -1564,12 +1559,6 @@ function load(): AppSettings {
 							videoGenToolchestApiKeyId,
 							videoGenToolchestModelId
 						}),
-				specialists: Array.isArray(rest.specialists)
-					? rest.specialists.map((e: SpecialistEntry) => ({
-							...e,
-							acceptsImages: e.acceptsImages ?? false
-						}))
-					: [],
 				codeHelpers: booleanRecord(rest.codeHelpers),
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				cameras: storedCameras(rest.cameras),
@@ -1739,11 +1728,6 @@ export function setCameraTrustedServers(urls: string[]): void {
 export function setCameraEventRetentionDays(days: number): void {
 	if (!Number.isFinite(days)) return;
 	commit({ ...settings, cameraEventRetentionDays: clampInt(days, 1, 365, Math.round) });
-}
-
-/** Replace the specialist list (Settings → Code → Specialists). */
-export function setSpecialistEntries(list: SpecialistEntry[]): void {
-	commit({ ...settings, specialists: list });
 }
 
 /**

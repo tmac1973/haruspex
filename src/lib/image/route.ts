@@ -13,6 +13,7 @@ import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/back
 import { backendForEntry } from '#lib/image/registry.ts';
 import { imageEntries, saveImageCaps } from '#lib/image/entries.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
+import { couldNotStart } from '#lib/toolchest/startFailure.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import {
@@ -177,6 +178,18 @@ function passOver(e: unknown): boolean {
 	return e instanceof ImageBackendError && (e.kind === 'unreachable' || e.kind === 'unconfigured');
 }
 
+/**
+ * On the unnamed path, also a server that couldn't start the model (another
+ * holds the GPU, or the VRAM preflight refused it): the next may fit. A model
+ * the chat model named still fails as itself.
+ */
+function passOverAuto(e: unknown): boolean {
+	return (
+		passOver(e) ||
+		(e instanceof ImageBackendError && e.kind === 'rejected' && couldNotStart(e.message))
+	);
+}
+
 export interface RouteOptions {
 	/** The entry the chat model named: it alone is tried. */
 	named?: string;
@@ -293,7 +306,7 @@ export async function routeImage<T>(
 		try {
 			got = await ready(entry, need);
 		} catch (e) {
-			if (!passOver(e)) throw e;
+			if (!passOverAuto(e)) throw e;
 			missed.push({ entry, error: e as ImageBackendError });
 			logDebug('image', `${entry.name} passed over: ${errMessage(e)}`);
 			continue;
@@ -301,7 +314,7 @@ export async function routeImage<T>(
 		try {
 			return { entry, ...got, value: await run(entry, got.backend, got.caps) };
 		} catch (e) {
-			if (!passOver(e)) throw e;
+			if (!passOverAuto(e)) throw e;
 			missed.push({ entry, error: e as ImageBackendError });
 			logDebug('image', `${entry.name} failed, trying the next: ${errMessage(e)}`);
 		}

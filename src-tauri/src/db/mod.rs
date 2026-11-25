@@ -1079,9 +1079,10 @@ impl Database {
             // Each chat's working folder ('' for none). NULL until the
             // frontend hands every older chat the folder they all shared.
             "ALTER TABLE conversations ADD COLUMN working_dir TEXT",
-            // The specialist entry ids a Code session offers, as a JSON array;
-            // NULL means the ones marked on by default (every session before
-            // specialists existed).
+            // Dead column: specialists were removed, and nothing reads or
+            // writes it. Left in place, as with the legacy job columns, so
+            // old databases replay the step and a reverted build finds its
+            // data.
             "ALTER TABLE code_sessions ADD COLUMN specialists TEXT",
             // The helper ids a Code session offers, as a JSON array; NULL
             // means the ones switched on in Settings → Code → Helpers.

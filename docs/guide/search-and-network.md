@@ -19,11 +19,11 @@ Pick one in Settings → Search → **Search provider**:
 | SearXNG | Instance URL | Unlimited, if you host it yourself. |
 | Browser-assisted | Chrome or Chromium | Drives a hidden browser, so it can reach engines that block simple requests (it adds Startpage). |
 
-Free public engines are unreliable: they rate-limit and change their pages. If searches keep failing, use a Brave key or SearXNG. To see how each engine is doing, open the log viewer's **Stats** tab: it shows totals for this session and all time, and a **By day** table of how many searches worked out of how many were tried, so an engine that broke today stands out.
+Free public engines are unreliable: they rate-limit and change their pages. If searches keep failing, use a Brave key or SearXNG. To see how each engine is doing, open the log viewer's **Stats** tab: it shows totals for this session and all time, and a **By day** table of searches that worked, so an engine that broke today stands out.
 
 **Brave Search:** paste the key into **Brave API Key**. It is saved when you leave the field. **Remove key** deletes it.
 
-**Browser-assisted:** any Chromium-based browser works (Chrome, Chromium, Brave, Edge). Haruspex finds it for you; if it doesn't, set **Browser path**. Searches take about twice as long and the browser uses about 1.2 GB of RAM while it runs. It starts when you search and quits when idle. If no browser works, searches fall back to the normal rotation and say so.
+**Browser-assisted:** any Chromium-based browser works (Chrome, Chromium, Brave, Edge). Haruspex finds it for you; if it doesn't, set **Browser path**. Searches take about twice as long and the browser uses about 1.2 GB of RAM while it runs. It starts when you search and quits when idle. It uses the Web Search Proxy. If no browser works, or that proxy needs a password, searches fall back to the normal rotation and say so.
 
 **Result recency** limits results to the past day, week, month or year. The default is Any time.
 
@@ -33,7 +33,7 @@ The deep research button in the chat box makes the assistant search more sources
 
 ## How the assistant reads a page
 
-It reads a page's visible text, or a JSON, XML, CSV or plain-text response as it is, so it can use an API or a feed. A long page is cut to fit the model's context, more for a model with a bigger window, and the assistant is told how much it read. It doesn't run a page's JavaScript, so a page that builds itself in the browser can come back nearly empty. PDFs and other files are downloaded to the working directory and read there.
+It reads a page's title and visible text, with up to 40 links to other pages on the same site, or a JSON, XML, CSV or plain-text response as it is, so it can use an API or a feed. A long page is cut to fit the model's context, more for a model with a bigger window, and the assistant is told how much it read. It doesn't run a page's JavaScript, so a page that builds itself in the browser can come back nearly empty. PDFs and other files are downloaded to the working directory and read there.
 
 ## What pages the assistant may open
 

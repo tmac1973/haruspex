@@ -1,43 +1,54 @@
 /**
- * How a ComfyUI prompt ended, from its `/history` entry. A failed run has
- * empty outputs, so without this every error read as "saved no files" and
- * the model guessed at the cause.
+ * How a ComfyUI prompt ended, from its `/history` entry. A failed prompt still
+ * lands there, usually with empty outputs, so reading only `outputs` turned
+ * "out of memory" into "node saved no files".
  */
 
 import { ImageBackendError } from '#lib/image/types.ts';
 
-/** One prompt's entry in `/history`: what it saved, and how it ended. */
-export interface HistoryRun<O> {
-	outputs?: Record<string, O>;
-	status?: { status_str?: string; messages?: [string, Record<string, unknown>][] };
+/** The part of a `/history` entry that says how the prompt ended. */
+export interface HistoryRun {
+	status?: { status_str?: string; messages?: unknown[] };
 }
 
-/**
- * Why a finished prompt failed, from ComfyUI's own report, or null when it
- * didn't. A failed run has empty outputs, so without this every error read as
- * "saved no files" and the model guessed at the cause.
- */
-export function runFailure(run: HistoryRun<unknown>): string | null {
-	if (run.status?.status_str !== 'error') return null;
-	const messages = run.status.messages ?? [];
-	if (messages.some(([kind]) => kind === 'execution_interrupted')) {
-		return 'ComfyUI stopped the job before it finished.';
-	}
-	const err = messages.find(([kind]) => kind === 'execution_error')?.[1] ?? {};
-	const node = typeof err.node_type === 'string' ? err.node_type : 'a node';
-	const raw = typeof err.exception_message === 'string' ? err.exception_message : '';
-	const first = raw.split('\n')[0].trim();
-	const detail = first.length > 240 ? `${first.slice(0, 240)}…` : first;
-	const what = detail ? `ComfyUI failed in ${node}: ${detail}` : `ComfyUI failed in ${node}.`;
+/** Longest exception message carried into an error; some run to pages. */
+const MAX_EXCEPTION_CHARS = 300;
+
+type Message = [string, Record<string, unknown>];
+
+const isMessage = (m: unknown, kind: string): m is Message =>
+	Array.isArray(m) && m[0] === kind && typeof m[1] === 'object' && m[1] !== null;
+
+/** The node that failed, by type, else by id. */
+function nodeName(detail: Record<string, unknown>): string {
+	if (typeof detail.node_type === 'string' && detail.node_type) return detail.node_type;
+	if (typeof detail.node_id === 'string' && detail.node_id) return `Node ${detail.node_id}`;
+	return 'The workflow';
+}
+
+/** What went wrong in `execution_error`'s detail, in one line. */
+function failureText(detail: Record<string, unknown>): string {
+	const node = nodeName(detail);
+	const raw = typeof detail.exception_message === 'string' ? detail.exception_message : '';
+	// The first line; a traceback follows it.
+	const first = raw.trim().split('\n')[0].trim();
+	const message =
+		first.length > MAX_EXCEPTION_CHARS
+			? `${first.slice(0, MAX_EXCEPTION_CHARS).trimEnd()}…`
+			: first;
+	const what = message ? `${node} failed: ${message}` : `${node} failed on the ComfyUI server.`;
 	return /out of memory/i.test(raw)
 		? `${what} The GPU ran out of memory: a smaller size or a shorter clip needs less.`
 		: what;
 }
 
-/** `run` as `history` and `historyFiles` read it: null while it runs, thrown when it failed. */
-export function finished<O>(run: HistoryRun<O> | undefined): Record<string, O> | null {
-	if (!run) return null;
-	const failure = runFailure(run);
-	if (failure) throw new ImageBackendError('rejected', failure);
-	return run.outputs ?? null;
+/** Throw the failing node's own error when the prompt failed. */
+export function throwIfFailed(run: HistoryRun | undefined): void {
+	if (run?.status?.status_str !== 'error') return;
+	const messages = run.status.messages ?? [];
+	if (messages.some((m) => Array.isArray(m) && m[0] === 'execution_interrupted')) {
+		throw new ImageBackendError('rejected', 'ComfyUI stopped the job before it finished.');
+	}
+	const entry = messages.find((m): m is Message => isMessage(m, 'execution_error'));
+	throw new ImageBackendError('rejected', failureText(entry?.[1] ?? {}));
 }

@@ -9,7 +9,7 @@
 //! subjects, and everything on it is openly licensed.
 
 use super::{strip_tracking_params, ImageSearchResult};
-use crate::proxy::extract::{strip_html_tags, USER_AGENT};
+use crate::proxy::extract::{strip_html_tags, with_cause, USER_AGENT};
 
 /// Types the image cache can actually fetch and display, mirroring
 /// `image_cache::fetch::ACCEPTED_MIME`.
@@ -49,7 +49,12 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Commons search request failed: {}", e.without_url()))?
+        .map_err(|e| {
+            format!(
+                "Commons search request failed: {}",
+                with_cause(&e.without_url())
+            )
+        })?
         .json()
         .await
         .map_err(|e| format!("Commons search JSON parse failed: {}", e.without_url()))?;
@@ -82,7 +87,12 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Commons imageinfo request failed: {}", e.without_url()))?
+        .map_err(|e| {
+            format!(
+                "Commons imageinfo request failed: {}",
+                with_cause(&e.without_url())
+            )
+        })?
         .json()
         .await
         .map_err(|e| format!("Commons imageinfo JSON parse failed: {}", e.without_url()))?;

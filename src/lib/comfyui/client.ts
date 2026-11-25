@@ -23,7 +23,7 @@ import { invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
 import type { ComfyGraph } from '#lib/comfyui/fieldMap.ts';
-import { finished, type HistoryRun } from '#lib/comfyui/runFailure.ts';
+import { throwIfFailed, type HistoryRun } from '#lib/comfyui/runFailure.ts';
 
 /** One HTTP call. Generous: a busy server queues. */
 export const HTTP_TIMEOUT_MS = 120_000;
@@ -304,11 +304,12 @@ export async function history(
 ): Promise<HistoryImage[] | null> {
 	const json = ((await requestJson(cfg, { path: `/history/${promptId}` }, signal)) ?? {}) as Record<
 		string,
-		HistoryRun<{ images?: HistoryImage[] }>
+		HistoryRun & { outputs?: Record<string, { images?: HistoryImage[] }> }
 	>;
-	const outputs = finished(json[promptId]);
-	if (!outputs) return null;
-	const images = outputs[outputNode]?.images;
+	const run = json[promptId];
+	throwIfFailed(run);
+	if (!run?.outputs) return null;
+	const images = run.outputs[outputNode]?.images;
 	if (!images) {
 		throw new ImageBackendError(
 			'rejected',
@@ -331,11 +332,12 @@ export async function historyFiles(
 ): Promise<HistoryImage[] | null> {
 	const json = ((await requestJson(cfg, { path: `/history/${promptId}` }, signal)) ?? {}) as Record<
 		string,
-		HistoryRun<Record<string, unknown>>
+		HistoryRun & { outputs?: Record<string, Record<string, unknown>> }
 	>;
-	const outputs = finished(json[promptId]);
-	if (!outputs) return null;
-	const out = outputs[outputNode] ?? {};
+	const run = json[promptId];
+	throwIfFailed(run);
+	if (!run?.outputs) return null;
+	const out = run.outputs[outputNode] ?? {};
 	const files = ['images', 'gifs', 'videos', 'audio'].flatMap((k) =>
 		Array.isArray(out[k]) ? (out[k] as HistoryImage[]) : []
 	);

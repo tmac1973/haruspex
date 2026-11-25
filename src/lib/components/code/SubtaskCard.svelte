@@ -1,7 +1,9 @@
 <script lang="ts">
 	/**
 	 * A `delegate` call's subtask: its label, status and time, a stop button
-	 * while it runs, the child's own steps, and its report. Finished cards
+	 * while it runs, its tokens and cost, the child's own steps, its latest
+	 * picture (a profile's final sheet, else the newest step thumbnail), and
+	 * its report. Finished cards
 	 * fold their steps away. `compact` (the web client) shows the head and the
 	 * report only.
 	 */
@@ -10,6 +12,7 @@
 	import { formatCommandDuration } from '#lib/code/commandResult.ts';
 	import { copyText } from '#lib/utils/copyText.ts';
 	import { renderMarkdown } from '#lib/markdown.ts';
+	import { formatCost, formatTokens } from '#lib/code/usageTotals.ts';
 
 	let {
 		subtask,
@@ -48,6 +51,18 @@
 		return formatCommandDuration(Math.max(0, end - subtask.startedAt));
 	});
 	const calls = $derived(subtask.steps.length);
+
+	/** "12.3k tokens · $0.42"; the cost only when a call had a price. */
+	const usageLine = $derived.by(() => {
+		if (subtask.tokens === undefined) return null;
+		const tokens = `${formatTokens(subtask.tokens)} tokens`;
+		return subtask.costUsd === undefined ? tokens : `${tokens} · ${formatCost(subtask.costUsd)}`;
+	});
+
+	/** The profile's final sheet, else the newest step's thumbnail. */
+	const picture = $derived(
+		subtask.sheet ?? subtask.steps.findLast((s) => s.thumbDataUrl)?.thumbDataUrl ?? null
+	);
 
 	/** One line on what became of a writing subtask's changes. */
 	const applyLine = $derived.by(() => {
@@ -105,6 +120,9 @@
 			</button>
 		{/if}
 	</div>
+	{#if usageLine}
+		<div class="usage" data-testid="subtask-usage">{usageLine}</div>
+	{/if}
 	{#if !compact && calls > 0}
 		<button class="toggle" onclick={() => (stepsOpen = !showSteps)}>
 			{showSteps ? 'Hide' : 'Show'}
@@ -113,6 +131,9 @@
 		{#if showSteps && steps}
 			<div class="steps">{@render steps(subtask)}</div>
 		{/if}
+	{/if}
+	{#if picture && !compact}
+		<img class="picture" src={picture} alt={subtask.label} data-testid="subtask-picture" />
 	{/if}
 	{#if applyLine}
 		<div class="apply {subtask.apply?.status}" data-testid="subtask-apply">
@@ -216,6 +237,22 @@
 
 	.toggle {
 		margin: 0 10px 6px;
+	}
+
+	.usage {
+		padding: 0 10px 6px;
+		color: var(--text-secondary);
+		font-size: 0.74rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.picture {
+		display: block;
+		width: calc(100% - 20px);
+		height: auto;
+		margin: 0 10px 6px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
 	}
 
 	.steps {

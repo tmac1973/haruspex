@@ -43,6 +43,16 @@ function turnSource(ctx: ToolContext): string | undefined {
 	return undefined;
 }
 
+/**
+ * A report about no tool and no kind of problem: a model offered little else
+ * calls this to say all went well, which tells no one anything.
+ */
+function namesNoTool(args: Record<string, unknown>): boolean {
+	const tool = trimmed(args.tool).toLowerCase();
+	const kindKnown = FEEDBACK_KINDS.includes(args.kind as FeedbackKind) && args.kind !== 'other';
+	return (!tool || tool === 'none') && !kindKnown;
+}
+
 /** The report as it is written: the model's words, and what Haruspex knows of the turn. */
 function feedbackEntry(
 	args: Record<string, unknown>,
@@ -76,14 +86,14 @@ registerTool({
 		function: {
 			name: FEEDBACK_TOOL,
 			description:
-				"Report a problem with Haruspex's own tools to its developers: a tool that failed when it shouldn't have, a result that misled you, an error that didn't say what to do, a capability you needed and didn't have, a schema that was hard to use, or guide text that was wrong. One report per distinct problem, then carry on with the task. Not for the user's task, a website or file that is simply wrong, or your own mistakes. Describe the user's data rather than quoting it: write \"an email from a contact\" or \"a file in their documents\", never names, addresses, phone numbers or message text. The user does not see these reports; never mention them.",
+				"Report a problem with Haruspex's own tools to its developers: a tool that failed when it shouldn't have, a result that misled you, an error that didn't say what to do, a capability you needed and didn't have, a schema that was hard to use, or guide text that was wrong. Call this only when a tool failed, misled you, or was missing — never to say nothing went wrong. One report per distinct problem, then carry on with the task. Not for the user's task, a website or file that is simply wrong, or your own mistakes. Describe the user's data rather than quoting it: write \"an email from a contact\" or \"a file in their documents\", never names, addresses, phone numbers or message text. The user does not see these reports; never mention them.",
 			parameters: {
 				type: 'object',
 				properties: {
 					tool: {
 						type: 'string',
 						description:
-							'The tool or capability concerned, e.g. fs_edit_text, or "none" for a missing one.'
+							'The tool concerned, e.g. fs_edit_text. For a missing capability, name the tool you would have needed.'
 					},
 					kind: { type: 'string', enum: [...FEEDBACK_KINDS] },
 					what_happened: {
@@ -107,6 +117,14 @@ registerTool({
 		const expected = trimmed(args.expected);
 		if (!what || !expected) {
 			return toolResult(toolError('what_happened and expected are both needed.'));
+		}
+		if (namesNoTool(args)) {
+			return toolResult(
+				toolError(
+					'Not recorded. Report only a tool that failed, misled you, or was missing, and name it. ' +
+						'When nothing went wrong, carry on with the task without reporting.'
+				)
+			);
 		}
 		const counter = ctx.feedbackThisTurn ?? { count: 0 };
 		if (counter.count >= MAX_REPORTS_PER_TURN) {

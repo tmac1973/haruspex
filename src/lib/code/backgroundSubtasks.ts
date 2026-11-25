@@ -52,7 +52,7 @@ export interface BackgroundSubtaskHost {
 	/** One ended. */
 	onDone(done: CompletedSubtask): void;
 	/** Each model call one makes. */
-	onUsage?(usage: Usage): void;
+	onUsage?(usage: Usage, ownModel?: boolean): void;
 }
 
 interface Pending {
@@ -113,9 +113,13 @@ export class BackgroundSubtasks {
 			};
 		}
 		const place = this.host.place();
-		// The lease is asked for only when a writer has changes to apply.
+		// A writer's lease is asked for only when it has changes to apply. A
+		// profiled one writes in the folder as it goes, outliving the turn
+		// that started it, so it takes the lease for each write and gives it
+		// back after.
 		let lease: ReturnType<BackgroundSubtaskHost['lease']> | null = null;
-		const guard: CodeWriteGuard = {
+		const perWrite = spec.profile ? perWriteGuard(() => this.host.lease()) : null;
+		const guard: CodeWriteGuard = perWrite?.guard ?? {
 			acquire: () => (lease ??= this.host.lease()).guard.acquire(),
 			changed: (paths) => lease?.guard.changed(paths)
 		};
@@ -137,7 +141,7 @@ export class BackgroundSubtasks {
 			// Nothing but its card's stop, or closing the session, stops it.
 			stoppedByUser: () => signal.aborted,
 			onState: (s) => this.host.onState(s),
-			onUsage: (u) => this.host.onUsage?.(u)
+			onUsage: (u, own) => this.host.onUsage?.(u, own)
 		};
 		try {
 			const res = await runSubtaskSpec(spec, env, initial);
@@ -147,8 +151,49 @@ export class BackgroundSubtasks {
 			return null;
 		} finally {
 			if (lease) await (lease as { done: () => Promise<void> }).done();
+			await perWrite?.settle();
 		}
 	}
+}
+
+/**
+ * A write guard that takes a fresh lease (`lease()`) for each write and
+ * gives it back once the write reports what it changed, so the folder is
+ * held only while a write runs, and the changed files reach whoever holds the
+ * lease then: the running turn, or the session's own notices. `settle` gives
+ * back one a failed write left open, and waits for them all.
+ */
+export function perWriteGuard(lease: BackgroundSubtaskHost['lease']): {
+	guard: CodeWriteGuard;
+	settle: () => Promise<void>;
+} {
+	let open: ReturnType<BackgroundSubtaskHost['lease']> | null = null;
+	const closing: Promise<void>[] = [];
+	const close = () => {
+		if (!open) return;
+		closing.push(open.done());
+		open = null;
+	};
+	return {
+		guard: {
+			acquire: async () => {
+				close();
+				const next = lease();
+				open = next;
+				const refused = await next.guard.acquire();
+				if (refused) close();
+				return refused;
+			},
+			changed: (paths) => {
+				open?.guard.changed(paths);
+				close();
+			}
+		},
+		settle: async () => {
+			close();
+			await Promise.all(closing);
+		}
+	};
 }
 
 /** The fixed opening of a notification turn for finished background subtasks. */

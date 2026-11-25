@@ -1270,7 +1270,7 @@ describe('load-time video model list', () => {
 	});
 });
 
-describe('load-time specialists', () => {
+describe('load-time removed specialists', () => {
 	let priorRaw: string | null;
 
 	beforeEach(() => {
@@ -1286,22 +1286,12 @@ describe('load-time specialists', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+	it('drops a stored specialists list', async () => {
+		const saved = [{ id: 'x', name: 'GLB', kind: 'glb', url: 'http://a:3000', model: 'm' }];
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ specialists: saved }));
 		vi.resetModules();
 		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings().specialists;
-	}
-
-	it('starts empty', async () => {
-		expect(await loadWith({})).toEqual([]);
-	});
-
-	it('gives an entry saved before Accepts images existed the setting off', async () => {
-		const saved = [{ id: 'x', name: 'GLB', kind: 'glb', url: 'http://a:3000', model: 'm' }];
-		expect(await loadWith({ specialists: saved })).toEqual([{ ...saved[0], acceptsImages: false }]);
-		const withImages = [{ ...saved[0], acceptsImages: true }];
-		expect(await loadWith({ specialists: withImages })).toEqual(withImages);
+		expect('specialists' in fresh.getSettings()).toBe(false);
 	});
 });
 
