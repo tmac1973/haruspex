@@ -46,7 +46,10 @@ export async function runTurnCore(
 
 	await runAgentLoop({
 		...loop,
-		onStreamChunk: (chunk) => {
+		onStreamChunk: (chunk, meta) => {
+			// A streamed tool round's text is for display; what becomes the
+			// answer is sent again, unmarked (`streamToolRounds`).
+			if (meta?.provisional) return;
 			streamingContent = appendStreamDelta(streamingContent, chunk.delta, thinkState);
 			hooks.onAssistantDelta?.(streamingContent);
 		},

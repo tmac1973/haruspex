@@ -363,6 +363,19 @@ export class ApiError extends Error {
 }
 
 /**
+ * The provider ended a whole (non-streamed) response with finish reason
+ * `error` and nothing in it. OpenRouter answers this way, with HTTP 200, when
+ * the upstream call fails or times out: seen after five minutes on a long
+ * Gemini write. It is not an answer, so it is thrown, and retried once.
+ */
+export class ProviderEndedError extends ApiError {
+	constructor(message: string) {
+		super(message, 502);
+		this.name = 'ProviderEndedError';
+	}
+}
+
+/**
  * The answer stopped at the per-response output cap (finish reason `length`).
  * Distinct from other failures because what was written so far is real
  * output: a caller that can use a partial answer (a research step) keeps it
@@ -660,6 +673,17 @@ function servedByOf(parsed: unknown, model: string | undefined): ServedBy | unde
 	return model && typeof provider === 'string' && provider ? { provider, model } : undefined;
 }
 
+/** What a `ProviderEndedError` says, with the provider's own message when it gave one. */
+function providerEndedMessage(error: unknown): string {
+	const detail =
+		error &&
+		typeof error === 'object' &&
+		typeof (error as { message?: unknown }).message === 'string'
+			? (error as { message: string }).message
+			: '';
+	return `The model's provider ended the response with an error${detail ? `: ${detail}` : ''}.`;
+}
+
 /** One try's outcome: the OK response, or a failure worth retrying. */
 type ChatTry = { response: Response } | { error: ApiError; retryAfterMs?: number };
 
@@ -874,6 +898,22 @@ export async function chatCompletion(
 	signal?: AbortSignal,
 	port?: number
 ): Promise<ChatCompletionResponse> {
+	try {
+		return await chatCompletionOnce(options, signal, port);
+	} catch (e) {
+		if (!(e instanceof ProviderEndedError) || signal?.aborted) throw e;
+		logDebug('api', 'non-stream request ended in a provider error; sending it once more', {
+			reason: e.message
+		});
+		return chatCompletionOnce(options, signal, port);
+	}
+}
+
+async function chatCompletionOnce(
+	options: ChatCompletionOptions,
+	signal?: AbortSignal,
+	port?: number
+): Promise<ChatCompletionResponse> {
 	// Stored keys and llama-server's key are read once per run; wait for that.
 	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
@@ -946,6 +986,9 @@ export async function chatCompletion(
 		content: isVerbosePayloads() ? content : undefined,
 		usage: data.usage
 	});
+	if (choice.finish_reason === 'error' && !content && !choice.message?.tool_calls?.length) {
+		throw new ProviderEndedError(providerEndedMessage(choice.error ?? data.error));
+	}
 
 	return {
 		content: fullContent,

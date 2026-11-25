@@ -43,3 +43,23 @@ describe('runTurnCore and a cut-off answer', () => {
 		await expect(turn(true)).rejects.toBeInstanceOf(ResponseCutOffError);
 	});
 });
+
+describe('runTurnCore with streamed tool rounds', () => {
+	it('builds the answer only from unmarked chunks', async () => {
+		const deltas: string[] = [];
+		loop.run.mockImplementation(async (o: AgentLoopOptions) => {
+			o.onStreamChunk(
+				{ delta: { content: 'Reading the module first.' }, finish_reason: null },
+				{ provisional: true }
+			);
+			o.onStreamChunk({ delta: { content: 'Built the crate.' }, finish_reason: 'stop' });
+			o.onComplete();
+		});
+		const out = await runTurnCore({ messages: [] } as never, {
+			finalize: (raw) => raw,
+			onAssistantDelta: (full) => deltas.push(full)
+		});
+		expect(out.finalText).toBe('Built the crate.');
+		expect(deltas).toEqual(['Built the crate.']);
+	});
+});

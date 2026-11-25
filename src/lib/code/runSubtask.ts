@@ -406,6 +406,10 @@ function profiledLoop(
 		// A delegate writes a whole module in one call: the global response cap
 		// (8K by default) cuts that off, so it scales with the model's window.
 		scaleResponseToContext: true,
+		// Streamed, as the Code tab's own turns are: a long write sent whole
+		// timed out after five minutes on OpenRouter with nothing back, where
+		// the same call streamed took one.
+		streamToolRounds: true,
 		// One more than the rounds left: the caps stop it first, with no
 		// wrap-up call of the loop's own before the report call.
 		maxIterations: tools ? caps.roundsLeft + 1 : 1,

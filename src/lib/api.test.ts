@@ -918,3 +918,45 @@ describe('unansweredNotice', () => {
 		expect(unansweredNotice([user('a'), { role: 'assistant', content: 'done' }])).toBeNull();
 	});
 });
+
+describe('chatCompletion and a provider error', () => {
+	const ended = {
+		ok: true,
+		json: async () => ({
+			choices: [
+				{
+					message: { content: '', role: 'assistant' },
+					finish_reason: 'error',
+					error: { message: 'Upstream timed out' }
+				}
+			]
+		})
+	};
+	const answered = {
+		ok: true,
+		json: async () => ({
+			choices: [{ message: { content: 'Done.', role: 'assistant' }, finish_reason: 'stop' }]
+		})
+	};
+
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('sends the request once more when the provider ends it with an error', async () => {
+		const fetch = vi.fn().mockResolvedValueOnce(ended).mockResolvedValueOnce(answered);
+		vi.stubGlobal('fetch', fetch);
+		const result = await chatCompletion({ messages: [] });
+		expect(result.content).toBe('Done.');
+		expect(fetch).toHaveBeenCalledTimes(2);
+		vi.unstubAllGlobals();
+	});
+
+	it('throws, naming the provider’s message, when it happens twice', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ended));
+		await expect(chatCompletion({ messages: [] })).rejects.toThrow(
+			"The model's provider ended the response with an error: Upstream timed out."
+		);
+		vi.unstubAllGlobals();
+	});
+});
