@@ -206,6 +206,7 @@ pub(crate) struct BrowserUnavailable {
 /// which the caller turns into a fallback to the plain rotation. Engine-level
 /// failures are handled here exactly as they are over HTTP: cool the engine
 /// down and try the next.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn search_via_browser(
     session: &BrowserSession,
     state: &ProxyState,

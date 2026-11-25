@@ -472,7 +472,8 @@ fn status_error(status: reqwest::StatusCode) -> String {
 }
 
 /// The page's visible text, whitespace tidied, uncut.
-pub(super) fn extract_text(html: &str) -> String {
+#[cfg(test)]
+fn extract_text(html: &str) -> String {
     document_text(&Html::parse_document(html), None)
 }
 
