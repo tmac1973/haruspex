@@ -1,6 +1,6 @@
 ---
 title: Notebook files and Python
-description: Files and pictures in a notebook, Python cards that read its tables, exporting, importing, printing and emailing notebooks (PDF, Word, web page, Markdown, Jupyter, CSV, Excel), and backups.
+description: Files and pictures in a notebook, Python cards, exporting, importing, printing, emailing and filing notebooks on GitHub (PDF, Word, web page, Markdown, Jupyter, CSV, Excel), and backups.
 ---
 
 # Notebook files and Python
@@ -22,6 +22,12 @@ What a notebook can hold besides text, tables and checklists, and how to get not
 ## Print or email a notebook
 
 **⋯ → Print…** on a notebook opens it as a page, pictures inside, and then the print dialog; **Print…** in that window opens the dialog again. **⋯ → Email…** opens a new message with the notebook as formatted text, in the **Review email** window: add the recipients and click **Send**. Its pictures and plots go inside the message and its file cards are attached; **Attach as PDF** adds the notebook as a PDF too. Email shows only when an email account has **Allow sending** on (see the `email` page). A card's **⋯ → Print card…** and **Email card…** do the same for that card alone. Neither is offered for a notebook on another computer.
+
+## File a notebook on GitHub
+
+With the GitHub server running (Settings → MCP servers, see the `integrations` page), a notebook's **⋯ → File as GitHub issue…** opens **File on GitHub** with the notebook as the issue's text. **⋯ → Add to a GitHub issue…** posts it as a comment instead: give the issue's number or paste its link. A card's menu has the same two for that card alone.
+
+Pick the repository (the one you used last comes first), edit the title and text, tick any of the repository's labels, and click **Create issue** or **Add comment**. A notice links to it on GitHub. Tables, checklists and code show on GitHub as they do here. Pictures and files are named in the text but not uploaded, since GitHub's API can't take them. The token you gave the GitHub server needs permission to write issues in that repository.
 
 ## Import notes and tables
 

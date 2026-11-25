@@ -18,7 +18,8 @@
 	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
 	import { exportNotebook, exportTable, type NotebookFormat } from '#lib/notebooks/export.ts';
 	import { importFiles } from '#lib/notebooks/import.ts';
-	import { emailNotebook, printNotebook } from '#lib/notebooks/share.ts';
+	import { emailNotebook, fileOnGitHub, printNotebook } from '#lib/notebooks/share.ts';
+	import { githubReady } from '#lib/github/issues.ts';
 	import { canEmail } from '#lib/share/email.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import {
@@ -73,6 +74,18 @@
 		const items = [{ label: `Print${what}…`, run: () => void printNotebook(id, card) }];
 		if (canEmail(getLiveSettings())) {
 			items.push({ label: `Email${what}…`, run: () => void emailNotebook(id, card) });
+		}
+		if (githubReady()) {
+			items.push(
+				{
+					label: `File${what} as GitHub issue…`,
+					run: () => void fileOnGitHub(id, card, 'issue')
+				},
+				{
+					label: `Add${what} to a GitHub issue…`,
+					run: () => void fileOnGitHub(id, card, 'comment')
+				}
+			);
 		}
 		return items;
 	}

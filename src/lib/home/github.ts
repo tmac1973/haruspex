@@ -131,8 +131,11 @@ export function serverNotice(): string | null {
 	return null;
 }
 
-/** One tool call, its text parsed as JSON. Throws on a tool error or a question. */
-async function callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+/**
+ * One tool call, its reply's text. Throws on a tool error or a question.
+ * Also used by Notebooks' File as GitHub issue (`github/issues.ts`).
+ */
+export async function callGitHubTool(name: string, args: Record<string, unknown>): Promise<string> {
 	const server = githubServer();
 	if (!server) throw new Error('No GitHub server is set up.');
 	const outcome = await invoke<McpCallOutcome>('mcp_call_tool', {
@@ -142,11 +145,16 @@ async function callTool<T>(name: string, args: Record<string, unknown>): Promise
 		inputResponses: null,
 		requestState: null
 	});
-	return parseOutcome<T>(outcome);
+	return outcomeText(outcome);
 }
 
-/** A tool reply's JSON. Exported for the tests. */
-export function parseOutcome<T>(outcome: McpCallOutcome): T {
+/** One tool call, its text parsed as JSON. */
+async function callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+	return JSON.parse(await callGitHubTool(name, args)) as T;
+}
+
+/** A tool reply's text. Exported for the tests. */
+export function outcomeText(outcome: McpCallOutcome): string {
 	if (outcome.type !== 'complete') {
 		throw new Error('GitHub asked for input; open it from a chat instead.');
 	}
@@ -157,7 +165,12 @@ export function parseOutcome<T>(outcome: McpCallOutcome): T {
 				.join('')
 		: '';
 	if (outcome.isError) throw new Error(text || 'GitHub returned an error.');
-	return JSON.parse(text) as T;
+	return text;
+}
+
+/** A tool reply's JSON. Exported for the tests. */
+export function parseOutcome<T>(outcome: McpCallOutcome): T {
+	return JSON.parse(outcomeText(outcome)) as T;
 }
 
 // ── Replies (v1.12.0) ───────────────────────────────────────────────────

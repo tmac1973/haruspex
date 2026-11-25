@@ -146,3 +146,20 @@ Example output:
 A print window shows the notebook as a white page, with the system print dialog open over it. Email opens a Review email window with the subject "Models — Speakers" and the table as formatted text, ready for a recipient. Tick **Attach as PDF** to send a PDF of it too.
 
 Read more: notebook-files, email
+
+## File a card as a GitHub issue
+
+Turn a checklist or a table of findings into an issue, or add it to one that's already open, without copying and pasting.
+
+Tab: Notebooks
+Required settings: The GitHub server in Settings → MCP servers, with a token that can write issues
+
+Prompt:
+
+> ⋯ → File card as GitHub issue… on the "Bugs to fix" checklist; or ⋯ → Add card to a GitHub issue… and paste the issue's link.
+
+Example output:
+
+**File on GitHub** opens with the repository you used last, the card's title and its checklist as the issue's text. Tick the `bug` label and click **Create issue**: "Opened an issue in tmac1973/haruspex." with **Open** to see it.
+
+Read more: notebook-files
