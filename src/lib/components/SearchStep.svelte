@@ -204,8 +204,8 @@
 				<!-- Not a tool call: a record of what memory put in the prompt.
 				     Rendered here so it sits with the turn it shaped. -->
 				<MemoryRecallStep {step} />
-			{:else if step.toolName === 'delegate' && step.subtask}
-				<!-- A job's subtask (the Code tab draws its own, in CodeSteps). -->
+			{:else if step.subtask}
+				<!-- A subtask's card (delegate, delegate_3d); the Code tab draws its own, in CodeSteps. -->
 				<SubtaskCard subtask={step.subtask}>
 					{#snippet steps(s: SubtaskState)}
 						<SearchStepList steps={s.steps} {pathLinks} {runControls} />

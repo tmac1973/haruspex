@@ -123,7 +123,7 @@
 			if (step.lead?.trim()) out.push({ kind: 'lead', text: step.lead.trim() });
 			const diff = diffOf(step);
 			const previewed = previewedOf(step);
-			if (step.toolName === 'delegate' && step.subtask) {
+			if (step.subtask) {
 				out.push({ kind: 'subtask', subtask: step.subtask });
 			} else if (COMMAND_TOOLS.has(step.toolName)) out.push({ kind: 'command', step });
 			else if (diff) out.push({ kind: 'diff', step, diff });
