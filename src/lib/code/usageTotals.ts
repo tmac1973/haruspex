@@ -73,6 +73,29 @@ export function addCall(
 	return next;
 }
 
+/**
+ * `totals` with one call of the session: its agent's, or a sub-agent's.
+ * `session` is how the session's own model is priced: whether it is on
+ * OpenRouter, and its catalogue prices. A sub-agent on the session's model
+ * is priced as the session is. One on a model of its own (`ownModel`, a
+ * subtask profile's) brings its cost with the call, or has none: the
+ * session's prices are another model's.
+ */
+export function addSessionCall(
+	totals: SessionUsage,
+	usage: Usage,
+	session: { openrouter: boolean; prices: () => TokenPrices | null },
+	opts: { subagent?: boolean; ownModel?: boolean } = {}
+): SessionUsage {
+	const subagent = opts.subagent === true;
+	if (subagent && opts.ownModel) {
+		return addCall(totals, usage, reportedCost(usage), null, true);
+	}
+	const paid = session.openrouter || (subagent && reportedCost(usage));
+	const prices = paid && usage.cost === undefined ? session.prices() : null;
+	return addCall(totals, usage, paid, prices, subagent);
+}
+
 /** Whether the server reported what the call cost. */
 function reportedCost(usage: Usage): boolean {
 	return typeof usage.cost === 'number' && Number.isFinite(usage.cost);

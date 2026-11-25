@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
 	runSubtaskSpec: vi.fn(),
 	finalCheck3d: vi.fn(),
 	files: new Set<string>(),
+	contents: new Map<string, string>(),
 	config: {} as Record<string, unknown>
 }));
 
@@ -16,7 +17,8 @@ vi.mock('@tauri-apps/api/core', async () =>
 		fs_read_bytes: (a) => {
 			const path = (a as { relPath: string }).relPath;
 			if (!m.files.has(path)) throw 'No such file';
-			return path.includes('huge') ? { length: 9 * 1024 * 1024 } : [1, 2, 3];
+			if (path.includes('huge')) return { length: 9 * 1024 * 1024 };
+			return [...new TextEncoder().encode(m.contents.get(path) ?? 'export default 1;')];
 		},
 		fs_read_image: (a) => `data:image/jpeg;base64,${(a as { relPath: string }).relPath}`
 	})
@@ -38,6 +40,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 
 import {
 	DELEGATE_3D_TOOLS,
+	finalHost,
 	delegate3dNudge,
 	delegate3dResultText,
 	executeDelegate3d
@@ -76,11 +79,13 @@ const errorOf = (out: { result: string }) => (JSON.parse(out.result) as { error:
 beforeEach(() => {
 	m.config = { backend, maxRounds: 40, maxCostUsd: 2 };
 	m.files.clear();
+	m.contents.clear();
 	m.finalCheck3d.mockReset().mockResolvedValue(clean);
 	m.runSubtaskSpec.mockReset().mockImplementation(async (spec: SubtaskSpec) => {
 		const fin = await spec.profile!.finish!(
 			{ outcome: 'done', report: 'Built a crate.', steps: [], stopReason: 'complete' },
-			{ tokens: 1200, costUsd: 0.05 }
+			{ tokens: 1200, costUsd: 0.05 },
+			{ stoppedByUser: false }
 		);
 		return { text: fin.text, failed: false, state: {}, png: fin.png };
 	});
@@ -157,10 +162,10 @@ describe('delegate_3d’s profile', () => {
 		await call({});
 		const done = lastSpec().profile!.doneCheck!;
 		m.finalCheck3d.mockResolvedValueOnce(failing);
-		expect(await done([])).toBe(
+		expect(await done([], {})).toBe(
 			'The final check still fails:\n- line 3: boom\nFix them, run check_3d, then give your report.'
 		);
-		expect(await done([])).toBeNull();
+		expect(await done([], {})).toBeNull();
 		const [files] = m.finalCheck3d.mock.calls[0];
 		expect(files).toEqual({
 			module: 'assets/crate.js',
@@ -231,5 +236,90 @@ describe('delegate_3d’s result', () => {
 
 	it('has no nudge for a clean check', () => {
 		expect(delegate3dNudge(clean)).toBeNull();
+	});
+});
+
+describe('delegate_3d review fixes', () => {
+	it('keeps the delegate’s last check_3d options in the final check, without clip', async () => {
+		await call({});
+		const profile = lastSpec().profile!;
+		m.finalCheck3d.mockClear();
+		const steps = [
+			{ toolName: 'check_3d', args: { path: 'assets/crate.js', height: 2 } },
+			{
+				toolName: 'check_3d',
+				args: {
+					path: './assets/crate.js',
+					height: 0.6,
+					ground: true,
+					clips: { Hover: { airborne: true } },
+					clip: 'Hover'
+				}
+			},
+			{ toolName: 'check_3d', args: { path: 'assets/other.js', height: 9 } }
+		];
+		await profile.doneCheck!(steps as never, {});
+		expect(m.finalCheck3d.mock.calls[0][2]).toEqual({
+			height: 0.6,
+			ground: true,
+			clips: { Hover: { airborne: true } }
+		});
+		m.finalCheck3d.mockClear();
+		await profile.finish!(
+			{ outcome: 'done', report: '', steps: steps as never, stopReason: null },
+			{ tokens: 0, costUsd: null },
+			{ stoppedByUser: false }
+		);
+		expect(m.finalCheck3d.mock.calls[0][2]).toMatchObject({ height: 0.6, ground: true });
+	});
+
+	it('writes the final GLB under the folder lease and reports it', async () => {
+		const guard = { acquire: vi.fn(async () => null), changed: vi.fn() };
+		const files = { module: 'a.js', anim: 'a.anim.js', glb: 'a.glb' };
+		const host = finalHost(ctx(), files, guard);
+		await host.write('/proj/a.glb', new Uint8Array([1]));
+		expect(guard.acquire).toHaveBeenCalledTimes(1);
+		expect(guard.changed).toHaveBeenCalledWith(['a.glb']);
+		guard.acquire.mockResolvedValueOnce('Another session is writing here.' as never);
+		expect(await host.write('/proj/a.glb', new Uint8Array([1]))).toBe(
+			'Another session is writing here.'
+		);
+		expect(guard.changed).toHaveBeenCalledTimes(1);
+	});
+
+	it('passes the turn’s write guard to the final check', async () => {
+		const guard = { acquire: vi.fn(async () => null), changed: vi.fn() };
+		await call({});
+		m.finalCheck3d.mockClear();
+		await lastSpec().profile!.doneCheck!([], { guard });
+		const host = m.finalCheck3d.mock.calls[0][1];
+		await host.write('/proj/assets/crate.glb', new Uint8Array([1]));
+		expect(guard.changed).toHaveBeenCalledWith(['assets/crate.glb']);
+	});
+
+	it('says the user stopped it, as delegate does', () => {
+		const res = { outcome: 'stopped' as const, report: '', steps: [], stopReason: null };
+		const usage = { tokens: 0, costUsd: null };
+		expect(delegate3dResultText('3D', res, failing, [], usage, true)).toContain(
+			'the user stopped it; do not start it again.'
+		);
+		expect(delegate3dResultText('3D', res, failing, [], usage, false)).toContain(
+			'stopped before it finished.'
+		);
+	});
+
+	it('hands the turn’s slot to the subtask, to give back while it runs elsewhere', async () => {
+		const turnSlot = { held: true, release: vi.fn(), reacquire: vi.fn(async () => {}) };
+		await call({}, ctx({ turnSlot }));
+		expect(m.runSubtaskSpec.mock.calls[0][1].parentSlot).toBe(turnSlot);
+	});
+
+	it('refuses a path whose module is some other script', async () => {
+		m.files.add('assets/crate.js');
+		m.contents.set('assets/crate.js', 'const player = {};\nmodule.exports = player;');
+		expect(errorOf(await call({}))).toMatch(
+			/assets\/crate\.js already exists and is not a build or animation module.*Pick another name/
+		);
+		expect(m.runSubtaskSpec).not.toHaveBeenCalled();
 	});
 });

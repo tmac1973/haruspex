@@ -198,6 +198,7 @@ export async function executeToolCalls(
 				backend: ctx.backend,
 				runInSlot,
 				releaseSlot: ctx.slot && !batchUsesModel ? releaseSlot : undefined,
+				turnSlot: ctx.slot,
 				askUser: ctx.askUser,
 				deferredTools: ctx.deferredTools,
 				skills: ctx.skills,

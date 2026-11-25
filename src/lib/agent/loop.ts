@@ -223,7 +223,7 @@ export interface AgentLoopOptions {
 	/** A `delegate` call's subtask changed: its card's state, for `call`'s step. */
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
 	/** See ToolContext.onSubtaskUsage. */
-	onSubtaskUsage?: (usage: Usage) => void;
+	onSubtaskUsage?: (usage: Usage, ownModel?: boolean) => void;
 	/** Stop handles for the turn's subtasks; see ToolContext.subtaskStops. */
 	subtaskStops?: SubtaskStops;
 	/** See ToolContext.startBackgroundSubtask. */

@@ -71,7 +71,12 @@ import {
 import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
 import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
-import { addCall, catalogPrices, emptyUsage, type SessionUsage } from '#lib/code/usageTotals.ts';
+import {
+	addSessionCall,
+	catalogPrices,
+	emptyUsage,
+	type SessionUsage
+} from '#lib/code/usageTotals.ts';
 import { getOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { registerCodeOpener } from '#lib/code/bridge.ts';
@@ -357,7 +362,7 @@ export class CodeSession implements CodeSessionView {
 				this.backgroundSubtaskCount = this.backgroundSubtasks.active;
 				void this.flushWatchNotifications();
 			},
-			onUsage: (usage) => this.countCall(usage, true)
+			onUsage: (usage, own) => this.countCall(usage, true, own)
 		});
 		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
 		this.unwatchTasks = setTaskHandler(`code:${this.id}`, () => {
@@ -1021,7 +1026,7 @@ export class CodeSession implements CodeSessionView {
 					};
 					this.countCall(usage);
 				},
-				onSubtaskUsage: (usage) => this.countCall(usage, true),
+				onSubtaskUsage: (usage, own) => this.countCall(usage, true, own),
 				onContextManaged: (info) => {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
 				},
@@ -1222,15 +1227,13 @@ export class CodeSession implements CodeSessionView {
 	}
 
 	/** Add one model call of the session's agent, or of a sub-agent, to `totals`. */
-	private countCall(usage: Usage, subagent = false): void {
+	private countCall(usage: Usage, subagent = false, ownModel = false): void {
 		const descriptor = resolveBackendDescriptor(this.backend ?? undefined);
-		// A sub-agent on a model of its own (a subtask profile's) brings its price.
-		const paid = descriptor.kind === 'openrouter' || (subagent && typeof usage.cost === 'number');
-		const prices =
-			paid && usage.cost === undefined
-				? catalogPrices(getOpenRouterCatalog(), descriptor.modelId)
-				: null;
-		this.totals = addCall(this.totals, usage, paid, prices, subagent);
+		const session = {
+			openrouter: descriptor.kind === 'openrouter',
+			prices: () => catalogPrices(getOpenRouterCatalog(), descriptor.modelId)
+		};
+		this.totals = addSessionCall(this.totals, usage, session, { subagent, ownModel });
 	}
 
 	/**

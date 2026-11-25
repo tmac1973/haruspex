@@ -6,7 +6,7 @@ const glb = vi.hoisted(() => ({ checkGlb: vi.fn() }));
 vi.mock('#lib/glb/check.ts', () => glb);
 
 import type { Check3dHost } from './call';
-import { finalCheck3d, MODULE_NEVER_WRITTEN } from './delegateCheck';
+import { finalCheck3d, lastCheckOptions, MODULE_NEVER_WRITTEN } from './delegateCheck';
 
 const GLB = new Uint8Array([1, 2, 3]);
 const enc = (s: string) => [...new TextEncoder().encode(s)];
@@ -84,5 +84,33 @@ describe('finalCheck3d', () => {
 		});
 		expect(MODULE_NEVER_WRITTEN).toBe('The module was never written.');
 		expect(runner.runBuildModule).not.toHaveBeenCalled();
+	});
+});
+
+describe('the delegate’s own check options', () => {
+	it('come from its last check_3d on the module, without clip or view', () => {
+		const steps = [
+			{ toolName: 'check_3d', args: { path: 'assets/crate.js', height: 2 } },
+			{ toolName: 'fs_write_text', args: { path: 'assets/crate.js' } },
+			{
+				toolName: 'check_3d',
+				args: { path: './assets/crate.js', ground: true, clip: 'Walk', view: 'head', out: 'x.glb' }
+			},
+			{ toolName: 'check_3d', args: { path: 'assets/barrel.js', height: 1 } }
+		];
+		expect(lastCheckOptions(steps, 'assets/crate.js')).toEqual({ ground: true });
+		expect(lastCheckOptions([], 'assets/crate.js')).toEqual({});
+	});
+
+	it('reach the build and the check, so a scaled GLB stays scaled', async () => {
+		files.set('/proj/assets/crate.js', enc('build'));
+		const clips = { Hover: { loop: true, airborne: true } };
+		await finalCheck3d(paths, host(), { height: 0.6, ground: true, clips });
+		expect(glb.checkGlb.mock.calls[0][1]).toMatchObject({
+			height: 0.6,
+			ground: true,
+			clips
+		});
+		expect(files.has('/proj/assets/crate.glb')).toBe(true);
 	});
 });

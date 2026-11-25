@@ -66,7 +66,7 @@ export { withNotice };
 import { logDebug } from '#lib/debugLog.ts';
 import { compactCodeThread, compactionDue, modelThread } from '#lib/code/compaction.ts';
 import type { CodeCompaction } from '#lib/code/session.ts';
-import { helperPrompt, sessionHelpers } from '#lib/helpers/registry.ts';
+import { helperPrompts, sessionHelpers } from '#lib/helpers/registry.ts';
 import { searchReranked } from '#lib/helpers/search/config.ts';
 
 export interface CodeTurnOptions {
@@ -165,7 +165,7 @@ export interface CodeTurnOptions {
 	/** A subtask's card changed, for `call`'s step (`AgentLoopOptions.onSubtaskUpdate`). */
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
 	/** Each model call a `delegate` subtask makes (`ToolContext.onSubtaskUsage`). */
-	onSubtaskUsage?: (usage: Usage) => void;
+	onSubtaskUsage?: (usage: Usage, ownModel?: boolean) => void;
 	/** The session's stop handles for its subtasks. */
 	subtaskStops?: SubtaskStops;
 	/** Hand a background subtask to the session (`ToolContext.startBackgroundSubtask`). */
@@ -480,7 +480,7 @@ export async function prepareSystem(
 		delegate: delegateModes(o),
 		subtask: o.subtask,
 		deferred: turnTools?.deferredTools,
-		helpers: helpers.map((h) => ({ id: h.id, prompt: helperPrompt(h) })),
+		helpers: helperPrompts(helpers, o.readOnly),
 		searchFirst: helpers.some((h) => h.id === 'search') && searchReranked()
 	});
 	return { system, skills, turnTools };

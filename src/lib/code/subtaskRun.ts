@@ -9,6 +9,7 @@ import type { BackendOverride, Usage } from '#lib/api.ts';
 import type { CallStats } from '#lib/agent/loop.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
+import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { spillIfLarge } from '#lib/agent/tools/_ptyExec.ts';
 import { runSubtask, type SubtaskResult } from '#lib/code/runSubtask.ts';
 import {
@@ -73,6 +74,8 @@ export interface SubtaskEnv {
 	/** Names the session in approval prompts; the subtask adds its label. */
 	requester?: () => string;
 	runInSlot?: SlotLender;
+	/** The parent turn's own slot (`SubtaskOptions.parentSlot`); absent in the background. */
+	parentSlot?: HeldSlot;
 	/** The session's write lease, for applying a writer's changes. */
 	guard?: CodeWriteGuard;
 	/** The subtask's own stop. */
@@ -82,7 +85,8 @@ export interface SubtaskEnv {
 	/** The card changed. */
 	onState: (state: SubtaskState) => void;
 	/** Each model call the subtask makes. */
-	onUsage?: (usage: Usage) => void;
+	/** Each model call the subtask makes; `ownModel` when it ran on a profile's model. */
+	onUsage?: (usage: Usage, ownModel?: boolean) => void;
 }
 
 export interface SubtaskRunResult {
@@ -212,6 +216,7 @@ export async function runSubtaskSpec(
 		mode: spec.mode,
 		worktree: wt ? { root: wt.root, linked: wt.linked } : undefined,
 		runInSlot: env.runInSlot,
+		parentSlot: env.parentSlot,
 		requester: () => `${parent?.() ?? 'Code'} · subtask "${spec.label}"`,
 		signal: env.signal,
 		profile,
@@ -221,13 +226,16 @@ export async function runSubtaskSpec(
 		onApprovalWait: (waiting) => publish(awaitingApproval(state, waiting)),
 		onUsage: (usage) => {
 			publish(withUsage(state, usage, subtaskCallCost(usage, callBackend)));
-			env.onUsage?.(usage);
+			env.onUsage?.(usage, profile !== undefined);
 		}
 	});
 	const applied = wt ? await bringBack(wt, res, env) : null;
 	if (applied) state = withApply(state, applied.state);
 	const finished = profile?.finish
-		? await finishProfile(profile, res, state)
+		? await finishProfile(profile, res, state, {
+				guard: env.guard,
+				stoppedByUser: env.stoppedByUser()
+			})
 		: { text: await resultText(spec.label, res, env.stoppedByUser(), applied) };
 	if (finished.png) state = { ...state, sheet: finished.png };
 	publish(
@@ -250,11 +258,12 @@ export async function runSubtaskSpec(
 async function finishProfile(
 	profile: SubtaskProfile,
 	res: SubtaskResult,
-	state: SubtaskState
+	state: SubtaskState,
+	run: Parameters<NonNullable<SubtaskProfile['finish']>>[2]
 ): Promise<{ text: string; png?: string }> {
 	try {
 		const finish = profile.finish as NonNullable<SubtaskProfile['finish']>;
-		return await finish(res, { tokens: state.tokens ?? 0, costUsd: state.costUsd ?? null });
+		return await finish(res, { tokens: state.tokens ?? 0, costUsd: state.costUsd ?? null }, run);
 	} catch (e) {
 		return {
 			text: `The subtask ended, but its result could not be put together: ${errMessage(e)}`

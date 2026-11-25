@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	addCall,
+	addSessionCall,
 	callCostUsd,
 	catalogPrices,
 	emptyUsage,
@@ -81,5 +82,26 @@ describe('callCostUsd', () => {
 		expect(callCostUsd(call(100, 10, 0.5), prices)).toBe(0.5);
 		expect(callCostUsd(call(100, 10), prices)).toBeCloseTo(0.12);
 		expect(callCostUsd(call(100, 10), null)).toBe(0);
+	});
+});
+
+describe('addSessionCall', () => {
+	const prices = { prompt: 0.001, completion: 0.002 };
+	const openrouter = { openrouter: true, prices: () => prices };
+	const local = { openrouter: false, prices: () => null };
+
+	it('prices the session’s own calls, and a sub-agent on its model, by the session', () => {
+		expect(addSessionCall(emptyUsage(), call(100, 10), openrouter).costUsd).toBeCloseTo(0.12);
+		const sub = addSessionCall(emptyUsage(), call(100, 10), openrouter, { subagent: true });
+		expect(sub.costUsd).toBeCloseTo(0.12);
+		expect(sub.subagentCalls).toBe(1);
+	});
+
+	it('never prices a sub-agent on its own model by the session’s catalogue entry', () => {
+		const own = { subagent: true, ownModel: true };
+		const unpriced = addSessionCall(emptyUsage(), call(100, 10), openrouter, own);
+		expect(unpriced).toMatchObject({ costUsd: null, estimated: false, subagentTokens: 110 });
+		const priced = addSessionCall(emptyUsage(), call(100, 10, 0.5), local, own);
+		expect(priced.costUsd).toBe(0.5);
 	});
 });

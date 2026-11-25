@@ -38,6 +38,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 
 import {
 	capReport,
+	onOwnLane,
 	runSubtask,
 	stoppedShort,
 	SUBTASK_MAX_ROUNDS,
@@ -512,6 +513,43 @@ describe('runSubtask with a profile', () => {
 			expect.any(Function)
 		);
 		expect(lent).not.toHaveBeenCalled();
+	});
+
+	it('gives the parent’s slot back while it runs on another lane, then takes it again', async () => {
+		scripted([1]);
+		const order: string[] = [];
+		const parentSlot = {
+			held: true,
+			release: vi.fn(() => order.push('release')),
+			reacquire: vi.fn(async () => {
+				order.push('reacquire');
+			})
+		};
+		mocks.withInferenceSlot.mockImplementation((_o: unknown, fn: (s?: unknown) => unknown) => {
+			order.push('own slot');
+			return fn(undefined);
+		});
+		await runSubtask({ ...base, backend: null, parentSlot, profile: profile() });
+		expect(order).toEqual(['release', 'own slot', 'reacquire']);
+	});
+
+	it('keeps the parent’s slot on the parent’s lane', async () => {
+		scripted([1]);
+		const parentSlot = { held: true, release: vi.fn(), reacquire: vi.fn(async () => {}) };
+		await runSubtask({ ...base, backend: openrouter, parentSlot, profile: profile() });
+		expect(parentSlot.release).not.toHaveBeenCalled();
+	});
+
+	it('leaves a stopped take-back to the parent’s loop', async () => {
+		const slot = {
+			held: false,
+			release: vi.fn(),
+			reacquire: vi.fn(async () => {
+				throw new DOMException('Aborted', 'AbortError');
+			})
+		};
+		await expect(onOwnLane(slot, async () => 'done')).resolves.toBe('done');
+		expect(slot.release).toHaveBeenCalled();
 	});
 
 	it('runs in the parent’s slot on the parent’s lane', async () => {

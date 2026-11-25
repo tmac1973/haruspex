@@ -106,6 +106,12 @@ export interface SubtaskOptions {
 	signal?: AbortSignal;
 	/** The parent turn's slot lender; absent on a serialized lane. */
 	runInSlot?: SlotLender;
+	/**
+	 * The parent turn's own slot, while it waits on this child. A profiled
+	 * child on another lane gives it back while it runs, so a turn never
+	 * holds one lane while it queues on another.
+	 */
+	parentSlot?: HeldSlot;
 	/** Who is asking in an approval prompt. */
 	requester?: () => string;
 	onToolStart?: (call: ResolvedToolCall) => void;
@@ -464,7 +470,7 @@ async function runProfiled(o: SubtaskOptions, profile: SubtaskProfile): Promise<
 		const capped = capOf(first.stopReason, caps);
 		if (capped) return report(slot, first.finalText, capped);
 		if (o.signal?.aborted) return first;
-		const nudge = (await profile.doneCheck?.(steps)) ?? null;
+		const nudge = (await profile.doneCheck?.(steps, { guard: o.guard })) ?? null;
 		if (!nudge || o.signal?.aborted) return first;
 		const reached = caps.reached();
 		if (reached) return report(slot, first.finalText, reached);
@@ -475,11 +481,7 @@ async function runProfiled(o: SubtaskOptions, profile: SubtaskProfile): Promise<
 	};
 
 	try {
-		const opts = { onAdmitted: o.onAdmitted, signal: o.signal };
-		const out =
-			profileLane(profile, o.backend) === 'parent'
-				? await parentSlot(o)(work, opts)
-				: await withInferenceSlot({ consumer: 'subagent', backend, ...opts }, work);
+		const out = await inProfileSlot(o, profile, work);
 		if (o.signal?.aborted) return stopped(steps, streamed);
 		return {
 			outcome: 'done',
@@ -490,6 +492,37 @@ async function runProfiled(o: SubtaskOptions, profile: SubtaskProfile): Promise<
 	} catch (e) {
 		if (o.signal?.aborted) return stopped(steps, streamed);
 		return { outcome: 'failed', report: '', error: errMessage(e), steps, stopReason: null };
+	}
+}
+
+/**
+ * Run a profiled child's `work` in its slot: the parent's on the parent's
+ * lane, else one of its own, with the parent's given back meanwhile.
+ */
+function inProfileSlot<T>(
+	o: SubtaskOptions,
+	profile: SubtaskProfile,
+	work: (slot?: HeldSlot) => Promise<T>
+): Promise<T> {
+	const opts = { onAdmitted: o.onAdmitted, signal: o.signal };
+	if (profileLane(profile, o.backend) === 'parent') return parentSlot(o)(work, opts);
+	const own = { consumer: 'subagent' as const, backend: profile.backend, ...opts };
+	return onOwnLane(o.parentSlot, () => withInferenceSlot(own, work));
+}
+
+/**
+ * Run `fn` with the parent's slot given back, and take it again after, as
+ * the loop does for a long tool batch (`HeldSlot`). Without this, two
+ * sessions handing work to each other's serialized servers would each hold
+ * their own lane while waiting on the other's. A stop while it takes the slot
+ * back is left for the parent's loop, which takes it back before its next call.
+ */
+export async function onOwnLane<T>(slot: HeldSlot | undefined, fn: () => Promise<T>): Promise<T> {
+	slot?.release();
+	try {
+		return await fn();
+	} finally {
+		await slot?.reacquire().catch(() => {});
 	}
 }
 

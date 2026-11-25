@@ -418,10 +418,11 @@ describe('runSubtaskSpec with a profile', () => {
 			png: 'data:image/png;base64,AA'
 		}));
 		const out = await runSubtaskSpec(spec({ profile: profile({ finish }) }), env(), initial());
-		expect(finish).toHaveBeenCalledWith(expect.objectContaining({ report: 'Crate built.' }), {
-			tokens: 120,
-			costUsd: 0.1
-		});
+		expect(finish).toHaveBeenCalledWith(
+			expect.objectContaining({ report: 'Crate built.' }),
+			{ tokens: 120, costUsd: 0.1 },
+			{ guard: undefined, stoppedByUser: false }
+		);
 		expect(out.text).toBe('Wrote assets/crate.glb.');
 		expect(out.png).toBe('data:image/png;base64,AA');
 		expect(out.state).toMatchObject({ status: 'done', sheet: 'data:image/png;base64,AA' });

@@ -168,6 +168,12 @@ export interface ToolContext {
 	 */
 	releaseSlot?: () => void;
 	/**
+	 * The turn's own inference slot, held while this tool runs. A tool whose
+	 * model call runs on another lane (`delegate_3d`) gives it back meanwhile
+	 * (`onOwnLane`); the loop takes it back after the batch in any case.
+	 */
+	turnSlot?: HeldSlot;
+	/**
 	 * The tool families this turn lists but does not send, for `load_tools`.
 	 * Absent when deferred loading is off for the turn.
 	 */
@@ -295,7 +301,11 @@ export interface ToolContext {
 	/** A subtask's card changed (`delegate`); the loop routes it to the call's step. */
 	onSubtask?: (state: SubtaskState) => void;
 	/** Each model call a `delegate` subtask makes, for the Code session's token count. */
-	onSubtaskUsage?: (usage: Usage) => void;
+	/**
+	 * `ownModel`: the call was on a subtask profile's own model, not the
+	 * session's, so the session's prices never apply to it.
+	 */
+	onSubtaskUsage?: (usage: Usage, ownModel?: boolean) => void;
 	/** Where a Code session keeps its running subtasks' stop handles. */
 	subtaskStops?: SubtaskStops;
 	/**

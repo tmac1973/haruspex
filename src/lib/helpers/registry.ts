@@ -97,6 +97,20 @@ export function helperPrompt(def: Pick<HelperDef, 'prompt'>): string | undefined
 	return typeof def.prompt === 'function' ? def.prompt() : def.prompt;
 }
 
+/**
+ * The TOOLS lines of a turn's helpers. A read-only turn is offered no writing
+ * helper's tools (the tool filter's rule), so it gets none of their lines.
+ */
+export function helperPrompts(
+	defs: HelperDef[],
+	readOnly: boolean | undefined
+): { id: string; prompt?: string }[] {
+	return defs.map((h) => ({
+		id: h.id,
+		prompt: readOnly && h.writes ? undefined : helperPrompt(h)
+	}));
+}
+
 /** For tests: forget every helper. */
 export function _resetHelpersForTests(): void {
 	registered.clear();

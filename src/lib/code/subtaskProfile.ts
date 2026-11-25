@@ -8,6 +8,7 @@
  * limited to `writablePaths`.
  */
 import type { BackendOverride, Usage } from '#lib/api.ts';
+import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
 import type { SubtaskResult } from '#lib/code/runSubtask.ts';
 import { laneKey } from '#lib/agent/inferenceQueue.svelte.ts';
@@ -17,6 +18,14 @@ import { callCostUsd, catalogPrices } from '#lib/code/usageTotals.ts';
 
 /** Why a profiled subtask was stopped before it finished on its own. */
 export type SubtaskCap = 'rounds' | 'cost';
+
+/**
+ * What a profile's own checks get from the run: the folder's write lease, for
+ * a write of their own (the turn's, or a background subtask's per-write one).
+ */
+export interface ProfileRun {
+	guard?: CodeWriteGuard;
+}
 
 /** The run's totals, the figures its card shows. */
 export interface SubtaskUsage {
@@ -45,14 +54,18 @@ export interface SubtaskProfile {
 	/** The most it may spend in USD; null for no limit. */
 	maxCostUsd: number | null;
 	/** Once it ends on its own: a nudge to send it back with (once), or null when it is done. */
-	doneCheck?: (steps: SearchStep[]) => Promise<string | null>;
+	doneCheck?: (steps: SearchStep[], run: ProfileRun) => Promise<string | null>;
 	/** The user message for its last call, with no tools, when a cap stopped it. */
 	finalReport: (why: SubtaskCap) => string;
 	/**
 	 * What the parent is told once the run ends, and a picture for the card
 	 * (`SubtaskState.sheet`). Without it the generic subtask text is used.
 	 */
-	finish?: (res: SubtaskResult, usage: SubtaskUsage) => Promise<{ text: string; png?: string }>;
+	finish?: (
+		res: SubtaskResult,
+		usage: SubtaskUsage,
+		run: ProfileRun & { stoppedByUser: boolean }
+	) => Promise<{ text: string; png?: string }>;
 }
 
 /**

@@ -22,13 +22,18 @@ import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { fsWorkdir, writableKey } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
-import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
+import type { CodeWriteGuard, ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { newSubtaskState } from '#lib/code/subtask.ts';
 import type { SubtaskProfile, SubtaskUsage } from '#lib/code/subtaskProfile.ts';
 import type { SubtaskResult } from '#lib/code/runSubtask.ts';
 import type { SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import { formatCost, formatTokens } from '#lib/code/usageTotals.ts';
-import { finalCheck3d, type FinalCheck3d } from '#lib/helpers/three/delegateCheck.ts';
+import {
+	finalCheck3d,
+	lastCheckOptions,
+	type FinalCheck3d
+} from '#lib/helpers/three/delegateCheck.ts';
+import type { Check3dHost } from '#lib/helpers/three/call.ts';
 import { delegate3dConfig, type Delegate3dConfig } from '#lib/helpers/three/delegateConfig.ts';
 import {
 	delegate3dFiles,
@@ -133,16 +138,59 @@ async function loadImages(
 /**
  * The final check's host: the turn's folder, writing only the GLB, showing
  * the sheet to nobody, and stopped by nothing (a background call outlives
- * its turn's signal).
+ * its turn's signal). Its write takes the folder's lease and reports the GLB
+ * through `guard`, as the delegate's own writes do: the turn's in the
+ * foreground, a per-write one in the background.
  */
-function finalHost(ctx: ToolContext, files: Delegate3dFiles) {
-	return check3dHost({
+export function finalHost(
+	ctx: ToolContext,
+	files: Delegate3dFiles,
+	guard: CodeWriteGuard | undefined
+): Check3dHost {
+	const host = check3dHost({
 		...ctx,
 		writablePaths: [files.glb],
 		pendingImages: [],
 		signal: undefined,
 		onProgress: undefined
 	});
+	if (!guard) return host;
+	return {
+		...host,
+		write: async (path, bytes) => {
+			const refused = await guard.acquire();
+			if (refused) return refused;
+			const failed = await host.write(path, bytes);
+			guard.changed(failed ? [] : [files.glb]);
+			return failed;
+		}
+	};
+}
+
+/** A file's text, or '' when it can't be read. */
+async function readText(ctx: ToolContext, relPath: string): Promise<string> {
+	try {
+		const bytes = await invoke<number[]>('fs_read_bytes', { workdir: fsWorkdir(ctx), relPath });
+		return new TextDecoder().decode(new Uint8Array(bytes));
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Why `files` can't be the delegate's, or null: a module path that already
+ * holds a file with no default export is some other script (a game's
+ * `player.js` beside `player.glb`), not a build module to edit.
+ */
+async function notBuildModules(ctx: ToolContext, files: Delegate3dFiles): Promise<string | null> {
+	for (const path of [files.module, files.anim]) {
+		if (!(await exists(ctx, path))) continue;
+		const text = await readText(ctx, path);
+		if (!/\bexport\s+default\b/.test(text)) {
+			return `${path} already exists and is not a build or animation module (it has no export default). Pick another name for the .glb, so the delegate's modules don't replace it.`;
+		}
+	}
+	return null;
 }
 
 /** The nudge for a failing final check, or null when it passes. */
@@ -157,7 +205,8 @@ export function delegate3dResultText(
 	res: SubtaskResult,
 	check: FinalCheck3d,
 	written: string[],
-	usage: SubtaskUsage
+	usage: SubtaskUsage,
+	byUser = false
 ): string {
 	const calls = res.steps.length;
 	const head = `3D delegate "${label}" (${res.outcome}, ${calls} tool call${calls === 1 ? '' : 's'})`;
@@ -165,7 +214,7 @@ export function delegate3dResultText(
 		res.outcome === 'done'
 			? `${head}:\n\n${res.report || '(It gave no report.)'}`
 			: res.outcome === 'stopped'
-				? `${head}: stopped before it finished.${res.report ? `\n\nWhat it had so far:\n${res.report}` : ''}`
+				? `${head}: ${byUser ? 'the user stopped it; do not start it again' : 'stopped before it finished'}.${res.report ? `\n\nWhat it had so far:\n${res.report}` : ''}`
 				: `${head}: ${res.error ?? 'it failed.'}`;
 	const verdict = check.ok
 		? 'Final check: clean.'
@@ -189,7 +238,6 @@ function profileFor(
 	firstMessage: string,
 	images: { path: string; dataUrl: string }[]
 ): SubtaskProfile {
-	const host = () => finalHost(ctx, files);
 	return {
 		backend: config.backend,
 		system: delegate3dSystemPrompt(),
@@ -201,13 +249,24 @@ function profileFor(
 		maxRounds: config.maxRounds,
 		maxCostUsd: config.maxCostUsd,
 		finalReport: delegate3dFinalReport,
-		doneCheck: async () => delegate3dNudge(await finalCheck3d(files, host())),
-		finish: async (res, usage) => {
-			const check = await finalCheck3d(files, host());
+		doneCheck: async (steps, run) =>
+			delegate3dNudge(
+				await finalCheck3d(
+					files,
+					finalHost(ctx, files, run.guard),
+					lastCheckOptions(steps, files.module)
+				)
+			),
+		finish: async (res, usage, run) => {
+			const check = await finalCheck3d(
+				files,
+				finalHost(ctx, files, run.guard),
+				lastCheckOptions(res.steps, files.module)
+			);
 			const all = [files.module, files.anim, files.glb];
 			const there = await Promise.all(all.map((f) => exists(ctx, f)));
 			const written = all.filter((_, i) => there[i]);
-			const text = delegate3dResultText(label, res, check, written, usage);
+			const text = delegate3dResultText(label, res, check, written, usage, run.stoppedByUser);
 			return { text, ...(check.png ? { png: check.png } : {}) };
 		}
 	};
@@ -234,6 +293,8 @@ export async function executeDelegate3d(
 	if (typeof images === 'string') return toolResult(toolError(images));
 	const config = delegate3dConfig();
 	if (!config.backend) return toolResult(toolError(NO_DELEGATE));
+	const foreign = await notBuildModules(ctx, files);
+	if (foreign) return toolResult(toolError(foreign));
 
 	const label = delegate3dLabel(args);
 	const [module, anim] = await Promise.all([exists(ctx, files.module), exists(ctx, files.anim)]);

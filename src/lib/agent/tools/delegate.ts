@@ -169,6 +169,7 @@ export async function runInForeground(
 				job: ctx.jobSubtasks,
 				requester: ctx.requester,
 				runInSlot: ctx.runInSlot,
+				parentSlot: ctx.turnSlot,
 				guard: ctx.codeWriteGuard,
 				signal: stop.controller.signal,
 				// The subtask's own stop button, not the turn's Stop.
