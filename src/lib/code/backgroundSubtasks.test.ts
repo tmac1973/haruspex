@@ -156,6 +156,26 @@ describe('BackgroundSubtasks', () => {
 		await bg.settle();
 		expect(leaseDone).toHaveBeenCalledTimes(1);
 	});
+
+	it('runs a profiled spec with its profile, and reports what its finish said', async () => {
+		const { h, done } = host();
+		const profile = {
+			backend: { baseUrl: 'https://openrouter.ai/api', modelId: 'vendor/big' },
+			writablePaths: ['a.js', 'a.anim.js', 'a.glb']
+		} as unknown as NonNullable<SubtaskSpec['profile']>;
+		mocks.runSubtaskSpec.mockResolvedValue({
+			text: '3D delegate "3D: a.glb" (done, 4 tool calls):\n\nBuilt it.\n\nFinal check: clean.',
+			failed: false,
+			state: {},
+			png: 'data:image/png;base64,AA'
+		});
+		const bg = new BackgroundSubtasks(h);
+		bg.start({ ...spec('d3'), mode: 'write', profile }, newSubtaskState('d3', 'l', 't', 'write'));
+		await bg.settle();
+		expect(mocks.runSubtaskSpec.mock.calls[0][0].profile).toBe(profile);
+		expect(done[0].text).toContain('Final check: clean.');
+		expect(buildSubtaskNotification(done)).toContain('Built it.');
+	});
 });
 
 describe('subtask notifications', () => {

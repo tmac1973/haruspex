@@ -33,7 +33,8 @@ import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
-import { helperForTool, sessionHelpers } from '#lib/helpers/registry.ts';
+import { helperForTool, sessionHelpers, type HelperDef } from '#lib/helpers/registry.ts';
+import { delegate3dConfig } from '#lib/helpers/three/delegateConfig.ts';
 import { cameraAccessRefusal, camerasUsable } from '#lib/agent/tools/_cameraGate.ts';
 
 const tools = new Map<string, ToolRegistration>();
@@ -374,6 +375,7 @@ function subtaskExcludes(reg: ToolRegistration, subtaskHelpers: Set<string>): bo
 	const helper = helperForTool(name);
 	return (
 		name === 'delegate' ||
+		name === 'delegate_3d' ||
 		name === 'make_asset' ||
 		(helper !== undefined && !subtaskHelpers.has(helper.id)) ||
 		SONG_TOOLS.has(name) ||
@@ -389,6 +391,13 @@ function subtaskExcludes(reg: ToolRegistration, subtaskHelpers: Set<string>): bo
 	);
 }
 
+/** Whether a helper's tool is offered: see `shouldIncludeTool`. */
+function helperToolOffered(name: string, helper: HelperDef, opts: ToolFilterOpts): boolean {
+	// delegate_3d hands work to the model set in Settings → Code → Helpers → 3D: none set, none offered.
+	if (name === 'delegate_3d' && !delegate3dConfig().backend) return false;
+	return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
+}
+
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	if (opts.subtask && subtaskExcludes(reg, opts.subtaskHelpers)) return false;
 	// Checking or cancelling a background task: only an owner that has one.
@@ -399,9 +408,7 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	// default, its switch in Settings → Code → Helpers), and not the writing
 	// ones in a read-only session.
 	const helper = helperForTool(reg.schema.function.name);
-	if (helper) {
-		return isCodeTab(opts) && opts.helpers.has(helper.id) && !(helper.writes && opts.codeReadOnly);
-	}
+	if (helper) return helperToolOffered(reg.schema.function.name, helper, opts);
 	// A job's draft opens in the Jobs tab for someone at this computer to run.
 	// Chat and the Code tab; Shell has no conversation a job grows out of.
 	if (reg.category === 'job-proposal') {

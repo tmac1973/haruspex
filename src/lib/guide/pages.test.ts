@@ -34,6 +34,7 @@ const PAGES = [
 	'code-windows',
 	'helpers',
 	'3d-helper',
+	'3d-delegate',
 	'web-preview',
 	'viewers',
 	'transcript-viewer',

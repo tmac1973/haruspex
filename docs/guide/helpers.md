@@ -5,7 +5,7 @@ description: Helpers in the Code tab — tools the coding agent runs without a m
 
 # Helpers
 
-A helper is a tool the Code tab's agent runs with no model behind it. It does one job the agent can't do well by itself, such as looking at a 3D model it made, and hands back what it found.
+A helper is a tool the Code tab's agent runs with no model behind it (the 3D delegate is the one exception). It does one job the agent can't do well by itself, such as looking at a 3D model it made, and hands back what it found.
 
 ## Turn a helper on
 
@@ -15,11 +15,9 @@ Helpers work in the Code tab only. The 3D helper needs a session that can write;
 
 ## The Search helper
 
-Turn on **Search** and the agent gets a `search_code` tool. With a reranker set, it's also told to use it first whenever it doesn't know the exact name to grep for; without one, it's told to grep first, as when Search is off. It asks a question in plain words ("where does the message box grow as I type?") and gets back the six best snippets of code, each with its path and line numbers, best first. Snippets next to each other in one file are joined, so there can be fewer. The agent then reads around the best one or greps for a name it saw.
+Turn on **Search** and the agent gets a `search_code` tool. With a reranker set, it's also told to use it first whenever it doesn't know the exact name to grep for; without one, it's told to grep first, as when Search is off. It asks a question in plain words ("where does the message box grow as I type?") and gets back the six best snippets of code, each with its path and line numbers, best first. Snippets next to each other in one file are joined, so there can be fewer. The agent then reads around the best one.
 
 It searches the text files in the session's folder, fresh on every call. Files your `.gitignore` skips, binaries, lockfiles and files over 1 MB are left out; tests and generated files are kept but ranked lower. The agent can narrow a search to one subfolder.
-
-It works in a read-only session, since it changes nothing.
 
 ### Use it with a reranker
 
@@ -52,16 +50,20 @@ For every argument, check and output, see the `3d-helper` page.
 
 Three.js comes with the app, so the 3D helper needs no network. The agent sees the render sheet only if its model can read images; the text report comes either way.
 
+### Hand 3D work to another model
+
+Set **Delegate to** on the 3D row (Settings → Code → Helpers → 3D) and the agent also gets `delegate_3d`: it hands one asset to that model, which builds and checks it and reports back. See the `3d-delegate` page.
+
 ## The Web preview helper
 
 Its `show_preview` tool opens an HTML page from the session's folder in a preview window that reloads as the page's files change. See the `web-preview` page.
 
 ## What it doesn't do
 
-- No model: a helper can't make anything on its own; the agent writes the code.
+- No model, bar the 3D delegate: a helper can't make anything on its own.
+- It doesn't check a Three.js app with its own renderer.
 - Search matches words, not meaning or code structure: it knows nothing of calls, types or imports, and a question worded unlike the code can miss.
 - It can't tell whether a motion looks good, only what's physically wrong. You can play the clips in the file's 3D view (**Animation**).
 - It finds knees and elbows by name only (knee, shin, elbow, forearm and so on), and measures each to the pivot or mesh under it.
-- It doesn't check a Three.js app with its own renderer.
 - It doesn't fix problems, rig or skin a character, unwrap UVs or make lower-detail copies.
-- Not in Chat, the Shell or subtasks. The 3D models job uses the 3D helper's checks itself; see the `3d-models` page.
+- Not in Chat, the Shell or subtasks, bar the 3D delegate's own `check_3d`. The 3D models job uses the 3D helper's checks itself; see the `3d-models` page.

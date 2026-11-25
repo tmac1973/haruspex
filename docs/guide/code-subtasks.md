@@ -31,6 +31,8 @@ Subtasks the agent starts together run at the same time when the model server ta
 
 Up to 4 run at once, and the agent starts at most 8 per turn.
 
+`delegate_3d` also runs as a subtask, on its own model, and counts toward those 8; it follows Settings → Code → Helpers → 3D, not Settings → Code → Subtasks. See the `3d-delegate` page.
+
 ## Let subtasks run in the background
 
 The agent can also start a subtask in the background, for work it doesn't need before answering. Its answer doesn't wait: the subtask runs on, its card marked **Background**, and when it finishes its report arrives as a new turn, shown as **Subtask finished**, which the agent answers. With one stream it starts once the agent's turn ends. Up to 4 run at once per session. A session with background subtasks running can't move to another window until they end.
