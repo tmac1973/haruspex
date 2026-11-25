@@ -172,6 +172,12 @@ export const CODE_DB: Record<string, Handler> = {
 	code_notice_record: () => null,
 	code_notices_take: (a) => ({ notices: [], now: Number(a?.since ?? 0) }),
 
+	// File checkpoints for Rewind to here: nothing is kept in these tests.
+	code_checkpoint_before: () => null,
+	code_checkpoint_after: () => null,
+	code_checkpoint_plan: () => [],
+	code_checkpoint_rewind: () => ({ restored: [], skipped: [] }),
+
 	code_git_status: (a) => {
 		const folder = String(a?.folder ?? '');
 		const wt = folder.match(/^\/e2e\/project-worktrees\/([^/]+)/);
