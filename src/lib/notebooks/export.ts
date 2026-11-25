@@ -39,7 +39,7 @@ const EXT: Record<NotebookFormat | TableFormat, { ext: string; name: string }> =
 	xlsx: { ext: 'xlsx', name: 'Excel workbook' }
 };
 
-const EMBEDDABLE = /^image\/(png|jpeg|gif)$/;
+export const EMBEDDABLE = /^image\/(png|jpeg|gif)$/;
 
 /** A file name from a title: no path characters, never empty. */
 export function safeFileName(title: string): string {
@@ -58,7 +58,7 @@ export async function fullNotebook(id: string): Promise<Full> {
 	return { detail, rowsOf: (c) => all.get(c.id) ?? c.rows };
 }
 
-async function fileBytes(f: ExportFile): Promise<Uint8Array> {
+export async function fileBytes(f: ExportFile): Promise<Uint8Array> {
 	if (f.dataUrl) {
 		const b64 = f.dataUrl.slice(f.dataUrl.indexOf(',') + 1);
 		return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));

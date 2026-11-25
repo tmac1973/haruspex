@@ -9,15 +9,20 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { tick, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import Modal from '#lib/components/Modal.svelte';
 	import {
 		composedBody,
 		getPendingEmailReview,
 		isAddress,
 		parseAddresses,
-		resolveEmailReview
+		resolveEmailReview,
+		stagedIds
 	} from '#lib/stores/emailReview.svelte.ts';
+	import { keptAttachments, messageBody, previewHtml, sentSize } from '#lib/email/draftSend.ts';
+	import { dropParts, formatSize, MAX_MESSAGE_BYTES, stagePart } from '#lib/email/parts.ts';
 	import type { OutgoingMessage } from '#lib/ipc/gen/OutgoingMessage.ts';
+	import type { PartRef } from '#lib/ipc/gen/PartRef.ts';
 	import type { SendOutcome } from '#lib/ipc/gen/SendOutcome.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -33,6 +38,12 @@
 	let error = $state<string | null>(null);
 	let bodyEl = $state<HTMLTextAreaElement | undefined>();
 	let toEl = $state<HTMLInputElement | undefined>();
+	/** Attachments the user removed, by staged id. */
+	const removed = new SvelteSet<string>();
+	/** Optional files ticked, and the staged id of each one built. */
+	let ticked = $state<Record<number, boolean>>({});
+	let built: Record<number, string> = {};
+	let preview = $state(false);
 
 	// Load each new draft into the fields.
 	$effect(() => {
@@ -47,6 +58,10 @@
 			note = '';
 			error = null;
 			sending = false;
+			removed.clear();
+			ticked = {};
+			built = {};
+			preview = false;
 		});
 		// A reply opens with the cursor at the top of the body; a new message
 		// with no recipient yet, in To.
@@ -64,26 +79,53 @@
 	const toList = $derived(parseAddresses(to));
 	const ccList = $derived(parseAddresses(cc));
 	const badAddress = $derived([...toList, ...ccList].find((a) => !isAddress(a)));
+	const markdown = $derived(pending?.draft.format === 'markdown');
+	const attachments = $derived(keptAttachments(pending?.draft.attachments ?? [], removed));
+	const size = $derived(pending ? sentSize(pending.draft, body, removed) : 0);
+	const tooLarge = $derived(size > MAX_MESSAGE_BYTES);
 	const canSend = $derived(
-		!!pending && toList.length > 0 && !badAddress && subject.trim() !== '' && !sending
+		!!pending && toList.length > 0 && !badAddress && subject.trim() !== '' && !sending && !tooLarge
 	);
 	const from = $derived(pending?.accounts.find((a) => a.id === accountId));
+
+	/** Stage the ticked optional files; each is built once, so Send can be retried. */
+	async function extraParts(): Promise<PartRef[]> {
+		const opts = pending?.draft.optional ?? [];
+		const refs: PartRef[] = [];
+		for (const [i, opt] of opts.entries()) {
+			if (!ticked[i]) continue;
+			if (!built[i]) {
+				const f = await opt.build();
+				built[i] = await stagePart(f.name, f.mime, f.bytes);
+			}
+			refs.push({ id: built[i] });
+		}
+		return refs;
+	}
+
+	/** Drop every file this draft staged; the ones just sent are already gone. */
+	function dropStaged() {
+		if (!pending) return;
+		void dropParts([...stagedIds(pending.draft), ...Object.values(built)]);
+		built = {};
+	}
 
 	async function send() {
 		if (!pending || !from || !canSend) return;
 		sending = true;
 		error = null;
-		const message: OutgoingMessage = {
-			to: toList,
-			cc: ccList,
-			subject: subject.trim(),
-			body: composedBody(body, pending.draft.quoted),
-			inReplyTo: pending.draft.inReplyTo,
-			references: pending.draft.references,
-			parts: []
-		};
 		try {
+			const text = composedBody(body, pending.draft.quoted);
+			const message: OutgoingMessage = {
+				to: toList,
+				cc: ccList,
+				subject: subject.trim(),
+				...messageBody(pending.draft, text, removed, await extraParts()),
+				inReplyTo: pending.draft.inReplyTo,
+				references: pending.draft.references
+			};
 			const out = await invoke<SendOutcome>('email_send', { account: from, message });
+			dropStaged();
 			resolveEmailReview({
 				kind: 'sent',
 				messageId: out.messageId,
@@ -99,6 +141,7 @@
 
 	function discard() {
 		if (sending) return;
+		dropStaged();
 		resolveEmailReview({ kind: 'discarded', note: note.trim() });
 	}
 </script>
@@ -140,12 +183,69 @@
 				<span>Subject</span>
 				<input type="text" bind:value={subject} disabled={sending} />
 			</label>
-			<textarea
-				bind:this={bodyEl}
-				bind:value={body}
-				rows="12"
-				aria-label="Message"
-				disabled={sending}></textarea>
+			{#if markdown && preview}
+				<div class="preview" aria-label="Preview">
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised by mailBody -->
+					{@html previewHtml(pending.draft, composedBody(body, pending.draft.quoted))}
+				</div>
+			{:else}
+				<textarea
+					bind:this={bodyEl}
+					bind:value={body}
+					rows="12"
+					aria-label="Message"
+					disabled={sending}></textarea>
+			{/if}
+			{#if markdown}
+				<div class="body-tools">
+					<button type="button" class="link-btn" onclick={() => (preview = !preview)}>
+						{preview ? 'Edit' : 'Preview'}
+					</button>
+					<span
+						class="hint"
+						title="Sent as formatted text, with a plain-text copy for mail apps that show only text."
+					>
+						Markdown
+					</span>
+				</div>
+			{/if}
+			{#if attachments.length || pending.draft.optional?.length}
+				<div class="files" aria-label="Attachments">
+					{#each attachments as a (a.partId)}
+						<span class="chip">
+							📎 {a.name} <span class="size">{formatSize(a.size)}</span>
+							<button
+								type="button"
+								class="chip-x"
+								aria-label="Remove {a.name}"
+								title="Don't attach this"
+								onclick={() => removed.add(a.partId)}
+								disabled={sending}
+							>
+								×
+							</button>
+						</span>
+					{/each}
+					{#each pending.draft.optional ?? [] as opt, i (opt.label)}
+						<label class="check">
+							<input type="checkbox" bind:checked={ticked[i]} disabled={sending} />
+							{opt.label}
+						</label>
+					{/each}
+				</div>
+			{/if}
+			{#if markdown && size > 0}
+				<p class="total" class:error-text={tooLarge}>
+					{tooLarge
+						? `The files add up to ${formatSize(size)}, over the ${formatSize(MAX_MESSAGE_BYTES)} an email can carry.`
+						: `Files: ${formatSize(size)}`}
+				</p>
+			{/if}
+			{#if pending.draft.skipped?.length}
+				<p class="total" title="Too large to send, or they could not be read.">
+					Left out: {pending.draft.skipped.join(', ')}
+				</p>
+			{/if}
 			{#if pending.draft.quoted}
 				<details>
 					<summary>Show quoted message</summary>
@@ -220,5 +320,72 @@
 		display: flex;
 		justify-content: flex-end;
 		gap: 0.5rem;
+	}
+
+	/* The mail as it will look: white, whatever the app's theme. */
+	.preview {
+		max-height: 24rem;
+		overflow: auto;
+		padding: 12px 16px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: #fff;
+		color: #222;
+	}
+
+	.body-tools {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 0.85rem;
+	}
+
+	.link-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--accent);
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.hint,
+	.total,
+	.size {
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+		margin: 0;
+	}
+
+	.files {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		align-items: center;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 2px 4px 2px 8px;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		font-size: 0.85rem;
+	}
+
+	.chip-x {
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: var(--text-secondary);
+		padding: 0 4px;
+	}
+
+	.check {
+		display: inline-flex;
+		grid-template-columns: none;
+		gap: 0.3rem;
+		font-size: 0.85rem;
 	}
 </style>

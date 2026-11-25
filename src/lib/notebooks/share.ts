@@ -1,14 +1,22 @@
 /**
  * Email and Print for a notebook, or for one of its cards. Both start from
- * `notebookToMarkdown`, as the exports do: Email sends that Markdown as the
- * message text, with files named in brackets; Print shows it as HTML with
- * the pictures inside.
+ * `notebookToMarkdown`, as the exports do. Email sends that Markdown as text
+ * and HTML with the pictures inline and the file cards attached, and offers
+ * Attach as PDF; Print shows it as HTML with the pictures inside.
  */
 import type { NotebookCard } from '#lib/notebooks/api.ts';
-import { fullNotebook, inlinedMarkdown, markdownHtml, type Full } from '#lib/notebooks/export.ts';
-import { notebookToMarkdown } from '#lib/notebooks/toMarkdown.ts';
-import { emailText } from '#lib/share/email.ts';
+import {
+	build,
+	fullNotebook,
+	inlinedMarkdown,
+	markdownHtml,
+	safeFileName,
+	type Full
+} from '#lib/notebooks/export.ts';
+import { emailMarkdown } from '#lib/share/email.ts';
+import { prepareNotebookMail } from '#lib/share/mailParts.ts';
 import { printHtml } from '#lib/share/print.ts';
+import type { OptionalFile } from '#lib/stores/emailReview.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -27,9 +35,16 @@ export function shareTitle(full: Full, card?: NotebookCard): string {
 	return card?.title ? `${card.title} — ${nb}` : nb;
 }
 
-/** The plain text an email of the notebook (or card) carries. */
-export function notebookText(full: Full): string {
-	return notebookToMarkdown(full.detail, { rowsOf: full.rowsOf, placeholders: true }).markdown;
+/** The notebook (or card) as a PDF, built only if the box is ticked. */
+export function pdfAttachment(full: Full, title: string): OptionalFile {
+	return {
+		label: 'Attach as PDF',
+		build: async () => ({
+			name: `${safeFileName(title)}.pdf`,
+			mime: 'application/pdf',
+			bytes: (await build(full, 'pdf')).bytes
+		})
+	};
 }
 
 async function load(id: string, card?: NotebookCard): Promise<Full | null> {
@@ -43,7 +58,9 @@ async function load(id: string, card?: NotebookCard): Promise<Full | null> {
 
 export async function emailNotebook(id: string, card?: NotebookCard): Promise<void> {
 	const full = await load(id, card);
-	if (full) await emailText(shareTitle(full, card), notebookText(full));
+	if (!full) return;
+	const title = shareTitle(full, card);
+	await emailMarkdown(title, () => prepareNotebookMail(full), [pdfAttachment(full, title)]);
 }
 
 export async function printNotebook(id: string, card?: NotebookCard): Promise<void> {

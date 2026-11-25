@@ -29,10 +29,11 @@ export interface MarkdownOptions {
 	rowsOf?: (card: NotebookCard) => NotebookRow[];
 	/**
 	 * Name files and pictures in brackets ("[Picture: map.png]") rather than
-	 * link them: for plain text that goes nowhere a link could follow (an
-	 * email body).
+	 * link them: for text that goes nowhere a link could follow (an email
+	 * body). A function decides per file: an email shows its pictures and
+	 * only names the files it attaches.
 	 */
-	placeholders?: boolean;
+	placeholders?: boolean | ((file: ExportFile) => boolean);
 }
 
 /** A cell for a GFM table: one line, pipes escaped, links as [host](url). */
@@ -84,7 +85,12 @@ interface CardContext {
 	name: (n: string) => string;
 	files: ExportFile[];
 	embeddable?: (f: ExportFile) => boolean;
-	placeholders?: boolean;
+	placeholders?: MarkdownOptions['placeholders'];
+}
+
+/** Whether `f` is named in brackets rather than linked. */
+function named(ctx: CardContext, f: ExportFile): boolean {
+	return typeof ctx.placeholders === 'function' ? ctx.placeholders(f) : !!ctx.placeholders;
 }
 
 /** "[Picture: a.png]" in place of a picture or a file link. */
@@ -105,7 +111,7 @@ function pythonParts(card: NotebookCard, ctx: CardContext): string[] {
 			mime: a.mime
 		};
 		ctx.files.push(f);
-		parts.push(ctx.placeholders ? placeholder(f, true) : `![${a.alt ?? 'plot'}](${ctx.ref(f)})`);
+		parts.push(named(ctx, f) ? placeholder(f, true) : `![${a.alt ?? 'plot'}](${ctx.ref(f)})`);
 	});
 	return parts;
 }
@@ -120,7 +126,7 @@ function fileParts(card: NotebookCard, ctx: CardContext): string[] {
 	};
 	ctx.files.push(f);
 	const asImage = card.kind === 'image' && (ctx.embeddable?.(f) ?? true);
-	if (ctx.placeholders) return [placeholder(f, card.kind === 'image')];
+	if (named(ctx, f)) return [placeholder(f, card.kind === 'image')];
 	return [asImage ? `![${card.title || f.name}](${ctx.ref(f)})` : `[${f.name}](${ctx.ref(f)})`];
 }
 

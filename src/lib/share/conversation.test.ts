@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
-import { answerText, conversationHtml, conversationText, conversationTurns } from './conversation';
+import {
+	answerText,
+	conversationHtml,
+	conversationMarkdown,
+	conversationTurns
+} from './conversation';
 
 const messages: ChatMessage[] = [
 	{ role: 'system', content: 'You are Haruspex.' },
@@ -33,10 +38,14 @@ describe('sharing a conversation', () => {
 		expect(answerText('<think>a</think>')).toBe('a');
 	});
 
-	it('writes plain text under who said it', () => {
-		const text = conversationText(messages);
-		expect(text.startsWith('You:\nPlan a <trip>\n\nHaruspex:\nGo to **Oslo**.')).toBe(true);
-		expect(text).toContain('You:\nAnd this?\n[1 picture attached]');
+	it('writes Markdown under who said it, with attached pictures', () => {
+		const md = conversationMarkdown(messages);
+		expect(md.startsWith('**You:**\n\nPlan a <trip>\n\n**Haruspex:**\n\nGo to **Oslo**.')).toBe(
+			true
+		);
+		expect(md).toContain(
+			'**You:**\n\nAnd this?\n\n![Attached picture](data:image/png;base64,AAAA)'
+		);
 	});
 
 	it('renders HTML with the typed text escaped and the answers as Markdown', () => {
