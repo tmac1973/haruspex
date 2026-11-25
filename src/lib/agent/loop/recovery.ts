@@ -47,6 +47,27 @@ export function pushNudge(
 	return 'continue';
 }
 
+/** After a response cut off while the model was still thinking. */
+function reasoningOverrunNote(ctx: LoopContext): string {
+	return (
+		`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
+		`limit while you were still thinking, so none of it reached the user. Answer ` +
+		`now: keep your reasoning short and spend the response on the answer itself. ` +
+		`If the full answer will not fit in one response, say so first and give the ` +
+		`most important part.`
+	);
+}
+
+/** After a response cut off with nothing in it: most often a tool call too long to arrive. */
+function cutOffCallNote(ctx: LoopContext): string {
+	return (
+		`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
+		`limit before it finished, so nothing in it ran. Make the next response ` +
+		`smaller: keep your reasoning short, and split a long file into parts, a ` +
+		`short first version and then edits that add the rest.`
+	);
+}
+
 /** The bare continuation nudge for a response cut off at the token limit. */
 const CONTINUE = 'Continue.';
 
@@ -72,11 +93,14 @@ const CONTINUE = 'Continue.';
  *    `reasoning_content`, not through content, so re-sending it as literal tags
  *    would nest a second `<think>` inside the one the template already emits.
  *
- *  - **Cut off still reasoning** — no answer content exists, so there is
- *    nothing coherent to continue from. Echoing a half-finished thought is
- *    worse than useless; ask for the answer directly instead. Bounded, since
- *    a model that overruns on the retry too must reach the error path rather
- *    than eat the iteration budget in silence.
+ *  - **Nothing to resume** — the model was still reasoning, or was writing a
+ *    tool call the server dropped unfinished (OpenRouter returns no partial
+ *    call). "Continue." after an empty echo only starts the same overlong
+ *    response again: a 3D delegate once spent 30 rounds at $0.09 each that
+ *    way, writing one module in one call. Say what happened and ask for a
+ *    smaller response instead. Bounded, since a model that overruns on the
+ *    retry too must reach the error path rather than eat the iteration budget
+ *    in silence.
  */
 export function tryContinueOnLength(
 	ctx: LoopContext,
@@ -88,14 +112,14 @@ export function tryContinueOnLength(
 	if (response.finish_reason !== 'length') return null;
 
 	// Cut off with an answer already in flight: resume it.
-	if (state.usedTools || hasNonThinkingContent(response.content)) {
+	if (hasNonThinkingContent(response.content)) {
 		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`, {
 			usedTools: state.usedTools
 		});
 		return pushNudge(ctx, response, CONTINUE, false, true);
 	}
 
-	// Cut off while still reasoning, with no answer to resume.
+	// Cut off with nothing to resume: still reasoning, or a dropped tool call.
 	if (!nudges.needsLengthContinueRetry()) {
 		logDebug('agent', `iteration ${iteration} branch=continue-on-length exhausted`, {
 			retries: nudges.lengthContinueRetryCount
@@ -103,20 +127,17 @@ export function tryContinueOnLength(
 		return null;
 	}
 	nudges.consumeLengthContinueRetry();
-	logDebug('agent', `iteration ${iteration} branch=reasoning-overrun nudge`, {
+	// After a tool has run, an empty cut-off is most often a call too long to
+	// arrive; before one, the model was still thinking.
+	const branch = state.usedTools ? 'cut-off-call' : 'reasoning-overrun';
+	logDebug('agent', `iteration ${iteration} branch=${branch} nudge`, {
 		retry: nudges.lengthContinueRetryCount
 	});
-	// No assistant echo: the response was entirely reasoning, and the stripped
-	// content would be an empty message.
+	// No assistant echo: the response was entirely reasoning (or a call that
+	// never arrived), and the stripped content would be an empty message.
 	appendMessage(ctx, {
 		role: 'user',
-		content: automaticCheck(
-			`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
-				`limit while you were still thinking, so none of it reached the user. Answer ` +
-				`now: keep your reasoning short and spend the response on the answer itself. ` +
-				`If the full answer will not fit in one response, say so first and give the ` +
-				`most important part.`
-		)
+		content: automaticCheck(state.usedTools ? cutOffCallNote(ctx) : reasoningOverrunNote(ctx))
 	});
 	return 'continue';
 }
