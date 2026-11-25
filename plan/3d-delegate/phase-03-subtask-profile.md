@@ -17,7 +17,7 @@ does not change.
 ## Files touched
 
 - `src/lib/code/subtaskRun.ts` — `SubtaskSpec` gains `profile?:
-  SubtaskProfile`; `runSubtaskSpec` passes it to `runSubtask` and adds cost to
+SubtaskProfile`; `runSubtaskSpec` passes it to `runSubtask` and adds cost to
   the card state.
 - `src/lib/code/subtaskProfile.ts` (new) — the `SubtaskProfile` type and
   `profileLane(profile, parentBackend)`.
@@ -33,7 +33,7 @@ does not change.
   call after the first. When it returns true the loop ends with stop reason
   `'capped'`.
 - `src/lib/agent/tools/registry.ts` — `ToolSchemaOpts.subtaskHelpers?:
-  string[]`: a subtask still gets no helper tools, except those of the helpers
+string[]`: a subtask still gets no helper tools, except those of the helpers
   named here.
 - `src/lib/agent/loop/turnTools.ts` — pass `subtaskHelpers` through.
 - `src/lib/code/systemPrompt.ts` — `buildSubtaskPrompt` takes an optional
@@ -69,7 +69,7 @@ does not change.
      (`usage` is the run's totals, the same figures the card shows)
      (builds what the parent is told once the run ends; without it, the
      generic `resultText` is used)
-1a. `runSubtaskSpec` with a profile:
+     1a. `runSubtaskSpec` with a profile:
    - `spec.wt` is null and the child's `root` is `env.folder`. A profiled
      subtask never makes a worktree and never goes through `bringBack`, even
      with `mode: 'write'`.
@@ -105,7 +105,7 @@ does not change.
 3. Slot: `profileLane` compares `laneKey(profile.backend)` with
    `laneKey(parentBackend)`. Same lane: use `runInSlot` as today. Different
    lane: `withInferenceSlot({ consumer: 'subagent', backend: profile.backend,
-   signal }, fn)`, so the parent's slot is neither borrowed nor held for it.
+signal }, fn)`, so the parent's slot is neither borrowed nor held for it.
 4. Registry: in `subtaskExcludes`, a helper tool is excluded unless its
    helper id is in `opts.subtaskHelpers`. The tool allowlist then narrows it
    further.

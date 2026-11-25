@@ -20,7 +20,7 @@ no worktree.
   `src/lib/agent/runTurn.ts` — carry a `writablePaths` loop option into the
   tool context.
 - `src/lib/agent/tools/_helpers.ts` — add `writeOutsideLimit(ctx, relPath):
-  string | null`, which returns the refusal text or null.
+string | null`, which returns the refusal text or null.
 - `src/lib/agent/tools/fs-write.ts` — call it in `fs_write_text` and
   `fs_edit_text` before any write or dry run.
 - `src/lib/agent/tools/check-3d.ts` — `appHost(ctx).write` refuses a path
@@ -36,7 +36,7 @@ no worktree.
    the fs layer. `writeOutsideLimit` compares normalised strings for an exact
    match.
 2. Refusal text: `You may write only: <list>. Write <path>'s content into one
-   of those instead.`, returned as a tool error.
+of those instead.`, returned as a tool error.
 3. `fs_write_text` and `fs_edit_text`: check before the write-guard
    acquisition, so a refused call takes no lease.
 4. `check_3d`: the host's `write` is the only place the helper writes (the

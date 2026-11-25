@@ -52,6 +52,7 @@ Nothing user-visible ships here. Phase 05 adds the Settings UI and the tool.
    `parseDelegate3dConfig` cleans an absent, old or hand-edited value into
    this shape. A backend must have a non-empty `baseUrl` and `modelId`, or it
    becomes null.
+
 2. `delegate3dFiles(path)`:
    - `path` must end in `.glb`.
    - It returns `{ module: <stem>.js, anim: <stem>.anim.js, glb: path }`.
@@ -79,7 +80,7 @@ Nothing user-visible ships here. Phase 05 adds the Settings UI and the tool.
 6. `finalCheck3d(paths, host: Check3dHost)` (`Check3dHost` is the existing
    type in `helpers/three/call.ts`):
    - It calls `runCheck3d` with `{ path: module, anim: <anim if the file
-     exists>, out: glb }` on the host it is given. The caller builds that
+exists>, out: glb }` on the host it is given. The caller builds that
      host so it writes only the GLB; phase 05 does this with `check3dHost`
      from phase 02. Tests pass a fake host.
    - It returns `ok`, the report text and the sheet PNG.

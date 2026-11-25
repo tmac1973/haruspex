@@ -57,6 +57,7 @@ model can see images. The guide and showcase describe it.
    build module and animation module, checks them with check_3d until clean,
    and writes the .glb. It can't see this conversation: put everything it
    needs in task. To change an asset it made, call again with the same path."
+
 2. **Refusals**, as tool errors:
    - a subtask calling it;
    - no project folder;
@@ -85,7 +86,7 @@ model can see images. The guide and showcase describe it.
      `delegate3dFinalReport`.
    - `doneCheck` ignores `steps` and runs `finalCheck3d` on the files on
      disk. Its host is `check3dHost({ ...ctx, writablePaths: [glb],
-     pendingImages: [] })`. If the check is not ok, it nudges: "The final
+pendingImages: [] })`. If the check is not ok, it nudges: "The final
      check still fails: <errors>. Fix them, run check_3d, then give your
      report." A missing module counts as not ok. If ok, it returns null.
    - `finish` runs `finalCheck3d` once more on the same host and builds the
