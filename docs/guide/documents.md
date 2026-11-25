@@ -45,7 +45,7 @@ A picture is printed at its own size, or narrower to fit the page. Say how wide 
 
 ## Languages and symbols
 
-PDF text prints in Roboto, which covers the Latin, Greek and Cyrillic alphabets and most symbols. Some characters it lacks have a stand-in: an arrow `→` prints as `->`, and a tick `✓` as `[x]`.
+PDF text prints in Roboto, which covers the Latin and Cyrillic alphabets, modern Greek and most symbols. Some characters it lacks have a stand-in: an arrow `→` prints as `->`, and a tick `✓` as `[x]`. A letter with an accent Roboto lacks prints without it: polytonic Greek `ἀρετή` prints as `αρετή`. For ancient Greek with its breathings, ask for a `.docx`.
 
 Chinese, Japanese and Korean text and emoji don't print. The assistant is told which characters were left out, so it can rephrase or tell you. For those, ask for a `.docx` and let Word or LibreOffice choose the font.
 

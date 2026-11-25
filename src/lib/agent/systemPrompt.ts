@@ -30,15 +30,15 @@ const FILE_FORMAT = String.raw`(?:pdf|docx|xlsx|odt|ods|odp|pptx|spreadsheet|wor
 /** A verb that makes a file, rather than reads, sends or mentions one. */
 const MAKING_VERB = String.raw`\b(?:make|create|write|save|export|generate|produce|draft|prepare|build|convert|turn|put)\b`;
 
+/** Words that link to another thing rather than describe the format. */
+const NOT_DESCRIBING = String.raw`(?:of|the|this|that|my|your|its|their|from|in|on|about|for|with|holding|containing)`;
+
 /**
  * The format is the thing made: after a / an and up to three words describing
  * it ("a one-page PDF", "a short slide deck"), or after as / into / to ("save
  * it as report.docx", "turn it into a PDF"). "Summarise report.pdf" and "a
  * summary of the PDF" name a file that exists, not one to make.
  */
-/** Words that link to another thing rather than describe the format. */
-const NOT_DESCRIBING = String.raw`(?:of|the|this|that|my|your|its|their|from|in|on|about|for|with|holding|containing)`;
-
 const MADE_FORMAT = String.raw`\b(?:a|an|as|into|to)\s+(?:(?!${NOT_DESCRIBING}\b)[\w-]+\s+){0,3}?(?:[\w-]+\.)?${FILE_FORMAT}\b`;
 
 /**
@@ -56,8 +56,24 @@ const FILE_OUTPUT_PATTERNS = new RegExp(
 /** A request that opens by sending its result: email_compose makes the file. */
 const SENDS = /^\s*(?:please\s+)?(?:e-?mail|send|mail|forward)\b/i;
 
-export function looksLikeFileOutputRequest(content: string): boolean {
-	return !SENDS.test(content) && FILE_OUTPUT_PATTERNS.test(content);
+/**
+ * Formats Lean + files can't write: it has fs_write_document and fs_write_text
+ * only. Pushing a file write for one of these made the model write a Markdown
+ * outline beside telling the user that slides need lean mode off.
+ */
+const LEAN_CANNOT_WRITE =
+	/\b(?:xlsx|ods|odp|pptx|spreadsheet|excel|presentation|powerpoint|slide\s*deck|deck|slides)\b/i;
+
+/**
+ * Whether `content` asks for a file to be made. With `lean`, only one that Lean
+ * + files can write counts.
+ */
+export function looksLikeFileOutputRequest(
+	content: string,
+	opts: { lean?: boolean } = {}
+): boolean {
+	if (SENDS.test(content) || !FILE_OUTPUT_PATTERNS.test(content)) return false;
+	return !(opts.lean && LEAN_CANNOT_WRITE.test(content));
 }
 
 export interface SystemPromptOptions {
@@ -316,7 +332,12 @@ export function injectMessageHints(
 		hints.push('Include forums and owner reviews as sources.');
 	}
 
-	if (opts.workingDir && opts.lean && opts.leanFileWrites && looksLikeFileOutputRequest(lastText)) {
+	if (
+		opts.workingDir &&
+		opts.lean &&
+		opts.leanFileWrites &&
+		looksLikeFileOutputRequest(lastText, { lean: true })
+	) {
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
 				'synthesize the content, then write the file: fs_write_document for ' +

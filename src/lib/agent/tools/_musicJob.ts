@@ -33,6 +33,7 @@ import { taskOwner } from '#lib/tasks/notices.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import { trackWrite } from '#lib/agent/tools/_created.ts';
+import { NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
 
 /** A `music` task's spec. Every song in `request` is named by its audio-cache hash. */
 export interface MusicTaskSpec {
@@ -119,7 +120,7 @@ export function musicAnswerText(o: {
 	notes: string[];
 }): string {
 	const lines = [summary(o.made, o.title), `Put ![${o.title}](${o.made.url}) in your answer.`];
-	if (o.saved) lines.push(o.saved);
+	lines.push(o.saved ?? NOT_SAVED_LINE);
 	return [...lines, ...o.notes].join(' ');
 }
 

@@ -240,6 +240,13 @@ describe('a background picture’s notice', () => {
 		expect(images).toEqual([hash]);
 	});
 
+	it('says no file was saved when it was not given a path', () => {
+		const unsaved = picture(true);
+		unsaved.result = { ...(unsaved.result as object), saved: null };
+		expect(noticeFor(unsaved).text).toContain('It is only in the chat: no file was saved.');
+		expect(noticeFor(picture(true)).text).not.toContain('no file was saved');
+	});
+
 	it('shows the picture only to a model that can see', () => {
 		const { text, images } = noticeFor(picture(false));
 		expect(text).not.toContain('attached');
@@ -297,5 +304,12 @@ describe('a background song’s notice', () => {
 		}
 		expect(isTaskNotice(text)).toBe(true);
 		expect(images).toEqual([]);
+	});
+
+	it('says no file was saved when it was not given a path', () => {
+		const unsaved = { ...song, result: { ...(song.result as object), saved: null } };
+		expect(noticeFor(unsaved as BackgroundTask).text).toContain(
+			'It is only in the chat: no file was saved.'
+		);
 	});
 });

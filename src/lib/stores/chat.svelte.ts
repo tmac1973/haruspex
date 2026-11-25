@@ -1735,7 +1735,12 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 	try {
 		const currentWorkingDir = getWorkingDirFor(conversation.id);
 		const content = lastUserText(conversation);
-		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
+		// Plain lean mode writes no files; Lean + files writes documents only.
+		const { leanMode, leanFileWrites } = getSettings();
+		const expectsFileOutput =
+			!!currentWorkingDir &&
+			(!leanMode || leanFileWrites) &&
+			looksLikeFileOutputRequest(content, { lean: leanMode });
 
 		const keepRecentTools = getSettings().keepRecentToolResults;
 

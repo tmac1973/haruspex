@@ -36,6 +36,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { VideoBackend } from '#lib/videogen/backend.ts';
+import { NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
 
 /** A `video` task's spec: a clip to make, or (`op: 'upscale'`) one to make larger. */
 export type VideoTaskSpec = VideoGenTaskSpec | VideoUpscaleTaskSpec;
@@ -114,7 +115,7 @@ export function videoAnswerText(o: {
 			: `Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}${sound}).`,
 		`Put ![${o.title}](${m.url}) in your answer.`
 	];
-	if (o.saved) lines.push(o.saved);
+	lines.push(o.saved ?? NOT_SAVED_LINE);
 	return [...lines, ...o.notes].join(' ');
 }
 

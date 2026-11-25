@@ -857,7 +857,7 @@ async function draftWrite(
 	const rewrite = turn.has(path) && mayRewriteDraft(turn, path, signature, kind);
 	const send: RawWrite = async (relPath, overwrite) => {
 		const written = await write(relPath, overwrite);
-		noteDraft(turn, relPath, signature, overwrite);
+		noteDraft(turn, relPath, signature, overwrite, kind);
 		return written;
 	};
 	return fsWriteWithConflictCheck(
