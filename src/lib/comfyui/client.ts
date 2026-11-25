@@ -23,6 +23,7 @@ import { invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
 import type { ComfyGraph } from '#lib/comfyui/fieldMap.ts';
+import { throwIfFailed, type HistoryRun } from '#lib/comfyui/runFailure.ts';
 
 /** One HTTP call. Generous: a busy server queues. */
 export const HTTP_TIMEOUT_MS = 120_000;
@@ -292,41 +293,6 @@ export async function cancelPrompt(cfg: ClientConfig, promptId: string): Promise
 	} catch {
 		// Best-effort; see above.
 	}
-}
-
-/** The part of a `/history` entry that says how the prompt ended. */
-interface HistoryRun {
-	status?: { status_str?: string; messages?: unknown[] };
-}
-
-/** Longest exception message carried into an error; some run to pages. */
-const MAX_EXCEPTION_CHARS = 300;
-
-/**
- * Throw the failing node's own error when the prompt failed. A failed prompt
- * still lands in `/history`, usually with empty outputs, so reading only
- * `outputs` turned "out of memory" into "node saved no files".
- */
-function throwIfFailed(run: HistoryRun | undefined): void {
-	if (run?.status?.status_str !== 'error') return;
-	const entry = (run.status.messages ?? []).find(
-		(m): m is [string, Record<string, unknown>] =>
-			Array.isArray(m) && m[0] === 'execution_error' && typeof m[1] === 'object' && m[1] !== null
-	);
-	const detail = entry?.[1] ?? {};
-	const nodeType =
-		typeof detail.node_type === 'string' && detail.node_type
-			? detail.node_type
-			: typeof detail.node_id === 'string' && detail.node_id
-				? `Node ${detail.node_id}`
-				: 'The workflow';
-	const raw = typeof detail.exception_message === 'string' ? detail.exception_message.trim() : '';
-	const message =
-		raw.length > MAX_EXCEPTION_CHARS ? `${raw.slice(0, MAX_EXCEPTION_CHARS).trimEnd()}…` : raw;
-	throw new ImageBackendError(
-		'rejected',
-		message ? `${nodeType} failed: ${message}` : `${nodeType} failed on the ComfyUI server.`
-	);
 }
 
 /** The output images a finished prompt produced, or null while it is running. */

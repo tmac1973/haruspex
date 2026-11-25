@@ -39,6 +39,26 @@ export interface GraphInput {
 type Ref = [string, number];
 const node = (class_type: string, inputs: Record<string, unknown>) => ({ class_type, inputs });
 
+/**
+ * Decode in tiles, across the picture and across time. A whole clip decoded at
+ * once ran out of memory on a 32 GB card: Wan 2.2 TI2V 5B at 1280×704 × 121
+ * frames asked plain VAEDecode for 18.6 GiB, and LTX-2.3 ran out with no
+ * temporal tiling. 512-pixel, 64-frame tiles still asked for 6.75 GiB at once;
+ * these made that clip with 9 GiB of the card taken by another program
+ * (asmodean's R9700, 2026-11-25). Tiles cost a little time and blend at their
+ * overlaps.
+ */
+function tiledDecode(samples: Ref, vae: Ref) {
+	return node('VAEDecodeTiled', {
+		samples,
+		vae,
+		tile_size: 256,
+		overlap: 32,
+		temporal_size: 32,
+		temporal_overlap: 4
+	});
+}
+
 function save(video: Ref, prefix: string) {
 	return node('SaveVideo', { video, filename_prefix: prefix, format: 'webm', codec: 'auto' });
 }
@@ -87,7 +107,7 @@ function wan5b(x: GraphInput): ComfyGraph {
 		negative,
 		latent_image: ['latent', 0]
 	});
-	g.decode = node('VAEDecode', { samples: ['sampler', 0], vae: ['vae', 0] });
+	g.decode = tiledDecode(['sampler', 0], ['vae', 0]);
 	g.video = node('CreateVideo', { images: ['decode', 0], fps: x.fps });
 	g[OUTPUT_NODE] = save(['video', 0], x.prefix);
 	return g;
@@ -155,7 +175,7 @@ function wan14b(x: GraphInput): ComfyGraph {
 		});
 	g.highPass = pass('shiftHigh', true);
 	g.lowPass = pass('shiftLow', false);
-	g.decode = node('VAEDecode', { samples: ['lowPass', 0], vae: ['vae', 0] });
+	g.decode = tiledDecode(['lowPass', 0], ['vae', 0]);
 	g.video = node('CreateVideo', { images: ['decode', 0], fps: x.fps });
 	g[OUTPUT_NODE] = save(['video', 0], x.prefix);
 	return g;
@@ -210,7 +230,7 @@ function wanS2v(x: GraphInput): ComfyGraph {
 	});
 	g.first = node('LatentCut', { samples: ['sampler', 0], dim: 't', index: 0, amount: 1 });
 	g.joined = node('LatentConcat', { samples1: ['first', 0], samples2: ['sampler', 0], dim: 't' });
-	g.decode = node('VAEDecode', { samples: ['joined', 0], vae: ['vae', 0] });
+	g.decode = tiledDecode(['joined', 0], ['vae', 0]);
 	g.frames = node('ImageFromBatch', { image: ['decode', 0], batch_index: 3, length: 4096 });
 	g.video = node('CreateVideo', { images: ['frames', 0], fps: x.fps, audio: ['audio', 0] });
 	g[OUTPUT_NODE] = save(['video', 0], x.prefix);
@@ -361,14 +381,7 @@ function ltxSecondPass(g: ComfyGraph, x: GraphInput): void {
 		latent_image: ['secondAv', 0]
 	});
 	g.secondSplit = node('LTXVSeparateAVLatent', { av_latent: ['secondPass', 0] });
-	g.decode = node('VAEDecodeTiled', {
-		samples: ['secondSplit', 0],
-		vae: ['ckpt', 2],
-		tile_size: 768,
-		overlap: 64,
-		temporal_size: 4096,
-		temporal_overlap: 4
-	});
+	g.decode = tiledDecode(['secondSplit', 0], ['ckpt', 2]);
 	g.sound = node('LTXVAudioVAEDecode', { samples: ['secondSplit', 1], audio_vae: ['audioVae', 0] });
 	g.video = node('CreateVideo', { images: ['decode', 0], audio: ['sound', 0], fps: x.fps });
 	g[OUTPUT_NODE] = save(['video', 0], x.prefix);

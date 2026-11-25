@@ -138,6 +138,36 @@ describe('historyFiles', () => {
 		expect(err.message.length).toBeLessThan(400);
 		expect(err.message).toMatch(/^WanVideoSampler failed: x+…$/);
 	});
+
+	it('keeps the first line of an out-of-memory error, and says what to change', async () => {
+		fetchMock.mockResolvedValue(
+			ok(
+				failedRun(
+					'HIP out of memory. Tried to allocate 18.56 GiB.\nTraceback (most recent call last): …'
+				)
+			)
+		);
+		const err = (await api.historyFiles(cfg, 'p1', '9').catch((e: unknown) => e)) as Error;
+		expect(err.message).toBe(
+			'WanVideoSampler failed: HIP out of memory. Tried to allocate 18.56 GiB. ' +
+				'The GPU ran out of memory: a smaller size or a shorter clip needs less.'
+		);
+	});
+
+	it('says when ComfyUI stopped the job', async () => {
+		fetchMock.mockResolvedValue(
+			ok({
+				p1: {
+					outputs: {},
+					status: {
+						status_str: 'error',
+						messages: [['execution_interrupted', { prompt_id: 'p1' }]]
+					}
+				}
+			})
+		);
+		await expect(api.history(cfg, 'p1', '9')).rejects.toThrow('stopped the job');
+	});
 });
 
 /** A `/history` entry for a prompt whose sampler raised, as ComfyUI records it. */

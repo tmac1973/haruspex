@@ -12,6 +12,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 
 const refresh = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('#lib/image/refreshCaps.ts', () => ({ refreshMissingImageCaps: refresh }));
+const refreshVideo = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('#lib/videogen/refreshCaps.ts', () => ({ refreshMissingVideoCaps: refreshVideo }));
 
 import {
 	mergePatch,
@@ -31,6 +33,7 @@ beforeEach(() => {
 		braveApiKeySaved: false,
 		imageBackend: 'none',
 		imageModels: [],
+		videoModels: [],
 		inferenceBackend: {
 			mode: 'local',
 			remoteBaseUrl: '',
@@ -138,6 +141,14 @@ describe('settings.patch', () => {
 		patchSettings({ theme: 'dark' });
 		patchSettings({ imageModels: [{ id: 'a', caps: null }] });
 		await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+	});
+
+	it('asks the video models what they can do when it changes them', async () => {
+		refreshVideo.mockClear();
+		patchSettings({ theme: 'light' });
+		expect(refreshVideo).not.toHaveBeenCalled();
+		patchSettings({ videoModels: [{ id: 'v', caps: null }] });
+		await vi.waitFor(() => expect(refreshVideo).toHaveBeenCalledTimes(1));
 	});
 
 	it('merges an object key by key, keeping what it does not name', () => {
