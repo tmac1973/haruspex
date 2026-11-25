@@ -17,7 +17,9 @@
 		steer = true,
 		why = null,
 		onsend,
-		onstop
+		onstop,
+		text = $bindable(''),
+		pictures = $bindable([])
 	}: {
 		busy: boolean;
 		disabled?: boolean;
@@ -25,12 +27,13 @@
 		why?: string | null;
 		onsend: (text: string, pictures: string[]) => Promise<boolean>;
 		onstop: () => void;
+		/** Bound by a chat, so Edit can put a message back in the box. */
+		text?: string;
+		pictures?: string[];
 	} = $props();
 
 	const blocked = $derived(disabled || (busy && !steer));
 
-	let text = $state('');
-	let pictures = $state<string[]>([]);
 	let sending = $state(false);
 	let picker = $state<HTMLInputElement | null>(null);
 

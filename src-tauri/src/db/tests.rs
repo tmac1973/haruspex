@@ -3079,6 +3079,40 @@ fn replace_messages_swaps_the_whole_list_in_order() {
     assert_eq!(conv.messages[1].steps.as_deref(), Some("[1]"));
     assert_eq!(conv.messages[1].sort_order, 2);
     assert_eq!(contents(&db, "c2"), ["untouched"]);
+}
+
+#[test]
+fn truncate_messages_keeps_the_first_n_and_lowers_the_memory_watermark() {
+    let db = test_db();
+    db.create_conversation("c1", "Chat").unwrap();
+    db.create_conversation("c2", "Other").unwrap();
+    for text in ["q1", "a1", "q2", "a2"] {
+        db.save_message("c1", "user", text, None, None, None)
+            .unwrap();
+    }
+    db.save_message("c2", "user", "untouched", None, None, None)
+        .unwrap();
+    db.set_memory_extracted_to("c1", 4).unwrap();
+
+    db.truncate_messages("c1", 2).unwrap();
+    assert_eq!(contents(&db, "c1"), ["q1", "a1"]);
+    assert_eq!(contents(&db, "c2"), ["untouched"]);
+    assert_eq!(db.get_memory_cursor("c1").unwrap().memory_extracted_to, 2);
+
+    // The next message takes sort_order 3: above the watermark, so memory
+    // still reads it.
+    db.save_message("c1", "user", "q2 again", None, None, None)
+        .unwrap();
+    let conv = db.get_conversation("c1").unwrap();
+    assert_eq!(conv.messages[2].sort_order, 3);
+
+    // A watermark already below the cut stays where it is.
+    db.truncate_messages("c1", 3).unwrap();
+    assert_eq!(db.get_memory_cursor("c1").unwrap().memory_extracted_to, 2);
+
+    db.truncate_messages("c1", 0).unwrap();
+    assert!(contents(&db, "c1").is_empty());
+    assert_eq!(db.get_memory_cursor("c1").unwrap().memory_extracted_to, 0);
 
     db.replace_messages("c1", &[]).unwrap();
     assert!(contents(&db, "c1").is_empty());

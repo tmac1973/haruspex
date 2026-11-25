@@ -162,3 +162,20 @@ Example output:
 **Queued** shows above the chat box. Once the running search finishes, the assistant answers with a line such as "Understood — I'll keep to sources from the last year," then carries on with the same question.
 
 Read more: chat-conversations
+
+## Fix a question and ask again
+
+Change something you asked earlier and send it again, or get a fresh go at the last answer. The answers after it go, and the chat carries on from the new version.
+
+Tab: Chat
+Required settings: None
+
+Prompt:
+
+> Compare the three cheapest e-readers with a warm light.
+
+Example output:
+
+Point at your message and click ✏️. It goes back in the chat box. Change "three" to "five" and press `Enter`: the old answer goes and a new comparison is written in its place. Click 🔄 under an answer to have it written again from the same question.
+
+Read more: chat-conversations

@@ -85,6 +85,7 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         | "chat.stop"
         | "chat.continue"
         | "chat.retry"
+        | "chat.rewind"
         | "jobs.duplicate"
         | "jobs.delete"
         | "jobs.run"
@@ -448,6 +449,7 @@ mod tests {
         assert_eq!(required_scope("models.probe"), Some(Scope::Drive));
         assert_eq!(required_scope("session.delete"), Some(Scope::Drive));
         assert_eq!(required_scope("chat.folder"), Some(Scope::Drive));
+        assert_eq!(required_scope("chat.rewind"), Some(Scope::Drive));
         assert_eq!(required_scope("settings.patch"), Some(Scope::Settings));
         assert_eq!(required_scope("session.explode"), None);
     }

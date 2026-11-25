@@ -247,6 +247,16 @@ export class WebStore {
 		await this.run(() => this.client.op({ type, id }));
 	}
 
+	/** Keep the chat's first `keep` messages, for Edit and Retry; false when refused. */
+	async rewindChat(id: string, keep: number): Promise<boolean> {
+		return (await this.run(() => this.client.op({ type: 'chat.rewind', id, keep }))) !== undefined;
+	}
+
+	/** Retry an answer: cut it, then run its turn again. */
+	async retryAnswer(id: string, index: number): Promise<void> {
+		if (await this.rewindChat(id, index)) await this.chatAction(id, 'chat.retry');
+	}
+
 	/** Open a session on the desktop (if it isn't), show it, and follow it. */
 	async select(id: string): Promise<void> {
 		this.selected = id;

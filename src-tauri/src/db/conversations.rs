@@ -290,6 +290,47 @@ impl Database {
         Ok(())
     }
 
+    /// Keep a conversation's first `keep` messages and delete the rest: Edit
+    /// and Retry in the Chat tab.
+    ///
+    /// The memory watermark comes down to the last kept message. A new
+    /// message takes the next `sort_order` after the kept ones, so a watermark
+    /// left above it would make extraction skip every turn sent after the cut.
+    pub fn truncate_messages(&self, conversation_id: &str, keep: i64) -> Result<(), String> {
+        let mut conn = self.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+
+        let last_kept: i64 = tx
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), 0) FROM (
+                     SELECT sort_order FROM messages WHERE conversation_id = ?1
+                     ORDER BY sort_order LIMIT ?2)",
+                params![conversation_id, keep.max(0)],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Query failed: {}", e))?;
+
+        tx.execute(
+            "DELETE FROM messages WHERE conversation_id = ?1 AND sort_order > ?2",
+            params![conversation_id, last_kept],
+        )
+        .map_err(|e| format!("Delete failed: {}", e))?;
+
+        tx.execute(
+            "UPDATE conversations
+             SET memory_extracted_to = MIN(memory_extracted_to, ?1), updated_at = ?2
+             WHERE id = ?3",
+            params![last_kept, chrono_now(), conversation_id],
+        )
+        .map_err(|e| format!("Update failed: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+
+        Ok(())
+    }
+
     /// Update the `steps` JSON for the most recently inserted message in a
     /// conversation. Used after the agent loop finishes to attach captured
     /// artifacts to the assistant message persisted at the start of streaming.

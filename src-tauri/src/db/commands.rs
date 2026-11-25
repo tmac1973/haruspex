@@ -170,6 +170,16 @@ pub async fn db_replace_messages(
 }
 
 #[tauri::command]
+pub async fn db_truncate_messages(
+    state: tauri::State<'_, Database>,
+    conversation_id: String,
+    keep: i64,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.truncate_messages(&conversation_id, keep)).await
+}
+
+#[tauri::command]
 pub async fn db_create_job(
     state: tauri::State<'_, Database>,
     input: JobInput,

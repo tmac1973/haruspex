@@ -58,7 +58,10 @@ export type EngineOp =
 	| { type: 'chat.send'; id: string; text: string; images?: string[] }
 	| { type: 'chat.stop'; id: string }
 	| { type: 'chat.continue'; id: string }
+	/** Run the last turn again: after a failure, or after `chat.rewind` cut its answer. */
 	| { type: 'chat.retry'; id: string }
+	/** Keep the first `keep` messages and delete the rest (Edit and Retry). */
+	| { type: 'chat.rewind'; id: string; keep: number }
 	| { type: 'chat.resync'; id: string }
 	/** Delete a chat, stopping its turn. */
 	| { type: 'chat.delete'; id: string }

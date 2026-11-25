@@ -115,6 +115,7 @@ import {
 	dbLoadMessages,
 	dbLoadMessageSteps,
 	dbReplaceMessages,
+	dbTruncateMessages,
 	dbGetConversationMemoryEnabled,
 	dbSetConversationMemoryEnabled,
 	dbSetUnread,
@@ -1582,7 +1583,45 @@ $effect.root(() => {
 });
 
 /**
- * Re-run a conversation's last failed turn (the open one's by default). The
+ * Cut conversation `id` back to its first `keep` messages: Edit and Retry.
+ * Edit cuts at the message being edited and sends the new text; Retry cuts
+ * at the answer and runs the turn again (`retryLastTurn`).
+ *
+ * Refused (false) while the conversation's turn runs, or when `keep` is
+ * past its end. What the cut turns did outside the conversation stays:
+ * files written, memories saved, the Python sandbox's variables.
+ */
+export async function rewindConversation(id: string | null, keep: number): Promise<boolean> {
+	const conversation = id ? conversations.find((c) => c.id === id) : undefined;
+	if (!conversation || !Number.isInteger(keep) || keep < 0) return false;
+	const run = runFor(conversation.id);
+	if (run.busy) return false;
+	if (conversation.id !== getActiveConversationId() && conversation.messages.length === 0) {
+		await loadConversationMessages(conversation.id);
+		// The load awaited; a turn may have started meanwhile.
+		if (run.busy) return false;
+	}
+	if (keep > conversation.messages.length) return false;
+	const below = <T>(record: Record<number, T>): Record<number, T> =>
+		Object.fromEntries(Object.entries(record).filter(([i]) => Number(i) < keep));
+	conversation.messages = conversation.messages.slice(0, keep);
+	conversation.messageSteps = below(conversation.messageSteps);
+	conversation.messageStats = below(conversation.messageStats);
+	conversation.messageStops = below(conversation.messageStops);
+	conversation.searchSteps = [];
+	conversation.sourceUrls = [];
+	conversation.lastTurnTools = undefined;
+	conversation.contextUsage = null;
+	conversation.updatedAt = Date.now();
+	if (getActiveConversationId() === conversation.id) resetContextUsage();
+	run.clearError();
+	await dbTruncateMessages(conversation.id, keep);
+	return true;
+}
+
+/**
+ * Re-run a conversation's last turn (the open one's by default): one that
+ * failed, or one whose answer `rewindConversation` cut away. The
  * user message is already in history, so this clears the error state and
  * runs the turn again — no duplicate user bubble. If the server is (still)
  * starting — e.g. retrying right after cancelling a queued send — the retry
@@ -1592,7 +1631,10 @@ export async function retryLastTurn(id = getActiveConversationId()): Promise<voi
 	const conversation = conversations.find((c) => c.id === id);
 	if (!conversation || conversation.messages.length === 0) return;
 	const run = runFor(conversation.id);
-	if (!run.lastTurnFailed || run.busy) return;
+	if (run.busy) return;
+	// After a failed turn, or after `rewindConversation` cut an answer away:
+	// either way the last message is a user message with nothing after it.
+	if (!run.lastTurnFailed && conversation.messages.at(-1)?.role !== 'user') return;
 	if (getServerState().status === 'starting') {
 		queueTurnForStartup(run);
 		return;
@@ -1903,6 +1945,7 @@ export const localChatSource: ChatSource = {
 	continueTurn: () => continueTurn(),
 	cancelGeneration: () => cancelGeneration(),
 	retryLastTurn: () => retryLastTurn(),
+	rewind: (keep) => rewindConversation(getActiveConversationId(), keep),
 	setMemoryEnabled: setConversationMemoryEnabled,
 	addLocalNote,
 	dropSteering,

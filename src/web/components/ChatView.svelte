@@ -9,12 +9,45 @@
 	import { renderMarkdown } from '#lib/markdown.ts';
 	import Composer from './Composer.svelte';
 	import PromptCard from './PromptCard.svelte';
+	import { messageText } from '#lib/api.ts';
+	import { typedText } from '#lib/skills/content.ts';
 
 	let { store }: { store: WebStore } = $props();
 
 	const id = $derived(store.selectedChat!);
 	const chat = $derived(store.currentChat);
 	const prompts = $derived(store.promptsForChat(id));
+
+	let draft = $state('');
+	let pictures = $state<string[]>([]);
+	/** The message Edit put back in the box: sending cuts the chat there first. */
+	let editing = $state<number | null>(null);
+	$effect(() => {
+		void id;
+		editing = null;
+	});
+
+	function edit(index: number): void {
+		const msg = chat?.messages[index];
+		if (!msg) return;
+		editing = index;
+		draft = typedText(messageText(msg.content));
+		pictures = Array.isArray(msg.content)
+			? msg.content.flatMap((p) =>
+					p.type === 'image_url' && p.image_url.url.startsWith('data:image/')
+						? [p.image_url.url]
+						: []
+				)
+			: [];
+	}
+
+	async function send(text: string, pics: string[]): Promise<boolean> {
+		if (editing !== null) {
+			if (!(await store.rewindChat(id, editing))) return false;
+			editing = null;
+		}
+		return store.sendChat(id, text, pics);
+	}
 </script>
 
 <header>
@@ -49,13 +82,23 @@
 		{chat}
 		oncontinue={() => store.chatAction(id, 'chat.continue')}
 		onretry={() => store.chatAction(id, 'chat.retry')}
+		onedit={edit}
+		onretryanswer={(i) => void store.retryAnswer(id, i)}
 	/>
 	{#each prompts as p (p.promptId)}
 		<PromptCard prompt={p} onanswer={(pid, a) => store.answer(pid, a)} />
 	{/each}
+	{#if editing !== null}
+		<div class="banner editing" role="status">
+			<span>Sending replaces your earlier message and everything after it.</span>
+			<button class="btn btn-small" onclick={() => (editing = null)}>Cancel</button>
+		</div>
+	{/if}
 	<Composer
+		bind:text={draft}
+		bind:pictures
 		busy={chat.busy}
-		onsend={(text, pictures) => store.sendChat(id, text, pictures)}
+		onsend={send}
 		onstop={() => store.chatAction(id, 'chat.stop')}
 	/>
 {:else}
@@ -63,6 +106,15 @@
 {/if}
 
 <style>
+	.editing {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
 	.note {
 		display: flex;
 		gap: 8px;

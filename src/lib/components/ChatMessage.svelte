@@ -48,6 +48,10 @@
 		 * conversation's title for the page and the subject line.
 		 */
 		shareTitle?: string;
+		/** Edit on your message (the Chat tab): its text goes back in the input box. */
+		onEdit?: () => void;
+		/** Retry on the last answer (the Chat tab): asks for it again. */
+		onRetry?: () => void;
 	}
 
 	let {
@@ -60,7 +64,9 @@
 		onFork,
 		forkBlocked = null,
 		onRewind,
-		shareTitle
+		shareTitle,
+		onEdit,
+		onRetry
 	}: Props = $props();
 
 	const emailOffered = $derived(canEmail(getLiveSettings()));
@@ -265,12 +271,32 @@
 			{#if onRewind}
 				{@render rewindButton()}
 			{/if}
+			{#if onRetry}
+				<button
+					class="icon-btn"
+					title="Retry: drop this answer and ask again"
+					aria-label="Retry this answer"
+					onclick={onRetry}
+				>
+					🔄
+				</button>
+			{/if}
 			{#if onFork}
 				{@render forkButton()}
 			{/if}
 		</div>
-	{:else if message.role === 'user' && (onFork || onRewind)}
+	{:else if message.role === 'user' && (onFork || onRewind || onEdit)}
 		<div class="message-footer user-footer">
+			{#if onEdit}
+				<button
+					class="icon-btn"
+					title="Edit: put this message back in the input box. Sending it replaces this message and everything after it."
+					aria-label="Edit this message"
+					onclick={onEdit}
+				>
+					✏️
+				</button>
+			{/if}
 			{#if onRewind}
 				{@render rewindButton()}
 			{/if}

@@ -1,6 +1,6 @@
 ---
 title: Chat conversations
-description: Several Chat conversations at once, adding to an answer as it is written, busy and unread marks, searching and deleting, printing and emailing, results that arrive later, and the Tasks list.
+description: Several conversations at once, steering or editing a message, retrying an answer, busy and unread marks, finding and deleting, printing and emailing, results that arrive later, the Tasks list.
 ---
 
 # Chat conversations
@@ -16,6 +16,12 @@ You can type and send while the assistant is still answering. The message shows 
 After you stop an answer, the assistant is told so and doesn't take that request up again unless you ask.
 
 If the answer finishes, or you stop it, before the assistant reads a queued message, the message goes back into the chat box for you to send again. A skill (`/name`) sent while it's working goes as plain text; send it again once the answer is done to run the skill.
+
+## Edit a message or retry an answer
+
+Point at one of your messages and click ✏️ to put it back in the chat box. Change it and send: it replaces your message and everything after it. **Cancel** or `Esc` gives back what the box held. 🔄 under the last answer drops it and asks again.
+
+Files written, memories saved and Python variables from the dropped turns stay. Neither shows while the chat is answering.
 
 ## See which conversations are busy
 

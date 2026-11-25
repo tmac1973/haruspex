@@ -25,6 +25,7 @@ import {
 	noteViewedOnWeb,
 	retryLastTurn,
 	renameConversation,
+	rewindConversation,
 	sendMessageTo,
 	setConversationMemoryEnabled,
 	setWorkingDir,
@@ -184,6 +185,7 @@ export async function dispatchChat(op: {
 	enabled?: boolean;
 	path?: string | null;
 	query?: string;
+	keep?: number;
 }) {
 	switch (op.type) {
 		case 'chats.list':
@@ -249,6 +251,15 @@ export async function dispatchChat(op: {
 			const id = find(op.id!).id;
 			mustBeFree(id);
 			return startTurn(() => (op.type === 'chat.continue' ? continueTurn(id) : retryLastTurn(id)));
+		}
+		case 'chat.rewind': {
+			const id = find(op.id!).id;
+			mustBeFree(id);
+			const keep = op.keep;
+			if (typeof keep !== 'number' || !(await rewindConversation(id, keep))) {
+				throw new Error('keep is a message count, no more than the chat has');
+			}
+			return { kept: keep };
 		}
 		default:
 			throw new Error(`unknown operation ${op.type}`);
