@@ -14,7 +14,7 @@
 
 use super::auth::EmailAccount;
 use super::imap_client::{self, ListFilters};
-use super::parser::{EmailListing, NormalizedMessage};
+use super::parser::{EmailListing, MailFolder, NormalizedMessage};
 use super::provider::{saves_sent_copy, EmailProviderPreset, PRESETS};
 use super::request_reply::{self, ReplyInput};
 use super::requests::{self, MoveOutcome, RequestCandidate, RequestFolder};
@@ -115,6 +115,8 @@ pub async fn email_test_connection(account: EmailAccount) -> Result<(), String> 
 /// Fetch a list of recent messages matching the supplied filters.
 /// Returns an array of `EmailListing` (metadata only — no bodies).
 /// `unseen_only` keeps unread mail alone (Home's Important emails card).
+/// `folder` is `inbox` (the default), `sent`, `drafts`, `trash`, `junk` or
+/// `archive`.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn email_list_recent(
@@ -125,8 +127,16 @@ pub async fn email_list_recent(
     subject_contains: Option<String>,
     max_results: Option<u32>,
     unseen_only: Option<bool>,
+    to: Option<String>,
+    folder: Option<String>,
     call_id: Option<String>,
 ) -> Result<Vec<EmailListing>, String> {
+    let folder = match folder.as_deref().map(str::trim) {
+        None | Some("") => MailFolder::Inbox,
+        Some(name) => MailFolder::parse(name).ok_or_else(|| {
+            format!("Unknown folder {name:?}: use inbox, sent, drafts, trash, junk or archive")
+        })?,
+    };
     let filters = ListFilters {
         hours,
         since_date,
@@ -135,7 +145,9 @@ pub async fn email_list_recent(
         // Enough headroom for a typical inbox-day, most of it noise the
         // model skips; it is told to summarise only 3–5.
         max_results: max_results.unwrap_or(imap_client::DEFAULT_MAX_RESULTS),
+        to,
         unseen_only: unseen_only.unwrap_or(false),
+        folder,
     };
     cancellable(call_id, async move {
         imap_client::list_recent(&account, &filters).await

@@ -87,6 +87,8 @@ describe('email_list_recent', () => {
 			from: null,
 			subjectContains: null,
 			maxResults: null,
+			to: null,
+			folder: 'inbox',
 			callId: expect.any(String)
 		});
 		expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'email_list_recent', {
@@ -96,6 +98,8 @@ describe('email_list_recent', () => {
 			from: null,
 			subjectContains: null,
 			maxResults: null,
+			to: null,
+			folder: 'inbox',
 			callId: expect.any(String)
 		});
 	});
@@ -157,7 +161,39 @@ describe('email_list_recent', () => {
 			from: 'alice',
 			subjectContains: 'invoice',
 			maxResults: 5,
+			to: null,
+			folder: 'inbox',
 			callId: expect.any(String)
+		});
+	});
+
+	it('lists another folder, filtered by recipient', async () => {
+		setEmailAccounts([account()]);
+		vi.mocked(invoke).mockResolvedValue([]);
+
+		await executeTool('email_list_recent', { folder: 'sent', to: 'bob' }, ctx);
+
+		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ folder: 'sent', to: 'bob' });
+	});
+
+	it('refuses a folder it cannot read without invoking the backend', async () => {
+		setEmailAccounts([account()]);
+
+		const out = await executeTool('email_list_recent', { folder: 'Projects/2026' }, ctx);
+
+		expect(JSON.parse(out.result).error).toMatch(/Unknown folder Projects\/2026/);
+		expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+	});
+
+	it("passes a folder the account lacks through as that account's error", async () => {
+		setEmailAccounts([account()]);
+		vi.mocked(invoke).mockRejectedValue('This account has no Drafts folder');
+
+		const out = await executeTool('email_list_recent', { folder: 'drafts' }, ctx);
+
+		expect(JSON.parse(out.result)).toEqual({
+			messages: [],
+			errors: [{ account: account().label, error: 'This account has no Drafts folder' }]
 		});
 	});
 
