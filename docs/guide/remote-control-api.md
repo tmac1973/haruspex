@@ -50,10 +50,10 @@ Events: `task` when a background task starts, moves on or ends; `home-card` (`ca
 
 ## Settings
 
-- `settings.get`: every setting, or `keys` for a few. Secrets and MCP args come back blank, URLs without login or query; `redacted` lists where.
-- `settings.patch` with `patch`: objects merge key by key, so `{"patch":{"inferenceBackend":{"mode":"remote"}}}` keeps the rest of `inferenceBackend`. A misspelt name or a value of the wrong type is refused.
+- `settings.get`: every setting, or `keys` for a few. Secrets and MCP args come back blank, URLs without login or query (`redacted` lists them).
+- `settings.patch` with `patch`: objects merge key by key, so `{"patch":{"inferenceBackend":{"mode":"remote"}}}` keeps the rest of `inferenceBackend`. Misspelt names and wrong types are refused.
 
-A patch can't set a secret, the API keys, Settings → Integrations (accounts), Settings → MCP servers, Settings → Remote control or Settings → Guest chat. Most changes apply at the next turn; a patch doesn't start what Settings would, such as the model server.
+A patch can't set a secret, the API keys, Settings → Integrations (accounts), Settings → MCP servers, Settings → Remote control or Settings → Guest chat. Most changes apply at the next turn. A patch doesn't start the model server, but probes an added image or video model.
 
 ## Lean mode
 

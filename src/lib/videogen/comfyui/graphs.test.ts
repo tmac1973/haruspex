@@ -49,6 +49,11 @@ describe('the video graphs', () => {
 			class_type: 'SaveVideo',
 			inputs: { format: 'webm', filename_prefix: 'haruspex/c1' }
 		});
+		// Decoding a whole clip at once ran out of memory on a 32 GB card.
+		expect(g.decode).toMatchObject({
+			class_type: 'VAEDecodeTiled',
+			inputs: { tile_size: 256, temporal_size: 32 }
+		});
 	});
 
 	it('starts Wan 5B from the picture only when there is one', () => {

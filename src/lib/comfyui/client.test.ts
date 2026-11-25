@@ -121,6 +121,32 @@ describe('historyFiles', () => {
 		fetchMock.mockResolvedValue(ok({ p1: { outputs: { '9': { animated: [true] } } } }));
 		await expect(api.historyFiles(cfg, 'p1', '9')).rejects.toThrow('saved no files');
 	});
+
+	it("passes on ComfyUI's own error instead of saying nothing was saved", async () => {
+		const failed = (messages: [string, Record<string, unknown>][]) =>
+			ok({ p1: { outputs: {}, status: { status_str: 'error', completed: false, messages } } });
+		fetchMock.mockResolvedValue(
+			failed([
+				['execution_start', { prompt_id: 'p1' }],
+				[
+					'execution_error',
+					{
+						node_type: 'VAEDecode',
+						exception_message:
+							'HIP out of memory. Tried to allocate 18.56 GiB.\nTraceback (most recent call last): …'
+					}
+				]
+			])
+		);
+		const err = await api.historyFiles(cfg, 'p1', '9').catch((e) => e);
+		expect(err).toMatchObject({ kind: 'rejected' });
+		expect(err.message).toBe(
+			'ComfyUI failed in VAEDecode: HIP out of memory. Tried to allocate 18.56 GiB. ' +
+				'The GPU ran out of memory: a smaller size or a shorter clip needs less.'
+		);
+		fetchMock.mockResolvedValue(failed([['execution_interrupted', { prompt_id: 'p1' }]]));
+		await expect(api.history(cfg, 'p1', '9')).rejects.toThrow('stopped the job');
+	});
 });
 
 describe('history', () => {

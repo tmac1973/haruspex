@@ -10,7 +10,8 @@
  * `HARUSPEX_VIDEO_FAMILIES` limits it to some families, comma-separated
  * (`wan22_ti2v_5b,wan22_i2v_14b,wan22_s2v,ltx23`); all run by default.
  * Each runs its real graph, small and short, through the shared run loop and
- * checks a WebM came back. The app's own steps around that (the upload from
+ * checks a WebM came back. `HARUSPEX_VIDEO_FULL=1` runs each at its default
+ * size and length instead, the clip the app asks for when nothing is said. The app's own steps around that (the upload from
  * the caches, `audio_store_url`) need Rust, so they are left to hand tests.
  */
 
@@ -29,6 +30,7 @@ const LIVE = process.env.HARUSPEX_VIDEO_E2E === '1';
 const URL_ = process.env.HARUSPEX_VIDEO_COMFY_URL ?? '';
 const ONLY = (process.env.HARUSPEX_VIDEO_FAMILIES ?? '').split(',').filter(Boolean);
 const cfg = { baseUrl: URL_, apiKey: '' };
+const FULL = process.env.HARUSPEX_VIDEO_FULL === '1';
 const wanted = (f: VideoFamily) => LIVE && URL_ && (ONLY.length === 0 || ONLY.includes(f));
 
 /** One second of a 440 Hz tone, as 16 kHz mono WAV: something for S2V to hear. */
@@ -65,6 +67,21 @@ async function aPicture(): Promise<string> {
 	return names.find((n) => /\.png$/i.test(n)) ?? names[0];
 }
 
+/** The clip's size: small and short, or the family's defaults with `HARUSPEX_VIDEO_FULL`. */
+function size(family: VideoFamily, step: number) {
+	const limits = FAMILY_CAPS[family].limits;
+	if (FULL) {
+		const [width, height] = limits.defaultSize.split('x').map(Number);
+		return { width, height, frames: limits.defaultFrames, fps: limits.defaultFps };
+	}
+	return {
+		width: family === 'ltx23' ? 384 : 320,
+		height: family === 'ltx23' ? 256 : 192,
+		frames: step * 4 + 1,
+		fps: limits.fixedFps ?? 24
+	};
+}
+
 async function clip(
 	family: VideoFamily,
 	extra: { picture?: boolean; end?: boolean; speech?: boolean }
@@ -86,10 +103,7 @@ async function clip(
 		model: model!,
 		companions: found,
 		prompt: 'a red fox walking through fresh snow, soft morning light',
-		width: family === 'ltx23' ? 384 : 320,
-		height: family === 'ltx23' ? 256 : 192,
-		frames: step * 4 + 1,
-		fps: FAMILY_CAPS[family].limits.fixedFps ?? 24,
+		...size(family, step),
 		seed: 7,
 		startImage: picture,
 		endImage: extra.end ? picture : undefined,
@@ -103,7 +117,7 @@ async function clip(
 	});
 	const bytes = await api.view(cfg, files[0]);
 	console.warn(
-		`${family}: ${files[0].filename}, ${bytes.length} bytes, ${Math.round((Date.now() - started) / 1000)} s`
+		`${family}${FULL ? ' (full size)' : ''}: ${files[0].filename}, ${bytes.length} bytes, ${Math.round((Date.now() - started) / 1000)} s`
 	);
 	// WebM's EBML header.
 	expect([...bytes.slice(0, 4)]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);

@@ -239,12 +239,18 @@ export function patchSettings(patch: unknown): { changed: string[] } {
 	if (changed.length) {
 		updateSettings(Object.fromEntries(changed.map((k) => [k, merged[k]])) as Partial<AppSettings>);
 	}
-	// Settings → Image asks a model it adds what it can do; one added here
-	// would otherwise stay unknown to the tools and the prompt until a restart.
+	// Settings → Image and Video ask a model they add what it can do; one added
+	// here would otherwise stay unknown to the tools and the prompt until a
+	// restart, and a video model would be tried after every one that is known.
 	if (changed.includes('imageModels')) {
 		void import('#lib/image/refreshCaps.ts')
 			.then((m) => m.refreshMissingImageCaps())
 			.catch((e) => console.warn('Image models were not asked what they can do:', e));
+	}
+	if (changed.includes('videoModels')) {
+		void import('#lib/videogen/refreshCaps.ts')
+			.then((m) => m.refreshMissingVideoCaps())
+			.catch((e) => console.warn('Video models were not asked what they can do:', e));
 	}
 	return { changed };
 }
