@@ -27,6 +27,11 @@ describe('jobModelForm', () => {
 		expect(typeof cols.model_advanced).toBe('string');
 	});
 
+	it("a new OpenRouter form starts with OpenRouter's URL", () => {
+		expect(emptyModelForm('openrouter').baseUrl).toBe('https://openrouter.ai/api');
+		expect(emptyModelForm('remote').baseUrl).toBe('');
+	});
+
 	it('round-trips a remote model through the form', () => {
 		const form = modelFormFromColumns(remote);
 		expect(form.source).toBe('remote');
