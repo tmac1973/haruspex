@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { glbNames, groupIssues, subject, validateGlb } from './validate';
+import { glbNames, groupIssues, subject, validateBytesOf, validateGlb } from './validate';
 
 /** A box whose vertex colours go past 1, exported without the runner's clamp. */
 async function brightBox(): Promise<Uint8Array> {
@@ -99,5 +99,21 @@ describe('validateGlb', () => {
 			{ binary: true }
 		);
 		expect(await validateGlb(new Uint8Array(out as ArrayBuffer))).toEqual({ errors: 0, lines: [] });
+	});
+});
+
+describe('validateBytesOf', () => {
+	const fn = async () => ({ issues: { numErrors: 0, messages: [] } });
+
+	it('reads the ES module build’s named export, as Vite loads it', () => {
+		expect(validateBytesOf({ validateBytes: fn })).toBe(fn);
+	});
+
+	it('reads the CommonJS build’s exports from default, as Node loads it', () => {
+		expect(validateBytesOf({ default: { validateBytes: fn } })).toBe(fn);
+	});
+
+	it('says so when neither has it', () => {
+		expect(() => validateBytesOf({})).toThrow('no validateBytes');
 	});
 });

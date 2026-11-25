@@ -85,10 +85,24 @@ export interface GlbValidation {
 
 let loading: Promise<ValidateBytes> | null = null;
 
+/**
+ * `validateBytes` from the loaded package, whichever build was loaded. Vite
+ * picks its ES module (`module.mjs`), which has named exports and no
+ * `default`; Node gets the CommonJS one, whose exports come as `default`.
+ * Reading only `default` quietly turned validation off in the app.
+ */
+export function validateBytesOf(m: {
+	validateBytes?: ValidateBytes;
+	default?: { validateBytes?: ValidateBytes };
+}): ValidateBytes {
+	const fn = m.validateBytes ?? m.default?.validateBytes;
+	if (!fn) throw new Error('The glTF validator has no validateBytes.');
+	return fn;
+}
+
 /** The validator, loaded once on first use: it is 300 KB that most turns never need. */
 function validator(): Promise<ValidateBytes> {
-	// A CommonJS module: the bundler may hand back its exports as `default`.
-	loading ??= import('gltf-validator').then((m) => m.default.validateBytes);
+	loading ??= import('gltf-validator').then((m) => validateBytesOf(m));
 	return loading;
 }
 
