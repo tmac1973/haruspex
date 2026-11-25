@@ -3,7 +3,7 @@
 //! All items are crate-internal to `proxy` except `validate_url`, which
 //! is consumed by `fs_tools::download::fs_download_url`.
 
-use super::bypass::apply_proxy;
+use super::bypass::{apply_proxy, routes_through_proxy};
 use super::config::FETCH_TIMEOUT;
 use super::paywall::{detect_paywall_signal, PAYWALL_SENTINEL};
 use super::public_dns::PublicOnly;
@@ -101,10 +101,11 @@ fn is_refusal(err: &str) -> bool {
 async fn fetch_first_ok(
     client: &reqwest::Client,
     candidates: &[String],
+    proxy: Option<&ProxyConfig>,
 ) -> Result<reqwest::Response, String> {
     let mut refusal: Option<String> = None;
     for candidate in candidates {
-        match fetch_ok(client, candidate).await {
+        match fetch_ok(client, candidate, proxy).await {
             Ok(r) => return Ok(r),
             Err(e) if is_refusal(&e) => refusal = Some(e),
             Err(e) => return Err(e),
@@ -210,14 +211,16 @@ pub(super) async fn fetch_and_extract(
 
     let reddit = reddit_fetch_candidates(url);
     let response = match &reddit {
-        Some(candidates) => fetch_first_ok(&client, candidates).await.map_err(|e| {
-            if is_refusal(&e) {
-                REDDIT_BLOCKED.to_string()
-            } else {
-                e
-            }
-        })?,
-        None => fetch_ok(&client, url).await?,
+        Some(candidates) => fetch_first_ok(&client, candidates, proxy)
+            .await
+            .map_err(|e| {
+                if is_refusal(&e) {
+                    REDDIT_BLOCKED.to_string()
+                } else {
+                    e
+                }
+            })?,
+        None => fetch_ok(&client, url, proxy).await?,
     };
 
     // Check content type
@@ -375,23 +378,76 @@ pub(crate) fn with_cause(e: &reqwest::Error) -> String {
 /// GET `url` with the shared browser [`USER_AGENT`] and reject any
 /// non-2xx response. The page and image fetch paths share this so the
 /// send/status idiom (and its exact error strings, which reach the
-/// model/UI verbatim) can't drift between them.
+/// model/UI verbatim) can't drift between them. `proxy` is only read to
+/// say which hop failed: the client already carries it.
 pub(super) async fn fetch_ok(
     client: &reqwest::Client,
     url: &str,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<reqwest::Response, String> {
     let response = client
         .get(url)
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Fetch failed: {}", with_cause(&e.without_url())))?;
+        .map_err(|e| send_error(e, url, proxy))?;
 
     if !response.status().is_success() {
-        return Err(format!("Fetch failed with status: {}", response.status()));
+        return Err(status_error(response.status()));
     }
 
     Ok(response)
+}
+
+/// The text for a request that got no response. A refused connection
+/// through a proxy is the proxy refusing, and "Connection refused" alone
+/// sent the model after the site.
+fn send_error(e: reqwest::Error, url: &str, proxy: Option<&ProxyConfig>) -> String {
+    let connect = e.is_connect();
+    let cause = with_cause(&e.without_url());
+    let proxied = url::Url::parse(url)
+        .ok()
+        .and_then(|target| proxy.filter(|p| routes_through_proxy(Some(p), &target)));
+    match proxied {
+        Some(cfg) if connect => proxy_unreachable(cfg, &cause),
+        _ => format!("Fetch failed: {cause}"),
+    }
+}
+
+fn proxy_unreachable(cfg: &ProxyConfig, cause: &str) -> String {
+    format!(
+        "Fetch failed: the proxy {} could not be reached ({cause}). The site was not \
+         contacted. Check Settings → Network → Web Search Proxy.",
+        proxy_host_port(cfg)
+    )
+}
+
+/// `host:port` of the configured proxy, without credentials or path.
+fn proxy_host_port(cfg: &ProxyConfig) -> String {
+    let Ok(parsed) = url::Url::parse(cfg.url.trim()) else {
+        return "set in Settings".to_string();
+    };
+    let host = parsed.host_str().unwrap_or("?");
+    match parsed.port_or_known_default() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    }
+}
+
+/// The text for a non-2xx answer. Keeps the status code in it: the reddit
+/// fallback matches on 403/429 (`is_refusal`).
+fn status_error(status: reqwest::StatusCode) -> String {
+    let base = format!("Fetch failed with status: {status}");
+    match status.as_u16() {
+        401 | 403 | 451 => format!(
+            "{base}. The site refuses automated requests, so retrying will not help. \
+             Use the search snippet or another source."
+        ),
+        429 => format!(
+            "{base}. The site is rate-limiting requests. Try again later or use another source."
+        ),
+        _ => base,
+    }
 }
 
 /// The page's visible text, whitespace tidied, uncut.
@@ -625,8 +681,52 @@ mod tests {
         // stops it, as it stops any public-looking name that points here.
         assert!(validate_url("http://localhost.:9/").is_ok());
         let client = build_fetch_client(None).unwrap();
-        let err = fetch_ok(&client, "http://localhost.:9/").await.unwrap_err();
+        let err = fetch_ok(&client, "http://localhost.:9/", None)
+            .await
+            .unwrap_err();
         assert!(err.contains("resolves to this computer"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_proxy_that_refuses_is_named_as_the_failed_hop() {
+        let cfg = crate::proxy::ProxyConfig {
+            mode: "manual".to_string(),
+            url: "http://user@127.0.0.1:1".to_string(),
+            ..Default::default()
+        };
+        let client = build_fetch_client(Some(&cfg)).unwrap();
+        let err = fetch_ok(&client, "https://example.com/", Some(&cfg))
+            .await
+            .unwrap_err();
+        assert!(
+            err.starts_with("Fetch failed: the proxy 127.0.0.1:1 "),
+            "{err}"
+        );
+        assert!(
+            err.contains("Settings → Network → Web Search Proxy"),
+            "{err}"
+        );
+        assert!(!err.contains("user"), "credentials stay out: {err}");
+    }
+
+    #[test]
+    fn a_refusing_status_says_retrying_will_not_help() {
+        let forbidden = status_error(reqwest::StatusCode::FORBIDDEN);
+        assert!(
+            forbidden.starts_with("Fetch failed with status: 403"),
+            "{forbidden}"
+        );
+        assert!(forbidden.contains("refuses automated requests"));
+        assert!(
+            is_refusal(&forbidden),
+            "the reddit fallback still sees a 403"
+        );
+        let limited = status_error(reqwest::StatusCode::TOO_MANY_REQUESTS);
+        assert!(limited.contains("rate-limiting") && is_refusal(&limited));
+        assert_eq!(
+            status_error(reqwest::StatusCode::NOT_FOUND),
+            "Fetch failed with status: 404 Not Found"
+        );
     }
 
     #[test]

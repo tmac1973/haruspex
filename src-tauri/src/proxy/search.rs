@@ -258,6 +258,11 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
         Selector::parse(".result__url").map_err(|_| "Failed to parse URL selector")?;
 
     Ok(scrape_results(&document, &result_selector, |element| {
+        // Sponsored results sit in a `.result--ad` wrapper around the same
+        // `.result__body` markup as organic ones.
+        if is_ddg_ad(element) {
+            return None;
+        }
         let title = element
             .select(&title_selector)
             .next()
@@ -299,12 +304,34 @@ pub(super) fn parse_ddg_html(html: &str) -> Result<Vec<SearchResult>, String> {
             })
             .unwrap_or_default();
 
-        (!title.is_empty() && !url.is_empty()).then_some(SearchResult {
+        (!title.is_empty() && !url.is_empty() && !is_ddg_ad_url(&url)).then_some(SearchResult {
             title,
             url,
             snippet,
         })
     }))
+}
+
+/// True when the result element, or a wrapper around it, is marked as an ad.
+fn is_ddg_ad(element: ElementRef) -> bool {
+    std::iter::once(element)
+        .chain(element.ancestors().filter_map(ElementRef::wrap))
+        .any(|e| e.value().classes().any(|c| c == "result--ad"))
+}
+
+/// DuckDuckGo's ad click-through (`duckduckgo.com/y.js?ad_domain=…`), which
+/// carries no `uddg=` destination and so survives the redirect decode.
+fn is_ddg_ad_url(url: &str) -> bool {
+    // DDG writes protocol-relative hrefs.
+    let absolute = match url.strip_prefix("//") {
+        Some(rest) => format!("https://{rest}"),
+        None => url.to_string(),
+    };
+    let Ok(parsed) = url::Url::parse(&absolute) else {
+        return false;
+    };
+    let host = parsed.host_str().unwrap_or_default();
+    (host == "duckduckgo.com" || host.ends_with(".duckduckgo.com")) && parsed.path() == "/y.js"
 }
 
 /// Phrases that only a bot wall says. Matched at any page size, because a
@@ -853,6 +880,11 @@ pub(super) fn parse_yahoo_html(html: &str) -> Result<Vec<SearchResult>, String> 
         Selector::parse("div.compText").map_err(|_| "Failed to parse yahoo snippet selector")?;
 
     Ok(scrape_results(&document, &result_selector, |element| {
+        // Sponsored results sit in a `.result--ad` wrapper around the same
+        // `.result__body` markup as organic ones.
+        if is_ddg_ad(element) {
+            return None;
+        }
         let title = element
             .select(&title_selector)
             .next()
@@ -1273,6 +1305,37 @@ mod tests {
         let result = parse_ddg_html("<html><body>No results</body></html>");
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    /// Mirrors DuckDuckGo's html endpoint: an ad block wraps the same
+    /// `.result__body` markup in `.result--ad` and links through `y.js`.
+    #[test]
+    fn parse_ddg_skips_ads() {
+        let html = r##"
+            <html><body><div id="links" class="results">
+            <div class="result results_links results_links_deep result--ad result--ad--small">
+              <div class="links_main links_deep result__body">
+                <h2 class="result__title"><a class="result__a" href="https://duckduckgo.com/y.js?ad_domain=example.com&ad_provider=bingv7aa&u3=x">Buy Rust Books</a></h2>
+                <a class="result__snippet" href="https://duckduckgo.com/y.js?ad_domain=example.com">Sponsored.</a>
+              </div>
+            </div>
+            <div class="result results_links results_links_deep web-result">
+              <div class="links_main links_deep result__body">
+                <h2 class="result__title"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.rust-lang.org%2F&rut=abc">Rust Programming Language</a></h2>
+                <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.rust-lang.org%2F">A language empowering everyone.</a>
+              </div>
+            </div>
+            <div class="result results_links web-result">
+              <div class="result__body">
+                <h2><a class="result__a" href="//duckduckgo.com/y.js?ad_domain=sneaky.example">Unmarked ad</a></h2>
+              </div>
+            </div>
+            </div></body></html>
+        "##;
+        let results = parse_ddg_html(html).expect("parse ok");
+        assert_eq!(results.len(), 1, "ads must not be collected: {results:?}");
+        assert_eq!(results[0].url, "https://www.rust-lang.org/");
+        assert!(results[0].snippet.contains("empowering"));
     }
 
     #[test]
