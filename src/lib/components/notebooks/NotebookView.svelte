@@ -226,7 +226,11 @@
 					menuItems={cardMenu?.(card) ?? []}
 					ondragstart={(e) => {
 						dragId = card.id;
-						e.dataTransfer?.setData('text/plain', card.id);
+						// Not text/plain: a text field would take the id as a drop.
+						if (e.dataTransfer) {
+							e.dataTransfer.setData('application/x-haruspex-card', card.id);
+							e.dataTransfer.effectAllowed = 'move';
+						}
 						stopAutoScroll?.();
 						if (viewEl) stopAutoScroll = startDragAutoScroll(viewEl);
 					}}
