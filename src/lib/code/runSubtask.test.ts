@@ -401,7 +401,9 @@ describe('runSubtask with a profile', () => {
 			subtaskHelpers: ['3d'],
 			codeHelpers: ['3d'],
 			writablePaths: ['assets/crate.js', 'assets/crate.glb'],
-			subtask: { depth: 1 }
+			subtask: { depth: 1 },
+			// Its response cap follows its model's window, not the global 8K.
+			scaleResponseToContext: true
 		});
 		expect(o.codeWriteGuard).toBe(guard);
 		expect(o.messages[0]).toEqual({ role: 'system', content: 'You build 3D assets.' });

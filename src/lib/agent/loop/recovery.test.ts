@@ -111,14 +111,47 @@ describe('tryContinueOnLength', () => {
 		]);
 	});
 
-	it('resumes after tools even when there is no answer content yet', () => {
+	it('resumes after tools when there is answer text to resume', () => {
+		const { ctx, added } = fixture();
+		const out = tryContinueOnLength(
+			ctx,
+			usedTools(),
+			new NudgeState(),
+			res('<think>x</think>Half a summ', 'length'),
+			1
+		);
+		expect(out).toBe('continue');
+		expect(added).toEqual([
+			{ role: 'assistant', content: 'Half a summ' },
+			{ role: 'user', content: 'Continue.' }
+		]);
+	});
+
+	it('after tools with nothing to resume, asks for a smaller response instead of "Continue."', () => {
+		// A tool call too long for the limit: the server drops it, leaving only reasoning.
 		const { ctx, added } = fixture();
 		const nudges = new NudgeState();
 		const out = tryContinueOnLength(ctx, usedTools(), nudges, res('<think>x</think>', 'length'), 1);
 		expect(out).toBe('continue');
-		expect(added.at(-1)).toEqual({ role: 'user', content: 'Continue.' });
-		// The bounded reasoning-overrun budget is untouched on this path.
-		expect(nudges.lengthContinueRetryCount).toBe(0);
+		expect(added).toHaveLength(1);
+		expect(added[0].role).toBe('user');
+		expect(added[0].content).toContain('4096-token limit before it finished, so nothing in it ran');
+		expect(added[0].content).toContain('split a long file into parts');
+		expect(added[0].content).toContain(NUDGE_NOTE);
+		expect(nudges.lengthContinueRetryCount).toBe(1);
+	});
+
+	it('stops asking after tools once the retries are spent, rather than looping', () => {
+		const { ctx } = fixture();
+		const nudges = new NudgeState();
+		for (let i = 0; i < MAX_LENGTH_CONTINUE_RETRIES; i++) {
+			expect(tryContinueOnLength(ctx, usedTools(), nudges, res(null, 'length'), i)).toBe(
+				'continue'
+			);
+		}
+		const before = ctx.messages.length;
+		expect(tryContinueOnLength(ctx, usedTools(), nudges, res(null, 'length'), 9)).toBeNull();
+		expect(ctx.messages).toHaveLength(before);
 	});
 
 	it('asks for the answer directly when cut off mid-reasoning, without an echo', () => {

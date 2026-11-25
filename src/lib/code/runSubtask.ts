@@ -384,8 +384,7 @@ class ProfileCaps {
 	};
 
 	private overBudget(): boolean {
-		const max = this.profile.maxCostUsd;
-		return max !== null && this.spent >= max;
+		return this.profile.maxCostUsd !== null && this.spent >= this.profile.maxCostUsd;
 	}
 }
 
@@ -404,6 +403,9 @@ function profiledLoop(
 		subtaskHelpers: profile.helpers,
 		toolAllowlist: tools ? profile.tools : [],
 		writablePaths: profile.writablePaths,
+		// A delegate writes a whole module in one call: the global response cap
+		// (8K by default) cuts that off, so it scales with the model's window.
+		scaleResponseToContext: true,
 		// One more than the rounds left: the caps stop it first, with no
 		// wrap-up call of the loop's own before the report call.
 		maxIterations: tools ? caps.roundsLeft + 1 : 1,
