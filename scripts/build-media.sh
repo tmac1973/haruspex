@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Haruspex's media bundle for one target: LGPL ffmpeg and ffprobe as
+# Builds Haruspex's media bundle for one target: GPL ffmpeg and ffprobe as
 # shared libraries, melt (MLT) with only the modules Kdenlive and Shotcut
 # projects need, and the cut-down Qt 6 that MLT's qt6 module renders `qtblend`
 # with. The result is dist/media-<triple>.tar.xz:
@@ -29,10 +29,11 @@
 # and Quick Sync on Linux; NVENC, AMF and Quick Sync on Windows; VideoToolbox
 # on macOS. All are LGPL-safe. melt renders through the same libav*, so the
 # formats it writes are the ones listed here (MP4 with H.264 from libx264 or
-# a hardware encoder, and AAC).
+# a hardware encoder, and AAC). WebM is written too (VP8/VP9 from libvpx, with
+# Opus), and dav1d decodes AV1 in software, which ComfyUI's clips need.
 #
 # Everything built from source here is linked into the shared libraries:
-# lame, x264, libxml2, and on Linux libdrm, libva and libvpl, so a machine without
+# lame, x264, opus, dav1d, libvpx, libxml2, and on Linux libdrm, libva and libvpl, so a machine without
 # libva still runs. What stays dynamic is what the platform provides: glibc,
 # libstdc++, gnutls, ALSA, PulseAudio, fontconfig and freetype on Linux (every
 # desktop has them), the system frameworks on macOS, the system DLLs on
@@ -62,6 +63,13 @@ LAME_URL="https://downloads.sourceforge.net/project/lame/lame/$LAME_VERSION/lame
 LAME_SHA256="ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e"
 # x264's stable branch, by commit (it has no release tags).
 X264_COMMIT="b35605ace3ddf7c1a5d67a2eb553f034aef41d55"
+# AV1 decoding (ComfyUI's clips are AV1 WebM; ffmpeg's own av1 decoder only
+# runs on hardware), and Opus and VP8/VP9 for writing WebM.
+DAV1D_TAG="1.5.5"
+OPUS_VERSION="1.6.1"
+OPUS_URL="https://downloads.xiph.org/releases/opus/opus-$OPUS_VERSION.tar.gz"
+OPUS_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
+LIBVPX_TAG="v1.17.0"
 LIBXML2_VERSION="2.13.8"
 LIBXML2_URL="https://download.gnome.org/sources/libxml2/${LIBXML2_VERSION%.*}/libxml2-$LIBXML2_VERSION.tar.xz"
 LIBXML2_SHA256="277294cb33119ab71b2bc81f2f445e9bc9435b893ad15bb2cd2b0e859a0ee84a"
@@ -292,6 +300,92 @@ if [ ! -f "$PREFIX/lib/libx264.a" ]; then
     )
 fi
 
+# ---- opus (BSD-3-Clause), static, position-independent ----
+if [ ! -f "$PREFIX/lib/libopus.a" ]; then
+    echo ">> Building opus $OPUS_VERSION"
+    fetch "$OPUS_URL" "$OPUS_SHA256" "opus-$OPUS_VERSION"
+    (
+        cd "$WORK/opus-$OPUS_VERSION"
+        ./configure --prefix="$PREFIX" ${LAME_HOST[@]+"${LAME_HOST[@]}"} \
+            --enable-static --disable-shared --with-pic --disable-doc \
+            --disable-extra-programs --disable-dependency-tracking
+        make -j"$JOBS"
+        make install
+    )
+fi
+
+# ---- dav1d (BSD-2-Clause), AV1 decoding, static, position-independent ----
+if [ ! -f "$PREFIX/lib/libdav1d.a" ]; then
+    echo ">> Building dav1d $DAV1D_TAG"
+    checkout dav1d https://code.videolan.org/videolan/dav1d.git "$DAV1D_TAG"
+    DAV1D_CROSS=()
+    if [ "${#LAME_HOST[@]}" -gt 0 ]; then
+        # The x86_64 macOS build on an arm64 runner: meson has to be told.
+        cat > "$WORK/dav1d-cross.txt" <<'EOF'
+[binaries]
+c = 'clang'
+ar = 'ar'
+strip = 'strip'
+nasm = 'nasm'
+
+[built-in options]
+c_args = ['-arch', 'x86_64']
+c_link_args = ['-arch', 'x86_64']
+
+[host_machine]
+system = 'darwin'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
+EOF
+        DAV1D_CROSS=(--cross-file "$WORK/dav1d-cross.txt")
+    fi
+    (
+        # The cross build's exported -arch flags are in the cross file.
+        unset CFLAGS LDFLAGS
+        meson setup "$WORK/dav1d/build" "$WORK/dav1d" --prefix="$PREFIX" --libdir=lib \
+            ${DAV1D_CROSS[@]+"${DAV1D_CROSS[@]}"} \
+            --default-library=static --buildtype=release -Db_staticpic=true \
+            -Denable_tools=false -Denable_tests=false -Denable_docs=false
+        ninja -C "$WORK/dav1d/build" install
+    )
+fi
+
+# ---- libvpx (BSD-3-Clause), VP8 and VP9 encoding only, static ----
+# ffmpeg decodes VP8 and VP9 itself; libvpx is here to write WebM.
+if [ ! -f "$PREFIX/lib/libvpx.a" ]; then
+    echo ">> Building libvpx $LIBVPX_TAG"
+    checkout libvpx https://github.com/webmproject/libvpx.git "$LIBVPX_TAG"
+    case "$TARGET" in
+        x86_64-unknown-linux-gnu) VPX_TARGET=x86_64-linux-gcc ;;
+        aarch64-unknown-linux-gnu) VPX_TARGET=arm64-linux-gcc ;;
+        # darwin22 is macOS 13, the bundle's minimum.
+        aarch64-apple-darwin) VPX_TARGET=arm64-darwin22-gcc ;;
+        x86_64-apple-darwin) VPX_TARGET=x86_64-darwin22-gcc ;;
+        x86_64-pc-windows-msvc) VPX_TARGET=x86_64-win64-gcc ;;
+    esac
+    (
+        cd "$WORK/libvpx"
+        # libvpx adds its own -arch; the cross build's exported flags would
+        # say it twice.
+        unset CFLAGS LDFLAGS
+        ./configure --prefix="$PREFIX" --target="$VPX_TARGET" \
+            --enable-static --disable-shared --enable-pic \
+            --disable-examples --disable-tools --disable-docs --disable-unit-tests \
+            --disable-vp8-decoder --disable-vp9-decoder \
+            --enable-vp8-encoder --enable-vp9-encoder
+        make -j"$JOBS"
+        make install
+    )
+fi
+# Static, so what they link against (libm, pthreads) has to come along, and
+# ffmpeg asks pkg-config for --static only on Windows. Fold Libs.private into
+# Libs; idempotent, as the line is gone after.
+for pc in opus vpx; do
+    perl -0pi -e 'if (/^Libs\.private:(.*)$/m) { my $p = $1; s/^Libs\.private:.*\n//m; s/^(Libs:.*)$/$1$p/m }' \
+        "$PREFIX/lib/pkgconfig/$pc.pc"
+done
+
 case "$OS" in
     linux|windows)
         # ---- NVENC headers (MIT) ----
@@ -377,10 +471,13 @@ if [ ! -x "$PREFIX/bin/ffmpeg$EXT" ]; then
             --disable-debug \
             --enable-libmp3lame \
             --enable-libx264 \
+            --enable-libopus \
+            --enable-libvpx \
+            --enable-libdav1d \
             --disable-encoders \
-            --enable-encoder=png,mjpeg,rawvideo,wrapped_avframe,pcm_s16le,flac,aac,libx264,libmp3lame${HW_ENCODERS:+,$HW_ENCODERS} \
+            --enable-encoder=png,mjpeg,rawvideo,wrapped_avframe,pcm_s16le,flac,aac,libx264,libmp3lame,libopus,libvpx_vp8,libvpx_vp9${HW_ENCODERS:+,$HW_ENCODERS} \
             --disable-muxers \
-            --enable-muxer=image2,image2pipe,rawvideo,segment,wav,flac,mp3,adts,mp4,mov,null \
+            --enable-muxer=image2,image2pipe,rawvideo,segment,wav,flac,mp3,adts,mp4,mov,webm,matroska,avi,null \
             --disable-protocols \
             --enable-protocol=file,pipe,rtp,tcp,udp,http,https,tls,httpproxy \
             --disable-indevs \
@@ -674,6 +771,10 @@ cp "$WORK/x264/COPYING" "$MEDIA/LICENSES/x264-COPYING"
 cp "$WORK/ffmpeg/LICENSE.md" "$MEDIA/LICENSES/ffmpeg-LICENSE.md"
 cp "$WORK/lame-$LAME_VERSION/COPYING" "$MEDIA/LICENSES/lame-COPYING"
 cp "$WORK/libxml2-$LIBXML2_VERSION/Copyright" "$MEDIA/LICENSES/libxml2-Copyright"
+cp "$WORK/opus-$OPUS_VERSION/COPYING" "$MEDIA/LICENSES/opus-COPYING"
+cp "$WORK/dav1d/COPYING" "$MEDIA/LICENSES/dav1d-COPYING"
+cp "$WORK/libvpx/LICENSE" "$MEDIA/LICENSES/libvpx-LICENSE"
+cp "$WORK/libvpx/PATENTS" "$MEDIA/LICENSES/libvpx-PATENTS"
 for f in "$WORK/mlt-$MLT_VERSION"/COPYING*; do cp "$f" "$MEDIA/LICENSES/mlt-$(basename "$f")"; done
 mkdir -p "$MEDIA/LICENSES/qt"
 cp "$WORK/qtbase-everywhere-src-$QT_VERSION/LICENSES/"* "$MEDIA/LICENSES/qt/"
@@ -688,6 +789,8 @@ x264 $X264_COMMIT (GPL-2.0-or-later)
 MLT $MLT_VERSION (LGPL-2.1-or-later; the qt6, plusgpl and normalize modules are GPL)
 Qt $QT_VERSION qtbase and qtsvg (LGPL-3.0)
 libxml2 $LIBXML2_VERSION (MIT), lame $LAME_VERSION (LGPL-2.0-or-later)
+dav1d $DAV1D_TAG (BSD-2-Clause), opus $OPUS_VERSION (BSD-3-Clause)
+libvpx $LIBVPX_TAG (BSD-3-Clause, with Google's VP8/VP9 patent grant)
 Sources: https://github.com/FFmpeg/FFmpeg/tree/$FFMPEG_TAG
          https://github.com/mltframework/mlt/tree/v$MLT_VERSION
          $QT_URL
