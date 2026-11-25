@@ -77,6 +77,18 @@ const HARUSPEX_INIT_PY = `
 import io as _io
 import sys as _sys
 import types as _types
+import warnings as _warnings
+
+# Matplotlib 3.10's own Agg drawing passes float x/y and then warns that
+# floats are deprecated, on any figure with text. The warning names the
+# first frame outside matplotlib (our figure capture, or the code's own
+# savefig), so it reads in the chat as the code's fault. Mute that one
+# message; every other deprecation still shows.
+_warnings.filterwarnings(
+    'ignore',
+    message='The [xy] parameter as float was deprecated in Matplotlib',
+    category=DeprecationWarning
+)
 
 # Install the 'haruspex' module so user code can do:
 #   import haruspex
