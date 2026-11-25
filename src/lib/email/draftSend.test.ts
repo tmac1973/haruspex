@@ -50,9 +50,16 @@ describe('sending a reviewed draft', () => {
 		expect(m.parts).toEqual([{ id: 'part-1', cid: 'p1' }, { id: 'part-3' }, { id: 'part-9' }]);
 	});
 
-	it('sends a plain draft as it is, with nothing else', () => {
-		const m = messageBody({ ...draft, format: undefined }, '**Hi**', new Set());
-		expect(m).toEqual({ body: '**Hi**', parts: [] });
+	it('sends a plain draft as it is, with its files but no pictures', () => {
+		const plain = { ...draft, format: undefined };
+		expect(messageBody(plain, '**Hi** ![A](cid:p1)', new Set())).toEqual({
+			body: '**Hi** ![A](cid:p1)',
+			parts: [{ id: 'part-3' }]
+		});
+		expect(messageBody({ ...plain, attachments: [] }, 'x', new Set())).toEqual({
+			body: 'x',
+			parts: []
+		});
 	});
 
 	it('previews pictures from their preview URLs', () => {

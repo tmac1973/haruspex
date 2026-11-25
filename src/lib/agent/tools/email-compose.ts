@@ -1,14 +1,22 @@
 /**
  * `email_compose`: the model drafts a reply or a new message, and the user
  * reviews, edits and sends it (`stores/emailReview.svelte.ts`). The tool
- * never sends; it reports what the user did.
+ * never sends; it reports what the user did. It can attach a notebook, or one
+ * card of it (`_emailAttach.ts`); the user can still remove the file.
  *
  * Offered only in an attended Chat with an account that has Allow sending on
  * (`registry.ts`), and refused here too when nobody is present.
  */
 import type { EmailAccount } from '#lib/stores/settings.ts';
-import { askEmailReview, type EmailDraft } from '#lib/stores/emailReview.svelte.ts';
+import {
+	askEmailReview,
+	stagedIds,
+	type EmailDraft,
+	type EmailReviewOutcome
+} from '#lib/stores/emailReview.svelte.ts';
 import { sendableAccounts } from '#lib/share/email.ts';
+import { dropParts, type StagedFile } from '#lib/email/parts.ts';
+import { ATTACH_FORMATS, composeAttachment } from '#lib/agent/tools/_emailAttach.ts';
 import type { ReplyContext } from '#lib/ipc/gen/ReplyContext.ts';
 import { toolInvokeError, waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { emailCall, resolveEmailAccounts } from '#lib/agent/tools/email.ts';
@@ -85,7 +93,7 @@ registerTool({
 			description:
 				'Open an email draft — a reply or a new message — for the user to review, edit and send. ' +
 				'It does not send anything itself: the user decides in a dialog, and the result says ' +
-				'whether they sent or discarded it.',
+				'whether they sent or discarded it. It can attach a notebook or a card from one.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -117,6 +125,20 @@ registerTool({
 						type: 'string',
 						description:
 							'The account to send from (accountId, label or address). Needed only when several can send; for a reply, pass the listing’s accountId.'
+					},
+					attach_notebook: {
+						type: 'string',
+						description: 'Attach this notebook (id or exact title), exported as notebook_format.'
+					},
+					attach_card: {
+						type: 'string',
+						description:
+							'Attach one card (its id) instead: a file or picture card attaches its file; any other card is exported as notebook_format.'
+					},
+					notebook_format: {
+						type: 'string',
+						enum: [...ATTACH_FORMATS],
+						description: 'The attached notebook or card’s format. Default pdf.'
 					}
 				},
 				required: ['body']
@@ -142,15 +164,37 @@ registerTool({
 		}
 		if (typeof draft === 'string') return toolResult(toolError(draft));
 
-		const outcome = await waitOnUser(ctx, () => askEmailReview(draft, sendableAccounts()));
-		if (outcome.kind === 'discarded') {
-			return toolResult(
-				outcome.note
-					? `The user discarded the draft. Their note: ${outcome.note}`
-					: 'The user discarded the draft.'
-			);
+		let file: StagedFile | null | string;
+		try {
+			file = await composeAttachment(args);
+		} catch (e) {
+			if (ctx.signal?.aborted) throw e;
+			return toolResult(toolInvokeError('email_compose', e));
 		}
-		const sent = `Sent to ${outcome.to.join(', ')} (Message-ID ${outcome.messageId}).`;
-		return toolResult(outcome.sentCopyError ? `${sent} ${outcome.sentCopyError}` : sent);
+		if (typeof file === 'string') return toolResult(toolError(file));
+		const withFile: EmailDraft = file ? { ...draft, attachments: [file] } : draft;
+
+		let outcome: EmailReviewOutcome;
+		try {
+			outcome = await waitOnUser(ctx, () => askEmailReview(withFile, sendableAccounts()));
+		} catch (e) {
+			// The dialog never opened, so nothing will drop the file.
+			await dropParts(stagedIds(withFile));
+			throw e;
+		}
+		return toolResult(report(outcome, !!file));
 	}
 });
+
+/** What the model is told the user did. */
+function report(outcome: EmailReviewOutcome, hadFile: boolean): string {
+	if (outcome.kind === 'discarded') {
+		return outcome.note
+			? `The user discarded the draft. Their note: ${outcome.note}`
+			: 'The user discarded the draft.';
+	}
+	let sent = `Sent to ${outcome.to.join(', ')} (Message-ID ${outcome.messageId}).`;
+	if (outcome.attached?.length) sent += ` Attached: ${outcome.attached.join(', ')}.`;
+	else if (hadFile) sent += ' The user removed the attachment.';
+	return outcome.sentCopyError ? `${sent} ${outcome.sentCopyError}` : sent;
+}

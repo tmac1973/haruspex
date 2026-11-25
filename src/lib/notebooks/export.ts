@@ -169,6 +169,30 @@ async function writeBytes(path: string, bytes: Uint8Array): Promise<void> {
 	});
 }
 
+const MIME: Record<NotebookFormat, string> = {
+	markdown: 'text/markdown',
+	html: 'text/html',
+	pdf: 'application/pdf',
+	docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+	odt: 'application/vnd.oasis.opendocument.text',
+	ipynb: 'application/x-ipynb+json'
+};
+
+/** A notebook exported as one file, to attach to an email. */
+export async function notebookFile(
+	full: Full,
+	title: string,
+	format: NotebookFormat
+): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
+	const built = await build(full, format);
+	const ext = built.zip ? 'zip' : EXT[format].ext;
+	return {
+		name: `${safeFileName(title)}.${ext}`,
+		mime: built.zip ? 'application/zip' : MIME[format],
+		bytes: built.bytes
+	};
+}
+
 async function ask(title: string, format: NotebookFormat | TableFormat, zip = false) {
 	const { ext, name } = zip ? { ext: 'zip', name: 'Markdown with files' } : EXT[format];
 	return save({

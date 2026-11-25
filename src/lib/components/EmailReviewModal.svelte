@@ -22,7 +22,6 @@
 	import { keptAttachments, messageBody, previewHtml, sentSize } from '#lib/email/draftSend.ts';
 	import { dropParts, formatSize, MAX_MESSAGE_BYTES, stagePart } from '#lib/email/parts.ts';
 	import type { OutgoingMessage } from '#lib/ipc/gen/OutgoingMessage.ts';
-	import type { PartRef } from '#lib/ipc/gen/PartRef.ts';
 	import type { SendOutcome } from '#lib/ipc/gen/SendOutcome.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -42,7 +41,7 @@
 	const removed = new SvelteSet<string>();
 	/** Optional files ticked, and the staged id of each one built. */
 	let ticked = $state<Record<number, boolean>>({});
-	let built: Record<number, string> = {};
+	let built: Record<number, { id: string; name: string }> = {};
 	let preview = $state(false);
 
 	// Load each new draft into the fields.
@@ -89,24 +88,24 @@
 	const from = $derived(pending?.accounts.find((a) => a.id === accountId));
 
 	/** Stage the ticked optional files; each is built once, so Send can be retried. */
-	async function extraParts(): Promise<PartRef[]> {
+	async function extraParts(): Promise<{ id: string; name: string }[]> {
 		const opts = pending?.draft.optional ?? [];
-		const refs: PartRef[] = [];
+		const files: { id: string; name: string }[] = [];
 		for (const [i, opt] of opts.entries()) {
 			if (!ticked[i]) continue;
 			if (!built[i]) {
 				const f = await opt.build();
-				built[i] = await stagePart(f.name, f.mime, f.bytes);
+				built[i] = { id: await stagePart(f.name, f.mime, f.bytes), name: f.name };
 			}
-			refs.push({ id: built[i] });
+			files.push(built[i]);
 		}
-		return refs;
+		return files;
 	}
 
 	/** Drop every file this draft staged; the ones just sent are already gone. */
 	function dropStaged() {
 		if (!pending) return;
-		void dropParts([...stagedIds(pending.draft), ...Object.values(built)]);
+		void dropParts([...stagedIds(pending.draft), ...Object.values(built).map((b) => b.id)]);
 		built = {};
 	}
 
@@ -116,11 +115,17 @@
 		error = null;
 		try {
 			const text = composedBody(body, pending.draft.quoted);
+			const extra = await extraParts();
 			const message: OutgoingMessage = {
 				to: toList,
 				cc: ccList,
 				subject: subject.trim(),
-				...messageBody(pending.draft, text, removed, await extraParts()),
+				...messageBody(
+					pending.draft,
+					text,
+					removed,
+					extra.map((f) => ({ id: f.id }))
+				),
 				inReplyTo: pending.draft.inReplyTo,
 				references: pending.draft.references
 			};
@@ -130,7 +135,8 @@
 				kind: 'sent',
 				messageId: out.messageId,
 				to: toList,
-				sentCopyError: out.sentCopyError
+				sentCopyError: out.sentCopyError,
+				attached: [...attachments.map((a) => a.name), ...extra.map((f) => f.name)]
 			});
 		} catch (e) {
 			error = errMessage(e);
@@ -234,7 +240,7 @@
 					{/each}
 				</div>
 			{/if}
-			{#if markdown && size > 0}
+			{#if size > 0}
 				<p class="total" class:error-text={tooLarge}>
 					{tooLarge
 						? `The files add up to ${formatSize(size)}, over the ${formatSize(MAX_MESSAGE_BYTES)} an email can carry.`

@@ -37,7 +37,11 @@ export function messageBody(
 	removed: ReadonlySet<string>,
 	extra: PartRef[] = []
 ): { body: string; html?: string; parts: PartRef[] } {
-	if (draft.format !== 'markdown') return { body: text, parts: [] };
+	if (draft.format !== 'markdown') {
+		// Plain text has no pictures, but may carry files (`email_compose`).
+		const files = keptAttachments(draft.attachments ?? [], removed).map((a) => ({ id: a.partId }));
+		return { body: text, parts: [...files, ...extra] };
+	}
 	const { text: plain, html } = mailBody(text, { cidPictures: true });
 	return {
 		body: plain,

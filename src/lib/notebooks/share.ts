@@ -6,11 +6,10 @@
  */
 import type { NotebookCard } from '#lib/notebooks/api.ts';
 import {
-	build,
 	fullNotebook,
 	inlinedMarkdown,
 	markdownHtml,
-	safeFileName,
+	notebookFile,
 	type Full
 } from '#lib/notebooks/export.ts';
 import { emailMarkdown } from '#lib/share/email.ts';
@@ -39,11 +38,7 @@ export function shareTitle(full: Full, card?: NotebookCard): string {
 export function pdfAttachment(full: Full, title: string): OptionalFile {
 	return {
 		label: 'Attach as PDF',
-		build: async () => ({
-			name: `${safeFileName(title)}.pdf`,
-			mime: 'application/pdf',
-			bytes: (await build(full, 'pdf')).bytes
-		})
+		build: () => notebookFile(full, title, 'pdf')
 	};
 }
 

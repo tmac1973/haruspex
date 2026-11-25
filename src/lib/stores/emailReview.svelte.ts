@@ -56,7 +56,14 @@ export function stagedIds(draft: EmailDraft): string[] {
 }
 
 export type EmailReviewOutcome =
-	| { kind: 'sent'; messageId: string; to: string[]; sentCopyError?: string }
+	| {
+			kind: 'sent';
+			messageId: string;
+			to: string[];
+			sentCopyError?: string;
+			/** The names of the files that went with it. */
+			attached?: string[];
+	  }
 	| { kind: 'discarded'; note: string };
 
 export interface EmailReviewOptions {
