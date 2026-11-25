@@ -1148,7 +1148,9 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 			content: automaticCheck(
 				'The research budget for this turn is spent and tools are switched off: a tool ' +
 					'call now is discarded and the user sees nothing. Write your answer to the user ' +
-					'as plain text now, from what you have found, and say what you could not confirm.'
+					'as plain text now, from what you have found, and say what you could not confirm. ' +
+					'Nothing more gets saved or changed this turn: claim only the changes your ' +
+					'earlier tool calls made, and name what is still to do.'
 			)
 		});
 		expect(streamedText(cb)).toBe('Summary of findings.');

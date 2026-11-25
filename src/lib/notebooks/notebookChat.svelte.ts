@@ -18,6 +18,7 @@ import { prepareHistory } from '#lib/remote/conversation.ts';
 import { dbLoadMessages, dbReplaceMessages, dbSaveMessage } from '#lib/stores/db.ts';
 import * as api from '#lib/notebooks/api.ts';
 import { emitNotebookChanged } from '#lib/stores/notebooks.svelte.ts';
+import { getSettings, notebookChatMaxIterations } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** How much of the notebook's outline goes in each turn's prompt. */
@@ -146,6 +147,7 @@ export async function sendNotebookChat(notebookId: string, text: string): Promis
 					userMessage: text,
 					workingDir: null,
 					contextSize: descriptor.contextSize,
+					maxIterations: notebookChatMaxIterations(getSettings().notebooks?.chatMaxIterations),
 					interactive: true,
 					conversationId,
 					keepFamilies: ['notebooks'],

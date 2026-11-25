@@ -11,6 +11,7 @@ import {
 	getIncludeImagesPrompt,
 	clampResponseTokens,
 	chatTurnMaxIterations,
+	notebookChatMaxIterations,
 	DEFAULT_MAX_RESPONSE_TOKENS,
 	DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 	MIN_MAX_RESPONSE_TOKENS,
@@ -1422,6 +1423,16 @@ describe('load-time Shell Full access default migration', () => {
 	it('prefers the new key once it has been written', async () => {
 		const s = await loadWith({ shellCodeModeDefault: true, shellFullAccessDefault: false });
 		expect(s.shellFullAccessDefault).toBe(false);
+	});
+});
+
+describe('notebookChatMaxIterations', () => {
+	it('defaults to 25 and clamps like Chat', () => {
+		expect(getSettings().notebooks.chatMaxIterations).toBe(25);
+		expect(notebookChatMaxIterations(40)).toBe(40);
+		expect(notebookChatMaxIterations(0)).toBe(5);
+		expect(notebookChatMaxIterations(5000)).toBe(200);
+		expect(notebookChatMaxIterations(Number.NaN)).toBe(25);
 	});
 });
 

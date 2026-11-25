@@ -228,9 +228,13 @@ export async function runMaxIterationsFinalSynthesis(
 		// told only "do not search", ThinkingCap 27B on vLLM wrote another
 		// tool call on 3 of 5 file requests, which vLLM drops, leaving no
 		// answer. This wording got text on 5 of 5.
+		//
+		// It also says nothing more gets saved: a notebook chat that ran out
+		// of steps between finding item links and writing them listed the
+		// links and said it had added them to the table.
 		const finalPrompt = ctx.shellMode
 			? 'Wrap up now using what you have found so far. If your investigation is incomplete, briefly say so and suggest the next command or file the user could share with you to continue.'
-			: 'The research budget for this turn is spent and tools are switched off: a tool call now is discarded and the user sees nothing. Write your answer to the user as plain text now, from what you have found, and say what you could not confirm.';
+			: 'The research budget for this turn is spent and tools are switched off: a tool call now is discarded and the user sees nothing. Write your answer to the user as plain text now, from what you have found, and say what you could not confirm. Nothing more gets saved or changed this turn: claim only the changes your earlier tool calls made, and name what is still to do.';
 		appendMessage(ctx, { role: 'user', content: automaticCheck(finalPrompt) });
 	}
 	// Reasoning off: the thinking happened over the whole turn, and this call

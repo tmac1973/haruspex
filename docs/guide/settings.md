@@ -64,6 +64,7 @@ See the `memory` page.
 
 ## Notebooks
 
+- **Max steps per turn**: 25, for the notebook's own chat (see `notebook-agents`).
 - **Semantic search**: off. On finds notebook cards by meaning too, using the model Memory uses (see `notebooks`).
 - **Back up…** / **Restore…**: save every notebook to one file, or put them back from one (see `notebook-files`).
 
