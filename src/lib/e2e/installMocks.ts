@@ -47,6 +47,7 @@ const SHELL_CONTEXT = {
 	hostname: null
 };
 let messageId = 0;
+let partId = 0;
 const empty: Handler = () => [];
 
 /** Answers for the commands the covered flows make. */
@@ -161,6 +162,11 @@ const TABLE: Record<string, Handler> = {
 	voices_list: empty,
 	list_audio_input_devices: empty,
 	email_list_providers: empty,
+	// Email: files are staged by id and sending always succeeds; the specs
+	// read what was sent from the recorded calls.
+	email_part_stage: () => `part-${++partId}`,
+	email_part_drop: none,
+	email_send: () => ({ messageId: 'e2e@example.com' }),
 	// Print: the window opens on a fixed page, and printing does nothing.
 	print_open: none,
 	print_document: () => ({ title: 'Sample', html: '<h1>Sample</h1><p>Printed text.</p>' }),

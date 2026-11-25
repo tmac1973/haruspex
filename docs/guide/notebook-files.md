@@ -21,7 +21,7 @@ What a notebook can hold besides text, tables and checklists, and how to get not
 
 ## Print or email a notebook
 
-**⋯ → Print…** on a notebook opens it as a page, pictures inside, and then the print dialog; **Print…** in that window opens the dialog again. **⋯ → Email…** opens a new message with the notebook as its text, in the **Review email** window: add the recipients and click **Send**. Files and pictures are named in the text, not attached. Email shows only when an email account has **Allow sending** on (see the `integrations` page). A card's **⋯ → Print card…** and **Email card…** do the same for that card alone. Neither is offered for a notebook on another computer.
+**⋯ → Print…** on a notebook opens it as a page, pictures inside, and then the print dialog; **Print…** in that window opens the dialog again. **⋯ → Email…** opens a new message with the notebook as formatted text, in the **Review email** window: add the recipients and click **Send**. Its pictures and plots go inside the message and its file cards are attached; **Attach as PDF** adds the notebook as a PDF too. Email shows only when an email account has **Allow sending** on (see the `email` page). A card's **⋯ → Print card…** and **Email card…** do the same for that card alone. Neither is offered for a notebook on another computer.
 
 ## Import notes and tables
 

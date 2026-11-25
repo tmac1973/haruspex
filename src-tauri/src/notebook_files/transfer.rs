@@ -18,7 +18,7 @@ pub struct ImportedSheet {
     pub rows: Vec<Vec<String>>,
 }
 
-fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
+pub(crate) fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
     let raw = request
         .headers()
         .get(name)

@@ -6,7 +6,8 @@
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
 	import SpeakerButton from '#lib/components/SpeakerButton.svelte';
 	import { getLiveSettings, getSettings } from '#lib/stores/settings.ts';
-	import { canEmail, emailText } from '#lib/share/email.ts';
+	import { canEmail, emailMarkdown } from '#lib/share/email.ts';
+	import { prepareChatMail } from '#lib/share/mailParts.ts';
 	import { printHtml } from '#lib/share/print.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { isWebClient } from '#lib/buildFlags.ts';
@@ -222,7 +223,7 @@
 						class="icon-btn"
 						title="Email this answer"
 						aria-label="Email this answer"
-						onclick={() => void emailText(shareTitle, answerText)}
+						onclick={() => void emailMarkdown(shareTitle, () => prepareChatMail(answerText))}
 					>
 						✉️
 					</button>

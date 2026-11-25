@@ -18,7 +18,7 @@ The Home tab is the first tab: cards that show what Haruspex is doing and what n
 
 ## See the email that matters
 
-**Add card → Important emails…** needs an email account (see the `integrations` page). Pick the accounts (named at the top of the card), say what counts as important ("from my manager, or about invoices"), how far back to look, how many to show and how often to check (every 30 minutes to start).
+**Add card → Important emails…** needs an email account (see the `email` page). Pick the accounts (named at the top of the card), say what counts as important ("from my manager, or about invoices"), how far back to look, how many to show and how often to check (every 30 minutes to start).
 
 Each check lists your unread inbox mail and the model picks the ones that fit your rule, reading only sender, subject and first lines. Subject, sender and age come straight from your mail; the model's short reason sits under each and can't change what a message says it is. Read mail drops off at the next check; checking marks nothing as read. **↻** checks now.
 

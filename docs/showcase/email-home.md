@@ -167,6 +167,23 @@ Prompt:
 
 Example output:
 
-Under the answer, ✉️ opens a Review email window with the subject "Lisbon trip" and the plan as its text. 🖨️ opens the answer as a page with the print dialog over it.
+Under the answer, ✉️ opens a Review email window with the subject "Lisbon trip" and the plan as formatted text; **Preview** shows it as it will arrive. A picture Haruspex generated for the plan goes inside the message. 🖨️ opens the answer as a page with the print dialog over it.
 
-Read more: chat-conversations, integrations
+Read more: chat-conversations, email
+
+## Email a notebook as a PDF
+
+Ask in Chat, and the notebook goes as an attachment to a draft you check and send.
+
+Tab: Chat
+Required settings: An email account with Allow sending on (Settings → Integrations → Email)
+
+Prompt:
+
+> Email the Speakers notebook to sam@example.com as a PDF, with a short note saying it's the shortlist we talked about.
+
+Example output:
+
+A Review email window opens, addressed to sam@example.com, with the note as its text and **📎 Speakers.pdf** under it. Click **Send**, and the assistant says: "Sent to sam@example.com. Attached: Speakers.pdf."
+
+Read more: email, notebook-agents

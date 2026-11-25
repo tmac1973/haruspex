@@ -42,8 +42,9 @@
 	import { createPendingAudio } from '#lib/utils/pendingAudio.svelte.ts';
 	import { withAttachedAudio } from '#lib/audio/attached.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
-	import { conversationHtml, conversationText } from '#lib/share/conversation.ts';
-	import { canEmail, emailText } from '#lib/share/email.ts';
+	import { conversationHtml, conversationMarkdown } from '#lib/share/conversation.ts';
+	import { canEmail, emailMarkdown } from '#lib/share/email.ts';
+	import { prepareChatMail } from '#lib/share/mailParts.ts';
 	import { printHtml } from '#lib/share/print.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -451,7 +452,8 @@
 
 	function emailConversation() {
 		const conv = activeConversation;
-		if (conv) void emailText(conv.title, conversationText(conv.messages));
+		if (conv)
+			void emailMarkdown(conv.title, () => prepareChatMail(conversationMarkdown(conv.messages)));
 	}
 </script>
 

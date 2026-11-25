@@ -114,4 +114,100 @@ describe('EmailReviewModal', () => {
 		expect(screen.queryByLabelText('Note')).toBeNull();
 		await waitFor(() => expect(document.activeElement).toBe(field('To')));
 	});
+
+	describe('a Markdown draft', () => {
+		const md = (over: Partial<EmailDraft> = {}) =>
+			draft({
+				quoted: undefined,
+				inReplyTo: undefined,
+				references: [],
+				body: '**Hi** ![Map](cid:p1)',
+				format: 'markdown',
+				pictures: [
+					{
+						partId: 'part-1',
+						cid: 'p1',
+						name: 'map.png',
+						mime: 'image/png',
+						size: 2048,
+						previewUrl: 'data:image/png;base64,AAAA'
+					}
+				],
+				attachments: [
+					{ partId: 'part-2', name: 'ticket.pdf', mime: 'application/pdf', size: 4096 },
+					{ partId: 'part-3', name: 'notes.txt', mime: 'text/plain', size: 10 }
+				],
+				...over
+			});
+
+		function route() {
+			vi.mocked(invoke).mockImplementation(async (cmd) => {
+				if (cmd === 'email_part_stage') return 'part-9';
+				if (cmd === 'email_send') return { messageId: 'new@example.com' };
+				return null;
+			});
+		}
+
+		it('sends text and HTML with the pictures shown and the files kept', async () => {
+			route();
+			const build = vi.fn(async () => ({
+				name: 'Trip.pdf',
+				mime: 'application/pdf',
+				bytes: new Uint8Array([1])
+			}));
+			const { outcome } = await open(md({ optional: [{ label: 'Attach as PDF', build }] }));
+			await fireEvent.click(screen.getByLabelText('Remove notes.txt'));
+			expect(screen.queryByText(/notes\.txt/)).toBeNull();
+			await fireEvent.click(screen.getByLabelText('Attach as PDF'));
+			await fireEvent.click(screen.getByText('Send'));
+
+			expect(await outcome).toMatchObject({ kind: 'sent' });
+			expect(build).toHaveBeenCalledTimes(1);
+			const send = vi.mocked(invoke).mock.calls.find(([c]) => c === 'email_send')!;
+			const message = (send[1] as { message: Record<string, unknown> }).message;
+			expect(message.body).toBe('**Hi** [Picture: Map]');
+			expect(message.html).toContain('<strong>Hi</strong>');
+			expect(message.parts).toEqual([
+				{ id: 'part-1', cid: 'p1' },
+				{ id: 'part-2' },
+				{ id: 'part-9' }
+			]);
+			// Whatever was staged and not sent is dropped.
+			expect(invoke).toHaveBeenCalledWith('email_part_drop', {
+				ids: ['part-1', 'part-2', 'part-3', 'part-9']
+			});
+		});
+
+		it('shows the size, and will not send over the limit', async () => {
+			route();
+			await open(
+				md({
+					attachments: [
+						{ partId: 'big', name: 'big.mov', mime: 'video/quicktime', size: 19 * 1024 * 1024 }
+					]
+				})
+			);
+			screen.getByText(/over the 18\.0 MB an email can carry/);
+			expect((screen.getByText('Send') as HTMLButtonElement).disabled).toBe(true);
+		});
+
+		it('previews the mail with its pictures', async () => {
+			route();
+			await open(md());
+			await fireEvent.click(screen.getByText('Preview'));
+			const preview = screen.getByLabelText('Preview');
+			expect(preview.querySelector('strong')?.textContent).toBe('Hi');
+			expect(preview.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+		});
+
+		it('drops its files on Discard', async () => {
+			route();
+			const { outcome } = await open(md());
+			await fireEvent.click(screen.getByText('Discard'));
+			expect(await outcome).toMatchObject({ kind: 'discarded' });
+			expect(invoke).toHaveBeenCalledWith('email_part_drop', {
+				ids: ['part-1', 'part-2', 'part-3']
+			});
+		});
+	});
 });

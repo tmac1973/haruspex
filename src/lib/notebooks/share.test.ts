@@ -5,7 +5,10 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));
 vi.mock('#lib/stores/toasts.svelte.ts', () => ({ showToast: vi.fn() }));
 
-import { notebookText, scoped, shareTitle } from './share';
+vi.mock('#lib/sandbox/sandbox.ts', () => ({ runPython: vi.fn() }));
+vi.mock('#lib/sandbox/availability.ts', () => ({ pythonRuntimeMissing: () => false }));
+
+import { pdfAttachment, scoped, shareTitle } from './share';
 
 const card = (id: string, over: Partial<NotebookCard>): NotebookCard =>
 	({
@@ -43,13 +46,13 @@ const detail = {
 const full = { detail, rowsOf: (c: NotebookCard) => c.rows };
 
 describe('sharing a notebook', () => {
-	it('names files and pictures in the text instead of linking them', () => {
-		const text = notebookText(full);
-		expect(text).toContain('# Trip');
-		expect(text).toContain('Bring a coat.');
-		expect(text).toContain('[Picture: map.png]');
-		expect(text).toContain('[File: ticket.pdf]');
-		expect(text).not.toContain('files/');
+	it('offers the notebook as a PDF, built only when asked for', async () => {
+		const pdf = pdfAttachment(scoped(full, notes), 'Notes — Trip');
+		expect(pdf.label).toBe('Attach as PDF');
+		const f = await pdf.build();
+		expect(f.name).toBe('Notes — Trip.pdf');
+		expect(f.mime).toBe('application/pdf');
+		expect(new TextDecoder().decode(f.bytes.slice(0, 5))).toBe('%PDF-');
 	});
 
 	it('shares one card under the notebook title', () => {

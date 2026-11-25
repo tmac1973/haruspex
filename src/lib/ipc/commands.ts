@@ -209,6 +209,8 @@ export const IPC = {
 	email_forget_session: 'email_forget_session',
 	email_list_providers: 'email_list_providers',
 	email_list_recent: 'email_list_recent',
+	email_part_drop: 'email_part_drop',
+	email_part_stage: 'email_part_stage',
 	email_prepare_summary: 'email_prepare_summary',
 	email_read_full: 'email_read_full',
 	email_reply_context: 'email_reply_context',

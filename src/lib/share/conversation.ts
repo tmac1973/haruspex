@@ -56,14 +56,15 @@ export function conversationTurns(messages: readonly ChatMessage[]): Turn[] {
 
 const label = (t: Turn) => (t.role === 'user' ? 'You' : 'Haruspex');
 
-/** The conversation as plain text, for an email body. */
-export function conversationText(messages: readonly ChatMessage[]): string {
+/**
+ * The conversation as Markdown, for an email body: each turn under who said
+ * it, the pictures the user attached under their message.
+ */
+export function conversationMarkdown(messages: readonly ChatMessage[]): string {
 	return conversationTurns(messages)
 		.map((t) => {
-			const pics = t.images.length
-				? `[${t.images.length} picture${t.images.length === 1 ? '' : 's'} attached]`
-				: '';
-			return `${label(t)}:\n${[t.text, pics].filter(Boolean).join('\n')}`;
+			const pics = t.images.map((u) => `![Attached picture](${u})`).join('\n');
+			return [`**${label(t)}:**`, t.text, pics].filter(Boolean).join('\n\n');
 		})
 		.join('\n\n');
 }

@@ -9,15 +9,16 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use lettre::message::header::{ContentTransferEncoding, ContentType};
-use lettre::message::{Body, Mailbox, Message, SinglePart};
+use lettre::message::{Mailbox, Message};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::client::{Tls, TlsParameters};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
 use serde::{Deserialize, Serialize};
 
 use super::auth::{self, EmailAccount};
+use super::body::{self, Content};
 use super::parser::NormalizedMessage;
+use super::parts::{self, PartRef};
 use super::provider::TlsMode;
 
 /// The limit on each SMTP exchange.
@@ -48,6 +49,14 @@ pub struct OutgoingMessage {
     /// The thread's Message-IDs, oldest first, without angle brackets.
     #[serde(default)]
     pub references: Vec<String>,
+    /// The same message as HTML, sent beside `body` as an alternative.
+    #[serde(default)]
+    #[ts(optional)]
+    pub html: Option<String>,
+    /// Staged files (`email_part_stage`): pictures the HTML shows, and
+    /// attachments.
+    #[serde(default)]
+    pub parts: Vec<PartRef>,
 }
 
 /// A new Message-ID at the sender's domain: time, process and a counter, so
@@ -66,8 +75,9 @@ fn mailbox(addr: &str, field: &str) -> Result<Mailbox, String> {
         .map_err(|e| format!("{field} address {addr:?} is not valid: {e}"))
 }
 
-/// Build the message: Date, a new Message-ID, plain UTF-8 text in
-/// quoted-printable, and the threading headers for a reply.
+/// Build the message: Date, a new Message-ID, the threading headers for a
+/// reply, and the body (`body::finish`): plain UTF-8 text in
+/// quoted-printable, with the HTML and staged files when there are any.
 pub fn build_message(
     account: &EmailAccount,
     msg: &OutgoingMessage,
@@ -94,14 +104,16 @@ pub fn build_message(
         let refs: Vec<String> = msg.references.iter().map(|r| format!("<{r}>")).collect();
         b = b.references(refs.join(" "));
     }
-    let body = Body::new_with_encoding(msg.body.clone(), ContentTransferEncoding::QuotedPrintable)
-        .map_err(|_| "The message body could not be encoded".to_string())?;
-    b.singlepart(
-        SinglePart::builder()
-            .header(ContentType::TEXT_PLAIN)
-            .body(body),
+    let (inline, attachments) = parts::resolve(&msg.parts)?;
+    body::finish(
+        b,
+        &Content {
+            text: msg.body.clone(),
+            html: msg.html.clone().filter(|h| !h.trim().is_empty()),
+            inline,
+            attachments,
+        },
     )
-    .map_err(|e| format!("The message could not be built: {e}"))
 }
 
 fn transport(account: &EmailAccount) -> Result<AsyncSmtpTransport<Tokio1Executor>, String> {
@@ -387,6 +399,8 @@ mod tests {
             body: "Yes — see you then.".into(),
             in_reply_to: Some("m2@example.com".into()),
             references: vec!["m1@example.com".into(), "m2@example.com".into()],
+            html: None,
+            parts: vec![],
         }
     }
 

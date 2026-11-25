@@ -25,9 +25,11 @@
 
 pub mod auth;
 pub mod auth_results;
+pub mod body;
 pub mod commands;
 pub mod imap_client;
 pub mod parser;
+pub mod parts;
 pub mod provider;
 pub mod request_reply;
 pub mod requests;

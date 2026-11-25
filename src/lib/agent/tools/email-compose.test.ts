@@ -2,13 +2,22 @@ import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	askEmailReview: vi.fn()
+	askEmailReview: vi.fn(),
+	composeAttachment: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/emailReview.svelte.ts', () => ({ askEmailReview: mocks.askEmailReview }));
+vi.mock('#lib/stores/emailReview.svelte.ts', () => ({
+	askEmailReview: mocks.askEmailReview,
+	stagedIds: (d: { attachments?: { partId: string }[] }) =>
+		(d.attachments ?? []).map((f) => f.partId)
+}));
+vi.mock('#lib/agent/tools/_emailAttach.ts', () => ({
+	ATTACH_FORMATS: ['pdf', 'docx', 'odt', 'html', 'markdown'],
+	composeAttachment: mocks.composeAttachment
+}));
 
 import '#lib/agent/tools/email-compose.ts';
 import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
@@ -40,6 +49,8 @@ function account(overrides: Partial<EmailAccount> = {}): EmailAccount {
 beforeEach(() => {
 	vi.mocked(invoke).mockReset();
 	mocks.askEmailReview.mockReset();
+	mocks.composeAttachment.mockReset();
+	mocks.composeAttachment.mockResolvedValue(null);
 	setEmailAccounts([]);
 });
 
@@ -135,5 +146,73 @@ describe('email_compose', () => {
 			attended
 		);
 		expect(out.result).toMatch(/pass account_id/);
+	});
+
+	describe('attachments', () => {
+		const pdf = { partId: 'part-1', name: 'Trip.pdf', mime: 'application/pdf', size: 900 };
+
+		it('puts the notebook on the draft and says it went', async () => {
+			setEmailAccounts([sender()]);
+			mocks.composeAttachment.mockResolvedValue(pdf);
+			mocks.askEmailReview.mockResolvedValue({
+				kind: 'sent',
+				messageId: 'n@example.com',
+				to: ['bob@example.com'],
+				attached: ['Trip.pdf']
+			});
+			const out = await executeTool(
+				'email_compose',
+				{ to: 'bob@example.com', subject: 'Trip', body: 'Here it is.', attach_notebook: 'Trip' },
+				attended
+			);
+			expect(mocks.composeAttachment.mock.calls[0][0]).toMatchObject({ attach_notebook: 'Trip' });
+			expect(mocks.askEmailReview.mock.calls[0][0].attachments).toEqual([pdf]);
+			expect(out.result).toBe(
+				'Sent to bob@example.com (Message-ID n@example.com). Attached: Trip.pdf.'
+			);
+		});
+
+		it('says so when the user removed the file before sending', async () => {
+			setEmailAccounts([sender()]);
+			mocks.composeAttachment.mockResolvedValue(pdf);
+			mocks.askEmailReview.mockResolvedValue({
+				kind: 'sent',
+				messageId: 'n@example.com',
+				to: ['bob@example.com'],
+				attached: []
+			});
+			const out = await executeTool(
+				'email_compose',
+				{ to: 'bob@example.com', subject: 'Trip', body: 'b', attach_notebook: 'Trip' },
+				attended
+			);
+			expect(out.result).toMatch(/The user removed the attachment\.$/);
+		});
+
+		it('reports a bad request without opening the dialog', async () => {
+			setEmailAccounts([sender()]);
+			mocks.composeAttachment.mockResolvedValue('notebook_format must be one of pdf, docx.');
+			const out = await executeTool(
+				'email_compose',
+				{ to: 'bob@example.com', subject: 'Trip', body: 'b', notebook_format: 'xls' },
+				attended
+			);
+			expect(out.result).toMatch(/notebook_format must be one of/);
+			expect(mocks.askEmailReview).not.toHaveBeenCalled();
+		});
+
+		it('drops the file when the dialog cannot open', async () => {
+			setEmailAccounts([sender()]);
+			mocks.composeAttachment.mockResolvedValue(pdf);
+			mocks.askEmailReview.mockRejectedValue(new Error('An email draft is already open'));
+			await expect(
+				executeTool(
+					'email_compose',
+					{ to: 'bob@example.com', subject: 'Trip', body: 'b', attach_notebook: 'Trip' },
+					attended
+				)
+			).rejects.toThrow(/already open/);
+			expect(invoke).toHaveBeenCalledWith('email_part_drop', { ids: ['part-1'] });
+		});
 	});
 });

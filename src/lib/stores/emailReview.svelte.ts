@@ -14,6 +14,7 @@
  */
 
 import type { EmailAccount } from '#lib/stores/settings.ts';
+import type { StagedFile, StagedPicture } from '#lib/email/parts.ts';
 
 export interface EmailDraft {
 	/** The account it goes from; one of `accounts`. */
@@ -27,10 +28,42 @@ export interface EmailDraft {
 	/** Threading for a reply: the parent's Message-ID and the thread's. */
 	inReplyTo?: string;
 	references: string[];
+	/**
+	 * `markdown`: the body is Markdown, sent as plain text and as HTML with
+	 * its `cid:` pictures (Email in Chat and Notebooks). Default `plain`.
+	 */
+	format?: 'plain' | 'markdown';
+	/** Staged pictures the body shows as `![…](cid:…)`. */
+	pictures?: StagedPicture[];
+	/** Staged attachments; the user may remove any. */
+	attachments?: StagedFile[];
+	/** Attachments made only if the user ticks them (Attach as PDF). */
+	optional?: OptionalFile[];
+	/** Files left out before the dialog opened (too large, unreadable). */
+	skipped?: string[];
+}
+
+/** An attachment built on Send, when its box is ticked. */
+export interface OptionalFile {
+	/** The checkbox's label, "Attach as PDF". */
+	label: string;
+	build: () => Promise<{ name: string; mime: string; bytes: Uint8Array }>;
+}
+
+/** Every staged file a draft holds, to drop when it closes. */
+export function stagedIds(draft: EmailDraft): string[] {
+	return [...(draft.pictures ?? []), ...(draft.attachments ?? [])].map((f) => f.partId);
 }
 
 export type EmailReviewOutcome =
-	| { kind: 'sent'; messageId: string; to: string[]; sentCopyError?: string }
+	| {
+			kind: 'sent';
+			messageId: string;
+			to: string[];
+			sentCopyError?: string;
+			/** The names of the files that went with it. */
+			attached?: string[];
+	  }
 	| { kind: 'discarded'; note: string };
 
 export interface EmailReviewOptions {

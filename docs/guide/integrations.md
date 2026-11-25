@@ -9,15 +9,7 @@ Email, calendars and contacts, MCP servers, and screen capture. All are off unti
 
 ## Connect an email account
 
-Go to Settings → Integrations → Email and click **Add email account**. Pick a provider, enter your address and an **app password**, then click **Save password**. Switch the account on with **Enabled**.
-
-An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported: Microsoft turned off app passwords. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
-
-With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read. Home's Important emails card watches unread mail and drafts replies (`home` page).
-
-## Let the assistant draft emails
-
-Turn on **Allow sending** for an account and fill in its SMTP server (preset for listed providers). The assistant can draft mail; Chat and Notebooks get **Email** (`chat-conversations` page). It opens a **Review email** window; nothing is sent until you click **Send**. **Discard** declines it; a **Note** goes back to the assistant. Replies thread under the original, and a copy goes to Sent. Jobs never send email (camera alerts aside: `camera-alerts` page); auto-approve does not apply.
+Go to Settings → Integrations → Email and click **Add email account**. With it on, the assistant can read your mail; with **Allow sending** on, it can draft mail for you to review and send, and Chat and Notebooks can email what they show. See the `email` page for setup, what is sent and the size limit.
 
 ## Connect calendars and contacts
 

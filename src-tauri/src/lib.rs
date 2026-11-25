@@ -917,6 +917,8 @@ pub fn run() {
             integrations::email::commands::email_forget_session,
             integrations::email::commands::email_test_smtp,
             integrations::email::commands::email_send,
+            integrations::email::parts::email_part_stage,
+            integrations::email::parts::email_part_drop,
             integrations::email::commands::email_trash,
             integrations::email::commands::email_request_scan,
             integrations::email::commands::email_watch_set,

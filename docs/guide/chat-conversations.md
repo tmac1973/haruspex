@@ -38,7 +38,7 @@ Hover over a dot to see what it means. The Remote control page (see the `remote-
 
 Under each answer, 🖨️ prints it and ✉️ emails it. The printer and envelope buttons beside the chat box do the same for the whole conversation: what you typed and the answers, without the reasoning or tool steps.
 
-Print opens the text as a page, then the print dialog; **Print…** in that window opens the dialog again. Email opens a new message in the **Review email** window, with the conversation's title as its subject: add the recipients and click **Send**. The text goes as written (Markdown). Pictures are not sent: the text says how many you attached. Email shows only when an email account has **Allow sending** on (see the `integrations` page).
+Print opens the text as a page, then the print dialog; **Print…** in that window opens the dialog again. Email opens a new message in the **Review email** window, with the conversation's title as its subject: add the recipients and click **Send**. It goes as formatted mail. Pictures you attached and ones Haruspex generated go inside it; a picture from the web goes as its credit and a link. Email shows only when an email account has **Allow sending** on. See the `email` page for what is sent and the size limit.
 
 ## Results that arrive while you're elsewhere
 

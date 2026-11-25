@@ -132,7 +132,7 @@ Read more: notebook-files
 
 ## Print a notebook or email it
 
-Print a notebook, or one card of it, with its pictures, or send its text to someone from your own email account.
+Print a notebook, or one card of it, with its pictures, or email it from your own account with its pictures inside and its files attached.
 
 Tab: Notebooks
 Required settings: Email needs an account with Allow sending on (Settings → Integrations → Email)
@@ -143,6 +143,6 @@ Prompt:
 
 Example output:
 
-A print window shows the notebook as a white page, with the system print dialog open over it. Email opens a Review email window with the subject "Models — Speakers" and the table as text, ready for a recipient.
+A print window shows the notebook as a white page, with the system print dialog open over it. Email opens a Review email window with the subject "Models — Speakers" and the table as formatted text, ready for a recipient. Tick **Attach as PDF** to send a PDF of it too.
 
-Read more: notebook-files, integrations
+Read more: notebook-files, email
