@@ -8,7 +8,7 @@ vi.mock('#lib/stores/toasts.svelte.ts', () => ({ showToast: vi.fn() }));
 vi.mock('#lib/sandbox/sandbox.ts', () => ({ runPython: vi.fn() }));
 vi.mock('#lib/sandbox/availability.ts', () => ({ pythonRuntimeMissing: () => false }));
 
-import { pdfAttachment, scoped, shareTitle } from './share';
+import { githubBody, pdfAttachment, scoped, shareTitle } from './share';
 
 const card = (id: string, over: Partial<NotebookCard>): NotebookCard =>
 	({
@@ -46,6 +46,14 @@ const detail = {
 const full = { detail, rowsOf: (c: NotebookCard) => c.rows };
 
 describe('sharing a notebook', () => {
+	it('gives GitHub Markdown with files named, the title line only in a comment', () => {
+		const issue = githubBody(full, 'issue');
+		expect(issue.startsWith('## Notes\n\nBring a coat.')).toBe(true);
+		expect(issue).toContain('[Picture: map.png]');
+		expect(issue).toContain('[File: ticket.pdf]');
+		expect(githubBody(full, 'comment').startsWith('# Trip\n')).toBe(true);
+	});
+
 	it('offers the notebook as a PDF, built only when asked for', async () => {
 		const pdf = pdfAttachment(scoped(full, notes), 'Notes — Trip');
 		expect(pdf.label).toBe('Attach as PDF');

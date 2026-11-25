@@ -16,6 +16,8 @@ import { emailMarkdown } from '#lib/share/email.ts';
 import { prepareNotebookMail } from '#lib/share/mailParts.ts';
 import { printHtml } from '#lib/share/print.ts';
 import type { OptionalFile } from '#lib/stores/emailReview.svelte.ts';
+import { openGitHubFile, type GitHubFileMode } from '#lib/stores/githubIssue.svelte.ts';
+import { notebookToMarkdown } from '#lib/notebooks/toMarkdown.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -56,6 +58,27 @@ export async function emailNotebook(id: string, card?: NotebookCard): Promise<vo
 	if (!full) return;
 	const title = shareTitle(full, card);
 	await emailMarkdown(title, () => prepareNotebookMail(full), [pdfAttachment(full, title)]);
+}
+
+/**
+ * The Markdown GitHub gets: tables and checklists as GFM, files and
+ * pictures named (GitHub's API can't upload them). A new issue drops the
+ * notebook's `# Title` line, since the issue's title says it; a comment
+ * keeps it.
+ */
+export function githubBody(full: Full, mode: GitHubFileMode): string {
+	const { markdown } = notebookToMarkdown(full.detail, { rowsOf: full.rowsOf, placeholders: true });
+	return (mode === 'issue' ? markdown.replace(/^# [^\n]*\n+/, '') : markdown).trim() + '\n';
+}
+
+/** Open File on GitHub on the notebook, or one card of it. */
+export async function fileOnGitHub(
+	id: string,
+	card: NotebookCard | undefined,
+	mode: GitHubFileMode
+): Promise<void> {
+	const full = await load(id, card);
+	if (full) openGitHubFile({ title: shareTitle(full, card), body: githubBody(full, mode), mode });
 }
 
 export async function printNotebook(id: string, card?: NotebookCard): Promise<void> {

@@ -20,6 +20,7 @@
 	import CameraIndicator from '#lib/components/CameraIndicator.svelte';
 	import YoutubeUploadDialog from '#lib/components/video/YoutubeUploadDialog.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
+	import GitHubIssueModal from '#lib/components/GitHubIssueModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
 	import ImageViewerHost from '#lib/components/ImageViewerHost.svelte';
 	import FileEditorModal from '#lib/components/FileEditorModal.svelte';
@@ -960,6 +961,7 @@
 
 	{@render agentModals()}
 	<EmailReviewModal />
+	<GitHubIssueModal />
 	<FileEditorModal />
 {/if}
 
