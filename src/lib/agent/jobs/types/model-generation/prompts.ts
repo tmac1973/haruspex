@@ -1,10 +1,16 @@
-/** Prompts for the 3D models job. */
+/** Prompts for the 3D models job. The module rules it shares with the 3D delegate are in `#lib/helpers/three/moduleRules.ts`. */
 
 import { SUBMIT_MODEL_SPEC_TOOL } from '#lib/agent/jobs/types/model-generation/tools.ts';
 import { DRAW_TEXTURE_TOOL } from '#lib/agent/tools/draw-texture.ts';
 import { modelFiles } from '#lib/models3d/spec/paths.ts';
 import { RIG_PARTS_LINES } from '#lib/models3d/spec/rigs.ts';
 import { clipFlags } from '#lib/glb/motion.ts';
+import {
+	ANIM_MODULE_RULES,
+	buildModuleRules,
+	CLIP_MOTION_RULES,
+	RIG_RULE
+} from '#lib/helpers/three/moduleRules.ts';
 import {
 	MAX_ENTRIES,
 	type ModelClip,
@@ -53,12 +59,6 @@ export function modelSpecRetryPrompt(problems: string[]): string {
 	].join('\n');
 }
 
-/** The rig rule, word for word in every creation prompt: animation depends on it. */
-export const RIG_RULE =
-	'Every name in Parts is an Object3D pivot placed at the joint it turns about, holding the ' +
-	'meshes it moves, nested parent → child (Pelvis > Hip_L > Knee_L > Foot_L). Animation ' +
-	'rotates these pivots and moves Pelvis, and nothing else.';
-
 /** What the creation model may colour with: the job's Allow textures and Noise colour. */
 export interface ColourOptions {
 	textures: boolean;
@@ -89,13 +89,7 @@ export function createSystemPrompt(spec: ModelSpec, colour: ColourOptions): stri
 		'You build one 3D model in code: a Three.js build module, checked with `check_3d`.',
 		'',
 		'The build module:',
-		'- `export default function build(THREE, kit)` returns one Object3D. No imports.',
-		'- kit: mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry,',
-		'  ParametricGeometry, random(seed) (a function giving [0, 1)), createNoise(seed)',
-		'  (an object: noise2(x, y) and noise3(x, y, z), each in [-1, 1])' +
-			(colour.textures ? ', texture(path).' : '.'),
-		'- Units are metres, y is up, the front faces +z, the feet stand on y = 0.',
-		'- Name every mesh.',
+		...buildModuleRules(colour.textures),
 		'- No clips: build returns the object only. Another stage animates it.',
 		...(spec.style ? ['', `Style for every model in this set: ${spec.style}`] : []),
 		'',
@@ -158,20 +152,9 @@ export function animateSystemPrompt(): string {
 		'checked by `check_3d`.',
 		'',
 		'The animation module:',
-		'- `export default function animate(THREE, object, kit)` returns an array of',
-		'  THREE.AnimationClip. No imports. `object` is what the build module returned.',
-		"- Find each pivot with `object.getObjectByName('Hip_L')`. Animate only the named",
-		'  pivots: QuaternionKeyframeTrack on `<name>.quaternion`, VectorKeyframeTrack on',
-		'  `<name>.position`. Start from each pivot’s rest pose (its current quaternion and',
-		'  position) and move away from it. Move Pelvis down and up so the hips drop with',
-		'  each step; turn each Foot to keep its sole flat while planted, and each Hand to',
-		'  finish a swing.',
+		...ANIM_MODULE_RULES,
 		'- One clip per name in the list, with that name and length in seconds.',
-		'- A looping clip ends on exactly its first pose, moving as it does at the start.',
-		'  A one-shot starts and ends at the rest pose or Idle’s first pose, so the game can',
-		'  blend into it.',
-		'- A walk or run plays in place, since the game moves the model: the body stays over',
-		'  the origin, and each planted foot moves back (−z) at one steady speed, then lifts.',
+		...CLIP_MOTION_RULES,
 		'- Units are metres, y is up, the front faces +z.',
 		'',
 		'The build module is not yours: do not edit it. A changed build module is put back.',
