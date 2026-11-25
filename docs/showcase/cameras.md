@@ -37,6 +37,23 @@ I looked around the Living room camera's whole range (6 pictures, left to right)
 
 Read more: camera-pan-tilt, camera-chat
 
+## Save where a camera points as a preset
+
+Turn the camera until it shows what you want, then ask the assistant to save it under a name. Next time, ask it to look there by that name.
+
+Tab: Chat
+Required settings: Settings → Cameras → a network camera with Pan/tilt set to ONVIF
+
+Prompt:
+
+> Save where the porch camera points now as a preset called hallway.
+
+Example output:
+
+Saved the preset "hallway" on Porch where it points now. Its presets are now Door, Garden and hallway; ask me to look at the hallway any time.
+
+Read more: camera-pan-tilt, camera-chat
+
 ## Find out what happened while you were out
 
 Turn on a camera's ambient log and it writes an entry each time something moves or someone speaks, with a caption and what was said. Then ask the assistant.

@@ -57,6 +57,7 @@ export const IPC = {
 	camera_onvif_discover: 'camera_onvif_discover',
 	camera_onvif_presets: 'camera_onvif_presets',
 	camera_position: 'camera_position',
+	camera_preset_save: 'camera_preset_save',
 	camera_probe: 'camera_probe',
 	camera_reference_clear: 'camera_reference_clear',
 	camera_reference_get: 'camera_reference_get',
