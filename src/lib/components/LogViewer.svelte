@@ -4,8 +4,8 @@
 	import { onMount } from 'svelte';
 	import { dismissable } from '#lib/actions/dismissable.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
-	import { clearDebugLogs, getDebugLogs } from '#lib/debugLog.ts';
-	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
+	import { clearDebugLogs, debugLogChats, getDebugLogs, type DebugLogChat } from '#lib/debugLog.ts';
+	import { createCopyAction, createKeyedCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import { firstImageEntry } from '#lib/image/entries.ts';
 	import type { CombinedSearchStats } from '#lib/ipc/gen/CombinedSearchStats.ts';
@@ -92,14 +92,23 @@
 	let filterText = $state('');
 	let turnFilter = $state('');
 	let categoryFilter = $state('');
+	/** A chat's id: shows only the lines from that chat's turns. */
+	let chatFilter = $state('');
+	let logChats = $state<DebugLogChat[]>([]);
 	let filterInput: HTMLInputElement | undefined = $state();
 
 	const STRUCTURED_TABS: ReadonlySet<LogTab> = new Set(['debug', 'tools']);
 	const PREFIX_RE = /^\[([^\]]+)\](?:\s+\[turn (\d+)\])?\s+\[([^\]]+)\]\s+/;
 
 	const filtersActive = $derived(
-		filterText.trim() !== '' || turnFilter !== '' || categoryFilter !== ''
+		filterText.trim() !== '' || turnFilter !== '' || categoryFilter !== '' || chatFilter !== ''
 	);
+
+	/** The chosen chat's turn ids, or null when no chat is chosen. */
+	const chatTurns = $derived.by(() => {
+		if (!chatFilter) return null;
+		return new Set(logChats.find((c) => c.id === chatFilter)?.turns ?? []);
+	});
 
 	/**
 	 * Turn / category facets, read straight off the line prefix.
@@ -120,7 +129,11 @@
 		return Object.keys(seen);
 	}
 
-	const availableTurns = $derived(distinctPrefixField(2).sort((a, b) => Number(a) - Number(b)));
+	const availableTurns = $derived(
+		distinctPrefixField(2)
+			.filter((t) => !chatTurns || chatTurns.has(t))
+			.sort((a, b) => Number(a) - Number(b))
+	);
 	const availableCategories = $derived(distinctPrefixField(3).sort());
 
 	const filteredLines = $derived.by(() => {
@@ -131,8 +144,9 @@
 		if (!filtersActive) return base;
 		const needle = filterText.trim().toLowerCase();
 		return base.filter((l) => {
-			if (turnFilter || categoryFilter) {
+			if (turnFilter || categoryFilter || chatTurns) {
 				const m = l.match(PREFIX_RE);
+				if (chatTurns && !(m?.[2] && chatTurns.has(m[2]))) return false;
 				if (turnFilter && m?.[2] !== turnFilter) return false;
 				if (categoryFilter && m?.[3] !== categoryFilter) return false;
 			}
@@ -144,6 +158,15 @@
 		filterText = '';
 		turnFilter = '';
 		categoryFilter = '';
+		chatFilter = '';
+	}
+
+	/** A Pretty entry as it reads on screen: its header line, message and data. */
+	function entryText(p: ParsedLine): string {
+		const head = [p.timestamp, p.turn ? `turn ${p.turn}` : '', p.category, p.message]
+			.filter(Boolean)
+			.join(' ');
+		return p.pretty ? `${head}\n${p.pretty}` : head;
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -261,39 +284,52 @@
 		stats: 'Stats'
 	};
 
+	/**
+	 * Counts fetches, so a slow one for the tab you just left can't land
+	 * after the new tab's and replace its lines.
+	 */
+	let fetchSeq = 0;
+
 	async function fetchLogs() {
+		const seq = ++fetchSeq;
 		try {
 			if (activeTab === 'stats') {
-				statsData = await invoke<CombinedStats>('get_search_stats');
+				const stats = await invoke<CombinedStats>('get_search_stats');
+				if (seq === fetchSeq) statsData = stats;
 				return;
 			}
+			let lines: string[];
 			if (activeTab === 'crashes') {
 				// The crash telemetry is a single multi-line file, not a ring
 				// buffer of lines — fetch the whole thing and split for display.
 				const text = await invoke<string>('get_llama_crash_log');
-				logLines = text ? text.replace(/\n$/, '').split('\n') : [];
+				lines = text ? text.replace(/\n$/, '').split('\n') : [];
 			} else if (activeTab === 'debug') {
 				// Frontend-side ring buffer; no Tauri round-trip needed.
-				logLines = getDebugLogs();
+				lines = getDebugLogs();
+				logChats = debugLogChats();
 			} else if (activeTab === 'mcp') {
 				// A server that is stopped, or that never printed anything, is a
 				// normal state rather than a failure — say so instead of showing
 				// an empty pane.
-				logLines = selectedMcpServer
+				lines = selectedMcpServer
 					? await invoke<string[]>('mcp_server_logs', { id: selectedMcpServer.id })
 					: [];
 			} else if (activeTab === 'image') {
-				logLines = await invoke<string[]>(
+				lines = await invoke<string[]>(
 					imageSource === 'engine' ? IPC.image_engine_logs : IPC.comfy_logs
 				);
 			} else if (activeTab === 'tools') {
 				// Same buffer, narrowed to tool start/end lines so you can
 				// see exactly what arguments the model passed to each tool
 				// without scrolling past API and loop chatter.
-				logLines = getDebugLogs().filter((l) => /\[agent\] tool (start|end):/.test(l));
+				lines = getDebugLogs().filter((l) => /\[agent\] tool (start|end):/.test(l));
+				logChats = debugLogChats();
 			} else {
-				logLines = await invoke<string[]>(tabCommands[activeTab]);
+				lines = await invoke<string[]>(tabCommands[activeTab]);
 			}
+			if (seq !== fetchSeq) return;
+			logLines = lines;
 			if (wasAtBottom && logContainer) {
 				requestAnimationFrame(() => {
 					if (logContainer) {
@@ -437,10 +473,12 @@
 		// the same string across tabs is a normal thing to want.
 		turnFilter = '';
 		categoryFilter = '';
+		chatFilter = '';
 		startPolling();
 	}
 
 	const copyLogs = createCopyAction();
+	const copyEntry = createKeyedCopyAction();
 	let clearState = $state<'idle' | 'cleared'>('idle');
 	// Lifetime stats reset awaits ConfirmDialog approval.
 	let confirmingStatsReset = $state(false);
@@ -477,6 +515,9 @@
 				// empties them both.
 				clearDebugLogs();
 				logLines = [];
+				logChats = [];
+				chatFilter = '';
+				turnFilter = '';
 			} else if (activeTab === 'image') {
 				await invoke(imageSource === 'engine' ? IPC.image_engine_clear_logs : IPC.comfy_clear_logs);
 				logLines = [];
@@ -629,6 +670,17 @@
 								bind:value={filterText}
 							/>
 							{#if STRUCTURED_TABS.has(activeTab)}
+								<select
+									class="filter-select"
+									bind:value={chatFilter}
+									onchange={() => (turnFilter = '')}
+									title="Show only one chat's lines, to copy them for a bug report"
+								>
+									<option value="">All chats</option>
+									{#each logChats as c (c.id)}
+										<option value={c.id}>{c.title}</option>
+									{/each}
+								</select>
 								<select class="filter-select" bind:value={turnFilter} title="Filter by agent turn">
 									<option value="">All turns</option>
 									{#each availableTurns as t (t)}
@@ -827,6 +879,13 @@
 											<span class="ts">{formatTimestamp(parsed.timestamp)}</span>
 											{#if parsed.turn}<span class="turn">turn {parsed.turn}</span>{/if}
 											<span class="cat">{parsed.category}</span>
+											<button
+												class="entry-copy"
+												onclick={() => copyEntry.copy(String(i), entryText(parsed))}
+												title="Copy this entry as shown"
+											>
+												{copyEntry.state(String(i)) === 'copied' ? 'Copied!' : 'Copy'}
+											</button>
 										</div>
 										{#if parsed.message}
 											<div class="entry-message">{parsed.message}</div>
@@ -1121,6 +1180,28 @@
 	.entry-header .cat {
 		color: #4ec9b0;
 		font-weight: 600;
+	}
+
+	.entry-copy {
+		margin-left: auto;
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 1px 8px;
+		cursor: pointer;
+		color: var(--text-secondary);
+		font-size: 0.65rem;
+		opacity: 0;
+	}
+
+	.log-entry:hover .entry-copy,
+	.entry-copy:focus-visible {
+		opacity: 1;
+	}
+
+	.entry-copy:hover {
+		color: var(--text-primary);
+		border-color: var(--text-secondary);
 	}
 
 	.entry-message {

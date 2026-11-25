@@ -2,7 +2,9 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
 	_resetForTests,
 	argumentShape,
+	beginTurn,
 	clearDebugLogs,
+	debugLogChats,
 	forwardConsoleToDebugLog,
 	getDebugLogs,
 	logDebug,
@@ -96,5 +98,26 @@ describe('argumentShape', () => {
 			missing: 'undefined'
 		});
 		expect(argumentShape(undefined)).toEqual({});
+	});
+});
+
+describe('debugLogChats', () => {
+	it("groups the buffer's turns by the chat they ran in, with its latest title", () => {
+		logDebug('app', 'before any turn');
+		const a1 = beginTurn({ id: 'a', title: 'New chat' });
+		logDebug('agent', 'a first');
+		const b1 = beginTurn({ id: 'b', title: 'Weather' });
+		logDebug('agent', 'b first');
+		const a2 = beginTurn({ id: 'a', title: 'Trip plan' });
+		logDebug('agent', 'a second');
+		beginTurn();
+		logDebug('agent', 'no chat');
+
+		expect(debugLogChats()).toEqual([
+			{ id: 'a', title: 'Trip plan', turns: [String(a1), String(a2)] },
+			{ id: 'b', title: 'Weather', turns: [String(b1)] }
+		]);
+		clearDebugLogs();
+		expect(debugLogChats()).toEqual([]);
 	});
 });

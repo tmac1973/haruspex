@@ -94,16 +94,54 @@ const buffer: DebugEntry[] = [];
 let lastSeq = 0;
 
 /**
- * Mark the start of a new agent turn. Returns an opaque turn id that
+ * The chat each turn ran in, and each chat's latest title, so the Log
+ * viewer can pick out one chat's lines. One small entry per turn.
+ */
+const turnChats = new Map<number, string>();
+const chatTitles = new Map<string, string>();
+
+/**
+ * Mark the start of a new agent turn in `chat`. Returns an opaque turn id that
  * subsequent `logDebug` calls are tagged with until the next `beginTurn`.
  * The chat store stashes the returned id alongside any error it surfaces
  * so the UI can offer a "copy debug log for this failure" action that
  * filters the buffer down to just the entries from the failing turn.
  */
-export function beginTurn(): number {
+export function beginTurn(chat?: { id: string; title: string }): number {
 	const id = nextTurnId++;
 	activeTurnId = id;
+	if (chat) {
+		turnChats.set(id, chat.id);
+		chatTitles.set(chat.id, chat.title);
+	}
 	return id;
+}
+
+export interface DebugLogChat {
+	id: string;
+	title: string;
+	/** The chat's turn ids in the buffer, as the `[turn N]` tag writes them. */
+	turns: string[];
+}
+
+/** The chats that have lines in the buffer, in the order their first line came. */
+export function debugLogChats(): DebugLogChat[] {
+	const chats = new Map<string, DebugLogChat>();
+	let lastTurn: number | null = null;
+	for (const e of buffer) {
+		if (e.turnId == null || e.turnId === lastTurn) continue;
+		lastTurn = e.turnId;
+		const chatId = turnChats.get(e.turnId);
+		if (chatId == null) continue;
+		let chat = chats.get(chatId);
+		if (!chat) {
+			chat = { id: chatId, title: chatTitles.get(chatId) ?? chatId, turns: [] };
+			chats.set(chatId, chat);
+		}
+		const turn = String(e.turnId);
+		if (!chat.turns.includes(turn)) chat.turns.push(turn);
+	}
+	return [...chats.values()];
 }
 
 /**
@@ -270,6 +308,8 @@ export function _resetForTests(): void {
 	fileQueue = null;
 	consoleForwarded = false;
 	clearDebugLogs();
+	turnChats.clear();
+	chatTitles.clear();
 }
 
 function consoleArg(a: unknown): string {
