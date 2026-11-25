@@ -297,6 +297,12 @@ export function getRun(id: string): ChatRun {
 	return runs.get(id) ?? IDLE;
 }
 
+/** Any conversation has a turn running, queued or compacting. */
+export function isAnyChatBusy(): boolean {
+	for (const run of runs.values()) if (run.busy) return true;
+	return false;
+}
+
 /** The open conversation's turn state, or an idle one. */
 export function getActiveRun(): ChatRun {
 	return activeRun();
