@@ -8,6 +8,10 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 import LogViewer from './LogViewer.svelte';
 import { invokeRouter } from '#lib/testing/invoke.ts';
+import { _resetForTests, beginTurn, logDebug } from '#lib/debugLog.ts';
+import { copyText } from '#lib/utils/copyText.ts';
+
+vi.mock('#lib/utils/copyText.ts', () => ({ copyText: vi.fn(async () => {}) }));
 
 const stats = {
 	session: { engines: [], globals: {} },
@@ -38,6 +42,8 @@ const stats = {
 };
 
 beforeEach(() => {
+	_resetForTests();
+	vi.mocked(copyText).mockClear();
 	vi.mocked(invoke)
 		.mockReset()
 		.mockImplementation(
@@ -82,5 +88,34 @@ describe('LogViewer', () => {
 		expect(screen.getByText('3/10').className).toContain('ok-bad');
 		const days = screen.getAllByText(/^2026-10-0[78]$/).map((el) => el.textContent);
 		expect(days).toEqual(['2026-10-08', '2026-10-07']);
+	});
+
+	it("copies one chat's debug lines, and one Pretty entry", async () => {
+		beginTurn({ id: 'a', title: 'Trip plan' });
+		logDebug('agent', 'a starts', { step: 1 });
+		beginTurn({ id: 'b', title: 'Weather' });
+		logDebug('agent', 'b starts');
+		beginTurn({ id: 'a', title: 'Trip plan' });
+		logDebug('agent', 'a again');
+
+		render(LogViewer, { open: true, onclose: vi.fn() });
+		await fireEvent.click(screen.getByText('Debug'));
+		await screen.findByText(/b starts/);
+		const chat = screen.getByDisplayValue('All chats') as HTMLSelectElement;
+		await fireEvent.change(chat, { target: { value: 'a' } });
+		await fireEvent.click(await screen.findByText('Copy 2'));
+		await waitFor(() => expect(copyText).toHaveBeenCalledTimes(1));
+		const copied = vi.mocked(copyText).mock.calls[0][0];
+		expect(copied).toContain('a starts');
+		expect(copied).toContain('a again');
+		expect(copied).not.toContain('b starts');
+
+		await fireEvent.click(screen.getByText('Raw'));
+		const [first] = await screen.findAllByTitle('Copy this entry as shown');
+		await fireEvent.click(first);
+		await waitFor(() => expect(copyText).toHaveBeenCalledTimes(2));
+		expect(vi.mocked(copyText).mock.calls[1][0]).toMatch(
+			/turn \d+ agent a starts\n\{\n {2}"step": 1\n\}$/
+		);
 	});
 });

@@ -26,7 +26,7 @@ Each reply has a length limit, separate from the context size. When a reply hits
 - **Max response tokens** for normal chat and shell replies.
 - **Max response tokens (file writes)** for turns that write a whole file.
 
-Or ask for a smaller piece of work, or lower **Reasoning effort** there so less goes on thinking.
+Or ask for less at once, or lower **Reasoning effort** there.
 
 If instead it says the model's tool call "could not be run", the reply was not cut off and raising the limit will not help. Try again, or ask for the work in smaller steps.
 
@@ -44,11 +44,11 @@ If the command really needs more, raise Settings → Shell → Memory limit (a p
 
 ## Pictures in answers are missing or wrong
 
-The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Chat → Pictures in answers → Include images in answers to stop them being added unasked.
+Picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Chat → Pictures in answers → Include images in answers to stop them being added unasked.
 
 ## Presentations with images are unreliable
 
-Research plus a deck with images in one message often fails. Do it in two or three messages: research first, then the deck. See the `slides` page.
+Research plus a deck with images in one message often fails. Research first, then ask for the deck. See the `slides` page.
 
 ## Image generation problems
 
@@ -56,7 +56,7 @@ Image generation is new and off by default. It has been tested most on Linux wit
 
 ## Games or other programs are slow
 
-Haruspex keeps the model in GPU memory while it runs. Close Haruspex before playing games, or use a smaller model or context size.
+Haruspex keeps the model in GPU memory while it runs. Close it before gaming, or use a smaller model or context.
 
 ## The app will not open (Windows or macOS)
 
@@ -64,7 +64,7 @@ The app is not code-signed. On Windows, click **More info → Run anyway** at th
 
 ## Can't reach a server on my network (macOS)
 
-Turn Haruspex on in System Settings → Privacy & Security → Local Network and reopen it. If it's on but fails after an update, toggle it.
+Turn Haruspex on in System Settings → Privacy & Security → Local Network and reopen it. If it fails after an update, toggle it.
 
 ## The model server will not start
 
@@ -78,7 +78,7 @@ Settings → Inference → API Keys marks a key the secret store has lost. Type 
 
 ## Find the logs
 
-Click the terminal icon in the toolbar (tooltip "Sidecar Logs"). The log viewer lists Haruspex's own logs (App, Debug, Tools, search Stats), then the servers (LLM, TTS, Whisper, Video whisper, Image, MCP), then Crashes. **Video whisper** is the video tools' speech-to-text. **Image** shows the bundled engine or the calls made to ComfyUI. Each has **Copy all**.
+Click the terminal icon in the toolbar (tooltip "Sidecar Logs"). It lists Haruspex's logs (App, Debug, Tools, search Stats), the servers (LLM, TTS, Whisper, Video whisper, Image, MCP) and Crashes. **Video whisper** is the video tools' speech-to-text. **Image** shows the bundled engine or ComfyUI calls. Each has **Copy all**. On Debug and Tools, pick a chat in **All chats** to copy just its lines. **Pretty** adds **Copy** to each entry.
 
 ## Report a bug
 

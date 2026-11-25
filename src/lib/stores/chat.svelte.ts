@@ -1205,7 +1205,7 @@ function finalizeUserTurn(
 function resetTurnState(conversation: Conversation, run: ChatRun): AbortSignal {
 	conversation.searchSteps = [];
 	conversation.sourceUrls = [];
-	return run.begin(beginTurn());
+	return run.begin(beginTurn({ id: conversation.id, title: conversation.title }));
 }
 
 /**
