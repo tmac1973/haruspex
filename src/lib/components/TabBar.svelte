@@ -6,6 +6,7 @@
 		type ActiveTab
 	} from '#lib/stores/activeTab.svelte.ts';
 	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
+	import { isAnyChatBusy } from '#lib/stores/chat.svelte.ts';
 	import { getActiveRuns, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import TasksChip from '#lib/components/tasks/TasksChip.svelte';
 
@@ -25,6 +26,9 @@
 
 	// Lean mode shows Chat and Jobs alone.
 	const tabs = $derived(allTabs.filter((t) => visibleTabs().includes(t.id)));
+
+	// A dot on Chat while any conversation's turn runs or waits.
+	const chatBusy = $derived(isAnyChatBusy());
 
 	// A dot on Code while any session's turn runs or waits.
 	const codeBusy = $derived(getOpenSessions().some((s) => s.status !== 'idle'));
@@ -54,6 +58,9 @@
 			onclick={() => setActiveTab(tab.id)}
 		>
 			{tab.label}
+			{#if tab.id === 'chat' && chatBusy}
+				<span class="badge" title="A chat is working">●</span>
+			{/if}
 			{#if tab.id === 'jobs' && jobsBadge !== null}
 				<span class="badge" title="Jobs running or queued">{jobsBadge}</span>
 			{/if}
