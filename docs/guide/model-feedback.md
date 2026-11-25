@@ -16,7 +16,7 @@ It is off by default.
 
 ## What the model does with it
 
-- In every chat, Shell and Code turn, every subtask and every job turn, the model gets a `haruspex_feedback` tool. In Chat, Shell and Code it is also asked to use it, including when it had to work around a tool. It reports a problem, then carries on with the task. A turn makes at most three reports.
+- In every chat, Shell and Code turn, every subtask and every job turn that has other tools, the model gets a `haruspex_feedback` tool. A job step with no tools, or only the one it answers with, doesn't get it. In Chat, Shell and Code it is also asked to use it, including when it had to work around a tool. It reports a problem, then carries on with the task. A report that names no tool and no problem is turned away. A turn makes at most three reports.
 - After each job run that made tool calls, the job's model gets one more turn to look back over the run's calls and report what got in the way. It is skipped after a run you cancel. It uses the job's model and an inference slot, like the run did.
 
 Guests (see the `guest-chat` page) never get the tool.

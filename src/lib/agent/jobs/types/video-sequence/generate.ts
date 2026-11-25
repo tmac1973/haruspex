@@ -30,6 +30,7 @@ import { GENERATED_DIR } from '#lib/sequence/spec/paths.ts';
 import { estimateRun } from '#lib/sequence/spec/estimate.ts';
 import { firstFrameId, reanchorId } from '#lib/sequence/spec/progress.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { couldNotStart } from '#lib/toolchest/startFailure.ts';
 
 type ClipOpts = Pick<VideoGenerateOptions, 'onHandle' | 'onProgress'>;
 
@@ -100,15 +101,6 @@ const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortEr
 /** How many times a clip waits for a model the server could not start. */
 export const START_WAITS = 3;
 const START_WAIT_MS = 60_000;
-
-/**
- * Whether a failure is the server not starting the model (another model holds
- * the GPU) rather than the clip itself. Running out of memory while making a
- * clip is the clip's: it fails as one.
- */
-export function couldNotStart(message: string): boolean {
-	return /starting the backend|not enough VRAM|failed to load the model/i.test(message);
-}
 
 /**
  * The order clips are made in: the plan's, except a transition that ends on

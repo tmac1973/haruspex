@@ -14,7 +14,7 @@
 //! other two sources.
 
 use super::ImageSearchResult;
-use crate::proxy::extract::USER_AGENT;
+use crate::proxy::extract::{with_cause, USER_AGENT};
 use log::debug;
 use serde_json::Value;
 
@@ -35,7 +35,7 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Openverse request failed: {}", e.without_url()))?;
+        .map_err(|e| format!("Openverse request failed: {}", with_cause(&e.without_url())))?;
 
     // Anonymous quota exhausted. Expected, and not the caller's problem.
     if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {

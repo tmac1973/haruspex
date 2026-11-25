@@ -29,6 +29,61 @@ const SNIPPET_LEN: usize = 240;
 /// forwarded chains, quoted receipts).
 pub const MAX_BODY_CHARS: usize = 40_000;
 
+/// A mailbox the email tools read: INBOX, or one of the special-use
+/// mailboxes (RFC 6154) the server flags or names in a well-known way.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MailFolder {
+    #[default]
+    Inbox,
+    Sent,
+    Drafts,
+    Trash,
+    Junk,
+    Archive,
+}
+
+impl MailFolder {
+    pub const ALL: [MailFolder; 6] = [
+        MailFolder::Inbox,
+        MailFolder::Sent,
+        MailFolder::Drafts,
+        MailFolder::Trash,
+        MailFolder::Junk,
+        MailFolder::Archive,
+    ];
+
+    /// The name in tool arguments, listings and message handles.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MailFolder::Inbox => "inbox",
+            MailFolder::Sent => "sent",
+            MailFolder::Drafts => "drafts",
+            MailFolder::Trash => "trash",
+            MailFolder::Junk => "junk",
+            MailFolder::Archive => "archive",
+        }
+    }
+
+    /// The name in messages to the user.
+    pub fn label(self) -> &'static str {
+        match self {
+            MailFolder::Inbox => "Inbox",
+            MailFolder::Sent => "Sent",
+            MailFolder::Drafts => "Drafts",
+            MailFolder::Trash => "Trash",
+            MailFolder::Junk => "Junk",
+            MailFolder::Archive => "Archive",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<MailFolder> {
+        MailFolder::ALL
+            .into_iter()
+            .find(|f| f.as_str().eq_ignore_ascii_case(s.trim()))
+    }
+}
+
 /// Cheap per-message metadata (no body). Returned by `email_list_recent`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,13 +100,22 @@ pub struct EmailListing {
     /// only one account enabled, the model can ignore this field.
     pub account_label: String,
 
-    /// Our handle for the message: `"<uidvalidity>:<uid>"` in its INBOX.
-    /// Not the RFC Message-ID, which is `rfc_message_id` on the full view.
+    /// Our handle for the message: `"<uidvalidity>:<uid>"` in INBOX,
+    /// `"<folder>:<uidvalidity>:<uid>"` in another folder. Not the RFC
+    /// Message-ID, which is `rfc_message_id` on the full view.
     pub message_id: String,
+
+    /// The folder it was listed from.
+    pub folder: MailFolder,
 
     pub subject: String,
     pub from_name: String,
     pub from_email: String,
+
+    /// Recipients' addresses, outside INBOX only: in Sent and Drafts the
+    /// sender is the user, and who it went to is what tells messages apart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to: Vec<String>,
 
     /// RFC 3339 date in UTC, so listings from several accounts sort as
     /// strings. Empty if the message had no usable date.
@@ -323,9 +387,12 @@ pub fn listing_from_header(
         account_id,
         account_label,
         message_id,
+        // The lister sets the folder, and keeps `to` outside INBOX only.
+        folder: MailFolder::Inbox,
         subject: h.subject,
         from_name: h.from_name,
         from_email: h.from_email,
+        to: h.to,
         date: timestamp.map(utc_rfc3339).unwrap_or_default(),
         snippet: make_snippet(preview),
         has_attachments,
@@ -443,8 +510,22 @@ Fine.\r\n";
         assert_eq!(listing.subject, "Hello");
         assert_eq!(listing.from_email, "alice@example.com");
         assert_eq!(listing.snippet, "First line second");
+        assert_eq!(listing.folder, MailFolder::Inbox);
         // No Date header: the server's INTERNALDATE stands in.
         assert_eq!(listing.timestamp, Some(1_712_793_600));
         assert_eq!(listing.date, "2024-04-11T00:00:00Z");
+    }
+
+    #[test]
+    fn a_folder_parses_its_own_name_and_serializes_lowercase() {
+        for f in MailFolder::ALL {
+            assert_eq!(MailFolder::parse(f.as_str()), Some(f));
+            assert_eq!(
+                serde_json::to_string(&f).unwrap(),
+                format!("\"{}\"", f.as_str())
+            );
+        }
+        assert_eq!(MailFolder::parse(" Sent "), Some(MailFolder::Sent));
+        assert_eq!(MailFolder::parse("outbox"), None);
     }
 }

@@ -180,6 +180,30 @@ describe('fetch_url', () => {
 		expect(out.result).toMatch(/\[Showing the first 9,8\d\d of 49,999 characters/);
 	});
 
+	it('keeps only the named fields of a JSON response', async () => {
+		const json = JSON.stringify([
+			{ name: 'a', id: 1 },
+			{ name: 'b', id: 2 }
+		]);
+		backend({ proxy_fetch: page(json) });
+		const out = await call('fetch_url', { url: 'https://api.test/x', fields: 'name' });
+		expect(JSON.parse(out.result)).toEqual([{ name: 'a' }, { name: 'b' }]);
+	});
+
+	it('adds the page links after the text', async () => {
+		backend({
+			proxy_fetch: () => ({
+				text: 'Body text',
+				full_length: 9,
+				hero_image: null,
+				links: [{ text: 'Docs', url: 'https://a.test/docs' }]
+			})
+		});
+		expect((await call('fetch_url', { url: 'https://a.test' })).result).toBe(
+			'Body text\n\nLinks on this page:\n- Docs: https://a.test/docs'
+		);
+	});
+
 	it('refuses a missing url without fetching', async () => {
 		const out = await call('fetch_url', {});
 		expect(JSON.parse(out.result).error).toMatch(/needs a non-empty "url"/);

@@ -14,6 +14,7 @@ import { saveVideoCaps, videoEntries, videoEntryByName } from '#lib/videogen/ent
 import type { VideoBackend } from '#lib/videogen/backend.ts';
 import { VideoBackendError } from '#lib/videogen/backend.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
+import { couldNotStart } from '#lib/toolchest/startFailure.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import type { VideoCaps, VideoModelEntry, VideoRequest } from '#lib/videogen/types.ts';
 
@@ -88,9 +89,15 @@ function noneCanSay(need: VideoNeed, known: { entry: VideoModelEntry; caps: Vide
 		.join('; ')}.`;
 }
 
-/** An error that means "try the next model": the server is away, or the model isn't there. */
+/**
+ * An error that means "try the next model": the server is away, the model
+ * isn't there, or the server couldn't start it (not enough VRAM). Only the
+ * unnamed path asks: a model the chat model named still fails as itself.
+ */
 function passOver(e: unknown): boolean {
-	return e instanceof VideoBackendError && (e.kind === 'unreachable' || e.kind === 'unconfigured');
+	if (!(e instanceof VideoBackendError)) return false;
+	if (e.kind === 'unreachable' || e.kind === 'unconfigured') return true;
+	return e.kind === 'rejected' && couldNotStart(e.message);
 }
 
 /** A model that answered and can't do the job. */

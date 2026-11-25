@@ -37,7 +37,7 @@ mod integration {
         let found = detect(None).expect("a Chromium-family browser must be installed");
         println!("using {} ({})", found.path, found.version);
 
-        let process = process::BrowserProcess::launch(&found).expect("browser should launch");
+        let process = process::BrowserProcess::launch(&found, &[]).expect("browser should launch");
         // A data: URL whose content only exists once scripts have run, so a
         // pass proves JS execution rather than plain HTML retrieval.
         let url = "data:text/html,<html><body><script>\
@@ -66,7 +66,7 @@ mod integration {
     #[ignore]
     async fn launched_browser_does_not_announce_itself_as_headless() {
         let found = detect(None).expect("a Chromium-family browser must be installed");
-        let process = process::BrowserProcess::launch(&found).expect("browser should launch");
+        let process = process::BrowserProcess::launch(&found, &[]).expect("browser should launch");
         let outcome = cdp::render(
             process.port,
             "data:text/html,<html><body>ua</body></html>",

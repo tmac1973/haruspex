@@ -479,8 +479,9 @@ export interface ToolSchemaOpts {
 	skillFileNames?: string[];
 	/**
 	 * An allowlisted turn that may also carry `haruspex_feedback` when Settings
-	 * → Feedback has it on: a job's, not a remote guest's or memory's own.
-	 * Every other turn carries it whenever the setting is on.
+	 * → Feedback has it on: a job's, not a remote guest's or memory's own, and
+	 * only beside a tool other than a `submit_*` one, or when the allowlist
+	 * names it. Every other turn carries it whenever the setting is on.
 	 */
 	harnessFeedback?: boolean;
 	/**
@@ -518,6 +519,16 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 			const name = reg.schema.function.name;
 			// A subtask's allowlist narrows what a subtask gets; it never adds to it.
 			if (opts.subtask && subtaskExcludes(reg, subtaskHelpers)) continue;
+			if (reg.category === 'harness-feedback') {
+				// Beside a tool that does work, or where the allowlist names it
+				// (the reflection after a job run). Offered alone, or with only
+				// a job's submit_* tools, a model calls it to say all went well.
+				const doesWork = [...allow].some((n) => n !== name && !n.startsWith('submit_'));
+				if (opts.harnessFeedback && feedbackOn() && (doesWork || allow.has(name))) {
+					schemas.push(reg.schema);
+				}
+				continue;
+			}
 			// Sending, and writing a skill, are reviewed by a person at the
 			// keyboard, and an allowlisted turn is a job's: no allowlist can
 			// grant them.
@@ -527,8 +538,6 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 				reg.category !== 'skills-write' &&
 				reg.category !== 'tools-load'
 			) {
-				schemas.push(reg.schema);
-			} else if (reg.category === 'harness-feedback' && opts.harnessFeedback && feedbackOn()) {
 				schemas.push(reg.schema);
 			}
 		}

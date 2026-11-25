@@ -121,7 +121,56 @@ describe('historyFiles', () => {
 		fetchMock.mockResolvedValue(ok({ p1: { outputs: { '9': { animated: [true] } } } }));
 		await expect(api.historyFiles(cfg, 'p1', '9')).rejects.toThrow('saved no files');
 	});
+
+	it("throws the failing node's own error when the prompt failed", async () => {
+		fetchMock.mockResolvedValue(ok(failedRun('Allocation on device would exceed allowed memory.')));
+		const err = await api.historyFiles(cfg, 'p1', '9').catch((e: unknown) => e);
+		expect(err).toBeInstanceOf(ImageBackendError);
+		expect(err).toMatchObject({
+			kind: 'rejected',
+			message: 'WanVideoSampler failed: Allocation on device would exceed allowed memory.'
+		});
+	});
+
+	it('trims a long exception message', async () => {
+		fetchMock.mockResolvedValue(ok(failedRun('x'.repeat(2000))));
+		const err = (await api.historyFiles(cfg, 'p1', '9').catch((e: unknown) => e)) as Error;
+		expect(err.message.length).toBeLessThan(400);
+		expect(err.message).toMatch(/^WanVideoSampler failed: x+…$/);
+	});
 });
+
+/** A `/history` entry for a prompt whose sampler raised, as ComfyUI records it. */
+function failedRun(exception: string): unknown {
+	return {
+		p1: {
+			outputs: {},
+			status: {
+				status_str: 'error',
+				completed: false,
+				messages: [
+					['execution_start', { prompt_id: 'p1', timestamp: 1 }],
+					['execution_cached', { nodes: [], prompt_id: 'p1', timestamp: 2 }],
+					[
+						'execution_error',
+						{
+							prompt_id: 'p1',
+							node_id: '3',
+							node_type: 'WanVideoSampler',
+							executed: [],
+							exception_message: exception,
+							exception_type: 'torch.OutOfMemoryError',
+							traceback: ['  File "execution.py", line 1\n'],
+							current_inputs: {},
+							current_outputs: {},
+							timestamp: 3
+						}
+					]
+				]
+			}
+		}
+	};
+}
 
 describe('history', () => {
 	it('returns null while the prompt is still running', async () => {
@@ -143,6 +192,20 @@ describe('history', () => {
 		// happily and returns no images; the message has to say so.
 		fetchMock.mockResolvedValue(ok({ p1: { outputs: { '8': {} } } }));
 		await expect(api.history(cfg, 'p1', '9')).rejects.toThrow(/SaveImage/);
+	});
+
+	it("throws the failing node's own error when the prompt failed", async () => {
+		fetchMock.mockResolvedValue(ok(failedRun('CUDA out of memory')));
+		await expect(api.history(cfg, 'p1', '9')).rejects.toThrow(
+			'WanVideoSampler failed: CUDA out of memory'
+		);
+	});
+
+	it('names the workflow when the error entry is missing', async () => {
+		fetchMock.mockResolvedValue(ok({ p1: { outputs: {}, status: { status_str: 'error' } } }));
+		await expect(api.history(cfg, 'p1', '9')).rejects.toThrow(
+			'The workflow failed on the ComfyUI server.'
+		);
 	});
 });
 

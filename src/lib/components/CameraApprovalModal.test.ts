@@ -19,6 +19,7 @@ describe('CameraApprovalModal', () => {
 		['look', 'Let the assistant look through Kitchen?'],
 		['listen', 'Let the assistant listen on Kitchen?'],
 		['move', 'Let the assistant move Kitchen?'],
+		['save_preset', 'Let the assistant save a preset on Kitchen?'],
 		['read_log', 'Let the assistant read the log of Kitchen?']
 	])('asks to %s', async (action, question) => {
 		render(CameraApprovalModal);

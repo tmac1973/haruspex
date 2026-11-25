@@ -52,6 +52,12 @@ The edges are kept when you calibrate again, as long as they still fit. The butt
 
 A turn that doesn't change the picture is reported as the end of its travel that way. Some cameras (Thingino ones such as the D1) stop tilting up once they reach the bottom, until they go home; when a tilt doesn't move such a camera, Haruspex sends it home and tries once more, and the assistant is told its pan went home too.
 
+## Save a preset
+
+Point the camera where you want it (with **Left**, **Right**, **Up** and **Down**, or by asking), then ask "save this position on the hallway camera as hallway". `camera_save_preset` saves it on the camera itself, and **Presets** in Settings → Cameras is read again, so `camera_look` can go back to it by name. A preset with the same name (ignoring case) is overwritten. A camera set to Ask shows a prompt first.
+
+It works on network cameras with **Pan/tilt** set to **ONVIF** only; USB webcams have no presets. Some cameras refuse to save presets over ONVIF, and the assistant then says what the camera answered. It can't delete a preset, or change the camera's home position.
+
 ## Look around the room
 
 Ask "look around the kitchen". `camera_look_around` turns the camera to its far left, then steps right taking a picture at each stop (up to 10, at a smaller size), then sends it home. The pictures are numbered left to right.

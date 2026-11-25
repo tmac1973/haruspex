@@ -1,6 +1,6 @@
 ---
 title: Email
-description: Connect an email account, let the assistant read and draft mail, email an answer, a conversation or a notebook, write to contacts by name, and the size limit.
+description: Connect an email account, let the assistant read and draft mail, find mail you sent, email an answer, a conversation or a notebook, write to contacts by name, and the size limit.
 ---
 
 # Email
@@ -12,6 +12,12 @@ Go to Settings → Integrations → Email and click **Add email account**. Pick 
 An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported: Microsoft turned off app passwords. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
 
 With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read. Home's Important emails card watches unread mail and drafts replies (see the `home` page).
+
+## Find mail you sent
+
+The assistant reads the inbox unless you ask about another folder. It can also list and read Sent, Drafts, Trash, Junk and Archive, so "what did I tell Sam about the invoice?" finds your Sent copy. It can narrow Sent by who a message went to.
+
+Haruspex finds those folders the way your mail app does: by the role the server gives them, or by a usual name such as "Sent Items" or "[Gmail]/Drafts". If an account has no such folder, the assistant says so. Folders you made yourself can't be read, and the other folders are only read: nothing is moved or deleted there.
 
 ## Let the assistant draft emails
 

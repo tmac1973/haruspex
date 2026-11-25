@@ -195,7 +195,9 @@ export async function runVideoJob(
 	}
 	const backend = videoBackendForEntry(entry);
 	if (!backend) throw new Error(`${entry.name} is not a kind this build can use.`);
-	const generated = await makeOrFollow(backend, spec, opts, handle);
+	const generated = await makeOrFollow(backend, spec, opts, handle).catch((e: unknown) => {
+		throw namedFailure(e, entry.name, env.signal);
+	});
 	const { made, notes } = await withSpeech(generated, spec);
 	return {
 		hash: made.hash,
@@ -214,6 +216,18 @@ export async function runVideoJob(
 			? { upscaledFrom: { width: spec.request.input.width, height: spec.request.input.height } }
 			: {})
 	};
+}
+
+/**
+ * A failure that says which video model it came from ("Wan 2.2 14B: …"), so
+ * the model reading the notice knows what to try instead. The error keeps its
+ * class, kind and status, which the task runner reads; a cancel is left alone.
+ */
+export function namedFailure(e: unknown, model: string, signal?: AbortSignal): unknown {
+	if (signal?.aborted || (e as { kind?: unknown } | null)?.kind === 'cancelled') return e;
+	if (!(e instanceof Error)) return new Error(`${model}: ${errMessage(e)}`);
+	if (!e.message.startsWith(`${model}:`)) e.message = `${model}: ${e.message}`;
+	return e;
 }
 
 /** The clip the spec asks for, made or followed on `backend`. */

@@ -144,6 +144,59 @@ pub async fn camera_onvif_presets(config: CameraConfig) -> Result<Vec<OnvifPrese
     Ptz::open(endpoint, creds).await?.presets().await
 }
 
+/// What `camera_preset_save` did.
+#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraPresetSaved {
+    /// A preset of that name was there and now points here instead.
+    pub replaced: bool,
+    /// The camera's presets, read again after saving.
+    pub presets: Vec<OnvifPreset>,
+}
+
+/// Save where an ONVIF camera points now as a preset called `name`,
+/// overwriting one of that name (ignoring case), then read its presets again.
+#[tauri::command]
+pub async fn camera_preset_save(
+    config: CameraConfig,
+    name: String,
+) -> Result<CameraPresetSaved, String> {
+    let name = preset_name(&name)?;
+    let endpoint = config
+        .onvif
+        .as_ref()
+        .ok_or("This camera has no ONVIF pan/tilt, so it has no presets.")?;
+    let creds = Credentials::for_source(&config.source).await?;
+    let ptz = Ptz::open(endpoint, creds).await?;
+    let before = ptz.presets().await?;
+    let existing = aim::find_preset(&before, name).map(|p| p.token.clone());
+    ptz.set_preset(name, existing.as_deref())
+        .await
+        .map_err(|e| format!("The camera didn't save the preset: {e}"))?;
+    Ok(CameraPresetSaved {
+        replaced: existing.is_some(),
+        presets: ptz.presets().await?,
+    })
+}
+
+/// The longest preset name sent to a camera.
+const MAX_PRESET_NAME: usize = 64;
+
+/// A preset name, trimmed: not empty, and no longer than `MAX_PRESET_NAME`.
+fn preset_name(name: &str) -> Result<&str, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Name the preset.".into());
+    }
+    if name.chars().count() > MAX_PRESET_NAME {
+        return Err(format!(
+            "A preset name is at most {MAX_PRESET_NAME} characters."
+        ));
+    }
+    Ok(name)
+}
+
 /// Turn the camera, or send it to a preset, and wait for it to settle.
 #[tauri::command]
 pub async fn camera_aim(
@@ -624,4 +677,17 @@ pub async fn camera_events_clear(
         Ok(count as u32)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preset_names_are_trimmed_and_bounded() {
+        assert_eq!(preset_name("  hallway "), Ok("hallway"));
+        assert!(preset_name("   ").is_err());
+        assert!(preset_name(&"a".repeat(MAX_PRESET_NAME)).is_ok());
+        assert!(preset_name(&"a".repeat(MAX_PRESET_NAME + 1)).is_err());
+    }
 }
