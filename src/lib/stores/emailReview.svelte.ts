@@ -118,14 +118,50 @@ export function composedBody(body: string, quoted?: string): string {
 
 const ADDRESS = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
 
-/** Addresses typed into one field: comma- or semicolon-separated. */
+/**
+ * Addresses typed into one field: comma- or semicolon-separated. A comma in
+ * a quoted name (`"Lee, Sam" <sam@example.com>`) or in angle brackets does
+ * not split.
+ */
 export function parseAddresses(text: string): string[] {
-	return text
-		.split(/[,;]/)
-		.map((a) => a.trim())
-		.filter(Boolean);
+	const out: string[] = [];
+	let cur = '';
+	let quoted = false;
+	let angle = false;
+	for (let i = 0; i < text.length; i++) {
+		const c = text[i];
+		if (quoted && c === '\\' && i + 1 < text.length) {
+			cur += c + text[++i];
+			continue;
+		}
+		if (c === '"') quoted = !quoted;
+		else if (!quoted && c === '<') angle = true;
+		else if (!quoted && c === '>') angle = false;
+		else if (!quoted && !angle && (c === ',' || c === ';')) {
+			out.push(cur);
+			cur = '';
+			continue;
+		}
+		cur += c;
+	}
+	out.push(cur);
+	return out.map((a) => a.trim()).filter(Boolean);
 }
 
+/** A bare address, or a name and an address: `Sam Lee <sam@example.com>`. */
 export function isAddress(a: string): boolean {
-	return ADDRESS.test(a);
+	const named = /^(.*?)<([^<>]*)>$/.exec(a.trim());
+	if (!named) return ADDRESS.test(a);
+	const name = named[1].trim();
+	// A name with commas, brackets and the like must be in quotes.
+	const nameOk = /^"(?:[^"\\]|\\.)*"$/.test(name) || !/["<>,;:@\\[\]()]/.test(name);
+	return nameOk && ADDRESS.test(named[2].trim());
+}
+
+/** `Sam Lee <sam@example.com>`, the name quoted when it needs to be; the bare address with no name. */
+export function mailbox(name: string, email: string): string {
+	const n = name.trim();
+	if (!n) return email;
+	const safe = /[()<>[\]:;@\\,."]/.test(n) ? `"${n.replace(/(["\\])/g, '\\$1')}"` : n;
+	return `${safe} <${email}>`;
 }

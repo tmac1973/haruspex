@@ -21,6 +21,7 @@ pub mod caldav;
 pub mod carddav;
 pub mod client;
 pub mod commands;
+pub mod contact_book;
 pub mod discovery;
 pub mod google;
 pub mod google_calendar;

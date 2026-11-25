@@ -167,6 +167,13 @@ const TABLE: Record<string, Handler> = {
 	email_part_stage: () => `part-${++partId}`,
 	email_part_drop: none,
 	email_send: () => ({ messageId: 'e2e@example.com' }),
+	dav_contact_addresses: () => ({
+		addresses: [
+			{ name: 'Sam Lee', email: 'sam@example.com', accountLabel: 'Google' },
+			{ name: 'Samantha Ortiz', email: 'sortiz@example.com', accountLabel: 'Google' }
+		],
+		problems: []
+	}),
 	// Print: the window opens on a fixed page, and printing does nothing.
 	print_open: none,
 	print_document: () => ({ title: 'Sample', html: '<h1>Sample</h1><p>Printed text.</p>' }),

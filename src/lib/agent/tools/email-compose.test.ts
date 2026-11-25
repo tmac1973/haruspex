@@ -3,16 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	askEmailReview: vi.fn(),
-	composeAttachment: vi.fn()
+	composeAttachment: vi.fn(),
+	loadContactAddresses: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('#lib/stores/emailReview.svelte.ts', () => ({
-	askEmailReview: mocks.askEmailReview,
-	stagedIds: (d: { attachments?: { partId: string }[] }) =>
-		(d.attachments ?? []).map((f) => f.partId)
+vi.mock('#lib/stores/emailReview.svelte.ts', async (orig) => ({
+	...(await orig<typeof import('#lib/stores/emailReview.svelte.ts')>()),
+	askEmailReview: mocks.askEmailReview
+}));
+vi.mock('#lib/email/contacts.ts', async (orig) => ({
+	...(await orig<typeof import('#lib/email/contacts.ts')>()),
+	loadContactAddresses: mocks.loadContactAddresses
 }));
 vi.mock('#lib/agent/tools/_emailAttach.ts', () => ({
 	ATTACH_FORMATS: ['pdf', 'docx', 'odt', 'html', 'markdown'],
@@ -50,6 +54,16 @@ beforeEach(() => {
 	vi.mocked(invoke).mockReset();
 	mocks.askEmailReview.mockReset();
 	mocks.composeAttachment.mockReset();
+	mocks.loadContactAddresses.mockReset();
+	mocks.loadContactAddresses.mockResolvedValue({
+		addresses: [
+			{ name: 'Sam Lee', email: 'sam@example.com', accountLabel: 'Google' },
+			{ name: 'Samantha Ortiz', email: 'sortiz@example.com', accountLabel: 'Google' },
+			{ name: 'Ana Silva', email: 'ana@work.example', accountLabel: 'Google' },
+			{ name: 'Ana Silva', email: 'ana@home.example', accountLabel: 'Google' }
+		],
+		problems: []
+	});
 	mocks.composeAttachment.mockResolvedValue(null);
 	setEmailAccounts([]);
 });
@@ -213,6 +227,43 @@ describe('email_compose', () => {
 				)
 			).rejects.toThrow(/already open/);
 			expect(invoke).toHaveBeenCalledWith('email_part_drop', { ids: ['part-1'] });
+		});
+	});
+
+	describe('contact names', () => {
+		const send = (to: unknown) =>
+			executeTool('email_compose', { to, subject: 'Hi', body: 'b' }, attended);
+
+		it("writes to a named contact's address, and leaves addresses alone", async () => {
+			setEmailAccounts([sender()]);
+			mocks.askEmailReview.mockResolvedValue({ kind: 'discarded', note: '' });
+			await send(['Sam Lee', 'bob@example.com']);
+			expect(mocks.askEmailReview.mock.calls[0][0].to).toEqual([
+				'Sam Lee <sam@example.com>',
+				'bob@example.com'
+			]);
+		});
+
+		it('does not read the address book when every recipient is an address', async () => {
+			setEmailAccounts([sender()]);
+			mocks.askEmailReview.mockResolvedValue({ kind: 'discarded', note: '' });
+			await send('bob@example.com, "Lee, Sam" <sam@example.com>');
+			expect(mocks.loadContactAddresses).not.toHaveBeenCalled();
+			expect(mocks.askEmailReview.mock.calls[0][0].to).toEqual([
+				'bob@example.com',
+				'"Lee, Sam" <sam@example.com>'
+			]);
+		});
+
+		it('names the choices when a name means several addresses, or says none matched', async () => {
+			setEmailAccounts([sender()]);
+			const several = await send(['Ana Silva']);
+			expect(several.result).toContain(
+				'could be several addresses: Ana Silva <ana@work.example>; Ana Silva <ana@home.example>'
+			);
+			const none = await send(['Zed']);
+			expect(none.result).toContain('No contact matches \\"Zed\\"');
+			expect(mocks.askEmailReview).not.toHaveBeenCalled();
 		});
 	});
 });

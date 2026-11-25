@@ -1,6 +1,6 @@
 ---
 title: Email
-description: Connect an email account, let the assistant read and draft mail, and email an answer, a conversation or a notebook with its pictures and files; what is sent and the size limit.
+description: Connect an email account, let the assistant read and draft mail, email an answer, a conversation or a notebook, write to contacts by name, and the size limit.
 ---
 
 # Email
@@ -28,6 +28,14 @@ The message opens in **Review email** with no recipient yet. Its text is Markdow
 - Pictures that are yours go inside the message: ones you attached, ones Haruspex generated, a notebook's pictures and Python plots.
 - A picture from the web is not sent. Its credit and a link to where it came from are sent instead.
 - A notebook's file cards are attached. **Attach as PDF** adds the notebook as a PDF too; it is off unless you tick it.
+
+## Write to your contacts
+
+With a contacts account connected (Google, or a CardDAV server: see the `integrations` page), **To** and **Cc** in **Review email** suggest contacts as you type a name or an address. Use ↑ and ↓ to choose and Enter or Tab to add one, or click it; Esc closes the list. A contact is added with their name, as `Sam Lee <sam@example.com>`.
+
+You can also ask the assistant to "email Sam the notes" by name. It looks the name up in your contacts. If the name fits more than one address, the assistant asks which one; if it fits none, it asks for the address.
+
+Haruspex keeps the list of addresses in memory for five minutes, so a contact added in the last few minutes may not be suggested yet.
 
 ## How much a message can carry
 

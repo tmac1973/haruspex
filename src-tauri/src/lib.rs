@@ -1011,6 +1011,7 @@ pub fn run() {
             integrations::dav::google::google_sign_out,
             integrations::dav::commands::dav_search_contacts,
             integrations::dav::commands::dav_get_contact,
+            integrations::dav::contact_book::dav_contact_addresses,
             integrations::dav::commands::dav_list_events,
             integrations::dav::commands::dav_search_events,
             background::background_get,

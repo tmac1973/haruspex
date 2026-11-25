@@ -67,7 +67,7 @@ test('Email opens a new message to address, with no Note', async ({ app }) => {
 	await app.getByRole('button', { name: 'Email this answer' }).click();
 	const dialog = app.getByRole('dialog');
 	await expect(dialog.getByText('Review email')).toBeVisible();
-	await expect(dialog.getByRole('textbox', { name: 'To', exact: true })).toBeFocused();
+	await expect(dialog.getByRole('combobox', { name: 'To' })).toBeFocused();
 	await expect(dialog.getByLabel('Message')).toHaveValue(/Hello from the fake model\./);
 	await expect(dialog.getByLabel('Note', { exact: true })).toHaveCount(0);
 	await app.getByRole('button', { name: 'Discard' }).click();
@@ -83,7 +83,7 @@ test('an answer goes as text and HTML, and Preview shows it', async ({ app }) =>
 
 	await app.getByRole('button', { name: 'Email this answer' }).click();
 	const dialog = app.getByRole('dialog');
-	await dialog.getByRole('textbox', { name: 'To', exact: true }).fill('sam@example.com');
+	await dialog.getByRole('combobox', { name: 'To' }).fill('sam@example.com');
 	await dialog.getByRole('button', { name: 'Preview' }).click();
 	await expect(dialog.getByLabel('Preview')).toContainText('Hello from the fake model.');
 	await dialog.getByRole('button', { name: 'Send' }).click();
@@ -109,7 +109,7 @@ test('a notebook can go with a PDF of itself attached', async ({ app }) => {
 	await app.getByRole('button', { name: 'Notebook options' }).click();
 	await app.getByRole('menuitem', { name: 'Email…' }).click();
 	const dialog = app.getByRole('dialog');
-	await dialog.getByRole('textbox', { name: 'To', exact: true }).fill('sam@example.com');
+	await dialog.getByRole('combobox', { name: 'To' }).fill('sam@example.com');
 	await dialog.getByLabel('Attach as PDF').check();
 	await dialog.getByRole('button', { name: 'Send' }).click();
 
