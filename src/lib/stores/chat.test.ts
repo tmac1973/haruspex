@@ -257,6 +257,19 @@ describe('chat store', () => {
 		expect(getActiveConversation()!.title).toBe('hello there');
 	});
 
+	it('keeps a name the chat was given before its first message', async () => {
+		// The first message's auto-title used to replace it (#1271).
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => options.onComplete());
+		const { createConversation, renameConversation, sendMessage, getActiveConversation } =
+			await import('#lib/stores/chat.svelte.ts');
+		const id = createConversation();
+		await renameConversation(id, 'Budget questions');
+		await setServerReady();
+		await sendMessage('what did we spend on travel?');
+		expect(getActiveConversation()!.title).toBe('Budget questions');
+	});
+
 	it('Retry: rewind to the question, then the turn runs again', async () => {
 		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 		const answers = ['first answer', 'second answer'];
