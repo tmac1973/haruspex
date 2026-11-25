@@ -8,6 +8,7 @@
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
+	import { CARD_JOB_WAIT_TIP } from '#lib/home/jobsCard.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import { getJob, getJobs } from '#lib/stores/jobs.svelte.ts';
@@ -133,7 +134,9 @@
 			<p class="muted" class:error={watch.problem} title={watch.detail}>{watch.text}</p>
 		{/if}
 		{#if running}
-			<p class="muted">{waiting ? 'Waiting for chat…' : 'Checking for requests…'}</p>
+			<p class="muted" title={waiting ? CARD_JOB_WAIT_TIP : undefined}>
+				{waiting ? 'Waiting for model…' : 'Checking for requests…'}
+			</p>
 		{:else if queued}
 			<p class="muted">Queued</p>
 		{/if}

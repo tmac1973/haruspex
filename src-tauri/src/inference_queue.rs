@@ -30,13 +30,16 @@
 //!     long tool gave it up) goes ahead of its lane's waiting tickets, after
 //!     any earlier `front` ones. It never displaces a running ticket.
 //!   - A `background` ticket (a Home card's job) gives way to everything
-//!     else on its lane: it is admitted only when no foreground ticket on the
-//!     lane is running or waiting and the lane holds no reservation. A turn
-//!     that gives its slot back while a long tool runs leaves a reservation
-//!     (keyed by the released request id) until it takes the slot back or
-//!     finishes, so a chat or Code turn keeps card jobs out for its whole
-//!     life, not only while it holds the slot. A running background ticket
-//!     is never pre-empted.
+//!     else on its lane. It waits while a foreground or prompt ticket there
+//!     is waiting, and it takes a slot only when one more stays free after
+//!     it, so the user's next turn starts at once. A turn that gives its slot
+//!     back while a long tool runs leaves a reservation (keyed by the
+//!     released request id) that counts as a used slot until it takes the
+//!     slot back or finishes. On a serialized lane that keeps card jobs out
+//!     for a chat or Code turn's whole life; on a parallel one they run
+//!     beside it in the room left over. A lane of one with nothing else on
+//!     it still admits a background ticket, or it would never run. A running
+//!     background ticket is never pre-empted.
 //!   - A `prompt` ticket (a camera event being judged) sits between the two:
 //!     it waits while a foreground ticket on its lane is running or waiting,
 //!     but not for a reservation, and every waiting background ticket on the
@@ -98,8 +101,8 @@ pub enum Priority {
     /// Admitted only when its lane has no foreground ticket; a reservation
     /// doesn't hold it. Goes before the lane's background tickets.
     Prompt,
-    /// Admitted only when its lane has no foreground or waiting prompt
-    /// ticket and no reservation.
+    /// Admitted only when its lane has no waiting foreground or prompt
+    /// ticket, and one slot stays free after it (reservations count as used).
     Background,
 }
 
@@ -238,15 +241,28 @@ impl Inner {
             .any(|t| t.lane == lane && t.priority == Priority::Foreground)
     }
 
-    /// Whether a background ticket on `lane` must keep waiting: a foreground
-    /// ticket there is running or waiting, a prompt ticket is waiting, or a
-    /// turn holds a reservation.
-    fn lane_busy_for_background(&self, lane: &str) -> bool {
-        self.lane_busy_for_prompt(lane)
-            || self.tickets.iter().any(|t| {
-                t.lane == lane && t.priority == Priority::Prompt && t.state == TicketState::Waiting
-            })
-            || self.reservations.iter().any(|r| r.lane == lane)
+    /// Whether a background ticket on `lane` must keep waiting, given the
+    /// `running` count there: a foreground or prompt ticket is waiting, or
+    /// taking a slot would not leave one free. A reservation counts as a used
+    /// slot. A lane of one needs no spare: there, a background ticket runs
+    /// only when nothing else is running or reserved.
+    fn lane_busy_for_background(&self, lane: &str, running: usize) -> bool {
+        let others_waiting = self.tickets.iter().any(|t| {
+            t.lane == lane
+                && t.state == TicketState::Waiting
+                && matches!(t.priority, Priority::Foreground | Priority::Prompt)
+        });
+        if others_waiting {
+            return true;
+        }
+        let reserved = self.reservations.iter().filter(|r| r.lane == lane).count();
+        let cap = self.capacity(lane);
+        let spare = usize::from(cap > 1);
+        running
+            .saturating_add(reserved)
+            .saturating_add(1)
+            .saturating_add(spare)
+            > cap
     }
 
     /// Admit waiting tickets in FIFO order while their lane has capacity,
@@ -277,7 +293,10 @@ impl Inner {
             let busy = match self.tickets[i].priority {
                 Priority::Foreground => false,
                 Priority::Prompt => self.lane_busy_for_prompt(&lane),
-                Priority::Background => self.lane_busy_for_background(&lane),
+                Priority::Background => {
+                    let now = running.get(&lane).copied().unwrap_or(0);
+                    self.lane_busy_for_background(&lane, now)
+                }
             };
             if busy {
                 continue;
@@ -573,8 +592,8 @@ pub fn spawn_lease_sweeper(app: AppHandle) {
 /// Wait for a slot in `lane`. `front` is for a turn taking back a slot it
 /// gave up while a long tool ran: it goes ahead of the lane's waiting turns,
 /// and `replaces` names the request it released. `priority` is
-/// `"background"` for a Home card's job, which waits while the lane has any
-/// other work, or `"prompt"` for a camera event being judged, which waits only
+/// `"background"` for a Home card's job, which waits for the user's waiting
+/// turns and takes a slot only when one stays free after it, or `"prompt"` for a camera event being judged, which waits only
 /// for foreground turns and goes before background ones.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -1147,6 +1166,109 @@ mod tests {
         assert_eq!(q.snapshot()[0].priority, "background");
     }
 
+    /// A ticket on the parallel lane `pool`, which admits `cap` at once
+    /// (`None`: unbounded).
+    fn enqueue_pool(
+        q: &InferenceQueue,
+        id: &str,
+        cap: Option<u32>,
+        priority: Priority,
+    ) -> oneshot::Receiver<()> {
+        q.enqueue_with(
+            id.into(),
+            json!("code"),
+            "pool".into(),
+            cap,
+            "main".into(),
+            Admission {
+                priority,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn background_runs_beside_a_turn_on_a_parallel_lane_and_leaves_a_slot_free() {
+        let q = InferenceQueue::new();
+        let mut code = enqueue_pool(&q, "code", Some(4), Priority::Foreground);
+        assert!(admitted(&mut code));
+        let mut j1 = enqueue_pool(&q, "j1", Some(4), Priority::Background);
+        let mut j2 = enqueue_pool(&q, "j2", Some(4), Priority::Background);
+        let mut j3 = enqueue_pool(&q, "j3", Some(4), Priority::Background);
+        assert!(admitted(&mut j1));
+        assert!(admitted(&mut j2));
+        // A fourth running ticket would leave no room for the user's next turn.
+        assert!(!admitted(&mut j3));
+
+        // The spare slot goes to the user's next turn at once.
+        let mut chat = enqueue_pool(&q, "chat", Some(4), Priority::Foreground);
+        assert!(admitted(&mut chat));
+
+        q.release("code");
+        q.release("chat");
+        assert!(admitted(&mut j3));
+    }
+
+    #[test]
+    fn background_on_a_lane_of_two_waits_for_a_running_turn() {
+        let q = InferenceQueue::new();
+        let mut code = enqueue_pool(&q, "code", Some(2), Priority::Foreground);
+        assert!(admitted(&mut code));
+        let mut job = enqueue_pool(&q, "job", Some(2), Priority::Background);
+        assert!(!admitted(&mut job));
+        q.release("code");
+        assert!(admitted(&mut job));
+    }
+
+    #[test]
+    fn background_keeps_a_slot_free_on_an_idle_parallel_lane() {
+        let q = InferenceQueue::new();
+        let mut jobs: Vec<_> = (0..4)
+            .map(|i| enqueue_pool(&q, &format!("j{i}"), Some(4), Priority::Background))
+            .collect();
+        let ran: Vec<bool> = jobs.iter_mut().map(admitted).collect();
+        assert_eq!(ran, [true, true, true, false]);
+    }
+
+    #[test]
+    fn background_waits_for_a_waiting_foreground_ticket_on_a_parallel_lane() {
+        let q = InferenceQueue::new();
+        let mut held: Vec<_> = (0..4)
+            .map(|i| enqueue_pool(&q, &format!("f{i}"), Some(4), Priority::Foreground))
+            .collect();
+        assert!(held.iter_mut().all(admitted));
+        let mut job = enqueue_pool(&q, "job", Some(4), Priority::Background);
+        let mut late = enqueue_pool(&q, "late", Some(4), Priority::Foreground);
+
+        // The job is ahead in line, but the waiting turn goes first.
+        q.release("f0");
+        assert!(!admitted(&mut job));
+        assert!(admitted(&mut late));
+    }
+
+    #[test]
+    fn a_reservation_counts_as_a_used_slot_on_a_parallel_lane() {
+        let q = InferenceQueue::new();
+        let mut code = enqueue_pool(&q, "c1", Some(3), Priority::Foreground);
+        assert!(admitted(&mut code));
+        // A long tool: the slot is given back, but the turn will want it.
+        assert!(q.release_with("c1", true));
+        let mut j1 = enqueue_pool(&q, "j1", Some(3), Priority::Background);
+        let mut j2 = enqueue_pool(&q, "j2", Some(3), Priority::Background);
+        assert!(admitted(&mut j1));
+        assert!(!admitted(&mut j2));
+    }
+
+    #[test]
+    fn background_on_an_unbounded_lane_runs_beside_a_turn() {
+        let q = InferenceQueue::new();
+        let mut code = enqueue_pool(&q, "code", None, Priority::Foreground);
+        assert!(admitted(&mut code));
+        let mut job = enqueue_pool(&q, "job", None, Priority::Background);
+        assert!(admitted(&mut job));
+    }
+
     #[test]
     fn a_running_background_ticket_is_not_pre_empted() {
         let q = InferenceQueue::new();
@@ -1346,14 +1468,15 @@ mod tests {
     #[test]
     fn a_background_ticket_passed_over_gets_room_left_after_a_prompt() {
         let q = InferenceQueue::new();
-        // Two slots: the job is passed over for the waiting judgement, then
-        // admitted in the same pump once the judgement runs.
+        // Three slots: the job is passed over for the waiting judgement, then
+        // admitted in the same pump once the judgement runs, with one slot
+        // still free after it.
         let mk = |id: &str, priority| {
             q.enqueue_with(
                 id.into(),
                 json!("x"),
                 "local".into(),
-                Some(2),
+                Some(3),
                 "main".into(),
                 Admission {
                     priority,
@@ -1363,12 +1486,17 @@ mod tests {
             .unwrap()
         };
         let mut chat = mk("chat", Priority::Foreground);
+        let mut code = mk("code", Priority::Foreground);
         let mut job = mk("job", Priority::Background);
         let mut judge = mk("judge", Priority::Prompt);
         assert!(admitted(&mut chat));
+        assert!(admitted(&mut code));
         assert!(!admitted(&mut job));
         assert!(!admitted(&mut judge));
         q.release("chat");
+        assert!(!admitted(&mut job));
+        assert!(!admitted(&mut judge));
+        q.release("code");
         assert!(admitted(&mut judge));
         assert!(admitted(&mut job));
     }

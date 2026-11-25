@@ -36,7 +36,6 @@ vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	getPendingQueue: () => m.queue,
 	getQueueDepth: () => m.queue.length
 }));
-vi.mock('#lib/agent/jobs/types/index.ts', () => ({ getJobType: () => ({ background: true }) }));
 vi.mock('#lib/home/emailCard.ts', () => ({
 	emailCardAccountsOf: (id: number) => Promise.resolve(id === 7 ? 'tim@work.example' : null)
 }));
@@ -121,7 +120,7 @@ describe('home.cards', () => {
 				runs: [
 					{
 						jobName: 'Digest',
-						line: 'Step 1 of 2 · Waiting for chat',
+						line: 'Step 1 of 2 · Waiting for model',
 						status: 'running',
 						progress: 0
 					}

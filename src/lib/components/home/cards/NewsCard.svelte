@@ -7,6 +7,7 @@
 	import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
 	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
+	import { CARD_JOB_WAIT_TIP } from '#lib/home/jobsCard.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { askAbout } from '#lib/home/askAbout.ts';
@@ -36,7 +37,9 @@
 	<p class="muted">This card's job was deleted. Remove the card and add it again.</p>
 {:else}
 	{#if running}
-		<p class="muted">{waiting ? 'Waiting for chat…' : 'Reading your feeds…'}</p>
+		<p class="muted" title={waiting ? CARD_JOB_WAIT_TIP : undefined}>
+			{waiting ? 'Waiting for model…' : 'Reading your feeds…'}
+		</p>
 	{:else if queued}
 		<p class="muted">Queued</p>
 	{/if}
