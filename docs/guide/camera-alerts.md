@@ -27,7 +27,7 @@ An Urgent entry shows a desktop notification, and an email when alert emails are
 
 ## Get alerts by email
 
-1. Have an email account with **Allow sending** on (Settings → Integrations → Email; see the `integrations` page).
+1. Have an email account with **Allow sending** on (Settings → Integrations → Email; see the `email` page).
 2. In Settings → Cameras → **Alerts**, turn on **Email alerts**, pick **Send from**, and type up to 5 addresses in **Send to**, separated by commas.
 3. Click **Send test** to check it arrives.
 

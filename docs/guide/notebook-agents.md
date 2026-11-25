@@ -25,8 +25,12 @@ In Chat, Shell or Code, ask in your own words: "make a notebook called speakers 
 
 In Chat, Shell and Code, **📓** under an answer saves it as a text card, and **📓 Save to notebook** on a table (shown on hover) saves it as a table card, with link cells kept as links. Right-click text you've selected in an answer for **Add selection to notebook…**. Each asks which notebook, or makes a new one; the card links back to the conversation.
 
+## Email a notebook
+
+In Chat, with an email account that has **Allow sending** on, ask "email the Trip notebook to Sam as a PDF". The draft opens in **Review email** with the notebook attached (a PDF unless you ask for Word, OpenDocument, a web page or Markdown), and you send it. Ask for one card to attach only that card; a file card attaches its file. See the `email` page.
+
 ## What agents don't do with notebooks
 
 - They don't look in your notebooks unless you ask, and Memory never reads them (see the `memory` page).
-- They can't open the files a notebook keeps.
+- They can't open the files a notebook keeps. They can only attach one to an email draft you review.
 - With Settings → General → **Show the Notebooks tab** off, agents have no notebook tools.

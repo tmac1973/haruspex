@@ -11,7 +11,7 @@ A Research by email job lets you ask Haruspex a question from your phone. You em
 
 The easy way is **Home → Add card → Email requests…**, which makes the job and shows its requests (below). Or, by hand:
 
-1. In Settings → Integrations → Email, have the account you'll write from, with **Allow sending** on (see the `integrations` page).
+1. In Settings → Integrations → Email, have the account you'll write from, with **Allow sending** on (see the `email` page).
 2. In the Jobs tab, make a job of type **Research by email** (see the `jobs` page).
 3. Pick the **Email account**, type a **Trigger phrase** such as `ask haruspex`, and set the **Daily limit** (10 by default, or **No limit**).
 4. Leave **Answer when mail arrives** on, and give it a schedule as the backup check. Hourly is enough. With it off, the schedule is the only check, so every 15 minutes is a better start.

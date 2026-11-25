@@ -62,6 +62,7 @@ const PAGES = [
 	'video-speech',
 	'textures',
 	'integrations',
+	'email',
 	'cameras',
 	'camera-chat',
 	'camera-pan-tilt',

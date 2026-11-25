@@ -73,9 +73,54 @@ test('Email opens a new message to address, with no Note', async ({ app }) => {
 	await app.getByRole('button', { name: 'Discard' }).click();
 
 	await app.getByRole('button', { name: 'Email conversation' }).click();
-	await expect(dialog.getByLabel('Message')).toHaveValue(/^You:\nhello there/);
+	await expect(dialog.getByLabel('Message')).toHaveValue(/^\*\*You:\*\*\n\nhello there/);
 	await app.getByRole('button', { name: 'Discard' }).click();
 	expect(await callsTo(app, 'email_send')).toHaveLength(0);
+});
+
+test('an answer goes as text and HTML, and Preview shows it', async ({ app }) => {
+	await answer(app);
+
+	await app.getByRole('button', { name: 'Email this answer' }).click();
+	const dialog = app.getByRole('dialog');
+	await dialog.getByRole('textbox', { name: 'To', exact: true }).fill('sam@example.com');
+	await dialog.getByRole('button', { name: 'Preview' }).click();
+	await expect(dialog.getByLabel('Preview')).toContainText('Hello from the fake model.');
+	await dialog.getByRole('button', { name: 'Send' }).click();
+
+	await expect.poll(() => callsTo(app, 'email_send')).toHaveLength(1);
+	const [send] = (await callsTo(app, 'email_send')) as {
+		message: { to: string[]; body: string; html: string; parts: unknown[] };
+	}[];
+	expect(send.message.to).toEqual(['sam@example.com']);
+	expect(send.message.body).toContain('Hello from the fake model.');
+	expect(send.message.html).toContain('<p>Hello from the fake model.');
+	expect(send.message.parts).toEqual([]);
+});
+
+test('a notebook can go with a PDF of itself attached', async ({ app }) => {
+	await app.getByRole('tab', { name: 'Notebooks' }).click();
+	await app.getByRole('button', { name: '+ New' }).click();
+	const name = app.getByLabel('New notebook title');
+	await name.fill('Trip');
+	await name.press('Enter');
+	await expect(app.getByLabel('Notebook title')).toHaveValue('Trip');
+
+	await app.getByRole('button', { name: 'Notebook options' }).click();
+	await app.getByRole('menuitem', { name: 'Email…' }).click();
+	const dialog = app.getByRole('dialog');
+	await dialog.getByRole('textbox', { name: 'To', exact: true }).fill('sam@example.com');
+	await dialog.getByLabel('Attach as PDF').check();
+	await dialog.getByRole('button', { name: 'Send' }).click();
+
+	await expect.poll(() => callsTo(app, 'email_send')).toHaveLength(1);
+	const [send] = (await callsTo(app, 'email_send')) as {
+		message: { subject: string; parts: { id: string }[] };
+	}[];
+	expect(send.message.subject).toBe('Trip');
+	expect(send.message.parts).toHaveLength(1);
+	const staged = (await callsTo(app, 'email_part_stage')).length;
+	expect(staged).toBe(1);
 });
 
 test('a notebook prints, and its menu offers Email', async ({ app }) => {
