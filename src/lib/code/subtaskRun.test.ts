@@ -408,6 +408,16 @@ describe('runSubtaskSpec with a profile', () => {
 		expect(invoke).not.toHaveBeenCalled();
 	});
 
+	it('calls onEnd once the run is over, even when finish throws', async () => {
+		child.runSubtask.mockResolvedValue(result());
+		const onEnd = vi.fn();
+		const finish = vi.fn(async () => {
+			throw new Error('boom');
+		});
+		await runSubtaskSpec(spec({ profile: profile({ finish, onEnd }) }), env(), initial());
+		expect(onEnd).toHaveBeenCalledTimes(1);
+	});
+
 	it('tells the parent what finish says, with the run’s totals, and keeps its picture', async () => {
 		child.runSubtask.mockImplementation(async (o) => {
 			o.onUsage(usage(0.1));

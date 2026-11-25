@@ -384,3 +384,46 @@ describe('writablePaths limits a turn to named files', () => {
 		});
 	}
 });
+
+describe('a running 3D delegate’s files', () => {
+	const held =
+		'assets/crate.js belongs to the 3D delegate "Crate", which is still working on it. Wait for its report; to change the asset, call delegate_3d again with the same path once it has finished.';
+	let release: () => void;
+	beforeEach(async () => {
+		const { holdDelegateFiles } = await import('#lib/helpers/three/delegateHolds.ts');
+		release = holdDelegateFiles('/tmp/work', ['assets/crate.js', 'assets/crate.glb'], 'Crate');
+		return () => release();
+	});
+
+	const cases: [string, Record<string, unknown>][] = [
+		['fs_write_text', { path: './assets/crate.js', content: 'x' }],
+		['fs_edit_text', { path: 'assets/crate.js', old_str: 'a', new_str: 'b' }],
+		['fs_delete', { path: '/tmp/work/assets/crate.js' }],
+		['fs_move', { from: 'assets/old.js', to: 'assets/crate.js' }]
+	];
+	it.each(cases)('%s is refused while the delegate holds it', async (tool, args) => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool(tool, args, ctx);
+		expect(JSON.parse(out.result).error).toBe(held);
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it('lets the delegate itself write, and anyone once it lets go', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		vi.mocked(invoke).mockResolvedValue(false);
+		const own = await executeTool(
+			'fs_write_text',
+			{ path: 'assets/crate.js', content: 'x' },
+			{ ...ctx, writablePaths: ['assets/crate.js'] }
+		);
+		expect(own.result).toMatch(/Wrote/);
+		release();
+		ctx.filesWrittenThisTurn.clear();
+		const after = await executeTool(
+			'fs_write_text',
+			{ path: 'assets/crate.js', content: 'y' },
+			ctx
+		);
+		expect(after.result).toMatch(/Wrote/);
+	});
+});

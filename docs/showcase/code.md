@@ -161,7 +161,7 @@ Prompt:
 
 Example output:
 
-The agent reads the other characters to get their scale and style, then calls `delegate_3d` with path `assets/goblin.glb` and a task naming the height, style, pivots and clips. The delegate writes `goblin.js` and `goblin.anim.js`, checks them with `check_3d` until both clips pass, and writes `goblin.glb`. The agent gets its report, "Final check: clean.", the files and the cost, and wires the goblin into the scene.
+The agent reads the other characters to get their scale and style, then calls `delegate_3d` with path `assets/goblin.glb` and a task naming the height, style, pivots and clips. The delegate writes `goblin.js` and `goblin.anim.js`, checks them with `check_3d` until both clips pass, and writes `goblin.glb`. It runs in the background, so you can keep talking to the agent meanwhile. When it finishes, the agent gets its report, "Final check: clean.", the files and the cost, and wires the goblin into the scene.
 
 <!-- media: the delegate's card with its steps, render sheet and cost, then goblin.glb walking in the 3D viewer -->
 
@@ -194,6 +194,7 @@ Required settings: None (Settings → Code → Subtasks → Read and write lets 
 Prompt:
 
 > Before I refactor the cache:
+>
 > 1. Find every caller of `getCached`.
 > 2. Work out how the tests mock Redis.
 > 3. List the config keys the cache reads.

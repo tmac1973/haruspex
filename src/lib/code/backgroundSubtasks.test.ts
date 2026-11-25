@@ -133,13 +133,21 @@ describe('BackgroundSubtasks', () => {
 		for (let i = 1; i <= 4; i++) bg.start(spec(`t${i}`), newSubtaskState(`t${i}`, 'l', 't'));
 		const wt = { path: '/w', root: '/w', base: 'b', linked: [] };
 		bg.start({ ...spec('late'), mode: 'write', wt }, newSubtaskState('late', 'late', 't', 'write'));
+		const onEnd = vi.fn();
+		bg.start(
+			{ ...spec('late3d'), profile: { onEnd } as unknown as SubtaskSpec['profile'] },
+			newSubtaskState('late3d', 'late', 't', 'write')
+		);
 		stops.stop('late');
+		stops.stop('late3d');
 		stops.stopAll();
 		await bg.settle();
 		expect(mocks.runSubtaskSpec).toHaveBeenCalledTimes(4);
 		expect(mocks.discard).toHaveBeenCalledWith(wt, null);
 		expect(states.find((s) => s.id === 'late')?.status).toBe('stopped');
 		expect(done.find((d) => d.id === 'late')?.text).toContain('before it started');
+		// A profile that never ran still gives back what it held.
+		expect(onEnd).toHaveBeenCalledTimes(1);
 	});
 
 	it('asks for the lease only to apply, and lets it go after', async () => {

@@ -7,19 +7,21 @@
  * (`finalCheck3d`): a failing one sends it back once, and the result says
  * whether errors remain.
  *
+ * It runs in the background unless the call asks to `wait`: the delegate is
+ * on another model, often another server, so the main agent and the user
+ * carry on meanwhile, and its report comes as a notification turn. While it
+ * runs its three files are held (`delegateHolds.ts`): other writes to them
+ * are refused, and so is a second call on the same path.
+ *
  * Owned by the 3D helper and offered only while a delegate model is set
  * (`registry.ts`). It shares `delegate`'s per-turn limit, but not its
  * setting: Settings → Code → Subtasks is not read.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { check3dHost } from '#lib/agent/tools/check-3d.ts';
-import {
-	runInForeground,
-	startInBackground,
-	SUBTASKS_PER_TURN
-} from '#lib/agent/tools/delegate.ts';
+import { runInForeground, SUBTASKS_PER_TURN } from '#lib/agent/tools/delegate.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
-import { fsWorkdir, writableKey } from '#lib/agent/tools/_helpers.ts';
+import { ctxCwd, fsWorkdir, writableKey } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { CodeWriteGuard, ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
@@ -35,6 +37,7 @@ import {
 } from '#lib/helpers/three/delegateCheck.ts';
 import type { Check3dHost } from '#lib/helpers/three/call.ts';
 import { delegate3dConfig, type Delegate3dConfig } from '#lib/helpers/three/delegateConfig.ts';
+import { delegateHolding, holdDelegateFiles } from '#lib/helpers/three/delegateHolds.ts';
 import {
 	delegate3dFiles,
 	delegate3dFinalReport,
@@ -79,9 +82,6 @@ function refusal(args: Record<string, unknown>, ctx: ToolContext): string | null
 	if (!ctx.workingDir) return 'No project folder set.';
 	if (ctx.codeReadOnly) return 'This session is read-only: delegate_3d writes files.';
 	if (!delegate3dConfig(ctx.codeHelperConfig).backend) return NO_DELEGATE;
-	if (args.background === true && !ctx.startBackgroundSubtask) {
-		return 'Background calls are not available here; leave background off.';
-	}
 	if ((ctx.subtasksStartedThisTurn?.count ?? 0) >= SUBTASKS_PER_TURN) {
 		return `This turn has already started ${SUBTASKS_PER_TURN} subtasks, the most it may. Do the rest yourself.`;
 	}
@@ -273,6 +273,22 @@ function profileFor(
 	};
 }
 
+/** What the parent is told when the delegate starts in the background. */
+export function delegate3dStartedText(label: string, glb: string): string {
+	return `The 3D delegate is working on "${label}" (${glb}) in the background. Its report, with the final check, comes to you in a new turn when it finishes. Do not build this asset yourself, and do not write to its files meanwhile. Tell the user it has started, then carry on with other work or end your turn.`;
+}
+
+/** Why `files` can't be handed out now: a running delegate holds one. */
+function busyWith(folder: string, files: Delegate3dFiles): string | null {
+	for (const path of [files.module, files.anim, files.glb]) {
+		const label = delegateHolding(folder, path);
+		if (label) {
+			return `The 3D delegate "${label}" is still working on ${path}. Wait for its report, then call again with the same path to change the asset.`;
+		}
+	}
+	return null;
+}
+
 /** Show the final sheet to the parent, when its model can see. */
 function attachSheet(ctx: ToolContext, path: string, png: string | undefined): void {
 	if (!png || ctx.visionSupported === false) return;
@@ -294,6 +310,9 @@ export async function executeDelegate3d(
 	if (typeof images === 'string') return toolResult(toolError(images));
 	const config = delegate3dConfig(ctx.codeHelperConfig);
 	if (!config.backend) return toolResult(toolError(NO_DELEGATE));
+	const folder = ctxCwd(ctx) as string;
+	const busy = busyWith(folder, files);
+	if (busy) return toolResult(toolError(busy));
 	const foreign = await notBuildModules(ctx, files);
 	if (foreign) return toolResult(toolError(foreign));
 
@@ -307,25 +326,33 @@ export async function executeDelegate3d(
 		existing: { module, anim },
 		imagePaths: images.map((i) => i.path)
 	});
-	const background = args.background === true;
+	// Outside a Code session there is no background to run in: it waits.
+	const background = args.wait !== true && ctx.startBackgroundSubtask !== undefined;
 	if (ctx.subtasksStartedThisTurn) ctx.subtasksStartedThisTurn.count += 1;
+	const profile = profileFor(
+		ctx,
+		{ ...config, backend: config.backend },
+		files,
+		label,
+		firstMessage,
+		images
+	);
+	// Held from here until the run is over (`onEnd`), however it ends.
+	profile.onEnd = holdDelegateFiles(folder, [files.module, files.anim, files.glb], label);
 	const spec: SubtaskSpec = {
 		id: ctx.toolCallId ?? `subtask-${Date.now()}`,
 		label,
 		task,
 		mode: 'write',
 		wt: null,
-		profile: profileFor(
-			ctx,
-			{ ...config, backend: config.backend },
-			files,
-			label,
-			firstMessage,
-			images
-		)
+		profile
 	};
 	const initial = newSubtaskState(spec.id, label, task, 'write', background);
-	if (background) return startInBackground(ctx, spec, initial);
+	if (background) {
+		ctx.onSubtask?.(initial);
+		ctx.startBackgroundSubtask?.(spec, initial);
+		return toolResult(delegate3dStartedText(label, files.glb));
+	}
 
 	const res = await runInForeground(ctx, spec, initial, ctx.workingDir as string);
 	if (res.failed) return toolResult(toolError(res.text));
@@ -341,7 +368,7 @@ registerTool({
 		function: {
 			name: 'delegate_3d',
 			description:
-				"Hand one 3D asset to the 3D delegate model: it writes the build module and animation module, checks them with check_3d until clean, and writes the .glb. It can't see this conversation: put everything it needs in task. To change an asset it made, call again with the same path.",
+				"Hand one 3D asset to the 3D delegate model: it writes the build module and animation module, checks them with check_3d until clean, and writes the .glb. It runs in the background and its report comes to you in a new turn. It can't see this conversation: put everything it needs in task. To change an asset it made, call again with the same path once it has finished.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -364,10 +391,10 @@ registerTool({
 						type: 'string',
 						description: 'A few words naming the asset, shown to the user.'
 					},
-					background: {
+					wait: {
 						type: 'boolean',
 						description:
-							"Return at once and let it run on; you'll get a notification turn with its report when it finishes. Default false: wait for its report."
+							'Wait for its report in this turn instead. Only when your next step needs the finished .glb. Default false.'
 					}
 				},
 				required: ['path', 'task']
