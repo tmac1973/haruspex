@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 // Side-effect import registers the camera tools in the shared registry.
 import '#lib/agent/tools/camera.ts';
 import '#lib/agent/tools/camera-log.ts';
+import { NAME_THE_PRESET, NO_PRESETS } from '#lib/agent/tools/camera-save-preset.ts';
 import {
 	CANT_MOVE,
 	DIRECTION_OR_PRESET,
@@ -26,7 +27,7 @@ import type { Aim } from '#lib/ipc/gen/Aim.ts';
 import { describeRange } from '#lib/camera/calibration.ts';
 import { ASK_IN_JOB, NOT_LOCAL, NO_CAMERAS } from '#lib/agent/tools/_cameraGate.ts';
 import { executeTool, getToolSchemas, type ToolSchemaOpts } from '#lib/agent/tools/registry.ts';
-import { defaultWatcherConfig, updateSettings } from '#lib/stores/settings.ts';
+import { defaultWatcherConfig, getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { getPendingCameraUse, resolveCameraUse } from '#lib/stores/cameraApproval.svelte.ts';
 import { activeCameraUses } from '#lib/stores/cameraActivity.svelte.ts';
 import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
@@ -78,7 +79,13 @@ beforeEach(() => {
 describe('which turns are offered the camera tools', () => {
 	it('offers them in Chat with cameras and the local model', () => {
 		expect(names()).toEqual(
-			expect.arrayContaining(['camera_list', 'camera_snapshot', 'camera_listen', 'camera_look'])
+			expect.arrayContaining([
+				'camera_list',
+				'camera_snapshot',
+				'camera_listen',
+				'camera_look',
+				'camera_save_preset'
+			])
 		);
 	});
 
@@ -615,6 +622,99 @@ describe('camera_look', () => {
 		const list = JSON.parse((await executeTool('camera_list', {}, chat())).result);
 		expect(list[0]).toMatchObject({ can_aim: true });
 		expect(list[0]).not.toHaveProperty('presets');
+	});
+});
+
+describe('camera_save_preset', () => {
+	const ENDPOINT = {
+		xaddr: 'http://192.168.1.50/onvif/device_service',
+		profileToken: 'Profile_0',
+		presets: [{ token: '0', name: 'Door' }]
+	};
+	const onvifCamera = (over: Partial<CameraConfig> = {}) =>
+		camera({ ptz: 'onvif', onvif: ENDPOINT, ...over });
+	const AFTER = [
+		{ token: '0', name: 'Door' },
+		{ token: '1', name: 'hallway' }
+	];
+
+	beforeEach(() => {
+		updateSettings({ cameras: [onvifCamera()] });
+		vi.mocked(invoke).mockImplementation(async (cmd) => {
+			if (cmd === 'camera_preset_save') return { replaced: false, presets: AFTER };
+			throw new Error(`unexpected invoke: ${cmd}`);
+		});
+	});
+
+	it('saves the preset on the camera and keeps the presets it reads back', async () => {
+		const out = await executeTool(
+			'camera_save_preset',
+			{ camera: 'Kitchen', name: ' hallway ' },
+			chat()
+		);
+		expect(invoke).toHaveBeenCalledWith('camera_preset_save', {
+			config: expect.objectContaining({ id: 'cam-1' }),
+			name: 'hallway'
+		});
+		expect(out.result).toBe(
+			'Saved the preset "hallway" on Kitchen where it points now. Its presets: Door, hallway.'
+		);
+		expect(getSettings().cameras[0].onvif?.presets).toEqual(AFTER);
+	});
+
+	it('says when it replaced a preset of that name', async () => {
+		vi.mocked(invoke).mockResolvedValue({ replaced: true, presets: ENDPOINT.presets });
+		const out = await executeTool(
+			'camera_save_preset',
+			{ camera: 'Kitchen', name: 'door' },
+			chat()
+		);
+		expect(out.result).toMatch(/^Replaced the preset "door" on Kitchen/);
+	});
+
+	it('refuses a camera without ONVIF presets, and a blank name, without asking', async () => {
+		updateSettings({
+			cameras: [
+				camera({ permission: 'ask' }),
+				camera({
+					id: 'cam-2',
+					name: 'Desk',
+					permission: 'ask',
+					ptz: 'uvc',
+					source: { kind: 'usb', videoDevice: '/dev/video0', audioDevice: null }
+				})
+			]
+		});
+		for (const name of ['Kitchen', 'Desk']) {
+			const out = await executeTool('camera_save_preset', { camera: name, name: 'x' }, chat());
+			expect(error(out.result)).toBe(NO_PRESETS);
+		}
+		const blank = await executeTool('camera_save_preset', { camera: 'Kitchen', name: ' ' }, chat());
+		expect(error(blank.result)).toBe(NAME_THE_PRESET);
+		expect(getPendingCameraUse()).toBeNull();
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it('asks before saving on an Ask camera, and saves nothing when declined', async () => {
+		updateSettings({ cameras: [onvifCamera({ permission: 'ask' })] });
+		const run = executeTool('camera_save_preset', { camera: 'Kitchen', name: 'hallway' }, chat());
+		await vi.waitFor(() => expect(getPendingCameraUse()?.action).toBe('save_preset'));
+		resolveCameraUse('deny');
+		expect((await run).result).toContain('The user declined');
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it("reports a camera that won't save as an error, and keeps the old presets", async () => {
+		vi.mocked(invoke).mockRejectedValue("The camera didn't save the preset: Action not supported");
+		const out = await executeTool(
+			'camera_save_preset',
+			{ camera: 'Kitchen', name: 'hallway' },
+			chat()
+		);
+		expect(error(out.result)).toBe(
+			"Kitchen: The camera didn't save the preset: Action not supported"
+		);
+		expect(getSettings().cameras[0].onvif?.presets).toEqual(ENDPOINT.presets);
 	});
 });
 

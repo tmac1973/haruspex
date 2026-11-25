@@ -22,7 +22,7 @@
 			totals.subagentCalls > 0
 				? `Sub-agents: ${totals.subagentTokens.toLocaleString()} tokens over ${totals.subagentCalls.toLocaleString()} calls (included above).`
 				: null,
-			'Specialists and summaries are not counted.'
+			'Summaries are not counted.'
 		]
 			.filter(Boolean)
 			.join('\n')

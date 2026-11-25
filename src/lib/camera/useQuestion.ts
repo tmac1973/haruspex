@@ -4,12 +4,13 @@
  */
 
 /** What the assistant wants to do with the cameras. */
-export type CameraAction = 'look' | 'listen' | 'move' | 'read_log';
+export type CameraAction = 'look' | 'listen' | 'move' | 'save_preset' | 'read_log';
 
 const VERBS: Record<CameraAction, string> = {
 	look: 'look through',
 	listen: 'listen on',
 	move: 'move',
+	save_preset: 'save a preset on',
 	read_log: 'read the log of'
 };
 

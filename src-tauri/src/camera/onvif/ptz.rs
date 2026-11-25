@@ -1,5 +1,6 @@
 //! ONVIF pan/tilt: continuous moves, stop, presets and home. Zoom is left
-//! alone. Used by `camera_look` (phase 06) through [`Ptz`].
+//! alone. Used by `camera_look` (phase 06) and `camera_save_preset` through
+//! [`Ptz`].
 
 use super::soap::{self, Element};
 use super::Client;
@@ -72,6 +73,17 @@ impl Ptz {
         self.client.call(&self.url, &body).await.map(drop)
     }
 
+    /// Save where the camera points now as the preset `name`; with
+    /// `existing`, overwrite that preset instead of adding one. The new
+    /// preset's token.
+    pub async fn set_preset(&self, name: &str, existing: Option<&str>) -> Result<String, String> {
+        let body = set_preset_body(&self.profile, name, existing);
+        let reply = self.client.call(&self.url, &body).await?;
+        parse_set_preset(&reply)
+            .or_else(|| existing.map(str::to_string))
+            .ok_or_else(|| "The camera saved no preset.".to_string())
+    }
+
     pub async fn goto_home(&self) -> Result<(), String> {
         let body = format!(
             "<tptz:GotoHomePosition>{}</tptz:GotoHomePosition>",
@@ -135,6 +147,25 @@ pub(crate) fn stop_body(profile: &str) -> String {
         "<tptz:Stop>{}<tptz:PanTilt>true</tptz:PanTilt><tptz:Zoom>false</tptz:Zoom></tptz:Stop>",
         profile_element(profile)
     )
+}
+
+pub(crate) fn set_preset_body(profile: &str, name: &str, existing: Option<&str>) -> String {
+    let token = existing
+        .map(|t| format!("<tptz:PresetToken>{}</tptz:PresetToken>", soap::escape(t)))
+        .unwrap_or_default();
+    format!(
+        "<tptz:SetPreset>{}<tptz:PresetName>{}</tptz:PresetName>{token}</tptz:SetPreset>",
+        profile_element(profile),
+        soap::escape(name)
+    )
+}
+
+/// The token in a SetPresetResponse; `None` when it has none.
+pub(crate) fn parse_set_preset(reply: &Element) -> Option<String> {
+    reply
+        .find("PresetToken")
+        .map(|t| t.text.trim().to_string())
+        .filter(|t| !t.is_empty())
 }
 
 pub(crate) fn parse_presets(reply: &Element) -> Vec<OnvifPreset> {
@@ -209,6 +240,35 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn set_preset_names_it_and_overwrites_by_token() {
+        let root = body_of(&soap::envelope(
+            &set_preset_body("Profile_0", "Hall & door", None),
+            None,
+        ));
+        assert_eq!(root.name, "SetPreset");
+        assert_eq!(root.text_at(&["ProfileToken"]), Some("Profile_0"));
+        assert_eq!(root.text_at(&["PresetName"]), Some("Hall & door"));
+        assert!(root.find("PresetToken").is_none());
+        let again = body_of(&soap::envelope(
+            &set_preset_body("Profile_0", "hallway", Some("3")),
+            None,
+        ));
+        assert_eq!(again.text_at(&["PresetToken"]), Some("3"));
+    }
+
+    #[test]
+    fn set_preset_reply_gives_the_token() {
+        let reply = body_of(concat!(
+            r#"<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" "#,
+            r#"xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><s:Body>"#,
+            "<tptz:SetPresetResponse><tptz:PresetToken> 2 </tptz:PresetToken>",
+            "</tptz:SetPresetResponse></s:Body></s:Envelope>"
+        ));
+        assert_eq!(parse_set_preset(&reply).as_deref(), Some("2"));
+        assert_eq!(parse_set_preset(&Element::default()), None);
     }
 
     #[test]

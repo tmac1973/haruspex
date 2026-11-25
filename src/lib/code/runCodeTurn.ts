@@ -66,7 +66,7 @@ export { withNotice };
 import { logDebug } from '#lib/debugLog.ts';
 import { compactCodeThread, compactionDue, modelThread } from '#lib/code/compaction.ts';
 import type { CodeCompaction } from '#lib/code/session.ts';
-import { helperPrompt, sessionHelpers } from '#lib/helpers/registry.ts';
+import { helperPrompts, sessionHelpers } from '#lib/helpers/registry.ts';
 import { searchReranked } from '#lib/helpers/search/config.ts';
 
 export interface CodeTurnOptions {
@@ -92,8 +92,6 @@ export interface CodeTurnOptions {
 	backend: BackendOverride | null;
 	/** Null follows the global setting. */
 	effort: string | null;
-	/** The specialist entry ids the session offers; null: the ones on by default. */
-	specialists?: string[] | null;
 	/** The helper ids the session offers; null: the ones on in Settings. */
 	helpers?: string[] | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
@@ -167,7 +165,7 @@ export interface CodeTurnOptions {
 	/** A subtask's card changed, for `call`'s step (`AgentLoopOptions.onSubtaskUpdate`). */
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
 	/** Each model call a `delegate` subtask makes (`ToolContext.onSubtaskUsage`). */
-	onSubtaskUsage?: (usage: Usage) => void;
+	onSubtaskUsage?: (usage: Usage, ownModel?: boolean) => void;
 	/** The session's stop handles for its subtasks. */
 	subtaskStops?: SubtaskStops;
 	/** Hand a background subtask to the session (`ToolContext.startBackgroundSubtask`). */
@@ -241,7 +239,6 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 			codeReadOnly: o.readOnly ?? false,
 			codeRemote: o.remote ?? false,
 			codeSessionId: o.sessionId,
-			codeSpecialists: o.specialists ?? null,
 			codeHelpers: o.helpers ?? null,
 			visionSupported: descriptor.vision,
 			interactive: true,
@@ -289,7 +286,6 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeRemote: o.remote ?? false,
 					codeWriteGuard: o.writeGuard,
 					codeEffort: o.effort,
-					codeSpecialists: o.specialists ?? null,
 					codeHelpers: o.helpers ?? null,
 					onSubtaskUpdate: o.onSubtaskUpdate,
 					onSubtaskUsage: o.onSubtaskUsage,
@@ -484,7 +480,7 @@ export async function prepareSystem(
 		delegate: delegateModes(o),
 		subtask: o.subtask,
 		deferred: turnTools?.deferredTools,
-		helpers: helpers.map((h) => ({ id: h.id, prompt: helperPrompt(h) })),
+		helpers: helperPrompts(helpers, o.readOnly),
 		searchFirst: helpers.some((h) => h.id === 'search') && searchReranked()
 	});
 	return { system, skills, turnTools };

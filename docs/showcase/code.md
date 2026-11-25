@@ -148,6 +148,25 @@ The agent writes `assets/props/mana_potion.js` and checks it with `check_3d`, wh
 
 Read more: helpers, 3d-helper, viewers
 
+## Hand a 3D character to a stronger model
+
+Keep a local model as the session's model and let a frontier model on OpenRouter do just the 3D work. The agent writes the brief, the delegate builds and checks the asset until it is clean, and the card shows its steps, render sheets and cost.
+
+Tab: Code
+Required settings: Settings → Code → Helpers → 3D → Delegate to
+
+Prompt:
+
+> Make a goblin for assets/goblin.glb: about 1.2 m tall, low-poly, with Idle and Walk clips, to match the other characters in assets/.
+
+Example output:
+
+The agent reads the other characters to get their scale and style, then calls `delegate_3d` with path `assets/goblin.glb` and a task naming the height, style, pivots and clips. The delegate writes `goblin.js` and `goblin.anim.js`, checks them with `check_3d` until both clips pass, and writes `goblin.glb`. The agent gets its report, "Final check: clean.", the files and the cost, and wires the goblin into the scene.
+
+<!-- media: the delegate's card with its steps, render sheet and cost, then goblin.glb walking in the 3D viewer -->
+
+Read more: 3d-delegate, 3d-helper, helpers
+
 ## Work on a branch without touching your checkout
 
 Tick **Work in a new worktree** when you start a session. It works in its own folder on a new branch, so your checkout stays as it is. Merging back is ordinary git.

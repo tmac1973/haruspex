@@ -23,13 +23,15 @@ Writing subtasks need a git repository, and aren't offered in a read-only sessio
 
 ## Follow a subtask
 
-Each subtask shows as a card among the agent's steps: its name (hover for the full task), whether it is waiting for a slot, running or done, and how long it took. While it runs, the card lists its own steps; once it ends they fold away behind **Show N steps**, and **Report** holds what it handed back. Cards are saved with the session. A subtask's tokens and cost count toward its session's total in the header. Settings → Remote control's page shows each card with its status and report, without the steps.
+Each subtask shows as a card among the agent's steps: its name (hover for the full task), whether it is waiting for a slot, running or done, and how long it took. Under the name, the card shows the tokens the subtask has used and, when its model has a price, what it has cost so far. While it runs, the card lists its own steps; once it ends they fold away behind **Show N steps**, and **Report** holds what it handed back. When a step returns a picture, the card shows the newest one. Cards are saved with the session. A subtask's tokens and cost count toward its session's total in the header. Settings → Remote control's page shows each card with its status and report, without the steps.
 
 ## Run several at once
 
 Subtasks the agent starts together run at the same time when the model server takes more than one request at once: raise Settings → Inference → Parallel streams for the bundled server, or use a server that runs several. With one stream they run one after another; they still keep the session's context small.
 
 Up to 4 run at once, and the agent starts at most 8 per turn.
+
+`delegate_3d` also runs as a subtask, on its own model, and counts toward those 8; it follows Settings → Code → Helpers → 3D, not Settings → Code → Subtasks. See the `3d-delegate` page.
 
 ## Let subtasks run in the background
 

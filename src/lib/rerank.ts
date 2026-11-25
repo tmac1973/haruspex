@@ -12,7 +12,7 @@ import type { ServerModel } from '#lib/ipc/gen/ServerModel.ts';
 
 export type { RerankResult, ServerModel };
 
-/** A rerank server, in `SpecialistEntry`'s shape: URL, API key id, model. */
+/** A rerank server: URL, API key id, model. */
 export interface RerankEndpoint {
 	url: string;
 	keyId: string | null;

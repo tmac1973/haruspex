@@ -73,27 +73,18 @@ describe('code session wrappers', () => {
 		expect(rec.backend).toBeNull();
 	});
 
-	it('decodes the specialist list, and treats a broken one as the defaults', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce(row({ specialists: '["a","b"]' }));
-		expect((await loadCodeSession('s1')).specialists).toEqual(['a', 'b']);
-		vi.mocked(invoke).mockResolvedValueOnce(row({ specialists: null }));
-		expect((await loadCodeSession('s1')).specialists).toBeNull();
+	it('decodes the helper list, and treats a broken one as the defaults', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(row({ helpers: '["three"]' }));
+		expect((await loadCodeSession('s1')).helpers).toEqual(['three']);
+		vi.mocked(invoke).mockResolvedValueOnce(row());
+		expect((await loadCodeSession('s1')).helpers).toBeNull();
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		for (const bad of ['not json', '{"a":1}', '[1,2]']) {
-			vi.mocked(invoke).mockResolvedValueOnce(row({ specialists: bad }));
-			expect((await loadCodeSession('s1')).specialists).toBeNull();
+			vi.mocked(invoke).mockResolvedValueOnce(row({ helpers: bad }));
+			expect((await loadCodeSession('s1')).helpers).toBeNull();
 		}
 		expect(warn).toHaveBeenCalledTimes(3);
 		warn.mockRestore();
-	});
-
-	it('decodes the helper list apart from the specialists', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce(row({ helpers: '["three"]', specialists: null }));
-		const rec = await loadCodeSession('s1');
-		expect(rec.helpers).toEqual(['three']);
-		expect(rec.specialists).toBeNull();
-		vi.mocked(invoke).mockResolvedValueOnce(row());
-		expect((await loadCodeSession('s1')).helpers).toBeNull();
 	});
 
 	it('loads by id, treating an unparseable backend as the global one', async () => {
@@ -172,16 +163,6 @@ describe('code session wrappers', () => {
 		expect(invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
 			id: 's1',
 			patch: { backend: JSON.stringify(backend) }
-		});
-		await updateCodeSessionMeta('s1', { specialists: ['a', 'b'] });
-		expect(invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
-			id: 's1',
-			patch: { specialists: '["a","b"]' }
-		});
-		await updateCodeSessionMeta('s1', { specialists: null });
-		expect(invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
-			id: 's1',
-			patch: { specialists: null }
 		});
 		await updateCodeSessionMeta('s1', { helpers: ['three'] });
 		expect(invoke).toHaveBeenLastCalledWith('code_session_update_meta', {

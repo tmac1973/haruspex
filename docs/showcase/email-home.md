@@ -21,6 +21,23 @@ The Important emails card lists matching unread messages with their sender, subj
 
 Read more: home, integrations
 
+## Find what you told someone
+
+Ask about mail you sent, and the assistant looks in your Sent folder, not just the inbox. It can also read Drafts, Trash, Junk and Archive.
+
+Tab: Chat
+Required settings: Settings → Integrations → Email → add an account
+
+Prompt:
+
+> What did I tell Sam about the invoice last week?
+
+Example output:
+
+On Tuesday you replied to Sam that the invoice would be paid by the 30th, and asked him to send a corrected copy with the new PO number. Nothing has come back from him since.
+
+Read more: email
+
 ## Ask a question by emailing yourself
 
 Email your own address with a trigger phrase in the subject. Haruspex researches the question on the web and replies in the same thread, with the sources it read.

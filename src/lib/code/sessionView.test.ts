@@ -17,7 +17,6 @@ import {
 const NONE: CodeSessionCapabilities = {
 	git: false,
 	helpers: false,
-	specialists: false,
 	detachWindow: false,
 	openInShell: false,
 	openInEditor: false,
@@ -93,9 +92,9 @@ describe('a Code session without every capability', () => {
 	it('renders without the controls it lacks, and without the optional members', () => {
 		render(CodePane, { session: bareView() });
 		screen.getByText('Run the tests');
-		// No branch control or extras (git, helpers, specialists).
+		// No branch control or extras (git, helpers).
 		expect(screen.queryByRole('button', { name: /^Branch / })).toBeNull();
-		expect(screen.queryByTitle(/Specialists and helpers/)).toBeNull();
+		expect(screen.queryByTitle(/^Helpers the agent can use/)).toBeNull();
 		// No Shell to go to, and no folder to choose here.
 		screen.getByText(/Waiting for you in Shell 1/);
 		expect(screen.queryByRole('button', { name: 'Go to shell' })).toBeNull();
@@ -110,13 +109,12 @@ describe('a Code session without every capability', () => {
 				capabilities: ALL_CAPABILITIES,
 				goToShell: vi.fn(),
 				moveTo: vi.fn(async () => {}),
-				helpers: null,
-				specialists: null
+				helpers: null
 			})
 		});
 		screen.getByRole('button', { name: 'Go to shell' });
 		screen.getByRole('button', { name: 'Choose folder…' });
-		screen.getByTitle(/Specialists and helpers/);
+		screen.getByTitle(/^Helpers the agent can use/);
 	});
 
 	it('names the computer it runs on, and says when that computer is offline', () => {

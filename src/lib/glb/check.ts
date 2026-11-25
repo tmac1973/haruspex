@@ -1,8 +1,7 @@
 /**
  * Everything a tool does with GLB bytes before it reports: load, inspect,
  * normalise when asked, check the clips, draw the sheet (or one clip's
- * motion sheet) and write the report's text. The GLB specialist's check and
- * `check_3d` both come through here.
+ * motion sheet) and write the report's text. `check_3d` comes through here.
  */
 import type { AnimationClip } from 'three';
 import { formatReport } from '#lib/glb/format.ts';
@@ -10,7 +9,7 @@ import { disposeTree, loadGlb, type LoadedGlb, type Three } from '#lib/glb/load.
 import { normaliseGlb, type NormaliseOptions } from '#lib/glb/normalise.ts';
 import { inspectGlb, type Bounds, type GlbReport } from '#lib/glb/report.ts';
 import { inspectMotion, type MotionOptions } from '#lib/glb/motion.ts';
-import { formatClip, formatClipLines } from '#lib/glb/motionFormat.ts';
+import { clipProblems, formatClip, formatClipLines } from '#lib/glb/motionFormat.ts';
 import { renderMotionSheet } from '#lib/glb/motionSheet.ts';
 import { closeUpBounds, renderSheet } from '#lib/glb/sheet.ts';
 import { validateGlb } from '#lib/glb/validate.ts';
@@ -43,6 +42,8 @@ export interface GlbCheck {
 	 * Not run for a clip's motion sheet: the file is the one the still check saw.
 	 */
 	invalid: string[];
+	/** What is wrong with each clip's motion, one line each (`Clip "Walk": …`); empty when nothing is. */
+	clipProblems: string[];
 }
 
 /**
@@ -120,7 +121,7 @@ function describe(
 	report: GlbReport,
 	{ clip, clips: flags, view }: CheckOptions,
 	normalisedFrom: Bounds | undefined
-): Pick<GlbCheck, 'text' | 'png' | 'clip' | 'closeUp'> | GlbProblems {
+): Pick<GlbCheck, 'text' | 'png' | 'clip' | 'closeUp' | 'clipProblems'> | GlbProblems {
 	const asked = whatToShow(THREE, gltf, report, clip, view);
 	if ('problems' in asked) {
 		disposeTree(gltf.scene);
@@ -142,5 +143,6 @@ function describe(
 		clip: anim?.name
 	});
 	const text = close?.note ? `${formatted}\n${close.note}` : formatted;
-	return { text, png, clip: anim?.name, closeUp: close?.label };
+	const problems = clips.flatMap((c) => clipProblems(c).map((p) => `Clip "${c.name}": ${p}.`));
+	return { text, png, clip: anim?.name, closeUp: close?.label, clipProblems: problems };
 }

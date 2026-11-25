@@ -6,6 +6,8 @@
 //! like a site that returned nothing.
 
 use super::detect::DetectedBrowser;
+use crate::proxy::bypass::{parse_bypass_list, BypassEntry};
+use crate::proxy::ProxyConfig;
 use log::{info, warn};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -58,9 +60,68 @@ pub(super) fn user_agent_for(version_line: &str) -> String {
     )
 }
 
+/// The flags that send the browser through the search proxy: none when no
+/// manual proxy is set.
+///
+/// Chrome cannot take a password on the command line (it asks for one in a
+/// dialog a headless browser never shows), so a proxy that needs one is
+/// refused here. The caller falls back to the plain rotation, which does use
+/// it, rather than searching around the proxy.
+///
+/// Chrome already reaches loopback directly unless told `<-loopback>`, which
+/// matches the carve-out `apply_proxy` makes.
+pub(crate) fn proxy_args(proxy: Option<&ProxyConfig>) -> Result<Vec<String>, String> {
+    let Some(cfg) = proxy.filter(|c| c.mode == "manual" && !c.url.trim().is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let parsed = url::Url::parse(cfg.url.trim()).map_err(|_| "the proxy URL is not valid")?;
+    if !parsed.username().is_empty() || parsed.password().is_some() || cfg.password_ref.is_some() {
+        return Err(
+            "Browser search cannot use a proxy that needs a password; using the standard \
+             rotation instead."
+                .to_string(),
+        );
+    }
+    let scheme = match parsed.scheme() {
+        // Chrome's socks5 already resolves names at the proxy.
+        "socks5h" => "socks5",
+        s => s,
+    };
+    let host = parsed.host_str().ok_or("the proxy URL has no host")?;
+    let server = match parsed.port_or_known_default() {
+        Some(port) => format!("{scheme}://{host}:{port}"),
+        None => format!("{scheme}://{host}"),
+    };
+    let mut args = vec![format!("--proxy-server={server}")];
+    let bypass = chrome_bypass_list(&parse_bypass_list(&cfg.bypass));
+    if !bypass.is_empty() {
+        args.push(format!("--proxy-bypass-list={bypass}"));
+    }
+    Ok(args)
+}
+
+/// The Proxy Bypass List in Chrome's syntax. A host entry matches the host
+/// and its subdomains, as it does for every other request.
+fn chrome_bypass_list(entries: &[BypassEntry]) -> String {
+    let mut rules = Vec::new();
+    for entry in entries {
+        match entry {
+            BypassEntry::Cidr(net) => rules.push(net.to_string()),
+            BypassEntry::Ip(std::net::IpAddr::V6(ip)) => rules.push(format!("[{ip}]")),
+            BypassEntry::Ip(ip) => rules.push(ip.to_string()),
+            BypassEntry::Host(host) => {
+                rules.push(host.clone());
+                rules.push(format!("*.{host}"));
+            }
+        }
+    }
+    rules.join(";")
+}
+
 impl BrowserProcess {
     /// Launch `browser` headless and wait until its debugging port answers.
-    pub(super) fn launch(browser: &DetectedBrowser) -> Result<Self, String> {
+    /// `extra_args` are [`proxy_args`].
+    pub(super) fn launch(browser: &DetectedBrowser, extra_args: &[String]) -> Result<Self, String> {
         let profile_dir = std::env::temp_dir().join(format!(
             "{PROFILE_PREFIX}{}",
             std::process::id()
@@ -89,6 +150,7 @@ impl BrowserProcess {
             .arg("--no-default-browser-check")
             .arg("--disable-extensions")
             .arg("--disable-background-networking")
+            .args(extra_args)
             .arg("about:blank")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -285,6 +347,56 @@ pub(crate) fn sweep_stale_profiles() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn manual(url: &str, bypass: &str) -> ProxyConfig {
+        ProxyConfig {
+            mode: "manual".to_string(),
+            url: url.to_string(),
+            bypass: bypass.to_string(),
+            password_ref: None,
+        }
+    }
+
+    #[test]
+    fn no_manual_proxy_adds_no_flags() {
+        assert!(proxy_args(None).unwrap().is_empty());
+        let off = ProxyConfig {
+            mode: "none".to_string(),
+            ..manual("http://p:3128", "")
+        };
+        assert!(proxy_args(Some(&off)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_manual_proxy_becomes_proxy_server_and_bypass_flags() {
+        let cfg = manual(
+            "socks5h://proxy.lan:1080",
+            "example.com, 10.0.0.0/8\n192.168.1.5 ::1",
+        );
+        assert_eq!(
+            proxy_args(Some(&cfg)).unwrap(),
+            vec![
+                "--proxy-server=socks5://proxy.lan:1080".to_string(),
+                "--proxy-bypass-list=example.com;*.example.com;10.0.0.0/8;192.168.1.5;[::1]"
+                    .to_string(),
+            ]
+        );
+        let plain = manual("http://proxy.lan", "");
+        assert_eq!(
+            proxy_args(Some(&plain)).unwrap(),
+            vec!["--proxy-server=http://proxy.lan:80".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_proxy_with_a_password_is_refused_rather_than_skipped() {
+        assert!(proxy_args(Some(&manual("http://me:secret@p:3128", ""))).is_err());
+        let stored = ProxyConfig {
+            password_ref: Some("proxy:search".to_string()),
+            ..manual("http://me@p:3128", "")
+        };
+        assert!(proxy_args(Some(&stored)).is_err());
+    }
 
     #[test]
     fn devtools_port_reads_the_first_line() {

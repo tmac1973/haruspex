@@ -18,8 +18,6 @@ export interface CodeSessionCapabilities {
 	git: boolean;
 	/** Settings → Code → Helpers for this session. */
 	helpers: boolean;
-	/** Specialists for this session. */
-	specialists: boolean;
 	/** Moving it into a window of its own. */
 	detachWindow: boolean;
 	/** Opening its folder in a Shell tab here. */
@@ -36,7 +34,6 @@ export interface CodeSessionCapabilities {
 export const ALL_CAPABILITIES: Readonly<CodeSessionCapabilities> = Object.freeze({
 	git: true,
 	helpers: true,
-	specialists: true,
 	detachWindow: true,
 	openInShell: true,
 	openInEditor: true,
@@ -104,9 +101,7 @@ export interface CodeSessionView {
 	readonly git?: S['git'];
 	refreshGit?: S['refreshGit'];
 	readonly helpers?: S['helpers'];
-	readonly specialists?: S['specialists'];
 	setSessionHelpers?: S['setSessionHelpers'];
-	setSessionSpecialists?: S['setSessionSpecialists'];
 	readonly agentsMd?: S['agentsMd'];
 	/** Stop reading the project's AGENTS.md (the owner untrusted it). */
 	ignoreProject?: S['ignoreProject'];

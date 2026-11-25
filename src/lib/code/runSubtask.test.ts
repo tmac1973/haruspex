@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
 	shellProject: vi.fn(),
-	prepareTurnSkills: vi.fn()
+	prepareTurnSkills: vi.fn(),
+	descriptor: vi.fn()
 }));
 
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
-	withInferenceSlot: mocks.withInferenceSlot
+	withInferenceSlot: mocks.withInferenceSlot,
+	laneKey: (b?: { baseUrl: string }) => (b ? `remote:${b.baseUrl}` : 'local')
 }));
 vi.mock('#lib/skills/project.ts', () => ({ shellProject: mocks.shellProject }));
 vi.mock('#lib/skills/turn.ts', () => ({
@@ -18,7 +20,7 @@ vi.mock('#lib/skills/turn.ts', () => ({
 	skillsPromptSection: () => ''
 }));
 vi.mock('#lib/inference/descriptor.ts', () => ({
-	resolveBackendDescriptor: () => ({ contextSize: 16384, vision: false })
+	resolveBackendDescriptor: mocks.descriptor
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -36,12 +38,14 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 
 import {
 	capReport,
+	onOwnLane,
 	runSubtask,
 	stoppedShort,
 	SUBTASK_MAX_ROUNDS,
 	SUBTASK_NUDGE_ROUNDS
 } from '#lib/code/runSubtask.ts';
 import type { SlotLender } from '#lib/agent/tools/types.ts';
+import type { SubtaskProfile } from '#lib/code/subtaskProfile.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/systemPrompt.ts';
 
 function loopOptions(): AgentLoopOptions {
@@ -69,6 +73,7 @@ const base = {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	mocks.descriptor.mockReturnValue({ contextSize: 16384, vision: false });
 	mocks.shellProject.mockResolvedValue({ root: null, agentsMd: null });
 	mocks.prepareTurnSkills.mockResolvedValue(undefined);
 });
@@ -306,5 +311,271 @@ describe('runSubtask when a child stops short', () => {
 		expect(stoppedShort('write', [], report, 'Add a high-score table.')).toContain(
 			'Only your next reply is passed on'
 		);
+	});
+});
+
+const openrouter = { baseUrl: 'https://openrouter.ai', modelId: 'frontier/3d' };
+
+function profile(over: Partial<SubtaskProfile> = {}): SubtaskProfile {
+	return {
+		backend: openrouter,
+		system: 'You build 3D assets.',
+		firstMessage: 'Make a crate at assets/crate.js.',
+		images: [],
+		tools: ['fs_read_text', 'fs_write_text', 'fs_edit_text', 'check_3d'],
+		helpers: ['3d'],
+		writablePaths: ['assets/crate.js', 'assets/crate.glb'],
+		maxRounds: 80,
+		maxCostUsd: null,
+		finalReport: (why) => `Report now (${why}).`,
+		...over
+	};
+}
+
+interface Pass {
+	tools: string[] | undefined;
+	maxIterations: number | undefined;
+	rounds: number;
+	/** The last message when the pass started: what it was asked. */
+	asked: unknown;
+}
+
+/**
+ * A loop that makes `script[n]` rounds on its nth pass (Infinity: tool calls
+ * for ever) before answering, asking `stopBeforeRound` as the real one does.
+ * Each round reports usage, with `cost` when given.
+ */
+function scripted(script: number[], cost?: number): Pass[] {
+	const passes: Pass[] = [];
+	mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => {
+		const want = script[passes.length] ?? 1;
+		const pass: Pass = {
+			tools: o.toolAllowlist ? [...o.toolAllowlist] : undefined,
+			maxIterations: o.maxIterations,
+			rounds: 0,
+			asked: o.messages[o.messages.length - 1]?.content
+		};
+		passes.push(pass);
+		const max = o.maxIterations ?? 8;
+		for (let i = 0; i < max; i++) {
+			if (i > 0 && o.stopBeforeRound?.()) {
+				o.onComplete({ stopReason: 'capped' });
+				return;
+			}
+			pass.rounds++;
+			o.onUsageUpdate?.({
+				prompt_tokens: 10,
+				completion_tokens: 5,
+				total_tokens: 15,
+				...(cost === undefined ? {} : { cost })
+			});
+			if (pass.rounds >= want) {
+				o.onStreamChunk(chunk(`answer ${passes.length}`));
+				o.onComplete({ stopReason: 'complete' });
+				return;
+			}
+		}
+		o.onComplete({ stopReason: 'max_iterations' });
+	});
+	return passes;
+}
+
+describe('runSubtask with a profile', () => {
+	beforeEach(() => {
+		mocks.withInferenceSlot.mockImplementation((_o: unknown, fn: (s?: unknown) => unknown) =>
+			fn(undefined)
+		);
+	});
+
+	it('runs on its own model with its prompt, tools, helpers and files', async () => {
+		scripted([1]);
+		const guard = { acquire: vi.fn(async () => null), changed: vi.fn() };
+		const res = await runSubtask({ ...base, profile: profile(), guard });
+		expect(res).toMatchObject({ outcome: 'done', report: 'answer 1' });
+		const o = loopOptions();
+		expect(o).toMatchObject({
+			backend: openrouter,
+			workingDir: '/proj',
+			codeReadOnly: false,
+			toolAllowlist: ['fs_read_text', 'fs_write_text', 'fs_edit_text', 'check_3d'],
+			subtaskHelpers: ['3d'],
+			codeHelpers: ['3d'],
+			writablePaths: ['assets/crate.js', 'assets/crate.glb'],
+			subtask: { depth: 1 }
+		});
+		expect(o.codeWriteGuard).toBe(guard);
+		expect(o.messages[0]).toEqual({ role: 'system', content: 'You build 3D assets.' });
+		expect(o.messages[1]).toEqual({ role: 'user', content: 'Make a crate at assets/crate.js.' });
+		// No project read or skills: the profile's prompt is the whole prompt.
+		expect(mocks.shellProject).not.toHaveBeenCalled();
+	});
+
+	it('sends the reference images with the first message when its model sees them', async () => {
+		mocks.descriptor.mockReturnValue({ contextSize: 16384, vision: true });
+		scripted([1]);
+		const images = [{ path: 'refs/crate.png', dataUrl: 'data:image/png;base64,AA' }];
+		await runSubtask({ ...base, profile: profile({ images }) });
+		expect(loopOptions().messages[1]).toEqual({
+			role: 'user',
+			content: [
+				{ type: 'text', text: 'Make a crate at assets/crate.js.' },
+				{ type: 'image_url', image_url: { url: 'data:image/png;base64,AA' } }
+			]
+		});
+	});
+
+	it('names the images instead when its model cannot see them', async () => {
+		scripted([1]);
+		const images = [{ path: 'refs/crate.png', dataUrl: 'data:image/png;base64,AA' }];
+		await runSubtask({ ...base, profile: profile({ images }) });
+		const content = String(loopOptions().messages[1].content);
+		expect(content).toContain('refs/crate.png');
+		expect(content).not.toContain('base64');
+	});
+
+	it('stops at its round cap, then asks for the report with no tools', async () => {
+		const passes = scripted([Infinity, 1]);
+		const res = await runSubtask({ ...base, profile: profile({ maxRounds: 5 }) });
+		expect(passes.map((p) => p.rounds)).toEqual([5, 1]);
+		expect(passes[1]).toMatchObject({ tools: [], maxIterations: 1, asked: 'Report now (rounds).' });
+		expect(res.report).toBe('answer 2');
+	});
+
+	it('stops before the call that would pass its dollar cap', async () => {
+		const passes = scripted([Infinity, 1], 0.3);
+		await runSubtask({ ...base, profile: profile({ maxCostUsd: 0.5 }) });
+		expect(passes.map((p) => p.rounds)).toEqual([2, 1]);
+		expect(passes[1].asked).toBe('Report now (cost).');
+	});
+
+	it('never stops on cost with no dollar cap', async () => {
+		const passes = scripted([30], 5);
+		await runSubtask({ ...base, profile: profile({ maxCostUsd: null }) });
+		expect(passes).toHaveLength(1);
+		expect(passes[0].rounds).toBe(30);
+	});
+
+	it('passes each call up, priced by its own model', async () => {
+		scripted([2], 0.25);
+		const onUsage = vi.fn();
+		await runSubtask({ ...base, profile: profile(), onUsage });
+		expect(onUsage).toHaveBeenCalledTimes(2);
+		expect(onUsage.mock.calls[0][0]).toMatchObject({ total_tokens: 15, cost: 0.25 });
+	});
+
+	it('runs one more pass when its done check nudges, and none when it is done', async () => {
+		let passes = scripted([2, 1]);
+		const doneCheck = vi.fn(async () => 'crate.glb is missing: write it and check it.');
+		await runSubtask({ ...base, profile: profile({ doneCheck }) });
+		expect(passes).toHaveLength(2);
+		expect(passes[1].asked).toBe('crate.glb is missing: write it and check it.');
+		expect(passes[1].tools).toContain('check_3d');
+
+		passes = scripted([2, 1]);
+		await runSubtask({ ...base, profile: profile({ doneCheck: async () => null }) });
+		expect(passes).toHaveLength(1);
+	});
+
+	it('nudges only once, even when the check still fails', async () => {
+		const passes = scripted([1, 1, 1]);
+		const doneCheck = vi.fn(async () => 'Still failing.');
+		await runSubtask({ ...base, profile: profile({ doneCheck }) });
+		expect(passes).toHaveLength(2);
+		expect(doneCheck).toHaveBeenCalledTimes(1);
+	});
+
+	it('counts both passes against the round cap', async () => {
+		const passes = scripted([4, Infinity, 1]);
+		const doneCheck = async () => 'Fix it.';
+		await runSubtask({ ...base, profile: profile({ maxRounds: 6, doneCheck }) });
+		expect(passes.map((p) => p.rounds)).toEqual([4, 2, 1]);
+		expect(passes[2]).toMatchObject({ tools: [], asked: 'Report now (rounds).' });
+	});
+
+	it('asks for the report instead of nudging when no rounds are left', async () => {
+		const passes = scripted([3, 1]);
+		const doneCheck = vi.fn(async () => 'Fix it.');
+		await runSubtask({ ...base, profile: profile({ maxRounds: 3, doneCheck }) });
+		expect(passes).toHaveLength(2);
+		expect(passes[1]).toMatchObject({ tools: [], asked: 'Report now (rounds).' });
+	});
+
+	it('takes a slot of its own on another lane, never the parent’s', async () => {
+		scripted([1]);
+		const lent = vi.fn();
+		const runInSlot: SlotLender = (fn) => {
+			lent();
+			return fn();
+		};
+		await runSubtask({ ...base, backend: null, runInSlot, profile: profile() });
+		expect(mocks.withInferenceSlot).toHaveBeenCalledWith(
+			expect.objectContaining({ consumer: 'subagent', backend: openrouter }),
+			expect.any(Function)
+		);
+		expect(lent).not.toHaveBeenCalled();
+	});
+
+	it('gives the parent’s slot back while it runs on another lane, then takes it again', async () => {
+		scripted([1]);
+		const order: string[] = [];
+		const parentSlot = {
+			held: true,
+			release: vi.fn(() => order.push('release')),
+			reacquire: vi.fn(async () => {
+				order.push('reacquire');
+			})
+		};
+		mocks.withInferenceSlot.mockImplementation((_o: unknown, fn: (s?: unknown) => unknown) => {
+			order.push('own slot');
+			return fn(undefined);
+		});
+		await runSubtask({ ...base, backend: null, parentSlot, profile: profile() });
+		expect(order).toEqual(['release', 'own slot', 'reacquire']);
+	});
+
+	it('keeps the parent’s slot on the parent’s lane', async () => {
+		scripted([1]);
+		const parentSlot = { held: true, release: vi.fn(), reacquire: vi.fn(async () => {}) };
+		await runSubtask({ ...base, backend: openrouter, parentSlot, profile: profile() });
+		expect(parentSlot.release).not.toHaveBeenCalled();
+	});
+
+	it('leaves a stopped take-back to the parent’s loop', async () => {
+		const slot = {
+			held: false,
+			release: vi.fn(),
+			reacquire: vi.fn(async () => {
+				throw new DOMException('Aborted', 'AbortError');
+			})
+		};
+		await expect(onOwnLane(slot, async () => 'done')).resolves.toBe('done');
+		expect(slot.release).toHaveBeenCalled();
+	});
+
+	it('runs in the parent’s slot on the parent’s lane', async () => {
+		scripted([1]);
+		const lent = vi.fn();
+		const runInSlot: SlotLender = (fn) => {
+			lent();
+			return fn();
+		};
+		await runSubtask({ ...base, backend: openrouter, runInSlot, profile: profile() });
+		expect(lent).toHaveBeenCalledTimes(1);
+		expect(mocks.withInferenceSlot).not.toHaveBeenCalled();
+	});
+
+	it('keeps a thumbnail on its newest image step only', async () => {
+		const onStep = vi.fn();
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => {
+			for (const id of ['c1', 'c2']) {
+				const call = { id, name: 'check_3d', arguments: { path: 'assets/crate.js' } };
+				o.onToolStart(call as never);
+				o.onToolEnd(call as never, 'Wrote assets/crate.glb.', `data:image/png;base64,${id}`);
+			}
+			o.onStreamChunk(chunk('done'));
+			o.onComplete({ stopReason: 'complete' });
+		});
+		const res = await runSubtask({ ...base, profile: profile(), onStep });
+		expect(res.steps.map((s) => s.thumbDataUrl)).toEqual([undefined, 'data:image/png;base64,c2']);
 	});
 });

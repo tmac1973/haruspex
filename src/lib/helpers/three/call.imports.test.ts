@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(__dirname, '..', '..');
 const CORE_DIRS = ['glb', 'helpers/three'];
 /** Files in those folders that are the app's, not the core's. */
-const APP_FILES = new Set(['helpers/three/helper.ts']);
+const APP_FILES = new Set(['helpers/three/helper.ts', 'helpers/three/delegateConfig.ts']);
 const UTILS = ['utils/base64.ts', 'utils/error.ts', 'utils/shellPath.ts'];
 const PACKAGES = [/^three$/, /^three\/examples\/jsm\//, /^gltf-validator$/];
 

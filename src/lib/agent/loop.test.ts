@@ -1523,6 +1523,30 @@ describe('runAgentLoop: endTurnWhen', () => {
 	});
 });
 
+describe('runAgentLoop: stopBeforeRound', () => {
+	const fetch = (id: string) =>
+		toolCallResponse([{ id, name: 'fetch_url', args: '{"url":"https://a.dev"}' }]);
+
+	it('ends the turn as capped before the next model call, with no wrap-up call', async () => {
+		nonStreamQueue.push(fetch('c1'), fetch('c2'), fetch('c3'));
+		const stopBeforeRound = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+		const { options, cb } = makeOptions({ stopBeforeRound, maxIterations: 8 });
+		await runAgentLoop(options);
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		expect(api.chatCompletionStream).not.toHaveBeenCalled();
+		expect(stopBeforeRound).toHaveBeenCalledTimes(2);
+		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'capped' });
+	});
+
+	it('is not asked before the first call', async () => {
+		nonStreamQueue.push(textResponse('Done.', 'stop'));
+		const stopBeforeRound = vi.fn(() => true);
+		const { options } = makeOptions({ stopBeforeRound });
+		await runAgentLoop(options);
+		expect(stopBeforeRound).not.toHaveBeenCalled();
+	});
+});
+
 /**
  * The observability contract Phase 02 rests on. Autonomous-coding turns all
  * set `forceFinalTool`, and that path answers with ONE non-streaming call and

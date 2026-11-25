@@ -17,6 +17,7 @@ import {
 import {
 	clampedLine,
 	closeUpNote,
+	errorLines,
 	failed,
 	loadModuleRun,
 	missingLine,
@@ -34,6 +35,11 @@ export interface Check3dHost {
 	read(path: string): Promise<number[]>;
 	/** Write the GLB to its resolved path; the refusal, or null. */
 	write(path: string, bytes: Uint8Array): Promise<string | null>;
+	/**
+	 * Why the turn may not write this resolved path at all, or null. A refused
+	 * GLB is not written, and the call still reports on the model.
+	 */
+	writeLimit?(path: string): string | null;
 	/** The folder paths resolve against; null leaves them as given. */
 	cwd: string | null;
 	/** The sandboxed frame build modules run in. */
@@ -44,8 +50,15 @@ export interface Check3dHost {
 	signal?: AbortSignal;
 }
 
-/** A call's reply: an error the host marks as one, or text and the sheet. */
-export type Check3dReply = { error: string } | { text: string; png?: string };
+/**
+ * A call's reply: an error the host marks as one, or text and the sheet.
+ * `ok` is true when the report has no error lines: it built, the GLB check
+ * passed, no track names a missing node, the glTF validator found nothing and
+ * no clip has a motion problem. Warnings (floating parts, a height off spec)
+ * don't count. `problems` are those error lines.
+ */
+export type Check3dReply =
+	{ error: string } | { text: string; ok: boolean; problems: string[]; png?: string };
 
 export const CHECK_3D_DESCRIPTION = `Build a 3D model from a Three.js module you write, or check a .glb made another way (Blender). Returns size, parts and problems, and a render sheet (front, right, back, left, top, three-quarter, over a floor grid whose spacing is labelled). View names are where the camera stands as you face the model's front: "right" looks from +x and so shows the model's own left side. A module imports nothing; its default export gets THREE (three.js) and kit (mergeGeometries, mergeVertices, RoundedBoxGeometry, ConvexGeometry, ParametricGeometry, createNoise(seed) → {noise2, noise3}, random(seed)) and returns an Object3D, or { object, animations } for clips:
 \`\`\`js
@@ -272,7 +285,12 @@ async function source(a: Args, host: Check3dHost): Promise<Source | Check3dReply
 	const run = await loadModuleRun({ build: a.path, anim: a.anim }, io, host.signal);
 	if ('refused' in run) return { error: run.refused };
 	if (run.errors.length || !run.glb) {
-		return { text: runFailure(run.errors, { build: a.path, anim: a.anim }) };
+		const problems = errorLines(run.errors, a.anim);
+		return {
+			text: runFailure(run.errors, { build: a.path, anim: a.anim }),
+			ok: false,
+			problems: problems.length ? problems : ['- build() exported nothing.']
+		};
 	}
 	const animBeside = a.anim === undefined ? await animModuleBeside(a.path, io) : null;
 	return { glb: run.glb, missing: run.missing, clamped: run.clamped, animBeside };
@@ -305,16 +323,17 @@ export async function runCheck3d(
 
 	host.onProgress?.('Checking');
 	const checked = await checkGlb(got.glb, a.opts);
-	if ('problems' in checked) return { text: checkFailed(checked, a.path) };
+	if ('problems' in checked) {
+		const problems = checked.problems.map((p) => `- ${p}`);
+		return { text: checkFailed(checked, a.path), ok: false, problems };
+	}
 
 	const target = MODULE.test(a.path) || checked.normalisedFrom ? a.out : undefined;
-	if (target) {
-		const refused = await host.write(resolveShellPath(target, host.cwd), checked.bytes);
-		if (refused) return { error: refused };
-	}
+	const wrote = await writeGlb(a.path, target, checked.bytes, host);
+	if ('error' in wrote) return wrote;
 	const sees = checked.png !== null && host.attachSheet(target ?? a.path, checked.png);
 	const lines = [
-		target ? `Wrote ${target}.` : `Checked ${a.path} (nothing written).`,
+		wrote.line,
 		...missingLine(got.missing),
 		...clampedLine(got.clamped),
 		checked.text,
@@ -322,7 +341,35 @@ export async function runCheck3d(
 		...animBesideLine(got.animBeside, checked.report),
 		...(sees ? [sheetNote(checked)] : [])
 	];
-	return { text: lines.join('\n'), png: checked.png ?? undefined };
+	const problems = [
+		...missingLine(got.missing).map((l) => `- ${l}`),
+		...(checked.invalid ?? []),
+		...(checked.clipProblems ?? []).map((l) => `- ${l}`)
+	];
+	return {
+		text: lines.join('\n'),
+		ok: problems.length === 0,
+		problems,
+		png: checked.png ?? undefined
+	};
+}
+
+/**
+ * Write the GLB to `target`, when the call has one: the report's first line
+ * (what was written, or why the turn may not write it), or the write's error.
+ */
+async function writeGlb(
+	path: string,
+	target: string | undefined,
+	bytes: Uint8Array,
+	host: Check3dHost
+): Promise<{ line: string } | { error: string }> {
+	if (!target) return { line: `Checked ${path} (nothing written).` };
+	const resolved = resolveShellPath(target, host.cwd);
+	const limited = host.writeLimit?.(resolved);
+	if (limited) return { line: `Did not write ${target}: ${limited}` };
+	const refused = await host.write(resolved, bytes);
+	return refused ? { error: refused } : { line: `Wrote ${target}.` };
 }
 
 /** What a failed check says: its problems, and the argument or file to fix. */

@@ -54,7 +54,7 @@ The header above the conversation holds:
 - the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits for an idle agent and committed or stashed changes; it warns when another open session uses the repo;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**; picking one never starts it;
 - **Effort** — how hard the model thinks, where it has levels;
-- **Extras** — see the `specialists` and `helpers` pages;
+- **Extras** — the session's helpers; see the `helpers` page;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is;
 - tokens used, sub-agents' included, and the OpenRouter cost (hover for more).
 

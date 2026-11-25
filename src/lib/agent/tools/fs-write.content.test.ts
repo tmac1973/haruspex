@@ -336,3 +336,51 @@ describe('writeRoot confinement applies to edits, not just writes', () => {
 		expect(invoke).not.toHaveBeenCalled();
 	});
 });
+
+describe('writablePaths limits a turn to named files', () => {
+	const guard = () => ({ acquire: vi.fn(async () => null), changed: vi.fn() });
+	const limit = ['assets/crate.js', 'assets/crate.anim.js'];
+	const refusal =
+		"You may write only: assets/crate.js, assets/crate.anim.js. Write src/main.ts's content into one of those instead.";
+
+	async function callLimited(tool: string, args: Record<string, unknown>) {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const g = guard();
+		const out = await executeTool(tool, args, { ...ctx, writablePaths: limit, codeWriteGuard: g });
+		return { out, g };
+	}
+
+	it('writes a path on the list', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+		const { out, g } = await callLimited('fs_write_text', {
+			path: './assets/crate.js',
+			content: 'export default () => null;'
+		});
+		expect(out.result).toMatch(/Wrote/);
+		expect(g.acquire).toHaveBeenCalledTimes(1);
+	});
+
+	it('edits a path on the list', async () => {
+		vi.mocked(invoke).mockResolvedValue({ first_changed_line: 3, used_fuzzy: false });
+		const { out } = await callLimited('fs_edit_text', {
+			path: 'assets/crate.anim.js',
+			old_str: 'a',
+			new_str: 'b'
+		});
+		expect(out.result).toContain('Edited assets/crate.anim.js');
+	});
+
+	for (const tool of ['fs_write_text', 'fs_edit_text']) {
+		it(`${tool} refuses any other path without taking the folder`, async () => {
+			const { out, g } = await callLimited(tool, {
+				path: 'src/main.ts',
+				content: 'x',
+				old_str: 'a',
+				new_str: 'b'
+			});
+			expect(JSON.parse(out.result).error).toBe(refusal);
+			expect(g.acquire).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalled();
+		});
+	}
+});

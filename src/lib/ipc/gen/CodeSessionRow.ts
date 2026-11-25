@@ -55,11 +55,6 @@ notices_seen_at: number | null,
  */
 agent_branch: string | null, 
 /**
- * JSON array of the specialist entry ids this session offers; `null`
- * means the entries marked on by default.
- */
-specialists: string | null, 
-/**
  * JSON array of the helper ids this session offers; `null` means the
  * ones switched on in Settings → Code → Helpers.
  */

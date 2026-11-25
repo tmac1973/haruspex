@@ -64,6 +64,7 @@ import {
 	takeRunTrace,
 	REFLECTION_SYSTEM_PROMPT
 } from '#lib/harnessFeedback/reflection.ts';
+import { FEEDBACK_TOOL } from '#lib/harnessFeedback/report.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
@@ -1139,8 +1140,8 @@ async function reflectOnRun(
 					workingDir: null,
 					contextSize: jobDescriptor(job).contextSize,
 					backend,
-					// The allowlist is empty: `feedback` adds haruspex_feedback alone.
-					toolAllowlist: [],
+					// haruspex_feedback alone; `feedback` lets the allowlist grant it.
+					toolAllowlist: [FEEDBACK_TOOL],
 					maxIterations: 4,
 					feedback: {
 						source: runSource(job, runId),

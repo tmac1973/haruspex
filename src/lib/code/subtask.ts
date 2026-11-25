@@ -6,6 +6,7 @@
  * States are plain JSON, never `$state` proxies: they are copied into the
  * saved thread, which `structuredClone` and the snapshot must be able to take.
  */
+import type { Usage } from '#lib/api.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
 import type { SubtaskApplyState } from '#lib/code/subtaskApply.ts';
 
@@ -35,6 +36,12 @@ export interface SubtaskState {
 	 * own. Absent (as in states saved before there were any) means false.
 	 */
 	background?: boolean;
+	/** Tokens its model calls used, prompt and completion; absent before the first. */
+	tokens?: number;
+	/** What its model calls cost in USD; absent while none had a known price. */
+	costUsd?: number;
+	/** A picture its profile's `finish` returned (the final render sheet), as a data URL. */
+	sheet?: string;
 }
 
 export function newSubtaskState(
@@ -67,6 +74,32 @@ export function startedSubtask(s: SubtaskState, at = Date.now()): SubtaskState {
 /** The subtask with its child's steps as they are now. */
 export function withChildSteps(s: SubtaskState, steps: SearchStep[]): SubtaskState {
 	return { ...s, steps: [...steps] };
+}
+
+/** The subtask with one more model call counted: its tokens, and its cost when known. */
+export function withUsage(s: SubtaskState, usage: Usage, costUsd: number | null): SubtaskState {
+	const tokens = (s.tokens ?? 0) + (usage.total_tokens || 0);
+	return costUsd === null
+		? { ...s, tokens }
+		: { ...s, tokens, costUsd: (s.costUsd ?? 0) + costUsd };
+}
+
+/**
+ * `steps` with a thumbnail on the newest step that has one only, so a saved
+ * session keeps one picture per subtask, not one per check.
+ */
+export function latestThumbOnly(steps: SearchStep[]): SearchStep[] {
+	let last = -1;
+	steps.forEach((step, i) => {
+		if (step.thumbDataUrl) last = i;
+	});
+	if (last < 0) return steps;
+	return steps.map((step, i) => {
+		if (i === last || !step.thumbDataUrl) return step;
+		const copy = { ...step };
+		delete copy.thumbDataUrl;
+		return copy;
+	});
 }
 
 /** The subtask waiting on the user's approval for a command, or back from it. */

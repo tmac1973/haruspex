@@ -8,7 +8,7 @@
 //! fix for one specific engine.
 
 use super::detect::DetectedBrowser;
-use super::process::BrowserProcess;
+use super::process::{proxy_args, BrowserProcess};
 use super::{cdp, detect};
 use crate::proxy::config::{ENGINE_COOLDOWN, RATE_LIMIT_INTERVAL};
 use crate::proxy::search::{
@@ -18,7 +18,7 @@ use crate::proxy::search::{
 use crate::proxy::stats::{
     record_engine_result, SearchFailure, SearchFailureKind, SearchStats, StatSink,
 };
-use crate::proxy::{ProxyState, SearchResult};
+use crate::proxy::{ProxyConfig, ProxyState, SearchResult};
 use log::{info, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -126,6 +126,9 @@ pub(crate) struct BrowserSession {
 struct WarmBrowser {
     process: BrowserProcess,
     last_used: Instant,
+    /// The proxy flags it was launched with. A browser started before the
+    /// proxy setting changed is restarted rather than reused.
+    proxy_args: Vec<String>,
 }
 
 impl BrowserSession {
@@ -137,17 +140,19 @@ impl BrowserSession {
     async fn render(
         &self,
         browser: &DetectedBrowser,
+        proxy_args: &[String],
         url: &str,
         ready: &(dyn Fn(&str) -> bool + Sync),
     ) -> Result<cdp::RenderOutcome, String> {
         let mut guard = self.inner.lock().await;
 
-        // Drop a browser that has been idle: see IDLE_SHUTDOWN.
+        // Drop a browser that has been idle (see IDLE_SHUTDOWN), or one
+        // launched with another proxy: Chrome reads it only at startup.
         if guard
             .as_ref()
-            .is_some_and(|w| w.last_used.elapsed() > IDLE_SHUTDOWN)
+            .is_some_and(|w| w.last_used.elapsed() > IDLE_SHUTDOWN || w.proxy_args != proxy_args)
         {
-            info!("browser search: shutting down idle browser");
+            info!("browser search: shutting down idle or reconfigured browser");
             if let Some(mut warm) = guard.take() {
                 warm.process.close().await;
             }
@@ -155,8 +160,9 @@ impl BrowserSession {
 
         if guard.is_none() {
             *guard = Some(WarmBrowser {
-                process: BrowserProcess::launch(browser)?,
+                process: BrowserProcess::launch(browser, proxy_args)?,
                 last_used: Instant::now(),
+                proxy_args: proxy_args.to_vec(),
             });
         }
 
@@ -200,6 +206,7 @@ pub(crate) struct BrowserUnavailable {
 /// which the caller turns into a fallback to the plain rotation. Engine-level
 /// failures are handled here exactly as they are over HTTP: cool the engine
 /// down and try the next.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn search_via_browser(
     session: &BrowserSession,
     state: &ProxyState,
@@ -208,7 +215,12 @@ pub(crate) async fn search_via_browser(
     query: &str,
     recency: &str,
     override_path: Option<&str>,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<Result<Vec<SearchResult>, String>, BrowserUnavailable> {
+    let proxy_args = proxy_args(proxy).map_err(|reason| BrowserUnavailable {
+        reason,
+        searched: Vec::new(),
+    })?;
     let browser = match detect::detect(override_path) {
         Ok(b) => b,
         Err(failure) => {
@@ -255,7 +267,7 @@ pub(crate) async fn search_via_browser(
         let ready = move |html: &str| parse(html).map(|r| !r.is_empty()).unwrap_or(false);
 
         let started = Instant::now();
-        let outcome = session.render(&browser, &url, &ready).await;
+        let outcome = session.render(&browser, &proxy_args, &url, &ready).await;
         let elapsed = started.elapsed().as_millis() as u64;
 
         let result = match outcome {
@@ -464,7 +476,7 @@ mod integration {
         let url = (engine.url)("rust async runtime", "any");
         let parse = engine.parse;
         let outcome = session
-            .render(&browser, &url, &move |html: &str| {
+            .render(&browser, &[], &url, &move |html: &str| {
                 parse(html).map(|r| !r.is_empty()).unwrap_or(false)
             })
             .await

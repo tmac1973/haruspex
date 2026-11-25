@@ -15,7 +15,7 @@
  * Never throws: a stop or a failure comes back as the outcome.
  */
 
-import type { BackendOverride, Usage } from '#lib/api.ts';
+import type { BackendOverride, ChatMessage, MessageContent, Usage } from '#lib/api.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { runTurnCore, type TurnLoopOptions } from '#lib/agent/runTurn.ts';
@@ -25,10 +25,17 @@ import { finalizeStreamText } from '#lib/markdown.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { assemble, prepareSystem } from '#lib/code/runCodeTurn.ts';
-import { SUBTASK_REPORT_CHARS } from '#lib/code/systemPrompt.ts';
+import { buildCodeSystemPrompt, SUBTASK_REPORT_CHARS } from '#lib/code/systemPrompt.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 import type { JobSubtaskHost } from '#lib/code/subtaskRun.ts';
-import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { withInferenceSlot, type HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { latestThumbOnly } from '#lib/code/subtask.ts';
+import {
+	profileLane,
+	subtaskCallCost,
+	type SubtaskCap,
+	type SubtaskProfile
+} from '#lib/code/subtaskProfile.ts';
 
 /** The most model rounds a subtask takes before it has to answer. */
 export const SUBTASK_MAX_ROUNDS = 25;
@@ -99,6 +106,12 @@ export interface SubtaskOptions {
 	signal?: AbortSignal;
 	/** The parent turn's slot lender; absent on a serialized lane. */
 	runInSlot?: SlotLender;
+	/**
+	 * The parent turn's own slot, while it waits on this child. A profiled
+	 * child on another lane gives it back while it runs, so a turn never
+	 * holds one lane while it queues on another.
+	 */
+	parentSlot?: HeldSlot;
 	/** Who is asking in an approval prompt. */
 	requester?: () => string;
 	onToolStart?: (call: ResolvedToolCall) => void;
@@ -112,6 +125,13 @@ export interface SubtaskOptions {
 	onApprovalWait?: (waiting: boolean) => void;
 	/** Each model call the child makes, for its session's token count. */
 	onUsage?: (usage: Usage) => void;
+	/**
+	 * Run it with this profile: its own model, prompt, tools and caps, writing
+	 * in `root` itself (see `SubtaskProfile`).
+	 */
+	profile?: SubtaskProfile;
+	/** A profile's writes in the session's folder take the session's lease. */
+	guard?: CodeWriteGuard;
 }
 
 /** A write guard for a private worktree: nobody else writes there. */
@@ -182,17 +202,51 @@ function childLoop(
 	};
 }
 
-export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
-	const backend = o.backend ?? undefined;
-	let steps: SearchStep[] = [];
-	let streamed = '';
-	const run: SlotLender =
+/** `steps` keeping one thumbnail, the new one, once a step brings one. */
+function withThumb(steps: SearchStep[], thumb: string | undefined): SearchStep[] {
+	return thumb ? latestThumbOnly(steps) : steps;
+}
+
+/** The child's step callbacks: its card's steps, and the caller's own hooks. */
+function stepHooks(
+	o: SubtaskOptions,
+	steps: () => SearchStep[],
+	setSteps: (next: SearchStep[]) => void
+): Pick<TurnLoopOptions, 'onToolStart' | 'onToolProgress' | 'onToolEnd'> {
+	return {
+		onToolStart: (call) => {
+			setSteps([...steps(), newRunningStep(call)]);
+			o.onToolStart?.(call);
+		},
+		onToolProgress: (call, status) => {
+			setSteps(markStepProgress(steps(), call, status));
+			o.onToolProgress?.(call, status);
+		},
+		onToolEnd: (call, result, thumb) => {
+			setSteps(withThumb(markStepDone(steps(), call, result, thumb), thumb));
+			o.onToolEnd?.(call, result);
+		}
+	};
+}
+
+/** The parent's slot, lent or held and idle. */
+function parentSlot(o: SubtaskOptions): SlotLender {
+	return (
 		o.runInSlot ??
 		(<T>(fn: (slot?: HeldSlot) => Promise<T>, opts?: { onAdmitted?: () => void }) => {
 			// No lender: the parent's slot is held and idle, so it's ours now.
 			opts?.onAdmitted?.();
 			return fn();
-		});
+		})
+	);
+}
+
+export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
+	if (o.profile) return runProfiled(o, o.profile);
+	const backend = o.backend ?? undefined;
+	let steps: SearchStep[] = [];
+	let streamed = '';
+	const run = parentSlot(o);
 	const setSteps = (next: SearchStep[]) => {
 		steps = next;
 		o.onStep?.(steps);
@@ -217,18 +271,7 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 					slot,
 					messages,
 					skills,
-					onToolStart: (call) => {
-						setSteps([...steps, newRunningStep(call)]);
-						o.onToolStart?.(call);
-					},
-					onToolProgress: (call, status) => {
-						setSteps(markStepProgress(steps, call, status));
-						o.onToolProgress?.(call, status);
-					},
-					onToolEnd: (call, result) => {
-						setSteps(markStepDone(steps, call, result));
-						o.onToolEnd?.(call, result);
-					}
+					...stepHooks(o, () => steps, setSteps)
 				},
 				{
 					finalize: (raw) => finalizeStreamText(raw).content,
@@ -275,4 +318,216 @@ function stopped(steps: SearchStep[], streamed: string): SubtaskResult {
 		steps,
 		stopReason: null
 	};
+}
+
+/** A profiled child's opening message: its text, and its pictures when its model sees them. */
+function firstMessage(profile: SubtaskProfile, vision: boolean): ChatMessage {
+	const { firstMessage: text, images } = profile;
+	if (images.length === 0) return { role: 'user', content: text };
+	if (!vision) {
+		const paths = images.map((i) => i.path).join(', ');
+		return {
+			role: 'user',
+			content: `${text}\n\nReference images, not attached because this model can't see images: ${paths}.`
+		};
+	}
+	const content: MessageContent = [
+		{ type: 'text', text },
+		...images.map((i) => ({ type: 'image_url' as const, image_url: { url: i.dataUrl } }))
+	];
+	return { role: 'user', content };
+}
+
+/**
+ * A profiled child's rounds and spend. The round cap counts every pass
+ * together; `stopBeforeRound` is asked before each round after a pass's first.
+ */
+class ProfileCaps {
+	private used = 0;
+	private thisPass = 0;
+	private spent = 0;
+	/** Which cap stopped the last pass, if one did. */
+	hit: SubtaskCap | null = null;
+
+	constructor(private readonly profile: SubtaskProfile) {}
+
+	add(cost: number | null): void {
+		this.spent += cost ?? 0;
+	}
+
+	get roundsLeft(): number {
+		return Math.max(0, this.profile.maxRounds - this.used);
+	}
+
+	/** Which cap is already reached, before a pass starts. */
+	reached(): SubtaskCap | null {
+		if (this.overBudget()) return 'cost';
+		return this.roundsLeft === 0 ? 'rounds' : null;
+	}
+
+	startPass(): void {
+		this.thisPass = 1;
+		this.hit = null;
+	}
+
+	endPass(): void {
+		this.used += this.thisPass;
+		this.thisPass = 0;
+	}
+
+	/** The loop's `stopBeforeRound`. */
+	readonly stopBeforeRound = (): boolean => {
+		if (this.overBudget()) this.hit = 'cost';
+		else if (this.used + this.thisPass >= this.profile.maxRounds) this.hit = 'rounds';
+		else this.thisPass++;
+		return this.hit !== null;
+	};
+
+	private overBudget(): boolean {
+		const max = this.profile.maxCostUsd;
+		return max !== null && this.spent >= max;
+	}
+}
+
+/** A profiled child's loop: its model, tools, files and caps, in the folder itself. */
+function profiledLoop(
+	o: SubtaskOptions,
+	profile: SubtaskProfile,
+	caps: ProfileCaps,
+	tools: boolean
+): Omit<TurnLoopOptions, 'messages' | 'onToolStart' | 'onToolEnd'> {
+	return {
+		...childLoop(o, profile.backend),
+		codeReadOnly: false,
+		codeWriteGuard: o.guard,
+		codeHelpers: profile.helpers,
+		subtaskHelpers: profile.helpers,
+		toolAllowlist: tools ? profile.tools : [],
+		writablePaths: profile.writablePaths,
+		// One more than the rounds left: the caps stop it first, with no
+		// wrap-up call of the loop's own before the report call.
+		maxIterations: tools ? caps.roundsLeft + 1 : 1,
+		stopBeforeRound: tools ? caps.stopBeforeRound : undefined
+	};
+}
+
+/**
+ * Run a profiled child: its own model and slot, its own prompt and tools,
+ * one nudge when its done check says so, and a report call with no tools
+ * when a cap stops it.
+ */
+async function runProfiled(o: SubtaskOptions, profile: SubtaskProfile): Promise<SubtaskResult> {
+	const backend = profile.backend;
+	const descriptor = resolveBackendDescriptor(backend);
+	const caps = new ProfileCaps(profile);
+	let steps: SearchStep[] = [];
+	let streamed = '';
+	const setSteps = (next: SearchStep[]) => {
+		steps = next;
+		o.onStep?.(steps);
+	};
+	const onUsage = (usage: Usage) => {
+		const cost = subtaskCallCost(usage, backend);
+		caps.add(cost);
+		// The session prices calls by its own model; this one's is the profile's.
+		o.onUsage?.(cost !== null && usage.cost === undefined ? { ...usage, cost } : usage);
+	};
+	const messages: ChatMessage[] = [
+		buildCodeSystemPrompt({ root: o.root, subtask: { task: o.task, system: profile.system } }),
+		firstMessage(profile, descriptor.vision)
+	];
+	const pass = (slot: HeldSlot | undefined, tools: boolean) => {
+		if (tools) caps.startPass();
+		streamed = '';
+		return runTurnCore(
+			{
+				...profiledLoop(o, profile, caps, tools),
+				onUsageUpdate: onUsage,
+				slot,
+				messages,
+				...stepHooks(o, () => steps, setSteps)
+			},
+			{
+				finalize: (raw) => finalizeStreamText(raw).content,
+				onAssistantDelta: (text) => {
+					streamed = text;
+				}
+			}
+		).finally(() => {
+			if (tools) caps.endPass();
+		});
+	};
+	const follow = (said: string, next: string) => {
+		if (said.trim()) messages.push({ role: 'assistant', content: said });
+		messages.push({ role: 'user', content: next });
+	};
+	const report = (slot: HeldSlot | undefined, said: string, why: SubtaskCap) => {
+		follow(said, profile.finalReport(why));
+		return pass(slot, false);
+	};
+	const work = async (slot?: HeldSlot) => {
+		const first = await pass(slot, true);
+		const capped = capOf(first.stopReason, caps);
+		if (capped) return report(slot, first.finalText, capped);
+		if (o.signal?.aborted) return first;
+		const nudge = (await profile.doneCheck?.(steps, { guard: o.guard })) ?? null;
+		if (!nudge || o.signal?.aborted) return first;
+		const reached = caps.reached();
+		if (reached) return report(slot, first.finalText, reached);
+		follow(first.finalText, nudge);
+		const second = await pass(slot, true);
+		const again = capOf(second.stopReason, caps);
+		return again ? report(slot, second.finalText, again) : second;
+	};
+
+	try {
+		const out = await inProfileSlot(o, profile, work);
+		if (o.signal?.aborted) return stopped(steps, streamed);
+		return {
+			outcome: 'done',
+			report: capReport(out.finalText),
+			steps,
+			stopReason: out.stopReason
+		};
+	} catch (e) {
+		if (o.signal?.aborted) return stopped(steps, streamed);
+		return { outcome: 'failed', report: '', error: errMessage(e), steps, stopReason: null };
+	}
+}
+
+/**
+ * Run a profiled child's `work` in its slot: the parent's on the parent's
+ * lane, else one of its own, with the parent's given back meanwhile.
+ */
+function inProfileSlot<T>(
+	o: SubtaskOptions,
+	profile: SubtaskProfile,
+	work: (slot?: HeldSlot) => Promise<T>
+): Promise<T> {
+	const opts = { onAdmitted: o.onAdmitted, signal: o.signal };
+	if (profileLane(profile, o.backend) === 'parent') return parentSlot(o)(work, opts);
+	const own = { consumer: 'subagent' as const, backend: profile.backend, ...opts };
+	return onOwnLane(o.parentSlot, () => withInferenceSlot(own, work));
+}
+
+/**
+ * Run `fn` with the parent's slot given back, and take it again after, as
+ * the loop does for a long tool batch (`HeldSlot`). Without this, two
+ * sessions handing work to each other's serialized servers would each hold
+ * their own lane while waiting on the other's. A stop while it takes the slot
+ * back is left for the parent's loop, which takes it back before its next call.
+ */
+export async function onOwnLane<T>(slot: HeldSlot | undefined, fn: () => Promise<T>): Promise<T> {
+	slot?.release();
+	try {
+		return await fn();
+	} finally {
+		await slot?.reacquire().catch(() => {});
+	}
+}
+
+/** The cap a pass ended on, if it ended on one. */
+function capOf(stopReason: AgentStopReason, caps: ProfileCaps): SubtaskCap | null {
+	if (stopReason === 'capped') return caps.hit ?? 'rounds';
+	return stopReason === 'max_iterations' ? 'rounds' : null;
 }

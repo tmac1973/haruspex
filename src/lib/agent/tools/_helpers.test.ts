@@ -12,7 +12,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	})
 );
 
-import { ensureUrlScheme, isToolErrorResult, toolInvokeError } from './_helpers';
+import { ensureUrlScheme, isToolErrorResult, toolInvokeError, writeOutsideLimit } from './_helpers';
 import { toolError } from './types';
 
 describe('isToolErrorResult', () => {
@@ -105,5 +105,41 @@ describe('toolInvokeError', () => {
 		expect(msg).toContain('the folder icon in the chat box');
 		// #1116: a job's own scratch files have somewhere to go.
 		expect(msg).toContain('goes under the working directory instead');
+	});
+});
+
+describe('writeOutsideLimit', () => {
+	const limited = (writablePaths?: string[]) => ({
+		workingDir: '/proj',
+		shellMode: false,
+		writablePaths
+	});
+	const refusal = (path: string) =>
+		`You may write only: assets/crate.js, assets/crate.glb. Write ${path}'s content into one of those instead.`;
+	const two = limited(['assets/crate.js', './assets/crate.glb']);
+
+	it('allows anything when the turn has no limit', () => {
+		expect(writeOutsideLimit(limited(), 'src/main.ts')).toBeNull();
+	});
+
+	it('allows a path on the list, however it is spelled', () => {
+		expect(writeOutsideLimit(two, 'assets/crate.js')).toBeNull();
+		expect(writeOutsideLimit(two, './assets/crate.js')).toBeNull();
+		expect(writeOutsideLimit(two, 'assets/crate.glb')).toBeNull();
+		expect(writeOutsideLimit(two, 'assets/../assets/crate.js')).toBeNull();
+		expect(writeOutsideLimit(two, '/proj/assets/crate.glb')).toBeNull();
+	});
+
+	it('refuses a sibling, a parent folder and another extension', () => {
+		const list = limited(['assets/crate.js', 'assets/crate.glb']);
+		expect(writeOutsideLimit(list, 'assets/barrel.js')).toBe(refusal('assets/barrel.js'));
+		expect(writeOutsideLimit(list, 'assets')).toBe(refusal('assets'));
+		expect(writeOutsideLimit(list, 'assets/crate.ts')).toBe(refusal('assets/crate.ts'));
+		expect(writeOutsideLimit(list, 'Assets/crate.js')).toBe(refusal('Assets/crate.js'));
+	});
+
+	it('refuses a path outside the folder', () => {
+		expect(writeOutsideLimit(two, '../other/assets/crate.js')).not.toBeNull();
+		expect(writeOutsideLimit(two, '/etc/crate.js')).not.toBeNull();
 	});
 });

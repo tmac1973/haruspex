@@ -5,6 +5,7 @@ import {
 	fsWorkdir,
 	labelArg,
 	toolInvokeError,
+	writeOutsideLimit,
 	wslDistroArg
 } from '#lib/agent/tools/_helpers.ts';
 import { resolveShellPath } from '#lib/utils/shellPath.ts';
@@ -921,7 +922,7 @@ function shellAwareWriteText() {
 		path: path as string
 	}));
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		const rootErr = writeRootError(args.path, ctx);
+		const rootErr = writeRootError(args.path, ctx) ?? writeOutsideLimit(ctx, args.path);
 		if (rootErr) return toolResult(toolError(rootErr));
 		const binary = binaryFormatError(args.path, ctx);
 		if (binary) return toolResult(toolError(binary));
@@ -959,7 +960,7 @@ function shellAwareEditText() {
 		// started exposing this tool, which was safe only because no writeRoot
 		// caller could reach it — an edit that escapes the root is exactly as
 		// damaging as a write that does.
-		const rootErr = writeRootError(args.path, ctx);
+		const rootErr = writeRootError(args.path, ctx) ?? writeOutsideLimit(ctx, args.path);
 		if (rootErr) return toolResult(toolError(rootErr));
 		if (ctx.shellMode && ctx.codeMode) {
 			const elsewhere = await localWriteBlocked('fs_edit_text', ctx);

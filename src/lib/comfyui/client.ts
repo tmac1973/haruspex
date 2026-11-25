@@ -294,6 +294,41 @@ export async function cancelPrompt(cfg: ClientConfig, promptId: string): Promise
 	}
 }
 
+/** The part of a `/history` entry that says how the prompt ended. */
+interface HistoryRun {
+	status?: { status_str?: string; messages?: unknown[] };
+}
+
+/** Longest exception message carried into an error; some run to pages. */
+const MAX_EXCEPTION_CHARS = 300;
+
+/**
+ * Throw the failing node's own error when the prompt failed. A failed prompt
+ * still lands in `/history`, usually with empty outputs, so reading only
+ * `outputs` turned "out of memory" into "node saved no files".
+ */
+function throwIfFailed(run: HistoryRun | undefined): void {
+	if (run?.status?.status_str !== 'error') return;
+	const entry = (run.status.messages ?? []).find(
+		(m): m is [string, Record<string, unknown>] =>
+			Array.isArray(m) && m[0] === 'execution_error' && typeof m[1] === 'object' && m[1] !== null
+	);
+	const detail = entry?.[1] ?? {};
+	const nodeType =
+		typeof detail.node_type === 'string' && detail.node_type
+			? detail.node_type
+			: typeof detail.node_id === 'string' && detail.node_id
+				? `Node ${detail.node_id}`
+				: 'The workflow';
+	const raw = typeof detail.exception_message === 'string' ? detail.exception_message.trim() : '';
+	const message =
+		raw.length > MAX_EXCEPTION_CHARS ? `${raw.slice(0, MAX_EXCEPTION_CHARS).trimEnd()}…` : raw;
+	throw new ImageBackendError(
+		'rejected',
+		message ? `${nodeType} failed: ${message}` : `${nodeType} failed on the ComfyUI server.`
+	);
+}
+
 /** The output images a finished prompt produced, or null while it is running. */
 export async function history(
 	cfg: ClientConfig,
@@ -303,9 +338,10 @@ export async function history(
 ): Promise<HistoryImage[] | null> {
 	const json = ((await requestJson(cfg, { path: `/history/${promptId}` }, signal)) ?? {}) as Record<
 		string,
-		{ outputs?: Record<string, { images?: HistoryImage[] }> }
+		HistoryRun & { outputs?: Record<string, { images?: HistoryImage[] }> }
 	>;
 	const run = json[promptId];
+	throwIfFailed(run);
 	if (!run?.outputs) return null;
 	const images = run.outputs[outputNode]?.images;
 	if (!images) {
@@ -330,9 +366,10 @@ export async function historyFiles(
 ): Promise<HistoryImage[] | null> {
 	const json = ((await requestJson(cfg, { path: `/history/${promptId}` }, signal)) ?? {}) as Record<
 		string,
-		{ outputs?: Record<string, Record<string, unknown>> }
+		HistoryRun & { outputs?: Record<string, Record<string, unknown>> }
 	>;
 	const run = json[promptId];
+	throwIfFailed(run);
 	if (!run?.outputs) return null;
 	const out = run.outputs[outputNode] ?? {};
 	const files = ['images', 'gifs', 'videos', 'audio'].flatMap((k) =>

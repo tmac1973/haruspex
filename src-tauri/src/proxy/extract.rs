@@ -3,7 +3,7 @@
 //! All items are crate-internal to `proxy` except `validate_url`, which
 //! is consumed by `fs_tools::download::fs_download_url`.
 
-use super::bypass::apply_proxy;
+use super::bypass::{apply_proxy, routes_through_proxy};
 use super::config::FETCH_TIMEOUT;
 use super::paywall::{detect_paywall_signal, PAYWALL_SENTINEL};
 use super::public_dns::PublicOnly;
@@ -101,10 +101,11 @@ fn is_refusal(err: &str) -> bool {
 async fn fetch_first_ok(
     client: &reqwest::Client,
     candidates: &[String],
+    proxy: Option<&ProxyConfig>,
 ) -> Result<reqwest::Response, String> {
     let mut refusal: Option<String> = None;
     for candidate in candidates {
-        match fetch_ok(client, candidate).await {
+        match fetch_ok(client, candidate, proxy).await {
             Ok(r) => return Ok(r),
             Err(e) if is_refusal(&e) => refusal = Some(e),
             Err(e) => return Err(e),
@@ -131,6 +132,17 @@ pub struct FetchedPage {
     #[ts(type = "number")]
     pub full_length: usize,
     pub hero_image: Option<String>,
+    /// Up to [`MAX_PAGE_LINKS`] links to other pages on the same site, the
+    /// page's own content first. Empty for anything but a web page.
+    pub links: Vec<PageLink>,
+}
+
+/// A link on a fetched page: its text and absolute URL.
+#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct PageLink {
+    pub text: String,
+    pub url: String,
 }
 
 impl FetchedPage {
@@ -141,6 +153,7 @@ impl FetchedPage {
             text: truncate_text(text),
             full_length,
             hero_image,
+            links: Vec::new(),
         }
     }
 }
@@ -210,16 +223,16 @@ pub(super) async fn fetch_and_extract(
 
     let reddit = reddit_fetch_candidates(url);
     let response = match &reddit {
-        Some(candidates) => fetch_first_ok(&client, candidates).await.map_err(|e| {
-            if is_refusal(&e) {
-                REDDIT_BLOCKED.to_string()
-            } else {
-                through_proxy(e, proxy)
-            }
-        })?,
-        None => fetch_ok(&client, url)
+        Some(candidates) => fetch_first_ok(&client, candidates, proxy)
             .await
-            .map_err(|e| through_proxy(e, proxy))?,
+            .map_err(|e| {
+                if is_refusal(&e) {
+                    REDDIT_BLOCKED.to_string()
+                } else {
+                    e
+                }
+            })?,
+        None => fetch_ok(&client, url, proxy).await?,
     };
 
     // Check content type
@@ -270,11 +283,20 @@ pub(super) async fn fetch_and_extract(
         .ok()
         .and_then(|base| super::images::extract_hero_image(&html, &base));
 
-    let text = extract_text(&html);
+    let base = url::Url::parse(&final_url).ok();
+    let document = Html::parse_document(&html);
+    let text = document_text(&document, base.as_ref());
     if reddit.is_some() && reddit_page_blocked(&text) {
         return Err(REDDIT_BLOCKED.to_string());
     }
-    Ok(FetchedPage::from_text(text, hero_image))
+    let links = base
+        .as_ref()
+        .map(|b| extract_links(&document, b))
+        .unwrap_or_default();
+    Ok(FetchedPage {
+        links,
+        ..FetchedPage::from_text(text, hero_image)
+    })
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
@@ -358,32 +380,6 @@ pub(crate) fn public_only_resolver(proxy: Option<&ProxyConfig>) -> PublicOnly {
     PublicOnly::new(host)
 }
 
-/// A fetch error, saying a proxy was in the path when one is set. A dead
-/// proxy and a site that refuses look the same ("Connection refused"), so
-/// without this the model can't tell its own setting from the site.
-pub(crate) fn through_proxy(err: String, proxy: Option<&ProxyConfig>) -> String {
-    let Some(p) = proxy.filter(|p| p.mode == "manual" && !p.url.trim().is_empty()) else {
-        return err;
-    };
-    // A status came back, so the proxy answered.
-    if !err.starts_with("Fetch failed: ") {
-        return err;
-    }
-    let at = reqwest::Url::parse(p.url.trim())
-        .ok()
-        .and_then(|u| {
-            let host = u.host_str()?.to_string();
-            Some(match u.port() {
-                Some(port) => format!(" at {host}:{port}"),
-                None => format!(" at {host}"),
-            })
-        })
-        .unwrap_or_default();
-    format!(
-        "{err}. It went through the proxy{at} in Settings → Network → Web Search Proxy: if that proxy isn't running, no site will answer."
-    )
-}
-
 /// A reqwest error with its root cause: reqwest's own message stops at
 /// "error sending request", and the cause (a refused address, a TLS failure)
 /// is what says why.
@@ -403,42 +399,250 @@ pub(crate) fn with_cause(e: &reqwest::Error) -> String {
 /// GET `url` with the shared browser [`USER_AGENT`] and reject any
 /// non-2xx response. The page and image fetch paths share this so the
 /// send/status idiom (and its exact error strings, which reach the
-/// model/UI verbatim) can't drift between them.
+/// model/UI verbatim) can't drift between them. `proxy` is only read to
+/// say which hop failed: the client already carries it.
 pub(super) async fn fetch_ok(
     client: &reqwest::Client,
     url: &str,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<reqwest::Response, String> {
     let response = client
         .get(url)
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Fetch failed: {}", with_cause(&e.without_url())))?;
+        .map_err(|e| send_error(e, url, proxy))?;
 
     if !response.status().is_success() {
-        return Err(format!("Fetch failed with status: {}", response.status()));
+        return Err(status_error(response.status()));
     }
 
     Ok(response)
 }
 
-/// The page's visible text, whitespace tidied, uncut.
-pub(super) fn extract_text(html: &str) -> String {
-    let document = Html::parse_document(html);
+/// The text for a request that got no response. A refused connection
+/// through a proxy is the proxy refusing, and "Connection refused" alone
+/// sent the model after the site.
+fn send_error(e: reqwest::Error, url: &str, proxy: Option<&ProxyConfig>) -> String {
+    let connect = e.is_connect();
+    let cause = with_cause(&e.without_url());
+    let proxied = url::Url::parse(url)
+        .ok()
+        .and_then(|target| proxy.filter(|p| routes_through_proxy(Some(p), &target)));
+    match proxied {
+        Some(cfg) if connect => proxy_unreachable(cfg, &cause),
+        _ => format!("Fetch failed: {cause}"),
+    }
+}
 
+fn proxy_unreachable(cfg: &ProxyConfig, cause: &str) -> String {
+    format!(
+        "Fetch failed: the proxy {} could not be reached ({cause}). The site was not \
+         contacted. Check Settings → Network → Web Search Proxy.",
+        proxy_host_port(cfg)
+    )
+}
+
+/// `host:port` of the configured proxy, without credentials or path.
+fn proxy_host_port(cfg: &ProxyConfig) -> String {
+    let Ok(parsed) = url::Url::parse(cfg.url.trim()) else {
+        return "set in Settings".to_string();
+    };
+    let host = parsed.host_str().unwrap_or("?");
+    match parsed.port_or_known_default() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    }
+}
+
+/// The text for a non-2xx answer. Keeps the status code in it: the reddit
+/// fallback matches on 403/429 (`is_refusal`).
+fn status_error(status: reqwest::StatusCode) -> String {
+    let base = format!("Fetch failed with status: {status}");
+    match status.as_u16() {
+        401 | 403 | 451 => format!(
+            "{base}. The site refuses automated requests, so retrying will not help. \
+             Use the search snippet or another source."
+        ),
+        429 => format!(
+            "{base}. The site is rate-limiting requests. Try again later or use another source."
+        ),
+        _ => base,
+    }
+}
+
+/// The page's visible text, whitespace tidied, uncut.
+#[cfg(test)]
+fn extract_text(html: &str) -> String {
+    document_text(&Html::parse_document(html), None)
+}
+
+/// [`extract_text`] for a parsed page. The page's title comes first: the
+/// main content is often only part of the page (a GitHub repository's
+/// `<article>` is its README), and the title is what says whose page it is.
+/// On github.com a fork also says what it was forked from.
+fn document_text(document: &Html, page_url: Option<&url::Url>) -> String {
     // Try to find main content area
-    let content = try_select_text(&document, "article")
-        .or_else(|| try_select_text(&document, "main"))
-        .or_else(|| try_select_text(&document, "[role='main']"))
-        .unwrap_or_else(|| extract_body_text(&document));
+    let content = try_select_text(document, "article")
+        .or_else(|| try_select_text(document, "main"))
+        .or_else(|| try_select_text(document, "[role='main']"))
+        .unwrap_or_else(|| extract_body_text(document));
 
     // Clean up whitespace
-    content
+    let body = content
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
         .collect::<Vec<&str>>()
-        .join("\n")
+        .join("\n");
+
+    let mut header = Vec::new();
+    if let Some(title) = page_title(document) {
+        if body.lines().next() != Some(title.as_str()) {
+            header.push(format!("Title: {title}"));
+        }
+    }
+    if let Some(fork) = page_url.and_then(|u| github_fork_note(document, u)) {
+        header.push(fork);
+    }
+    if header.is_empty() {
+        return body;
+    }
+    header.push(body);
+    header.join("\n")
+}
+
+/// The document's `<title>`, whitespace collapsed.
+fn page_title(document: &Html) -> Option<String> {
+    let selector = Selector::parse("head > title").expect("static selector");
+    let title = document
+        .select(&selector)
+        .next()?
+        .text()
+        .collect::<String>();
+    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!title.is_empty()).then_some(title)
+}
+
+/// The `content` of `<meta name="{name}">`, trimmed.
+fn meta_content(document: &Html, name: &str) -> Option<String> {
+    let selector = Selector::parse("meta[name][content]").expect("static selector");
+    document
+        .select(&selector)
+        .find(|m| m.value().attr("name") == Some(name))
+        .and_then(|m| m.value().attr("content"))
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty())
+}
+
+/// "Forked from owner/repo" for a GitHub repository page that is a fork.
+/// GitHub states it in its analytics meta tags (checked 2026-11-25 against
+/// a live fork page); the visible "forked from" line sits outside the
+/// README that the text is taken from.
+fn github_fork_note(document: &Html, page_url: &url::Url) -> Option<String> {
+    let host = page_url.host_str()?;
+    if host != "github.com" && host != "www.github.com" {
+        return None;
+    }
+    let is_fork = meta_content(document, "octolytics-dimension-repository_is_fork")?;
+    if !is_fork.eq_ignore_ascii_case("true") {
+        return None;
+    }
+    Some(
+        match meta_content(document, "octolytics-dimension-repository_parent_nwo") {
+            Some(parent) => format!("Forked from {parent}"),
+            None => "This repository is a fork.".to_string(),
+        },
+    )
+}
+
+/// The most links a page reports.
+const MAX_PAGE_LINKS: usize = 40;
+/// Longest link text kept, in characters.
+const MAX_LINK_TEXT: usize = 80;
+
+/// Links to other pages on the page's own site, at most [`MAX_PAGE_LINKS`],
+/// those in the main content first and none from the site's navigation,
+/// header or footer.
+fn extract_links(document: &Html, base: &url::Url) -> Vec<PageLink> {
+    let anchors = Selector::parse("a[href]").expect("static selector");
+    let mut seen = std::collections::HashSet::new();
+    let mut own = base.clone();
+    own.set_fragment(None);
+    seen.insert(own.to_string());
+    let mut out = Vec::new();
+    for scope in ["article", "main", "[role='main']", "body"] {
+        let Some(root) = Selector::parse(scope)
+            .ok()
+            .and_then(|s| document.select(&s).next())
+        else {
+            continue;
+        };
+        for anchor in root.select(&anchors) {
+            if out.len() >= MAX_PAGE_LINKS {
+                return out;
+            }
+            if in_site_chrome(anchor) {
+                continue;
+            }
+            if let Some(link) = page_link(anchor, base) {
+                if seen.insert(link.url.clone()) {
+                    out.push(link);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// True when `element` sits in the site's navigation, header or footer.
+fn in_site_chrome(element: scraper::ElementRef) -> bool {
+    element.ancestors().any(|a| {
+        a.value()
+            .as_element()
+            .is_some_and(|e| matches!(e.name(), "nav" | "header" | "footer"))
+    })
+}
+
+/// The anchor as a [`PageLink`], when it points at another page on the same
+/// site and has something to call it by.
+fn page_link(anchor: scraper::ElementRef, base: &url::Url) -> Option<PageLink> {
+    let href = anchor.value().attr("href")?.trim();
+    if href.is_empty() || href.starts_with('#') {
+        return None;
+    }
+    let mut url = base.join(href).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let site = |u: &url::Url| {
+        u.host_str()
+            .map(|h| h.trim_start_matches("www.").to_ascii_lowercase())
+    };
+    if site(&url) != site(base) {
+        return None;
+    }
+    url.set_fragment(None);
+    let text = visible_text(anchor);
+    let mut text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        text = ["aria-label", "title"]
+            .iter()
+            .find_map(|a| anchor.value().attr(a))
+            .unwrap_or("")
+            .trim()
+            .to_string();
+    }
+    if text.is_empty() {
+        return None;
+    }
+    if text.chars().count() > MAX_LINK_TEXT {
+        text = text.chars().take(MAX_LINK_TEXT).collect::<String>() + "…";
+    }
+    Some(PageLink {
+        text,
+        url: url.to_string(),
+    })
 }
 
 /// `text` cut to `MAX_FETCH_LENGTH` at a word, without splitting a UTF-8 code
@@ -653,31 +857,52 @@ mod tests {
         // stops it, as it stops any public-looking name that points here.
         assert!(validate_url("http://localhost.:9/").is_ok());
         let client = build_fetch_client(None).unwrap();
-        let err = fetch_ok(&client, "http://localhost.:9/").await.unwrap_err();
+        let err = fetch_ok(&client, "http://localhost.:9/", None)
+            .await
+            .unwrap_err();
         assert!(err.contains("resolves to this computer"), "{err}");
     }
 
-    #[test]
-    fn a_connect_failure_names_the_proxy_it_went_through() {
-        let proxy = ProxyConfig {
-            mode: "manual".into(),
-            url: "http://user@127.0.0.1:9".into(),
+    #[tokio::test]
+    async fn a_proxy_that_refuses_is_named_as_the_failed_hop() {
+        let cfg = crate::proxy::ProxyConfig {
+            mode: "manual".to_string(),
+            url: "http://user@127.0.0.1:1".to_string(),
             ..Default::default()
         };
-        let refused = "Fetch failed: error sending request: Connection refused (os error 111)";
-        let said = through_proxy(refused.into(), Some(&proxy));
-        assert!(said.starts_with(refused), "{said}");
-        assert!(said.contains("proxy at 127.0.0.1:9"), "{said}");
-        assert!(!said.contains("user"), "no login in the message: {said}");
-        // A status means the proxy answered; no proxy means nothing to name.
-        let status = "Fetch failed with status: 404 Not Found";
-        assert_eq!(through_proxy(status.into(), Some(&proxy)), status);
-        assert_eq!(through_proxy(refused.into(), None), refused);
-        let off = ProxyConfig {
-            mode: "none".into(),
-            ..proxy
-        };
-        assert_eq!(through_proxy(refused.into(), Some(&off)), refused);
+        let client = build_fetch_client(Some(&cfg)).unwrap();
+        let err = fetch_ok(&client, "https://example.com/", Some(&cfg))
+            .await
+            .unwrap_err();
+        assert!(
+            err.starts_with("Fetch failed: the proxy 127.0.0.1:1 "),
+            "{err}"
+        );
+        assert!(
+            err.contains("Settings → Network → Web Search Proxy"),
+            "{err}"
+        );
+        assert!(!err.contains("user"), "credentials stay out: {err}");
+    }
+
+    #[test]
+    fn a_refusing_status_says_retrying_will_not_help() {
+        let forbidden = status_error(reqwest::StatusCode::FORBIDDEN);
+        assert!(
+            forbidden.starts_with("Fetch failed with status: 403"),
+            "{forbidden}"
+        );
+        assert!(forbidden.contains("refuses automated requests"));
+        assert!(
+            is_refusal(&forbidden),
+            "the reddit fallback still sees a 403"
+        );
+        let limited = status_error(reqwest::StatusCode::TOO_MANY_REQUESTS);
+        assert!(limited.contains("rate-limiting") && is_refusal(&limited));
+        assert_eq!(
+            status_error(reqwest::StatusCode::NOT_FOUND),
+            "Fetch failed with status: 404 Not Found"
+        );
     }
 
     #[test]
@@ -841,6 +1066,92 @@ mod tests {
     fn extract_text_trims_lines_and_drops_blank_ones() {
         let html = "<html><body><p>  Line one  </p>\n\n\n<p>\t Line two \t</p></body></html>";
         assert_eq!(extract_text(html), "Line one\nLine two");
+    }
+
+    /// Trimmed from a live GitHub fork page (sharkdp/ripgrep, 2026-11-25):
+    /// the analytics meta tags, the header with its "forked from" line, the
+    /// file list in `main` and the README in `article`.
+    const GITHUB_FORK: &str = r##"<html><head>
+        <title>GitHub - sharkdp/ripgrep: ripgrep recursively searches directories for a regex pattern · GitHub</title>
+        <meta name="octolytics-dimension-repository_nwo" content="sharkdp/ripgrep" />
+        <meta name="octolytics-dimension-repository_is_fork" content="true" />
+        <meta name="octolytics-dimension-repository_parent_nwo" content="BurntSushi/ripgrep" />
+        </head><body>
+        <header><a href="/login">Sign in</a><a href="/features">Features</a></header>
+        <main>
+          <div><span>forked from </span><a href="/BurntSushi/ripgrep">BurntSushi/ripgrep</a></div>
+          <a href="/sharkdp/ripgrep/tree/master/crates">crates</a>
+          <a href="/sharkdp/ripgrep/blob/master/Cargo.toml">Cargo.toml</a>
+          <a href="https://docs.rs/grep">docs.rs</a>
+          <a href="#readme">skip</a>
+          <article><h1>ripgrep (rg)</h1>
+            <p>ripgrep is a line-oriented search tool that recursively searches the current
+            directory for a regex pattern. By default, ripgrep will respect gitignore rules.</p>
+            <a href="/sharkdp/ripgrep/blob/master/GUIDE.md">user guide</a>
+            <a href="/sharkdp/ripgrep/blob/master/FAQ.md#install"><svg></svg></a>
+            <a href="/sharkdp/ripgrep/blob/master/FAQ.md" aria-label="FAQ"><svg></svg></a>
+          </article>
+        </main>
+        <footer><a href="/site/terms">Terms</a></footer>
+        </body></html>"##;
+
+    #[test]
+    fn a_github_page_keeps_its_title_and_what_it_was_forked_from() {
+        let base = url::Url::parse("https://github.com/sharkdp/ripgrep").unwrap();
+        let text = document_text(&Html::parse_document(GITHUB_FORK), Some(&base));
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next(),
+            Some("Title: GitHub - sharkdp/ripgrep: ripgrep recursively searches directories for a regex pattern · GitHub")
+        );
+        assert_eq!(lines.next(), Some("Forked from BurntSushi/ripgrep"));
+        assert_eq!(lines.next(), Some("ripgrep (rg)"));
+
+        // Off github.com the meta tags mean nothing.
+        let elsewhere = url::Url::parse("https://example.com/").unwrap();
+        let text = document_text(&Html::parse_document(GITHUB_FORK), Some(&elsewhere));
+        assert!(!text.contains("Forked from"));
+    }
+
+    #[test]
+    fn a_title_the_text_already_opens_with_is_not_repeated() {
+        let html =
+            "<html><head><title>Hello</title></head><body><p>Hello</p>\n<p>there</p></body></html>";
+        assert_eq!(extract_text(html), "Hello\nthere");
+    }
+
+    #[test]
+    fn links_are_same_site_content_first_and_skip_site_chrome() {
+        let base = url::Url::parse("https://github.com/sharkdp/ripgrep").unwrap();
+        let links = extract_links(&Html::parse_document(GITHUB_FORK), &base);
+        let urls: Vec<&str> = links.iter().map(|l| l.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            vec![
+                "https://github.com/sharkdp/ripgrep/blob/master/GUIDE.md",
+                "https://github.com/sharkdp/ripgrep/blob/master/FAQ.md",
+                "https://github.com/BurntSushi/ripgrep",
+                "https://github.com/sharkdp/ripgrep/tree/master/crates",
+                "https://github.com/sharkdp/ripgrep/blob/master/Cargo.toml",
+            ]
+        );
+        assert_eq!(links[0].text, "user guide");
+        assert_eq!(
+            links[1].text, "FAQ",
+            "an empty anchor falls back to aria-label"
+        );
+    }
+
+    #[test]
+    fn links_stop_at_the_cap() {
+        let anchors: String = (0..100)
+            .map(|i| format!("<a href=\"/p/{i}\">page {i}</a>"))
+            .collect();
+        let html = format!("<html><body>{anchors}</body></html>");
+        let base = url::Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&Html::parse_document(&html), &base);
+        assert_eq!(links.len(), MAX_PAGE_LINKS);
+        assert_eq!(links[0].url, "https://example.com/p/0");
     }
 
     #[test]

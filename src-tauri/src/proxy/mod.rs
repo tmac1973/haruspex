@@ -161,6 +161,7 @@ pub async fn proxy_search(
                 &query,
                 recency,
                 browser_path.as_deref(),
+                proxy_ref,
             )
             .await
             {
