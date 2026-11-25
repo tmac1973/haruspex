@@ -13,7 +13,7 @@ export function threeHelperPrompt(session: SessionHelperConfig | null = null): s
 	const backend = delegate3dConfig(session).backend;
 	if (!backend) return '';
 	const { label } = overrideModelLabel(backend);
-	return `- delegate_3d — hand a new 3D asset, or a change to one it made, to ${label}; describe it fully. It runs in the background and reports in a new turn; pass wait only when your next step needs the .glb. Use check_3d yourself to look at or measure an asset, not to build one.`;
+	return `- delegate_3d — hand a new 3D asset, or a change to one it made, to ${label}; describe it fully. It runs in the background and its report comes to you in a new turn, so do not pass wait just to see or tell the user the result; pass it only when a step in this turn uses the finished .glb, such as placing it in a scene. Use check_3d yourself to look at or measure an asset, not to build one.`;
 }
 
 registerHelper({
