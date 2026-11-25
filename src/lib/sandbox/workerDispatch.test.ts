@@ -27,7 +27,9 @@ describe('dispatchWorkerMessage', () => {
 	it('routes the id-carrying control messages', () => {
 		const h = mockHandlers();
 		dispatchWorkerMessage({ kind: 'run', id: 'a', code: 'print(1)' }, h);
-		expect(h.run).toHaveBeenCalledWith('a', 'print(1)');
+		expect(h.run).toHaveBeenCalledWith('a', 'print(1)', false);
+		dispatchWorkerMessage({ kind: 'run', id: 'a2', code: 'x', replay: true }, h);
+		expect(h.run).toHaveBeenCalledWith('a2', 'x', true);
 		dispatchWorkerMessage({ kind: 'install', id: 'b', package: 'numpy' }, h);
 		expect(h.install).toHaveBeenCalledWith('b', 'numpy');
 		dispatchWorkerMessage({ kind: 'list_globals', id: 'c' }, h);

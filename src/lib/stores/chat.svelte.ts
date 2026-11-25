@@ -986,8 +986,10 @@ function isLongRunningLaunch(code: string): boolean {
 /**
  * Walk a chat's message history, find every prior install_package /
  * run_python / reset_python tool call, and replay them sequentially
- * against a fresh per-chat iframe so the model picks up where it left
- * off. Skipped entirely if the IframePool already has a live iframe
+ * against a fresh per-chat worker so the model picks up where it left
+ * off. A replayed run rebuilds Python state only: it saves and deletes
+ * nothing in the working directory and sends no network writes (see
+ * RunOptions.replay). Skipped entirely if the pool still has a live worker
  * for this chat — its Python state hasn't been lost. Per-call errors
  * are swallowed (the chat history already records what the model saw
  * at the time; the goal is to rebuild state, not surface failures).
@@ -1005,7 +1007,7 @@ async function replaySandboxCall(chatId: string, call: SandboxCallToReplay): Pro
 			});
 			return;
 		}
-		await runPython(chatId, call.args.code);
+		await runPython(chatId, call.args.code, { replay: true });
 	} else if (call.name === 'reset_python') {
 		await resetSandbox(chatId);
 	}
@@ -1037,8 +1039,8 @@ async function restoreSandboxSession(id: string): Promise<void> {
 	conv.sessionRestoreSkipped = false;
 	logDebug('sandbox', 'session restore start', { chatId: id, callCount: calls.length });
 	try {
-		// IframePool boots a fresh iframe lazily on the first runPython
-		// for this chat — no explicit reset needed.
+		// The pool boots a fresh worker lazily on the first runPython for
+		// this chat — no explicit reset needed.
 		for (const call of calls) {
 			if (getActiveConversationId() !== id) {
 				logDebug('sandbox', 'session restore aborted — chat switched', { fromChatId: id });

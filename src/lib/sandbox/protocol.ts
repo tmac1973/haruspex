@@ -60,7 +60,8 @@ export type MainToWorker =
 			deleted: string[];
 			skipped: SyncSkipped[];
 	  }
-	| { kind: 'run'; id: string; code: string }
+	/** `replay`: rebuild state only; no host saves or deletes, no network writes. */
+	| { kind: 'run'; id: string; code: string; replay?: boolean }
 	| { kind: 'install'; id: string; package: string }
 	| { kind: 'reset'; id: string }
 	| { kind: 'interrupt'; id: string }

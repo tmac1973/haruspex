@@ -345,10 +345,109 @@ describe('python.worker run', () => {
 		expect(posted).toEqual([]);
 	});
 
+	it('does not run the code again when the failed attempt already printed', async () => {
+		// A second run would print, save or send everything before the import twice.
+		await boot();
+		let calls = 0;
+		py.userCode = () => {
+			calls++;
+			py.stdout('sent the report');
+			throw new Error("ModuleNotFoundError: No module named 'foo'");
+		};
+		const result = await run('USER send(); import foo');
+		expect(calls).toBe(1);
+		expect(result.error).toContain("No module named 'foo'");
+		expect(result.stderr).toContain('auto-installed foo');
+		expect(result.notes.join(' ')).toContain('did not run the code again');
+	});
+
+	it('saves what a failed run wrote before it failed', async () => {
+		await boot();
+		py.userCode = () => {
+			throw new Error('ValueError: late');
+		};
+		py.internalScripts.length = 0;
+		await run('USER write(); raise ValueError()');
+		expect(py.internalScripts).toContain('await _haruspex_drain_pending_saves()');
+	});
+
+	it('saves nothing for a run that failed before its code started', async () => {
+		await boot();
+		(py.api as { loadPackagesFromImports: () => Promise<void> }).loadPackagesFromImports =
+			async () => {
+				throw new Error('lockfile fetch failed');
+			};
+		py.internalScripts.length = 0;
+		const result = await run('USER import numpy');
+		expect(result.error).toBe('lockfile fetch failed');
+		expect(py.internalScripts).not.toContain('await _haruspex_drain_pending_saves()');
+	});
+
 	it('acknowledges reset with an empty result', async () => {
 		await boot();
 		send({ kind: 'reset', id: 'z' });
 		expect(doneFor('z')).toMatchObject({ error: null, result: '', duration_ms: 0 });
+	});
+});
+
+describe('python.worker replay', () => {
+	// Session restore runs a chat's earlier code again to rebuild its state.
+	// It must not save, delete or send anything a second time.
+	type Bridge = (...args: unknown[]) => unknown;
+	const bridge = (name: string) => py.globals.get(name) as Bridge;
+	const replay = async (id = 'p1') => {
+		send({ kind: 'run', id, code: 'USER replayed', replay: true });
+		await settle();
+		return doneFor(id);
+	};
+
+	it('throws away the files it made instead of saving them', async () => {
+		await boot();
+		py.internalScripts.length = 0;
+		await replay();
+		expect(py.internalScripts).toContain('_haruspex_discard_replay_files()');
+		expect(py.internalScripts).not.toContain('await _haruspex_drain_pending_saves()');
+	});
+
+	it('answers saves and deletes without asking the host', async () => {
+		await boot();
+		let saved: unknown;
+		let deleted: unknown;
+		py.userCode = async () => {
+			saved = await bridge('_haruspex_save')('out.txt', 'hi');
+			deleted = await bridge('_haruspex_delete')('old.csv');
+		};
+		await replay();
+		expect(saved).toEqual({ path: '', bytes: 2 });
+		expect(deleted).toEqual({ path: '' });
+		expect(kinds()).not.toContain('save_request');
+		expect(kinds()).not.toContain('delete_request');
+	});
+
+	it('refuses network writes but lets reads through', async () => {
+		await boot();
+		let post: unknown;
+		py.userCode = () => {
+			post = (bridge('_haruspex_fetch')('https://x.test/a', 'POST', {}, 'x') as Promise<unknown>)
+				.then(() => 'sent')
+				.catch((e: Error) => e.message);
+			void bridge('_haruspex_fetch')('https://x.test/b', 'GET', {}, null);
+			expect(() => new FakeXHR().open('PUT', 'https://x.test/c', false)).toThrow('not sent');
+			new FakeXHR().open('GET', 'https://x.test/d', false);
+		};
+		await replay();
+		expect(await post).toContain('not sent');
+		const fetches = posted.filter((m) => m.kind === 'fetch_request');
+		expect(fetches).toHaveLength(1);
+		expect(fetches[0]).toMatchObject({ url: 'https://x.test/b' });
+	});
+
+	it('goes back to normal for the next run', async () => {
+		await boot();
+		await replay();
+		py.userCode = () => void bridge('_haruspex_save')('out.txt', 'hi');
+		await run('USER save');
+		expect(kinds()).toContain('save_request');
 	});
 });
 

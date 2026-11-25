@@ -25,7 +25,7 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
 );
 
-import { WorkerManager } from './workerManager';
+import { STATE_LOST, WorkerManager } from './workerManager';
 import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from './availability';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
@@ -287,5 +287,78 @@ describe('WorkerManager message dispatch', () => {
 			'sandbox_sync_workdir',
 			expect.objectContaining({ workdir: '/b' })
 		);
+	});
+
+	it('marks a session-restore run as a replay', async () => {
+		const wm = makeManager();
+		void wm.runPython('x = 1', { replay: true });
+		fake.emit({ kind: 'ready' });
+		await tick();
+		expect(fake.posted.find((m) => m.kind === 'run')).toMatchObject({ replay: true });
+	});
+
+	it('copies every host file in again on the first real run after a replay', async () => {
+		// A replay changes MEMFS without saving, so the host copy must win again.
+		session.workingDir = '/w';
+		const json = new TextEncoder().encode(
+			JSON.stringify({
+				to_sync: [{ path: 'a.txt', abs_path: '/w/a.txt', mtime: 1, len: 0 }],
+				deleted: [],
+				skipped: [],
+				workdir_abs: '/w'
+			})
+		);
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					sandbox_sync_workdir: () => {
+						const body = new Uint8Array(4 + json.length);
+						new DataView(body.buffer).setUint32(0, json.length, true);
+						body.set(json, 4);
+						return body.buffer;
+					}
+				},
+				undefined
+			)
+		);
+		const wm = makeManager();
+		let booted = false;
+		const runOnce = async (replay: boolean) => {
+			const before = fake.posted.length;
+			const p = wm.runPython('x', { replay });
+			if (!booted) fake.emit({ kind: 'ready' });
+			booted = true;
+			await tick();
+			const sync = fake.posted.slice(before).find((m) => m.kind === 'sync_workdir_files');
+			if (sync?.kind !== 'sync_workdir_files') throw new Error('no sync posted');
+			fake.emit({ kind: 'sync_workdir_ack', sync_id: sync.sync_id });
+			await tick();
+			const run = fake.posted.slice(before).find((m) => m.kind === 'run');
+			if (run?.kind !== 'run') throw new Error('no run posted');
+			fake.emit({ kind: 'done', id: run.id, result: doneResult() });
+			await p;
+		};
+		const knownOf = (call: number) =>
+			(
+				vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'sandbox_sync_workdir')[call][1] as {
+					knownFiles: Array<{ path: string; mtime: number }>;
+				}
+			).knownFiles;
+		await runOnce(false);
+		await runOnce(true);
+		await runOnce(false);
+		await runOnce(false);
+		expect(knownOf(1)).toEqual([{ path: 'a.txt', mtime: 1 }]); // the replay itself
+		expect(knownOf(2)).toEqual([{ path: 'a.txt', mtime: -1 }]); // first real run after
+		expect(knownOf(3)).toEqual([{ path: 'a.txt', mtime: 1 }]); // back to mtimes
+	});
+
+	it('tells the model a timeout wiped Python state', async () => {
+		// Without an interrupt buffer a timeout ends the worker, and with it
+		// every variable the model would otherwise go on using.
+		const wm = makeManager();
+		const p = wm.runPython('while True: pass', { timeoutMs: 5 });
+		fake.emit({ kind: 'ready' });
+		await expect(p).rejects.toThrow(STATE_LOST);
 	});
 });

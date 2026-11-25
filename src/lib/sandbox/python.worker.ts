@@ -38,6 +38,20 @@ let currentStderr = '';
 // error output.
 let pendingSyncNotes: string[] = [];
 let currentNotes: string[] = [];
+// True while a session-restore replay runs: rebuild state, touch nothing
+// outside the sandbox. See handleRun.
+let replayRun = false;
+// Effects outside the sandbox (artifacts, saves, deletes, fetches) during the
+// current run. The import retry runs the code again only when an attempt
+// made none, so nothing happens twice.
+let runEffects = 0;
+
+/** Only these methods may reach the network while a replay runs. */
+function replayAllows(method: string | undefined): boolean {
+	const m = (method ?? 'GET').toUpperCase();
+	return m === 'GET' || m === 'HEAD';
+}
+const REPLAY_REFUSED = 'not sent: restoring the Python session runs no network writes';
 
 // Tracks Promises returned from _haruspex_save so the matching
 // save_response message can resolve/reject the right call. Keyed by
@@ -418,6 +432,8 @@ def _haruspex_snapshot_workdir():
     modified files regardless of how they were written."""
     import os as _os
     _haruspex_workdir_snapshot.clear()
+    # Writes recorded before this run are not this run's to save.
+    _haruspex_pending_save_paths.clear()
     if not _haruspex_working_dir_set:
         return
     try:
@@ -526,6 +542,45 @@ async def _haruspex_drain_pending_saves():
     for _fname, _err in failed:
         print('WARNING: could not save ' + repr(_fname) + ' to working directory: ' + _err,
               file=_sys.stderr)
+
+def _haruspex_workdir_changed_paths():
+    """Workdir files that are new or modified since the pre-run snapshot."""
+    import os as _os
+    if not _haruspex_working_dir_set:
+        return []
+    try:
+        cwd = _os.getcwd()
+    except Exception:
+        return []
+    changed = []
+    for _root, _dirs, _files in _os.walk(cwd):
+        for _fname in _files:
+            _path = _os.path.join(_root, _fname)
+            try:
+                _mtime = _os.stat(_path).st_mtime
+            except Exception:
+                continue
+            _prev = _haruspex_workdir_snapshot.get(_path)
+            if _prev is None or _mtime > _prev:
+                changed.append(_path)
+    return changed
+
+def _haruspex_run_wrote_files():
+    """True when the run so far wrote a file, in the workdir or outside it."""
+    return bool(_haruspex_pending_save_paths) or bool(_haruspex_workdir_changed_paths())
+
+def _haruspex_discard_replay_files():
+    """After a replay run: forget its writes instead of saving them. Files it
+    made are removed; files it changed are copied in again from the host by
+    the next real run's sync."""
+    import os as _os
+    _haruspex_pending_save_paths.clear()
+    for _path in _haruspex_workdir_changed_paths():
+        if _path not in _haruspex_workdir_snapshot:
+            try:
+                _os.remove(_path)
+            except Exception:
+                pass
 
 def _haruspex_install_matplotlib_hook():
     try:
@@ -1024,6 +1079,7 @@ function registerHostBridges(py: PyodideInterface): void {
 		} else {
 			return;
 		}
+		runEffects++;
 		post({
 			kind: 'artifact',
 			id: currentRunId,
@@ -1034,6 +1090,10 @@ function registerHostBridges(py: PyodideInterface): void {
 	py.globals.set(
 		'_haruspex_fetch',
 		(url: unknown, method: unknown, headers: unknown, body: unknown) => {
+			if (replayRun && !replayAllows(typeof method === 'string' ? method : undefined)) {
+				return Promise.reject(new Error(REPLAY_REFUSED));
+			}
+			runEffects++;
 			const requestId = crypto.randomUUID();
 			let bodyBytes: Uint8Array | undefined;
 			if (body != null) {
@@ -1073,6 +1133,9 @@ function registerHostBridges(py: PyodideInterface): void {
 		}
 	);
 	py.globals.set('_haruspex_delete', (filename: unknown) => {
+		// A replay leaves the host alone; the original run already did this.
+		if (replayRun) return Promise.resolve({ path: '' });
+		runEffects++;
 		const requestId = crypto.randomUUID();
 		return new Promise<{ path: string }>((resolve, reject) => {
 			pendingDeletes.set(requestId, { resolve, reject });
@@ -1092,6 +1155,11 @@ function registerHostBridges(py: PyodideInterface): void {
 		if (payload === null) {
 			return Promise.reject(new Error('haruspex.save: content must be str or bytes'));
 		}
+		if (replayRun) {
+			const size = typeof payload === 'string' ? payload.length : payload.byteLength;
+			return Promise.resolve({ path: '', bytes: size });
+		}
+		runEffects++;
 		return new Promise<{ path: string; bytes: number }>((resolve, reject) => {
 			pendingSaves.set(requestId, { resolve, reject });
 			post({
@@ -1107,6 +1175,7 @@ function registerHostBridges(py: PyodideInterface): void {
 		'_haruspex_emit_html',
 		(html: unknown, shown: number | null, total: number | null, interactive: unknown) => {
 			if (!currentRunId) return;
+			runEffects++;
 			const truncated =
 				shown !== null && total !== null && shown !== undefined && total !== undefined
 					? { shown, total }
@@ -1180,6 +1249,10 @@ function installSandboxFetchProxy(): void {
 		password?: string | null
 	): void {
 		const raw = typeof url === 'string' ? url : url.href;
+		if (shouldProxy(raw)) {
+			if (replayRun && !replayAllows(method)) throw new Error(REPLAY_REFUSED);
+			runEffects++;
+		}
 		const target = shouldProxy(raw)
 			? proxyBase + '?u=' + encodeURIComponent(new URL(raw, self.location.href).href)
 			: url;
@@ -1414,6 +1487,23 @@ async function clearFailedImports(pyodide: PyodideInterface, code: string): Prom
 	);
 }
 
+/**
+ * Whether the failed attempt did anything a second run would repeat: printed,
+ * showed a figure, saved, deleted, fetched, or wrote a file.
+ */
+async function attemptHadEffects(
+	pyodide: PyodideInterface,
+	stdoutBefore: number,
+	effectsBefore: number
+): Promise<boolean> {
+	if (currentStdout.length > stdoutBefore || runEffects > effectsBefore) return true;
+	try {
+		return Boolean(await pyodide.runPythonAsync('_haruspex_run_wrote_files()'));
+	} catch {
+		return true;
+	}
+}
+
 async function runWithImportRetry(
 	pyodide: PyodideInterface,
 	code: string,
@@ -1421,6 +1511,9 @@ async function runWithImportRetry(
 ): Promise<unknown> {
 	const tried = new Set<string>();
 	for (let round = 0; round < MAX_INSTALL_ROUNDS; round++) {
+		const stdoutBefore = currentStdout.length;
+		const stderrBefore = currentStderr.length;
+		const effectsBefore = runEffects;
 		try {
 			// Entering user-code execution: (re)arm the execution timeout.
 			postExecStart();
@@ -1431,6 +1524,9 @@ async function runWithImportRetry(
 			if (!pkg) throw err;
 			if (tried.has(pkg)) throw err;
 			tried.add(pkg);
+			const rerunSafe = !(await attemptHadEffects(pyodide, stdoutBefore, effectsBefore));
+			// The failed attempt's warnings would show twice.
+			if (rerunSafe) currentStderr = currentStderr.slice(0, stderrBefore);
 			try {
 				// Back into the install phase: pause the execution timeout
 				// while we download the missing transitive dependency.
@@ -1438,6 +1534,14 @@ async function runWithImportRetry(
 				await installIntoPyodide(pyodide, pkg, log);
 				await clearFailedImports(pyodide, code);
 			} catch {
+				throw err;
+			}
+			if (!rerunSafe) {
+				// Running it again would print, save or send a second time.
+				currentNotes.push(
+					`installed ${pkg}, but did not run the code again because it had already ` +
+						'printed, shown, saved or sent something before the import failed; run it again'
+				);
 				throw err;
 			}
 		}
@@ -1489,12 +1593,31 @@ function postRunError(id: string, t0: number, err: unknown): void {
 	post({ kind: 'done', id, result: emptyResult(Math.round(performance.now() - t0), message) });
 }
 
-async function handleRun(id: string, code: string): Promise<void> {
+/**
+ * Save what the run wrote to the host, or, for a replay, throw it away.
+ * Errors per file reach stderr from inside the drain.
+ */
+async function settleRunFiles(py: PyodideInterface, replay: boolean): Promise<void> {
+	try {
+		await py.runPythonAsync(
+			replay ? '_haruspex_discard_replay_files()' : 'await _haruspex_drain_pending_saves()'
+		);
+	} catch (drainErr) {
+		currentStderr += '\n[haruspex] drain failed: ' + errMessage(drainErr) + '\n';
+	}
+}
+
+async function handleRun(id: string, code: string, replay: boolean): Promise<void> {
 	if (!pyodide) {
 		postNotLoaded(id);
 		return;
 	}
 	currentRunId = id;
+	replayRun = replay;
+	runEffects = 0;
+	// Set once the code itself starts, after the workdir snapshot: only then
+	// can the run have written anything worth saving.
+	let codeStarted = false;
 	currentStdout = '';
 	currentStderr = '';
 	currentNotes = pendingSyncNotes;
@@ -1528,17 +1651,13 @@ async function handleRun(id: string, code: string): Promise<void> {
 		await pyodide.runPythonAsync(
 			'_haruspex_install_matplotlib_hook(); _haruspex_install_plotly_hook(); _haruspex_install_bokeh_hook(); _haruspex_snapshot_workdir()'
 		);
+		codeStarted = true;
 		const value = await runWithImportRetry(pyodide, code, (msg) => {
 			currentStderr += msg;
 		});
 		// Flush any native file writes that landed in MEMFS during the run
-		// to the host working dir. Errors per file are surfaced via stderr
-		// inside the drain function; only catastrophic failures bubble up.
-		try {
-			await pyodide.runPythonAsync('await _haruspex_drain_pending_saves()');
-		} catch (drainErr) {
-			currentStderr += '\n[haruspex] drain failed: ' + errMessage(drainErr) + '\n';
-		}
+		// to the host working dir.
+		await settleRunFiles(pyodide, replay);
 		const result = emptyResult(Math.round(performance.now() - t0));
 		// Pass the value back to Python so it can detect rich representations
 		// (DataFrame _repr_html_, anything with _repr_html_) and emit
@@ -1563,11 +1682,16 @@ async function handleRun(id: string, code: string): Promise<void> {
 		}
 		post({ kind: 'done', id, result });
 	} catch (err) {
+		// What a failed run wrote before it failed is saved too. Left in MEMFS,
+		// the next run's snapshot would count it as already there, and it
+		// would never reach the host.
+		if (codeStarted && pyodide) await settleRunFiles(pyodide, replay);
 		// What a failed run drew still shows, and doesn't turn up in the next run.
 		await pyodide?.runPythonAsync('_haruspex_flush_figures()').catch(() => {});
 		postRunError(id, t0, err);
 	} finally {
 		currentRunId = '';
+		replayRun = false;
 	}
 }
 
@@ -1610,7 +1734,7 @@ const workerHandlers: WorkerMessageHandlers = {
 		}
 	},
 	syncWorkdir: (msg) => void handleSyncWorkdir(msg),
-	run: (id, code) => void handleRun(id, code),
+	run: (id, code, replay) => void handleRun(id, code, replay),
 	install: (id, packageName) => void handleInstall(id, packageName),
 	// Full reset is implemented by the manager via terminate-and-respawn.
 	// Acknowledging here keeps the protocol symmetric in case we add an

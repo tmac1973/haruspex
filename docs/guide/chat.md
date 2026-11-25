@@ -9,10 +9,10 @@ The Chat tab is where you ask questions. The assistant can search the web, read 
 
 ## Ask a question and get a researched answer
 
-Type a question and press `Enter` (`Shift`+`Enter` for a new line). When the question needs current facts, the assistant searches the web, reads pages and answers. `Ctrl`/`Cmd` + `N` starts a new conversation, and `Esc` stops a reply.
+Type a question and press `Enter` (`Shift`+`Enter` for a new line). For current facts, it searches the web and reads pages. `Ctrl`/`Cmd` + `N` starts a new conversation, and `Esc` stops a reply.
 
-- **Sources** — answers cite their sources with numbers, and numbered chips under the answer show each site. Click a chip to open the page in your browser.
-- **Deep research** — click the magnifying-glass button in the chat box ("Deep research ON — will search more sources"). Answers are slower but use more sources.
+- **Sources** — answers cite their sources with numbers, and numbered chips under the answer show each site. Click one to open the page.
+- **Deep research** — click the magnifying-glass button in the chat box ("Deep research ON — will search more sources"). Slower, with more sources.
 - **Stopped early?** — a turn gets 10 steps (searches, page reads, replies), 25 with deep research. Raise it in Settings → Chat → Max steps per turn.
 
 Search can fail or be rate limited. Search engines and proxies are on the `search-and-network` page. The model can be wrong even with sources, so check anything that matters.
@@ -37,9 +37,11 @@ Small models may forget to write the file, or claim they did.
 
 ## Run Python for charts, maths and documents
 
-The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, installs more, shows its charts in the answer, and saves files to your working directory. It is on by default and works best with a larger model. Click **code** on a run's step to see it. The assistant sees up to about 20 KB of each run's output; the middle of anything longer is cut.
+The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, installs more, shows its charts in the answer, and saves files to your working directory. It is on by default and works best with a larger model. Click **code** on a run's step to see it. The assistant sees up to about 20 KB of each run's output; the middle is cut.
 
-Before code runs you see **Allow code execution?** By default it asks once per chat. Change this in Settings → Chat → Python Sandbox → Approval prompt (Off, Once per chat, or Every run). The same section sets **Network access** (default: Internet and local network) and the timeout, and **Enable Python sandbox** turns it off.
+Reopening an older chat reruns its code to restore its variables, saving no files and sending nothing but downloads. A timeout loses them.
+
+Before code runs you see **Allow code execution?** By default it asks once per chat. Change this in Settings → Chat → Python Sandbox → Approval prompt (Off, Once per chat, or Every run). The same section sets **Network access** (default: Internet and local network), the timeout, and **Enable Python sandbox**.
 
 ## Get pictures in answers
 
@@ -60,7 +62,7 @@ Pick voice, microphone and speaker in Settings → Audio. Speech is processed on
 
 ## Run the commands from an answer
 
-If an answer tells you to run commands, click the `>_` button in the chat box. It opens the conversation in a new Shell tab, where the commands become buttons you can run. That shell thread isn't saved to your chat history. See the `shell` page.
+If an answer tells you to run commands, click the `>_` button in the chat box. It opens the conversation in a new Shell tab, where the commands become buttons you can run. The shell thread isn't saved. See the `shell` page.
 
 ## Keep a chat out of memory
 
@@ -68,7 +70,7 @@ When memory is on, the eye button in the chat box makes the current chat incogni
 
 ## Where your conversations are kept
 
-Conversations are saved on your computer and kept after a restart. Find them in the sidebar. Chats from other people's devices through Guest chat also appear there (see `guest-chat`).
+Conversations are saved on your computer. Find them in the sidebar. Chats from other people's devices through Guest chat also appear there (see `guest-chat`).
 
 ## When a chat gets long
 
