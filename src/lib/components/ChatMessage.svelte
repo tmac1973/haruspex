@@ -41,6 +41,8 @@
 		onFork?: () => void;
 		/** Why forking is not possible right now; the button is inert and says so. */
 		forkBlocked?: string | null;
+		/** "Rewind to here" (the Code transcript), beside Fork; inert while `forkBlocked`. */
+		onRewind?: () => void;
 		/**
 		 * Print and Email buttons on an answer (the Chat tab), with the
 		 * conversation's title for the page and the subject line.
@@ -57,6 +59,7 @@
 		codePaths,
 		onFork,
 		forkBlocked = null,
+		onRewind,
 		shareTitle
 	}: Props = $props();
 
@@ -129,7 +132,37 @@
 	function fork() {
 		if (!forkBlocked) onFork?.();
 	}
+
+	function rewind() {
+		if (!forkBlocked) onRewind?.();
+	}
 </script>
+
+{#snippet rewindButton()}
+	<button
+		class="icon-btn fork"
+		class:blocked={!!forkBlocked}
+		aria-disabled={!!forkBlocked}
+		title={forkBlocked?.replace('fork', 'rewind') ??
+			(message.role === 'user'
+				? 'Rewind to here: cut this session back to before this message, and put it in the input box'
+				: 'Rewind to here: cut this session back to this answer')}
+		aria-label="Rewind to here"
+		data-testid="rewind-button"
+		onclick={rewind}
+	>
+		<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+			<path
+				d="M3 3v4h4M3.5 7A5 5 0 1 1 4 11"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
+		</svg>
+	</button>
+{/snippet}
 
 {#snippet forkButton()}
 	<button
@@ -229,13 +262,21 @@
 					</button>
 				{/if}
 			{/if}
+			{#if onRewind}
+				{@render rewindButton()}
+			{/if}
 			{#if onFork}
 				{@render forkButton()}
 			{/if}
 		</div>
-	{:else if message.role === 'user' && onFork}
+	{:else if message.role === 'user' && (onFork || onRewind)}
 		<div class="message-footer user-footer">
-			{@render forkButton()}
+			{#if onRewind}
+				{@render rewindButton()}
+			{/if}
+			{#if onFork}
+				{@render forkButton()}
+			{/if}
 		</div>
 	{/if}
 </div>

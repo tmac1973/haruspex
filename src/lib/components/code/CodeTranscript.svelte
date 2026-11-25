@@ -26,6 +26,7 @@
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import CodeSteps from '#lib/components/code/CodeSteps.svelte';
 	import ForkDialog from '#lib/components/code/ForkDialog.svelte';
+	import RewindDialog from '#lib/components/code/RewindDialog.svelte';
 	import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
@@ -220,6 +221,11 @@
 		}
 	}
 
+	/** The message "Rewind to here" was pressed on; the dialog says what it will do. */
+	let rewindAt = $state<number | null>(null);
+	/** A read-only session reads; Fork is how it goes another way. */
+	const canRewind = $derived(!!session.rewind && !session.readOnly);
+
 	function removePending(index: number) {
 		session.removeSteering(index);
 	}
@@ -280,7 +286,12 @@
 					<pre>{messageText(msg.content)}</pre>
 				</details>
 			{:else if msg.role === 'user'}
-				<ChatMessage message={msg} onFork={() => fork(i)} {forkBlocked} />
+				<ChatMessage
+					message={msg}
+					onFork={() => fork(i)}
+					onRewind={canRewind ? () => (rewindAt = i) : undefined}
+					{forkBlocked}
+				/>
 			{:else}
 				{#if session.messageSteps[i]?.length}
 					<CodeSteps
@@ -299,6 +310,7 @@
 					tokensPerSecond={session.messageStats[i]?.tokensPerSecond}
 					elapsedMs={session.messageStats[i]?.elapsedMs}
 					onFork={() => fork(i)}
+					onRewind={canRewind ? () => (rewindAt = i) : undefined}
 					{forkBlocked}
 				/>
 				{#if session.messageStops[i]}
@@ -441,6 +453,8 @@
 		</div>
 	{/if}
 </div>
+
+<RewindDialog {session} index={rewindAt} onclose={() => (rewindAt = null)} />
 
 <ForkDialog
 	open={forkAt !== null}

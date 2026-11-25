@@ -153,6 +153,7 @@ describe('dispatch: lean mode', () => {
 			op({ type: 'session.send', id: 'a', text: 'go' }),
 			op({ type: 'session.compact', id: 'a' }),
 			op({ type: 'session.fork', id: 'a', index: 0 }),
+			op({ type: 'session.rewind', id: 'a', index: 0 }),
 			op({ type: 'session.cancelShellWait', id: 'a' })
 		]) {
 			await expect(dispatch(o, 'w')).rejects.toThrow(LEAN_SESSION_REFUSAL);

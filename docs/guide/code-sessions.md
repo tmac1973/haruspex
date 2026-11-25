@@ -1,11 +1,11 @@
 ---
 title: Code sessions
-description: Code tab sessions — the list, long sessions, worktree sessions, forks, sessions sharing a folder, a missing folder, and moving a session to its own window and back.
+description: Code tab sessions — the list, long sessions, worktree sessions, forks, rewinding, sessions sharing a folder, a missing folder, and a window of its own.
 ---
 
 # Code sessions
 
-How to find, fork and move sessions in the Code tab. For what a session does, see the `code` page.
+How to find, fork, rewind and move sessions in the Code tab. For what a session does, see the `code` page.
 
 ## Find and reopen sessions
 
@@ -17,7 +17,7 @@ If Haruspex closes mid-turn, the session keeps your message and each finished st
 
 ## When a session gets long
 
-Once a session fills about three quarters of the model's context, Haruspex summarises older turns; `/compact` does it now. The conversation you see stays whole: **Earlier turns summarised** marks the cut and opens the summary, which lists the agent's changes. File contents aren't kept; it reads files again.
+Once a session fills about three quarters of the model's context, Haruspex summarises older turns; `/compact` does it now. The conversation you see stays whole: **Earlier turns summarised** marks the cut and opens the summary, which lists the agent's changes.
 
 ## Start a session in its own worktree
 
@@ -25,19 +25,25 @@ In a git repository, **New session** offers **Work in a new worktree** (remember
 
 ## Fork a session from a message
 
-Each of your messages and each answer has a **Fork from here** button (the branch icon, next to Copy; on your messages it shows when you point at the message). It asks where the fork works, then opens it as a tab:
+Each of your messages and answers has **Fork from here** (the branch icon; on your messages, point at the message). It asks where the fork works, then opens it as a tab:
 
-- **New worktree** (in a git repository, the default): its own worktree, as above, in `<project>-worktrees/<name>` on a new branch named after the fork.
+- **New worktree** (in a git repository, the default): its own worktree, as above, on a new branch named after the fork.
 - **Same folder, read-only**: the fork shares the folder. Outside a git repository this is the only choice.
 
 What the fork keeps:
 
-- From an answer, the conversation up to and including that answer.
+- From an answer, everything up to and including it.
 - From one of your messages, what came before; your message goes back in the input box to change and send again.
 
 Background processes are not copied. You can't fork while the agent is working. In the list, a fork has a branch icon; point at it to see what it was forked from. Deleting the original leaves the fork.
 
 Merging back is ordinary git; there is no merge button.
+
+## Rewind a session to a message
+
+**Rewind to here** (the arrow icon) cuts the session back to that message, in place. Rewinding to an answer keeps it; rewinding to your message puts it back in the input box.
+
+It offers to put back what the agent's write and edit tools changed since. A file changed after the agent wrote it (by you, another session or a command) is only overwritten if you tick it. Changes made by commands (a build, `git`) aren't tracked and stay, as do folders and files over 16 MB. You can't rewind while the agent works or in a read-only session.
 
 ## Read-only sessions
 
@@ -45,13 +51,13 @@ A **Read-only** badge in the header marks a fork that shares its folder. Its age
 
 ## Sessions sharing a folder
 
-Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn writes files or runs commands that may change them, another's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
+Several sessions can work in one folder. Only one edits at a time: while one session's turn writes files or runs commands that may change them, another's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
 
-When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, wherever it was switched. Both notes survive a restart: changes not yet told, and a branch switched while Haruspex was closed, are told on the next turn.
+When a session's turn changes files, the other sessions there are told at the start of their next turn which files changed and by whom, so they re-read them; the note shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, wherever it was switched. Both notes survive a restart.
 
 ## When a session's folder is gone
 
-If a session's folder was deleted, moved or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes forward; a folder gone mid-turn shows when the turn ends.
+If a session's folder was deleted, moved or is on an unmounted drive, it shows **Folder not found** with the path. You can still read it, but nothing runs. Haruspex checks when you open or switch to the session, and as each turn ends.
 
 - **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
 - **Delete session** deletes it.
@@ -60,17 +66,17 @@ Haruspex never recreates the missing folder.
 
 ## Delete a worktree session
 
-Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you're told why. Its branch is always kept. When the last worktree goes, the empty `<project>-worktrees` folder goes with it.
+Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you're told why. Its branch is always kept.
 
 ## Move a session to its own window
 
-**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It works only while the session is idle. Unsent text and images in the input box go with it, both ways.
+**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It works only while the session is idle; unsent text and images go with it, both ways.
 
-The window shows that one session, without the list. The status badge stays in the main window. `F2` and `F3` work there as in the main window.
+The window shows that one session, without the list. `F2` and `F3` work there too.
 
 - **⇤ Re-attach** puts it back as a tab in the main window and closes the window (also only when idle).
-- Commands that need a terminal still open in a Shell tab in the main window, which comes to the front. **Go to shell**, **Cancel** and **Stop** work as in the tab.
+- Commands that need a terminal open in a Shell tab in the main window. **Go to shell**, **Cancel** and **Stop** work as in the tab.
 - Forks and `/new` made there open as tabs in the main window.
-- Closing the window is like closing the tab: it stops the agent and the background processes, asking first if any run. Closing the main window closes these windows too.
+- Closing the window is like closing the tab: it stops the agent and background processes, asking first if any run. Closing the main window closes it too.
 
-A session is open in one window at a time. In the list, a session with its own window shows **⧉**; clicking it brings that window to the front, and it can't be deleted until that window is closed.
+A session is open in one window at a time. In the list, one with its own window shows **⧉**; click it to bring that window forward. It can't be deleted until that window closes.

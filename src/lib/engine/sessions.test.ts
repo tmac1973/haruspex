@@ -29,7 +29,17 @@ function session(id: string) {
 		rename: vi.fn(async (t: string) => void (s.title = t)),
 		setEffort: vi.fn(async (e: string | null) => void (s.effort = e)),
 		setBackend: vi.fn(async (b: unknown) => void (s.backend = b)),
-		stopBackground: vi.fn(async (p: string) => void s.stopped.push(p))
+		stopBackground: vi.fn(async (p: string) => void s.stopped.push(p)),
+		messages: [{}, {}, {}, {}] as unknown[],
+		planRewind: vi.fn(async (index: number) => ({ at: index, files: [] })),
+		rewind: vi.fn(async (index: number) => {
+			s.messages = s.messages.slice(0, index);
+			return {
+				restored: ['a.ts'],
+				skipped: [{ shown: 'b.ts', reason: 'changed' }],
+				prefill: { text: 'again', images: [] }
+			};
+		})
 	};
 	return s;
 }
@@ -63,6 +73,39 @@ describe('session controls', () => {
 			await dispatchSession({ type: 'session.fork', id: 'a', index: 2, mode: 'worktree' })
 		).toEqual({ id: 'f', prefill: 'try again' });
 		expect(mocks.forkSession).toHaveBeenCalledWith('a', 2, 'worktree');
+	});
+
+	it('rewinds an open session in place, putting files back unless told not to', async () => {
+		const s = session('a');
+		mocks.open = [s];
+		expect(await dispatchSession({ type: 'session.rewind', id: 'a', index: 2 })).toEqual({
+			messages: 2,
+			cut: 2,
+			restored: ['a.ts'],
+			skipped: [{ shown: 'b.ts', reason: 'changed' }],
+			prefill: 'again'
+		});
+		expect(s.rewind).toHaveBeenCalledWith(2, { restoreFiles: true, overwrite: undefined });
+		await dispatchSession({
+			type: 'session.rewind',
+			id: 'a',
+			index: 1,
+			restoreFiles: false,
+			overwrite: ['b.ts']
+		});
+		expect(s.rewind).toHaveBeenLastCalledWith(1, { restoreFiles: false, overwrite: ['b.ts'] });
+	});
+
+	it('says what a rewind would do without doing it, and needs the session open', async () => {
+		const s = session('a');
+		mocks.open = [s];
+		expect(
+			await dispatchSession({ type: 'session.rewind', id: 'a', index: 3, dryRun: true })
+		).toEqual({ at: 3, files: [] });
+		expect(s.rewind).not.toHaveBeenCalled();
+		await expect(dispatchSession({ type: 'session.rewind', id: 'b', index: 0 })).rejects.toThrow(
+			'not open'
+		);
 	});
 
 	it('renames an open session, or a saved one no window has', async () => {

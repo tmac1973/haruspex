@@ -20,6 +20,8 @@ import type { FileNotices } from '#lib/ipc/gen/FileNotices.ts';
 import type { WorktreeRemoval } from '#lib/ipc/gen/WorktreeRemoval.ts';
 import { listCodeSessions, type CodeSessionSummary } from '#lib/code/db.ts';
 import { logDebug } from '#lib/debugLog.ts';
+import { turnCheckpoints } from '#lib/code/checkpoints.ts';
+import { ioRoot } from '#lib/code/paths.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** What a write is told while another session has the folder. */
@@ -50,10 +52,19 @@ export function createWriteGuard(opts: {
 	/** The WSL distro `root` is in: the same path in another distro is another folder. */
 	wslDistro?: string | null;
 	title: () => string;
+	/**
+	 * How many messages the thread held when the turn began: the turn's file
+	 * checkpoints are saved under it (`code/checkpoints.ts`). None: no checkpoints.
+	 */
+	checkpointAt?: number;
 }): TurnWriteGuard {
 	const wslDistro = opts.wslDistro ?? null;
 	let held = false;
 	const files = new Set<string>();
+	const checkpoints =
+		opts.checkpointAt === undefined
+			? null
+			: turnCheckpoints(opts.sessionId, opts.checkpointAt, ioRoot(opts.root, wslDistro));
 	return {
 		async acquire() {
 			if (held) return null;
@@ -76,6 +87,7 @@ export function createWriteGuard(opts: {
 		changed(paths) {
 			for (const p of paths) files.add(absolutePath(opts.root, p));
 		},
+		...(checkpoints ?? {}),
 		async finish() {
 			try {
 				if (files.size > 0) {

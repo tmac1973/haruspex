@@ -989,10 +989,28 @@ async function runTool(
 	if (!guard) return reg.execute(coerced, ctx);
 	const refusal = await guard.acquire();
 	if (refusal) return toolResult(toolError(refusal));
+	const named = namedFiles(name, coerced);
+	await guard.beforeWrite?.(named);
 	const before = new Set(ctx.filesWrittenThisTurn);
 	const out = await reg.execute(coerced, ctx);
-	guard.changed(changedFiles(name, coerced, out, before, ctx.filesWrittenThisTurn));
+	const changed = changedFiles(name, coerced, out, before, ctx.filesWrittenThisTurn);
+	guard.changed(changed);
+	await guard.afterWrite?.([...new Set([...named, ...changed])]);
 	return out;
+}
+
+/**
+ * The files a write tool's arguments name, before it runs: what a file
+ * checkpoint saves. A tool that picks its own path is seen only afterwards.
+ */
+export function namedFiles(name: string, args: Record<string, unknown>): string[] {
+	if (name === 'make_asset' && typeof args.path === 'string') {
+		if (args.kind === 'transition') return transitionFiles(args.path);
+		if (args.kind === 'texture') return textureFiles(args.path, args.variants);
+	}
+	return ['path', 'from', 'to']
+		.map((k) => args[k])
+		.filter((v): v is string => typeof v === 'string' && v.trim() !== '');
 }
 
 /**
