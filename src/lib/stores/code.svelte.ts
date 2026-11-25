@@ -194,8 +194,6 @@ export class CodeSession implements CodeSessionView {
 	backend = $state<BackendOverride | null>(null);
 	/** Null follows the global reasoning effort. */
 	effort = $state<string | null>(null);
-	/** The specialist entry ids it offers; null: the ones on by default. */
-	specialists = $state<string[] | null>(null);
 	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
 	helpers = $state<string[] | null>(null);
 
@@ -326,7 +324,6 @@ export class CodeSession implements CodeSessionView {
 		this.title = isUnsetTitle(record.title) ? '' : record.title;
 		this.backend = record.backend;
 		this.effort = record.reasoning_effort;
-		this.specialists = record.specialists;
 		this.helpers = record.helpers;
 		// A new session, or a fork at its first message, stores an empty thread,
 		// which decodes as null: that is an empty session, not a broken one.
@@ -730,18 +727,6 @@ export class CodeSession implements CodeSessionView {
 		}
 	};
 
-	/** Null puts the session back on the defaults. Applies from the next turn. */
-	setSessionSpecialists = async (ids: string[] | null): Promise<void> => {
-		const prev = this.specialists;
-		this.specialists = ids;
-		try {
-			await updateCodeSessionMeta(this.id, { specialists: ids });
-		} catch (e) {
-			this.specialists = prev;
-			throw e;
-		}
-	};
-
 	/** Null puts the session back on the Settings switches. Applies from the next turn. */
 	setSessionHelpers = async (ids: string[] | null): Promise<void> => {
 		const prev = this.helpers;
@@ -983,7 +968,6 @@ export class CodeSession implements CodeSessionView {
 				},
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
-				specialists: this.specialists ? [...this.specialists] : null,
 				helpers: this.helpers ? [...this.helpers] : null,
 				readOnly: this.readOnly,
 				remote: this.remote,

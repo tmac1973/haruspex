@@ -29,7 +29,6 @@ const ORDER = [
 	'code-sessions',
 	'code-subtasks',
 	'code-windows',
-	'specialists',
 	'helpers',
 	'3d-helper',
 	'web-preview',

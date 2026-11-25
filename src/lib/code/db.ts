@@ -5,8 +5,7 @@
  * session store has to tell "no sessions" from "the save did not happen",
  * since the thread is written after every turn to survive a power cut.
  *
- * The translations done here are the backend and the specialist and helper
- * lists: Rust
+ * The translations done here are the backend and the helper list: Rust
  * stores them as opaque JSON, callers deal in `BackendOverride` and a list
  * of ids. The thread stays a string; it is
  * `#lib/code/session.ts`'s to encode and decode.
@@ -20,11 +19,9 @@ import type { CodeLocation } from '#lib/ipc/gen/CodeLocation.ts';
 
 export type { CodeSessionSummary, CodeLocation };
 
-/** A session row with its backend and specialists decoded. */
-export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'specialists' | 'helpers'> & {
+/** A session row with its backend and helpers decoded. */
+export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'helpers'> & {
 	backend: BackendOverride | null;
-	/** The specialist entry ids it offers; null: the ones on by default. */
-	specialists: string[] | null;
 	/** The helper ids it offers; null: the ones on in Settings → Code → Helpers. */
 	helpers: string[] | null;
 };
@@ -37,8 +34,6 @@ export interface CodeSessionMetaPatch {
 	title?: string;
 	backend?: BackendOverride | null;
 	effort?: string | null;
-	/** Null puts the session back on the specialists marked on by default. */
-	specialists?: string[] | null;
 	/** Null puts the session back on the helpers switched on in Settings. */
 	helpers?: string[] | null;
 }
@@ -71,7 +66,6 @@ function toRecord(row: CodeSessionRow): CodeSessionRecord {
 	return {
 		...row,
 		backend: decodeBackend(row.backend),
-		specialists: decodeIds(row.specialists, 'specialist'),
 		helpers: decodeIds(row.helpers, 'helper')
 	};
 }
@@ -205,9 +199,6 @@ export function updateCodeSessionMeta(id: string, patch: CodeSessionMetaPatch): 
 		wire.backend = patch.backend === null ? null : JSON.stringify(patch.backend);
 	}
 	if (patch.effort !== undefined) wire.effort = patch.effort;
-	if (patch.specialists !== undefined) {
-		wire.specialists = patch.specialists === null ? null : JSON.stringify(patch.specialists);
-	}
 	if (patch.helpers !== undefined) {
 		wire.helpers = patch.helpers === null ? null : JSON.stringify(patch.helpers);
 	}

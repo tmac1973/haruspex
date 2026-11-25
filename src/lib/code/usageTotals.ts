@@ -2,8 +2,7 @@
  * A Code session's running count of tokens and cost: every model call its
  * agent and its sub-agents (`delegate`, in a turn or in the background) make,
  * summed across turns and saved with the thread (see
- * `CodeSessionSnapshot.usage`). Specialists and compaction calls are not
- * counted.
+ * `CodeSessionSnapshot.usage`). Compaction calls are not counted.
  *
  * Cost is known only for OpenRouter: the price it reports with each call,
  * or, when a call carries none, one worked out from the model's catalogue

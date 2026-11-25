@@ -270,11 +270,6 @@ export interface ToolContext {
 	/** The Code session's reasoning effort, for the subtasks it starts. Null follows Settings. */
 	codeEffort?: string | null;
 	/**
-	 * The Code tab session's specialist entry ids (`ask_specialist`). Null:
-	 * the ones on by default. Undefined outside the Code tab.
-	 */
-	codeSpecialists?: string[] | null;
-	/**
 	 * Set on the tools of a subtask (`delegate`'s child agent): it may not
 	 * start subtasks of its own, ask the user anything, or leave anything
 	 * running.
@@ -396,8 +391,6 @@ export interface ToolRegistration {
 		/** Checking and cancelling background tasks. Only for a Chat or Code turn
 		 *  whose owner has started one. */
 		| 'tasks'
-		/** `ask_specialist`: the Code tab, when the session has a specialist on. */
-		| 'specialist'
 		/** `propose_job`: drafts a job for the user to save and run. Interactive
 		 *  Chat and Code-tab turns, from this computer. */
 		| 'job-proposal'

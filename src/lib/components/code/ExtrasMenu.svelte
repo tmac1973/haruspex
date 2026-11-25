@@ -1,16 +1,11 @@
 <script lang="ts">
 	/**
-	 * The session header's Extras menu: which specialists (Settings → Code →
-	 * Specialists, `ask_specialist`) and helpers (Settings → Code → Helpers)
-	 * this session offers its agent. One menu for both, to save room in the
-	 * header. Hidden while there are neither. Applies from the next turn.
+	 * The session header's Extras menu: which helpers (Settings → Code →
+	 * Helpers) this session offers its agent. Hidden while there are none.
+	 * Applies from the next turn.
 	 */
 	import { helpers, sessionHelpers } from '#lib/helpers/registry.ts';
 	import '#lib/helpers/index.ts';
-	import { specialistEntries } from '#lib/specialists/entries.ts';
-	import { specialistKind } from '#lib/specialists/kinds.ts';
-	import '#lib/specialists/kinds/index.ts';
-	import { sessionSpecialists } from '#lib/specialists/session.ts';
 	import type { CodeSessionView } from '#lib/code/sessionView.ts';
 	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -20,51 +15,34 @@
 
 	// Read live so the menu follows Settings → Code.
 	const settings = $derived(getLiveSettings());
-	const entries = $derived.by(() => {
-		void settings;
-		return specialistEntries();
-	});
-	const onIds = $derived.by(() => {
-		void settings;
-		return new Set(sessionSpecialists(session.specialists ?? null).map((e) => e.id));
-	});
 	const helperList = helpers();
 	const helpersOn = $derived.by(() => {
 		void settings;
 		return new Set(sessionHelpers(session.helpers ?? null).map((h) => h.id));
 	});
-	const count = $derived(onIds.size + helpersOn.size);
-	const custom = $derived(
-		(session.specialists ?? null) !== null || (session.helpers ?? null) !== null
-	);
+	const count = $derived(helpersOn.size);
+	const custom = $derived((session.helpers ?? null) !== null);
 
 	let open = $state(false);
 	let wrap = $state<HTMLElement>();
 
-	async function store(kind: 'specialists' | 'helpers', ids: string[] | null) {
+	async function store(ids: string[] | null) {
 		try {
-			if (kind === 'specialists') await session.setSessionSpecialists?.(ids);
-			else await session.setSessionHelpers?.(ids);
+			await session.setSessionHelpers?.(ids);
 		} catch (e) {
-			showToast(`Couldn't change the ${kind}: ${errMessage(e)}`, { kind: 'error' });
+			showToast(`Couldn't change the helpers: ${errMessage(e)}`, { kind: 'error' });
 		}
-	}
-
-	function toggleSpecialist(id: string, on: boolean) {
-		const next = entries.filter((e) => (e.id === id ? on : onIds.has(e.id))).map((e) => e.id);
-		void store('specialists', next);
 	}
 
 	function toggleHelper(id: string, on: boolean) {
 		const next = helperList
 			.filter((h) => (h.id === id ? on : helpersOn.has(h.id)))
 			.map((h) => h.id);
-		void store('helpers', next);
+		void store(next);
 	}
 
 	async function useDefaults() {
-		if (session.specialists !== null) await store('specialists', null);
-		if (session.helpers !== null) await store('helpers', null);
+		if (session.helpers !== null) await store(null);
 	}
 
 	function closeOutside(e: MouseEvent) {
@@ -74,41 +52,18 @@
 
 <svelte:window onclick={closeOutside} />
 
-{#if entries.length > 0 || helperList.length > 0}
+{#if helperList.length > 0}
 	<span class="wrap" bind:this={wrap}>
 		<button
 			class="pick"
 			aria-expanded={open}
-			title="Specialists and helpers the agent can hand a job to. Applies from the next message."
+			title="Helpers the agent can use. Applies from the next message."
 			onclick={() => (open = !open)}
 		>
 			Extras: {count} ▾
 		</button>
 		{#if open}
 			<div class="panel" role="dialog" aria-label="Extras">
-				{#if entries.length > 0}
-					<div
-						class="heading"
-						title="Small models tuned for one job (Settings → Code → Specialists)."
-					>
-						Specialists
-					</div>
-					{#each entries as e (e.id)}
-						{@const writes = specialistKind(e.kind)?.writes ?? false}
-						<label
-							class="item"
-							title={writes && session.readOnly ? 'This session is read-only.' : undefined}
-						>
-							<input
-								type="checkbox"
-								checked={onIds.has(e.id)}
-								disabled={session.busy || (writes && session.readOnly)}
-								onchange={(ev) => toggleSpecialist(e.id, ev.currentTarget.checked)}
-							/>
-							<span>{e.name}</span>
-						</label>
-					{/each}
-				{/if}
 				{#if helperList.length > 0}
 					<div class="heading" title="Tools that run without a model (Settings → Code → Helpers).">
 						Helpers
@@ -131,7 +86,7 @@
 				<button
 					class="defaults"
 					disabled={session.busy || !custom}
-					title="The specialists marked On by default and the helpers switched on, in Settings → Code."
+					title="The helpers switched on in Settings → Code → Helpers."
 					onclick={() => void useDefaults()}
 				>
 					Use defaults

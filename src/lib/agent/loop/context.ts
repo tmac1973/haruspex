@@ -153,7 +153,6 @@ export interface LoopContext {
 	codeRemote: boolean;
 	codeWriteGuard?: ToolContext['codeWriteGuard'];
 	codeEffort: string | null;
-	codeSpecialists?: string[] | null;
 	subtask?: ToolContext['subtask'];
 	subtasksStartedThisTurn: { count: number };
 	/** How many `haruspex_feedback` reports this turn has made (capped). */
@@ -303,7 +302,6 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeRemote: options.codeRemote ?? false,
 		codeWriteGuard: options.codeWriteGuard,
 		codeEffort: options.codeEffort ?? null,
-		codeSpecialists: options.codeSpecialists,
 		subtask: options.subtask,
 		subtasksStartedThisTurn: { count: 0 },
 		feedbackThisTurn: { count: 0 },

@@ -32,7 +32,6 @@ import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
-import { sessionSpecialists } from '#lib/specialists/session.ts';
 import { helperForTool, sessionHelpers } from '#lib/helpers/registry.ts';
 import { cameraAccessRefusal, camerasUsable } from '#lib/agent/tools/_cameraGate.ts';
 
@@ -125,8 +124,6 @@ interface ToolFilterOpts {
 	codeReadOnly: boolean;
 	/** A Code turn started from another computer: no hand-off to a Shell tab. */
 	codeRemote: boolean;
-	/** A Code tab session with at least one specialist on: `ask_specialist`. */
-	specialists: boolean;
 	/** The helper ids whose tools the turn offers (`ToolSchemaOpts.codeHelpers`). */
 	helpers: Set<string>;
 	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
@@ -373,7 +370,6 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 	return (
 		name === 'delegate' ||
 		name === 'make_asset' ||
-		reg.category === 'specialist' ||
 		helperForTool(name) !== undefined ||
 		SONG_TOOLS.has(name) ||
 		reg.category === 'speech' ||
@@ -394,8 +390,6 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	if (reg.category === 'tasks') {
 		return !!opts.taskOwner && opts.interactive && getTasks(opts.taskOwner).length > 0;
 	}
-	// A session's specialists are the user's to turn on (the Code tab header).
-	if (reg.category === 'specialist' && !opts.specialists) return false;
 	// A helper's tools: the Code tab only, while the session has it on (by
 	// default, its switch in Settings → Code → Helpers), and not the writing
 	// ones in a read-only session.
@@ -443,11 +437,6 @@ export interface ToolSchemaOpts {
 	codeReadOnly?: boolean;
 	/** A Code turn started from another computer: `open_in_shell` is left out. */
 	codeRemote?: boolean;
-	/**
-	 * The Code tab session's specialist entry ids; null: the ones on by
-	 * default. Undefined outside the Code tab, which offers none.
-	 */
-	codeSpecialists?: string[] | null;
 	/**
 	 * The Code tab session's helper ids; null or undefined: the ones switched
 	 * on in Settings → Code → Helpers.
@@ -535,8 +524,6 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		codeMode: opts.codeMode ?? false,
 		codeReadOnly: opts.codeReadOnly ?? false,
 		codeRemote: opts.codeRemote ?? false,
-		specialists:
-			opts.codeSpecialists !== undefined && sessionSpecialists(opts.codeSpecialists).length > 0,
 		helpers: new Set(sessionHelpers(opts.codeHelpers).map((h) => h.id)),
 		subtask: opts.subtask ?? false,
 		hasEmail: hasEnabledEmailAccount(),

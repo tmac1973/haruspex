@@ -3,8 +3,6 @@ import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, isCodeWriteTool } from './_codeTabProfile';
 import { NOTEBOOK_TOOLS } from './notebook';
 
-/** The tab's own tools every turn gets: ask_specialist also needs a specialist on (ask-specialist.test.ts). */
-const ALWAYS_TAB_ONLY = [...CODE_TAB_ONLY].filter((t) => t !== 'ask_specialist');
 import type { ToolDefinition } from '#lib/api.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { invoke } from '@tauri-apps/api/core';
@@ -51,7 +49,7 @@ describe('tool profiles over (codeMode, shellMode)', () => {
 		expect(names(true, false)).toEqual(
 			[
 				...CODE_TOOLS,
-				...ALWAYS_TAB_ONLY,
+				...CODE_TAB_ONLY,
 				'fs_read_image',
 				'save_generated',
 				'fs_delete',
@@ -151,7 +149,7 @@ describe('a read-only Code session', () => {
 			.map((s) => s.function.name)
 			.sort();
 		expect(n).toEqual(
-			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'fs_read_image', 'show_preview', ...NOTEBOOK_TOOLS]
+			[...CODE_TOOLS, ...CODE_TAB_ONLY, 'fs_read_image', 'show_preview', ...NOTEBOOK_TOOLS]
 				.filter((t) => !isCodeWriteTool(t))
 				.sort()
 		);

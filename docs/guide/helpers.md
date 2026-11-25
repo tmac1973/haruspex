@@ -5,11 +5,11 @@ description: Helpers in the Code tab — tools the coding agent runs without a m
 
 # Helpers
 
-A helper is a tool the Code tab's agent runs with no model behind it. It does one job the agent can't do well by itself, such as looking at a 3D model it made, and hands back what it found. For small models that do a narrow job, see the `specialists` page.
+A helper is a tool the Code tab's agent runs with no model behind it. It does one job the agent can't do well by itself, such as looking at a 3D model it made, and hands back what it found.
 
 ## Turn a helper on
 
-Settings → Code → Helpers has a switch for each helper, all off but Web preview. A session follows these switches until you change its own: **Extras: N** in the session's header lists the helpers (and specialists) with a checkbox each, and **Use defaults** goes back to the switches. A change applies from the next message. Hover a helper for what it does.
+Settings → Code → Helpers has a switch for each helper, all off but Web preview. A session follows these switches until you change its own: **Extras: N** in the session's header lists the helpers with a checkbox each, and **Use defaults** goes back to the switches. A change applies from the next message. Hover a helper for what it does.
 
 Helpers work in the Code tab only. The 3D helper needs a session that can write; Search and Web preview also work read-only.
 
@@ -62,6 +62,6 @@ Its `show_preview` tool opens an HTML page from the session's folder in a previe
 - Search matches words, not meaning or code structure: it knows nothing of calls, types or imports, and a question worded unlike the code can miss.
 - It can't tell whether a motion looks good, only what's physically wrong. You can play the clips in the file's 3D view (**Animation**).
 - It finds knees and elbows by name only (knee, shin, elbow, forearm and so on), and measures each to the pivot or mesh under it.
-- It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
+- It doesn't check a Three.js app with its own renderer.
 - It doesn't fix problems, rig or skin a character, unwrap UVs or make lower-detail copies.
 - Not in Chat, the Shell or subtasks. The 3D models job uses the 3D helper's checks itself; see the `3d-models` page.

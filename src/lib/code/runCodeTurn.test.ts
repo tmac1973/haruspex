@@ -101,13 +101,13 @@ beforeEach(() => {
 });
 
 describe('runCodeTurn', () => {
-	it("hands the session's specialists to the loop and its tool list", async () => {
+	it("hands the session's helpers to the loop", async () => {
 		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
-		await runCodeTurn(opts({ specialists: ['glb-1'] }));
-		expect(loopOptions().codeSpecialists).toEqual(['glb-1']);
+		await runCodeTurn(opts({ helpers: ['three'] }));
+		expect(loopOptions().codeHelpers).toEqual(['three']);
 		await runCodeTurn(opts());
-		// Unset: the ones on by default, which is not "none".
-		expect((mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions).codeSpecialists).toBeNull();
+		// Unset: the ones switched on in Settings, which is not "none".
+		expect((mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions).codeHelpers).toBeNull();
 	});
 
 	it('runs the code profile in the project folder', async () => {

@@ -23,7 +23,6 @@ interface Row {
 	worktree: string | null;
 	notices_seen_at: number | null;
 	agent_branch: string | null;
-	specialists: string | null;
 }
 
 const rows = new Map<string, Row>();
@@ -78,8 +77,7 @@ export const CODE_DB: Record<string, Handler> = {
 			read_only: false,
 			worktree: a?.worktree ? `${String(a?.root ?? '')}-worktrees/session` : null,
 			notices_seen_at: null,
-			agent_branch: null,
-			specialists: null
+			agent_branch: null
 		};
 		rows.set(r.id, r);
 		return { ...r };
@@ -110,7 +108,6 @@ export const CODE_DB: Record<string, Handler> = {
 		if (typeof patch.title === 'string') r.title = patch.title;
 		if ('backend' in patch) r.backend = (patch.backend as string | null) ?? null;
 		if ('effort' in patch) r.reasoning_effort = (patch.effort as string | null) ?? null;
-		if ('specialists' in patch) r.specialists = (patch.specialists as string | null) ?? null;
 		return null;
 	},
 	code_session_delete: (a) => {

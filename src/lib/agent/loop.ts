@@ -211,8 +211,6 @@ export interface AgentLoopOptions {
 	codeWriteGuard?: CodeWriteGuard;
 	/** The session's effort, for the subtasks it starts; see ToolContext.codeEffort. */
 	codeEffort?: string | null;
-	/** The Code session's specialists; see ToolContext.codeSpecialists. */
-	codeSpecialists?: string[] | null;
 	/** The Code session's helpers; see ToolSchemaOpts.codeHelpers. */
 	codeHelpers?: string[] | null;
 	/** The turn is a subtask's; see ToolContext.subtask. */

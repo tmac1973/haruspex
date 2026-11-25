@@ -92,8 +92,6 @@ export interface CodeTurnOptions {
 	backend: BackendOverride | null;
 	/** Null follows the global setting. */
 	effort: string | null;
-	/** The specialist entry ids the session offers; null: the ones on by default. */
-	specialists?: string[] | null;
 	/** The helper ids the session offers; null: the ones on in Settings. */
 	helpers?: string[] | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
@@ -241,7 +239,6 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 			codeReadOnly: o.readOnly ?? false,
 			codeRemote: o.remote ?? false,
 			codeSessionId: o.sessionId,
-			codeSpecialists: o.specialists ?? null,
 			codeHelpers: o.helpers ?? null,
 			visionSupported: descriptor.vision,
 			interactive: true,
@@ -289,7 +286,6 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeRemote: o.remote ?? false,
 					codeWriteGuard: o.writeGuard,
 					codeEffort: o.effort,
-					codeSpecialists: o.specialists ?? null,
 					codeHelpers: o.helpers ?? null,
 					onSubtaskUpdate: o.onSubtaskUpdate,
 					onSubtaskUsage: o.onSubtaskUsage,

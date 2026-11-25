@@ -1,8 +1,7 @@
 /**
  * Everything a tool does with GLB bytes before it reports: load, inspect,
  * normalise when asked, check the clips, draw the sheet (or one clip's
- * motion sheet) and write the report's text. The GLB specialist's check and
- * `check_3d` both come through here.
+ * motion sheet) and write the report's text. `check_3d` comes through here.
  */
 import type { AnimationClip } from 'three';
 import { formatReport } from '#lib/glb/format.ts';

@@ -2606,30 +2606,34 @@ fn code_session_meta_patch_sets_clears_and_leaves_alone() {
 }
 
 #[test]
-fn code_session_specialists_start_unset_are_patched_and_follow_a_fork() {
+fn code_session_dead_specialists_column_is_left_alone() {
     let db = test_db();
-    let dir = TempDir::new("specialists");
+    let dir = TempDir::new("dead-column");
     let s = db.create_code_session(dir.path(), None, None).unwrap();
-    // Unset: the entries marked on by default.
-    assert_eq!(s.specialists, None);
-
+    // A database from before specialists were removed still has the column
+    // and its data; sessions read, patch and fork round it.
+    db.conn()
+        .execute(
+            "UPDATE code_sessions SET specialists = '[\"a\"]' WHERE id = ?1",
+            params![s.id],
+        )
+        .unwrap();
     let patch: CodeSessionMetaPatch =
-        serde_json::from_str(r#"{"specialists":"[\"a\",\"b\"]"}"#).unwrap();
+        serde_json::from_str(r#"{"specialists":null,"title":"Assets"}"#).unwrap();
     db.update_code_session_meta(&s.id, &patch).unwrap();
     let row = db.load_code_session(&s.id).unwrap();
-    assert_eq!(row.specialists.as_deref(), Some(r#"["a","b"]"#));
-
-    // A rename leaves the list alone.
-    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"title":"Assets"}"#).unwrap();
-    db.update_code_session_meta(&s.id, &patch).unwrap();
-    assert!(db.load_code_session(&s.id).unwrap().specialists.is_some());
-
+    assert_eq!(row.title, "Assets");
     let fork = db.fork_code_session(&s.id, 0).unwrap();
-    assert_eq!(fork.specialists.as_deref(), Some(r#"["a","b"]"#));
-
-    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"specialists":null}"#).unwrap();
-    db.update_code_session_meta(&s.id, &patch).unwrap();
-    assert_eq!(db.load_code_session(&s.id).unwrap().specialists, None);
+    assert_eq!(fork.root, row.root);
+    let kept: Option<String> = db
+        .conn()
+        .query_row(
+            "SELECT specialists FROM code_sessions WHERE id = ?1",
+            params![s.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept.as_deref(), Some(r#"["a"]"#));
 }
 
 #[test]
@@ -2644,14 +2648,6 @@ fn code_session_helpers_start_unset_are_patched_apart_and_follow_a_fork() {
     db.update_code_session_meta(&s.id, &patch).unwrap();
     let row = db.load_code_session(&s.id).unwrap();
     assert_eq!(row.helpers.as_deref(), Some(r#"["three"]"#));
-
-    // Specialists are a column of their own.
-    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"specialists":"[]"}"#).unwrap();
-    db.update_code_session_meta(&s.id, &patch).unwrap();
-    assert_eq!(
-        db.load_code_session(&s.id).unwrap().helpers.as_deref(),
-        Some(r#"["three"]"#)
-    );
 
     let fork = db.fork_code_session(&s.id, 0).unwrap();
     assert_eq!(fork.helpers.as_deref(), Some(r#"["three"]"#));
