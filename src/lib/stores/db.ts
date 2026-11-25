@@ -275,6 +275,22 @@ export async function dbLoadMessages(id: string): Promise<ChatMessage[]> {
 	return full ? full.messages.map(dbMessageToChatMessage) : [];
 }
 
+/**
+ * Keep a conversation's first `keep` messages and delete the rest (Edit and
+ * Retry). Also lowers the memory watermark, so memory reads the turns sent
+ * after the cut.
+ */
+export async function dbTruncateMessages(conversationId: string, keep: number): Promise<void> {
+	if (!available) return;
+	await dbMutate({
+		cmd: 'db_truncate_messages',
+		args: { conversationId, keep },
+		category: 'db',
+		onError: 'dbTruncateMessages failed',
+		ctx: { conversationId }
+	});
+}
+
 export async function dbReplaceMessages(
 	conversationId: string,
 	messages: ChatMessage[],

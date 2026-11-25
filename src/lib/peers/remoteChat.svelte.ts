@@ -192,6 +192,12 @@ export class RemoteChatSource implements ChatSource {
 		await this.op({ type: 'chat.retry', id: this.chatId });
 	};
 
+	rewind = async (keep: number): Promise<boolean> => {
+		// Notes a `/name` answered with live only here, after the messages.
+		this.notes = [];
+		return (await this.op({ type: 'chat.rewind', id: this.chatId, keep })) !== undefined;
+	};
+
 	setMemoryEnabled = async (_id: string, enabled: boolean): Promise<void> => {
 		await this.op({ type: 'chat.memory', id: this.chatId, enabled });
 	};

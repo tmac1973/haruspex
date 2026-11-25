@@ -11,7 +11,7 @@
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
 	import { hasStreamingAnswer } from '#lib/agent/thinkStream.ts';
-	import { messageText } from '#lib/api.ts';
+	import { messageText, type ChatMessage as Message } from '#lib/api.ts';
 	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
 	import { isTaskNotice, taskNoticeTitle } from '#lib/tasks/noticeText.ts';
 	import { localChatSource } from '#lib/stores/chat.svelte.ts';
@@ -40,7 +40,11 @@
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { createPendingAudio } from '#lib/utils/pendingAudio.svelte.ts';
-	import { withAttachedAudio } from '#lib/audio/attached.ts';
+	import {
+		splitAttachedAudio,
+		withAttachedAudio,
+		type AttachedAudio
+	} from '#lib/audio/attached.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
 	import { conversationHtml, conversationMarkdown } from '#lib/share/conversation.ts';
 	import { canEmail, emailMarkdown } from '#lib/share/email.ts';
@@ -54,6 +58,14 @@
 	const can = $derived(source.capabilities);
 
 	let inputText = $state('');
+	/**
+	 * The message Edit put back in the box: sending cuts the conversation
+	 * there first. What the box held before comes back on Cancel.
+	 */
+	let editing = $state<{
+		index: number;
+		before: { text: string; images: string[]; audio: AttachedAudio[] };
+	} | null>(null);
 	let messagesContainer: HTMLDivElement | undefined = $state();
 	let autoScroll = $state(true);
 	let showScrollButton = $state(false);
@@ -91,6 +103,15 @@
 		if (slash.kind === 'handled') {
 			inputText = '';
 			return;
+		}
+		if (editing) {
+			if (!(await source.rewind(editing.index))) {
+				showToast("Couldn't edit that message. Wait for the reply to finish, then send again.", {
+					kind: 'error'
+				});
+				return;
+			}
+			editing = null;
 		}
 		// Clear optimistically so the composer empties the moment the send is
 		// accepted. When the store rejects the send without consuming it (the
@@ -256,6 +277,50 @@
 		history.reset();
 	});
 
+	const activeId = $derived(activeConversation?.id);
+	$effect(() => {
+		void activeId;
+		untrack(() => (editing = null));
+	});
+
+	function imagesOf(msg: Message): string[] {
+		if (typeof msg.content === 'string') return [];
+		return msg.content.flatMap((p) => (p.type === 'image_url' ? [p.image_url.url] : []));
+	}
+
+	/** Edit: the message goes back in the box; sending it cuts the chat there. */
+	function startEdit(index: number) {
+		const msg = activeConversation?.messages[index];
+		if (!msg) return;
+		const before = editing?.before ?? {
+			text: inputText,
+			images: pendingImages.urls,
+			audio: pendingAudio.audio
+		};
+		const { text, audio } = splitAttachedAudio(typedText(messageText(msg.content)));
+		editing = { index, before };
+		inputText = text;
+		pendingImages.set(imagesOf(msg));
+		pendingAudio.set(audio);
+		void tick().then(() => inputEl?.focus());
+	}
+
+	function cancelEdit() {
+		if (!editing) return;
+		const { text, images, audio } = editing.before;
+		editing = null;
+		inputText = text;
+		pendingImages.set(images);
+		pendingAudio.set(audio);
+	}
+
+	/** Retry: cut the last answer and run its turn again. */
+	async function retryAnswer(index: number) {
+		if (await source.rewind(index)) await source.retryLastTurn();
+	}
+
+	const turnBusy = $derived(isGenerating || isCompacting || queuedForStartup);
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (slashMenu?.handleKey(e)) return;
 		if (
@@ -271,6 +336,8 @@
 		}
 		if (e.key === 'Escape' && (isGenerating || queuedForStartup)) {
 			source.cancelGeneration();
+		} else if (e.key === 'Escape' && editing) {
+			cancelEdit();
 		}
 	}
 
@@ -535,6 +602,13 @@
 							elapsedMs={activeConversation.messageStats?.[i]?.elapsedMs}
 							steps={activeConversation.messageSteps[i]}
 							shareTitle={activeConversation.title}
+							onEdit={msg.role === 'user' && !turnBusy ? () => startEdit(i) : undefined}
+							onRetry={msg.role === 'assistant' &&
+							!turnBusy &&
+							i === activeConversation.messages.length - 1 &&
+							activeConversation.messages[i - 1]?.role === 'user'
+								? () => void retryAnswer(i)
+								: undefined}
 						/>
 						{#if activeConversation.messageStops?.[i]}
 							<StopIndicator
@@ -720,6 +794,14 @@
 							</button>
 						</div>
 					{/each}
+				</div>
+			{/if}
+			{#if editing}
+				<div class="editing" data-testid="chat-editing">
+					<span>Sending replaces your earlier message and everything after it.</span>
+					<button class="link-btn" onclick={cancelEdit} title="Put back what the box held (Esc)">
+						Cancel
+					</button>
 				</div>
 			{/if}
 			{#if pendingImages.length || pendingAudio.length}
@@ -1211,6 +1293,22 @@
 		background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
 		outline: 2px dashed var(--accent);
 		outline-offset: -4px;
+	}
+	.editing {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 6px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+	.editing .link-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--accent);
+		cursor: pointer;
+		font-size: inherit;
 	}
 	.attachments {
 		display: flex;

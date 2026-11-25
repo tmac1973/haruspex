@@ -257,6 +257,88 @@ describe('chat store', () => {
 		expect(getActiveConversation()!.title).toBe('hello there');
 	});
 
+	it('Retry: rewind to the question, then the turn runs again', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		const answers = ['first answer', 'second answer'];
+		const seen: string[][] = [];
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
+			seen.push(options.messages.map((m) => `${m.role}:${String(m.content)}`));
+			options.onStreamChunk({ delta: { content: answers.shift()! }, finish_reason: null });
+			options.onComplete();
+		});
+		const { sendMessage, getActiveConversation, rewindConversation, retryLastTurn } =
+			await import('#lib/stores/chat.svelte.ts');
+		await setServerReady();
+
+		await sendMessage('Hello');
+		const conv = getActiveConversation()!;
+		conv.messageStats[1] = {
+			tokensPerSecond: 9,
+			completionTokens: 3,
+			durationMs: 10,
+			elapsedMs: 10
+		};
+
+		// An answer is there, so Retry alone does nothing.
+		await retryLastTurn(conv.id);
+		expect(runAgentLoop).toHaveBeenCalledTimes(1);
+
+		expect(await rewindConversation(conv.id, 1)).toBe(true);
+		expect(conv.messages.map((m) => m.content)).toEqual(['Hello']);
+		expect(conv.messageStats).toEqual({});
+
+		await retryLastTurn(conv.id);
+		expect(conv.messages.map((m) => m.content)).toEqual(['Hello', 'second answer']);
+		// The second run saw the question once, and not the first answer.
+		const second = seen[1].filter((m) => !m.startsWith('system:'));
+		expect(second).toEqual(['user:Hello']);
+	});
+
+	it('Edit: rewind to the message, then the new text is sent in its place', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
+			options.onStreamChunk({ delta: { content: 'ok' }, finish_reason: null });
+			options.onComplete();
+		});
+		const { sendMessage, getActiveConversation, rewindConversation } =
+			await import('#lib/stores/chat.svelte.ts');
+		await setServerReady();
+
+		await sendMessage('one');
+		await sendMessage('two');
+		const conv = getActiveConversation()!;
+		expect(await rewindConversation(conv.id, 2)).toBe(true);
+		await sendMessage('two, changed');
+		expect(conv.messages.map((m) => m.content)).toEqual(['one', 'ok', 'two, changed', 'ok']);
+	});
+
+	it('rewindConversation refuses a count past the end, and a chat whose turn runs', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		let release: (() => void) | undefined;
+		vi.mocked(runAgentLoop).mockImplementation(
+			(options) =>
+				new Promise<void>((resolve) => {
+					release = () => {
+						options.onComplete();
+						resolve();
+					};
+				})
+		);
+		const { sendMessage, getActiveConversation, rewindConversation } =
+			await import('#lib/stores/chat.svelte.ts');
+		await setServerReady();
+
+		const sending = sendMessage('Hello');
+		await vi.waitFor(() => expect(release).toBeDefined());
+		const conv = getActiveConversation()!;
+		expect(await rewindConversation(conv.id, 0)).toBe(false);
+		release!();
+		await sending;
+		expect(await rewindConversation(conv.id, 5)).toBe(false);
+		expect(await rewindConversation(conv.id, 0)).toBe(true);
+		expect(conv.messages).toEqual([]);
+	});
+
 	it('sendMessage ignores empty messages', async () => {
 		const { sendMessage, getConversations } = await import('#lib/stores/chat.svelte.ts');
 

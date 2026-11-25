@@ -5,7 +5,7 @@ description: Drive Code sessions, chats, jobs and settings from a script through
 
 # Remote control from a script
 
-Remote control (see `remote-control`) also takes requests from a script, through the web page's API. Turns run on this computer.
+Remote control (see `remote-control`) also takes requests from a script. Turns run on this computer.
 
 ## Connect
 
@@ -14,14 +14,14 @@ Send the token as `Authorization: Bearer <token>`, and trust the certificate: sa
 - `POST /api/v1/op` with an operation as JSON. The answer is `{"value": …}`, or an error message.
 - `GET /api/v1/events` streams the events named below.
 - `POST /api/v1/upload` with a picture as the body (PNG, JPEG, WebP or GIF, up to 16 MB) answers its `hash`. Needs **Drive**.
-- `POST /api/v1/images` with `{"urls":[…]}` says which image URLs this computer has cached; `GET /api/v1/image/<hash>` returns one.
+- `POST /api/v1/images` with `{"urls":[…]}` says which of them this computer has cached; `GET /api/v1/image/<hash>` returns one.
 - `GET /api/v1/health` needs no token.
 
 ## Code sessions and chats
 
 `{"type":"sessions.list"}`, `session.new` (`root`, and on Windows a `wslDistro` with a Linux `root`; `wsl.distros` lists them), `session.send` (`id`, `text`), `session.get`, `session.stop`, `session.compact`. Chats: `chats.list`, `chats.search` (`query`), `chat.new`, `chat.send`, `chat.get`, `chat.stop`, `chat.continue`, `chat.retry`. Prompts waiting on you: `prompts.list` and `prompts.answer`.
 
-A session's controls: `session.close` (stops its turn and processes; it stays saved), `session.delete` (a worktree it works in stays), `session.fork` (`index` of a message; `mode` `worktree` for its own worktree), `session.rewind` (`index`; cuts it back there in place, putting files back unless `restoreFiles` is false; `overwrite` names changed ones to put back too; `dryRun` lists them), `session.rename`, `session.effort` (`low` to `xhigh`, or null for Settings), `session.model` (`{baseUrl, modelId, apiKeyId}`, or null for Settings) and `session.stopBackground` (`processId`). A chat's: `chat.delete`, `chat.rename`, `chat.memory` (`enabled`), and `chat.folder` (working folder: `path` or null; `id`, else the open chat).
+A session's controls: `session.close` (stops its turn and processes; stays saved), `session.delete` (its worktree stays), `session.fork` (`index` of a message; `mode` `worktree` for its own worktree), `session.rewind` (`index`; cuts it back there in place, putting files back unless `restoreFiles` is false; `overwrite` names changed ones to restore too; `dryRun` lists them), `session.rename`, `session.effort` (`low` to `xhigh`, or null for Settings), `session.model` (`{baseUrl, modelId, apiKeyId}` or null) and `session.stopBackground` (`processId`). A chat's: `chat.delete`, `chat.rename`, `chat.memory` (`enabled`), `chat.folder` (`path` or null; `id`, else the open chat) and `chat.rewind` (`keep`: messages that stay; then `chat.send` or `chat.retry`).
 
 Models: `models.list` names Settings → Inference's model, the saved remote options and the API keys; `models.probe` (`baseUrl`, `apiKeyId`) lists a server's models. Keys go by id, never by value.
 

@@ -17,8 +17,24 @@
 	let {
 		chat,
 		oncontinue,
-		onretry
-	}: { chat: ChatState; oncontinue: () => void; onretry: () => void } = $props();
+		onretry,
+		onedit,
+		onretryanswer
+	}: {
+		chat: ChatState;
+		oncontinue: () => void;
+		onretry: () => void;
+		/** Edit on your message, by its index in `chat.messages`. */
+		onedit?: (index: number) => void;
+		/** Retry on the last answer, by its index. */
+		onretryanswer?: (index: number) => void;
+	} = $props();
+
+	/** Retry is on the last message when it answers the one before it. */
+	const retryable = (i: number) =>
+		i === chat.messages.length - 1 &&
+		chat.messages[i].role === 'assistant' &&
+		chat.messages[i - 1]?.role === 'user';
 
 	/** What a person reads: tool rounds show as their steps instead. */
 	const shown = $derived(
@@ -50,6 +66,27 @@
 				<SearchStep steps={steps(i)} runControls={false} />
 			{/if}
 			<Message message={msg} steps={steps(i)} />
+			{#if !chat.busy && msg.role === 'user' && onedit}
+				<div class="actions">
+					<button
+						class="btn btn-small"
+						title="Put this message back in the input box. Sending it replaces this message and everything after it."
+						onclick={() => onedit(i)}
+					>
+						Edit
+					</button>
+				</div>
+			{:else if !chat.busy && onretryanswer && retryable(i)}
+				<div class="actions">
+					<button
+						class="btn btn-small"
+						title="Drop this answer and ask again."
+						onclick={() => onretryanswer(i)}
+					>
+						Retry
+					</button>
+				</div>
+			{/if}
 		{/if}
 		{#if stopAt(i)}
 			<StopIndicator reason={stopAt(i) as never} disabled={chat.busy} onContinue={oncontinue} />
@@ -111,6 +148,12 @@
 		overflow-y: auto;
 		padding: 12px 16px;
 		min-height: 0;
+	}
+
+	.actions {
+		display: flex;
+		justify-content: flex-end;
+		margin: -4px 0 8px;
 	}
 
 	.failed {

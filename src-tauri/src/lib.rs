@@ -683,6 +683,7 @@ pub fn run() {
             db::code_session_fork,
             db::code_session_set_root,
             db::db_replace_messages,
+            db::db_truncate_messages,
             db::db_create_job,
             db::db_list_jobs,
             db::db_get_job,

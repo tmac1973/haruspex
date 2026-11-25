@@ -197,6 +197,7 @@ export const IPC = {
 	db_set_job_api_key_ref: 'db_set_job_api_key_ref',
 	db_set_job_next_due_at: 'db_set_job_next_due_at',
 	db_set_run_environment: 'db_set_run_environment',
+	db_truncate_messages: 'db_truncate_messages',
 	db_update_job: 'db_update_job',
 	db_update_last_message_steps: 'db_update_last_message_steps',
 	debug_log_append: 'debug_log_append',

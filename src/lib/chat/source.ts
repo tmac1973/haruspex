@@ -67,6 +67,8 @@ export interface ChatSource {
 	continueTurn: () => Promise<boolean>;
 	cancelGeneration: () => void;
 	retryLastTurn: () => Promise<void>;
+	/** Keep the first `keep` messages, for Edit and Retry; false when refused. */
+	rewind: (keep: number) => Promise<boolean>;
 	setMemoryEnabled: typeof Store.setConversationMemoryEnabled;
 	addLocalNote: typeof Store.addLocalNote;
 	dropSteering: typeof Store.dropSteering;

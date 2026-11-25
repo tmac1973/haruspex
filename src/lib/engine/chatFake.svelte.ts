@@ -42,6 +42,7 @@ export const fake = $state({
 	cancelled: [] as string[],
 	continued: [] as string[],
 	retried: [] as string[],
+	rewound: [] as [string, number][],
 	opened: [] as string[],
 	viewed: [] as string[],
 	folders: {} as Record<string, string | null>
@@ -81,6 +82,7 @@ export function reset(): void {
 	fake.cancelled = [];
 	fake.continued = [];
 	fake.retried = [];
+	fake.rewound = [];
 	fake.opened = [];
 	fake.viewed = [];
 	fake.folders = { a: '/home/me/notes' };
@@ -164,6 +166,11 @@ export const chatStore = {
 	},
 	retryLastTurn: async (id: string) => {
 		fake.retried.push(id);
+	},
+	rewindConversation: async (id: string, keep: number) => {
+		if (keep > (fake.conversations.find((c) => c.id === id)?.messages.length ?? 0)) return false;
+		fake.rewound.push([id, keep]);
+		return true;
 	}
 };
 

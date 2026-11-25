@@ -229,6 +229,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'chat.stop':
 		case 'chat.continue':
 		case 'chat.retry':
+		case 'chat.rewind':
 		case 'chat.delete':
 		case 'chat.rename':
 		case 'chat.memory':

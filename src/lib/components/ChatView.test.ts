@@ -10,6 +10,7 @@ import {
 	getLastTurnFailed,
 	hasConversationDraft,
 	retryLastTurn,
+	rewindConversation,
 	sendMessage,
 	takeConversationDraft
 } from '#lib/stores/chat.svelte.ts';
@@ -47,6 +48,7 @@ vi.mock('#lib/stores/chat.svelte.ts', async () => {
 		continueTurn: vi.fn(),
 		cancelGeneration: vi.fn(),
 		retryLastTurn: vi.fn(),
+		rewindConversation: vi.fn(async () => true),
 		isActiveConversationRemembered: vi.fn(() => true),
 		isActiveConversationRemote: vi.fn(() => false),
 		setConversationMemoryEnabled: vi.fn(),
@@ -130,6 +132,7 @@ vi.mock('#lib/stores/chat.svelte.ts', async () => {
 		continueTurn: () => m.continueTurn(),
 		cancelGeneration: () => m.cancelGeneration(),
 		retryLastTurn: () => m.retryLastTurn(),
+		rewind: (keep: number) => (m.rewindConversation as (k: number) => Promise<boolean>)(keep),
 		setMemoryEnabled: (...a: unknown[]) =>
 			(m.setConversationMemoryEnabled as (...a: unknown[]) => unknown)(...a),
 		addLocalNote: (t: string) => m.addLocalNote(t),
@@ -264,6 +267,69 @@ describe('ChatView input history', () => {
 		await fireEvent.keyDown(box, { key: 'ArrowDown' });
 		await fireEvent.keyDown(box, { key: 'ArrowDown' });
 		expect(box.value).toBe('draft');
+	});
+});
+
+describe('ChatView Edit and Retry', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(getActiveConversation).mockReturnValue({
+			...conversation!,
+			messages: [
+				{ role: 'user', content: 'first question' },
+				{ role: 'assistant', content: 'first answer' },
+				{ role: 'user', content: 'second question' },
+				{ role: 'assistant', content: 'second answer' }
+			]
+		} as unknown as ReturnType<typeof getActiveConversation>);
+		vi.mocked(getConversations).mockReturnValue([]);
+		vi.mocked(getErrorMessage).mockReturnValue(null as unknown as string);
+		vi.mocked(getIsGenerating).mockReturnValue(false);
+		vi.mocked(sendMessage).mockResolvedValue(true);
+	});
+
+	it('offers Retry on the last answer only, and runs it again after cutting it', async () => {
+		render(ChatView);
+		const retries = screen.getAllByRole('button', { name: 'Retry this answer' });
+		expect(retries).toHaveLength(1);
+		await fireEvent.click(retries[0]);
+		await vi.waitFor(() => expect(retryLastTurn).toHaveBeenCalledTimes(1));
+		expect(rewindConversation).toHaveBeenCalledWith(3);
+	});
+
+	it('puts a message back in the box, and cuts there only when it is sent', async () => {
+		render(ChatView);
+		const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+		await fireEvent.input(box, { target: { value: 'half typed' } });
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Edit this message' })[0]);
+		expect(box.value).toBe('first question');
+		screen.getByTestId('chat-editing');
+		expect(rewindConversation).not.toHaveBeenCalled();
+
+		await fireEvent.input(box, { target: { value: 'first question, better' } });
+		await fireEvent.keyDown(box, { key: 'Enter' });
+		await vi.waitFor(() => expect(sendMessage).toHaveBeenCalled());
+		expect(rewindConversation).toHaveBeenCalledWith(0);
+		expect(vi.mocked(sendMessage).mock.calls[0][0]).toBe('first question, better');
+		expect(screen.queryByTestId('chat-editing')).toBeNull();
+	});
+
+	it('gives back what the box held on Cancel', async () => {
+		render(ChatView);
+		const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+		await fireEvent.input(box, { target: { value: 'half typed' } });
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Edit this message' })[1]);
+		expect(box.value).toBe('second question');
+		await fireEvent.keyDown(box, { key: 'Escape' });
+		expect(box.value).toBe('half typed');
+		expect(screen.queryByTestId('chat-editing')).toBeNull();
+	});
+
+	it('hides both while a turn runs', () => {
+		vi.mocked(getIsGenerating).mockReturnValue(true);
+		render(ChatView);
+		expect(screen.queryByRole('button', { name: 'Retry this answer' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Edit this message' })).toBeNull();
 	});
 });
 

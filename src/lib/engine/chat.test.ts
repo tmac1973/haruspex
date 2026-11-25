@@ -193,6 +193,19 @@ describe('chat operations', () => {
 		setRun('b', { generating: true });
 		await expect(dispatchChat({ type: 'chat.continue', id: 'b' })).rejects.toThrow('this chat');
 	});
+
+	it('rewind the chat named, refusing a busy chat or a count past its end', async () => {
+		expect(await dispatchChat({ type: 'chat.rewind', id: 'a', keep: 1 })).toEqual({ kept: 1 });
+		expect(fake.rewound).toEqual([['a', 1]]);
+		await expect(dispatchChat({ type: 'chat.rewind', id: 'a', keep: 99 })).rejects.toThrow(
+			'no more than'
+		);
+		setRun('a', { generating: true });
+		await expect(dispatchChat({ type: 'chat.rewind', id: 'a', keep: 0 })).rejects.toThrow(
+			'this chat'
+		);
+		expect(fake.rewound).toEqual([['a', 1]]);
+	});
 });
 
 describe('chat events', () => {
