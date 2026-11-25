@@ -115,7 +115,7 @@
 {#if open}
 	<DelegateModelPicker
 		title="3D delegate model"
-		{backend}
+		current={backend}
 		onchoose={choose}
 		onclose={() => (open = false)}
 	/>

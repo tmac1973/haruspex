@@ -66,14 +66,15 @@ describe('ThreeSettings', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: 'Delegate to: qwen-big · gpu-box:8080' })
 		);
-		// The Settings model would follow the global model, not name a delegate.
-		expect(screen.queryByRole('radio', { name: /Settings model/ })).toBeNull();
+		// Following Settings means nothing in Settings itself.
+		expect(screen.queryByRole('radio', { name: /Settings/ })).toBeNull();
 		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		expect(saved()).toEqual({ backend: remote, maxRounds: 80, maxCostUsd: null });
 		expect(() => structuredClone(saved())).not.toThrow();
 
 		await fireEvent.click(screen.getByRole('button', { name: /Delegate to:/ }));
-		await fireEvent.click(screen.getByRole('button', { name: 'None' }));
+		await fireEvent.click(screen.getByRole('radio', { name: 'None' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		expect(saved().backend).toBeNull();
 		screen.getByRole('button', { name: 'Delegate to: None' });
 	});
@@ -81,6 +82,8 @@ describe('ThreeSettings', () => {
 	it('saves an OpenRouter model picked from None', async () => {
 		render(ThreeSettings, { helperId: '3d' });
 		await fireEvent.click(screen.getByRole('button', { name: 'Delegate to: None' }));
+		expect((screen.getByRole('radio', { name: 'None' }) as HTMLInputElement).checked).toBe(true);
+		await fireEvent.click(screen.getByRole('radio', { name: 'OpenRouter (cloud)' }));
 		const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
 		expect(save.disabled).toBe(true);
 		await fireEvent.click(screen.getByRole('button', { name: 'Load models' }));

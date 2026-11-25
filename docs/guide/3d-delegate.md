@@ -11,7 +11,7 @@ The 3D delegate lets a Code session hand 3D modelling to a different, usually st
 
 Turn on the 3D switch in Settings → Code → Helpers, then set:
 
-- **Delegate to**: the model, picked as for a job: **Remote server** (any OpenAI-compatible server, a llama-server on this computer included) or **OpenRouter (cloud)**. **None** turns the delegate off.
+- **Delegate to**: the model, picked as for a job: **Remote server** (any OpenAI-compatible server, a llama-server on this computer included) or **OpenRouter (cloud)**, then **Save**. Pick **None** and **Save** to turn the delegate off.
 - **Rounds per asset**: the most model calls one asset may take, 5 to 500. The default is 80.
 - **Cost limit per asset**: the most one asset may spend, in dollars. **Unlimited**, the default, sets no limit.
 
@@ -19,7 +19,7 @@ With no delegate model, the agent has no `delegate_3d` and uses `check_3d` itsel
 
 ## Use a different delegate in one session
 
-With the 3D helper on, a session's **Extras** menu shows its **3D delegate**. **Change…** opens the same picker and sets a model for that session only, marked "this session"; **None** turns the delegate off there. **Use Settings** puts the session back on Settings → Code → Helpers → 3D. Two sessions can each hand work to a different model. The round and cost limits always come from Settings, and a change applies from the next message.
+With the 3D helper on, a session's **Extras** menu shows its **3D delegate**. **Change…** opens the same picker with a **Settings** choice first. Pick a model to use it in that session only, marked "this session"; **None** turns the delegate off there, so the agent builds 3D assets itself with `check_3d`; **Settings** puts the session back on Settings → Code → Helpers → 3D. **Save** applies the choice. Two sessions can each hand work to a different model. The round and cost limits always come from Settings, and a change applies from the next message.
 
 ## Ask for an asset
 
