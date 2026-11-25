@@ -172,6 +172,17 @@ describe('the video follower', () => {
 		await dispatch(task(), 'run');
 		expect(state.updates.at(-1)).toEqual({ state: 'cancelled' });
 	});
+
+	it('names the video model in a failure', async () => {
+		state.generate.mockRejectedValue(
+			new ToolchestError('rejected', 'WanVideoSampler failed: out of memory')
+		);
+		await dispatch(task(), 'run');
+		expect(state.updates.at(-1)).toEqual({
+			state: 'failed',
+			error: 'ti2v: WanVideoSampler failed: out of memory'
+		});
+	});
 });
 
 describe('the video follower, upscaling', () => {

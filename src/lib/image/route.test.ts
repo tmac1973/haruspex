@@ -114,6 +114,36 @@ describe('routeImage', () => {
 		});
 	});
 
+	describe('a model the server could not start', () => {
+		const VRAM =
+			'llama-toolchest refused /v1/images/edits: not enough VRAM on GPU 0: needs 18.5 GiB, but only 5.1 GiB is left';
+		/** Run on each entry's backend, B refusing for want of VRAM. */
+		const generate = (named?: string) =>
+			routeImage(
+				edit(2),
+				async (e) => {
+					if (e.id === 'B') throw new ImageBackendError('rejected', VRAM);
+					return e.id;
+				},
+				{ named }
+			).then((r) => r.value);
+
+		it('tries the next when no model was named', async () => {
+			expect(await generate()).toBe('C');
+		});
+
+		it('lists it and why when none could', async () => {
+			state.backends.C = backend(EDITS_3, 'down');
+			await expect(generate()).rejects.toMatchObject({
+				message: `No image model answered: B (b:3000): ${VRAM}; C (c:3000): Can’t reach it..`
+			});
+		});
+
+		it('still fails a named model as itself', async () => {
+			await expect(generate('B')).rejects.toMatchObject({ kind: 'rejected', message: VRAM });
+		});
+	});
+
 	it('tries an entry no probe has answered for after the known ones, and judges it live', async () => {
 		state.entries = [entry('U', null), entry('A', DRAWS)];
 		state.backends.U = backend(EDITS_4);
