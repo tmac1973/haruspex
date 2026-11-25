@@ -149,9 +149,9 @@
 	{#if picking}
 		<DelegateModelPicker
 			title="3D delegate for this session"
-			backend={ownDelegate ?? delegate}
+			current={ownDelegate}
 			onchoose={(b) => void storeDelegate(b)}
-			onusesettings={ownDelegate === undefined ? undefined : () => void storeDelegate(undefined)}
+			onusesettings={() => void storeDelegate(undefined)}
 			onclose={() => (picking = false)}
 		/>
 	{/if}

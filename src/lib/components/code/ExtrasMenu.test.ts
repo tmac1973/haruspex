@@ -130,9 +130,13 @@ describe('the Extras menu’s 3D delegate', () => {
 		const s = delegateSession({ helperConfig: { search: { a: 1 } } });
 		await open(s);
 		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
-		// Settings' model fills the picker; this session has none of its own yet.
-		expect(screen.queryByRole('button', { name: 'Use Settings' })).toBeNull();
-		await fireEvent.click(screen.getByRole('button', { name: 'None' }));
+		// It follows Settings, so the picker opens there.
+		expect((screen.getByRole('radio', { name: 'Settings' }) as HTMLInputElement).checked).toBe(
+			true
+		);
+		await fireEvent.click(screen.getByRole('radio', { name: 'None' }));
+		expect(screen.queryByRole('button', { name: 'None' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		await vi.waitFor(() =>
 			expect(s.setSessionHelperConfig).toHaveBeenCalledWith({
 				search: { a: 1 },
@@ -145,16 +149,25 @@ describe('the Extras menu’s 3D delegate', () => {
 		const s = delegateSession({ helperConfig: { '3d': { backend: own } } });
 		await open(s);
 		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Use Settings' }));
+		await fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		await vi.waitFor(() => expect(s.setSessionHelperConfig).toHaveBeenCalledWith(null));
 	});
 
-	it('saves the picked model for this session', async () => {
-		settings.codeHelperConfig = { '3d': { backend: own } };
-		const s = delegateSession();
+	it('opens on None when the session has none', async () => {
+		const s = delegateSession({ helperConfig: { '3d': { backend: null } } });
 		await open(s);
 		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
-		// The picker starts on Settings' model; Save makes it this session's own.
+		expect((screen.getByRole('radio', { name: 'None' }) as HTMLInputElement).checked).toBe(true);
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(s.setSessionHelperConfig).not.toHaveBeenCalled();
+	});
+
+	it('saves the picked model for this session', async () => {
+		const s = delegateSession({ helperConfig: { '3d': { backend: own } } });
+		await open(s);
+		await fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
+		// The picker opens on the session's own model.
 		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		await vi.waitFor(() =>
 			expect(s.setSessionHelperConfig).toHaveBeenCalledWith({

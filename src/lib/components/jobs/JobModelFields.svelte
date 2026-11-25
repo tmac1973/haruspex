@@ -37,6 +37,8 @@
 		name,
 		allowSettings = true,
 		settingsLabel,
+		noneOption,
+		none = $bindable(false),
 		showAdvanced = true
 	}: {
 		form: JobModelForm;
@@ -48,6 +50,10 @@
 		settingsLabel?: { title: string; description: string };
 		/** Show the reasoning and sampling section; off where the caller can't honour it. */
 		showAdvanced?: boolean;
+		/** Offer a last "no model" option, with this wording. */
+		noneOption?: { title: string; description: string };
+		/** Whether that option is picked; the form is kept for when it isn't. */
+		none?: boolean;
 	} = $props();
 
 	// Transient: what the last probe or catalog load found. Never saved.
@@ -84,8 +90,16 @@
 					description: 'A specific OpenRouter model — prompts leave your device.'
 				}
 			] satisfies { value: ModelSource; title: string; description: string }[]
-		).filter((o) => allowSettings || o.value !== 'settings')
+		)
+			.filter((o) => allowSettings || o.value !== 'settings')
+			.map((o): { value: ModelSource | 'none'; title: string; description: string } => o)
+			.concat(noneOption ? [{ value: 'none', ...noneOption }] : [])
 	);
+
+	function choose(next: ModelSource | 'none') {
+		none = next === 'none';
+		if (next !== 'none') setSource(next);
+	}
 
 	// Servers saved in Settings, plus the active one even if it was never
 	// added to the list, plus this form's own URL, so a saved job shows it
@@ -256,8 +270,13 @@
 	}
 </script>
 
-<ModeSelector {name} value={form.source} onchange={setSource} options={sourceOptions} />
-{#if form.source !== 'settings'}
+<ModeSelector
+	{name}
+	value={none ? 'none' : form.source}
+	onchange={choose}
+	options={sourceOptions}
+/>
+{#if form.source !== 'settings' && !none}
 	<div class="model-fields">
 		{#if form.source === 'openrouter'}
 			<div class="model-row">
