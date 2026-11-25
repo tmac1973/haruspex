@@ -17,6 +17,7 @@ import {
 } from '#lib/agent/jobs/modelAdvanced.ts';
 import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
+import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
 
 export { isOpenRouterUrl };
 
@@ -69,12 +70,15 @@ function withAdvanced(form: JobModelForm, adv: JobModelAdvanced): JobModelForm {
 	};
 }
 
-/** A new job's form: the Settings model, default behaviour. */
+/**
+ * A new job's form: the Settings model, default behaviour. An OpenRouter form
+ * starts with OpenRouter's URL, as switching to that source would set it.
+ */
 export function emptyModelForm(source: ModelSource = 'settings'): JobModelForm {
 	return withAdvanced(
 		{
 			source,
-			baseUrl: '',
+			baseUrl: source === 'openrouter' ? OPENROUTER_BASE_URL : '',
 			apiKey: '',
 			apiKeyId: null,
 			modelId: '',
