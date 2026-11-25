@@ -143,4 +143,21 @@ describe('routeVideo', () => {
 		}));
 		await expect(routeVideo(plain)).rejects.toThrow('Bad key.');
 	});
+
+	it('passes over a model the server could not start, unless it was named', async () => {
+		const VRAM = 'not enough VRAM on GPU 0: needs 30 GiB, but only 5.1 GiB is left';
+		models(['big', LTX], ['small', LTX]);
+		registerVideoBackendKind('comfyui', (entry) => ({
+			kind: 'comfyui',
+			probe: async () => ({ ok: true, detail: 'ok' }),
+			capabilities: async () => {
+				if (entry.id === 'big') throw new VideoBackendError('rejected', VRAM);
+				return LTX;
+			},
+			generate: () => Promise.reject(new Error('no')),
+			resume: () => Promise.reject(new Error('no'))
+		}));
+		expect((await routeVideo(plain)).entry.id).toBe('small');
+		await expect(routeVideo(plain, { named: 'big' })).rejects.toThrow(VRAM);
+	});
 });
