@@ -104,6 +104,7 @@ export class BackgroundSubtasks {
 		const signal = controller.signal;
 		// Stopped while it waited its turn: it never starts.
 		if (signal.aborted) {
+			spec.profile?.onEnd?.();
 			if (spec.wt) await discardQuietly(spec.wt, this.host.place().wslDistro);
 			this.host.onState(finishedSubtask(initial, { status: 'stopped', report: '', steps: [] }));
 			return {

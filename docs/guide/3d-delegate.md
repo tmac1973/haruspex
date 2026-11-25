@@ -25,17 +25,19 @@ With the 3D helper on, a session's **Extras** menu shows its **3D delegate**. **
 
 Ask as usual: "make a goblin with a walk cycle for assets/goblin.glb". The agent calls `delegate_3d` with:
 
-| Argument     | What it does                                                                    |
-| ------------ | ------------------------------------------------------------------------------- |
-| `path`       | where the `.glb` goes (required)                                                |
-| `task`       | what to make: size in metres, style, engine, clips, what it must fit (required) |
-| `images`     | up to 3 reference pictures in the project: PNG, JPEG or WebP, 8 MB each         |
-| `label`      | the card's name; otherwise "3D: " and the file name                             |
-| `background` | return at once; the report arrives in a later turn                              |
+| Argument | What it does                                                                    |
+| -------- | ------------------------------------------------------------------------------- |
+| `path`   | where the `.glb` goes (required)                                                |
+| `task`   | what to make: size in metres, style, engine, clips, what it must fit (required) |
+| `images` | up to 3 reference pictures in the project: PNG, JPEG or WebP, 8 MB each         |
+| `label`  | the card's name; otherwise "3D: " and the file name                             |
+| `wait`   | wait for the report in the same turn, when the next step needs the `.glb`       |
 
 The delegate starts with an empty context. It can't see the conversation, so the agent writes the task in full. It can list, read, search and look at images anywhere in the project, and run `check_3d`. It writes only three files: the build module and animation module beside the `.glb` (`goblin.js`, `goblin.anim.js`) and the `.glb` itself; any other write is refused. It has no shell, web or subtasks.
 
-To change an asset, the agent calls again with the same path. The delegate is told the modules exist, and edits them.
+It runs in the background: the agent's turn goes on, or ends, and you can keep talking to it. The report arrives as a new turn, shown as **Subtask finished**, which the agent answers. While it runs, its three files belong to it: the agent, other sessions on the folder, and a second `delegate_3d` call can't write them.
+
+To change an asset, the agent calls again with the same path once the first call has finished. The delegate is told the modules exist, and edits them.
 
 ## When it's done
 
@@ -54,4 +56,5 @@ It counts toward the 8 subtasks a turn may start, but follows Settings → Code 
 - Only the Code tab: not Chat, the Shell, jobs or the 3D models job.
 - It writes no textures, but can use PNGs already in the project.
 - It keeps nothing between calls: each starts fresh from the files.
+- A shell command can still change its files while it runs; only the file tools and `check_3d` are held off.
 - The cost limit counts only what the server reports, or OpenRouter's prices; a server with neither has no cost to limit.

@@ -14,7 +14,7 @@ describe('the 3D helper’s TOOLS line', () => {
 			backend: { baseUrl: 'https://openrouter.ai/api', modelId: 'vendor/big' }
 		});
 		expect(helperPrompt(three())).toBe(
-			'- delegate_3d — hand a new 3D asset, or a change to one it made, to vendor/big · OpenRouter; describe it fully. Use check_3d yourself to look at or measure an asset, not to build one.'
+			'- delegate_3d — hand a new 3D asset, or a change to one it made, to vendor/big · OpenRouter; describe it fully. It runs in the background and reports in a new turn; pass wait only when your next step needs the .glb. Use check_3d yourself to look at or measure an asset, not to build one.'
 		);
 	});
 

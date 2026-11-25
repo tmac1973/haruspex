@@ -66,6 +66,8 @@ export interface SubtaskProfile {
 		usage: SubtaskUsage,
 		run: ProfileRun & { stoppedByUser: boolean }
 	) => Promise<{ text: string; png?: string }>;
+	/** Called once when the run is over, however it ended, even if it never started. */
+	onEnd?: () => void;
 }
 
 /**

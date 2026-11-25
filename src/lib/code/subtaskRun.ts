@@ -194,6 +194,18 @@ export async function runSubtaskSpec(
 	env: SubtaskEnv,
 	initial: SubtaskState
 ): Promise<SubtaskRunResult> {
+	try {
+		return await runSpec(spec, env, initial);
+	} finally {
+		spec.profile?.onEnd?.();
+	}
+}
+
+async function runSpec(
+	spec: SubtaskSpec,
+	env: SubtaskEnv,
+	initial: SubtaskState
+): Promise<SubtaskRunResult> {
 	let state = initial;
 	const publish = (next: SubtaskState) => {
 		state = next;

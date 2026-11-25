@@ -8,6 +8,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { ioRoot, relativeToRoot } from '#lib/code/paths.ts';
+import { delegateHolding, heldFileRefusal } from '#lib/helpers/three/delegateHolds.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { chatCompletion, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import {
@@ -170,6 +171,25 @@ export function writeOutsideLimit(
 	if (key !== null && limit.some((p) => writableKey(ctx, p) === key)) return null;
 	const list = limit.length ? limit.join(', ') : 'nothing';
 	return `You may write only: ${list}. Write ${key ?? (path || '(empty path)')}'s content into one of those instead.`;
+}
+
+/**
+ * Why a write to `relPath` is refused because a running 3D delegate owns it
+ * (`delegateHolds.ts`), or null. A turn whose `writablePaths` name the file
+ * is that delegate, and may.
+ */
+export function heldByDelegate(
+	ctx: Pick<ToolContext, 'shellMode' | 'shellCwd' | 'workingDir' | 'writablePaths'>,
+	relPath: unknown
+): string | null {
+	const cwd = ctxCwd(ctx);
+	const path = typeof relPath === 'string' ? relPath.trim() : '';
+	const key = cwd && path ? writableKey(ctx, path) : null;
+	if (!cwd || key === null) return null;
+	const label = delegateHolding(cwd, key);
+	if (!label) return null;
+	if (ctx.writablePaths?.some((p) => writableKey(ctx, p) === key)) return null;
+	return heldFileRefusal(key, label);
 }
 
 /** What Rust says when a path leaves the folder the file tools are confined to. */

@@ -82,6 +82,23 @@ describe('check_3d under writablePaths', () => {
 	});
 });
 
+describe('check_3d beside a running 3D delegate', () => {
+	it('does not write a GLB the delegate holds', async () => {
+		const { holdDelegateFiles } = await import('#lib/helpers/three/delegateHolds.ts');
+		const release = holdDelegateFiles('/proj', ['assets/crate.glb'], 'Crate');
+		try {
+			files.set('/proj/assets/crate.js', enc(MODULE));
+			const out = await call({ path: 'assets/crate.js' });
+			expect(io.write).not.toHaveBeenCalled();
+			expect(out.result.split('\n')[0]).toMatch(
+				/^Did not write assets\/crate\.glb: assets\/crate\.glb belongs to the 3D delegate "Crate"/
+			);
+		} finally {
+			release();
+		}
+	});
+});
+
 describe('check_3d', () => {
 	it('builds a module, writes its GLB beside it and attaches the sheet', async () => {
 		files.set('/proj/assets/crate.js', enc(MODULE));

@@ -7,7 +7,7 @@
  * files, its sandboxed frame and the agent's pending images.
  */
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
-import { ctxCwd, writeOutsideLimit } from '#lib/agent/tools/_helpers.ts';
+import { ctxCwd, heldByDelegate, writeOutsideLimit } from '#lib/agent/tools/_helpers.ts';
 import { READ_ONLY_REFUSAL } from '#lib/agent/tools/_codeTabProfile.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
@@ -26,12 +26,13 @@ export { MOTION_NOTE, SHEET_NOTE };
 
 /**
  * The app as `check_3d`'s host, for a turn's `ToolContext`. A write outside
- * `ctx.writablePaths` is refused; other code builds a host with a limit of
+ * `ctx.writablePaths` is refused, and so is one to a file a running 3D
+ * delegate owns (`heldByDelegate`); other code builds a host with a limit of
  * its own by passing a `ctx` that sets one.
  */
 export function check3dHost(ctx: ToolContext): Check3dHost {
 	const io = assetIo(ctx);
-	const writeLimit = (path: string) => writeOutsideLimit(ctx, path);
+	const writeLimit = (path: string) => writeOutsideLimit(ctx, path) ?? heldByDelegate(ctx, path);
 	return {
 		read: (path) => io.read(path),
 		write: async (path, bytes) => writeLimit(path) ?? writeAsset(path, bytes, true, false, io),

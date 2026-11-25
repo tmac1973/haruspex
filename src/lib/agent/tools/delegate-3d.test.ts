@@ -46,6 +46,7 @@ import {
 	executeDelegate3d
 } from '#lib/agent/tools/delegate-3d.ts';
 import { SUBTASKS_PER_TURN } from '#lib/agent/tools/delegate.ts';
+import { clearDelegateHolds, delegateHolding } from '#lib/helpers/three/delegateHolds.ts';
 
 const backend = {
 	baseUrl: 'https://openrouter.ai/api',
@@ -77,6 +78,7 @@ const lastSpec = () => m.runSubtaskSpec.mock.calls.at(-1)![0] as SubtaskSpec;
 const errorOf = (out: { result: string }) => (JSON.parse(out.result) as { error: string }).error;
 
 beforeEach(() => {
+	clearDelegateHolds();
 	m.config = { backend, maxRounds: 40, maxCostUsd: 2 };
 	m.files.clear();
 	m.contents.clear();
@@ -87,6 +89,7 @@ beforeEach(() => {
 			{ tokens: 1200, costUsd: 0.05 },
 			{ stoppedByUser: false }
 		);
+		spec.profile!.onEnd?.();
 		return { text: fin.text, failed: false, state: {}, png: fin.png };
 	});
 });
@@ -101,7 +104,6 @@ describe('delegate_3d refuses', () => {
 		['an empty task', { task: '  ' }, {}, /requires a task/],
 		['too many images', { images: ['a.png', 'b.png', 'c.png', 'd.png'] }, {}, /at most 3/],
 		['an image of another kind', { images: ['refs/a.gif'] }, {}, /PNG, JPEG or WebP/],
-		['background with no session to run it', { background: true }, {}, /Background calls/],
 		[
 			'past the per-turn limit',
 			{},
@@ -209,15 +211,25 @@ describe('delegate_3d’s result', () => {
 		expect(c.pendingImages).toEqual([]);
 	});
 
-	it('returns at once in the background, handing the spec to the session', async () => {
+	it('runs in the background by default, handing the spec to the session', async () => {
 		const start = vi.fn();
 		const onSubtask = vi.fn();
-		const out = await call({ background: true }, ctx({ startBackgroundSubtask: start, onSubtask }));
+		const out = await call({}, ctx({ startBackgroundSubtask: start, onSubtask }));
 		expect(m.runSubtaskSpec).not.toHaveBeenCalled();
-		expect(out.result).toMatch(/in the background \(id call-1\)/);
+		expect(out.result).toBe(
+			'The 3D delegate is working on "3D: crate.glb" (assets/crate.glb) in the background. Its report, with the final check, comes to you in a new turn when it finishes. Do not build this asset yourself, and do not write to its files meanwhile. Tell the user it has started, then carry on with other work or end your turn.'
+		);
 		const [spec, initial] = start.mock.calls[0];
 		expect(spec.profile.writablePaths).toContain('assets/crate.glb');
 		expect(initial).toMatchObject({ background: true, mode: 'write', status: 'queued' });
+		expect(onSubtask).toHaveBeenCalledWith(initial);
+	});
+
+	it('waits for the report in the turn when asked to', async () => {
+		const start = vi.fn();
+		const out = await call({ wait: true }, ctx({ startBackgroundSubtask: start }));
+		expect(start).not.toHaveBeenCalled();
+		expect(out.result).toContain('Final check: clean.');
 	});
 
 	it('says plainly when errors remain', () => {
@@ -333,5 +345,30 @@ describe('delegate_3d review fixes', () => {
 			/assets\/crate\.js already exists and is not a build or animation module.*Pick another name/
 		);
 		expect(m.runSubtaskSpec).not.toHaveBeenCalled();
+	});
+});
+
+describe('delegate_3d’s hold on its files', () => {
+	it('holds the three files while a background run is going, and lets go when it ends', async () => {
+		const start = vi.fn();
+		await call({}, ctx({ startBackgroundSubtask: start }));
+		for (const p of ['assets/crate.js', 'assets/crate.anim.js', 'assets/crate.glb']) {
+			expect(delegateHolding('/proj', p)).toBe('3D: crate.glb');
+		}
+		(start.mock.calls[0][0] as SubtaskSpec).profile!.onEnd!();
+		expect(delegateHolding('/proj', 'assets/crate.glb')).toBeNull();
+	});
+
+	it('refuses a second call on the same asset while the first runs', async () => {
+		await call({}, ctx({ startBackgroundSubtask: vi.fn() }));
+		const again = await call({ task: 'Make it taller.' }, ctx({ startBackgroundSubtask: vi.fn() }));
+		expect(errorOf(again)).toBe(
+			'The 3D delegate "3D: crate.glb" is still working on assets/crate.js. Wait for its report, then call again with the same path to change the asset.'
+		);
+	});
+
+	it('lets go after a run it waited for', async () => {
+		await call({ wait: true });
+		expect(delegateHolding('/proj', 'assets/crate.js')).toBeNull();
 	});
 });
