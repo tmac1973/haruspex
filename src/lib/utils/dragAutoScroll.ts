@@ -16,12 +16,11 @@ export function edgeSpeed(y: number, top: number, bottom: number): number {
 	return 0;
 }
 
-/** The nearest ancestor of `node` that scrolls vertically, else the page. */
+/** `node` itself or its nearest ancestor that scrolls vertically, else the page. */
 export function scrollParent(node: HTMLElement): HTMLElement {
-	for (let el = node.parentElement; el; el = el.parentElement) {
+	for (let el: HTMLElement | null = node; el; el = el.parentElement) {
 		const { overflowY } = getComputedStyle(el);
-		if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight)
-			return el;
+		if (overflowY === 'auto' || overflowY === 'scroll') return el;
 	}
 	return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
 }
