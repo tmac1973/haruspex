@@ -46,6 +46,7 @@ export function formatSandboxResult(output: SandboxRunOutput): string {
 		lines.push(`Error: ${r.error}`);
 		if (r.stderr.trim()) lines.push(`Stderr:\n${r.stderr.trim()}`);
 		if (r.stdout.trim()) lines.push(`Stdout:\n${r.stdout.trim()}`);
+		if (r.notes.length > 0) lines.push(`Notes: ${r.notes.join('; ')}`);
 		lines.push(`(took ${r.duration_ms}ms)`);
 		return lines.join('\n\n');
 	}

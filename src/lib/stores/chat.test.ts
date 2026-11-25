@@ -481,11 +481,11 @@ describe('chat store', () => {
 			await setActiveConversation(a);
 			await flush();
 
-			// IframePool boots a fresh iframe lazily on the first runPython
+			// The pool boots a fresh worker lazily on the first runPython
 			// for the chat, so the explicit resetSandbox at the start of
 			// restore (legacy worker behavior) is no longer needed.
 			expect(sandboxMocks.installPackage).toHaveBeenCalledWith(a, 'numpy');
-			expect(sandboxMocks.runPython).toHaveBeenCalledWith(a, 'import numpy');
+			expect(sandboxMocks.runPython).toHaveBeenCalledWith(a, 'import numpy', { replay: true });
 			// Successful restore implies prior approval — chat marked approved
 			// in the sandbox-approval store.
 			const { isChatSandboxApproved } = await import('#lib/stores/sandboxApproval.svelte.ts');

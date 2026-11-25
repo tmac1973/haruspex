@@ -28,6 +28,12 @@ export interface RunOptions {
 	 * intentional rather than a hang.
 	 */
 	onInstall?: (packageName: string, phase: InstallPhase) => void;
+	/**
+	 * Run the code again only to rebuild Python state (session restore).
+	 * The worker saves and deletes nothing on the host, refuses network
+	 * requests other than GET and HEAD, and drops the files the run made.
+	 */
+	replay?: boolean;
 }
 
 interface PendingRun {
@@ -78,6 +84,9 @@ const INSTALL_TIMEOUT_MS = 180_000;
 // reports ready (a webview fetch that never settles) would otherwise hold
 // the run, and the turn, forever.
 const BOOT_TIMEOUT_MS = 120_000;
+/** Said after a timeout terminates the worker: nothing from earlier runs survives. */
+export const STATE_LOST =
+	'Python was restarted, so variables, imports and installed packages from earlier runs are gone.';
 
 export type WorkerFactory = () => Worker;
 
@@ -157,6 +166,11 @@ export class WorkerManager {
 	 * worker respawn (chat switch / reset / timeout escalation).
 	 */
 	private syncedFiles = new Map<string, number>();
+	/**
+	 * A replay run changed MEMFS without saving to the host, so the next
+	 * real run copies every host file in again rather than trusting mtimes.
+	 */
+	private resyncAll = false;
 	private pendingSyncs = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
 
 	constructor(
@@ -420,7 +434,7 @@ export class WorkerManager {
 					// compute Python even if the filesystem bridge is down.
 					if (msg.kind === 'run') {
 						try {
-							await this.syncWorkdir();
+							await this.syncWorkdir(!opts.replay);
 						} catch (err) {
 							logDebug('sandbox', 'pre-run workdir sync failed (non-fatal)', {
 								error: errMessage(err)
@@ -475,12 +489,15 @@ export class WorkerManager {
 	 * / etc. resolve against real bytes. Change-detection via mtime keeps
 	 * subsequent runs cheap. Returns when the worker has acked the writes.
 	 */
-	private async syncWorkdir(): Promise<void> {
+	private async syncWorkdir(allowFullResync: boolean): Promise<void> {
 		const workdir = this.workdir();
 		if (!workdir) return;
+		// A known mtime that never matches makes Rust send the file again,
+		// while still reporting the ones the host deleted.
+		const full = allowFullResync && this.resyncAll;
 		const knownFiles = Array.from(this.syncedFiles.entries()).map(([path, mtime]) => ({
 			path,
-			mtime
+			mtime: full ? -1 : mtime
 		}));
 		// Binary, not JSON: see syncBody.ts. The files' bytes are views of
 		// `body`, which is transferred to the worker rather than copied.
@@ -496,6 +513,7 @@ export class WorkerManager {
 			// posts the workdir_abs.
 			if (this.syncedFiles.size > 0) return; // already chdir'd in a prior sync
 		}
+		if (full) this.resyncAll = false;
 		const syncId = crypto.randomUUID();
 		const ackPromise = new Promise<void>((resolve, reject) => {
 			this.pendingSyncs.set(syncId, { resolve, reject });
@@ -551,7 +569,7 @@ export class WorkerManager {
 		this.pending.delete(id);
 		this.clearTimers(p);
 		this.respawn();
-		p.reject(new Error(`sandbox timeout after ${timeoutMs}ms`));
+		p.reject(new Error(`sandbox timeout after ${timeoutMs}ms. ${STATE_LOST}`));
 	}
 
 	/**
@@ -578,14 +596,15 @@ export class WorkerManager {
 		this.respawn();
 		p.reject(
 			new Error(
-				`sandbox package install stalled (no progress for ${INSTALL_TIMEOUT_MS}ms) — the download may have failed`
+				`sandbox package install stalled (no progress for ${INSTALL_TIMEOUT_MS}ms) — the download may have failed. ${STATE_LOST}`
 			)
 		);
 	}
 
 	async runPython(code: string, opts: RunOptions = {}): Promise<ToolResult> {
 		const id = crypto.randomUUID();
-		return this.dispatch({ kind: 'run', id, code }, id, opts);
+		if (opts.replay) this.resyncAll = true;
+		return this.dispatch({ kind: 'run', id, code, replay: opts.replay || undefined }, id, opts);
 	}
 
 	async installPackage(packageName: string, opts: RunOptions = {}): Promise<ToolResult> {

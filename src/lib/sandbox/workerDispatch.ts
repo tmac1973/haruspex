@@ -16,7 +16,7 @@ export interface WorkerMessageHandlers {
 	setInterruptBuffer(buffer: SharedArrayBuffer): void;
 	resolveRuntimeConfig(workingDirSet: boolean): void;
 	syncWorkdir(msg: SyncWorkdirMsg): void;
-	run(id: string, code: string): void;
+	run(id: string, code: string, replay: boolean): void;
 	install(id: string, packageName: string): void;
 	acknowledgeReset(id: string): void;
 	interrupt(): void;
@@ -36,7 +36,7 @@ export function dispatchWorkerMessage(msg: MainToWorker, h: WorkerMessageHandler
 		case 'sync_workdir_files':
 			return h.syncWorkdir(msg);
 		case 'run':
-			return h.run(msg.id, msg.code);
+			return h.run(msg.id, msg.code, msg.replay === true);
 		case 'install':
 			return h.install(msg.id, msg.package);
 		case 'reset':

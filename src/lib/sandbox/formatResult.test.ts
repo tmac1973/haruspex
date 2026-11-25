@@ -42,4 +42,9 @@ describe('formatSandboxResult', () => {
 		expect(failed.length).toBeLessThan(2 * SANDBOX_OUTPUT_MAX_BYTES + 2048);
 		expect(failed).toContain('Error: Boom');
 	});
+
+	it('keeps the notes of a failed run', () => {
+		const text = formatSandboxResult({ ...base, error: 'Boom', notes: ['installed foo'] });
+		expect(text).toContain('Notes: installed foo');
+	});
 });
