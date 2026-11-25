@@ -13,14 +13,22 @@ const EMAIL_SUMMARY_MAX_TOKENS = 400;
 /** Listings when the model names no number; the Rust default is the same. */
 const DEFAULT_MAX_RESULTS = 25;
 
+/** The folders `email_list_recent` reads; Rust's `MailFolder` names them the same. */
+export const EMAIL_FOLDERS = ['inbox', 'sent', 'drafts', 'trash', 'junk', 'archive'] as const;
+export type EmailFolder = (typeof EMAIL_FOLDERS)[number];
+
 // Hand-written: the Rust structs are serde, not ts-exported.
 export interface EmailListing {
 	accountId: string;
 	accountLabel: string;
+	/** `"<uidvalidity>:<uid>"` in the inbox, `"sent:<uidvalidity>:<uid>"` elsewhere. */
 	messageId: string;
+	folder: EmailFolder;
 	subject: string;
 	fromName: string;
 	fromEmail: string;
+	/** Recipients' addresses, outside the inbox only. */
+	to?: string[];
 	date: string;
 	snippet: string;
 	hasAttachments: boolean;
@@ -101,7 +109,7 @@ registerTool({
 		function: {
 			name: 'email_list_recent',
 			description:
-				'List recent email messages. Returns metadata only (subject, sender, date, snippet) — no bodies. Omit account_id to query all enabled accounts.',
+				'List recent email messages in one folder (the inbox unless folder says otherwise). Returns metadata only (subject, sender, recipients outside the inbox, date, snippet) — no bodies. Omit account_id to query all enabled accounts.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -109,6 +117,12 @@ registerTool({
 						type: 'string',
 						description:
 							'Optional — target a specific account by accountId UUID, label, or email address. Omit to query all enabled accounts.'
+					},
+					folder: {
+						type: 'string',
+						enum: [...EMAIL_FOLDERS],
+						description:
+							'Which folder to list. Default inbox. Use sent for mail the user sent (e.g. the Sent copy of a reply), drafts for unsent drafts. Other folders are not reachable.'
 					},
 					hours: {
 						type: 'integer',
@@ -130,6 +144,11 @@ registerTool({
 						type: 'string',
 						description: 'Substring filter on the Subject header. Case-insensitive.'
 					},
+					to: {
+						type: 'string',
+						description:
+							'Substring filter on the recipients (To header). Case-insensitive. Most useful with folder sent.'
+					},
 					max_results: {
 						type: 'integer',
 						minimum: 1,
@@ -143,6 +162,12 @@ registerTool({
 	displayLabel: () => 'email',
 	async execute(args, ctx) {
 		const accountId = args.account_id as string | undefined;
+		const folder = (args.folder as string | undefined) || 'inbox';
+		if (!(EMAIL_FOLDERS as readonly string[]).includes(folder)) {
+			return toolResult(
+				toolError(`Unknown folder ${folder}. Use one of: ${EMAIL_FOLDERS.join(', ')}.`)
+			);
+		}
 		const accounts = resolveEmailAccounts(accountId);
 		if (accounts.length === 0) {
 			return toolResult(
@@ -165,7 +190,9 @@ registerTool({
 						sinceDate: (args.since_date as string | undefined) ?? null,
 						from: (args.from as string | undefined) ?? null,
 						subjectContains: (args.subject_contains as string | undefined) ?? null,
-						maxResults: (args.max_results as number | undefined) ?? null
+						maxResults: (args.max_results as number | undefined) ?? null,
+						to: (args.to as string | undefined) ?? null,
+						folder
 					},
 					ctx.signal
 				)

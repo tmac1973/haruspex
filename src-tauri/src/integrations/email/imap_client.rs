@@ -31,7 +31,8 @@ use tokio_rustls::TlsConnector;
 
 use super::auth::{self, EmailAccount};
 use super::parser::{
-    listing_from_header, parse_rfc5322, parse_with_body, EmailListing, NormalizedMessage,
+    listing_from_header, parse_rfc5322, parse_with_body, EmailListing, MailFolder,
+    NormalizedMessage,
 };
 use super::provider::TlsMode;
 use super::structure::{self, Part};
@@ -54,8 +55,13 @@ pub struct ListFilters {
     /// Upper bound on results: [`DEFAULT_MAX_RESULTS`] when zero, at most
     /// [`MAX_RESULTS`].
     pub max_results: u32,
+    /// Case-insensitive substring filter on the `TO` header: who a Sent
+    /// message went to.
+    pub to: Option<String>,
     /// Unread messages only (`UNSEEN`), for the Important emails card.
     pub unseen_only: bool,
+    /// The folder to list; INBOX by default.
+    pub folder: MailFolder,
 }
 
 /// Results when the caller names no number. The tool's schema and its
@@ -304,6 +310,25 @@ pub(super) async fn select_inbox(
     Ok(mailbox.uid_validity.unwrap_or(0))
 }
 
+/// Open `folder` for reading; its UIDVALIDITY. INBOX is SELECTed, as every
+/// other call expects; another folder is EXAMINEd, read-only, after LIST
+/// finds it. An account without one says so.
+async fn open_folder(
+    session: &mut ImapSession,
+    host: &str,
+    t: &Timeouts,
+    folder: MailFolder,
+) -> Result<u32, String> {
+    if folder == MailFolder::Inbox {
+        return select_inbox(session, host, t).await;
+    }
+    let names = mailboxes(session, host, t, special_use(folder)).await?;
+    let mailbox = special_mailbox(&names, known_names(folder))
+        .ok_or_else(|| format!("This account has no {} folder", folder.label()))?;
+    let mailbox = within(t.command, host, "EXAMINE", session.examine(&mailbox)).await?;
+    Ok(mailbox.uid_validity.unwrap_or(0))
+}
+
 /// A UID FETCH, collected. One message the server could not send is
 /// skipped, not fatal.
 pub(super) async fn fetch(
@@ -358,6 +383,10 @@ fn build_search_query(filters: &ListFilters) -> String {
 
     if let Some(s) = filters.subject_contains.as_ref() {
         parts.push(format!("SUBJECT \"{}\"", sanitize_search_value(s)));
+    }
+
+    if let Some(to) = filters.to.as_ref() {
+        parts.push(format!("TO \"{}\"", sanitize_search_value(to)));
     }
 
     if filters.unseen_only {
@@ -437,7 +466,7 @@ pub(super) fn unix_to_imap_date(secs: i64) -> String {
 /// for a message with no Date header, and the flags (read or not). PEEK
 /// leaves a listed message unread.
 const LIST_QUERY: &str = "(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE \
-     BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT MESSAGE-ID)])";
+     BODY.PEEK[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)])";
 
 /// The fetch of the first `len` bytes of one part.
 fn part_query(section: &str, len: u32) -> String {
@@ -447,6 +476,25 @@ fn part_query(section: &str, len: u32) -> String {
 /// A message handle: `"<uidvalidity>:<uid>"`.
 pub fn handle(uid_validity: u32, uid: u32) -> String {
     format!("{uid_validity}:{uid}")
+}
+
+/// A message handle in `folder`: an INBOX one as [`handle`] makes it, so
+/// handles from before folders stay valid; any other with the folder in
+/// front, `"sent:<uidvalidity>:<uid>"`.
+pub fn folder_handle(folder: MailFolder, uid_validity: u32, uid: u32) -> String {
+    match folder {
+        MailFolder::Inbox => handle(uid_validity, uid),
+        f => format!("{}:{}", f.as_str(), handle(uid_validity, uid)),
+    }
+}
+
+/// The folder a handle names, and the rest of it for [`uid_from_handle`].
+/// A handle without a folder is in INBOX.
+pub fn split_handle(handle: &str) -> (MailFolder, &str) {
+    handle
+        .split_once(':')
+        .and_then(|(f, rest)| MailFolder::parse(f).map(|f| (f, rest)))
+        .unwrap_or((MailFolder::Inbox, handle))
 }
 
 /// The UID in a handle, refusing one from before the mailbox was renumbered.
@@ -484,7 +532,8 @@ struct Listed {
 /// Fetch listings for the `max_results` most recent messages matching the
 /// filters, newest first.
 ///
-/// 1. SELECT INBOX, UID SEARCH, keep the newest `max_results` UIDs.
+/// 1. Open the folder ([`open_folder`]), UID SEARCH, keep the newest
+///    `max_results` UIDs.
 /// 2. Fetch headers and structure ([`LIST_QUERY`]).
 /// 3. Fetch the first [`PREVIEW_BYTES`] of each message's text part, one
 ///    FETCH per section number, and decode it for the snippet.
@@ -510,7 +559,8 @@ async fn list_in(
     t: &Timeouts,
 ) -> Result<Vec<EmailListing>, String> {
     let host = account.imap_host.as_str();
-    let validity = select_inbox(session, host, t).await?;
+    let folder = filters.folder;
+    let validity = open_folder(session, host, t, folder).await?;
 
     let query = build_search_query(filters);
     let found = within(t.command, host, "SEARCH", session.uid_search(&query)).await?;
@@ -582,10 +632,16 @@ async fn list_in(
                 l.internal,
                 account.id.clone(),
                 account.label.clone(),
-                handle(validity, l.uid),
+                folder_handle(folder, validity, l.uid),
             )
             .map(|listing| EmailListing {
                 seen: l.seen,
+                folder,
+                to: if folder == MailFolder::Inbox {
+                    Vec::new()
+                } else {
+                    listing.to.clone()
+                },
                 ..listing
             })
             .map_err(|e| log::warn!("Could not read the headers of UID {}: {e}", l.uid))
@@ -645,15 +701,16 @@ async fn read_in(
     t: &Timeouts,
 ) -> Result<NormalizedMessage, String> {
     let host = account.imap_host.as_str();
-    let validity = select_inbox(session, host, t).await?;
-    let uid = uid_from_handle(message_id, validity)?;
+    let (folder, rest) = split_handle(message_id);
+    let validity = open_folder(session, host, t, folder).await?;
+    let uid = uid_from_handle(rest, validity)?;
     let set = uid.to_string();
-    let missing = || format!("No message {message_id} in INBOX — list again");
+    let missing = || format!("No message {message_id} in {} — list again", folder.label());
     let ids = || {
         (
             account.id.clone(),
             account.label.clone(),
-            handle(validity, uid),
+            folder_handle(folder, validity, uid),
         )
     };
 
@@ -716,7 +773,38 @@ pub(super) const SENT_NAMES: &[&str] = &[
     "Sent Mail",
     "INBOX.Sent",
     "INBOX/Sent",
+    "[Gmail]/Sent Mail",
+    "[Google Mail]/Sent Mail",
 ];
+
+/// Names a Drafts folder goes by on servers that do not flag one `\Drafts`.
+const DRAFTS_NAMES: &[&str] = &[
+    "Drafts",
+    "Draft",
+    "[Gmail]/Drafts",
+    "[Google Mail]/Drafts",
+    "INBOX.Drafts",
+    "INBOX/Drafts",
+];
+
+/// Names a Junk folder goes by on servers that do not flag one `\Junk`.
+const JUNK_NAMES: &[&str] = &[
+    "Junk",
+    "Spam",
+    "Junk E-mail",
+    "Junk Email",
+    "Bulk Mail",
+    "[Gmail]/Spam",
+    "[Google Mail]/Spam",
+    "INBOX.Junk",
+    "INBOX/Junk",
+    "INBOX.Spam",
+    "INBOX/Spam",
+];
+
+/// Names an Archive folder goes by on servers that do not flag one
+/// `\Archive`. Gmail's All Mail is not one: it holds the Inbox too.
+const ARCHIVE_NAMES: &[&str] = &["Archive", "Archives", "INBOX.Archive", "INBOX/Archive"];
 
 /// Names a Trash folder goes by on servers that do not flag one `\Trash`.
 const TRASH_NAMES: &[&str] = &[
@@ -741,6 +829,32 @@ pub(super) fn special_mailbox(names: &[(String, bool)], known: &[&str]) -> Optio
                 .find_map(|want| names.iter().find(|(n, _)| n.eq_ignore_ascii_case(want)))
         })
         .map(|(n, _)| n.clone())
+}
+
+/// The well-known names of a special-use folder; none for INBOX, which is
+/// opened by name.
+fn known_names(folder: MailFolder) -> &'static [&'static str] {
+    match folder {
+        MailFolder::Inbox => &[],
+        MailFolder::Sent => SENT_NAMES,
+        MailFolder::Drafts => DRAFTS_NAMES,
+        MailFolder::Trash => TRASH_NAMES,
+        MailFolder::Junk => JUNK_NAMES,
+        MailFolder::Archive => ARCHIVE_NAMES,
+    }
+}
+
+/// The RFC 6154 attribute LIST flags a special-use folder with.
+fn special_use(folder: MailFolder) -> fn(&async_imap::types::NameAttribute) -> bool {
+    use async_imap::types::NameAttribute as A;
+    match folder {
+        MailFolder::Inbox => |_| false,
+        MailFolder::Sent => |a| matches!(a, A::Sent),
+        MailFolder::Drafts => |a| matches!(a, A::Drafts),
+        MailFolder::Trash => |a| matches!(a, A::Trash),
+        MailFolder::Junk => |a| matches!(a, A::Junk),
+        MailFolder::Archive => |a| matches!(a, A::Archive),
+    }
 }
 
 /// The mailbox for sent mail: the one LIST flags `\Sent`, else one with a
@@ -827,11 +941,18 @@ async fn trash_in(
 ) -> Result<(), String> {
     use async_imap::types::NameAttribute;
     let host = account.imap_host.as_str();
+    let (folder, rest) = split_handle(message_id);
+    if folder != MailFolder::Inbox {
+        return Err(format!(
+            "Only an Inbox message can be moved to Trash, not one in {}",
+            folder.label()
+        ));
+    }
     let names = mailboxes(session, host, t, |a| matches!(a, NameAttribute::Trash)).await?;
     let trash = special_mailbox(&names, TRASH_NAMES)
         .ok_or_else(|| "no Trash mailbox was found".to_string())?;
     let validity = select_inbox(session, host, t).await?;
-    let set = uid_from_handle(message_id, validity)?.to_string();
+    let set = uid_from_handle(rest, validity)?.to_string();
     move_selected(session, host, t, &set, &trash).await
 }
 
@@ -891,11 +1012,14 @@ mod tests {
             from: Some("alice".into()),
             subject_contains: Some("report".into()),
             max_results: 10,
+            to: Some("bob".into()),
             unseen_only: false,
+            folder: MailFolder::Sent,
         });
         assert!(q.contains("SINCE 01-Jan-2026"));
         assert!(q.contains("FROM \"alice\""));
         assert!(q.contains("SUBJECT \"report\""));
+        assert!(q.contains("TO \"bob\""));
     }
 
     #[test]
@@ -992,7 +1116,7 @@ mod tests {
     fn a_list_asks_for_headers_and_structure_never_the_body() {
         assert!(LIST_QUERY.contains("BODYSTRUCTURE"));
         assert!(LIST_QUERY.contains("FLAGS"));
-        assert!(LIST_QUERY.contains("BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT MESSAGE-ID)]"));
+        assert!(LIST_QUERY.contains("BODY.PEEK[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)]"));
         assert!(!LIST_QUERY.contains("BODY.PEEK[]"));
         assert_eq!(part_query("1.2", 4096), "(UID BODY.PEEK[1.2]<0.4096>)");
     }
@@ -1008,6 +1132,55 @@ mod tests {
         // From before handles carried UIDVALIDITY.
         assert_eq!(uid_from_handle("1200", 77), Ok(1200));
         assert!(uid_from_handle("abc", 77).is_err());
+    }
+
+    #[test]
+    fn a_handle_outside_inbox_names_its_folder_and_an_inbox_one_does_not() {
+        assert_eq!(folder_handle(MailFolder::Inbox, 77, 1200), "77:1200");
+        assert_eq!(folder_handle(MailFolder::Sent, 77, 1200), "sent:77:1200");
+        assert_eq!(split_handle("77:1200"), (MailFolder::Inbox, "77:1200"));
+        assert_eq!(split_handle("1200"), (MailFolder::Inbox, "1200"));
+        assert_eq!(split_handle("sent:77:1200"), (MailFolder::Sent, "77:1200"));
+        assert_eq!(
+            split_handle("inbox:77:1200"),
+            (MailFolder::Inbox, "77:1200")
+        );
+        for f in MailFolder::ALL {
+            let h = folder_handle(f, 9, 3);
+            let (folder, rest) = split_handle(&h);
+            assert_eq!(folder, f);
+            assert_eq!(uid_from_handle(rest, 9), Ok(3));
+        }
+        // An unknown folder is not a handle.
+        let (folder, rest) = split_handle("outbox:77:1200");
+        assert_eq!(folder, MailFolder::Inbox);
+        assert!(uid_from_handle(rest, 77).is_err());
+    }
+
+    #[test]
+    fn every_folder_but_inbox_has_well_known_names() {
+        for f in MailFolder::ALL {
+            assert_eq!(known_names(f).is_empty(), f == MailFolder::Inbox, "{f:?}");
+        }
+        use async_imap::types::NameAttribute as A;
+        assert!(special_use(MailFolder::Drafts)(&A::Drafts));
+        assert!(!special_use(MailFolder::Drafts)(&A::Sent));
+        assert!(special_use(MailFolder::Junk)(&A::Junk));
+        assert!(!special_use(MailFolder::Inbox)(&A::Sent));
+        let named = |v: &[(&str, bool)]| -> Vec<(String, bool)> {
+            v.iter().map(|(n, f)| (n.to_string(), *f)).collect()
+        };
+        assert_eq!(
+            special_mailbox(
+                &named(&[("INBOX", false), ("[Gmail]/Spam", false)]),
+                known_names(MailFolder::Junk)
+            ),
+            Some("[Gmail]/Spam".into())
+        );
+        assert_eq!(
+            special_mailbox(&named(&[("INBOX", false)]), known_names(MailFolder::Drafts)),
+            None
+        );
     }
 
     #[test]
