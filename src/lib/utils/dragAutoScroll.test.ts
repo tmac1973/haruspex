@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { edgeSpeed } from './dragAutoScroll';
+import { edgeSpeed, scrollParent } from './dragAutoScroll';
 
 describe('edgeSpeed', () => {
 	it('is zero in the middle', () => {
@@ -20,5 +20,35 @@ describe('edgeSpeed', () => {
 	it('keeps a small scroller mostly free of edge zones', () => {
 		expect(edgeSpeed(50, 0, 100)).toBe(0);
 		expect(edgeSpeed(0, 0, 0)).toBe(0);
+	});
+});
+
+describe('scrollParent', () => {
+	it('picks the node itself when it scrolls', () => {
+		const outer = document.createElement('div');
+		outer.style.overflowY = 'auto';
+		const view = document.createElement('div');
+		view.style.overflowY = 'auto';
+		outer.append(view);
+		document.body.append(outer);
+		expect(scrollParent(view)).toBe(view);
+		outer.remove();
+	});
+
+	it('walks up to a scrolling ancestor', () => {
+		const outer = document.createElement('div');
+		outer.style.overflowY = 'scroll';
+		const inner = document.createElement('div');
+		outer.append(inner);
+		document.body.append(outer);
+		expect(scrollParent(inner)).toBe(outer);
+		outer.remove();
+	});
+
+	it('falls back to the page', () => {
+		const el = document.createElement('div');
+		document.body.append(el);
+		expect(scrollParent(el)).toBe(document.scrollingElement ?? document.documentElement);
+		el.remove();
 	});
 });
