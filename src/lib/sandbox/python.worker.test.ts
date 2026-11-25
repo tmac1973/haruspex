@@ -287,6 +287,25 @@ describe('python.worker run', () => {
 		expect(destroyed).toEqual(['value']);
 	});
 
+	it("loads the code's packages without printing Pyodide's progress", async () => {
+		// "Loading numpy, …" / "numpy already loaded from default channel"
+		// landed in the run's stdout, read as the code's own output.
+		await boot();
+		let opts: { messageCallback?: (m: string) => void; errorCallback?: (m: string) => void } = {};
+		(py.api as { loadPackagesFromImports: unknown }).loadPackagesFromImports = async (
+			_c: string,
+			o: typeof opts
+		) => {
+			opts = o;
+			o.messageCallback?.('Loading numpy');
+			o.errorCallback?.('could not load ghost');
+		};
+		const result = await run('USER import numpy');
+		expect(result.stdout).toBe('');
+		expect(result.stderr).toContain('could not load ghost');
+		expect(opts.messageCallback).toBeTypeOf('function');
+	});
+
 	it('leaves result empty when the code evaluates to nothing', async () => {
 		await boot();
 		expect((await run('USER x = 1')).result).toBe('');
