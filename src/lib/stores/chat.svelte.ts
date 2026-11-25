@@ -320,8 +320,11 @@ function generateId(): string {
 	return crypto.randomUUID();
 }
 
+/** What a chat is called until its first message names it. */
+const UNTITLED = 'New chat';
+
 function generateTitle(content: string): string {
-	return content.slice(0, 50).replace(/\n/g, ' ').trim() || 'New chat';
+	return content.slice(0, 50).replace(/\n/g, ' ').trim() || UNTITLED;
 }
 
 // Public API
@@ -826,7 +829,7 @@ export function createConversation(): string {
 	const now = Date.now();
 	conversations.unshift({
 		id,
-		title: 'New chat',
+		title: UNTITLED,
 		messages: [],
 		createdAt: now,
 		updatedAt: now,
@@ -848,7 +851,7 @@ export function createConversation(): string {
 	resetContextUsage();
 	// Stored even when empty: a row without one would take the shared folder
 	// at the next launch.
-	void dbCreateConversation(id, 'New chat').then(() => dbSetWorkingDir(id, folder));
+	void dbCreateConversation(id, UNTITLED).then(() => dbSetWorkingDir(id, folder));
 	return id;
 }
 
@@ -1217,8 +1220,8 @@ function finalizeUserTurn(
 	skill?: SkillDoc
 ): void {
 	// The first message the user sends titles the chat, even after a `/skills`
-	// note opened it.
-	if (!conversation.messages.some((m) => m.role === 'user')) {
+	// note opened it — unless the chat was renamed before it: that name stays.
+	if (conversation.title === UNTITLED && !conversation.messages.some((m) => m.role === 'user')) {
 		const title = generateTitle(content || 'Image');
 		conversation.title = title;
 		void dbRenameConversation(conversation.id, title);
