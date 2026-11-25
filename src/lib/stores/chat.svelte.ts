@@ -954,9 +954,39 @@ interface SandboxCallToReplay {
 	args: { code?: string; package?: string };
 }
 
-function collectSandboxCalls(messages: ChatMessage[]): SandboxCallToReplay[] {
+const SANDBOX_TOOLS = new Set(['run_python', 'install_package', 'reset_python']);
+
+/** A step whose code never ran: lint stopped it, or the user said no. */
+function stepNeverRan(step: SearchStep): boolean {
+	if (step.lintIssues?.length) return true;
+	const result = step.result ?? '';
+	return (
+		result.startsWith('Lint failed before running') || result.includes('User denied code execution')
+	);
+}
+
+/**
+ * The chat's earlier sandbox calls, in order. A turn's tool calls are saved
+ * as its message's steps (`messageSteps`), not as `tool_calls` on the
+ * message, so they are read from there; `tool_calls` is still read for a
+ * message that has no steps.
+ */
+function collectSandboxCalls(
+	messages: ChatMessage[],
+	messageSteps: Record<number, SearchStep[]>
+): SandboxCallToReplay[] {
 	const out: SandboxCallToReplay[] = [];
-	for (const msg of messages) {
+	for (const [i, msg] of messages.entries()) {
+		const steps = messageSteps[i];
+		if (steps?.length) {
+			for (const step of steps) {
+				if (!SANDBOX_TOOLS.has(step.toolName) || step.status !== 'done') continue;
+				if (stepNeverRan(step)) continue;
+				const args = (step.args ?? {}) as { code?: string; package?: string };
+				out.push({ name: step.toolName as SandboxCallToReplay['name'], args });
+			}
+			continue;
+		}
 		if (msg.role !== 'assistant' || !msg.tool_calls) continue;
 		for (const call of msg.tool_calls) {
 			const name = call.function?.name;
@@ -1024,7 +1054,7 @@ async function restoreSandboxSession(id: string): Promise<void> {
 		logDebug('sandbox', 'session restore skipped — worker still live', { chatId: id });
 		return;
 	}
-	const calls = collectSandboxCalls(conv.messages);
+	const calls = collectSandboxCalls(conv.messages, conv.messageSteps);
 	if (calls.length === 0) return;
 	if (calls.length > SESSION_REPLAY_CAP) {
 		conv.sessionRestoreSkipped = true;

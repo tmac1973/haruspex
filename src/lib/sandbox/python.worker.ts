@@ -1430,6 +1430,19 @@ const OPTIONAL_DEP_RE = /Missing optional dependency ['"]([^'"]+)['"]/;
 const REQUIRED_RE = /ImportError: ([A-Za-z_][\w.]*) is required\b/;
 const MAX_INSTALL_ROUNDS = 3;
 
+/**
+ * Package loads inside a run say nothing on success. Pyodide's default
+ * prints "Loading numpy, …" / "numpy already loaded from default channel"
+ * to the run's stdout, where the model and the user read it as the code's
+ * output. Errors still reach stderr.
+ */
+const quietLoad = {
+	messageCallback: () => {},
+	errorCallback: (msg: string) => {
+		currentStderr += msg + '\n';
+	}
+};
+
 /** Route plt.show / fig.show / bokeh show into the chat. Idempotent. */
 const INSTALL_DISPLAY_HOOKS =
 	'_haruspex_install_matplotlib_hook(); _haruspex_install_plotly_hook(); _haruspex_install_bokeh_hook()';
@@ -1465,7 +1478,7 @@ async function installIntoPyodide(
 	postInstallProgress(pkg, 'downloading');
 	let found = false;
 	if (/^[A-Za-z_]\w*$/.test(pkg)) {
-		await pyodide.loadPackagesFromImports(`import ${pkg}`);
+		await pyodide.loadPackagesFromImports(`import ${pkg}`, quietLoad);
 		found = Boolean(
 			await pyodide.runPythonAsync(
 				'import importlib, importlib.util\n' +
@@ -1664,7 +1677,7 @@ async function handleRun(id: string, code: string, replay: boolean): Promise<voi
 		// loadPackagesFromImports + the auto-install pass below can take as
 		// long as the downloads need without tripping the run budget.
 		postPkgPhaseStart();
-		await pyodide.loadPackagesFromImports(code);
+		await pyodide.loadPackagesFromImports(code, quietLoad);
 		// Auto-install PyPI packages the user code imports but that
 		// aren't in Pyodide's lockfile (so loadPackagesFromImports
 		// didn't catch them). Eliminates the install_package →

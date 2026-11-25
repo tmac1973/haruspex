@@ -493,6 +493,41 @@ describe('chat store', () => {
 			expect(getActiveConversation()?.isRestoringSession).toBe(false);
 		});
 
+		it('replays the code a saved turn keeps in its steps', async () => {
+			// The chat saves a turn's tool calls as its message's steps, not as
+			// tool_calls, so restore read nothing and never ran.
+			const { createConversation, setActiveConversation, getConversations } =
+				await import('#lib/stores/chat.svelte.ts');
+			const a = createConversation();
+			const b = createConversation();
+			const convA = getConversations().find((c) => c.id === a)!;
+			convA.messages.push({ role: 'user', content: 'plot it' });
+			convA.messages.push({ role: 'assistant', content: 'done' });
+			const step = (over: Record<string, unknown>) =>
+				({ id: 's', toolName: 'run_python', query: '', status: 'done', ...over }) as never;
+			convA.messageSteps[1] = [
+				step({ toolName: 'web_search', args: { query: 'x' } }),
+				step({ args: { code: 'x = 1' }, result: 'Result: 1' }),
+				step({
+					args: { code: 'y = undefined_name' },
+					result: 'Lint failed before running (ruff caught 1 issue). No code was executed:',
+					lintIssues: [{ line: 1, code: 'F821', message: 'undefined' }]
+				}),
+				step({ args: { code: 'import os' }, result: 'Error: User denied code execution.' }),
+				step({ args: { code: 'z = 2' }, status: 'running' }),
+				step({ toolName: 'install_package', args: { package: 'plotly' } })
+			];
+
+			await setActiveConversation(b);
+			sandboxMocks.installPackage.mockClear();
+			sandboxMocks.runPython.mockClear();
+			await setActiveConversation(a);
+			await flush();
+
+			expect(sandboxMocks.runPython.mock.calls).toEqual([[a, 'x = 1', { replay: true }]]);
+			expect(sandboxMocks.installPackage).toHaveBeenCalledWith(a, 'plotly');
+		});
+
 		it('does nothing when the chat has no prior sandbox tool calls', async () => {
 			const { createConversation, setActiveConversation } =
 				await import('#lib/stores/chat.svelte.ts');
