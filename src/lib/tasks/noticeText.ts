@@ -117,7 +117,13 @@ const RESULT_TEXT: Partial<Record<BackgroundTask['kind'], (t: BackgroundTask) =>
 	video: (t) => {
 		const r = t.result as VideoTaskResult;
 		const made = { ...r, url: clipUrl(r) };
-		return videoAnswerText({ made, title: r.title, saved: r.saved, notes: r.notes });
+		return videoAnswerText({
+			made,
+			title: r.title,
+			saved: r.saved,
+			notes: r.notes,
+			upscaledFrom: r.upscaledFrom
+		});
 	}
 };
 

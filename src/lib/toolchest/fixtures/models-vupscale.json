@@ -1,0 +1,160 @@
+{
+	"object": "list",
+	"data": [
+		{
+			"created": 1795374251,
+			"id": "s2v",
+			"meta": {
+				"api": ["video.jobs", "video.sync"],
+				"capabilities": ["start_image", "audio"],
+				"gpu": 2,
+				"kind": "video",
+				"measuring": false,
+				"model_set": "wan22-s2v-14b",
+				"recipe": "wan22-s2v",
+				"reserved_mib": 13812,
+				"state": "stopped",
+				"video": {
+					"default_fps": 16,
+					"default_frames": 33,
+					"default_size": "832x480",
+					"fixed_fps": 16,
+					"max_frames": 81,
+					"max_size": "1280x720",
+					"measured_frames": 49,
+					"measured_pixel_frames": 19568640,
+					"measured_size": "832x480",
+					"size_multiple": 16
+				}
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1795536209,
+			"id": "relayvsr-x2",
+			"meta": {
+				"api": ["video.upscale.jobs"],
+				"capabilities": [],
+				"gpu": 2,
+				"kind": "vupscale",
+				"measuring": false,
+				"model_set": "relayvsr-x2",
+				"recipe": "relayvsr",
+				"reserved_mib": 9728,
+				"scale": 2,
+				"state": "stopped",
+				"vupscale": {
+					"default_window_size": 16,
+					"input_formats": ["avi", "webm", "webp"],
+					"max_decoded_bytes": 268435456,
+					"measured_frames": 81,
+					"measured_size": "832x480",
+					"measured_window": 16,
+					"output_formats": ["webm", "avi"],
+					"scale": 2,
+					"script": "relayvsr",
+					"window_sizes": {
+						"max": 32,
+						"min": 2
+					}
+				}
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1795536209,
+			"id": "relayvsr-x4",
+			"meta": {
+				"api": ["video.upscale.jobs"],
+				"capabilities": [],
+				"gpu": 2,
+				"kind": "vupscale",
+				"measuring": false,
+				"model_set": "relayvsr-x4",
+				"recipe": "relayvsr",
+				"reserved_mib": 12288,
+				"scale": 4,
+				"state": "stopped",
+				"vupscale": {
+					"default_window_size": 16,
+					"input_formats": ["avi", "webm", "webp"],
+					"max_decoded_bytes": 268435456,
+					"measured_frames": 81,
+					"measured_size": "512x288",
+					"measured_window": 16,
+					"output_formats": ["webm", "avi"],
+					"scale": 4,
+					"script": "relayvsr",
+					"window_sizes": {
+						"max": 32,
+						"min": 2
+					}
+				}
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1795536209,
+			"id": "seedvr2-3b",
+			"meta": {
+				"api": ["video.upscale.jobs"],
+				"capabilities": [],
+				"gpu": 2,
+				"kind": "vupscale",
+				"measuring": false,
+				"model_set": "seedvr2-3b",
+				"recipe": "seedvr2",
+				"reserved_mib": 11264,
+				"scale": 2,
+				"state": "stopped",
+				"vupscale": {
+					"default_window_size": 1,
+					"input_formats": ["avi", "webm", "webp"],
+					"max_decoded_bytes": 268435456,
+					"measured_frames": 81,
+					"measured_size": "832x480",
+					"measured_window": 1,
+					"output_formats": ["webm", "avi"],
+					"scale": 2,
+					"script": "seedvr2",
+					"window_sizes": [1, 5, 9, 13, 17, 21, 25, 29, 33]
+				}
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1795558609,
+			"id": "seedvr2-7b-sharp",
+			"meta": {
+				"api": ["video.upscale.jobs"],
+				"capabilities": [],
+				"gpu": 2,
+				"kind": "vupscale",
+				"measuring": false,
+				"model_set": "seedvr2-7b-sharp",
+				"recipe": "seedvr2",
+				"reserved_mib": 14324,
+				"scale": 2,
+				"state": "stopped",
+				"vupscale": {
+					"default_window_size": 1,
+					"input_formats": ["avi", "webm", "webp"],
+					"max_decoded_bytes": 268435456,
+					"measured_frames": 33,
+					"measured_size": "832x480",
+					"measured_window": 1,
+					"output_formats": ["webm", "avi"],
+					"scale": 2,
+					"script": "seedvr2",
+					"window_sizes": [1, 5, 9, 13, 17, 21, 25, 29, 33]
+				}
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		}
+	]
+}

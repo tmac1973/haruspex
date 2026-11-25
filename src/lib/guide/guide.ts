@@ -51,6 +51,7 @@ const ORDER = [
 	'voice',
 	'speech',
 	'video-generation',
+	'video-upscaling',
 	'video-editing',
 	'video-cut',
 	'video-adjust',

@@ -6,7 +6,7 @@
  */
 
 import type { GenerationEntry } from '#lib/generation/entry.ts';
-import type { VideoLimits } from '#lib/toolchest/models.ts';
+import type { VideoLimits, VupscaleLimits } from '#lib/toolchest/models.ts';
 
 /** A server kind that can make clips. */
 export type VideoBackendKind = 'llama-toolchest' | 'comfyui';
@@ -33,6 +33,8 @@ export interface VideoCaps {
 	licence: string;
 	/** Null when the licence isn't one Haruspex knows. */
 	commercialUse: boolean | null;
+	/** Its server has a video upscaler (`upscale_video`). Absent means no. */
+	upscale?: boolean;
 }
 
 /** One video model on one server, as Settings → Video generation keeps it. */
@@ -65,6 +67,34 @@ export interface VideoRequest {
 	audio?: { name: string; hash: string };
 	/** Send no length: the server makes the clip as long as `audio`. */
 	followAudio?: boolean;
+}
+
+/** A video upscaler on a video model's server, and what it takes. */
+export interface VideoUpscaler {
+	/** The instance id: what a request's `model` names. */
+	id: string;
+	limits: VupscaleLimits;
+}
+
+/** A clip as `video_upscale_input` keeps it: MJPEG AVI in the audio cache. */
+export interface UpscaleClip {
+	hash: string;
+	width: number;
+	height: number;
+	frames: number;
+	fps: number;
+	hasAudio: boolean;
+}
+
+/** One clip to make larger, settled: converted, and checked against the upscaler. */
+export interface VideoUpscaleRequest {
+	/** What the player and a saved file are called. */
+	title: string;
+	input: UpscaleClip;
+	/** The upscaler instance on the entry's server. */
+	upscaler: string;
+	scale: number;
+	seed: number;
 }
 
 export interface VideoProgress {

@@ -53,7 +53,13 @@ export function videoBackendForEntry(entry: VideoModelEntry): VideoBackend | und
 	const backend: VideoBackend = {
 		...inner,
 		generate: (req, opts) => inner.generate(req, own(opts)),
-		resume: (handle, req, opts) => inner.resume(handle, req, own(opts))
+		resume: (handle, req, opts) => inner.resume(handle, req, own(opts)),
+		...(inner.upscale && inner.resumeUpscale
+			? {
+					upscale: (req, opts) => inner.upscale!(req, own(opts)),
+					resumeUpscale: (handle, req, opts) => inner.resumeUpscale!(handle, req, own(opts))
+				}
+			: {})
 	};
 	built.set(slot, { key, backend });
 	return backend;

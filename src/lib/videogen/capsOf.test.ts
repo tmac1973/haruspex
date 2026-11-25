@@ -24,6 +24,7 @@ function instance(over: Partial<ToolchestInstance>): ToolchestInstance {
 		maxEditImages: null,
 		scale: null,
 		video: limits,
+		vupscale: null,
 		licence: 'Apache 2.0',
 		commercialUse: true,
 		...over

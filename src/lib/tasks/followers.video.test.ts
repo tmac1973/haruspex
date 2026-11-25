@@ -3,12 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const state = vi.hoisted(() => ({
 	updates: [] as Record<string, unknown>[],
 	generate: vi.fn(),
-	resume: vi.fn()
+	resume: vi.fn(),
+	upscale: vi.fn(),
+	resumeUpscale: vi.fn(),
+	muxed: [] as Record<string, unknown>[]
 }));
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore(
 		{},
 		async (cmd: string, args: { id: string; patch: Record<string, unknown> }) => {
+			if (cmd === 'video_mux_audio') {
+				state.muxed.push(args as never);
+				return { hash: 'f'.repeat(64), mime: 'video/webm', bytes: 1 };
+			}
 			if (cmd !== 'task_update') return null;
 			state.updates.push(args.patch);
 			return { id: args.id, ...args.patch };
@@ -20,7 +27,12 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })
 }));
 vi.mock('#lib/videogen/index.ts', () => ({
-	videoBackendForEntry: () => ({ generate: state.generate, resume: state.resume })
+	videoBackendForEntry: () => ({
+		generate: state.generate,
+		resume: state.resume,
+		upscale: state.upscale,
+		resumeUpscale: state.resumeUpscale
+	})
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -114,6 +126,9 @@ beforeEach(() => {
 	state.updates = [];
 	state.generate.mockReset();
 	state.resume.mockReset();
+	state.upscale.mockReset();
+	state.resumeUpscale.mockReset();
+	state.muxed = [];
 });
 
 describe('the video follower', () => {
@@ -156,5 +171,56 @@ describe('the video follower', () => {
 		state.generate.mockRejectedValue(new ToolchestError('cancelled', 'Cancelled.'));
 		await dispatch(task(), 'run');
 		expect(state.updates.at(-1)).toEqual({ state: 'cancelled' });
+	});
+});
+
+describe('the video follower, upscaling', () => {
+	const input = { hash: 'd'.repeat(64), width: 832, height: 480, frames: 33, fps: 24 };
+	const upSpec = (hasAudio: boolean): VideoTaskSpec => ({
+		op: 'upscale',
+		request: {
+			title: 'Fox ×2',
+			input: { ...input, hasAudio },
+			upscaler: 'relayvsr-x2',
+			scale: 2,
+			seed: 3
+		},
+		notes: [],
+		save: null,
+		conversationId: 'c1',
+		codeSessionId: null,
+		entryId: 'v'
+	});
+	const upMade = { ...made, width: 1664, height: 960, model: 'relayvsr-x2', hasAudio: false };
+
+	it('upscales, puts the clip’s sound back, and says what size it was', async () => {
+		state.upscale.mockResolvedValue(upMade);
+		await dispatch(task({ spec: upSpec(true) }), 'run');
+		expect(state.generate).not.toHaveBeenCalled();
+		expect(state.upscale).toHaveBeenCalledWith(upSpec(true).request, expect.anything());
+		expect(state.muxed[0]).toMatchObject({ videoHash: HASH, audioHash: input.hash });
+		const result = state.updates.find((u) => u.result)?.result;
+		expect(result).toMatchObject({
+			hash: 'f'.repeat(64),
+			width: 1664,
+			hasAudio: true,
+			upscaledFrom: { width: 832, height: 480 }
+		});
+	});
+
+	it('leaves a clip without sound as it came', async () => {
+		state.upscale.mockResolvedValue(upMade);
+		await dispatch(task({ spec: upSpec(false) }), 'run');
+		expect(state.muxed).toHaveLength(0);
+	});
+
+	it('follows an upscale job again after a restart', async () => {
+		state.resumeUpscale.mockResolvedValue(upMade);
+		await dispatch(task({ spec: upSpec(false), handle }), 'resume');
+		expect(state.resumeUpscale).toHaveBeenCalledWith(
+			handle,
+			upSpec(false).request,
+			expect.anything()
+		);
 	});
 });

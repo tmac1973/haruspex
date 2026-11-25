@@ -11,7 +11,9 @@ import type {
 	VideoGenerateOptions,
 	VideoJobHandle,
 	VideoRequest,
-	VideoResult
+	VideoResult,
+	VideoUpscaler,
+	VideoUpscaleRequest
 } from '#lib/videogen/types.ts';
 
 export type VideoBackendErrorKind =
@@ -44,4 +46,16 @@ export interface VideoBackend {
 	): Promise<VideoResult>;
 	/** The models the server offers, for Settings' dropdown. */
 	models?(signal?: AbortSignal): Promise<ModelOption[]>;
+	/**
+	 * The server's video upscalers, as `capabilities` last saw them. Only
+	 * where `capabilities().upscale` says so, with `upscale` and
+	 * `resumeUpscale` beside it.
+	 */
+	upscalers?(): VideoUpscaler[];
+	upscale?(req: VideoUpscaleRequest, opts?: VideoGenerateOptions): Promise<VideoResult>;
+	resumeUpscale?(
+		handle: VideoJobHandle,
+		req: VideoUpscaleRequest,
+		opts?: VideoGenerateOptions
+	): Promise<VideoResult>;
 }

@@ -34,6 +34,7 @@ vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.res
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
+import vupscale from '#lib/toolchest/fixtures/models-vupscale.json';
 import { invoke } from '@tauri-apps/api/core';
 import {
 	httpRouter,
@@ -44,10 +45,10 @@ import {
 	type HttpCall
 } from '#lib/testing/invoke.ts';
 import { parseGenerationModels } from '#lib/toolchest/models.ts';
-import { readVideoJob, videoProgressOf } from './backend.ts';
+import { readUpscaleJob, readVideoJob, videoProgressOf } from './backend.ts';
 import { videoBackendForEntry } from '../index.ts';
 import type { VideoBackend } from '../backend.ts';
-import type { VideoJobHandle, VideoProgress, VideoRequest } from '../types.ts';
+import type { VideoJobHandle, VideoProgress, VideoRequest, VideoUpscaleRequest } from '../types.ts';
 
 interface Call extends HttpCall {
 	api_key: string;
@@ -438,5 +439,136 @@ describe('one backend per video model', () => {
 			.catch((e: unknown) => e);
 		expect(err).toBeInstanceOf(VideoBackendError);
 		expect(err).toMatchObject({ kind: 'unconfigured' });
+	});
+});
+
+describe('upscaling a clip', () => {
+	const UP = `/v1/videos/upscale/jobs/${ID}`;
+	const withUpscalers = () => {
+		const m = models();
+		return { ...m, data: [...m.data, ...vupscale.data.filter((d) => d.meta.kind === 'vupscale')] };
+	};
+	const upDone = {
+		id: ID,
+		model: 'relayvsr-x2',
+		status: 'succeeded',
+		queue_position: 0,
+		input: { format: 'avi', width: 832, height: 480, frames: 81, has_audio: true },
+		audio_dropped: true,
+		video: {
+			url: `${UP}/video`,
+			mime_type: 'video/webm',
+			format: 'webm',
+			frames: 81,
+			width: 1664,
+			height: 960,
+			bytes: 999
+		}
+	};
+	const upRequest: VideoUpscaleRequest = {
+		title: 'Fox ×2',
+		input: { hash: 'd'.repeat(64), width: 832, height: 480, frames: 81, fps: 16, hasAudio: true },
+		upscaler: 'relayvsr-x2',
+		scale: 2,
+		seed: 3
+	};
+
+	function upscaleRoutes(): Record<string, Answer> {
+		const states = [
+			{ id: ID, status: 'queued', phase: 'queued', queue_position: 0 },
+			{ id: ID, status: 'running', phase: 'upscaling', progress: { completed: 2, total: 6 } },
+			upDone
+		];
+		let n = 0;
+		return {
+			'GET /v1/models': withUpscalers(),
+			'POST /v1/videos/upscale/jobs': states[0],
+			[`GET ${UP}`]: () => states[Math.min(++n, states.length - 1)],
+			[`DELETE ${UP}`]: null
+		};
+	}
+
+	it('says the server can upscale, and lists its upscalers with their measured size', async () => {
+		use(upscaleRoutes());
+		const caps = await backend().capabilities();
+		expect(caps.upscale).toBe(true);
+		const ups = backend().upscalers!();
+		expect(ups.map((u) => [u.id, u.limits.scale])).toEqual([
+			['relayvsr-x2', 2],
+			['relayvsr-x4', 4],
+			['seedvr2-3b', 2],
+			['seedvr2-7b-sharp', 2]
+		]);
+		expect(ups[1].limits).toMatchObject({
+			script: 'relayvsr',
+			measuredWidth: 512,
+			measuredHeight: 288,
+			measuredFrames: 81,
+			maxDecodedBytes: 268435456
+		});
+	});
+
+	it('says no upscale on a server with none', async () => {
+		use(jobRoutes());
+		expect((await backend().capabilities()).upscale).toBe(false);
+	});
+
+	it('sends the clip from the cache as a form, follows the job and keeps the result', async () => {
+		use(upscaleRoutes());
+		const seen: VideoProgress[] = [];
+		const handles: VideoJobHandle[] = [];
+		const made = await backend().upscale!(upRequest, {
+			conversationId: 'chat-1',
+			onProgress: (p) => seen.push(p),
+			onHandle: (h) => handles.push(h)
+		});
+		const [sent] = calls('toolchest_upload');
+		expect(sent.call.path).toBe('/v1/videos/upscale/jobs');
+		expect(sent.call.body).toEqual({ model: 'relayvsr-x2', output_format: 'webm', seed: 3 });
+		expect(sent.fields).toBe(true);
+		expect(sent.files).toEqual([
+			{ field: 'video', filename: 'clip.avi', hash: 'd'.repeat(64), cache: 'audio', bytes: null }
+		]);
+		expect(handles[0]).toMatchObject({ id: ID, model: 'relayvsr-x2', entryId: 'v1' });
+		expect(seen).toContainEqual({ phase: 'generating', step: 2, totalSteps: 6 });
+		expect(calls('audio_store_url')[0]).toMatchObject({ url: `http://box:3000${UP}/video` });
+		expect(made).toMatchObject({
+			width: 1664,
+			height: 960,
+			frames: 81,
+			fps: 16,
+			model: 'relayvsr-x2',
+			hasAudio: false
+		});
+		expect(
+			calls('toolchest_json').some((a) => a.call.method === 'DELETE' && a.call.path === UP)
+		).toBe(true);
+	});
+
+	it('refuses an upscaler the server no longer has', async () => {
+		use(upscaleRoutes());
+		await expect(backend().upscale!({ ...upRequest, upscaler: 'gone' })).rejects.toThrow(
+			/gone is not a video upscaler/
+		);
+	});
+
+	it('follows an upscale job again after a restart', async () => {
+		use(upscaleRoutes());
+		const handle: VideoJobHandle = {
+			backend: 'llama-toolchest',
+			baseUrl: 'http://box:3000/',
+			id: ID,
+			model: 'relayvsr-x2',
+			keyId: 'k1'
+		};
+		const made = await backend().resumeUpscale!(handle, upRequest);
+		expect(made.width).toBe(1664);
+		expect(calls('toolchest_upload')).toHaveLength(0);
+	});
+
+	it('reads windows done as steps', () => {
+		expect(
+			readUpscaleJob({ id: ID, status: 'running', progress: { completed: 1, total: 4 } })
+		).toMatchObject({ step: 1, totalSteps: 4 });
 	});
 });

@@ -54,6 +54,13 @@ const FIELDS = {
 	}
 } as const satisfies Record<FieldKind, { url: string; key: ApiKeyIdField; model: string }>;
 
+/** The upscalers each kind uses, and the route a build lists for them. */
+const UPSCALERS: Record<GenerationKind, { kind: 'upscale' | 'vupscale'; api: string } | null> = {
+	image: { kind: 'upscale', api: 'images.upscale' },
+	video: { kind: 'vupscale', api: 'video.upscale.jobs' },
+	music: null
+};
+
 /** The `/v1/models` route every toolchest build serves. */
 const MODELS_ROUTE = '/v1/models';
 
@@ -151,8 +158,12 @@ export function toolchestServer(kind: GenerationKind, source: () => ToolchestSou
 	const section = SECTIONS[kind];
 	/** What a probe or a generation last saw, for the sync questions asked after. */
 	let lastInstances: ToolchestInstance[] = [];
-	/** The server's upscalers, from the same read; kept for the image kind only. */
+	/**
+	 * The server's upscalers, from the same read: picture upscalers for the
+	 * image kind, video upscalers for the video kind, none for music.
+	 */
 	let lastUpscalers: ToolchestInstance[] = [];
+	const upscaler = UPSCALERS[kind];
 
 	/** The server and key. */
 	async function config(): Promise<ToolchestConfig> {
@@ -181,16 +192,16 @@ export function toolchestServer(kind: GenerationKind, source: () => ToolchestSou
 	): Promise<ToolchestInstance[]> {
 		const json = await toolchestJson(cfg, { path: MODELS_ROUTE }, signal);
 		lastInstances = parseGenerationModels(json, kind);
-		if (kind === 'image') lastUpscalers = parseGenerationModels(json, 'upscale');
+		if (upscaler) lastUpscalers = parseGenerationModels(json, upscaler.kind);
 		return lastInstances;
 	}
 
 	/**
 	 * The upscalers the last read saw that a request may name. Toolchest runs
-	 * one as a set of its own, beside the image instances.
+	 * one as a set of its own, beside the image or video instances.
 	 */
 	function upscalers(): ToolchestInstance[] {
-		return lastUpscalers.filter((i) => usable(i) && i.api.includes('images.upscale'));
+		return lastUpscalers.filter((i) => usable(i) && !!upscaler && i.api.includes(upscaler.api));
 	}
 
 	/** Every instance the last probe or generation saw. */

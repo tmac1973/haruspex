@@ -76,7 +76,7 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
 	},
 	{
 		id: 'video-gen',
-		line: 'video-gen — make a short video clip from a description or a picture',
+		line: 'video-gen — make a short video clip from a description or a picture, or upscale one',
 		has: byCategory('video-gen')
 	},
 	{

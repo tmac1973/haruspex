@@ -578,6 +578,7 @@ export const IPC = {
 	video_transcribe: 'video_transcribe',
 	video_transcribe_cancel: 'video_transcribe_cancel',
 	video_transcript_for: 'video_transcript_for',
+	video_upscale_input: 'video_upscale_input',
 	video_write_captions: 'video_write_captions',
 	video_write_chapters: 'video_write_chapters',
 	voice_add_clip: 'voice_add_clip',

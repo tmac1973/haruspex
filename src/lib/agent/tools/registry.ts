@@ -96,7 +96,13 @@ const IMAGE_TOOLS = new Set(['generate_image', 'edit_image', 'upscale_image']);
 const SONG_TOOLS = new Set(['generate_music', 'edit_music']);
 
 /** The tools that write what they make into the folder when given a `path`. */
-const SAVING_TOOLS = new Set([...IMAGE_TOOLS, ...SONG_TOOLS, 'generate_video', 'generate_speech']);
+const SAVING_TOOLS = new Set([
+	...IMAGE_TOOLS,
+	...SONG_TOOLS,
+	'generate_video',
+	'upscale_video',
+	'generate_speech'
+]);
 
 /**
  * Get the tool schemas to expose to the model for this request.
