@@ -31,7 +31,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	})
 );
 
-import { buildSystemPrompt, injectMessageHints } from './systemPrompt';
+import { buildSystemPrompt, injectMessageHints, looksLikeFileOutputRequest } from './systemPrompt';
 import { renderSlashMessage } from '#lib/skills/content.ts';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { getToolSchemas } from '#lib/agent/tools/registry.ts';
@@ -333,5 +333,33 @@ describe('injectMessageHints', () => {
 	it('leaves a skill run alone, whatever words the skill uses', () => {
 		expect(hinted(weather)).toBe(weather);
 		expect(hinted(weather, true)).toBe(weather);
+	});
+});
+
+describe('looksLikeFileOutputRequest', () => {
+	it.each([
+		'Write a three-page report on the history of the bicycle as report.pdf in the working folder.',
+		'Make a one-page PDF summary, summary.pdf, of the causes of World War I.',
+		'Make a PDF, greek.pdf, with a short paragraph about Greek philosophy.',
+		'Write a report-style PDF on A4 with a title and a contents page about renewable energy.',
+		'Research the history of the Rosetta Stone and save it as report.docx.',
+		'Now make a short slide deck from that report, as rosetta.pptx.',
+		'Turn notes.txt into a PDF.',
+		'Export the table to xlsx',
+		'Create a spreadsheet of the prices'
+	])('takes "%s" as asking for a file', (text) => {
+		expect(looksLikeFileOutputRequest(text)).toBe(true);
+	});
+
+	it.each([
+		// email_compose makes and attaches the PDF itself.
+		"Email that notebook to sam@example.com as a PDF, subject 'Notes', with a one-line note.",
+		"Using the work account, find the email with subject 'Haruspex test: notebook as PDF' and tell me its attachments.",
+		'Summarise report.pdf for me.',
+		'Write a summary of the PDF.',
+		'Make a new notebook with a text card, an image card holding lighthouse.png from the working folder, and a file card holding summary.pdf.',
+		'What does this spreadsheet say about March?'
+	])('leaves "%s" alone', (text) => {
+		expect(looksLikeFileOutputRequest(text)).toBe(false);
 	});
 });
