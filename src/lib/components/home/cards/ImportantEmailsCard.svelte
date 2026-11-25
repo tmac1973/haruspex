@@ -8,6 +8,7 @@
 	import type { ImportantEmail } from '#lib/agent/jobs/types/email-digest/pipeline.ts';
 	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
+	import { CARD_JOB_WAIT_TIP } from '#lib/home/jobsCard.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import { askAbout } from '#lib/home/askAbout.ts';
@@ -119,7 +120,9 @@
 		<p class="accounts" title={accounts}>{accounts}</p>
 	{/if}
 	{#if running}
-		<p class="muted">{waiting ? 'Waiting for chat…' : 'Checking your mail…'}</p>
+		<p class="muted" title={waiting ? CARD_JOB_WAIT_TIP : undefined}>
+			{waiting ? 'Waiting for model…' : 'Checking your mail…'}
+		</p>
 	{:else if queued}
 		<p class="muted">Queued</p>
 	{/if}

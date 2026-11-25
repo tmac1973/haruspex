@@ -112,10 +112,10 @@ describe('ImportantEmailsCard', () => {
 		screen.getByText('No important mail.');
 	});
 
-	it('says it is waiting for chat while its run waits', () => {
+	it('says it is waiting for the model while its run waits', () => {
 		m.current = { id: 7, jobId: 3, status: 'running', waitingForSlot: true };
 		render(ImportantEmailsCard, { card });
-		screen.getByText('Waiting for chat…');
+		screen.getByText('Waiting for model…');
 	});
 
 	it('opens a message when its row is clicked', async () => {

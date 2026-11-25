@@ -19,7 +19,6 @@ import {
 	getPendingQueue,
 	getQueueDepth
 } from '#lib/agent/jobs/runner.svelte.ts';
-import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getCardError, getCardNotice } from '#lib/home/fetchedCards.svelte.ts';
 import { GITHUB_EMPTY, githubConfigOf, scopeLine, type GitHubResult } from '#lib/home/github.ts';
@@ -67,7 +66,7 @@ async function jobsPayload(): Promise<HomeCardPayload> {
 		type: 'jobs',
 		runs: getActiveRuns().map((run) => ({
 			jobName: run.jobName,
-			line: currentRunLine(run, getJobType(run.jobType)?.background ?? false),
+			line: currentRunLine(run),
 			status: run.status,
 			progress: runProgress(run)
 		})),

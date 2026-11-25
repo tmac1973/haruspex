@@ -57,7 +57,7 @@ Each email, story, meeting and GitHub item has a **⋯** menu.
 
 **Add card**, top right, adds a card at the end; drag a card by its title to move it. Cards are one height and scroll inside. One that needs an account or server first is greyed out; hover it to see what's missing. Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (two columns) or **Normal width**, **Edit job** (its job's schedule and settings, in the Jobs tab) and **Remove**.
 
-The email and news cards make their own job, with a **Home** badge in the Jobs tab; **Use a job** in their form shows one of your jobs of that type instead, which stays yours. A card's job waits while chat or Code uses the model ("Waiting for chat"), and doesn't run in lean mode. **⋯ → Notify on new items** (off to start) sends a desktop notification naming what's new. Removing a card deletes a job it made unless you untick **Also delete the job**; a job of yours stays unless you tick it.
+The email and news cards make their own job, with a **Home** badge in the Jobs tab; **Use a job** in their form shows one of your jobs of that type instead, which stays yours. A card's job yields to chat and Code ("Waiting for model"), runs beside them on a spare parallel stream, and skips lean mode. **⋯ → Notify on new items** (off to start) sends a desktop notification naming what's new. Removing a card deletes a job it made unless you untick **Also delete the job**; a job of yours stays unless you tick it.
 
 Cards and their order are kept across restarts and stack on a narrow window. A card from a newer Haruspex shows as **Unknown card**.
 

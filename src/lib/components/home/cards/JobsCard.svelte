@@ -8,7 +8,6 @@
 	import { dbQuery } from '#lib/stores/dbCall.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { currentRunLine, runProgress, runStatusLabel } from '#lib/home/jobsCard.ts';
-	import { getJobType } from '#lib/agent/jobs/types/index.ts';
 
 	// Home hands every card its row; a live card keeps nothing in it.
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -50,7 +49,7 @@
 	<button class="row current" onclick={() => open(current.jobId, current.id)}>
 		<span class="name">{current.jobName}</span>
 		<span class="detail">
-			{currentRunLine(current, getJobType(current.jobType)?.background ?? false)}
+			{currentRunLine(current)}
 		</span>
 	</button>
 	{#if progress !== null}

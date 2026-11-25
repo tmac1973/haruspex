@@ -86,9 +86,10 @@ export interface WithSlotOptions {
 	 */
 	onRequeue?: (ticket: InferenceTicket | null) => void;
 	/**
-	 * `'background'` for a Home card's job: it waits while its lane has any
-	 * other turn running or waiting, or a turn that gave its slot back for a
-	 * long tool. `'prompt'` for a camera event being judged: it waits only for
+	 * `'background'` for a Home card's job: it waits while its lane has a
+	 * foreground or prompt turn waiting, and takes a slot only when one stays
+	 * free after it (a turn that gave its slot back for a long tool still
+	 * counts as using it). `'prompt'` for a camera event being judged: it waits only for
 	 * foreground turns on its lane and goes before background ones. Foreground
 	 * otherwise.
 	 */
