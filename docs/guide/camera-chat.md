@@ -23,6 +23,7 @@ In Chat, the assistant can use your cameras with these tools:
 | `camera_snapshot` | Takes one picture from a camera and looks at it. Needs a model that can see images. |
 | `camera_listen` | Records up to 30 seconds of sound, transcribes it on this computer and says how loud it was; the clip isn't kept. |
 | `camera_look` | Turns a pan/tilt camera, then takes a picture (see the `camera-pan-tilt` page). |
+| `camera_save_preset` | Saves where an ONVIF camera points now as a preset on the camera, replacing one of the same name. |
 | `camera_look_around` | Sweeps a pan/tilt camera end to end, a picture at each stop, then points it home. |
 | `camera_log` | Searches the ambient log (see the `camera-log` page). |
 

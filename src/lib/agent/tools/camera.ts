@@ -11,7 +11,8 @@
  * then takes a picture like `camera_snapshot`.
  *
  * `camera_log` (in `camera-log.ts`) reads the ambient log, and
- * `camera_look_around` (in `camera-look-around.ts`) sweeps a camera end to end.
+ * `camera_look_around` (in `camera-look-around.ts`) sweeps a camera end to end,
+ * and `camera_save_preset` (in `camera-save-preset.ts`) saves a preset on one.
  *
  * Every call goes through `_cameraGate.ts` first: a model on this computer or
  * a trusted server, a camera by that name, and its Ask / Allow permission.

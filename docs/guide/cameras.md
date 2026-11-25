@@ -24,7 +24,7 @@ Many network cameras speak ONVIF, which lets Haruspex find them and read their a
 2. The first one is picked; click another to change it. A blank **Name** takes the name the camera gives itself. A camera with a name on your network is listed by it, and **Use its name** (on by default) keeps it working if the router changes its address.
 3. Fill in **User name** and **Password**, then click **Connect**.
 
-Haruspex signs in and fills in **RTSP address** (the camera's sharpest stream) and **Substream** (its smallest). If the camera can pan and tilt, **Pan/tilt** is set to **ONVIF** and its saved positions are listed as **Presets**; **Refresh presets** reads them again after you change them on the camera.
+Haruspex signs in and fills in **RTSP address** (the camera's sharpest stream) and **Substream** (its smallest). If the camera can pan and tilt, **Pan/tilt** is set to **ONVIF** and its saved positions are listed as **Presets**; **Refresh presets** reads them again after you change them on the camera. The assistant can also save a preset for you: point the camera, then ask it to "save this as hallway" (see the `camera-pan-tilt` page).
 
 A camera that isn't listed may have ONVIF turned off, or be on another network: type its **RTSP address**, then click **Connect** to try ONVIF there; a name you typed (`rtsp://wifi-cam-2.local/ch0`) is kept. Cameras are reached directly, never through the proxy in Settings → Network.
 

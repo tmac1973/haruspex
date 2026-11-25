@@ -31,6 +31,7 @@ import '#lib/agent/tools/notebook-table.ts';
 import '#lib/agent/tools/screen.ts';
 import '#lib/agent/tools/camera.ts';
 import '#lib/agent/tools/camera-look-around.ts';
+import '#lib/agent/tools/camera-save-preset.ts';
 import '#lib/agent/tools/camera-log.ts';
 import '#lib/agent/tools/image-gen.ts';
 import '#lib/agent/tools/image-edit.ts';
