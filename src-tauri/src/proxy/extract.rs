@@ -132,6 +132,17 @@ pub struct FetchedPage {
     #[ts(type = "number")]
     pub full_length: usize,
     pub hero_image: Option<String>,
+    /// Up to [`MAX_PAGE_LINKS`] links to other pages on the same site, the
+    /// page's own content first. Empty for anything but a web page.
+    pub links: Vec<PageLink>,
+}
+
+/// A link on a fetched page: its text and absolute URL.
+#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct PageLink {
+    pub text: String,
+    pub url: String,
 }
 
 impl FetchedPage {
@@ -142,6 +153,7 @@ impl FetchedPage {
             text: truncate_text(text),
             full_length,
             hero_image,
+            links: Vec::new(),
         }
     }
 }
@@ -271,11 +283,20 @@ pub(super) async fn fetch_and_extract(
         .ok()
         .and_then(|base| super::images::extract_hero_image(&html, &base));
 
-    let text = extract_text(&html);
+    let base = url::Url::parse(&final_url).ok();
+    let document = Html::parse_document(&html);
+    let text = document_text(&document, base.as_ref());
     if reddit.is_some() && reddit_page_blocked(&text) {
         return Err(REDDIT_BLOCKED.to_string());
     }
-    Ok(FetchedPage::from_text(text, hero_image))
+    let links = base
+        .as_ref()
+        .map(|b| extract_links(&document, b))
+        .unwrap_or_default();
+    Ok(FetchedPage {
+        links,
+        ..FetchedPage::from_text(text, hero_image)
+    })
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
@@ -452,21 +473,175 @@ fn status_error(status: reqwest::StatusCode) -> String {
 
 /// The page's visible text, whitespace tidied, uncut.
 pub(super) fn extract_text(html: &str) -> String {
-    let document = Html::parse_document(html);
+    document_text(&Html::parse_document(html), None)
+}
 
+/// [`extract_text`] for a parsed page. The page's title comes first: the
+/// main content is often only part of the page (a GitHub repository's
+/// `<article>` is its README), and the title is what says whose page it is.
+/// On github.com a fork also says what it was forked from.
+fn document_text(document: &Html, page_url: Option<&url::Url>) -> String {
     // Try to find main content area
-    let content = try_select_text(&document, "article")
-        .or_else(|| try_select_text(&document, "main"))
-        .or_else(|| try_select_text(&document, "[role='main']"))
-        .unwrap_or_else(|| extract_body_text(&document));
+    let content = try_select_text(document, "article")
+        .or_else(|| try_select_text(document, "main"))
+        .or_else(|| try_select_text(document, "[role='main']"))
+        .unwrap_or_else(|| extract_body_text(document));
 
     // Clean up whitespace
-    content
+    let body = content
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
         .collect::<Vec<&str>>()
-        .join("\n")
+        .join("\n");
+
+    let mut header = Vec::new();
+    if let Some(title) = page_title(document) {
+        if body.lines().next() != Some(title.as_str()) {
+            header.push(format!("Title: {title}"));
+        }
+    }
+    if let Some(fork) = page_url.and_then(|u| github_fork_note(document, u)) {
+        header.push(fork);
+    }
+    if header.is_empty() {
+        return body;
+    }
+    header.push(body);
+    header.join("\n")
+}
+
+/// The document's `<title>`, whitespace collapsed.
+fn page_title(document: &Html) -> Option<String> {
+    let selector = Selector::parse("head > title").expect("static selector");
+    let title = document
+        .select(&selector)
+        .next()?
+        .text()
+        .collect::<String>();
+    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!title.is_empty()).then_some(title)
+}
+
+/// The `content` of `<meta name="{name}">`, trimmed.
+fn meta_content(document: &Html, name: &str) -> Option<String> {
+    let selector = Selector::parse("meta[name][content]").expect("static selector");
+    document
+        .select(&selector)
+        .find(|m| m.value().attr("name") == Some(name))
+        .and_then(|m| m.value().attr("content"))
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty())
+}
+
+/// "Forked from owner/repo" for a GitHub repository page that is a fork.
+/// GitHub states it in its analytics meta tags (checked 2026-11-25 against
+/// a live fork page); the visible "forked from" line sits outside the
+/// README that the text is taken from.
+fn github_fork_note(document: &Html, page_url: &url::Url) -> Option<String> {
+    let host = page_url.host_str()?;
+    if host != "github.com" && host != "www.github.com" {
+        return None;
+    }
+    let is_fork = meta_content(document, "octolytics-dimension-repository_is_fork")?;
+    if !is_fork.eq_ignore_ascii_case("true") {
+        return None;
+    }
+    Some(
+        match meta_content(document, "octolytics-dimension-repository_parent_nwo") {
+            Some(parent) => format!("Forked from {parent}"),
+            None => "This repository is a fork.".to_string(),
+        },
+    )
+}
+
+/// The most links a page reports.
+const MAX_PAGE_LINKS: usize = 40;
+/// Longest link text kept, in characters.
+const MAX_LINK_TEXT: usize = 80;
+
+/// Links to other pages on the page's own site, at most [`MAX_PAGE_LINKS`],
+/// those in the main content first and none from the site's navigation,
+/// header or footer.
+fn extract_links(document: &Html, base: &url::Url) -> Vec<PageLink> {
+    let anchors = Selector::parse("a[href]").expect("static selector");
+    let mut seen = std::collections::HashSet::new();
+    let mut own = base.clone();
+    own.set_fragment(None);
+    seen.insert(own.to_string());
+    let mut out = Vec::new();
+    for scope in ["article", "main", "[role='main']", "body"] {
+        let Some(root) = Selector::parse(scope)
+            .ok()
+            .and_then(|s| document.select(&s).next())
+        else {
+            continue;
+        };
+        for anchor in root.select(&anchors) {
+            if out.len() >= MAX_PAGE_LINKS {
+                return out;
+            }
+            if in_site_chrome(anchor) {
+                continue;
+            }
+            if let Some(link) = page_link(anchor, base) {
+                if seen.insert(link.url.clone()) {
+                    out.push(link);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// True when `element` sits in the site's navigation, header or footer.
+fn in_site_chrome(element: scraper::ElementRef) -> bool {
+    element.ancestors().any(|a| {
+        a.value()
+            .as_element()
+            .is_some_and(|e| matches!(e.name(), "nav" | "header" | "footer"))
+    })
+}
+
+/// The anchor as a [`PageLink`], when it points at another page on the same
+/// site and has something to call it by.
+fn page_link(anchor: scraper::ElementRef, base: &url::Url) -> Option<PageLink> {
+    let href = anchor.value().attr("href")?.trim();
+    if href.is_empty() || href.starts_with('#') {
+        return None;
+    }
+    let mut url = base.join(href).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let site = |u: &url::Url| {
+        u.host_str()
+            .map(|h| h.trim_start_matches("www.").to_ascii_lowercase())
+    };
+    if site(&url) != site(base) {
+        return None;
+    }
+    url.set_fragment(None);
+    let text = visible_text(anchor);
+    let mut text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        text = ["aria-label", "title"]
+            .iter()
+            .find_map(|a| anchor.value().attr(a))
+            .unwrap_or("")
+            .trim()
+            .to_string();
+    }
+    if text.is_empty() {
+        return None;
+    }
+    if text.chars().count() > MAX_LINK_TEXT {
+        text = text.chars().take(MAX_LINK_TEXT).collect::<String>() + "…";
+    }
+    Some(PageLink {
+        text,
+        url: url.to_string(),
+    })
 }
 
 /// `text` cut to `MAX_FETCH_LENGTH` at a word, without splitting a UTF-8 code
@@ -890,6 +1065,92 @@ mod tests {
     fn extract_text_trims_lines_and_drops_blank_ones() {
         let html = "<html><body><p>  Line one  </p>\n\n\n<p>\t Line two \t</p></body></html>";
         assert_eq!(extract_text(html), "Line one\nLine two");
+    }
+
+    /// Trimmed from a live GitHub fork page (sharkdp/ripgrep, 2026-11-25):
+    /// the analytics meta tags, the header with its "forked from" line, the
+    /// file list in `main` and the README in `article`.
+    const GITHUB_FORK: &str = r##"<html><head>
+        <title>GitHub - sharkdp/ripgrep: ripgrep recursively searches directories for a regex pattern · GitHub</title>
+        <meta name="octolytics-dimension-repository_nwo" content="sharkdp/ripgrep" />
+        <meta name="octolytics-dimension-repository_is_fork" content="true" />
+        <meta name="octolytics-dimension-repository_parent_nwo" content="BurntSushi/ripgrep" />
+        </head><body>
+        <header><a href="/login">Sign in</a><a href="/features">Features</a></header>
+        <main>
+          <div><span>forked from </span><a href="/BurntSushi/ripgrep">BurntSushi/ripgrep</a></div>
+          <a href="/sharkdp/ripgrep/tree/master/crates">crates</a>
+          <a href="/sharkdp/ripgrep/blob/master/Cargo.toml">Cargo.toml</a>
+          <a href="https://docs.rs/grep">docs.rs</a>
+          <a href="#readme">skip</a>
+          <article><h1>ripgrep (rg)</h1>
+            <p>ripgrep is a line-oriented search tool that recursively searches the current
+            directory for a regex pattern. By default, ripgrep will respect gitignore rules.</p>
+            <a href="/sharkdp/ripgrep/blob/master/GUIDE.md">user guide</a>
+            <a href="/sharkdp/ripgrep/blob/master/FAQ.md#install"><svg></svg></a>
+            <a href="/sharkdp/ripgrep/blob/master/FAQ.md" aria-label="FAQ"><svg></svg></a>
+          </article>
+        </main>
+        <footer><a href="/site/terms">Terms</a></footer>
+        </body></html>"##;
+
+    #[test]
+    fn a_github_page_keeps_its_title_and_what_it_was_forked_from() {
+        let base = url::Url::parse("https://github.com/sharkdp/ripgrep").unwrap();
+        let text = document_text(&Html::parse_document(GITHUB_FORK), Some(&base));
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next(),
+            Some("Title: GitHub - sharkdp/ripgrep: ripgrep recursively searches directories for a regex pattern · GitHub")
+        );
+        assert_eq!(lines.next(), Some("Forked from BurntSushi/ripgrep"));
+        assert_eq!(lines.next(), Some("ripgrep (rg)"));
+
+        // Off github.com the meta tags mean nothing.
+        let elsewhere = url::Url::parse("https://example.com/").unwrap();
+        let text = document_text(&Html::parse_document(GITHUB_FORK), Some(&elsewhere));
+        assert!(!text.contains("Forked from"));
+    }
+
+    #[test]
+    fn a_title_the_text_already_opens_with_is_not_repeated() {
+        let html =
+            "<html><head><title>Hello</title></head><body><p>Hello</p>\n<p>there</p></body></html>";
+        assert_eq!(extract_text(html), "Hello\nthere");
+    }
+
+    #[test]
+    fn links_are_same_site_content_first_and_skip_site_chrome() {
+        let base = url::Url::parse("https://github.com/sharkdp/ripgrep").unwrap();
+        let links = extract_links(&Html::parse_document(GITHUB_FORK), &base);
+        let urls: Vec<&str> = links.iter().map(|l| l.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            vec![
+                "https://github.com/sharkdp/ripgrep/blob/master/GUIDE.md",
+                "https://github.com/sharkdp/ripgrep/blob/master/FAQ.md",
+                "https://github.com/BurntSushi/ripgrep",
+                "https://github.com/sharkdp/ripgrep/tree/master/crates",
+                "https://github.com/sharkdp/ripgrep/blob/master/Cargo.toml",
+            ]
+        );
+        assert_eq!(links[0].text, "user guide");
+        assert_eq!(
+            links[1].text, "FAQ",
+            "an empty anchor falls back to aria-label"
+        );
+    }
+
+    #[test]
+    fn links_stop_at_the_cap() {
+        let anchors: String = (0..100)
+            .map(|i| format!("<a href=\"/p/{i}\">page {i}</a>"))
+            .collect();
+        let html = format!("<html><body>{anchors}</body></html>");
+        let base = url::Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&Html::parse_document(&html), &base);
+        assert_eq!(links.len(), MAX_PAGE_LINKS);
+        assert_eq!(links[0].url, "https://example.com/p/0");
     }
 
     #[test]

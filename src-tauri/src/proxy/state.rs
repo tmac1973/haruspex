@@ -220,6 +220,7 @@ mod tests {
                 text: "cached content".to_string(),
                 full_length: 14,
                 hero_image: None,
+                links: Vec::new(),
             },
         );
         let cached = state
