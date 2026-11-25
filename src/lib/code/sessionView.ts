@@ -111,6 +111,10 @@ export interface CodeSessionView {
 	goToShell?: S['goToShell'];
 	/** Fork from message `index`, opening the fork; a local session's is `forkFromMessage`. */
 	fork?: (index: number, mode: CodeForkMode) => Promise<void>;
+	/** What Rewind to here at message `index` would cut to and put back. */
+	planRewind?: S['planRewind'];
+	/** Rewind to here: cut the thread back in place, putting files back. */
+	rewind?: S['rewind'];
 	/** `/new`: a new session in the same folder, opened beside this one. */
 	newBeside?: () => Promise<void>;
 	/** Close its tab here. A local session closes through `closeSession`. */

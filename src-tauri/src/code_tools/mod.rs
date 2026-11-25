@@ -11,6 +11,7 @@
 
 pub mod background;
 pub mod checkout;
+pub mod checkpoints;
 pub mod claims;
 pub mod folders;
 pub mod git;

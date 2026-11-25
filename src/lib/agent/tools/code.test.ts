@@ -1135,6 +1135,37 @@ describe('one writer per folder', () => {
 		expect(invoke).not.toHaveBeenCalledWith('fs_write_text', expect.anything());
 	});
 
+	it('an edit saves its file before it runs and notes it after (file checkpoints)', async () => {
+		const order: string[] = [];
+		routeInvoke({
+			fs_edit_text: () => {
+				order.push('edit');
+				return { first_changed_line: 1, used_fuzzy: false };
+			}
+		});
+		const g = {
+			...guard(),
+			beforeWrite: vi.fn(async (paths: string[]) => void order.push(`before ${paths}`)),
+			afterWrite: vi.fn(async (paths: string[]) => void order.push(`after ${paths}`))
+		};
+		await executeTool(
+			'fs_edit_text',
+			{ path: 'src/a.ts', old_str: 'a', new_str: 'b' },
+			{ ...codeCtx, codeSessionId: 's1', codeWriteGuard: g }
+		);
+		expect(order).toEqual(['before src/a.ts', 'edit', 'after src/a.ts']);
+	});
+
+	it('a refused write saves no checkpoint', async () => {
+		const g = { ...guard('busy'), beforeWrite: vi.fn(async () => {}) };
+		await executeTool(
+			'fs_write_text',
+			{ path: 'a.txt', content: 'x' },
+			{ ...codeCtx, codeSessionId: 's1', codeWriteGuard: g }
+		);
+		expect(g.beforeWrite).not.toHaveBeenCalled();
+	});
+
 	it('a failed edit reports nothing changed', async () => {
 		routeInvoke({
 			fs_edit_text: () => {

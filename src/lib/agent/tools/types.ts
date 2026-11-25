@@ -355,6 +355,13 @@ export interface CodeWriteGuard {
 	acquire(): Promise<string | null>;
 	/** Files a write or edit changed, relative to the folder or absolute. */
 	changed(paths: string[]): void;
+	/**
+	 * Save the files a write may change, as they are, before it runs (file
+	 * checkpoints for Rewind to here). Never throws.
+	 */
+	beforeWrite?(paths: string[]): Promise<void>;
+	/** Note what those files hold once the write has run. Never throws. */
+	afterWrite?(paths: string[]): Promise<void>;
 }
 
 /**

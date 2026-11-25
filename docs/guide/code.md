@@ -1,17 +1,17 @@
 ---
 title: Code tab
-description: Coding sessions in a project folder — starting one, diffs and command cards, editor windows, commands that need a terminal (sudo), steering, background processes, the git branch, model and effort.
+description: Coding sessions in a project folder — starting one, diffs and command cards, editor windows, commands that need a terminal, steering, background processes, the git branch, model and effort.
 ---
 
 # Code tab
 
-The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there, and can't work outside it. It can move files it made in the session, or delete them to the trash, unless you've changed them. For Windows (a Windows folder or WSL), see the `code-windows` page.
+The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there, never outside it. It can move files it made in the session, or trash them, unless you've changed them. For Windows (a Windows folder or WSL), see the `code-windows` page.
 
 ## Start a session
 
 Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder.
 
-Type what you want and press `Enter`. After the first reply the model names the session, unless you named it. Sessions save as they go.
+Type what you want and press `Enter`. After the first reply the model names the session unless you did. Sessions save as they go.
 
 The camera button attaches the screen, a window or a region to your next message.
 
@@ -25,7 +25,7 @@ The agent can search the web and read pages, with Chat's search and proxy; see t
 - **Commands** show as a card: command, exit code, time and output (the last 20 lines until **Show all**). **Open in Shell** types it in a new Shell tab, not run.
 - Searches and reads show as steps.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step is above it in grey.
-- A call being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
+- A call being written shows as **Writing**, **Editing** or **Preparing command…**.
 - **File names** in the folder (`src/app.ts:42`) open in an editor window; **Preview** beside an `.html` file shows it (see the `web-preview` page).
 
 ## Commands that need a terminal
@@ -51,12 +51,12 @@ A dot on a session's tab shows it working (filled) or waiting for the model (hol
 The header above the conversation holds:
 
 - the **folder** — click to open it in your file manager;
-- the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits for an idle agent and committed or stashed changes; it warns when another open session uses the repo;
+- the **git branch**, with **●** for uncommitted changes. Click it to switch branch or start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits for an idle agent and committed or stashed changes; it warns when another open session uses the repo;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**; picking one never starts it;
 - **Effort** — how hard the model thinks, where it has levels;
 - **Extras** — the session's helpers; see the `helpers` page;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is;
-- tokens used, sub-agents' included, and the OpenRouter cost (hover for more).
+- tokens used, sub-agents' included, and OpenRouter cost (hover for more).
 
 Model, effort and extras apply from the next message.
 
@@ -71,5 +71,5 @@ Safe-looking commands just run. A risky one (`sudo`, `rm -rf`, a pipe to a shell
 ## What it doesn't do yet
 
 - Each command runs on its own, so `cd` and environment changes don't carry over.
-- No undo or checkpoints; use git.
+- **Rewind to here** doesn't undo commands' changes; see the `code-sessions` page.
 - Small local models get stuck; see the `models` page.

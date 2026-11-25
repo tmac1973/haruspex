@@ -137,6 +137,12 @@ const db = vi.hoisted(() => {
 				case 'code_session_delete':
 					rows.delete(args.id as string);
 					return undefined;
+				case 'code_checkpoint_plan':
+					return [
+						{ path: '/proj/a.ts', shown: 'a.ts', status: 'ready', reason: null, created: false }
+					];
+				case 'code_checkpoint_rewind':
+					return { restored: args.restore ? ['a.ts'] : [], skipped: [] };
 				case 'code_lease_take':
 					return folders.holder;
 				case 'code_notices_take': {
@@ -1335,6 +1341,100 @@ describe('fork from a message', () => {
 		await sending;
 		s.messages = [...s.messages, { role: 'tool', tool_call_id: 'x', content: 'r' }];
 		await expect(forkSession(s.id, s.messages.length - 1)).rejects.toThrow();
+	});
+});
+
+describe('rewind to here', () => {
+	async function twoTurns() {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(answers('first answer'));
+		await s.send('first question');
+		mocks.runAgentLoop.mockImplementationOnce(answers('second answer'));
+		await s.send('second question');
+		return s;
+	}
+
+	const saved = (id: string) => JSON.parse(db.rows.get(id)!.thread as string);
+
+	it('cuts the thread back to an answer in place, putting the files back', async () => {
+		const s = await twoTurns();
+		s.messageStats = { 1: { tokensPerSecond: 1 }, 3: { tokensPerSecond: 2 } } as never;
+		expect(await s.planRewind(1)).toEqual({
+			at: 2,
+			files: [expect.objectContaining({ shown: 'a.ts' })]
+		});
+		const report = await s.rewind(1, { restoreFiles: true });
+		expect(report).toEqual({ restored: ['a.ts'], skipped: [], prefill: null });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('code_checkpoint_rewind', {
+			sessionId: s.id,
+			at: 2,
+			workdir: '/proj',
+			restore: true,
+			overwrite: []
+		});
+		expect(s.messages.map((m) => m.content)).toEqual(['first question', 'first answer']);
+		expect(Object.keys(s.messageStats)).toEqual(['1']);
+		expect(saved(s.id).messages).toHaveLength(2);
+		expect(getOpenSessions()).toHaveLength(1);
+	});
+
+	it('rewinds to one of your messages and hands it back to the input', async () => {
+		const s = await twoTurns();
+		const report = await s.rewind(2, { restoreFiles: false, overwrite: ['/proj/b.ts'] });
+		expect(report.restored).toEqual([]);
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+			'code_checkpoint_rewind',
+			expect.objectContaining({ at: 2, restore: false, overwrite: ['/proj/b.ts'] })
+		);
+		expect(s.messages).toHaveLength(2);
+		expect(s.takePrefill()).toEqual({ text: 'second question', images: [] });
+	});
+
+	it("saves each turn's files under where the turn began", async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(answers('one'));
+		await s.send('first');
+		mocks.runAgentLoop.mockImplementationOnce(answers('two'));
+		await s.send('second');
+		const guard = (mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions).codeWriteGuard!;
+		await guard.beforeWrite!(['a.ts']);
+		await guard.afterWrite!(['a.ts']);
+		for (const cmd of ['code_checkpoint_before', 'code_checkpoint_after']) {
+			expect(vi.mocked(invoke)).toHaveBeenCalledWith(cmd, {
+				sessionId: s.id,
+				turnAt: 2,
+				workdir: '/proj',
+				paths: ['a.ts']
+			});
+		}
+	});
+
+	it('counts as busy while the files go back, so nothing is sent meanwhile', async () => {
+		const s = await twoTurns();
+		const rewinding = s.rewind(1, { restoreFiles: true });
+		expect(s.busy).toBe(true);
+		await s.send('in between');
+		expect(s.steering.map((m) => m.text)).toEqual(['in between']);
+		await rewinding;
+		expect(s.busy).toBe(false);
+		expect(s.messages).toHaveLength(2);
+	});
+
+	it('will not rewind while a turn runs, from a tool message, or in a read-only fork', async () => {
+		const s = await twoTurns();
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('third');
+		await turn.running;
+		await expect(s.rewind(1, { restoreFiles: true })).rejects.toThrow(/turn/);
+		await expect(s.planRewind(1)).rejects.toThrow(/turn/);
+		turn.release();
+		await sending;
+		s.messages = [...s.messages, { role: 'tool', tool_call_id: 'x', content: 'r' }];
+		await expect(s.rewind(s.messages.length - 1, { restoreFiles: true })).rejects.toThrow();
+		const fork = (await forkAndOpen(s.id, 1, 'readOnly'))!;
+		await expect(fork.rewind(1, { restoreFiles: true })).rejects.toThrow(/read-only/);
+		expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('code_checkpoint_rewind', expect.anything());
 	});
 });
 

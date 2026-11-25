@@ -1,6 +1,6 @@
 /**
  * The Code tab's session controls beyond sending (#744): close, delete,
- * fork and rename a session, its effort and model, and stopping one of its
+ * fork, rewind and rename a session, its effort and model, and stopping one of its
  * background processes. Each does what the tab's own control does, in the
  * window that has the session; a saved session no window has open can be
  * renamed and deleted from the main window.
@@ -66,6 +66,21 @@ export async function dispatchSession(op: SessionOp): Promise<unknown> {
 		case 'session.fork': {
 			const fork = await forkSession(op.id, op.index, op.mode ?? 'readOnly');
 			return { id: fork.id, prefill: fork.prefill.text };
+		}
+		case 'session.rewind': {
+			const s = mustBeOpen(op.id);
+			if (op.dryRun) return s.planRewind(op.index);
+			const before = s.messages.length;
+			const { prefill, ...report } = await s.rewind(op.index, {
+				restoreFiles: op.restoreFiles ?? true,
+				overwrite: op.overwrite
+			});
+			return {
+				messages: s.messages.length,
+				cut: before - s.messages.length,
+				...report,
+				prefill: prefill?.text ?? null
+			};
 		}
 		case 'session.rename': {
 			const title = op.title.trim();

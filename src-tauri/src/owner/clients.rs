@@ -98,6 +98,7 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         | "session.close"
         | "session.delete"
         | "session.fork"
+        | "session.rewind"
         | "session.rename"
         | "session.effort"
         | "session.model"

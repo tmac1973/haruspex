@@ -134,6 +134,7 @@ const LEAN_REFUSED: ReadonlySet<EngineOp['type']> = new Set([
 	'session.send',
 	'session.compact',
 	'session.fork',
+	'session.rewind',
 	'session.cancelShellWait'
 ]);
 
@@ -256,6 +257,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'session.close':
 		case 'session.delete':
 		case 'session.fork':
+		case 'session.rewind':
 		case 'session.rename':
 		case 'session.effort':
 		case 'session.model':

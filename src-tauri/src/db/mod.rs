@@ -523,6 +523,22 @@ impl Database {
                 at INTEGER NOT NULL
             );
 
+            -- What a file held before a Code session's turn first wrote or
+            -- edited it, and what the turn's last write left; see
+            -- code_tools/checkpoints.rs. `turn_at` is how many messages the
+            -- thread held when the turn began. `before` is the bytes when
+            -- before_kind is 'file'.
+            CREATE TABLE IF NOT EXISTS code_checkpoints (
+                session_id TEXT NOT NULL
+                    REFERENCES code_sessions(id) ON DELETE CASCADE,
+                turn_at INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                before_kind TEXT NOT NULL,
+                before BLOB,
+                after TEXT,
+                PRIMARY KEY (session_id, turn_at, path)
+            );
+
             CREATE TABLE IF NOT EXISTS search_stats_engines (
                 engine TEXT PRIMARY KEY,
                 attempts INTEGER NOT NULL DEFAULT 0,
@@ -1249,6 +1265,7 @@ fn chrono_now() -> i64 {
 
 mod audio;
 mod camera_events;
+mod code_checkpoints;
 mod code_notices;
 mod code_sessions;
 mod commands;
@@ -1274,6 +1291,7 @@ mod tasks;
 
 pub use audio::AudioRow;
 pub use camera_events::{AlertLevel, CameraEvent, CameraEventFilter, HourCounts, NewCameraEvent};
+pub use code_checkpoints::{CheckpointBefore, CheckpointRow};
 pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;

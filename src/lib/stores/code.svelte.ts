@@ -86,6 +86,14 @@ import { updateSettings } from '#lib/stores/settings.ts';
 import { isUnsetTitle, sessionLabel } from '#lib/code/sessionList.ts';
 import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
 import { forkPoint, type Prefill } from '#lib/code/fork.ts';
+import { cutThread } from '#lib/code/rewind.ts';
+import { ioRoot } from '#lib/code/paths.ts';
+import {
+	planRewind,
+	rewindFiles,
+	type RewindFile,
+	type RewindReport
+} from '#lib/code/checkpoints.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 import { ALL_CAPABILITIES, type CodeSessionView } from '#lib/code/sessionView.ts';
 import {
@@ -219,6 +227,8 @@ export class CodeSession implements CodeSessionView {
 	compaction = $state.raw<CodeCompaction | null>(null);
 	/** The running turn is summarising older turns before it starts. */
 	compacting = $state(false);
+	/** Rewind to here is putting files back: no turn starts meanwhile. */
+	private rewinding = $state(false);
 
 	status = $state<CodeSessionStatus>('idle');
 	/** The waiting inference ticket while `status` is 'queued'. */
@@ -421,7 +431,7 @@ export class CodeSession implements CodeSessionView {
 	}
 
 	get busy(): boolean {
-		return this.status !== 'idle';
+		return this.status !== 'idle' || this.rewinding;
 	}
 
 	/**
@@ -874,6 +884,68 @@ export class CodeSession implements CodeSessionView {
 	});
 
 	/**
+	 * What Rewind to here at the message at `index` would cut to, and what it
+	 * would do to the files. Throws while a turn runs, at a message that
+	 * can't be rewound to, or when the files can't be checked.
+	 */
+	planRewind = async (index: number): Promise<{ at: number; files: RewindFile[] }> => {
+		const at = this.rewindAt(index);
+		return { at, files: await planRewind(this.id, at, ioRoot(this.root, this.wslDistro)) };
+	};
+
+	/**
+	 * Rewind to here: cut the thread back to the message at `index`, in place
+	 * (see `forkPoint`). With `restoreFiles`, first put back the files the
+	 * agent's write and edit tools changed since: each one that still holds
+	 * what the agent wrote, and each changed one `overwrite` names. Commands'
+	 * changes are not undone. Rewinding to one of the user's messages hands
+	 * it back to the input box.
+	 */
+	rewind = async (
+		index: number,
+		opts: { restoreFiles: boolean; overwrite?: string[] }
+	): Promise<RewindReport & { prefill: Prefill | null }> => {
+		const at = this.rewindAt(index);
+		const prefill = forkPoint(this.messages, index)?.prefill ?? null;
+		this.rewinding = true;
+		let report: RewindReport;
+		try {
+			report = await rewindFiles(
+				this.id,
+				at,
+				ioRoot(this.root, this.wslDistro),
+				opts.restoreFiles,
+				opts.overwrite ?? []
+			);
+		} finally {
+			this.rewinding = false;
+		}
+		const cut = cutThread(this.snapshot(), at);
+		this.messages = cut.messages;
+		this.messageSteps = cut.messageSteps;
+		this.messageStats = cut.messageStats;
+		this.messageStops = cut.messageStops;
+		this.messageHistorySent = cut.messageHistorySent;
+		this.compaction = cut.compaction ?? null;
+		this.fileNotes = this.fileNotes.filter((n) => n.at < at);
+		this.usage = null;
+		this.contextNotice = null;
+		this.lastError = null;
+		if (prefill) this.prefill = prefill;
+		await this.persist();
+		return { ...report, prefill };
+	};
+
+	/** Where a rewind at the message at `index` cuts, or why it can't. */
+	private rewindAt(index: number): number {
+		if (this.busy) throw new Error('Wait for the turn to finish, then rewind.');
+		if (this.readOnly) throw new Error('A read-only session can’t rewind; fork it instead.');
+		const point = forkPoint(this.messages, index);
+		if (!point) throw new Error('Only your messages and answers can be rewound to.');
+		return point.at;
+	}
+
+	/**
 	 * Stop the turn and let go of everything this session holds in the app.
 	 * Resolves once a stopped turn has been saved. Background processes are
 	 * the registry's to stop (`closeSession`).
@@ -953,7 +1025,8 @@ export class CodeSession implements CodeSessionView {
 			sessionId: this.id,
 			root: this.root,
 			wslDistro: this.wslDistro,
-			title: () => this.title
+			title: () => this.title,
+			checkpointAt: openingAt
 		});
 		this.turnGuard = guard;
 		// What the agent had been told, put back if the turn never starts.

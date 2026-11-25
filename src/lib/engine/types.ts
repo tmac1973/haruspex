@@ -160,6 +160,21 @@ export type SessionOp =
 	 * answer), not opened. `worktree` gives it a worktree of its own.
 	 */
 	| { type: 'session.fork'; id: string; index: number; mode?: 'readOnly' | 'worktree' }
+	/**
+	 * Cut an open, idle session back to the message at `index`, in place (Fork's
+	 * cut). `restoreFiles` (default true) puts back what its write and edit
+	 * tools changed since; a file changed after the agent wrote it is left
+	 * unless `overwrite` names it. `dryRun` only says what it would do.
+	 * Commands' changes are not undone.
+	 */
+	| {
+			type: 'session.rewind';
+			id: string;
+			index: number;
+			restoreFiles?: boolean;
+			overwrite?: string[];
+			dryRun?: boolean;
+	  }
 	| { type: 'session.rename'; id: string; title: string }
 	/** From the next turn; null follows Settings. */
 	| { type: 'session.effort'; id: string; effort: string | null }

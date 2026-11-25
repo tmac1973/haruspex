@@ -12,6 +12,7 @@ import type { FileContent, SessionModel, SessionState } from '#lib/engine/types.
 import { readOnlyIO } from '#lib/editor/io.ts';
 import { editWorkdirFiles } from '#lib/stores/fileEditor.svelte.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
+import type { RewindFile, RewindReport } from '#lib/code/checkpoints.ts';
 import { peerImageUrl } from '#lib/peers/images.ts';
 import { onPeerGone, type PeerView } from '#lib/peers/store.svelte.ts';
 import {
@@ -309,6 +310,34 @@ export class RemoteCodeSession implements CodeSessionView {
 		if (!out) throw new Error(this.opError ?? 'failed');
 		const fork = await openRemoteSession(this.view, out.id);
 		fork.prefill = { text: out.prefill ?? '', images: [] };
+	};
+
+	planRewind = async (index: number): Promise<{ at: number; files: RewindFile[] }> => {
+		const out = await this.op<{ at: number; files: RewindFile[] }>({
+			type: 'session.rewind',
+			id: this.sessionId,
+			index,
+			dryRun: true
+		});
+		if (!out) throw new Error(this.opError ?? 'failed');
+		return out;
+	};
+
+	rewind = async (
+		index: number,
+		opts: { restoreFiles: boolean; overwrite?: string[] }
+	): Promise<RewindReport & { prefill: Prefill | null }> => {
+		const out = await this.op<RewindReport & { prefill: string | null }>({
+			type: 'session.rewind',
+			id: this.sessionId,
+			index,
+			restoreFiles: opts.restoreFiles,
+			overwrite: opts.overwrite
+		});
+		if (!out) throw new Error(this.opError ?? 'failed');
+		const prefill = out.prefill === null ? null : { text: out.prefill ?? '', images: [] };
+		if (prefill) this.prefill = prefill;
+		return { restored: out.restored ?? [], skipped: out.skipped ?? [], prefill };
 	};
 
 	newBeside = async (): Promise<void> => {

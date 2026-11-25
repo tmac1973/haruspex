@@ -44,6 +44,23 @@ The agent finds the date was read as UTC, changes `src/parseDate.ts`, and runs t
 
 Read more: code
 
+## Take back a turn that went the wrong way
+
+When the agent heads somewhere you didn't want, rewind the session to your message. The files its edits changed since are put back, and your message returns to the input box to reword.
+
+Tab: Code
+Required settings: None
+
+Prompt:
+
+> Split the settings page into tabs.
+
+Example output:
+
+The agent breaks `src/Settings.svelte` into three tab components. You'd rather keep one page, so you press **Rewind to here** on your message. The dialog lists `src/Settings.svelte` and the three new files; **Rewind** puts the first back, deletes the others and cuts the conversation back to before your message, which waits in the input box. Anything a command changed, such as an `npm install`, stays.
+
+Read more: code-sessions, code
+
 ## Find your way round an unfamiliar project
 
 Ask how something works in a repo you haven't read. The agent searches and reads the files, and answers with file names you can click to open. With the Search helper and a reranker it can ask the code in plain words.
@@ -194,6 +211,7 @@ Required settings: None (Settings → Code → Subtasks → Read and write lets 
 Prompt:
 
 > Before I refactor the cache:
+>
 > 1. Find every caller of `getCached`.
 > 2. Work out how the tests mock Redis.
 > 3. List the config keys the cache reads.
