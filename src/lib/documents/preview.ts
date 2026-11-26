@@ -40,7 +40,7 @@ export function pdfPreviewText(preview: PdfPreview, relPath: string, canRewrite:
 				? 'its page'
 				: `all ${preview.total} pages`;
 	const fix = canRewrite
-		? `If something needs fixing, write the whole document again to "${relPath}", starting with the same first line.`
+		? `If something needs fixing, write the whole document again to "${relPath}", keeping its first line or most of its lines.`
 		: `It has been rewritten as many times as it can be this turn, so tell the user what still needs fixing.`;
 	return (
 		`\nThe sheets show ${which} as printed, numbered. Check for a heading alone at the foot ` +

@@ -87,31 +87,45 @@ export function textSignature(content: string): string[] {
  * (#1116); a second part of a long file shares few lines with the first.
  */
 export const TEXT: DraftKind = {
-	keeps: (before, now) => {
-		if (before[0] !== '' && before[0] === now[0]) return true;
-		const lines = before.slice(1);
-		if (lines.length === 0) return false;
-		const kept = new Set(now.slice(1));
-		return lines.filter((l) => kept.has(l)).length >= lines.length * TEXT_KEEPS;
-	},
+	keeps: (before, now) =>
+		(before[0] !== '' && before[0] === now[0]) || keepsLines(before.slice(1), now.slice(1)),
 	how: 'write it whole again, keeping its first line or most of its lines'
 };
 
+/** Whether `now` keeps at least half of the lines in `before`. */
+function keepsLines(before: string[], now: string[]): boolean {
+	if (before.length === 0) return false;
+	const kept = new Set(now);
+	return before.filter((l) => kept.has(l)).length >= before.length * TEXT_KEEPS;
+}
+
+/** The places in a document's signature that a revision may keep on its own. */
+const DOCUMENT_OPENING = 3;
+
 /**
  * A built document (PDF, Word, LibreOffice) is revised when it keeps its
- * title, its first heading or its first line. Fixing a layout often means
- * rewording an opening paragraph, so the line alone is too strict; a later
- * part, written as a second call, starts at a later heading.
+ * title, its first heading or its first line, or at least half its lines.
+ * Fixing a layout often means rewording an opening paragraph, so the line
+ * alone is too strict; a later part, written as a second call, starts at a
+ * later heading and shares few lines with the first. Seen live (#1276): a
+ * shopping list a line too long for one page lost its title heading, and
+ * kept most of its rows.
  */
 export const BUILT_DOCUMENT: DraftKind = {
-	keeps: (before, now) => before.some((s, i) => s !== '' && s === now[i]),
-	how: 'write it whole again with the same title, first heading or first line'
+	keeps: (before, now) =>
+		before.slice(0, DOCUMENT_OPENING).some((s, i) => s !== '' && s === now[i]) ||
+		keepsLines(before.slice(DOCUMENT_OPENING), now.slice(DOCUMENT_OPENING)),
+	how: 'write it whole again with the same title, first heading or first line, or most of its lines'
 };
 
-/** What a revised built document keeps: its title, first heading and first line. */
+/**
+ * What a revised built document keeps: its title, first heading and first
+ * line, then its lines as `textSignature` takes them.
+ */
 export function documentSignature(content: string, title: unknown): string[] {
 	const heading = content.split('\n').find((l) => /^\s*#{1,6}\s/.test(l)) ?? '';
-	return [typeof title === 'string' ? normText(title) : '', firstLine(heading), firstLine(content)];
+	const [line, ...lines] = textSignature(content);
+	return [typeof title === 'string' ? normText(title) : '', firstLine(heading), line, ...lines];
 }
 
 /** A spreadsheet is revised when its first sheet keeps its header and first record. */

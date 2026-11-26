@@ -33,7 +33,7 @@ Ask for any of these in your message and the assistant passes them along:
 
 ## The assistant checks its PDF
 
-After writing a PDF, the assistant is told how many pages it came to. If the model can see images, it is also shown the pages, four to a picture, up to the first eight. It looks for a table too narrow to read, a picture missing or too small, a mostly empty page, or more pages than you asked for, and may write the document again to fix it. It can do that up to three times in one answer, as long as the new version keeps the title, the first heading or the first line, even for a file that was there before and that you said to overwrite.
+After writing a PDF, the assistant is told how many pages it came to. If the model can see images, it is also shown the pages, four to a picture, up to the first eight. It looks for a table too narrow to read, a picture missing or too small, a mostly empty page, or more pages than you asked for, and may write the document again to fix it. It can do that up to three times in one answer, as long as the new version keeps the title, the first heading, the first line or most of its lines, even for a file that was there before and that you said to overwrite.
 
 A model that can't see images gets only the page count.
 
