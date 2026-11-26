@@ -1,3 +1,4 @@
+import type { RecallArchive } from '#lib/agent/recallArchive.ts';
 import type { BackendOverride, ChatMessage, ToolDefinition, Usage } from '#lib/api.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import type { JobSubtaskHost, SubtaskSpec } from '#lib/code/subtaskRun.ts';
@@ -301,6 +302,8 @@ export interface ToolContext {
 	feedback?: FeedbackTurn;
 	/** The id of the call being run: names a subtask after its `delegate` call. */
 	toolCallId?: string;
+	/** Results this turn's context fit trimmed, for `recall_result`. */
+	recallArchive?: RecallArchive;
 	/** A subtask's card changed (`delegate`); the loop routes it to the call's step. */
 	onSubtask?: (state: SubtaskState) => void;
 	/** Each model call a `delegate` subtask makes, for the Code session's token count. */
@@ -415,6 +418,9 @@ export interface ToolRegistration {
 		/** The model's notes on Haruspex's tools (`haruspex_feedback`). Settings →
 		 *  Feedback switches it on; an allowlisted turn needs `harnessFeedback`. */
 		| 'harness-feedback'
+		/** `recall_result`: the exact text of a result the fit trimmed. Every
+		 *  turn that can be trimmed, bar lean Chat (`_leanProfile.ts`). */
+		| 'recall'
 		/** Checking and cancelling background tasks. Only for a Chat or Code turn
 		 *  whose owner has started one. */
 		| 'tasks'

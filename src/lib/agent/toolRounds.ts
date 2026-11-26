@@ -4,7 +4,7 @@
  * messages has to keep the two together.
  */
 
-import type { ChatMessage } from '#lib/api.ts';
+import type { ChatMessage, ToolCall } from '#lib/api.ts';
 
 /** `idx` and what goes with it: a tool call's message and all its results. */
 export function droppingUnit(messages: ChatMessage[], idx: number): number[] {
@@ -42,4 +42,15 @@ export function sanitizeOrphanToolResults(messages: ChatMessage[]): void {
 			messages.splice(i, 1);
 		}
 	}
+}
+
+/** The call a tool result at `toolIdx` answers, or undefined. */
+export function callFor(messages: ChatMessage[], toolIdx: number): ToolCall | undefined {
+	const id = messages[toolIdx].tool_call_id;
+	if (!id) return undefined;
+	for (let i = toolIdx - 1; i >= 0; i--) {
+		const call = messages[i].tool_calls?.find((c) => c.id === id);
+		if (call) return call;
+	}
+	return undefined;
 }

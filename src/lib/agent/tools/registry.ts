@@ -612,6 +612,9 @@ function schemaFor(
 	if (reg.category === 'guide') return filter.interactive && !filter.subtask ? reg.schema : null;
 	// Every mode, subtasks and all: friction is friction wherever it happens.
 	if (reg.category === 'harness-feedback') return feedbackOn() ? reg.schema : null;
+	// Every mode too: any turn can have its results trimmed. Lean Chat leaves
+	// it out above, for the schema room; its stubs say to run the tool again.
+	if (reg.category === 'recall') return reg.schema;
 	if (reg.category === 'skills-write') {
 		if (!skills.hasSkills || !filter.interactive || filter.codeReadOnly || filter.subtask) {
 			return null;

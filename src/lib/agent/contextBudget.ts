@@ -22,7 +22,13 @@
 
 import { holdsSkillContent } from '#lib/skills/content.ts';
 import { messageText, type ChatMessage, type ToolDefinition } from '#lib/api.ts';
-import { droppingUnit, sanitizeOrphanToolResults } from '#lib/agent/toolRounds.ts';
+import { callFor, droppingUnit, sanitizeOrphanToolResults } from '#lib/agent/toolRounds.ts';
+import {
+	archivedStub,
+	keepResult,
+	recallHint,
+	type RecallArchive
+} from '#lib/agent/recallArchive.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 
 // Bytes per token. Real English is ~4 bytes/token; dividing by a smaller
@@ -101,28 +107,35 @@ export function estimateMessagesTokens(messages: ChatMessage[], tools?: ToolDefi
  * reads to trimming reported the code as missing from disk.
  */
 function describeToolCall(messages: ChatMessage[], toolIdx: number): string {
-	const id = messages[toolIdx].tool_call_id;
-	if (!id) return '';
-	for (let i = toolIdx - 1; i >= 0; i--) {
-		const call = messages[i].tool_calls?.find((c) => c.id === id);
-		if (!call) continue;
-		let arg = '';
-		try {
-			const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
-			const key = ['path', 'relPath', 'pattern', 'query', 'command', 'url'].find(
-				(k) => typeof args[k] === 'string'
-			);
-			if (key) arg = String(args[key]).slice(0, 120);
-		} catch {
-			// Unparseable arguments: the name alone is still worth having.
-		}
-		return arg ? `${call.function.name}(${arg})` : call.function.name;
+	const call = callFor(messages, toolIdx);
+	if (!call) return '';
+	let arg = '';
+	try {
+		const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+		const key = ['path', 'relPath', 'pattern', 'query', 'command', 'url', 'id'].find(
+			(k) => typeof args[k] === 'string'
+		);
+		if (key) arg = String(args[key]).slice(0, 120);
+	} catch {
+		// Unparseable arguments: the name alone is still worth having.
 	}
-	return '';
+	return arg ? `${call.function.name}(${arg})` : call.function.name;
 }
 
-function stubFor(messages: ChatMessage[], idx: number, text: string): string {
+/**
+ * With an archive (a turn that offers `recall_result`), the stub keeps the result's
+ * id and receipt, so the model can read it back exactly instead of running
+ * the tool again. Without one, it says the result is gone.
+ */
+function stubFor(
+	messages: ChatMessage[],
+	idx: number,
+	text: string,
+	archive?: RecallArchive
+): string {
 	const what = describeToolCall(messages, idx);
+	const id = keepResult(archive, messages, idx, text, what);
+	if (archive && id) return archivedStub(archive, id);
 	return (
 		`[Trimmed: ${text.length} chars dropped to free context. The result of ` +
 		`${what || 'an earlier tool call'} is no longer in scope — it was DROPPED TO SAVE ` +
@@ -177,7 +190,7 @@ function trimCandidates(messages: ChatMessage[]): TrimCandidate[] {
  */
 export function trimOldToolMessages(
 	messages: ChatMessage[],
-	opts: { budget?: number; tools?: ToolDefinition[] } = {}
+	opts: { budget?: number; tools?: ToolDefinition[]; archive?: RecallArchive } = {}
 ): boolean {
 	const candidates = trimCandidates(messages);
 	if (candidates.length === 0) return false;
@@ -186,7 +199,8 @@ export function trimOldToolMessages(
 	// behaviour, kept for callers that have no estimate to aim at).
 	if (opts.budget === undefined) {
 		for (const c of candidates) {
-			messages[c.idx] = { ...messages[c.idx], content: stubFor(messages, c.idx, c.text) };
+			const content = stubFor(messages, c.idx, c.text, opts.archive);
+			messages[c.idx] = { ...messages[c.idx], content };
 		}
 		return true;
 	}
@@ -196,7 +210,7 @@ export function trimOldToolMessages(
 	let trimmed = false;
 	for (const c of [...candidates].sort((a, b) => b.tokens - a.tokens)) {
 		if (running <= opts.budget) break;
-		const stub = stubFor(messages, c.idx, c.text);
+		const stub = stubFor(messages, c.idx, c.text, opts.archive);
 		messages[c.idx] = { ...messages[c.idx], content: stub };
 		running -= c.tokens - (estimateTokens(stub) + PER_MESSAGE_OVERHEAD_TOKENS);
 		trimmed = true;
@@ -206,8 +220,8 @@ export function trimOldToolMessages(
 
 export interface ContextManagedInfo {
 	/**
-	 * `trim`: the in-loop trim after a call came back over 70% of the window,
-	 * which stubs older tool results only. `fit`: the pre-send fit, which may
+	 * `trim`: the in-loop trim before a call whose prompt is over 70% of the
+	 * window, which stubs older tool results only. `fit`: the pre-send fit, which may
 	 * go on to truncate messages and drop turns.
 	 */
 	kind: 'trim' | 'fit';
@@ -345,6 +359,8 @@ export interface FitOptions {
 	calibrationKey?: string;
 	/** Tool schemas that will be sent alongside (counted toward the estimate). */
 	tools?: ToolDefinition[];
+	/** Where to keep results it trims or cuts, for `recall_result`; see `RecallArchive`. */
+	archive?: RecallArchive;
 }
 
 /**
@@ -389,13 +405,15 @@ export function fitMessagesToBudget(
 	let trimmedTools = false;
 	let truncatedMessages = 0;
 	const stub = () => {
-		trimmedTools = trimOldToolMessages(messages, { budget: effectiveBudget, tools: opts.tools });
+		const { tools, archive } = opts;
+		trimmedTools = trimOldToolMessages(messages, { budget: effectiveBudget, tools, archive });
 	};
+	const truncate = () => truncateOversized(messages, effectiveBudget, fits, opts.archive);
 	if (stubbingCanFit(messages, beforeEst - effectiveBudget)) {
 		stub();
-		if (!fits()) truncatedMessages = truncateOversized(messages, effectiveBudget, fits);
+		if (!fits()) truncatedMessages = truncate();
 	} else {
-		truncatedMessages = truncateOversized(messages, effectiveBudget, fits);
+		truncatedMessages = truncate();
 		if (!fits()) stub();
 	}
 
@@ -443,7 +461,8 @@ function stubbingCanFit(messages: ChatMessage[], excess: number): boolean {
 function truncateOversized(
 	messages: ChatMessage[],
 	effectiveBudget: number,
-	fits: () => boolean
+	fits: () => boolean,
+	archive?: RecallArchive
 ): number {
 	const oversizedTokenCap = Math.max(
 		1,
@@ -463,11 +482,10 @@ function truncateOversized(
 	let truncated = 0;
 	for (const c of candidates) {
 		if (fits()) break;
-		const result = truncateCapturedOutput(
-			c.m.content as string,
-			maxBytes,
-			CUT_HINTS[c.m.role] ?? CUT_HINTS.tool
-		);
+		const text = c.m.content as string;
+		const id = keepResult(archive, messages, c.i, text, describeToolCall(messages, c.i));
+		const hint = id ? recallHint(id) : (CUT_HINTS[c.m.role] ?? CUT_HINTS.tool);
+		const result = truncateCapturedOutput(text, maxBytes, hint);
 		if (result.truncated) {
 			messages[c.i] = { ...c.m, content: result.text };
 			truncated++;

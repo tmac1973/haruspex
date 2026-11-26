@@ -16,6 +16,7 @@ const ORDER = [
 	'models',
 	'lean-mode',
 	'tool-loading',
+	'context',
 	'home',
 	'chat',
 	'chat-conversations',

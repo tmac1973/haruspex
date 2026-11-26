@@ -134,6 +134,7 @@ export function familyOf(name: string, families = allFamilies()): ToolFamily | n
 
 /** Always sent in Chat (overview → Decisions). */
 export const CHAT_CORE: ReadonlySet<string> = new Set([
+	'recall_result',
 	'web_search',
 	'fetch_url',
 	'fetch_url_images',
@@ -164,6 +165,7 @@ export const CHAT_CORE: ReadonlySet<string> = new Set([
 
 /** Always sent in the Code tab (overview → Decisions). */
 export const CODE_CORE: ReadonlySet<string> = new Set([
+	'recall_result',
 	'fs_read_text',
 	'fs_read_image',
 	'fs_list_dir',

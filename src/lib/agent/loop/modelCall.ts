@@ -229,7 +229,8 @@ async function sendGuardedCompletion(
 		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
 			reserveOutput: max_tokens,
 			tools,
-			calibrationKey: ctx.descriptor.calibrationKey
+			calibrationKey: ctx.descriptor.calibrationKey,
+			archive: ctx.recallArchive
 		});
 		if (info) ctx.options.onContextManaged?.(info);
 		sentEstimate = estimateMessagesTokens(ctx.messages, tools);

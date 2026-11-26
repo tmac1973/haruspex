@@ -49,8 +49,12 @@ export function leanOffers(name: string, fileWrites: boolean): boolean {
 	return LEAN_CHAT_TOOLS.has(name) || (fileWrites && LEAN_WRITE_TOOLS.has(name));
 }
 
-/** The most a lean Chat turn's schemas may add up to, in JSON characters. */
-export const LEAN_SCHEMA_BUDGET_CHARS = 9600;
+/**
+ * The most a lean Chat turn's schemas may add up to, in JSON characters.
+ * `haruspex_docs` lists every guide page by name, so each new page adds about
+ * ten: 9700 makes room for the `context` page and a few more.
+ */
+export const LEAN_SCHEMA_BUDGET_CHARS = 9700;
 
 /** The same for Lean + files. */
 export const LEAN_WRITE_SCHEMA_BUDGET_CHARS = 12000;

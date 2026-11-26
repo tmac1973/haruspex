@@ -745,7 +745,9 @@ describe('Code-mode tool filtering', () => {
 		'code_glob',
 		'run_command',
 		'web_search',
-		'research_url'
+		'research_url',
+		// Not a code tool, but in every profile but lean Chat.
+		'recall_result'
 	].sort();
 
 	it('the Code tab exposes the CODE_TOOLS allowlist plus its own tools', async () => {
