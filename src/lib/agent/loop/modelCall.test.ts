@@ -2,12 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
 import { resetTokenCalibration, type ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from './context';
-import {
-	applyContextGuard,
-	promptCacheFigures,
-	raceWithAbort,
-	samplingOptionsFor
-} from './modelCall';
+import { promptCacheFigures, raceWithAbort, samplingOptionsFor } from './modelCall';
+import { applyContextGuard } from './responseRoom';
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)

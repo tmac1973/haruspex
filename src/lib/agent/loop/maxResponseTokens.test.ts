@@ -1,5 +1,12 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { buildLoopContext } from './iteration';
+import { promptReserve } from './context';
+import { fitForCall, noteResponseFinish } from './responseRoom';
+import {
+	estimateMessagesTokens,
+	getTokenCalibration,
+	resetTokenCalibration
+} from '#lib/agent/contextBudget.ts';
 import { updateSettings, getSettings } from '#lib/stores/settings.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 
@@ -104,5 +111,51 @@ describe('response ceiling vs context window', () => {
 
 	it('is inert when the context size is unknown', () => {
 		expect(ctxFor({ contextSize: 0, maxResponseTokens: 32768 }).maxResponseTokens).toBe(32768);
+	});
+});
+
+describe('room for the response (#1022)', () => {
+	beforeEach(() => resetTokenCalibration());
+
+	// A Code turn on a 64K window: the file-write ceiling clamps to 32K.
+	const codeTurn = (content: string) =>
+		ctxFor({
+			messages: [{ role: 'user', content }],
+			contextSize: 65536,
+			expectsFileOutput: true
+		});
+	const promptTokens = (ctx: ReturnType<typeof codeTurn>) =>
+		Math.ceil(estimateMessagesTokens(ctx.messages, ctx.tools) * getTokenCalibration());
+
+	it('reserves an eighth of the window for the fit, not the whole ceiling', () => {
+		const ctx = codeTurn('hi');
+		expect(ctx.maxResponseTokens).toBe(32768);
+		expect(promptReserve(ctx)).toBe(8192);
+	});
+
+	it('sends the whole ceiling while the prompt leaves room for it', () => {
+		const ctx = codeTurn('x'.repeat(35_000));
+		expect(fitForCall(ctx, ctx.tools)).toBe(32768);
+		expect(ctx.responseRoom.limit).toBe(32768);
+	});
+
+	it('keeps a long prompt, and sends what room it leaves', () => {
+		// About 45K tokens of prompt: the old fit cut it to 32K.
+		const ctx = codeTurn('x'.repeat(105_000));
+		const limit = fitForCall(ctx, ctx.tools);
+		expect(String(ctx.messages[0].content).length).toBe(105_000);
+		expect(limit).toBeGreaterThanOrEqual(8192);
+		expect(limit).toBeLessThan(32768);
+		expect(promptTokens(ctx) + limit).toBeLessThanOrEqual(65536);
+	});
+
+	it('makes room for the whole ceiling after a call ran out of it', () => {
+		const ctx = codeTurn('x'.repeat(105_000));
+		noteResponseFinish(ctx, 'length');
+		expect(promptReserve(ctx)).toBe(32768);
+		expect(fitForCall(ctx, ctx.tools)).toBe(32768);
+		expect(promptTokens(ctx) + 32768).toBeLessThanOrEqual(65536);
+		noteResponseFinish(ctx, 'stop');
+		expect(promptReserve(ctx)).toBe(8192);
 	});
 });

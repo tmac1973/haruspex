@@ -221,7 +221,12 @@ describe('nudge prompts', () => {
 
 describe('outOfTokensMessage', () => {
 	const ctx = (over: Partial<LoopContext>) =>
-		({ maxResponseTokens: 8192, expectsFileOutput: false, ...over }) as LoopContext;
+		({
+			maxResponseTokens: 8192,
+			responseRoom: { limit: 8192, fullReserve: false },
+			expectsFileOutput: false,
+			...over
+		}) as LoopContext;
 
 	it('names the response limit and its approximate size', () => {
 		const msg = outOfTokensMessage(ctx({}), false);
@@ -235,6 +240,16 @@ describe('outOfTokensMessage', () => {
 	it('points at the file-write setting when the turn expects a file', () => {
 		const msg = outOfTokensMessage(ctx({ expectsFileOutput: true }), false);
 		expect(msg).toContain('Max response tokens (file writes)');
+	});
+
+	it('blames the window, not the setting, when the prompt left less than the ceiling', () => {
+		const msg = outOfTokensMessage(
+			ctx({ responseRoom: { limit: 3000, fullReserve: false } }),
+			false
+		);
+		expect(msg).toContain('leaving 3000 tokens for the answer');
+		expect(msg).toContain('Settings → Inference → Context Size');
+		expect(msg).not.toContain('Max response tokens');
 	});
 
 	it('adds the research hint after tools ran', () => {

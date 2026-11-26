@@ -42,6 +42,7 @@ function harness(over: Partial<LoopContext> = {}, steering: { text: string }[] =
 		tools: [],
 		forceFinalTool: null,
 		maxResponseTokens: 1000,
+		responseRoom: { limit: 1000, fullReserve: false },
 		expectsFileOutput: false,
 		options: {
 			onStreamChunk: (c: unknown) => out.chunks.push(c),

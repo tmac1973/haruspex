@@ -5,13 +5,13 @@ description: Known issues and fixes: small-model limits, cut-off answers, comman
 
 # Troubleshooting
 
-Common problems and what to try. If none of this helps, report a bug (see the last section).
+If none of this helps, report a bug (see the last section).
 
 ## The model did only half of what I asked
 
-Small local models (Qwen 3.5 4B and 9B) often do only the first part of a two-part request. Ask "research X and make a PDF report" and you may get a good answer in the chat but no file. It may even claim a file that does not exist.
+Small local models (Qwen 3.5 4B and 9B) often do only the first part of a two-part request. Ask "research X and make a PDF report" and you may get a good answer in the chat but no file, or a claim of a file that does not exist.
 
-**What to do:** ask again, as a separate message: "write that to a PDF". It almost always works, as the content is already in the conversation. For big tasks, ask one step at a time. Larger models rarely have this problem.
+**What to do:** ask again, as a separate message: "write that to a PDF". It almost always works: the content is already there. For big tasks, ask one step at a time. Larger models rarely have this problem.
 
 ## Coding features make mistakes or get stuck
 
@@ -28,7 +28,9 @@ Each reply has a length limit, separate from the context size. When a reply hits
 
 Or ask for less at once, or lower **Reasoning effort** there.
 
-If instead it says the model's tool call "could not be run", the reply was not cut off and raising the limit will not help. Try again, or ask for the work in smaller steps.
+If it says the conversation filled the window, start a new chat or raise Settings → Inference → Context Size.
+
+If it says the model's tool call "could not be run", the reply was not cut off and a higher limit will not help. Try again, or ask for smaller steps.
 
 ## It ran a command without asking me
 
@@ -44,7 +46,7 @@ If the command really needs more, raise Settings → Shell → Memory limit (a p
 
 ## Pictures in answers are missing or wrong
 
-Picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Chat → Pictures in answers → Include images in answers to stop them being added unasked.
+Picture sources are good for places, animals, landmarks and general subjects, weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Chat → Pictures in answers → Include images in answers to stop them being added unasked.
 
 ## Presentations with images are unreliable
 
@@ -56,7 +58,7 @@ Image generation is new and off by default. It has been tested most on Linux wit
 
 ## Games or other programs are slow
 
-Haruspex keeps the model in GPU memory while it runs. Close it before gaming, or use a smaller model or context.
+Haruspex keeps the model in GPU memory. Close it to game, or use a smaller model or context.
 
 ## The app will not open (Windows or macOS)
 
