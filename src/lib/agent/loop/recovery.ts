@@ -50,7 +50,7 @@ export function pushNudge(
 /** After a response cut off while the model was still thinking. */
 function reasoningOverrunNote(ctx: LoopContext): string {
 	return (
-		`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
+		`Your previous response was cut off at the ${ctx.responseRoom.limit}-token ` +
 		`limit while you were still thinking, so none of it reached the user. Answer ` +
 		`now: keep your reasoning short and spend the response on the answer itself. ` +
 		`If the full answer will not fit in one response, say so first and give the ` +
@@ -61,7 +61,7 @@ function reasoningOverrunNote(ctx: LoopContext): string {
 /** After a response cut off with nothing in it: most often a tool call too long to arrive. */
 function cutOffCallNote(ctx: LoopContext): string {
 	return (
-		`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
+		`Your previous response was cut off at the ${ctx.responseRoom.limit}-token ` +
 		`limit before it finished, so nothing in it ran. Make the next response ` +
 		`smaller: keep your reasoning short, and split a long file into parts, a ` +
 		`short first version and then edits that add the rest.`

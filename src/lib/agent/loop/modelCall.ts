@@ -36,6 +36,7 @@ import { splitThinkChannels } from '#lib/markdown.ts';
 import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { inLoopTrimBudget, type LoopContext } from '#lib/agent/loop/context.ts';
+import { fitForCall, noteResponseFinish } from '#lib/agent/loop/responseRoom.ts';
 import { isCodeContext } from '#lib/agent/loop/heuristics.ts';
 
 /** Headroom on a server's "at least N tokens" count before recalibrating to it. */
@@ -159,29 +160,6 @@ export function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Pro
 // `trimOldToolMessages` now lives in #lib/agent/context-budget alongside
 // the pre-send guard that shares it.
 
-/**
- * Deterministically shrink `ctx.messages` to fit the server's context
- * window before a model call, reserving `reserveOutput` tokens for the
- * response. No-op when context size is unknown (0) or the prompt already
- * fits. Surfaces what it did via the optional `onContextManaged` callback.
- */
-export function applyContextGuard(
-	ctx: LoopContext,
-	reserveOutput: number,
-	tools?: ToolDefinition[]
-): void {
-	if (ctx.contextSize <= 0) return;
-	const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
-		reserveOutput,
-		tools,
-		calibrationKey: ctx.descriptor.calibrationKey
-	});
-	if (info) {
-		logDebug('agent', 'pre-send context guard reduced prompt', info);
-		ctx.options.onContextManaged?.(info);
-	}
-}
-
 /** Per-call sampling/output params shared by the guarded helper. Sampling
  * fields are optional — undefined means "don't send", so unrecognized
  * remote models get the serving backend's own defaults. */
@@ -191,7 +169,6 @@ type CompletionParams = {
 	top_k?: number;
 	min_p?: number;
 	presence_penalty?: number;
-	max_tokens: number;
 	chat_template_kwargs: ReturnType<typeof getChatTemplateKwargs>;
 	/** OpenRouter reasoning param; undefined for non-OpenRouter backends. */
 	reasoning?: { effort: string };
@@ -219,18 +196,21 @@ async function sendGuardedCompletion(
 	ctx: LoopContext,
 	tools: ToolDefinition[] | undefined,
 	params: CompletionParams,
-	reserveOutput: number,
 	send: CompletionSender
 ): Promise<ChatCompletionResponse> {
-	applyContextGuard(ctx, reserveOutput, tools);
+	const max_tokens = fitForCall(ctx, tools);
 	const backend = ctx.backend ?? undefined;
 	let sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	try {
 		// A streamed send fails here too when the server refuses the prompt:
 		// the overflow 400 comes back before any stream data.
-		const res = await send({ messages: ctx.messages, tools, backend, ...params }, ctx.signal);
+		const res = await send(
+			{ messages: ctx.messages, tools, backend, ...params, max_tokens },
+			ctx.signal
+		);
 		if (res.usage)
 			recordTokenCalibration(sentEstimate, res.usage.prompt_tokens, ctx.descriptor.calibrationKey);
+		noteResponseFinish(ctx, res.finish_reason);
 		return res;
 	} catch (e) {
 		const overflow = e instanceof ApiError ? parseContextOverflow(e.message) : null;
@@ -248,15 +228,19 @@ async function sendGuardedCompletion(
 			calibration: getTokenCalibration(ctx.descriptor.calibrationKey)
 		});
 		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
-			reserveOutput,
+			reserveOutput: max_tokens,
 			tools,
 			calibrationKey: ctx.descriptor.calibrationKey
 		});
 		if (info) ctx.options.onContextManaged?.(info);
 		sentEstimate = estimateMessagesTokens(ctx.messages, tools);
-		const res = await send({ messages: ctx.messages, tools, backend, ...params }, ctx.signal);
+		const res = await send(
+			{ messages: ctx.messages, tools, backend, ...params, max_tokens },
+			ctx.signal
+		);
 		if (res.usage)
 			recordTokenCalibration(sentEstimate, res.usage.prompt_tokens, ctx.descriptor.calibrationKey);
+		noteResponseFinish(ctx, res.finish_reason);
 		return res;
 	}
 }
@@ -354,7 +338,7 @@ async function streamSynthesisOnce(
 	thinking: boolean | null,
 	answerOnly: boolean
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
-	applyContextGuard(ctx, ctx.maxResponseTokens, tools);
+	const maxTokens = fitForCall(ctx, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	const reasoning =
 		getOpenRouterReasoningParam(ctx.descriptor, thinking, ctx.reasoningEffort) ?? undefined;
@@ -365,7 +349,7 @@ async function streamSynthesisOnce(
 			...(answerOnly && tools?.length ? { tool_choice: 'none' as const } : {}),
 			backend: ctx.backend ?? undefined,
 			...sampling,
-			max_tokens: ctx.maxResponseTokens,
+			max_tokens: maxTokens,
 			chat_template_kwargs: templateKwargs,
 			reasoning
 		},
@@ -399,6 +383,7 @@ async function streamSynthesisOnce(
 		usage: streamUsage ?? undefined,
 		text: accumulated
 	});
+	noteResponseFinish(ctx, lastFinish);
 	return { lastFinish, totalChunks, totalContent };
 }
 
@@ -487,11 +472,9 @@ export async function runModelCall(
 		tools,
 		{
 			...sampling,
-			max_tokens: ctx.maxResponseTokens,
 			chat_template_kwargs: templateKwargs,
 			reasoning
 		},
-		ctx.maxResponseTokens,
 		send
 	);
 	const callDurationMs = Date.now() - callStartMs;

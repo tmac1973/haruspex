@@ -143,8 +143,13 @@ export interface LoopContext {
 	samplingSource: 'server' | 'profile' | 'custom';
 	/** Values for samplingSource 'custom'; ignored otherwise. */
 	samplingParams: SamplingParams | null;
-	/** Per-call response token budget. */
+	/**
+	 * The turn's response ceiling: the most any one call may write. A call is
+	 * sent less when the prompt leaves less room (`fitForCall`).
+	 */
 	maxResponseTokens: number;
+	/** The room the turn's calls got for a response; see `ResponseRoom`. */
+	responseRoom: ResponseRoom;
 	shellCwd: string | null;
 	shellSessionId: number | null;
 	codeSessionId?: string;
@@ -233,11 +238,45 @@ export function contextResponseFloor(contextSize: number): number {
 }
 
 /**
- * Ceilings are also RESERVATIONS: `applyContextGuard` hands the value to
- * `fitMessagesToBudget`, which computes the prompt budget as
- * `contextSize - reserveOutput`. So a ceiling at or above the context window
- * leaves no room for the prompt and collapses the budget to 1 token, trimming
- * the conversation to nothing on every turn.
+ * How much room a turn's model calls get for their response.
+ *
+ * The prompt fit used to reserve the whole ceiling on every call. A file-write
+ * turn's ceiling is half the window, so a Code turn on a 64K window had 32K
+ * for its prompt, about 22K once the system prompt was in: two source files at
+ * a time. The model summarised files it no longer had and made the rest up
+ * (#1022). Now the fit reserves `promptReserve`, and each call is sent
+ * whatever room the prompt leaves, up to the ceiling.
+ */
+export interface ResponseRoom {
+	/** The `max_tokens` the last call was sent. */
+	limit: number;
+	/**
+	 * Reserve the whole ceiling on the next call: the last one ran out of
+	 * room, so the fit makes space for a full-length response.
+	 */
+	fullReserve: boolean;
+}
+
+/** The least the prompt fit leaves for a response. */
+const RESPONSE_RESERVE_MIN = 8192;
+
+/**
+ * What the prompt fit reserves for the response: an eighth of the window, at
+ * least RESPONSE_RESERVE_MIN, never more than the ceiling — or the ceiling
+ * itself right after a call ran out of room.
+ */
+export function promptReserve(ctx: LoopContext): number {
+	if (ctx.responseRoom.fullReserve) return ctx.maxResponseTokens;
+	const reserve = Math.max(RESPONSE_RESERVE_MIN, contextResponseFloor(ctx.contextSize));
+	return Math.min(ctx.maxResponseTokens, reserve);
+}
+
+/**
+ * A ceiling can also be a RESERVATION: after a call runs out of room the next
+ * fit reserves the whole ceiling (`promptReserve`), computing the prompt budget
+ * as `contextSize - reserveOutput`. So a ceiling at or above the context window
+ * would leave no room for the prompt and collapse the budget to 1 token,
+ * trimming the conversation to nothing.
  *
  * That was reachable with the old 8K context tier (since removed) against the
  * default 8192 ceiling: exactly `8192 - 8192`. Imported or remote models can
@@ -263,6 +302,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const codeMode = options.codeMode ?? false;
 	const codeAutoApprove = options.codeAutoApprove ?? false;
 	const expectsFileOutput = options.expectsFileOutput ?? false;
+	const maxResponseTokens = resolveMaxResponseTokens(options, expectsFileOutput);
 	const descriptor = resolveBackendDescriptor(options.backend);
 	const { tools, deferredTools } = options.turnTools ?? resolveTurnTools(options);
 	const ctx: LoopContext = {
@@ -294,7 +334,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		reasoningEffort: options.reasoningEffort ?? null,
 		samplingSource: options.samplingSource ?? 'profile',
 		samplingParams: options.samplingParams ?? null,
-		maxResponseTokens: resolveMaxResponseTokens(options, expectsFileOutput),
+		maxResponseTokens,
+		responseRoom: { limit: maxResponseTokens, fullReserve: false },
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
 		codeSessionId: options.codeSessionId,

@@ -17,8 +17,8 @@ import { NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
 import type { CompletionMeta } from '#lib/agent/loop.ts';
 import { appendMessage, type LoopContext, type LoopState } from '#lib/agent/loop/context.ts';
 import { outOfTokensMessage } from '#lib/agent/loop/heuristics.ts';
+import { fitForCall } from '#lib/agent/loop/responseRoom.ts';
 import {
-	applyContextGuard,
 	completionSender,
 	reportCall,
 	samplingOptionsFor,
@@ -77,7 +77,7 @@ export async function forceFinalToolCall(
 		getOpenRouterReasoningParam(ctx.descriptor, ctx.thinkingEnabled, ctx.reasoningEffort) ??
 		undefined;
 	const offered = tool ? [tool] : ctx.tools;
-	applyContextGuard(ctx, ctx.maxResponseTokens, offered);
+	const maxTokens = fitForCall(ctx, offered);
 
 	let response: ChatCompletionResponse;
 	const callStartMs = Date.now();
@@ -89,7 +89,7 @@ export async function forceFinalToolCall(
 				backend: ctx.backend ?? undefined,
 				tool_choice: { type: 'function', function: { name } },
 				...sampling,
-				max_tokens: ctx.maxResponseTokens,
+				max_tokens: maxTokens,
 				chat_template_kwargs: templateKwargs,
 				reasoning
 			},
@@ -157,7 +157,7 @@ async function writeFileBeforeWrapUp(ctx: LoopContext, nudges: NudgeState): Prom
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, false, ctx.reasoningEffort);
 	const reasoning =
 		getOpenRouterReasoningParam(ctx.descriptor, false, ctx.reasoningEffort) ?? undefined;
-	applyContextGuard(ctx, ctx.maxResponseTokens, writeTools);
+	const maxTokens = fitForCall(ctx, writeTools);
 	let response: ChatCompletionResponse;
 	const callStartMs = Date.now();
 	try {
@@ -167,7 +167,7 @@ async function writeFileBeforeWrapUp(ctx: LoopContext, nudges: NudgeState): Prom
 				tools: writeTools,
 				backend: ctx.backend ?? undefined,
 				...sampling,
-				max_tokens: ctx.maxResponseTokens,
+				max_tokens: maxTokens,
 				chat_template_kwargs: templateKwargs,
 				reasoning
 			},

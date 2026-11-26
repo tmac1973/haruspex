@@ -20,12 +20,13 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 }));
 
 vi.mock('#lib/agent/loop/modelCall.ts', () => ({
-	applyContextGuard: vi.fn(),
 	completionSender: () => send,
 	reportCall,
 	samplingOptionsFor: () => ({}),
 	streamFinalSynthesis: vi.fn()
 }));
+
+vi.mock('#lib/agent/loop/responseRoom.ts', () => ({ fitForCall: () => 1000 }));
 
 vi.mock('#lib/agent/loop/toolCalls.ts', () => ({ executeToolCalls }));
 

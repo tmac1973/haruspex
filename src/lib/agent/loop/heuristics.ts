@@ -173,6 +173,16 @@ export function outOfTokensMessage(ctx: LoopContext, postTools: boolean): string
 	const settingLabel = ctx.expectsFileOutput
 		? 'Max response tokens (file writes)'
 		: 'Max response tokens';
+	const limit = ctx.responseRoom.limit;
+	if (limit < ctx.maxResponseTokens) {
+		// Sent less than the ceiling: the prompt filled the rest of the window.
+		return (
+			`The model ran out of room before finishing its answer. The conversation ` +
+			`filled most of the context window, leaving ${limit} tokens for the answer. ` +
+			`Start a new chat or session, ask for a smaller piece of work, or raise ` +
+			`Settings → Inference → Context Size.`
+		);
+	}
 	const approxKb = Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024);
 	return (
 		`The model ran out of room before finishing its answer. It hit the ` +

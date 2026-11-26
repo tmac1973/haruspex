@@ -43,6 +43,7 @@ function fixture(over: Partial<LoopContext> = {}): Fixture {
 	const ctx = {
 		messages: [{ role: 'user', content: 'go' }],
 		maxResponseTokens: 4096,
+		responseRoom: { limit: 4096, fullReserve: false },
 		expectsFileOutput: false,
 		options: {
 			onMessageAdded: (m: ChatMessage) => added.push(m),
