@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
 import { resetTokenCalibration, type ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from './context';
-import { applyContextGuard, raceWithAbort, samplingOptionsFor } from './modelCall';
+import {
+	applyContextGuard,
+	promptCacheFigures,
+	raceWithAbort,
+	samplingOptionsFor
+} from './modelCall';
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 	(await import('#lib/testing/debugLog.ts')).mockDebugLog(importOriginal)
@@ -168,5 +173,33 @@ describe('applyContextGuard', () => {
 		const before = JSON.stringify(messages).length;
 		applyContextGuard(ctxWith({ messages, contextSize: 4096 }), 1024);
 		expect(JSON.stringify(messages).length).toBeLessThan(before);
+	});
+});
+
+describe('promptCacheFigures', () => {
+	const usage = { prompt_tokens: 30_000, completion_tokens: 10, total_tokens: 30_010 };
+
+	it('reads cached_tokens, as llama-server, vLLM and OpenRouter report it', () => {
+		expect(
+			promptCacheFigures({ ...usage, prompt_tokens_details: { cached_tokens: 29_000 } })
+		).toEqual({ prompt: 30_000, cached: 29_000, processed: 1_000 });
+	});
+
+	it("falls back to an older llama-server's timings", () => {
+		expect(
+			promptCacheFigures({
+				...usage,
+				timings: { cache_n: 9_000, prompt_n: 21_000, prompt_ms: 812.4 }
+			})
+		).toEqual({ prompt: 30_000, cached: 9_000, processed: 21_000, ms: 812 });
+	});
+
+	it('is null when the server reported neither', () => {
+		expect(promptCacheFigures(usage)).toBeNull();
+	});
+
+	it('names no field with "token", which the log would redact', () => {
+		const figures = promptCacheFigures({ ...usage, prompt_tokens_details: { cached_tokens: 0 } });
+		expect(Object.keys(figures!).some((k) => /token/i.test(k))).toBe(false);
 	});
 });
