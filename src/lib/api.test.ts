@@ -89,6 +89,22 @@ describe('parseSSE', () => {
 		expect(chunks[0].finish_reason).toBeNull();
 	});
 
+	it("keeps llama-server's prompt timings, on a choice chunk or a usage-only one", async () => {
+		const response = createMockResponse([
+			'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"timings":{"cache_n":900,"prompt_n":100,"prompt_ms":250.5,"predicted_n":7}}\n\n',
+			'data: {"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":7,"total_tokens":1007},"timings":{"cache_n":900,"prompt_n":100}}\n\n',
+			'data: {"choices":[],"timings":{"predicted_n":7}}\n\n',
+			'data: [DONE]\n\n'
+		]);
+		const chunks = [];
+		for await (const chunk of parseSSE(response)) chunks.push(chunk);
+		expect(chunks[0].timings).toEqual({ cache_n: 900, prompt_n: 100, prompt_ms: 250.5 });
+		expect(chunks[1].usage?.prompt_tokens).toBe(1000);
+		expect(chunks[1].timings).toEqual({ cache_n: 900, prompt_n: 100 });
+		// Timings with none of the prompt fields carry nothing worth a chunk.
+		expect(chunks).toHaveLength(2);
+	});
+
 	it('reads `data:` with no space after the colon, and single-newline events', async () => {
 		const response = createMockResponse([
 			'data:{"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\n',

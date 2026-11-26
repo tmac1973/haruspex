@@ -73,6 +73,7 @@ export function reportCall(
 	// reasonable proxy but it is still a proxy, and a UI marking every figure
 	// `~` when some of them are exact undersells the ones that aren't.
 	const exact = args.usage.completion_tokens_details?.reasoning_tokens;
+	logPromptCache(args.usage);
 	ctx.options.onCallStats?.({
 		durationMs: args.durationMs,
 		completionTokens: args.usage.completion_tokens,
@@ -82,6 +83,23 @@ export function reportCall(
 		reasoningTokens: exact ?? Math.round(args.usage.completion_tokens * share),
 		reasoningExact: exact !== undefined,
 		reasoningMs: Math.round(args.durationMs * share)
+	});
+}
+
+/**
+ * Log how much of the prompt llama-server read again, when it said. A trim or
+ * fit that rewrites an early message makes the next call re-read everything
+ * after it — on the hybrid Qwen models, the whole prompt — and this line beside
+ * the trim's own log line is how that cost is measured.
+ */
+function logPromptCache(usage: Usage): void {
+	const t = usage.timings;
+	if (t?.prompt_n === undefined) return;
+	logDebug('agent', 'prompt cache', {
+		promptTokens: usage.prompt_tokens,
+		cached: t.cache_n ?? 0,
+		processed: t.prompt_n,
+		promptMs: t.prompt_ms === undefined ? undefined : Math.round(t.prompt_ms)
 	});
 }
 

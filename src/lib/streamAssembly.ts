@@ -14,6 +14,7 @@
 
 import type {
 	ChatCompletionResponse,
+	PromptTimings,
 	ServedBy,
 	StreamChunk,
 	ToolCall,
@@ -45,6 +46,14 @@ export interface PartialToolCall {
 
 let fallbackIdSeq = 0;
 
+/** `usage` with llama-server's `timings` folded in, when there are both. */
+export function withTimings(
+	usage: Usage | undefined,
+	timings: PromptTimings | undefined
+): Usage | undefined {
+	return usage && timings ? { ...usage, timings } : usage;
+}
+
 /**
  * Folds `StreamChunk`s into a `ChatCompletionResponse` shaped exactly as
  * `chatCompletion` shapes one:
@@ -54,7 +63,8 @@ let fallbackIdSeq = 0;
  *  - `tool_calls` are assembled by `index` — id and name from whichever delta
  *    carries them first, argument chunks concatenated in order — and absent
  *    when the model wrote none;
- *  - `finish_reason` and `usage` are the last ones the stream reported.
+ *  - `finish_reason` and `usage` are the last ones the stream reported, with
+ *    llama-server's `timings` folded into `usage`.
  *
  * A call whose arguments were cut off (finish reason `length`) keeps its
  * partial JSON, as a non-streaming response would: refusing it is the
@@ -66,6 +76,7 @@ export class StreamResponseAssembler {
 	private readonly calls = new Map<number, PartialToolCall>();
 	private finishReason: string | null = null;
 	private usage: Usage | undefined;
+	private timings: PromptTimings | undefined;
 	private servedBy: ServedBy | undefined;
 	private readonly details = new ReasoningDetailsAssembler();
 
@@ -79,6 +90,7 @@ export class StreamResponseAssembler {
 		for (const item of delta.reasoning_details ?? []) this.details.push(item);
 		if (chunk.finish_reason) this.finishReason = chunk.finish_reason;
 		if (chunk.usage) this.usage = chunk.usage;
+		if (chunk.timings) this.timings = chunk.timings;
 		if (chunk.served_by) this.servedBy = chunk.served_by;
 	}
 
@@ -109,7 +121,7 @@ export class StreamResponseAssembler {
 			content: combineReasoningAndContent(this.reasoning || undefined, this.content || null),
 			tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
 			finish_reason: this.finishReason ?? 'stop',
-			usage: this.usage,
+			usage: withTimings(this.usage, this.timings),
 			reasoning_details: this.details.finish(),
 			...(this.servedBy ? { served_by: this.servedBy } : {})
 		};
