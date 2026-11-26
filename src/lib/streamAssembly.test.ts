@@ -113,6 +113,17 @@ describe('StreamResponseAssembler', () => {
 		});
 	});
 
+	it("folds llama-server's timings into the usage, whichever chunk brought them", () => {
+		const usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
+		const timings = { cache_n: 8, prompt_n: 2 };
+		const res = assemble([
+			{ ...c({ content: 'Hi' }, 'stop'), timings },
+			{ delta: {}, finish_reason: null, usage }
+		]);
+		expect(res.usage).toEqual({ ...usage, timings });
+		expect(assemble([{ ...c({}), timings }]).usage).toBeUndefined();
+	});
+
 	it('reports a call as far as it is written', () => {
 		const a = new StreamResponseAssembler();
 		expect(a.partial(0)).toBeNull();

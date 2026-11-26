@@ -8,7 +8,7 @@ import { baseUrl } from '#lib/ports.ts';
 import { OPENROUTER_ATTRIBUTION_HEADERS, openRouterProviderSlug } from '#lib/openrouter.ts';
 import { isAbortError, errMessage } from '#lib/utils/error.ts';
 import { readErrorText, urlForReport } from '#lib/utils/http.ts';
-import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
+import { combineReasoningAndContent, withTimings } from '#lib/streamAssembly.ts';
 import {
 	PINNED_RATE_LIMIT_DELAYS_MS,
 	notifyRateLimitWait,
@@ -313,6 +313,34 @@ export interface Usage {
 	completion_tokens_details?: { reasoning_tokens?: number };
 	/** What the call cost in USD. OpenRouter reports it; others don't. */
 	cost?: number;
+	/** llama-server's prompt timings, when it sent them. See `PromptTimings`. */
+	timings?: PromptTimings;
+}
+
+/**
+ * How much of the prompt llama-server read from its cache. Only llama.cpp
+ * reports this (a top-level `timings` object beside `usage`); the agent loop
+ * logs it per call so a trim's cost — the prompt it makes the server read
+ * again — can be measured.
+ */
+export interface PromptTimings {
+	/** Prompt tokens served from the KV cache. */
+	cache_n?: number;
+	/** Prompt tokens processed by this call. */
+	prompt_n?: number;
+	prompt_ms?: number;
+}
+
+/** `timings` off a llama-server response or chunk, or undefined. */
+export function promptTimingsOf(parsed: unknown): PromptTimings | undefined {
+	const t = (parsed as { timings?: unknown } | null)?.timings;
+	if (!t || typeof t !== 'object') return undefined;
+	const { cache_n, prompt_n, prompt_ms } = t as Record<string, unknown>;
+	const out: PromptTimings = {};
+	if (typeof cache_n === 'number') out.cache_n = cache_n;
+	if (typeof prompt_n === 'number') out.prompt_n = prompt_n;
+	if (typeof prompt_ms === 'number') out.prompt_ms = prompt_ms;
+	return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export interface StreamChunk {
@@ -330,6 +358,11 @@ export interface StreamChunk {
 	};
 	finish_reason: string | null;
 	usage?: Usage;
+	/**
+	 * llama-server's prompt timings. They can arrive on a chunk apart from
+	 * `usage`; `StreamResponseAssembler` folds them into the response's usage.
+	 */
+	timings?: PromptTimings;
 	/** The OpenRouter provider streaming this response. */
 	served_by?: ServedBy;
 	/** OpenRouter mid-stream error object (top-level `error` on the chunk). */
@@ -650,21 +683,34 @@ function parseSSEData(data: string, model?: string): StreamChunk | null {
 				error: parsed.error
 			};
 		}
+		const extras = chunkExtras(parsed, servedBy);
 		if (parsed.choices && parsed.choices[0]) {
-			const chunk: StreamChunk = {
+			return {
 				delta: parsed.choices[0].delta || {},
-				finish_reason: parsed.choices[0].finish_reason
+				finish_reason: parsed.choices[0].finish_reason,
+				...extras
 			};
-			if (parsed.usage) chunk.usage = parsed.usage;
-			if (servedBy) chunk.served_by = servedBy;
-			return chunk;
 		}
-		// Final usage-only chunk (no choices) when stream_options.include_usage is set.
-		if (parsed.usage) return { delta: {}, finish_reason: null, usage: parsed.usage };
+		// Final usage-only chunk (no choices) when stream_options.include_usage
+		// is set; llama-server may send its timings on it too.
+		if (extras.usage || extras.timings) return { delta: {}, finish_reason: null, ...extras };
 		return null;
 	} catch {
 		return null; // skip malformed JSON chunks
 	}
+}
+
+/** A parsed chunk's `usage`, `timings` and provider, only those it has. */
+function chunkExtras(
+	parsed: { usage?: Usage },
+	servedBy: ServedBy | undefined
+): Pick<StreamChunk, 'usage' | 'timings' | 'served_by'> {
+	const timings = promptTimingsOf(parsed);
+	return {
+		...(parsed.usage ? { usage: parsed.usage } : {}),
+		...(timings ? { timings } : {}),
+		...(servedBy ? { served_by: servedBy } : {})
+	};
 }
 
 /** OpenRouter's top-level `provider` on a response or chunk, for `model`. */
@@ -869,6 +915,7 @@ export async function* chatCompletionStream(
 	let toolCallChunks = 0;
 	let lastFinish: string | null = null;
 	let lastUsage: Usage | undefined;
+	let lastTimings: PromptTimings | undefined;
 	let provider: string | undefined;
 	try {
 		const model = endpoint.isOpenRouter ? endpoint.model : undefined;
@@ -878,6 +925,7 @@ export async function* chatCompletionStream(
 			if (chunk.delta.tool_calls && chunk.delta.tool_calls.length > 0) toolCallChunks++;
 			if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 			if (chunk.usage) lastUsage = chunk.usage;
+			if (chunk.timings) lastTimings = chunk.timings;
 			if (chunk.served_by) provider = chunk.served_by.provider;
 			yield chunk;
 		}
@@ -888,7 +936,7 @@ export async function* chatCompletionStream(
 			toolCallChunks,
 			finish_reason: lastFinish,
 			provider,
-			usage: lastUsage
+			usage: withTimings(lastUsage, lastTimings)
 		});
 	}
 }
@@ -984,7 +1032,7 @@ async function chatCompletionOnce(
 		// A reply can echo an email or a tool result, so only its
 		// length (content_len) is logged unless verbose payloads are on.
 		content: isVerbosePayloads() ? content : undefined,
-		usage: data.usage
+		usage: withTimings(data.usage, promptTimingsOf(data))
 	});
 	if (choice.finish_reason === 'error' && !content && !choice.message?.tool_calls?.length) {
 		throw new ProviderEndedError(providerEndedMessage(choice.error ?? data.error));
@@ -994,7 +1042,7 @@ async function chatCompletionOnce(
 		content: fullContent,
 		tool_calls: choice.message?.tool_calls,
 		finish_reason: choice.finish_reason ?? 'stop',
-		usage: data.usage,
+		usage: withTimings(data.usage, promptTimingsOf(data)),
 		reasoning_details: reasoningDetails,
 		...(servedBy ? { served_by: servedBy } : {})
 	};
