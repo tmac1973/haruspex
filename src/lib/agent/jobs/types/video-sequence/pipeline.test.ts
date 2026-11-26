@@ -476,7 +476,15 @@ describe('the Video sequence run', () => {
 		const h = harness({}, () => foxArgs());
 		await runVideoSequencePipeline(h.ctx);
 		expect(asked.questions[1].question).toBe('Every clip starts from these stills. Approve them?');
-		expect(asked.questions[1].body).toContain('![snow]');
+		expect(asked.questions[1].images?.map((i) => i.alt)).toEqual([
+			'snow',
+			'forest',
+			'snow, clip 6',
+			'snow, clip 12',
+			'forest, clip 6',
+			'forest, clip 12'
+		]);
+		expect(asked.questions[1].images?.[0].src).toMatch(/^haruspex-img:\/\/localhost\//);
 		expect(asked.questions[2].options.map((o) => o.label)).toEqual(['snow', 'forest']);
 		const redone = image.requests.slice(6);
 		expect(redone).toHaveLength(3);

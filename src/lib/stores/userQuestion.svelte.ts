@@ -25,6 +25,7 @@
  */
 
 import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
+import type { ViewerImage } from '#lib/stores/imageViewer.svelte.ts';
 
 export interface UserQuestionOption {
 	label: string;
@@ -56,6 +57,12 @@ export interface UserQuestionRequest {
 	 * next to the question that judges it.
 	 */
 	imageUrl?: string;
+	/**
+	 * Several pictures the question is about (a sequence's stills), shown as
+	 * a strip of small thumbnails and a button that opens the viewer on them.
+	 * There can be dozens, so they never take the space `imageUrl` does.
+	 */
+	images?: ViewerImage[];
 	/** The Code session asking, so a client elsewhere knows whose question it is. */
 	sessionId?: string;
 	/** The job run asking, likewise. */

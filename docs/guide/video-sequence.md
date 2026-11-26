@@ -24,7 +24,7 @@ Open Settings → Video editing and turn on **Let the assistant edit videos**, a
 
 1. Writes `sequence.json`: the sections, how each joins the next (a cut, a crossfade, or a generated transition), and the sound. You can edit this file; a run reads it as it is.
 2. Speaks the lines of each speaking section into `narration/` (see below).
-3. Makes a still for each generated section in `keyframes/`. Later sections' stills are edits of the first, so the subject stays the same, when the image model can edit. In an Attended run, click a still in the question to see it full size, and use ← and → to go through the others.
+3. Makes a still for each generated section in `keyframes/`. Later sections' stills are edits of the first, so the subject stays the same, when the image model can edit. In an Attended run, the question shows the stills as small thumbnails. Click one, or **View all stills**, to see them full size, and use ← and → to go through them.
 4. Makes the clips in `generated/`. A section longer than the model's longest clip is several clips, each starting from the last frame of the one before; every few clips end on a fresh still of the section, so it doesn't drift.
 5. With a model that can see, checks each seam and makes a clip that jumps once more.
 6. Makes the music beds in `music/` and the narration in `narration/`.
