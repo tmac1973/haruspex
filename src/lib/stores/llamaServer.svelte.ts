@@ -3,7 +3,12 @@ import { listen } from '@tauri-apps/api/event';
 import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
 import type { ContextBackoffState } from '#lib/ipc/gen/ContextBackoffState.ts';
 import { PORTS } from '#lib/ports.ts';
-import { DEFAULT_CONTEXT_SIZE, getSettings, updateSettings } from '#lib/stores/settings.ts';
+import {
+	DEFAULT_CONTEXT_SIZE,
+	getSettings,
+	updateSettings,
+	type InferenceBackendConfig
+} from '#lib/stores/settings.ts';
 import { setContextSize as setIndicatorContextSize } from '#lib/stores/context.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { getRunningCount } from '#lib/agent/inferenceQueue.svelte.ts';
@@ -53,6 +58,17 @@ export interface ServerState {
 	 */
 	remoteProblem?: RemoteProblem;
 	/**
+	 * What the local sidecar itself last reported. Equal to `status` in local
+	 * mode; in remote mode `status` stays 'remote' and this keeps tracking the
+	 * sidecar, so leaving remote mode shows whether it is actually running.
+	 */
+	localStatus?: ServerStatusType;
+	/**
+	 * The model this window last started the sidecar with. The badge names it,
+	 * since Settings → Inference may have moved on since the start.
+	 */
+	localModelPath?: string;
+	/**
 	 * Set when llama-server failed to load on the GPU and was respawned
 	 * with `--n-gpu-layers 0`. Drives the "Running on CPU" banner in the
 	 * chat UI. Carries the first GPU-error stderr line (typically the
@@ -79,15 +95,22 @@ let serverState = $state<ServerState>({
 });
 
 function parseStatusEvent(payload: RustServerStatus): void {
-	// When the UI is in remote-inference mode the local llama-server sidecar
-	// is intentionally not running, so Rust will keep reporting `Stopped`.
-	// Ignore those updates — the user only leaves remote mode through the
-	// explicit `exitRemoteMode()` path. Without this guard, an unawaited
-	// `initServerStore()` racing against the layout's settings check would
-	// flip the badge from 'remote' back to 'stopped' shortly after startup.
-	if (serverState.status === 'remote' && payload.type === 'Stopped') return;
-	serverState.status = payload.type.toLowerCase() as ServerStatusType;
+	const status = payload.type.toLowerCase() as ServerStatusType;
+	serverState.localStatus = status;
+	// In remote mode the sidecar's events never move the badge: chat goes to
+	// the remote server whether or not something started a local model. Only
+	// `exitRemoteMode()` (or `syncBackendMode`) leaves remote mode.
+	if (serverState.status === 'remote') return;
+	serverState.status = status;
 	serverState.errorMessage = payload.type === 'Error' ? payload.message : undefined;
+}
+
+/** Set the sidecar's status, and the shown one too unless remote mode holds it. */
+function setLocalStatus(status: ServerStatusType, errorMessage?: string): void {
+	serverState.localStatus = status;
+	if (serverState.status === 'remote') return;
+	serverState.status = status;
+	serverState.errorMessage = errorMessage;
 }
 
 let listenerInitialized = false;
@@ -170,8 +193,8 @@ export async function startServer(
 ): Promise<void> {
 	const settings = getSettings();
 	const args = extraArgs ?? splitServerArgs(settings.llamaServerExtraArgs);
-	serverState.status = 'starting';
-	serverState.errorMessage = undefined;
+	setLocalStatus('starting');
+	serverState.localModelPath = modelPath;
 	// Clear the CPU-fallback banner up front. Rust also emits
 	// `gpu-fallback-cleared`, but doing it locally first means the
 	// banner disappears the moment the user clicks "Restart on GPU"
@@ -194,16 +217,14 @@ export async function startServer(
 			parallel: settings.localParallelSlots
 		});
 	} catch (e) {
-		serverState.status = 'error';
-		serverState.errorMessage = errMessage(e);
+		setLocalStatus('error', errMessage(e));
 	}
 }
 
 export async function stopServer(): Promise<void> {
 	try {
 		await invoke('stop_server');
-		serverState.status = 'stopped';
-		serverState.errorMessage = undefined;
+		setLocalStatus('stopped');
 	} catch (e) {
 		serverState.errorMessage = errMessage(e);
 	}
@@ -351,16 +372,38 @@ function buildRemoteLabel(baseUrl: string, modelId: string): string {
 }
 
 /**
- * Leave remote-inference mode without starting anything. Resets the
- * status to 'stopped' so the caller can then invoke startServer() for
- * the local sidecar if appropriate.
+ * Leave remote-inference mode without starting anything. The status goes
+ * back to what the sidecar last reported ('stopped' when it never did), so
+ * the caller can then invoke startServer() for the local sidecar if needed.
  */
 export function exitRemoteMode(): void {
 	serverState.remoteLabel = undefined;
 	serverState.remoteProblem = undefined;
 	if (serverState.status === 'remote') {
-		serverState.status = 'stopped';
+		serverState.status = serverState.localStatus ?? 'stopped';
 	}
+}
+
+/**
+ * Make remote mode match Settings → Inference. The Settings page and the
+ * setup wizard enter and leave it themselves, but settings can change
+ * without them (the Remote control API's `settings.patch`, another window),
+ * and the badge must not keep describing a backend chat no longer uses.
+ * Starts and stops nothing. Remote with a blank URL counts as local, as it
+ * does for request routing.
+ */
+export function syncBackendMode(
+	backend: Pick<InferenceBackendConfig, 'mode' | 'remoteBaseUrl' | 'remoteModelId'>
+): void {
+	const remote = backend.mode === 'remote' && backend.remoteBaseUrl.trim().length > 0;
+	if (!remote) {
+		exitRemoteMode();
+		return;
+	}
+	// Re-entering with the same label would drop a problem the startup check found.
+	const label = buildRemoteLabel(backend.remoteBaseUrl, backend.remoteModelId);
+	if (serverState.status === 'remote' && serverState.remoteLabel === label) return;
+	enterRemoteMode(backend.remoteBaseUrl, backend.remoteModelId);
 }
 
 export async function getServerLogs(): Promise<string[]> {

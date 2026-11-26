@@ -66,8 +66,11 @@
 		enterRemoteMode,
 		initServerStore,
 		maybeFlushPendingRestart,
-		startServer
+		startServer,
+		syncBackendMode
 	} from '#lib/stores/llamaServer.svelte.ts';
+	import { setContextSize as setIndicatorContextSize } from '#lib/stores/context.svelte.ts';
+	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 	import { checkRemoteModelOnStartup } from '#lib/inference/remoteModelCheck.ts';
 	import {
 		applyAccent,
@@ -88,7 +91,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { refreshSavedVoices } from '#lib/audio/savedVoices.ts';
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { syncRemoteServer } from '#lib/remote/service.ts';
 	import '#lib/styles/app.css';
 	import { startEngine } from '#lib/engine/index.ts';
@@ -281,6 +284,20 @@
 			e.preventDefault();
 		}
 	}
+
+	// The badge and the context ceiling follow Settings → Inference even when
+	// something other than the Settings page changed it (the Remote control
+	// API, another window). Starts and stops nothing.
+	$effect(() => {
+		const s = getLiveSettings();
+		const { mode, remoteBaseUrl, remoteModelId } = s.inferenceBackend;
+		// The ceiling's inputs, read here so a change to either re-runs this.
+		void [s.inferenceBackend.remoteContextSize, s.contextSize];
+		untrack(() => {
+			syncBackendMode({ mode, remoteBaseUrl, remoteModelId });
+			setIndicatorContextSize(resolveBackendDescriptor().contextSize);
+		});
+	});
 
 	// "Save to notebook" buttons hide while the Notebooks tab is off or lean
 	// mode is on (CSS keys on this attribute, so rendered answers needn't change).

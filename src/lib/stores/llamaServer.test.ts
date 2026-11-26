@@ -176,13 +176,28 @@ describe('status events', () => {
 		expect(getServerState().status).toBe('remote');
 	});
 
-	it('leaves remote mode for any status other than Stopped', async () => {
-		const { initServerStore, enterRemoteMode, getServerState } = await freshStore();
+	it('keeps the remote badge when something starts the local server', async () => {
+		const { initServerStore, enterRemoteMode, exitRemoteMode, getServerState } = await freshStore();
 		await initServerStore();
 		enterRemoteMode('http://gpu-box:8080/v1', 'qwen');
 
 		emitStatus({ type: 'Starting' });
-		expect(getServerState().status).toBe('starting');
+		emitStatus({ type: 'Ready' });
+		expect(getServerState().status).toBe('remote');
+		expect(getServerState().localStatus).toBe('ready');
+
+		// Leaving remote mode shows the sidecar as it is: running.
+		exitRemoteMode();
+		expect(getServerState().status).toBe('ready');
+	});
+
+	it('startServer in remote mode leaves the badge on remote', async () => {
+		const { enterRemoteMode, startServer, getServerState } = await freshStore();
+		enterRemoteMode('http://gpu-box:8080/v1', 'qwen');
+		await startServer('/models/a.gguf', 8192);
+		expect(getServerState().status).toBe('remote');
+		expect(getServerState().localStatus).toBe('starting');
+		expect(getServerState().localModelPath).toBe('/models/a.gguf');
 	});
 
 	it('initServerStore attaches its listeners only once', async () => {
@@ -395,6 +410,42 @@ describe('remote mode label', () => {
 		exitRemoteMode();
 		expect(getServerState().status).toBe('stopped');
 		expect(getServerState().remoteLabel).toBeUndefined();
+	});
+});
+
+describe('syncBackendMode', () => {
+	const remote = {
+		mode: 'remote',
+		remoteBaseUrl: 'http://gpu-box:8080',
+		remoteModelId: 'qwen'
+	} as const;
+
+	it('enters remote mode when Settings changed without the Settings page', async () => {
+		const { syncBackendMode, getServerState } = await freshStore();
+		syncBackendMode(remote);
+		expect(getServerState().status).toBe('remote');
+		expect(getServerState().remoteLabel).toBe('qwen @ gpu-box:8080');
+	});
+
+	it('leaves remote mode for local, or for remote with no server URL', async () => {
+		const { syncBackendMode, getServerState } = await freshStore();
+		syncBackendMode(remote);
+		syncBackendMode({ ...remote, mode: 'local' });
+		expect(getServerState().status).toBe('stopped');
+		syncBackendMode(remote);
+		syncBackendMode({ ...remote, remoteBaseUrl: '  ' });
+		expect(getServerState().status).toBe('stopped');
+	});
+
+	it('keeps a found problem while the server and model stay the same', async () => {
+		const { syncBackendMode, setRemoteProblem, getServerState } = await freshStore();
+		syncBackendMode(remote);
+		setRemoteProblem('http://gpu-box:8080', 'qwen', { kind: 'missing', modelId: 'qwen' });
+		syncBackendMode(remote);
+		expect(getServerState().remoteProblem).toBeDefined();
+		syncBackendMode({ ...remote, remoteModelId: 'other' });
+		expect(getServerState().remoteLabel).toBe('other @ gpu-box:8080');
+		expect(getServerState().remoteProblem).toBeUndefined();
 	});
 });
 
