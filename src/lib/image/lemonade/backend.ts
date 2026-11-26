@@ -3,13 +3,13 @@
  * engine's models and its way of drawing, on a server the user keeps.
  *
  * The model is a catalogue id (the entry's `model`), installed on the
- * server from Settings → Image (`./install.svelte.ts`) under a fixed name, so
+ * server from Settings → Image generation (`./install.svelte.ts`) under a fixed name, so
  * every request knows its family and how to make it transparent.
  *
  * It edits with Qwen-Image 2.1 when its vision weights were installed with
  * it (`/api/v1/images/edits`, pictures as file parts), and upscales with
  * Lemonade's own Real-ESRGAN (`/api/v1/images/upscale`) once that is
- * installed; Settings → Image installs both.
+ * installed; Settings → Image generation installs both.
  *
  * It does not tile. The seam pass is an img2img from the rolled texture, and
  * the only way to hand sd-server a start image through Lemonade is inside the
@@ -105,12 +105,18 @@ async function chosen(
 	id: string
 ): Promise<{ id: string; family: SdFamily; model: LemonadeModel }> {
 	if (!cfg.baseUrl) {
-		throw new ImageBackendError('unconfigured', 'No Lemonade server is set — Settings → Image.');
+		throw new ImageBackendError(
+			'unconfigured',
+			'No Lemonade server is set — Settings → Image generation.'
+		);
 	}
 	const family = familyOfId(id);
 	const model = (await lemonadeCatalogue()).find((m) => m.id === id);
 	if (!family || !model) {
-		throw new ImageBackendError('unconfigured', 'No image model is chosen — Settings → Image.');
+		throw new ImageBackendError(
+			'unconfigured',
+			'No image model is chosen — Settings → Image generation.'
+		);
 	}
 	return { id, family, model };
 }
@@ -131,7 +137,7 @@ async function edit(
 	if (!state.edits.has(bareName(model.name))) {
 		throw new ImageBackendError(
 			'unconfigured',
-			`${modelLabel(model)} on Lemonade can't edit — Settings → Image → Add editing.`
+			`${modelLabel(model)} on Lemonade can't edit — Settings → Image generation → Add editing.`
 		);
 	}
 	const fields = buildEditFields({
@@ -216,7 +222,7 @@ function lemonadeFor(entry: ImageModelEntry): ImageBackend {
 		async probe(): Promise<ProbeResult> {
 			const cfg = await config();
 			if (!cfg.baseUrl) {
-				return { ok: false, detail: 'No server address — Settings → Image.' };
+				return { ok: false, detail: 'No server address — Settings → Image generation.' };
 			}
 			let state: ServerState;
 			try {
@@ -236,12 +242,12 @@ function lemonadeFor(entry: ImageModelEntry): ImageBackend {
 				.map((m) => ({ name: m.id, label: modelLabel(m) }));
 			const model = catalogue.find((m) => m.id === modelId());
 			if (!model) {
-				return { ok: false, detail: 'No model is chosen — Settings → Image.', models };
+				return { ok: false, detail: 'No model is chosen — Settings → Image generation.', models };
 			}
 			if (!state.downloaded.has(bareName(model.name))) {
 				return {
 					ok: false,
-					detail: `${modelLabel(model)} is not installed on the server — Settings → Image → Install.`,
+					detail: `${modelLabel(model)} is not installed on the server — Settings → Image generation → Install.`,
 					models
 				};
 			}

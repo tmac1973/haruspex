@@ -1,5 +1,5 @@
 /**
- * Settings → Image's single-backend fields from before the list (v0.2.14 and
+ * Settings → Image generation's single-backend fields from before the list (v0.2.14 and
  * older), as an install may still have them stored: the saved list
  * (`imageModels`) is seeded from them once, and `#lib/image/keys.ts` moves
  * their keys to named keys and then drops them. Nothing else reads them.

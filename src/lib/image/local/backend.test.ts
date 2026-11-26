@@ -36,9 +36,9 @@ describe('engineSetupMessage', () => {
 				'development checkout run ./scripts/fetch-sdcpp.sh.'
 		);
 		expect(engineSetupMessage('ModelMissing', '/m/sd15.safetensors')).toMatch(
-			/not on disk \(\/m\/sd15\.safetensors\) — download it again in Settings → Image/
+			/not on disk \(\/m\/sd15\.safetensors\) — download it again in Settings → Image generation/
 		);
-		expect(engineSetupMessage('NoModel', '')).toMatch(/Settings → Image/);
+		expect(engineSetupMessage('NoModel', '')).toMatch(/Settings → Image generation/);
 	});
 
 	it('leaves the failures that are not set-up to the caller', () => {
@@ -351,7 +351,7 @@ describe('upscale', () => {
 			.mockImplementation(invokeRouter(routes(false), undefined));
 		await expect(localBackend.upscale!({ name: 'a.png', bytes: [1] })).rejects.toMatchObject({
 			kind: 'unconfigured',
-			message: expect.stringContaining('Settings → Image → Bundled engine')
+			message: expect.stringContaining('Settings → Image generation → Bundled engine')
 		});
 	});
 });

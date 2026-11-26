@@ -440,7 +440,7 @@
 </section>
 
 <style>
-	/* Label, then its control, one per line, as in Settings → Music. */
+	/* Label, then its control, one per line, as in Settings → Music generation. */
 	.fields {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);

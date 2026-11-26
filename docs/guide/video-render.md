@@ -19,7 +19,7 @@ The check reports loudness against YouTube's -14 LUFS, a render whose length dif
 
 ## Make a thumbnail
 
-Ask "make a thumbnail from 3:12 in the cut", "use the frame at 40 seconds of the phone clip", or "draw a thumbnail of a castle at sunset". A frame comes from a clip, a render or the cut; a drawing comes from the image backend in Settings → Image, and needs one set up. Either way the thumbnail is a 1280×720 JPEG under 2 MB, YouTube's size, saved as `<project>.thumbnail.jpg` in the episode folder and shown in the chat. Pictures of another shape are cropped to fill, or fitted inside black bars if you ask. Making a new one keeps the old one in `.haruspex/backups/`.
+Ask "make a thumbnail from 3:12 in the cut", "use the frame at 40 seconds of the phone clip", or "draw a thumbnail of a castle at sunset". A frame comes from a clip, a render or the cut; a drawing comes from the image backend in Settings → Image generation, and needs one set up. Either way the thumbnail is a 1280×720 JPEG under 2 MB, YouTube's size, saved as `<project>.thumbnail.jpg` in the episode folder and shown in the chat. Pictures of another shape are cropped to fill, or fitted inside black bars if you ask. Making a new one keeps the old one in `.haruspex/backups/`.
 
 Haruspex doesn't put text on a thumbnail. An image model can draw a short title into the picture if the prompt asks for it.
 

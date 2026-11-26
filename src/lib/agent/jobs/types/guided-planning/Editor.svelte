@@ -247,12 +247,12 @@
 					Also generate assets
 					<Tooltip
 						label="About generating assets"
-						text="Writes an asset spec from the finished plan, then runs an asset-generation job before the coding job, so the code is built against art that already exists. Needs an image backend in Settings → Image."
+						text="Writes an asset spec from the finished plan, then runs an asset-generation job before the coding job, so the code is built against art that already exists. Needs an image backend in Settings → Image generation."
 					/>
 				</span>
 			</label>
 			{#if !imageBackendReady}
-				<p class="hint">Needs an image backend — set one in Settings → Image.</p>
+				<p class="hint">Needs an image backend — set one in Settings → Image generation.</p>
 			{/if}
 		</div>
 
@@ -263,7 +263,7 @@
 					bind:form={cfg.chain_assets_model}
 					jobForm={jobModel}
 					label="Asset run model"
-					tip="The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image."
+					tip="The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image generation."
 				/>
 			{/if}
 			<StageModelRow

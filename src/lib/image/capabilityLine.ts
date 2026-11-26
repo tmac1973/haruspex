@@ -1,6 +1,6 @@
 /**
  * What Haruspex can do with the configured image model, in words, for
- * Settings → Image: drawing, editing, upscaling, extending, transparency, tiling and
+ * Settings → Image generation: drawing, editing, upscaling, extending, transparency, tiling and
  * LoRAs, with what it can't do and how to get it in a tooltip.
  *
  * Read from `capabilities()`, the same answer the tools act on, so the line
@@ -41,7 +41,7 @@ const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	none: '',
 	local: 'Upscaling needs the upscaler, under Bundled engine.',
 	comfyui: 'Upscaling needs the upscaler, under Models on the server.',
-	'llama-toolchest': 'Upscalers are in Settings → Image → Upscalers.',
+	'llama-toolchest': 'Upscalers are in Settings → Image generation → Upscalers.',
 	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 
@@ -65,7 +65,7 @@ export function capabilityLine(
 			'edit pictures',
 			EDIT_HOW[kind]
 		],
-		// A toolchest server's upscalers are their own entries (Settings → Image →
+		// A toolchest server's upscalers are their own entries (Settings → Image generation →
 		// Upscalers), so a toolchest model's row says nothing about upscaling.
 		...(kind === 'llama-toolchest'
 			? []

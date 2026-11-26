@@ -63,7 +63,7 @@ export const PROMPTS = {
 		tab: 'chat',
 		family: 'music',
 		slow: true,
-		needs: 'a music backend in Settings → Music',
+		needs: 'a music backend in Settings → Music generation',
 		text: 'Write a short song about rain.',
 		check: (r) => r.ran.includes('generate_music') && has(r.answer, 'haruspex-audio:')
 	},
@@ -71,7 +71,7 @@ export const PROMPTS = {
 		tab: 'chat',
 		family: 'images',
 		slow: true,
-		needs: 'an image model in Settings → Image',
+		needs: 'an image model in Settings → Image generation',
 		text: 'Draw a small picture of a red fox in the snow.',
 		check: (r) => r.ran.includes('generate_image') && has(r.answer, 'haruspex-img:')
 	},

@@ -152,13 +152,13 @@
 				},
 				{
 					id: 'image',
-					label: 'Image',
+					label: 'Image generation',
 					subtitle: 'Where pictures are generated, if anywhere.',
 					icon: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>'
 				},
 				{
 					id: 'music',
-					label: 'Music',
+					label: 'Music generation',
 					subtitle: 'Where songs are made, if anywhere.',
 					icon: '<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>'
 				},

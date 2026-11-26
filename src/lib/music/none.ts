@@ -3,7 +3,7 @@
 import type { MusicBackend } from '#lib/music/backend.ts';
 import { MusicBackendError } from '#lib/music/types.ts';
 
-const NOT_CONFIGURED = 'No music backend configured — Settings → Music.';
+const NOT_CONFIGURED = 'No music backend configured — Settings → Music generation.';
 
 export const noneMusicBackend: MusicBackend = {
 	kind: 'none',

@@ -45,7 +45,7 @@ against them.
 
 - Use `kind: "sprite"` for anything that stands on the map: characters,
   items, doors, stairs, furniture, buildings. Use `kind: "icon"` for user
-  interface symbols. They need an image backend (Settings → Image). If there
+  interface symbols. They need an image backend (Settings → Image generation). If there
   is none, say so and make only the textures.
 - Make the most important sprite first and show it to the user before the
   rest. Then pass it as `palette_from` for every later sprite, so the set

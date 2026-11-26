@@ -78,7 +78,7 @@ export function rejectionMessage(path: string, body: string): string {
 			const what = (first.details || first.message || first.type || '').slice(0, 200);
 			const missing =
 				first.type === 'value_not_in_list'
-					? ' — a file the workflow needs is not on the server (Settings → Image)'
+					? ' — a file the workflow needs is not on the server (Settings → Image generation)'
 					: '';
 			return `${base}: ${node?.class_type ?? 'a node'} — ${what}${missing}.`;
 		}

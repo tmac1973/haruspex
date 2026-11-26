@@ -1,7 +1,7 @@
 import type { MusicProgress } from '#lib/music/types.ts';
 
 /**
- * One line for a song in flight, shared by Settings → Music and the tool so
+ * One line for a song in flight, shared by Settings → Music generation and the tool so
  * both say the same thing. `seconds` keeps moving so a long synthesis does not
  * look hung.
  */

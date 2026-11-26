@@ -9,7 +9,7 @@
 import type { ImageBackend } from '#lib/image/backend.ts';
 import { ImageBackendError, type ImageBackendCapabilities } from '#lib/image/types.ts';
 
-const NOT_CONFIGURED = 'No image backend configured — Settings → Image.';
+const NOT_CONFIGURED = 'No image backend configured — Settings → Image generation.';
 
 const NO_CAPABILITIES: ImageBackendCapabilities = {
 	transparency: false,

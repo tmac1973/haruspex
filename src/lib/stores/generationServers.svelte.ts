@@ -1,5 +1,5 @@
 /**
- * The generation servers saved in Settings → Image, Music and Video
+ * The generation servers saved in Settings → Image generation, Music and Video
  * (`settings.generationServers`), read and changed for the address
  * dropdowns. A llama-toolchest is one entry for all three, so saving it in
  * Image lists it in Music too.

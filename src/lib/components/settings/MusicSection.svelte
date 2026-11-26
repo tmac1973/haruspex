@@ -370,7 +370,7 @@
 </section>
 
 <style>
-	/* Label, then its control, one per line, as in Settings → Image. */
+	/* Label, then its control, one per line, as in Settings → Image generation. */
 	.fields {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);

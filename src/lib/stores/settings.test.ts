@@ -1138,7 +1138,7 @@ describe('MCP servers', () => {
 });
 
 /**
- * Image generation is off until Settings → Image has a model: nothing is
+ * Image generation is off until Settings → Image generation has a model: nothing is
  * resolved, started or downloaded for an install that never opted in.
  */
 describe('image model settings', () => {

@@ -9,7 +9,7 @@ A Video sequence job turns a brief ("2 minutes: a fox walking in snow, then a fo
 
 ## Turn it on
 
-Open Settings → Video editing and turn on **Let the assistant edit videos**, and set up a video model in Settings → Video generation (see the `video-generation` page). For opening stills, set up an image backend in Settings → Image; for music, Settings → Music. Then Jobs → new job → **Video sequence**.
+Open Settings → Video editing and turn on **Let the assistant edit videos**, and set up a video model in Settings → Video generation (see the `video-generation` page). For opening stills, set up an image backend in Settings → Image generation; for music, Settings → Music generation. Then Jobs → new job → **Video sequence**.
 
 ## Write the job
 

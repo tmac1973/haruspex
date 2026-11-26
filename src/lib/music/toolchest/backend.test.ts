@@ -260,7 +260,7 @@ describe('llama-toolchest music jobs after a restart', () => {
 		]);
 	});
 
-	it('follows the job on the server it went to, whatever Settings → Music says now', async () => {
+	it('follows the job on the server it went to, whatever Settings → Music generation says now', async () => {
 		settings.musicToolchestBaseUrl = 'http://elsewhere:3000/';
 		settings.musicToolchestApiKeyId = null;
 		const handle: MusicJobHandle = {

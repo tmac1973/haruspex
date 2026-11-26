@@ -90,7 +90,7 @@ describe('video_thumbnail', () => {
 	it('refuses to draw without an image backend, and draws with one', async () => {
 		const ctx = makeToolContext({ interactive: true, workingDir: '/videos' });
 		const off = await executeTool('video_thumbnail', { from: 'generate', prompt: 'a castle' }, ctx);
-		expect(off.result).toContain('Settings → Image');
+		expect(off.result).toContain('Settings → Image generation');
 		state.backend = 'comfyui';
 		state.generate.mockResolvedValue({
 			images: [

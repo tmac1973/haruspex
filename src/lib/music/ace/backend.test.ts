@@ -166,7 +166,9 @@ describe('ace-server music backend', () => {
 		settings.musicAceModel = 'gone.gguf';
 		const err = await aceMusicBackend.generate(request).catch((e) => e);
 		expect(err).toBeInstanceOf(MusicBackendError);
-		expect(err.message).toBe('gone.gguf is not on box:8083 any more — Settings → Music.');
+		expect(err.message).toBe(
+			'gone.gguf is not on box:8083 any more — Settings → Music generation.'
+		);
 		expect(sent('POST', '/lm')).toBeUndefined();
 	});
 
@@ -185,7 +187,9 @@ describe('ace-server music backend', () => {
 		});
 		expect((await aceMusicBackend.probe()).detail).toBe("Can't reach box:8083.");
 		settings.musicAceBaseUrl = ' ';
-		expect((await aceMusicBackend.probe()).detail).toBe('No server address — Settings → Music.');
+		expect((await aceMusicBackend.probe()).detail).toBe(
+			'No server address — Settings → Music generation.'
+		);
 	});
 
 	it('sends a task on a song straight to /synth with the song, skipping composing', async () => {

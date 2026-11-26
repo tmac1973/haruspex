@@ -85,7 +85,7 @@ async function editReferences(
 		throw new ImageBackendError(
 			'unconfigured',
 			'The bundled engine edits only with Qwen-Image 2.1 and its editing weights — ' +
-				'Settings → Image → Add editing.'
+				'Settings → Image generation → Add editing.'
 		);
 	}
 	return Promise.all(req.edit.images.map(base64Of));
@@ -107,9 +107,9 @@ async function editReferences(
 export function engineSetupMessage(kind: string | undefined, detail: string): string | null {
 	switch (kind) {
 		case 'NoModel':
-			return 'No image model is configured — Settings → Image.';
+			return 'No image model is configured — Settings → Image generation.';
 		case 'ModelMissing':
-			return `The image model is not on disk (${detail}) — download it again in Settings → Image.`;
+			return `The image model is not on disk (${detail}) — download it again in Settings → Image generation.`;
 		case 'SidecarMissing':
 			return (
 				`The bundled image engine is missing (${detail}). Reinstall Haruspex, or in a ` +
@@ -123,7 +123,10 @@ export function engineSetupMessage(kind: string | undefined, detail: string): st
 async function ensureRunning(id: string): Promise<LocalFamily> {
 	const family = familyOfId(id);
 	if (!family) {
-		throw new ImageBackendError('unconfigured', 'No image model is configured — Settings → Image.');
+		throw new ImageBackendError(
+			'unconfigured',
+			'No image model is configured — Settings → Image generation.'
+		);
 	}
 	try {
 		await invoke('image_engine_start', { modelId: id });
@@ -215,7 +218,7 @@ function localFor(entry: ImageModelEntry): ImageBackend {
 			}
 			const id = modelId();
 			if (!familyOfId(id)) {
-				return { ok: false, detail: 'No model is selected — Settings → Image.' };
+				return { ok: false, detail: 'No model is selected — Settings → Image generation.' };
 			}
 			if (st.status.type === 'Ready') {
 				return { ok: true, detail: `Running, ${st.model ?? id}.` };
@@ -315,7 +318,7 @@ async function upscale(
 	if (!(await canUpscale())) {
 		throw new ImageBackendError(
 			'unconfigured',
-			'The upscaler is not downloaded — Settings → Image → Bundled engine.'
+			'The upscaler is not downloaded — Settings → Image generation → Bundled engine.'
 		);
 	}
 	await ensureRunning(id);

@@ -98,7 +98,7 @@ describe('upscaling on ComfyUI', () => {
 	it('says how to install the upscaler when the server has none', async () => {
 		server([]);
 		await expect(comfyUiBackend.upscale!({ name: 'car.png', bytes: [1] })).rejects.toThrow(
-			/models\/upscale_models — Settings → Image → Install/
+			/models\/upscale_models — Settings → Image generation → Install/
 		);
 	});
 

@@ -56,7 +56,7 @@ function tooManyPictures(count: number): string | null {
 	if (most === 0 || count <= most) return null;
 	return (
 		`edit_image combines at most ${most} picture${most === 1 ? '' : 's'} with the image models ` +
-		'in Settings → Image.'
+		'in Settings → Image generation.'
 	);
 }
 
@@ -161,7 +161,7 @@ registerTool({
 				'Change a picture: a picture the user attached, one you drew earlier, or a file in the ' +
 				'working folder. Describe the change ("make it night", "remove the car"), or combine ' +
 				'pictures ("put the cat from the second picture on the sofa"). Uses the image generation ' +
-				'in Settings → Image; takes 10 s to a few minutes. The original is kept.',
+				'in Settings → Image generation; takes 10 s to a few minutes. The original is kept.',
 			parameters: {
 				type: 'object',
 				properties: {

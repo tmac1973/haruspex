@@ -91,12 +91,12 @@ beforeEach(() => {
 describe('generateForTool', () => {
 	it('refuses with the Settings path when nothing is set up', async () => {
 		state.kind = 'none';
-		await expect(generateForTool(req())).rejects.toThrow(/Settings → Image/);
+		await expect(generateForTool(req())).rejects.toThrow(/Settings → Image generation/);
 		expect(state.generate).not.toHaveBeenCalled();
 	});
 
 	it('passes the probe’s own reason on when the backend is not usable', async () => {
-		state.probe = { ok: false, detail: 'No model is selected — Settings → Image.' };
+		state.probe = { ok: false, detail: 'No model is selected — Settings → Image generation.' };
 		await expect(generateForTool(req())).rejects.toThrow('No model is selected');
 	});
 

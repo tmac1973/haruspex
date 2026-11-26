@@ -13,9 +13,9 @@ Each works in certain tabs and needs something set up:
 
 | Skill | Where | Needs |
 |---|---|---|
-| `fix-picture` | Chat | an image backend (Settings → Image) |
+| `fix-picture` | Chat | an image backend (Settings → Image generation) |
 | `game-assets` | the Code tab, or the Shell with Full access | nothing for textures; an image backend for sprites and icons |
-| `write-song` | Chat and the Code tab | a music backend (Settings → Music) |
+| `write-song` | Chat and the Code tab | a music backend (Settings → Music generation) |
 | `narrate` | Chat and the Code tab | nothing (see the `speech` page) |
 | `cut-video`, `clean-up-talk`, `fix-speech`, `make-sequence`, `save-my-voice` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing); see the `video-skills` page |
 | `fix-speech` | Chat and the Code tab, with a working folder | the video tools, and a saved voice on a llama.cpp speech server |

@@ -41,21 +41,21 @@ export interface ImageNeed {
 }
 
 export const NOT_SET_UP =
-	'Image generation is not set up. The user can add an image model in Settings → Image.';
+	'Image generation is not set up. The user can add an image model in Settings → Image generation.';
 
 export const NO_EDIT_SENTENCE =
-	"The image generation in Settings → Image can't edit pictures. Qwen-Image 2.1 can, on the " +
-	'bundled engine or Lemonade (Settings → Image → Add editing) or ComfyUI 0.39 or later, and ' +
+	"The image generation in Settings → Image generation can't edit pictures. Qwen-Image 2.1 can, on the " +
+	'bundled engine or Lemonade (Settings → Image generation → Add editing) or ComfyUI 0.39 or later, and ' +
 	'so can FLUX.2 klein 4B (on ComfyUI or llama-toolchest) and Qwen-Image-Edit-2511 (on ComfyUI).';
 
 export const NO_EXTEND_SENTENCE =
-	"The image generation in Settings → Image can't grow a picture past its edges. The bundled " +
+	"The image generation in Settings → Image generation can't grow a picture past its edges. The bundled " +
 	'engine and ComfyUI can, with any of their models.';
 
 export const NO_UPSCALE_SENTENCE =
-	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +
-	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image, and ' +
-	'a llama-toolchest upscaler can, added in Settings → Image → Upscalers.';
+	"The image generation in Settings → Image generation can't upscale pictures. The bundled engine, " +
+	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image generation, and ' +
+	'a llama-toolchest upscaler can, added in Settings → Image generation → Upscalers.';
 
 /** What `req` needs. */
 export function needOf(req: ImageRequest): ImageNeed {
@@ -103,7 +103,7 @@ export function capableEntries(
 	need: ImageNeed,
 	entries: readonly ImageModelEntry[] = imageEntries()
 ): ImageModelEntry[] {
-	// A toolchest server's upscalers are entries of their own (Settings → Image →
+	// A toolchest server's upscalers are entries of their own (Settings → Image generation →
 	// Upscalers), whatever a probe from before that saved on its image model.
 	if (need.op === 'upscale') entries = entries.filter((e) => e.backend !== 'llama-toolchest');
 	const known = entries.filter((e) => e.caps && meetsNeed(e.caps, need));
@@ -152,7 +152,7 @@ function noneCanSay(need: ImageNeed, all: readonly (ImageBackendCapabilities | n
 		if (most === 0) return NO_EDIT_SENTENCE;
 		return `This model combines at most ${most} picture${most === 1 ? '' : 's'} in one edit.`;
 	}
-	return 'No image model in Settings → Image can draw this.';
+	return 'No image model in Settings → Image generation can draw this.';
 }
 
 /** What each entry keeps of its capabilities. */

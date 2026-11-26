@@ -562,7 +562,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		// that reaches the front of the queue — possibly twelve hours later,
 		// behind a coding job — after the setting changed.
 		if (resolveImageBackend().kind === 'none') {
-			throw new Error('No image backend configured — Settings → Image.');
+			throw new Error('No image backend configured — Settings → Image generation.');
 		}
 
 		startStep(SPEC);

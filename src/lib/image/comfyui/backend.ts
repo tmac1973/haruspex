@@ -74,8 +74,8 @@ async function customTemplate(
 		throw new ImageBackendError(
 			'unconfigured',
 			graphPath
-				? 'A custom workflow is set but its field map is not — Settings → Image.'
-				: 'A custom field map is set but its workflow is not — Settings → Image.'
+				? 'A custom workflow is set but its field map is not — Settings → Image generation.'
+				: 'A custom field map is set but its workflow is not — Settings → Image generation.'
 		);
 	}
 	const { invoke } = await import('@tauri-apps/api/core');
@@ -213,7 +213,7 @@ function templateFor(req: ImageRequest, templates: WorkflowTemplate[]): Workflow
 		throw new ImageBackendError(
 			'unconfigured',
 			req.edit
-				? "This model can't edit pictures here — choose Qwen-Image-2.1, FLUX.2 klein 4B or Qwen-Image-Edit-2511 in Settings → Image."
+				? "This model can't edit pictures here — choose Qwen-Image-2.1, FLUX.2 klein 4B or Qwen-Image-Edit-2511 in Settings → Image generation."
 				: 'No bundled workflow serves this model.'
 		);
 	}
@@ -226,14 +226,14 @@ async function probeModel(
 	name: string
 ): Promise<string | null> {
 	if (!name) {
-		return 'No model is set — Settings → Image.';
+		return 'No model is set — Settings → Image generation.';
 	}
 	// A server that will not answer object_info still answers system_stats;
 	// this check is a convenience, not a gate.
 	if ((await hasModel(cfg, family, name)) === false) {
 		return family === 'sd'
-			? `The backend does not have a checkpoint called "${name}" — pick one it has in Settings → Image.`
-			: `The backend does not have a diffusion model called "${name}" in models/diffusion_models — Settings → Image → Install.`;
+			? `The backend does not have a checkpoint called "${name}" — pick one it has in Settings → Image generation.`
+			: `The backend does not have a diffusion model called "${name}" in models/diffusion_models — Settings → Image generation → Install.`;
 	}
 	if (family !== 'sd') {
 		try {
@@ -316,7 +316,7 @@ function comfyUiFor(entry: ImageModelEntry): ImageBackend {
 		async probe() {
 			const cfg = await config(entry);
 			if (!cfg.baseUrl.trim()) {
-				return { ok: false, detail: 'No backend URL is set — Settings → Image.' };
+				return { ok: false, detail: 'No backend URL is set — Settings → Image generation.' };
 			}
 			const model = configuredModel();
 			const family = familyOf(model);
@@ -412,7 +412,7 @@ async function upscaleWith(
 	if (!model) {
 		throw new ImageBackendError(
 			'unconfigured',
-			'ComfyUI has no Real-ESRGAN x4plus in models/upscale_models — Settings → Image → Install.'
+			'ComfyUI has no Real-ESRGAN x4plus in models/upscale_models — Settings → Image generation → Install.'
 		);
 	}
 	const clientId = crypto.randomUUID();

@@ -116,7 +116,7 @@ describe('generateOneImage', () => {
 
 	it('fails with the unconfigured message when no backend is set', async () => {
 		updateSettings({ imageModels: imageModelsFor('none') });
-		await expect(generateOneImage({ prompt: 'x' })).rejects.toThrow(/Settings → Image/);
+		await expect(generateOneImage({ prompt: 'x' })).rejects.toThrow(/Settings → Image generation/);
 	});
 });
 

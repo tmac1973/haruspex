@@ -61,9 +61,9 @@ pub enum SkillSource {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum SkillNeed {
-    /// An image backend (Settings → Image).
+    /// An image backend (Settings → Image generation).
     Image,
-    /// A music backend (Settings → Music).
+    /// A music backend (Settings → Music generation).
     Music,
     /// The video editing tools (Settings → Video editing).
     Video,

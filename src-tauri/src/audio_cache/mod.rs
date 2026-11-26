@@ -16,7 +16,7 @@
 //! It mirrors `image_cache` in shape (hash-named files, rows in `db/audio.rs`,
 //! a startup sweep) but not in policy. Linked audio is the user's work and is
 //! never evicted; only unlinked audio is, and unlinked audio survives an hour
-//! after it was made so a chat not saved yet, or Settings → Music's test clip,
+//! after it was made so a chat not saved yet, or Settings → Music generation's test clip,
 //! does not lose it on the next start.
 
 pub mod commands;
@@ -164,7 +164,7 @@ pub fn sweep_orphans(db: &Database, dir: &Path, now_ms: i64) -> Result<(), Strin
     Ok(())
 }
 
-/// Delete every unlinked file now, grace period or not: Settings → Music's
+/// Delete every unlinked file now, grace period or not: Settings → Music generation's
 /// "Clear unused audio".
 pub fn clear_unlinked(db: &Database, dir: &Path) -> Result<(), String> {
     let doomed = db.unlinked_audio_before(i64::MAX)?;

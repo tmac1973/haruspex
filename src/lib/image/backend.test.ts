@@ -48,7 +48,7 @@ describe('resolveImageBackend', () => {
 describe('the none backend', () => {
 	it('names the settings path and nothing else', async () => {
 		const { detail } = await noneBackend.probe();
-		expect(detail).toBe('No image backend configured — Settings → Image.');
+		expect(detail).toBe('No image backend configured — Settings → Image generation.');
 	});
 
 	it('fails a generation with a kind the caller can branch on', async () => {

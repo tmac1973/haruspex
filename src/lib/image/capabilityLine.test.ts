@@ -13,7 +13,7 @@ describe('capabilityLine', () => {
 	it('says what an editing model on llama-toolchest can and can’t do, and how to get the rest', () => {
 		const line = capabilityLine({ ...base, edit: true, maxEditImages: 4 }, 'llama-toolchest');
 		expect(line.can).toBe('draw pictures, edit pictures (up to 4 together)');
-		// Its server's upscalers are entries of their own, in Settings → Image → Upscalers.
+		// Its server's upscalers are entries of their own, in Settings → Image generation → Upscalers.
 		expect(line.cannot).toBe('extend pictures, transparent backgrounds, tiling textures');
 		expect(line.howTo).not.toContain('Upscal');
 		expect(line.howTo).not.toContain('Editing needs');

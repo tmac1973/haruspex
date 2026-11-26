@@ -59,7 +59,7 @@ function toVideoError(e: unknown): unknown {
 	if (e instanceof VideoBackendError || !(e instanceof ImageBackendError)) return e;
 	const message = e.message
 		.replace(/the image backend/gi, 'ComfyUI')
-		.replace(/Settings → Image/g, SECTION);
+		.replace(/Settings → Image generation/g, SECTION);
 	return new VideoBackendError(e.kind, message, { status: e.status });
 }
 

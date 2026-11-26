@@ -13,7 +13,7 @@
  * only while the request still waits in its queue.
  *
  * Upscaling is not the image instance's: it goes to an upscaler instance
- * (`meta.kind: "upscale"`) in Settings → Image → Upscalers
+ * (`meta.kind: "upscale"`) in Settings → Image generation → Upscalers
  * ({@link upscaleWithEntry}). The route answers at once, so an upscale is
  * never a job and can't be resumed.
  */
@@ -226,7 +226,7 @@ function toolchestFor(entry: ImageModelEntry): ImageBackend {
 		generate: (req, opts) => generateWith(server, req, opts),
 
 		async resume(handle: ImageJobHandle, opts: GenerateOptions = {}): Promise<ImageResult> {
-			// The server it went to, whatever Settings → Image says now.
+			// The server it went to, whatever Settings → Image generation says now.
 			const cfg = await server.configFor(handle.baseUrl, handle.extra?.keyId);
 			const started = Date.now();
 			let images: Uint8Array[];
@@ -276,7 +276,7 @@ async function generateWith(
 		if (!canEdit(instance)) {
 			throw new ImageBackendError(
 				'unconfigured',
-				`${instance.id} can't edit pictures — choose a model that can in Settings → Image.`
+				`${instance.id} can't edit pictures — choose a model that can in Settings → Image generation.`
 			);
 		}
 		const fields = buildEditFields({
@@ -335,7 +335,7 @@ async function generateWith(
 }
 
 /**
- * A picture made larger by upscaler entry `e` (Settings → Image →
+ * A picture made larger by upscaler entry `e` (Settings → Image generation →
  * Upscalers): its instance, read fresh from its server, since it may have
  * been stopped or removed since the last read.
  */

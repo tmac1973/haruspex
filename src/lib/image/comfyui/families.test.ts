@@ -109,7 +109,7 @@ describe('resolveCompanions', () => {
 		lists.VAELoader = ['ae.safetensors'];
 		await expect(resolveCompanions(cfg, 'ming')).rejects.toMatchObject({
 			kind: 'unconfigured',
-			message: expect.stringMatching(/Ming-Image VAE.*Settings → Image → Install/)
+			message: expect.stringMatching(/Ming-Image VAE.*Settings → Image generation → Install/)
 		});
 	});
 

@@ -5,13 +5,13 @@ description: Adding image models (ComfyUI, the bundled engine, Lemonade or llama
 
 # Image generation
 
-Haruspex can draw pictures with diffusion models. It is off by default: nothing is downloaded or started until you add a model in Settings → Image.
+Haruspex can draw pictures with diffusion models. It is off by default: nothing is downloaded or started until you add a model in Settings → Image generation.
 
 This page is about drawing new pictures. To change one, see the `image-editing` page; for web photos in answers, the `chat` page.
 
 ## Add image models
 
-In Settings → Image, press **Add model**, then choose its **Backend**:
+In Settings → Image generation, press **Add model**, then choose its **Backend**:
 
 - **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, here or elsewhere.
 - **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex, on Linux, Windows and Apple Silicon Macs.
@@ -20,7 +20,7 @@ In Settings → Image, press **Add model**, then choose its **Backend**:
 
 The image tools use the first model in the list that can do the job: an editing one for an edit, one with transparency if you ask. Use ↑ and ↓ to change the order. A model that doesn't answer or won't fit in VRAM is skipped. To use a certain one, name it ("draw it with klein"). Click a model to change it; **Generate a test image** checks it works.
 
-Every model's **API key** is a named key from Settings → Inference → API Keys; a ComfyUI or Lemonade key set before was moved there. A server you probe is kept under **Saved servers**; a llama-toolchest is listed in Settings → Music and Video too.
+Every model's **API key** is a named key from Settings → Inference → API Keys. A server you probe is kept under **Saved servers**; the other generation sections list a llama-toolchest too.
 
 ### Set up the bundled engine
 
@@ -48,7 +48,7 @@ If your chat model comes from a toolchest, its address and key are filled in; ot
 | Qwen-Image 2.1 Turbo                  | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
 | FLUX.2 klein 4B, Qwen-Image-Edit-2511 | Apache 2.0            | Allowed         | ComfyUI only                |
 
-Settings → Image marks Qwen-Image as not licensed for commercial use and asks before downloading it. When one draws, the assistant is told. Some stores require AI-made content to be disclosed.
+Settings → Image generation marks Qwen-Image as not licensed for commercial use and asks before downloading it. When one draws, the assistant is told. Some stores require AI-made content to be disclosed.
 
 ## Draw a picture in Chat
 
@@ -58,7 +58,7 @@ Ask Chat to draw something. It takes 30 seconds to minutes, or ask for it in the
 
 In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It won't overwrite a file unless asked. See the `code` and `shell` pages.
 
-A tiling texture, such as "a 32 px gravel tile", or the edge tiles where two textures meet, is drawn by code, not by the image model, and works without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model in Settings → Image can tile, the picture is still written, and the assistant says so.
+A tiling texture, such as "a 32 px gravel tile", or the edge tiles where two textures meet, is drawn by code, not by the image model, and works without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model can tile, the picture is still written, and the assistant says so.
 
 ## Make a whole set of game art
 
@@ -66,7 +66,7 @@ The **Asset generation** job draws all of a project's sprites, icons and tiling 
 
 ## What it costs your computer
 
-The bundled engine holds most of a 16 GB card, so your chat model and games may not fit. Stop it in Settings → Image when done.
+The bundled engine holds most of a 16 GB card, so your chat model and games may not fit. Stop it in Settings → Image generation when done.
 
 ## What has been tested
 

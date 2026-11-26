@@ -126,7 +126,7 @@ async function paintAsset(asset: PaintInput, input: ParsedInput, target: Target,
 	if (imageEntries().length === 0) {
 		return toolResult(
 			toolError(
-				`A ${asset.kind} needs image generation: set one up in Settings → Image. ` +
+				`A ${asset.kind} needs image generation: set one up in Settings → Image generation. ` +
 					'Only kind texture works without it, and a texture is a surface that fills ' +
 					'the tile: it cannot draw an object.'
 			)
@@ -282,7 +282,7 @@ registerTool({
 				'asset should be (transparent background, cropped, sized, reduced to a palette), or a ' +
 				'plain picture; or a transition set, the 16 edge tiles where two of your textures meet. ' +
 				'Textures and transitions are drawn by code from your recipes in a second; the rest use ' +
-				'the image generation in Settings → Image and take 30 s to a few minutes. Pass ' +
+				'the image generation in Settings → Image generation and take 30 s to a few minutes. Pass ' +
 				'palette_from with an existing asset to keep a set consistent.',
 			parameters: {
 				type: 'object',

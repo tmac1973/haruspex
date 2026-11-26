@@ -114,7 +114,7 @@ default parameters, which looks exactly like success.
 
 ## Using your own instead
 
-Set **Settings → Image → Custom workflow** to an API-format export plus a field
+Set **Settings → Image generation → Custom workflow** to an API-format export plus a field
 map in the same shape as `index.ts`'s. Both or neither: one without the other
 fails the probe. A custom workflow replaces all the bundled ones, never claims
 transparency (there is no way to ask a graph how it would make alpha), and its declared

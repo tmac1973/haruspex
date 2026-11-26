@@ -1,6 +1,6 @@
 /**
  * `generate_music`: a song from a description, made by the music backend set
- * up in Settings → Music, kept in the audio cache and played in the answer.
+ * up in Settings → Music generation, kept in the audio cache and played in the answer.
  *
  * Chat and the Code tab only. The song is linked to the chat or Code session
  * that made it, so the cache keeps it as long as that does; the model is told
@@ -219,7 +219,7 @@ registerTool({
 			name: 'generate_music',
 			description:
 				'Make a song or instrumental from a description, with the music generation set up in ' +
-				'Settings → Music. Takes a minute or more. Use it when the user asks for music, a song ' +
+				'Settings → Music generation. Takes a minute or more. Use it when the user asks for music, a song ' +
 				'or a soundtrack.',
 			parameters: {
 				type: 'object',
@@ -239,7 +239,7 @@ registerTool({
 					},
 					duration_seconds: {
 						type: 'number',
-						description: 'Length, 5 to 240. Default from Settings → Music.'
+						description: 'Length, 5 to 240. Default from Settings → Music generation.'
 					},
 					bpm: { type: 'integer', description: 'Tempo, 40 to 220. Omit to let it choose.' },
 					key: { type: 'string', description: 'Key, e.g. "C major". Omit to let it choose.' },

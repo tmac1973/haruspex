@@ -5,7 +5,7 @@ description: Ground, floor and wall tiles drawn by code — what they can be mad
 
 # Tiling textures
 
-A tiling texture is a square tile a game repeats across a map: grass, a dirt path, a wooden floor, a brick wall. Haruspex draws these by code, not with the image model, so they always tile, take about a second, and need nothing set up in Settings → Image.
+A tiling texture is a square tile a game repeats across a map: grass, a dirt path, a wooden floor, a brick wall. Haruspex draws these by code, not with the image model, so they always tile, take about a second, and need nothing set up in Settings → Image generation.
 
 ## Make a texture
 

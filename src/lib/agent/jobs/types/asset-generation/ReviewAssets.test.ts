@@ -108,7 +108,7 @@ describe('ReviewAssets', () => {
 		// failed at once, after the sprite had already been set aside.
 		mocks.probe.mockResolvedValue({
 			ok: false,
-			detail: 'No model is selected — Settings → Image.'
+			detail: 'No model is selected — Settings → Image generation.'
 		});
 		open();
 		await waitFor(() => screen.getByAltText('player'));

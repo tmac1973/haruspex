@@ -85,7 +85,7 @@ Read more: job-types, code-subtasks
 An asset generation job makes the sprites, icons and tiling textures a project needs from a JSON spec, or writes the spec from what you describe. Every asset follows one style anchor, which _Attended_ shows you first.
 
 Tab: Jobs
-Required settings: Settings → Image → Add model
+Required settings: Settings → Image generation → Add model
 
 Prompt:
 

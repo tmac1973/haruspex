@@ -403,7 +403,7 @@ describe('make_asset textures', () => {
 			{ kind: 'sprite', prompt: 'a slime', path: 's.png' },
 			context()
 		);
-		expect(out.result).toMatch(/Settings → Image/);
+		expect(out.result).toMatch(/Settings → Image generation/);
 		// The live run's model offered to draw the coin as a texture instead.
 		expect(out.result).toMatch(/cannot draw an object/);
 		expect(state.make).not.toHaveBeenCalled();

@@ -117,19 +117,19 @@ export async function resolveCompanions(
 	if (!textEncoder) {
 		throw new ImageBackendError(
 			'unconfigured',
-			`The backend has no ${label} text encoder in models/text_encoders — Settings → Image → Install.`
+			`The backend has no ${label} text encoder in models/text_encoders — Settings → Image generation → Install.`
 		);
 	}
 	if (!vae) {
 		throw new ImageBackendError(
 			'unconfigured',
-			`The backend has no ${label} VAE in models/vae — Settings → Image → Install.`
+			`The backend has no ${label} VAE in models/vae — Settings → Image generation → Install.`
 		);
 	}
 	if (lora === null) {
 		throw new ImageBackendError(
 			'unconfigured',
-			`The backend has no ${label} Lightning LoRA in models/loras — Settings → Image → Install.`
+			`The backend has no ${label} Lightning LoRA in models/loras — Settings → Image generation → Install.`
 		);
 	}
 	return lora ? { textEncoder, vae, lora } : { textEncoder, vae };

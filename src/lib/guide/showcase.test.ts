@@ -6,7 +6,7 @@ import { ORDER, parseExamples, renderShowcase } from '../../../scripts/build-sho
 /** "Things you can do" on the website, as scripts/build-showcase.mjs renders it. */
 
 const example = (title: string, more = 'chat') =>
-	`## ${title}\n\nDoes a thing.\n\nTab: Chat\nRequired settings: Settings → Image\n\nPrompt:\n\n> Draw a cat.\n\nExample output:\n\nA cat.\n\n<!-- media: the cat -->\n\nRead more: ${more}\n`;
+	`## ${title}\n\nDoes a thing.\n\nTab: Chat\nRequired settings: Settings → Image generation\n\nPrompt:\n\n> Draw a cat.\n\nExample output:\n\nA cat.\n\n<!-- media: the cat -->\n\nRead more: ${more}\n`;
 
 const subjects = (body: string) =>
 	ORDER.map((name, i) =>
@@ -40,7 +40,7 @@ describe('the showcase on the website', () => {
 		const page = files.get(`${ORDER[1]}/index.html`)!;
 		expect(page).toContain('<title>S1 &amp; co · Things you can do with Haruspex</title>');
 		expect(page).toContain('<article class="example" id="draw-a-picture">');
-		expect(page).toContain('<dd>Settings → Image</dd>');
+		expect(page).toContain('<dd>Settings → Image generation</dd>');
 		expect(page).toContain('<div class="example-prompt"><p>Draw a cat.</p>');
 		expect(page).toContain('<a href="../../guide/images/"><code>images</code></a>');
 		expect(page).toContain('<a href="../../guide/"><code>getting-started</code></a>');

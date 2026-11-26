@@ -3,7 +3,7 @@
  * stretch redone, extended at either end, with an instrument added or pulled
  * out, or filled in around a part. ACE-Step's tasks on a source song
  * (`cover`, `repaint`, `lego`, `extract`, `complete`), made by the music
- * backend in Settings → Music and answered like `generate_music`: kept in
+ * backend in Settings → Music generation and answered like `generate_music`: kept in
  * the audio cache, played in the answer, and saved to `path` if asked.
  *
  * The source is a song made earlier in the conversation (its
@@ -162,10 +162,10 @@ async function unsupported(task: MusicTask): Promise<string | null> {
 	}
 	if (tasks.includes(task)) return null;
 	if (tasks.length <= 1) {
-		return 'The music server in Settings → Music only makes new songs; update it to work on existing ones.';
+		return 'The music server in Settings → Music generation only makes new songs; update it to work on existing ones.';
 	}
 	return (
-		'The music model in Settings → Music can only ' +
+		'The music model in Settings → Music generation can only ' +
 		'restyle, redo or extend a song; adding, pulling out or completing instruments needs a base model, such as ACE-Step 1.5 XL base.'
 	);
 }
@@ -179,7 +179,7 @@ registerTool({
 			description:
 				'Make a new version of an existing song: restyle it, redo a stretch, extend it, add or ' +
 				'complete instruments, pull out one part, such as the vocals (stem separation), or trim ' +
-				'it to a stretch. Uses the music generation in Settings → Music and takes a minute or ' +
+				'it to a stretch. Uses the music generation in Settings → Music generation and takes a minute or ' +
 				'more; trim is cut here in a moment and works with any model. The original is kept.',
 			parameters: {
 				type: 'object',

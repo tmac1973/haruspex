@@ -124,7 +124,7 @@ describe('probe', () => {
 		setComfy({ url: '' });
 		expect(await comfyUiBackend.probe()).toEqual({
 			ok: false,
-			detail: 'No backend URL is set — Settings → Image.'
+			detail: 'No backend URL is set — Settings → Image generation.'
 		});
 	});
 

@@ -8,7 +8,7 @@ description: Draw pictures, change or extend ones you have, combine and upscale 
 Describe what you want and the assistant draws it. It takes 30 seconds to a few minutes, and you can ask for another shape or a transparent background.
 
 Tab: Chat
-Required settings: Settings → Image → Add model
+Required settings: Settings → Image generation → Add model
 
 Prompt:
 
@@ -27,7 +27,7 @@ Read more: images, image-editing
 Attach a picture, or point at one drawn earlier, and say what to change. The original is kept and the edit appears as a new picture.
 
 Tab: Chat
-Required settings: Settings → Image → a model that can edit (for example FLUX.2 klein 4B on ComfyUI)
+Required settings: Settings → Image generation → a model that can edit (for example FLUX.2 klein 4B on ComfyUI)
 
 Prompt:
 
@@ -46,7 +46,7 @@ Read more: image-editing, media-skills
 Name the part in words. Nothing outside it changes, and the edge is blended so the join doesn't show.
 
 Tab: Chat
-Required settings: Settings → Image → a model that can edit
+Required settings: Settings → Image generation → a model that can edit
 
 Prompt:
 
@@ -65,7 +65,7 @@ Read more: image-editing
 Ask for a picture wider or taller. The new part is painted to continue the scene.
 
 Tab: Chat
-Required settings: Settings → Image → a bundled engine or ComfyUI model that can edit
+Required settings: Settings → Image generation → a bundled engine or ComfyUI model that can edit
 
 Prompt:
 
@@ -84,7 +84,7 @@ Read more: image-editing
 Name several attached pictures in one request and they are merged in one edit.
 
 Tab: Chat
-Required settings: Settings → Image → a model that takes several pictures (FLUX.2 klein takes four)
+Required settings: Settings → Image generation → a model that takes several pictures (FLUX.2 klein takes four)
 
 Prompt:
 
@@ -103,7 +103,7 @@ Read more: image-editing
 Upscale two or four times. It sharpens as it enlarges, up to 4096 pixels on the longest side.
 
 Tab: Chat
-Required settings: Settings → Image → download or install the Upscaler
+Required settings: Settings → Image generation → download or install the Upscaler
 
 Prompt:
 
@@ -122,7 +122,7 @@ Read more: image-editing, media-skills
 Ask for art in your project. The assistant reads the project, keeps one style, and writes PNGs at the size you ask for, with transparent backgrounds.
 
 Tab: Code
-Required settings: Settings → Image → Add model
+Required settings: Settings → Image generation → Add model
 
 Prompt:
 

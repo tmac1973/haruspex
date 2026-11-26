@@ -24,7 +24,7 @@ import {
 import type { ImageModelEntry, ImageProgress } from '#lib/image/types.ts';
 import { imageModel } from '#lib/testing/imageModels.ts';
 
-/** Change the one Lemonade entry, as a user editing it in Settings → Image would. */
+/** Change the one Lemonade entry, as a user editing it in Settings → Image generation would. */
 const editEntry = (over: Partial<ImageModelEntry>) => {
 	settings.imageModels = [{ ...settings.imageModels[0], ...over }];
 };
@@ -108,7 +108,7 @@ describe('lemonade backend', () => {
 		editEntry({ url: '' });
 		expect(await lemonadeBackend.probe()).toEqual({
 			ok: false,
-			detail: 'No server address — Settings → Image.'
+			detail: 'No server address — Settings → Image generation.'
 		});
 	});
 

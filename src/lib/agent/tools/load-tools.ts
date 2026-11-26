@@ -20,8 +20,8 @@ const TURN_ON: Record<string, string> = {
 	email: 'The user can connect an account in Settings → Integrations.',
 	calendar: 'The user can connect an account in Settings → Integrations.',
 	contacts: 'The user can connect an account in Settings → Integrations.',
-	images: 'The user can choose an image model in Settings → Image.',
-	music: 'The user can turn it on in Settings → Music.',
+	images: 'The user can choose an image model in Settings → Image generation.',
+	music: 'The user can turn it on in Settings → Music generation.',
 	'video-gen': 'The user can turn it on in Settings → Video generation.',
 	video: 'They need a working folder and Settings → Video editing.'
 };

@@ -32,7 +32,7 @@ import {
 import { ImageBackendError, type ImageModelEntry, type ImageProgress } from '#lib/image/types.ts';
 import { imageModel } from '#lib/testing/imageModels.ts';
 
-/** Change the one toolchest entry, as a user editing it in Settings → Image would. */
+/** Change the one toolchest entry, as a user editing it in Settings → Image generation would. */
 const editEntry = (over: Partial<ImageModelEntry>) => {
 	settings.imageModels = [{ ...settings.imageModels[0], ...over }];
 };
@@ -115,16 +115,20 @@ describe('llama-toolchest image backend', () => {
 
 	it('says what is wrong rather than failing quietly', async () => {
 		editEntry({ model: '' });
-		expect((await toolchestBackend.probe()).detail).toBe('No model is chosen — Settings → Image.');
+		expect((await toolchestBackend.probe()).detail).toBe(
+			'No model is chosen — Settings → Image generation.'
+		);
 
 		// Gone from the server, or not an image model (an upscaler's id).
 		editEntry({ model: 'real-esrgan' });
 		expect((await toolchestBackend.probe()).detail).toBe(
-			'box:3000 has no image model called real-esrgan — Settings → Image.'
+			'box:3000 has no image model called real-esrgan — Settings → Image generation.'
 		);
 
 		editEntry({ url: '' });
-		expect((await toolchestBackend.probe()).detail).toBe('No server address — Settings → Image.');
+		expect((await toolchestBackend.probe()).detail).toBe(
+			'No server address — Settings → Image generation.'
+		);
 
 		editEntry({ url: 'http://box:3000' });
 		use({
@@ -460,7 +464,7 @@ describe('llama-toolchest image backend', () => {
 		}
 		const picture = { name: 'p.png', bytes: [1, 2, 3] };
 
-		/** An entry in Settings → Image → Upscalers for asmodean's upscaler. */
+		/** An entry in Settings → Image generation → Upscalers for asmodean's upscaler. */
 		const upscaler: UpscalerEntry = {
 			id: 'u1',
 			name: 'real-esrgan',
