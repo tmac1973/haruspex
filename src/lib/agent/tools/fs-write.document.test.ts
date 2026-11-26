@@ -244,6 +244,36 @@ describe('rewriting a document in the same turn', () => {
 		expect(out.result).toBe('Wrote: wide.pdf (1 page)');
 	});
 
+	it('rewrites a document that lost its title heading when it keeps most of its lines', async () => {
+		// #1276: a shopping list a little too long for one page, its heading cut.
+		const rows = [
+			'## Fridge',
+			'',
+			'| | Item | Buy | You need |',
+			'|---|---|---|---|',
+			'| [ ] | Elbow macaroni | **2 boxes (16 oz)** | 24 oz |',
+			'| [ ] | Extra-sharp cheddar | **1½ lb** | 6 cups grated |',
+			'| [ ] | Evaporated milk | **2 cans** | 1½ cans |',
+			'| [ ] | Unsalted butter | **2 sticks** | 1½ sticks |'
+		].join('\n');
+		await write({ path: 'list.pdf', content: `# Shopping List\n\n**Serves 10.**\n\n${rows}` });
+		const out = await write({ path: 'list.pdf', content: `**Serves 10 to 12.**\n\n${rows}` });
+		expect(out.result).toBe('Wrote: list.pdf (1 page)');
+	});
+
+	it('still refuses a second part that shares few lines with the first', async () => {
+		await write({
+			path: 'guide.pdf',
+			content: '# Guide\n\n## Setting up\n\nInstall the app first.\n\nThen open Settings.'
+		});
+		const out = await write({
+			path: 'guide.pdf',
+			content: '## Using it\n\nOpen a new chat.\n\nThen open Settings.\n\nAsk a question.'
+		});
+		expect(JSON.parse(out.result).error).toContain('or most of its lines');
+		expect(writes()).toHaveLength(1);
+	});
+
 	it(`allows ${MAX_DRAFT_REWRITES} rewrites, then refuses`, async () => {
 		await write({ path: 'r.pdf', content: DRAFT });
 		for (let i = 0; i < MAX_DRAFT_REWRITES; i++) {
