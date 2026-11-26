@@ -18,10 +18,16 @@ import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { splitAttachedAudio } from '#lib/audio/attached.ts';
 
-// Trim older tool results when context usage crosses this fraction.
-// Lower than the conversation-level compaction threshold (0.8) so we
-// act before a single deep-research turn can blow context.
+// Trim older tool results when the prompt about to be sent crosses this
+// fraction of the window. Lower than the conversation-level compaction
+// threshold (0.8) so we act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
+// ...and trim down to this one. The gap is the hysteresis: a trim rewrites an
+// early message, and the next call reads everything after it again (on the
+// hybrid Qwen models, everything after the system prompt: 20-45K tokens, half
+// a minute or more locally). Trimming back to the threshold itself meant the
+// next read crossed it again — seven trims in one live Code turn (#1022).
+const IN_LOOP_TRIM_TARGET = 0.55;
 
 /** The audio-cache hashes of the files attached to the newest user message that has any. */
 export function latestUserAudio(messages: ChatMessage[]): string[] {
@@ -51,19 +57,19 @@ export function latestUserImages(messages: ChatMessage[]): string[] {
 
 /**
  * The token budget the in-loop trim should aim at, or null when no trim is
- * warranted this iteration.
+ * warranted for this call.
  *
  * Split out so the policy is testable without driving a whole agent loop —
- * and because the policy is the part that went wrong. The trim used to have
- * no target at all: crossing the threshold stubbed every eligible tool result
- * at once, which on a long coding turn discards the files the turn is working
- * from. Aiming AT the threshold keeps the freed space proportional to the
- * overage.
+ * and because the policy is the part that went wrong, twice. The trim first
+ * had no target: crossing the threshold stubbed every eligible tool result at
+ * once, which on a long coding turn discards the files the turn is working
+ * from. Then it aimed AT the threshold, which kept the freed space small but
+ * trimmed again on nearly every read. IN_LOOP_TRIM_TARGET sits between.
  */
 export function inLoopTrimBudget(contextSize: number, promptTokens: number): number | null {
 	if (contextSize <= 0) return null;
 	if (promptTokens / contextSize < IN_LOOP_TRIM_THRESHOLD) return null;
-	return Math.floor(contextSize * IN_LOOP_TRIM_THRESHOLD);
+	return Math.floor(contextSize * IN_LOOP_TRIM_TARGET);
 }
 // Last-resort per-call output cap, used only if the settings store can't be
 // read. The operative values come from Settings → Inference → Model defaults,

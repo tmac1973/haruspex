@@ -19,14 +19,16 @@ describe('inLoopTrimBudget', () => {
 		expect(inLoopTrimBudget(100_000, 69_000)).toBeNull();
 	});
 
-	it('fires at the threshold', () => {
-		expect(inLoopTrimBudget(100_000, 70_000)).toBe(70_000);
+	it('fires at the threshold, and aims below it', () => {
+		// Back to 55%, not to 70%: aiming at the threshold meant the next read
+		// crossed it again, and every trim costs a re-read of the prompt (#1022).
+		expect(inLoopTrimBudget(100_000, 70_000)).toBe(55_000);
 	});
 
-	it('aims at the threshold, not at the floor', () => {
-		// The budget is a target to come back UNDER, so the trim frees roughly
-		// the overage — not everything it is allowed to touch.
-		expect(inLoopTrimBudget(100_000, 95_000)).toBe(70_000);
+	it('aims at the target, not at the floor', () => {
+		// The budget is a target to come back UNDER, so the trim frees the
+		// overage plus the gap — not everything it is allowed to touch.
+		expect(inLoopTrimBudget(100_000, 95_000)).toBe(55_000);
 	});
 
 	it('stays silent when the context size is unknown', () => {

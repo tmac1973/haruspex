@@ -7,10 +7,11 @@ import type { ToolDefinition } from '#lib/api.ts';
 import {
 	estimateMessagesTokens,
 	fitMessagesToBudget,
-	getTokenCalibration
+	getTokenCalibration,
+	trimOldToolMessages
 } from '#lib/agent/contextBudget.ts';
 import { logDebug } from '#lib/debugLog.ts';
-import { promptReserve, type LoopContext } from '#lib/agent/loop/context.ts';
+import { inLoopTrimBudget, promptReserve, type LoopContext } from '#lib/agent/loop/context.ts';
 
 /**
  * Deterministically shrink `ctx.messages` to fit the server's context
@@ -39,12 +40,54 @@ export function applyContextGuard(
 const RESPONSE_ROOM_MARGIN = 256;
 
 /**
+ * Stub older tool results when the prompt about to be sent is over the in-loop
+ * trim threshold, down to its target (`inLoopTrimBudget`).
+ *
+ * It runs before the send, on the estimate, rather than after a response on
+ * the server's `prompt_tokens`: that count didn't include the tool results
+ * the response had just asked for, so a round of big reads went past the
+ * threshold and the hard fit in one step, and the fit trimmed instead — to
+ * the budget exactly, so the next read went over again. It also works on a
+ * backend that reports no usage.
+ *
+ * Logged because this is otherwise an invisible mutation: when a run degrades
+ * in quality rather than failing outright, this is the line that says why.
+ */
+function trimAhead(ctx: LoopContext, tools?: ToolDefinition[]): void {
+	if (ctx.contextSize <= 0) return;
+	const calibration = getTokenCalibration(ctx.descriptor.calibrationKey);
+	const beforeEst = estimateMessagesTokens(ctx.messages, tools);
+	const prompt = Math.ceil(beforeEst * calibration);
+	const target = inLoopTrimBudget(ctx.contextSize, prompt);
+	if (target === null) return;
+	const budget = Math.floor(target / calibration);
+	if (!trimOldToolMessages(ctx.messages, { budget, tools })) return;
+	const afterEst = estimateMessagesTokens(ctx.messages, tools);
+	logDebug('agent', 'in-loop trim stubbed older tool results', {
+		prompt,
+		contextSize: ctx.contextSize,
+		ratio: +(prompt / ctx.contextSize).toFixed(3),
+		after: Math.ceil(afterEst * calibration)
+	});
+	ctx.options.onContextManaged?.({
+		kind: 'trim',
+		forced: false,
+		trimmedTools: true,
+		truncatedMessages: 0,
+		droppedTurns: 0,
+		beforeEst,
+		afterEst
+	});
+}
+
+/**
  * Fit the prompt for one call, then size its response: whatever room the
  * prompt leaves, up to the turn's ceiling and never below what the fit
  * reserved. Returns the `max_tokens` to send. See `ResponseRoom`.
  */
 export function fitForCall(ctx: LoopContext, tools?: ToolDefinition[]): number {
 	const reserve = promptReserve(ctx);
+	trimAhead(ctx, tools);
 	applyContextGuard(ctx, reserve, tools);
 	let limit = ctx.maxResponseTokens;
 	if (ctx.contextSize > 0) {

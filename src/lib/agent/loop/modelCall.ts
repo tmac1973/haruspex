@@ -20,7 +20,6 @@ import { StreamResponseAssembler } from '#lib/streamAssembly.ts';
 import { resolveToolCalls, type ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	fitMessagesToBudget,
-	trimOldToolMessages,
 	estimateMessagesTokens,
 	recordTokenCalibration,
 	parseContextOverflow,
@@ -35,7 +34,7 @@ import {
 import { splitThinkChannels } from '#lib/markdown.ts';
 import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
 import { logDebug } from '#lib/debugLog.ts';
-import { inLoopTrimBudget, type LoopContext } from '#lib/agent/loop/context.ts';
+import type { LoopContext } from '#lib/agent/loop/context.ts';
 import { fitForCall, noteResponseFinish } from '#lib/agent/loop/responseRoom.ts';
 import { isCodeContext } from '#lib/agent/loop/heuristics.ts';
 
@@ -485,39 +484,6 @@ export async function runModelCall(
 		usage: response.usage,
 		text: response.content
 	});
-
-	const trimBudget = response.usage
-		? inLoopTrimBudget(ctx.contextSize, response.usage.prompt_tokens)
-		: null;
-	if (trimBudget !== null && response.usage) {
-		// Logged because this is otherwise an invisible mutation: it silently
-		// stubs earlier tool results, and the only trace was the `[Trimmed:`
-		// marker buried inside a later prompt dump. When a run degrades in
-		// quality rather than failing outright, this is the line that says why.
-		//
-		// Trim back TO the threshold, not down to the floor. This fires
-		// pre-emptively — the request that triggered it fit — so there is no
-		// reason for it to be the more destructive of the two trims, and it
-		// used to be: it stubbed every eligible tool result the moment the
-		// prompt crossed 70%, which on a long coding turn is the turn's whole
-		// working memory in one step.
-		if (trimOldToolMessages(ctx.messages, { budget: trimBudget, tools: ctx.tools })) {
-			logDebug('agent', 'in-loop trim stubbed older tool results', {
-				promptTokens: response.usage.prompt_tokens,
-				contextSize: ctx.contextSize,
-				ratio: +(response.usage.prompt_tokens / ctx.contextSize).toFixed(3)
-			});
-			options.onContextManaged?.({
-				kind: 'trim',
-				forced: false,
-				trimmedTools: true,
-				truncatedMessages: 0,
-				droppedTurns: 0,
-				beforeEst: response.usage.prompt_tokens,
-				afterEst: estimateMessagesTokens(ctx.messages, ctx.tools)
-			});
-		}
-	}
 
 	let toolCalls: ResolvedToolCall[] = [];
 	// Non-null when the model attempted a call we refused (truncated or

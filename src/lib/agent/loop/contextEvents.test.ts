@@ -137,28 +137,36 @@ beforeEach(() => {
 });
 
 describe('onContextManaged', () => {
-	it('reports the in-loop trim after a call comes back over 70% of the window', async () => {
-		// Let the pre-send fit pass the conversation untouched: learn a 1:1
-		// estimate, so only the server's figure decides.
-		// Under the key the loop budgets with: the local model's (mocked as '').
+	it('trims before a call whose prompt is over 70% of the window, down to 55%', async () => {
+		// A learned 1:1 estimate, under the key the loop budgets with (the
+		// local model's, mocked as ''), so the hard fit has nothing left to do.
 		for (let i = 0; i < 20; i++) recordTokenCalibration(1000, 1000, 'local:');
 		const estimate = estimateMessagesTokens(conversation());
 		const contextSize = Math.ceil(estimate / 0.8);
-		const events = await run(contextSize, Math.ceil(contextSize * 0.9));
+		const events = await run(contextSize, 100);
 		expect(events.map((e) => e.kind)).toEqual(['trim']);
 		expect(events[0]).toMatchObject({ forced: false, trimmedTools: true });
+		expect(events[0].afterEst).toBeLessThanOrEqual(contextSize * 0.55);
+	});
+
+	it('leaves a prompt under 70% alone', async () => {
+		for (let i = 0; i < 20; i++) recordTokenCalibration(1000, 1000, 'local:');
+		const estimate = estimateMessagesTokens(conversation());
+		const events = await run(Math.ceil(estimate / 0.65), 100);
+		expect(events).toEqual([]);
 	});
 
 	it('reports a pre-send fit, and whether it had to force one', async () => {
+		// The trim runs first and cannot get this far under; the fit does.
 		const fit = await run(16_000, 100);
-		expect(fit[0]).toMatchObject({ kind: 'fit', forced: false });
+		expect(fit.find((e) => e.kind === 'fit')).toMatchObject({ forced: false });
 
 		// A system prompt and turns each far over the window: truncating and
 		// dropping cannot get there, so the last resort halves them.
 		const huge: ChatMessage[] = [{ role: 'system', content: 'x'.repeat(200_000) }];
 		for (let i = 0; i < 10; i++) huge.push({ role: 'user', content: 'y'.repeat(200_000) });
 		const forced = await run(8_192, 100, huge);
-		expect(forced[0]).toMatchObject({ kind: 'fit', forced: true });
+		expect(forced.find((e) => e.kind === 'fit')).toMatchObject({ forced: true });
 	});
 });
 
