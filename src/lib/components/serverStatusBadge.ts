@@ -36,7 +36,10 @@ export function statusBadge(
 		};
 	}
 
-	const name = localModelName(settings.activeLocalModelFilename);
+	// The model the sidecar was started with, when this window started it:
+	// Settings may name another one that is not loaded yet.
+	const loaded = state.localModelPath?.split(/[\\/]/).pop();
+	const name = localModelName(loaded || settings.activeLocalModelFilename);
 	const badge = settingsBadge(name, state);
 	if (view.kind !== 'server') return badge;
 	// Code tab: the state alone, since each session names its own model.

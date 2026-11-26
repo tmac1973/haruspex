@@ -55,6 +55,15 @@ describe('ServerStatusBadge', () => {
 		expect(badge().title).toContain('Click to open Settings → Inference.');
 	});
 
+	it('names the model the server was started with, not the one Settings names', () => {
+		mockState({
+			status: 'ready',
+			localModelPath: '/data/models/Qwen3.6-35B-A3B-UD-IQ4_NL.gguf'
+		});
+		render(ServerStatusBadge);
+		screen.getByText('Ready · qwen3.6-35b-a3b-ud');
+	});
+
 	it('names the local model while starting', () => {
 		mockState({ status: 'starting' });
 		render(ServerStatusBadge);
