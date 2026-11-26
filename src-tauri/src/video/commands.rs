@@ -1070,13 +1070,19 @@ pub struct UpscaleInput {
 /// The ffmpeg arguments that turn `clip` into what llama-toolchest's video
 /// upscalers read: MJPEG AVI with PCM sound, the sound only when there is
 /// some. MP4, VP9 and ordinary VP8 are all refused there.
-pub fn upscale_input_args(clip: &Path, out: &Path) -> Vec<std::ffi::OsString> {
+pub fn upscale_input_args(clip: &Path, out: &Path, rate: Option<u32>) -> Vec<std::ffi::OsString> {
     let mut a: Vec<std::ffi::OsString> = vec!["-i".into(), clip.into()];
+    for s in ["-map", "0:v:0", "-map", "0:a:0?", "-fps_mode", "cfr"] {
+        a.push(s.into());
+    }
+    // A variable-rate clip (a phone's, or one cut from others) leaves gaps
+    // the AVI muxer fills with empty frames, which toolchest refuses; at a
+    // constant rate ffmpeg repeats or drops a frame instead.
+    if let Some(r) = rate {
+        a.push("-r".into());
+        a.push(r.to_string().into());
+    }
     for s in [
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a:0?",
         "-c:v",
         "mjpeg",
         "-q:v",
@@ -1092,6 +1098,12 @@ pub fn upscale_input_args(clip: &Path, out: &Path) -> Vec<std::ffi::OsString> {
     }
     a.push(out.into());
     a
+}
+
+/// The whole-number rate a clip averaging `fps` is converted at, or None
+/// when ffprobe gave none.
+pub fn constant_rate(fps: f64) -> Option<u32> {
+    (fps.is_finite() && fps > 0.0).then(|| (fps.round() as u32).max(1))
 }
 
 /// The frame count of a clip `secs` long at `fps`, at least one.
@@ -1137,11 +1149,12 @@ pub async fn video_upscale_input(
         .video
         .as_ref()
         .ok_or_else(|| format!("{shown} has no picture."))?;
-    let fps = if video.fps_den > 0 {
+    let rate = constant_rate(if video.fps_den > 0 {
         video.fps_num as f64 / video.fps_den as f64
     } else {
         0.0
-    };
+    });
+    let fps = rate.map_or(0.0, f64::from);
     // ffmpeg turns the picture upright as it converts.
     let (width, height) = if video.rotation.abs() % 180 == 90 {
         (video.height, video.width)
@@ -1152,7 +1165,7 @@ pub async fn video_upscale_input(
     let temp = dir.join(crate::audio_cache::commands::temp_name());
     if let Err(e) = ffmpeg_run(
         &ffmpeg,
-        &upscale_input_args(&file, &temp),
+        &upscale_input_args(&file, &temp, rate),
         "Converting the clip",
     )
     .await
@@ -1923,11 +1936,16 @@ mod upscale_tests {
 
     #[test]
     fn upscale_input_is_mjpeg_avi_with_optional_sound() {
-        let args: Vec<String> = upscale_input_args(Path::new("in.mp4"), Path::new("out.tmp"))
-            .iter()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
+        let args: Vec<String> =
+            upscale_input_args(Path::new("in.mp4"), Path::new("out.tmp"), Some(16))
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
         let joined = args.join(" ");
+        assert!(
+            joined.contains("-fps_mode cfr -r 16 "),
+            "a constant rate, so the AVI has no empty frames"
+        );
         assert!(joined.starts_with("-i in.mp4 "));
         assert!(
             joined.contains("-map 0:a:0?"),
@@ -1936,6 +1954,17 @@ mod upscale_tests {
         assert!(joined.contains("-c:v mjpeg"));
         assert!(joined.contains("-c:a pcm_s16le"));
         assert!(joined.ends_with("-f avi out.tmp"));
+    }
+
+    #[test]
+    fn a_clip_converts_at_a_whole_number_rate() {
+        assert_eq!(constant_rate(15.5), Some(16));
+        assert_eq!(constant_rate(30000.0 / 1001.0), Some(30));
+        assert_eq!(constant_rate(0.2), Some(1));
+        assert_eq!(constant_rate(0.0), None);
+        assert_eq!(constant_rate(f64::NAN), None);
+        let args = upscale_input_args(Path::new("in.mp4"), Path::new("out.tmp"), None);
+        assert!(!args.iter().any(|a| a == "-r"), "no rate, no -r");
     }
 
     #[test]
