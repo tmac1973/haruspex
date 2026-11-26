@@ -59,9 +59,13 @@ pub mod timing {
     /// measured from process spawn. Suits the CPU-bound STT/TTS sidecars.
     pub const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
-    /// Longer health deadline for the LLM server: its first load mmaps a
-    /// multi-GB model and initializes Vulkan before `/health` answers.
-    pub const HEALTH_POLL_TIMEOUT_SLOW: Duration = Duration::from_secs(60);
+    /// Health deadline for the LLM server. It only catches a process that
+    /// stays alive but never answers: a crash during the load is reported by
+    /// the exit handler, which also runs the context-backoff and CPU-fallback
+    /// retries only while the status is still `Starting`. A large model with a
+    /// big KV cache can take minutes to load (an 18 GB 35B with a 64K context
+    /// took over a minute right after a model switch), so this is generous.
+    pub const HEALTH_POLL_TIMEOUT_SLOW: Duration = Duration::from_secs(10 * 60);
 }
 
 /// Maximum entries kept in a sidecar's in-memory log ring buffer.

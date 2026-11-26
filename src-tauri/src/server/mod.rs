@@ -1047,8 +1047,8 @@ impl LlamaServer {
                 }
             } else if state.status == ServerStatus::Starting {
                 let msg = format!(
-                    "Health check timed out after {} seconds",
-                    sidecar_util::timing::HEALTH_POLL_TIMEOUT_SLOW.as_secs()
+                    "llama-server did not answer /health within {} minutes",
+                    sidecar_util::timing::HEALTH_POLL_TIMEOUT_SLOW.as_secs() / 60
                 );
                 error!("{}", msg);
                 state.status = ServerStatus::Error(msg.clone());
