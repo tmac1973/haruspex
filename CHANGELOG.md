@@ -1,5 +1,74 @@
 # Changelog
 
+## [0.2.25](https://github.com/tmac1973/haruspex/compare/v0.2.24...v0.2.25) (2026-11-26)
+
+
+### Features
+
+* **cameras:** save the current position as a preset from chat ([#1248](https://github.com/tmac1973/haruspex/issues/1248)) ([9c861a2](https://github.com/tmac1973/haruspex/commit/9c861a2c2c16442e0ccf8be2458068ba7d2cbf04))
+* **chat:** edit a message and retry an answer ([#1261](https://github.com/tmac1973/haruspex/issues/1261)) ([0a22904](https://github.com/tmac1973/haruspex/commit/0a2290483eaf7f6d56e0ac92961caa5979dc3c77))
+* **code:** 3d delegate — hand 3D assets to a chosen model, replacing specialists ([#1252](https://github.com/tmac1973/haruspex/issues/1252)) ([1a5b15b](https://github.com/tmac1973/haruspex/commit/1a5b15bdea0504534fca508661c7d0aabb921cdc))
+* **code:** pick a 3D delegate model per session from Extras ([#1256](https://github.com/tmac1973/haruspex/issues/1256)) ([f97259c](https://github.com/tmac1973/haruspex/commit/f97259caadeebfeaf1a101f5553e05a14ad9c134))
+* **code:** pick None (and Settings) as tabs in the 3D delegate picker ([#1263](https://github.com/tmac1973/haruspex/issues/1263)) ([e208353](https://github.com/tmac1973/haruspex/commit/e2083530e25729b2182a73a7ea7f29b9b1805475))
+* **code:** rewind to here — cut a session back in place and put back its file edits ([#1260](https://github.com/tmac1973/haruspex/issues/1260)) ([7412dda](https://github.com/tmac1973/haruspex/commit/7412ddafb5ba8284934b7946f3a182f777fad4b7))
+* **code:** run delegate_3d in the background by default, and hold its files while it works ([#1262](https://github.com/tmac1973/haruspex/issues/1262)) ([71ccb24](https://github.com/tmac1973/haruspex/commit/71ccb243cb0f8982ac299c4106391f99d1c799d9))
+* email and print from chat and notebooks ([#1233](https://github.com/tmac1973/haruspex/issues/1233)) ([8b83dd5](https://github.com/tmac1973/haruspex/commit/8b83dd50d2f2bad3ac4dee95875d5bd0e1e4297e))
+* **email:** read sent, drafts and trash with email_list_recent ([#1247](https://github.com/tmac1973/haruspex/issues/1247)) ([dee569f](https://github.com/tmac1973/haruspex/commit/dee569f4755707edbfec866d102d1615acd2f4c7)), closes [#1242](https://github.com/tmac1973/haruspex/issues/1242)
+* **email:** send html mail with pictures and attachments, and let email_compose attach files ([#1235](https://github.com/tmac1973/haruspex/issues/1235)) ([3d68fb0](https://github.com/tmac1973/haruspex/commit/3d68fb0913de1b5b4fbf84ac79be24503dd6583e))
+* **email:** suggest contacts in To and Cc, and let email_compose take a name ([#1237](https://github.com/tmac1973/haruspex/issues/1237)) ([791ee32](https://github.com/tmac1973/haruspex/commit/791ee3286293e70df22f329a0f25c84b0ff39538))
+* **logs:** copy one chat's debug lines, and one pretty entry ([#1259](https://github.com/tmac1973/haruspex/issues/1259)) ([07747ca](https://github.com/tmac1973/haruspex/commit/07747ca7fdbdec9c7d75d0c96219597aedf8d2bf))
+* **media:** decode av1 with dav1d and write webm with libvpx and opus ([#1243](https://github.com/tmac1973/haruspex/issues/1243)) ([0675660](https://github.com/tmac1973/haruspex/commit/0675660e8feb68d6bd33292dd03c25327801f5d8))
+* **notebooks:** add a notebooks tab for notes, tables and python ([#1228](https://github.com/tmac1973/haruspex/issues/1228)) ([b74fe99](https://github.com/tmac1973/haruspex/commit/b74fe99e1f5777aeec6f947d632d0331d9aaf8fb))
+* **notebooks:** back up every notebook to one file and restore from it ([#1231](https://github.com/tmac1973/haruspex/issues/1231)) ([043effb](https://github.com/tmac1973/haruspex/commit/043effb6f4b0a76a6167bfb325fdee824106fb2f))
+* **notebooks:** file a notebook or card as a GitHub issue, or add it to one ([#1238](https://github.com/tmac1973/haruspex/issues/1238)) ([1dc6d91](https://github.com/tmac1973/haruspex/commit/1dc6d91e511244839e8dfbfad92c34acb9f0dfab))
+* video models list with ComfyUI as a video backend ([#1225](https://github.com/tmac1973/haruspex/issues/1225)) ([f6cc445](https://github.com/tmac1973/haruspex/commit/f6cc445f5c7684a7420e69087b2f2b2e45e86621))
+* **video-sequence:** make a missing episode folder, and step through stills ([#1223](https://github.com/tmac1973/haruspex/issues/1223)) ([6e6ff37](https://github.com/tmac1973/haruspex/commit/6e6ff37e61c4cd8d10ba025df4f86bd31006d1b8))
+* **video:** upscale clips with llama-toolchest's video upscalers ([#1239](https://github.com/tmac1973/haruspex/issues/1239)) ([13c6c99](https://github.com/tmac1973/haruspex/commit/13c6c99ecb9784a8cfa127ff54aaefab3ff38202))
+
+
+### Bug Fixes
+
+* **3d:** let the delegate picker save an OpenRouter model ([#1253](https://github.com/tmac1973/haruspex/issues/1253)) ([301431a](https://github.com/tmac1973/haruspex/commit/301431a74d23bbbd834ec2976665bd8891e10bc3))
+* **agent:** no file-write push lean mode can't meet, honest save lines, proxy-aware fetch errors, rewrite cap across names, polytonic greek ([#1249](https://github.com/tmac1973/haruspex/issues/1249)) ([5b01729](https://github.com/tmac1973/haruspex/commit/5b01729d5bf74eb1bf7d059bebc78d8e6c627ebd))
+* **agent:** stop the empty Continue loop, and scale the 3D delegate's response cap ([#1258](https://github.com/tmac1973/haruspex/issues/1258)) ([4abc9a5](https://github.com/tmac1973/haruspex/commit/4abc9a556f253b87aa494bbac9301bfd2209eac3))
+* **chat:** keep a name a chat was given before its first message ([#1272](https://github.com/tmac1973/haruspex/issues/1272)) ([9fa84f9](https://github.com/tmac1973/haruspex/commit/9fa84f9db418d8f5425a67ae427b0f7e1c2ebcbd)), closes [#1271](https://github.com/tmac1973/haruspex/issues/1271)
+* **chat:** only push a file write when the request makes a file, not when it names a pdf ([#1241](https://github.com/tmac1973/haruspex/issues/1241)) ([7a4bc61](https://github.com/tmac1973/haruspex/commit/7a4bc61dd0d61cdb72f0a048cbb0729e97df0719))
+* **chat:** show the busy dot on the chat tab while a conversation works ([#1255](https://github.com/tmac1973/haruspex/issues/1255)) ([7568f07](https://github.com/tmac1973/haruspex/commit/7568f07d055a7c2d1d9ebc60bfd00d3a63ef7c92))
+* **code:** show delegate_3d's subtask card while it runs ([#1254](https://github.com/tmac1973/haruspex/issues/1254)) ([5c1ac3c](https://github.com/tmac1973/haruspex/commit/5c1ac3cd2c4a48d233283182ed764f9acd09ea1b))
+* **code:** stream the 3D delegate, retry a provider-error reply, and load the glTF validator in the app ([#1265](https://github.com/tmac1973/haruspex/issues/1265)) ([42fb61e](https://github.com/tmac1973/haruspex/commit/42fb61e7f42939cb59634ce0b43fa8168e71fd2c))
+* **code:** tell the main model not to wait on delegate_3d just to report it ([#1266](https://github.com/tmac1973/haruspex/issues/1266)) ([2823d42](https://github.com/tmac1973/haruspex/commit/2823d42fb8cbb268a672ca6ee0c5925763dc3c0d))
+* **documents:** a rewrite that keeps most of its lines is a revision ([#1277](https://github.com/tmac1973/haruspex/issues/1277)) ([0d2daf1](https://github.com/tmac1973/haruspex/commit/0d2daf1b2d62273f4573db808f91417fe590a9d0)), closes [#1276](https://github.com/tmac1973/haruspex/issues/1276)
+* **email:** dark text in the Review email preview whatever the theme ([#1236](https://github.com/tmac1973/haruspex/issues/1236)) ([6c3ff3e](https://github.com/tmac1973/haruspex/commit/6c3ff3e9fc56d6dbb7a82de74edaf213c71fb339))
+* **jobs:** let home card jobs use free parallel slots, say "waiting for model" ([#1257](https://github.com/tmac1973/haruspex/issues/1257)) ([ddfcd19](https://github.com/tmac1973/haruspex/commit/ddfcd1972da4162103e31f3a81d47fc09bbf4d50))
+* **notebooks:** a card drag no longer drops its id into text fields ([#1275](https://github.com/tmac1973/haruspex/issues/1275)) ([a3db3ed](https://github.com/tmac1973/haruspex/commit/a3db3ede25fc845433cfc1e20c2caf414bf240b5))
+* **notebooks:** drag auto-scroll found the wrong scroller ([#1274](https://github.com/tmac1973/haruspex/issues/1274)) ([926d15e](https://github.com/tmac1973/haruspex/commit/926d15ef2be71dfcd1dba4847d6c6d5506e8f01f))
+* **notebooks:** give notebook chat its own step limit, and stop the wrap-up claiming unsaved changes ([#1234](https://github.com/tmac1973/haruspex/issues/1234)) ([1a48b9d](https://github.com/tmac1973/haruspex/commit/1a48b9db021dc754fbe438e2029de9ebaba5d8d2))
+* **notebooks:** let the chat panel give way in a narrow window ([#1281](https://github.com/tmac1973/haruspex/issues/1281)) ([9ec1504](https://github.com/tmac1973/haruspex/commit/9ec15041f07dc95eb5cf763476b9ef91f4326625))
+* **notebooks:** scroll the list while dragging a card near its edge ([#1273](https://github.com/tmac1973/haruspex/issues/1273)) ([8d0ada9](https://github.com/tmac1973/haruspex/commit/8d0ada9d4e9114eafdf1d812bb592bef3cdec266))
+* **sandbox:** mute matplotlib's float x/y deprecation warning ([#1264](https://github.com/tmac1973/haruspex/issues/1264)) ([2bfa368](https://github.com/tmac1973/haruspex/commit/2bfa3685c477fda9831f42556dbed9b238e429fd))
+* **sandbox:** restore Python sessions from saved steps, load packages quietly ([#1270](https://github.com/tmac1973/haruspex/issues/1270)) ([6144d1d](https://github.com/tmac1973/haruspex/commit/6144d1d6cc4ffeea8828551e93fc865594cbd767))
+* **sandbox:** restore without side effects, save failed runs' files, honest retries and timeouts ([#1267](https://github.com/tmac1973/haruspex/issues/1267)) ([60231f5](https://github.com/tmac1973/haruspex/commit/60231f55f295da67aaead43e16820dbba0ef1b0c))
+* surface comfyui node errors, skip models that can't start, and stop empty feedback reports ([#1246](https://github.com/tmac1973/haruspex/issues/1246)) ([feb7cc5](https://github.com/tmac1973/haruspex/commit/feb7cc5f0f1b9bdcc095fb860b421970278dc4ec)), closes [#1242](https://github.com/tmac1973/haruspex/issues/1242)
+* **video:** convert a clip for upscaling at a constant frame rate ([#1279](https://github.com/tmac1973/haruspex/issues/1279)) ([be9b101](https://github.com/tmac1973/haruspex/commit/be9b101324e962c3c874247198244af9355a6046))
+* **videogen:** tell the model each video model's longest clip, and plan LTX clips in steps of 8 ([#1226](https://github.com/tmac1973/haruspex/issues/1226)) ([5e56f37](https://github.com/tmac1973/haruspex/commit/5e56f37166d68a21bf58286f1db5a95c8397bde1))
+* **video:** pass on comfyui's own error, decode clips in tiles, probe video models added over the api ([#1251](https://github.com/tmac1973/haruspex/issues/1251)) ([726dd34](https://github.com/tmac1973/haruspex/commit/726dd347e6dcad35992f81f784fef6a0e95a1727))
+* **web:** skip ddg ads, proxy browser search, clearer fetch errors, page titles and links, json fields ([#1250](https://github.com/tmac1973/haruspex/issues/1250)) ([ec329b5](https://github.com/tmac1973/haruspex/commit/ec329b5d1846a7c12db7a704ddb0ba5d123a6f62))
+
+
+### Performance Improvements
+
+* **sandbox:** lean worker boot, side-effect-free import check, offline bokeh ([#1269](https://github.com/tmac1973/haruspex/issues/1269)) ([2f09eb6](https://github.com/tmac1973/haruspex/commit/2f09eb6597804532cf02d8ae03619af2f7dede40)), closes [#1268](https://github.com/tmac1973/haruspex/issues/1268)
+
+
+### Code Refactoring
+
+* **image:** remove the single-backend image settings ([#1221](https://github.com/tmac1973/haruspex/issues/1221)) ([8fa1e08](https://github.com/tmac1973/haruspex/commit/8fa1e08f87191b93f68854e20afda6f8631312d2))
+
+
+### Documentation
+
+* **plan:** 3d delegate, replacing specialists ([#1245](https://github.com/tmac1973/haruspex/issues/1245)) ([56d3bca](https://github.com/tmac1973/haruspex/commit/56d3bca902f54850cdf4b63ef54e0f0368f290b3))
+
 ## [0.2.24](https://github.com/tmac1973/haruspex/compare/v0.2.23...v0.2.24) (2026-11-24)
 
 
