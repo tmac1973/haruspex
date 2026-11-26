@@ -488,29 +488,9 @@ describe('upscaling a clip', () => {
 		};
 	}
 
-	it('says the server can upscale, and lists its upscalers with their measured size', async () => {
+	it("says nothing of its server's upscalers: those are in Settings → Video generation → Upscalers", async () => {
 		use(upscaleRoutes());
-		const caps = await backend().capabilities();
-		expect(caps.upscale).toBe(true);
-		const ups = backend().upscalers!();
-		expect(ups.map((u) => [u.id, u.limits.scale])).toEqual([
-			['relayvsr-x2', 2],
-			['relayvsr-x4', 4],
-			['seedvr2-3b', 2],
-			['seedvr2-7b-sharp', 2]
-		]);
-		expect(ups[1].limits).toMatchObject({
-			script: 'relayvsr',
-			measuredWidth: 512,
-			measuredHeight: 288,
-			measuredFrames: 81,
-			maxDecodedBytes: 268435456
-		});
-	});
-
-	it('says no upscale on a server with none', async () => {
-		use(jobRoutes());
-		expect((await backend().capabilities()).upscale).toBe(false);
+		expect(await backend().capabilities()).not.toHaveProperty('upscale');
 	});
 
 	it('sends the clip from the cache as a form, follows the job and keeps the result', async () => {

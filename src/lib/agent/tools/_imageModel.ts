@@ -11,6 +11,7 @@
 
 import type { ToolDefinition } from '#lib/api.ts';
 import { entryNamesFor, imageEntries } from '#lib/image/entries.ts';
+import { upscalerEntries } from '#lib/upscale/entries.ts';
 
 type Properties = Record<string, Record<string, unknown>>;
 
@@ -28,7 +29,10 @@ export function namedModel(args: Record<string, unknown>): string | undefined {
 
 /** What the schemas depend on: the models' names and what each can do. */
 function modelsKey(): string {
-	return JSON.stringify(imageEntries().map((e) => [e.name, e.caps]));
+	return JSON.stringify([
+		imageEntries().map((e) => [e.name, e.caps]),
+		upscalerEntries('image').map((e) => e.name)
+	]);
 }
 
 const built = new Map<string, { key: string; schema: ToolDefinition | null }>();

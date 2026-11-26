@@ -5,6 +5,7 @@
 	 * (`#lib/videogen/route.ts`). One row's editor is open at a time.
 	 */
 	import GenerationModelList from '#lib/components/settings/GenerationModelList.svelte';
+	import UpscalerSection from '#lib/components/settings/UpscalerSection.svelte';
 	import VideoEntryEditor from '#lib/components/settings/VideoEntryEditor.svelte';
 	import { toolchestHint, inferenceToolchest } from '#lib/toolchest/detect.ts';
 	import { hostOf } from '#lib/toolchest/client.ts';
@@ -83,6 +84,8 @@
 		<button onclick={add}>Add model</button>
 	</div>
 </section>
+
+<UpscalerSection kind="video" />
 
 <style>
 	.actions {

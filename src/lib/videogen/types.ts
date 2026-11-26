@@ -33,8 +33,6 @@ export interface VideoCaps {
 	licence: string;
 	/** Null when the licence isn't one Haruspex knows. */
 	commercialUse: boolean | null;
-	/** Its server has a video upscaler (`upscale_video`). Absent means no. */
-	upscale?: boolean;
 }
 
 /** One video model on one server, as Settings → Video generation keeps it. */
@@ -69,7 +67,7 @@ export interface VideoRequest {
 	followAudio?: boolean;
 }
 
-/** A video upscaler on a video model's server, and what it takes. */
+/** A video upscaler on a server, and what it takes. */
 export interface VideoUpscaler {
 	/** The instance id: what a request's `model` names. */
 	id: string;
@@ -91,7 +89,7 @@ export interface VideoUpscaleRequest {
 	/** What the player and a saved file are called. */
 	title: string;
 	input: UpscaleClip;
-	/** The upscaler instance on the entry's server. */
+	/** The upscaler instance on its entry's server. */
 	upscaler: string;
 	scale: number;
 	seed: number;

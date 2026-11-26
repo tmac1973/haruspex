@@ -5,6 +5,7 @@
  * built from an entry (`#lib/image/registry.ts`).
  */
 
+import { upscalerEntries } from '#lib/upscale/entries.ts';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import type { ImageBackendCapabilities, ImageModelEntry } from '#lib/image/types.ts';
 import type { ImageJobHandle } from '#lib/image/backend.ts';
@@ -40,9 +41,19 @@ export function entryNames(): string[] {
  * probe found can't edit isn't offered for edits. Every model draws.
  */
 export function entryNamesFor(op: 'draw' | 'edit' | 'upscale'): string[] {
-	return imageEntries()
-		.filter((e) => op === 'draw' || !e.caps || !!e.caps[op])
+	const models = imageEntries()
+		.filter((e) => (op === 'upscale' ? modelUpscales(e) : op === 'draw' || !e.caps || !!e.caps[op]))
 		.map((e) => e.name);
+	return op === 'upscale' ? [...upscalerEntries('image').map((e) => e.name), ...models] : models;
+}
+
+/**
+ * An image model that upscales with its own server's upscaler, or may (no
+ * probe has said): the bundled engine, ComfyUI and Lemonade. A toolchest
+ * server's upscalers are entries of their own in Settings → Image → Upscalers.
+ */
+export function modelUpscales(e: ImageModelEntry): boolean {
+	return e.backend !== 'llama-toolchest' && (!e.caps || !!e.caps.upscale);
 }
 
 /** The pictures one edit took before models said: what an unprobed one is assumed to take. */
@@ -60,8 +71,14 @@ export function maxEditPictures(): number {
 	return Math.max(0, ...each);
 }
 
-/** Some image model can `op`, or may: one no probe has answered for counts. */
+/**
+ * Some image model can `op`, or may: one no probe has answered for counts.
+ * For an upscale, so does an upscaler in the list.
+ */
 export function anyEntryCan(op: 'edit' | 'upscale'): boolean {
+	if (op === 'upscale') {
+		return upscalerEntries('image').length > 0 || imageEntries().some(modelUpscales);
+	}
 	return imageEntries().some((e) => !e.caps || !!e.caps[op]);
 }
 

@@ -6,6 +6,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import ImageEntryEditor from '#lib/components/settings/ImageEntryEditor.svelte';
 	import GenerationModelList from '#lib/components/settings/GenerationModelList.svelte';
+	import UpscalerSection from '#lib/components/settings/UpscalerSection.svelte';
 	import { toolchestHint, inferenceToolchest } from '#lib/toolchest/detect.ts';
 	import { hostOf } from '#lib/toolchest/client.ts';
 	import {
@@ -100,6 +101,8 @@
 		<button onclick={add}>Add model</button>
 	</div>
 </section>
+
+<UpscalerSection kind="image" />
 
 <style>
 	.actions {

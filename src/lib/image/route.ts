@@ -55,7 +55,7 @@ export const NO_EXTEND_SENTENCE =
 export const NO_UPSCALE_SENTENCE =
 	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +
 	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image, and ' +
-	'llama-toolchest can with an upscaler instance.';
+	'a llama-toolchest upscaler can, added in Settings → Image → Upscalers.';
 
 /** What `req` needs. */
 export function needOf(req: ImageRequest): ImageNeed {
@@ -103,6 +103,9 @@ export function capableEntries(
 	need: ImageNeed,
 	entries: readonly ImageModelEntry[] = imageEntries()
 ): ImageModelEntry[] {
+	// A toolchest server's upscalers are entries of their own (Settings → Image →
+	// Upscalers), whatever a probe from before that saved on its image model.
+	if (need.op === 'upscale') entries = entries.filter((e) => e.backend !== 'llama-toolchest');
 	const known = entries.filter((e) => e.caps && meetsNeed(e.caps, need));
 	const unknown = entries.filter((e) => !e.caps);
 	return [
@@ -367,8 +370,6 @@ export function routedImageBackend(): ImageBackend {
 			return backendForEntry(first)?.probe() ?? { ok: false, detail: NOT_SET_UP };
 		},
 		generate: async (req: ImageRequest, opts?: GenerateOptions): Promise<ImageResult> =>
-			(await routeImage(needOf(req), (_e, b) => b.generate(req, opts))).value,
-		upscale: async (input, opts) =>
-			(await routeImage(upscaleNeed(), (_e, b) => b.upscale!(input, opts))).value
+			(await routeImage(needOf(req), (_e, b) => b.generate(req, opts))).value
 	};
 }

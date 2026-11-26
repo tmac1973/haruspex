@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ImageModelEntry } from './types';
 
-const state = vi.hoisted(() => ({ models: [] as unknown[] }));
+const state = vi.hoisted(() => ({ models: [] as unknown[], upscalers: [] as unknown[] }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: () => ({ imageModels: state.models }),
+		settings: () => ({ imageModels: state.models, imageUpscalers: state.upscalers }),
 		overDefaults: true
 	})
 );
@@ -37,6 +37,7 @@ const THREE = [
 
 beforeEach(() => {
 	state.models = [];
+	state.upscalers = [];
 });
 
 describe('imageModelsPrompt', () => {
@@ -51,9 +52,20 @@ describe('imageModelsPrompt', () => {
 
 IMAGE MODELS, in the order the image tools use them:
 - Ming-Image 0.1 Design: draws, transparent backgrounds.
-- klein: draws, edits up to 4 pictures, upscales.
+- klein: draws, edits up to 4 pictures.
 - FLUX.3 Image Klein: draws, edits up to 10 pictures.
 - The tools pick the first model that can do the job. Pass \`model\` only when the user names one.`);
+	});
+
+	it('names the upscalers, which upscale_image tries first', () => {
+		state.models = THREE;
+		state.upscalers = [
+			{ name: 'real-esrgan', caps: { scale: 4, limits: null } },
+			{ name: 'esrgan-x2', caps: null }
+		];
+		expect(imageModelsPrompt()).toContain(
+			'- Upscalers, which upscale_image tries first: real-esrgan (×4), esrgan-x2.'
+		);
 	});
 
 	it('goes into a Chat prompt asking for it, and not a lean one', () => {

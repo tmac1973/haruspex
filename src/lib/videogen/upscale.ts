@@ -1,57 +1,56 @@
 /**
- * Which video upscaler makes a clip larger (`upscale_video`): one on the
- * server of a video model in Settings → Video generation. Only llama-toolchest
- * has them (RelayVSR and SeedVR2 instances, `meta.kind: "vupscale"`).
+ * Which video upscaler makes a clip larger (`upscale_video`): one in
+ * Settings → Video generation → Upscalers, a RelayVSR or SeedVR2 instance on
+ * a llama-toolchest server (`meta.kind: "vupscale"`).
  *
- * The upscaler is the one the call names, else the first at the scale asked
- * for that takes a clip this size. Toolchest refuses a clip larger than the
- * one an instance was measured with, and one past stable-diffusion.cpp's
- * decoded-frame limit; this says so before the clip is sent.
+ * The upscaler is the one the call names, else the first in the list at the
+ * scale asked for that takes a clip this size. Toolchest refuses a clip larger
+ * than the one an instance was measured with, and one past
+ * stable-diffusion.cpp's decoded-frame limit; this says so before the clip is
+ * sent.
  */
 
-import { videoEntries } from '#lib/videogen/entries.ts';
-import { readyEntry } from '#lib/videogen/route.ts';
-import { VideoBackendError, type VideoBackend } from '#lib/videogen/backend.ts';
-import { hostOf } from '#lib/toolchest/client.ts';
+import { VideoBackendError } from '#lib/videogen/backend.ts';
+import { ToolchestError, hostOf } from '#lib/toolchest/client.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import type { UpscaleClip, VideoModelEntry, VideoUpscaler } from '#lib/videogen/types.ts';
+import { upscalerEntries, UPSCALERS_SECTION } from '#lib/upscale/entries.ts';
+import { readyUpscaler } from '#lib/upscale/toolchest.ts';
+import type { UpscalerEntry } from '#lib/upscale/types.ts';
+import type { UpscaleClip, VideoUpscaler } from '#lib/videogen/types.ts';
 
 export const NO_VIDEO_UPSCALER =
-	'No video model in Settings → Video generation has a video upscaler. A llama-toolchest ' +
-	'server has one when it runs a RelayVSR or SeedVR2 instance.';
-
-/**
- * Whether an entry may have upscalers: a toolchest one that no probe has
- * said lacks them. Caps saved before upscaling came have no `upscale`.
- */
-export function mayUpscale(e: VideoModelEntry): boolean {
-	return e.backend === 'llama-toolchest' && e.caps?.upscale !== false;
-}
+	`No video upscaler is set in ${UPSCALERS_SECTION.video}. A llama-toolchest server ` +
+	'has one when it runs a RelayVSR or SeedVR2 instance.';
 
 export function anyVideoUpscaler(): boolean {
-	return videoEntries().some(mayUpscale);
+	return upscalerEntries('video').length > 0;
 }
 
-export interface RoutedUpscale {
-	entry: VideoModelEntry;
-	backend: VideoBackend;
-	upscalers: VideoUpscaler[];
+/** A video upscaler in the list, read from its server just now. */
+export interface ListedUpscaler extends VideoUpscaler {
+	entry: UpscalerEntry;
 }
 
-/** The first video model whose server has an upscaler, probed; or why there is none. */
-export async function routeUpscale(signal?: AbortSignal): Promise<RoutedUpscale> {
+/**
+ * The list's upscalers whose servers answer, in order; or why none does.
+ */
+export async function routeUpscale(signal?: AbortSignal): Promise<ListedUpscaler[]> {
+	const entries = upscalerEntries('video');
+	if (entries.length === 0) throw new VideoBackendError('unconfigured', NO_VIDEO_UPSCALER);
+	const ready: ListedUpscaler[] = [];
 	const reasons: string[] = [];
-	for (const entry of videoEntries().filter(mayUpscale)) {
+	for (const entry of entries) {
 		try {
-			const { backend, caps } = await readyEntry(entry, signal);
-			const upscalers = caps.upscale ? (backend.upscalers?.() ?? []) : [];
-			if (upscalers.length > 0) return { entry, backend, upscalers };
+			const { instance } = await readyUpscaler('video', entry, signal);
+			if (instance.vupscale) ready.push({ id: instance.id, limits: instance.vupscale, entry });
 		} catch (e) {
-			if (e instanceof VideoBackendError && e.kind === 'cancelled') throw e;
+			if (signal?.aborted || (e instanceof ToolchestError && e.kind === 'cancelled')) {
+				throw new VideoBackendError('cancelled', 'Cancelled.');
+			}
 			reasons.push(`${entry.name} (${hostOf(entry.url)}): ${errMessage(e).replace(/\.$/, '')}`);
 		}
 	}
-	if (reasons.length === 0) throw new VideoBackendError('unconfigured', NO_VIDEO_UPSCALER);
+	if (ready.length > 0) return ready;
 	throw new VideoBackendError(
 		'unreachable',
 		`No video upscaler could be reached: ${reasons.join('; ')}.`
@@ -72,7 +71,7 @@ export function clipRefusal(clip: UpscaleClip, up: VideoUpscaler): string | null
 	if (l.measuredWidth && l.measuredHeight && (w > l.measuredWidth || h > l.measuredHeight)) {
 		const turned = w <= l.measuredHeight && h <= l.measuredWidth;
 		return (
-			`${up.id} takes clips up to ${l.measuredWidth}×${l.measuredHeight}; this one is ${w}×${h}.` +
+			`${nameOf(up)} takes clips up to ${l.measuredWidth}×${l.measuredHeight}; this one is ${w}×${h}.` +
 			(turned
 				? ' A portrait clip needs the instance measured for portrait in llama-toolchest.'
 				: ' Make it smaller first, or measure the instance for a larger clip in llama-toolchest.')
@@ -80,29 +79,36 @@ export function clipRefusal(clip: UpscaleClip, up: VideoUpscaler): string | null
 	}
 	if (l.measuredFrames && f > l.measuredFrames) {
 		return (
-			`${up.id} takes up to ${l.measuredFrames} frames; this clip has ${f}. Cut it into parts ` +
+			`${nameOf(up)} takes up to ${l.measuredFrames} frames; this clip has ${f}. Cut it into parts ` +
 			'with the video tools, or measure the instance for longer clips in llama-toolchest.'
 		);
 	}
 	return null;
 }
 
+/** What the call names an upscaler by: its name in the list, else its instance. */
+function nameOf(u: VideoUpscaler): string {
+	return 'entry' in u ? (u as ListedUpscaler).entry.name : u.id;
+}
+
 /** "relayvsr-x2 (×2), seedvr2-3b (×2)": the upscalers, for a sentence. */
 export function upscalerList(ups: VideoUpscaler[]): string {
-	return ups.map((u) => `${u.id} (×${u.limits.scale})`).join(', ');
+	return ups.map((u) => `${nameOf(u)} (×${u.limits.scale})`).join(', ');
 }
 
 /**
  * The upscaler for `clip`: the one `named`, or the first at `scale` (else
  * the smallest scale there is) that takes it. Or why none will.
  */
-export function pickUpscaler(
-	ups: VideoUpscaler[],
+export function pickUpscaler<U extends VideoUpscaler>(
+	ups: U[],
 	clip: UpscaleClip,
 	opts: { named?: string; scale?: number } = {}
-): VideoUpscaler | string {
+): U | string {
 	if (opts.named) {
-		const up = ups.find((u) => u.id === opts.named);
+		const want = opts.named.trim().toLowerCase();
+		const up =
+			ups.find((u) => nameOf(u).toLowerCase() === want) ?? ups.find((u) => u.id === opts.named);
 		if (!up)
 			return `There is no video upscaler called ${opts.named}. There are: ${upscalerList(ups)}.`;
 		return clipRefusal(clip, up) ?? up;
