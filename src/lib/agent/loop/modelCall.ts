@@ -87,20 +87,36 @@ export function reportCall(
 }
 
 /**
- * Log how much of the prompt llama-server read again, when it said. A trim or
- * fit that rewrites an early message makes the next call re-read everything
- * after it — on the hybrid Qwen models, the whole prompt — and this line beside
- * the trim's own log line is how that cost is measured.
+ * How much of a call's prompt the server took from its cache, from either
+ * field a server may report it in: `usage.prompt_tokens_details.cached_tokens`
+ * (llama-server, vLLM, OpenRouter) or llama-server's older `timings`. Null
+ * when it reported neither.
+ *
+ * A trim or fit that rewrites an early message makes the next call read
+ * everything after it again — on the hybrid Qwen models, the whole prompt —
+ * so this, logged beside the trim's own line, is that cost.
  */
+export function promptCacheFigures(
+	usage: Usage
+): { prompt: number; cached: number; processed: number; ms?: number } | null {
+	const cached = usage.prompt_tokens_details?.cached_tokens ?? usage.timings?.cache_n;
+	if (cached === undefined) return null;
+	const processed = usage.timings?.prompt_n ?? usage.prompt_tokens - cached;
+	const ms = usage.timings?.prompt_ms;
+	return {
+		prompt: usage.prompt_tokens,
+		cached,
+		processed,
+		...(ms === undefined ? {} : { ms: Math.round(ms) })
+	};
+}
+
 function logPromptCache(usage: Usage): void {
-	const t = usage.timings;
-	if (t?.prompt_n === undefined) return;
-	logDebug('agent', 'prompt cache', {
-		promptTokens: usage.prompt_tokens,
-		cached: t.cache_n ?? 0,
-		processed: t.prompt_n,
-		promptMs: t.prompt_ms === undefined ? undefined : Math.round(t.prompt_ms)
-	});
+	const figures = promptCacheFigures(usage);
+	// No key here may contain "token": the log's secret redaction takes a
+	// compact JSON line for one `key:value` word and blanks the last value
+	// when the text before it names a token.
+	if (figures) logDebug('agent', 'prompt cache', figures);
 }
 
 export function samplingOptionsFor(ctx: LoopContext, messages: ChatMessage[]): SamplingOptions {

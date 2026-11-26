@@ -311,6 +311,11 @@ export interface Usage {
 	 * silent — see `reportCall`.
 	 */
 	completion_tokens_details?: { reasoning_tokens?: number };
+	/**
+	 * Prompt tokens the server served from its cache. llama-server, vLLM and
+	 * OpenRouter report it here; older llama-server builds only in `timings`.
+	 */
+	prompt_tokens_details?: { cached_tokens?: number };
 	/** What the call cost in USD. OpenRouter reports it; others don't. */
 	cost?: number;
 	/** llama-server's prompt timings, when it sent them. See `PromptTimings`. */
