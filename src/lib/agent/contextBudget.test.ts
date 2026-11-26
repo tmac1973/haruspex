@@ -451,6 +451,55 @@ describe('fitMessagesToBudget', () => {
 		expect(estimateMessagesTokens(msgs)).toBeLessThanOrEqual(8192 - 2048);
 	});
 
+	it('keeps a parallel round of tool calls whole when it drops turns', () => {
+		// One round of nine reads, as the model sends them in parallel: one
+		// assistant message carrying every call, then the nine results. Only
+		// the results fit in the protected tail, so the calls message was
+		// dropped as an old turn and every result went with it as an orphan —
+		// the model saw none of its reads and read them all again, round after
+		// round (#1022).
+		const ids = Array.from({ length: 9 }, (_, i) => `read_${i}`);
+		const msgs: ChatMessage[] = [
+			// A Code system prompt and tool list run to about 10K tokens.
+			sys('p'.repeat(35_000)),
+			user('Read every file, then summarise them.'),
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{ id: 'ls', type: 'function', function: { name: 'fs_list_dir', arguments: '{}' } }
+				]
+			},
+			tool('a.py b.py c.py', 'ls'),
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: ids.map((id) => ({
+					id,
+					type: 'function' as const,
+					function: { name: 'fs_read_text', arguments: `{"path":"${id}.py"}` }
+				}))
+			},
+			...ids.map((id) => tool(`${id} `.repeat(3_000), id))
+		];
+		// A Code turn reserves the file-write cap, half of a 64K window.
+		const info = fitMessagesToBudget(msgs, 65536, { reserveOutput: 32768 });
+		expect(info).not.toBeNull();
+		const calls = msgs.find((m) => m.tool_calls?.length === 9);
+		expect(calls).toBeDefined();
+		// Every read is still answered — whole, cut or stubbed, but there.
+		for (const id of ids) {
+			expect(msgs.some((m) => m.role === 'tool' && m.tool_call_id === id)).toBe(true);
+		}
+		// The newest reads keep text the model can use, not just stubs.
+		const whole = msgs.filter(
+			(m) => m.role === 'tool' && !String(m.content).startsWith('[Trimmed:')
+		);
+		expect(whole.length).toBeGreaterThan(0);
+		expect(msgs.some((m) => m.role === 'user')).toBe(true);
+		expect(estimateMessagesTokens(msgs)).toBeLessThanOrEqual((65536 - 32768) / 1.5);
+	});
+
 	it('removes tool results orphaned by dropped turns', () => {
 		const msgs: ChatMessage[] = [sys('p')];
 		// Old assistant tool call + result that will be dropped, then many turns.

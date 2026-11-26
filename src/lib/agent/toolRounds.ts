@@ -1,0 +1,45 @@
+/**
+ * Rounds of tool calls in a message list: an assistant message carrying
+ * `tool_calls`, and the `tool` messages that answer them. Whatever removes
+ * messages has to keep the two together.
+ */
+
+import type { ChatMessage } from '#lib/api.ts';
+
+/** `idx` and what goes with it: a tool call's message and all its results. */
+export function droppingUnit(messages: ChatMessage[], idx: number): number[] {
+	let callIdx = idx;
+	const id = messages[idx].tool_call_id;
+	if (messages[idx].role === 'tool' && id) {
+		callIdx = messages.findLastIndex((m, i) => i < idx && !!m.tool_calls?.some((c) => c.id === id));
+		if (callIdx < 0) return [idx];
+	}
+	const ids = new Set((messages[callIdx].tool_calls ?? []).map((c) => c.id));
+	if (ids.size === 0) return [idx];
+	const unit = [callIdx];
+	for (let i = callIdx + 1; i < messages.length; i++) {
+		const answers = messages[i].tool_call_id;
+		if (messages[i].role === 'tool' && answers && ids.has(answers)) unit.push(i);
+	}
+	return unit;
+}
+
+/**
+ * Remove tool messages whose matching assistant tool_call was dropped —
+ * an orphaned tool result with no preceding call can be rejected by
+ * strict servers.
+ */
+export function sanitizeOrphanToolResults(messages: ChatMessage[]): void {
+	const validIds = new Set<string>();
+	for (const m of messages) {
+		if (m.role === 'assistant' && m.tool_calls) {
+			for (const tc of m.tool_calls) validIds.add(tc.id);
+		}
+	}
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role === 'tool' && m.tool_call_id && !validIds.has(m.tool_call_id)) {
+			messages.splice(i, 1);
+		}
+	}
+}

@@ -22,6 +22,7 @@
 
 import { holdsSkillContent } from '#lib/skills/content.ts';
 import { messageText, type ChatMessage, type ToolDefinition } from '#lib/api.ts';
+import { droppingUnit, sanitizeOrphanToolResults } from '#lib/agent/toolRounds.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 
 // Bytes per token. Real English is ~4 bytes/token; dividing by a smaller
@@ -505,22 +506,10 @@ function dropOldestTurns(
 	const latestUser = messages.findLastIndex(
 		(m) => m.role === 'user' && m.content !== DROPPED_TURNS_NOTE
 	);
-	const droppable = nonSystemIdx
-		.slice(0, nonSystemIdx.length - protectedCount)
-		.filter((i) => i !== latestUser);
-	const toRemove = new Set<number>();
-	let dropped = 0;
-	// The estimate is a plain sum of per-message costs (plus a constant
-	// tools term), so keep a running subtotal and subtract each dropped
-	// message instead of re-estimating the survivors every iteration
-	// (which was O(n²) in conversation length).
-	let running = estimateMessagesTokens(messages, tools);
-	for (const idx of droppable) {
-		if (running <= target) break;
-		toRemove.add(idx);
-		running -= messageTokens(messages[idx]);
-		dropped++;
-	}
+	const keep = new Set(nonSystemIdx.slice(nonSystemIdx.length - protectedCount));
+	if (latestUser >= 0) keep.add(latestUser);
+	const toRemove = pickDrops(messages, nonSystemIdx, keep, target, tools);
+	const dropped = toRemove.size;
 	if (dropped === 0) return 0;
 
 	const kept = messages.filter((_, i) => !toRemove.has(i));
@@ -547,23 +536,32 @@ function dropOldestTurns(
 }
 
 /**
- * Remove tool messages whose matching assistant tool_call was dropped —
- * an orphaned tool result with no preceding call can be rejected by
- * strict servers.
+ * The messages to drop, oldest first, until the estimate is under `target`. A
+ * round of tool calls goes whole, and never with any of it in `keep`: dropping
+ * a parallel round's calls message orphaned every result, protected ones too,
+ * and the model read them all again (#1022).
  */
-function sanitizeOrphanToolResults(messages: ChatMessage[]): void {
-	const validIds = new Set<string>();
-	for (const m of messages) {
-		if (m.role === 'assistant' && m.tool_calls) {
-			for (const tc of m.tool_calls) validIds.add(tc.id);
+function pickDrops(
+	messages: ChatMessage[],
+	order: number[],
+	keep: Set<number>,
+	target: number,
+	tools?: ToolDefinition[]
+): Set<number> {
+	const toRemove = new Set<number>();
+	// A running subtotal: re-estimating the survivors each pass was O(n²).
+	let running = estimateMessagesTokens(messages, tools);
+	for (const idx of order) {
+		if (running <= target) break;
+		if (toRemove.has(idx)) continue;
+		const unit = droppingUnit(messages, idx);
+		if (unit.some((i) => keep.has(i))) continue;
+		for (const i of unit) {
+			toRemove.add(i);
+			running -= messageTokens(messages[i]);
 		}
 	}
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const m = messages[i];
-		if (m.role === 'tool' && m.tool_call_id && !validIds.has(m.tool_call_id)) {
-			messages.splice(i, 1);
-		}
-	}
+	return toRemove;
 }
 
 const REMOVED = '[Removed to fit context.]';
