@@ -289,6 +289,18 @@ jobs:
           sudo glib-compile-schemas /usr/share/glib-2.0/schemas
           sudo gio-querymodules /usr/lib/x86_64-linux-gnu/gio/modules
           sudo /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders --update-cache
+      # The cache holds only what apt newly installed, so it carries
+      # libegl-mesa0 but not the rest of Mesa the image already had. Restored
+      # onto an image with an older Mesa, the two halves disagree and WebKit
+      # aborts with "Could not create default EGL display". Bring every Mesa
+      # package to the archive's one version; on a matching image it's a no-op.
+      - name: Match Mesa to the restored libEGL
+        if: steps.apt-install.outputs.cache-hit == 'true'
+        run: |
+          pkgs=$(apt-cache policy libegl-mesa0 libgbm1 libgl1-mesa-dri libglx-mesa0 mesa-libgallium \
+            | awk '/^[a-z]/ {p=$1} /Candidate:/ && $2 != "(none)" {sub(":$", "", p); print p}')
+          sudo apt-get install -y --no-install-recommends $pkgs
+          dpkg-query -W -f='${Package} ${Version}\n' $pkgs
       - run: scripts/ci-placeholder-sidecars.sh
       - run: npm ci
       - run: cargo install tauri-driver --locked
