@@ -63,7 +63,9 @@ jobs:
           echo "Changed outside prose: ${code:-nothing}"
           if [ -n "$code" ]; then echo code=true; else echo code=false; fi >> "$GITHUB_OUTPUT"
 
-  frontend:
+  # The frontend checks, apart from the unit tests: lint, types, formatting
+  # and the drift guards.
+  frontend-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: changes
@@ -78,7 +80,6 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run check
-      - run: npm run test
       # Regression guard for the chat<->sandbox import cycle fixed in the
       # architecture audit (A1). madge can't resolve the #lib subpath import,
       # so it silently misses these cycles (audit A6) — a grep guard is the
@@ -113,6 +114,46 @@ jobs:
       # when a tag is cut. Checked here so the gap surfaces before the tag.
       - name: Check sidecar release coverage
         run: node scripts/check-sidecar-coverage.mjs
+
+  # Vitest, split by file across runners: one runner took four to six
+  # minutes, longer than any other job. Raise the shard count here alone.
+  frontend-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    name: frontend-test (${{ matrix.shard }}/3)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --shard=${{ matrix.shard }}/3
+
+  # The required check the ruleset names. It passes when every frontend job
+  # passed or was skipped (a prose-only change), and fails otherwise. It must
+  # run `always()`: a job whose needs failed is skipped, and a skipped
+  # required check counts as a pass.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changes, frontend-checks, frontend-test]
+    if: always()
+    steps:
+      - name: Every frontend job passed or was skipped
+        env:
+          RESULTS: ${{ needs.changes.result }} ${{ needs.frontend-checks.result }} ${{ needs.frontend-test.result }}
+        run: |
+          echo "changes, frontend-checks, frontend-test: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success | skipped) ;; *) exit 1 ;; esac
+          done
 
   # UI flows in a real browser, against mocked IPC and the scripted fake LLM
   # (e2e/, docs/testing.md). Inside the pinned Playwright image, so the
