@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
+import type { ViewerImage } from '#lib/stores/imageViewer.svelte.ts';
 import { capableEntries, needOf, routedImageBackend } from '#lib/image/route.ts';
 import { videoSettings } from '#lib/video/args.ts';
 import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
@@ -79,13 +80,13 @@ function depsFor(
 	};
 }
 
-/** Each still as markdown the run view and the question can show, at the video's size. */
+/** Each still as a picture the question and the viewer can show, at the video's size. */
 async function pictures(
 	stills: Still[],
 	files: RunFiles,
 	size: { width: number; height: number }
-): Promise<string> {
-	const out: string[] = [];
+): Promise<ViewerImage[]> {
+	const out: ViewerImage[] = [];
 	for (const s of stills) {
 		const bytes = await files.readBytes(s.file);
 		if (!bytes) continue;
@@ -96,9 +97,14 @@ async function pictures(
 		});
 		const url = registerLocalImage(hash, { mime: 'image/png', ...size });
 		const label = s.n ? `${s.section}, clip ${s.n}` : s.section;
-		if (url) out.push(`![${label}](${url})`);
+		if (url) out.push({ src: url, alt: label });
 	}
-	return out.join('\n\n');
+	return out;
+}
+
+/** The pictures as markdown, for the run view. */
+function picturesMarkdown(pics: ViewerImage[]): string {
+	return pics.map((p) => `![${p.alt}](${p.src})`).join('\n\n');
 }
 
 /** Make the run's stills; returns them for the Generate stage. */
@@ -136,7 +142,10 @@ export async function keyframesStage(
 		files,
 		size
 	);
-	steps.finish(KEYFRAMES, [stillsSummary(stills), pics].filter(Boolean).join('\n\n'));
+	steps.finish(
+		KEYFRAMES,
+		[stillsSummary(stills), picturesMarkdown(pics)].filter(Boolean).join('\n\n')
+	);
 	return stills;
 }
 
@@ -156,7 +165,9 @@ async function checkpoint(
 			{
 				runId: ctx.runId,
 				question: 'Every clip starts from these stills. Approve them?',
-				body: await pictures(
+				// A list, not markdown pictures in the body: a long sequence has
+				// dozens of stills, and full-width pictures would bury the options.
+				images: await pictures(
 					stills.filter((s) => s.how !== 'reused'),
 					files,
 					size

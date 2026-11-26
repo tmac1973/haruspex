@@ -7,14 +7,19 @@ import {
 	cancelUserQuestion,
 	getPendingQuestion
 } from '#lib/stores/userQuestion.svelte.ts';
-import { closeImageViewer, openImageViewer } from '#lib/stores/imageViewer.svelte.ts';
+import {
+	closeImageViewer,
+	getImageViewer,
+	openImageViewer,
+	type ViewerImage
+} from '#lib/stores/imageViewer.svelte.ts';
 
 afterEach(() => {
 	closeImageViewer();
 	cancelUserQuestion();
 });
 
-async function ask(req: { question: string; body?: string }) {
+async function ask(req: { question: string; body?: string; images?: ViewerImage[] }) {
 	render(UserQuestionModal);
 	askUserQuestion({ ...req, options: [{ label: 'Approve' }] }).catch(() => {});
 	await tick();
@@ -42,6 +47,38 @@ describe('UserQuestionModal', () => {
 		await ask({ question: 'Pick one', body: 'hi <script>window.__pwned = 1</script>' });
 		expect(document.querySelector('.qbody-text script')).toBeNull();
 		expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+	});
+});
+
+describe('UserQuestionModal with pictures', () => {
+	const stills = [
+		{ src: 'haruspex-img://localhost/a', alt: 'snow' },
+		{ src: 'haruspex-img://localhost/b', alt: 'forest' },
+		{ src: 'haruspex-img://localhost/c', alt: 'forest, clip 9' }
+	];
+
+	it('shows the stills as thumbnails, and opens the viewer at the one clicked', async () => {
+		await ask({ question: 'Approve them?', images: stills });
+		const thumbs = document.querySelectorAll('.strip img');
+		expect([...thumbs].map((t) => t.getAttribute('alt'))).toEqual([
+			'snow',
+			'forest',
+			'forest, clip 9'
+		]);
+		await fireEvent.click(screen.getByRole('button', { name: 'View forest' }));
+		expect(getImageViewer()?.index).toBe(1);
+		expect(getImageViewer()?.images).toHaveLength(3);
+	});
+
+	it('opens the viewer on the first still from its button', async () => {
+		await ask({ question: 'Approve them?', images: stills });
+		await fireEvent.click(screen.getByRole('button', { name: 'View all 3 stills' }));
+		expect(getImageViewer()?.index).toBe(0);
+	});
+
+	it('shows no strip without pictures', async () => {
+		await ask({ question: 'Pick one' });
+		expect(document.querySelector('.strip')).toBeNull();
 	});
 });
 

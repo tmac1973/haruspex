@@ -27,7 +27,7 @@
 		resolveUserQuestion,
 		cancelUserQuestion
 	} from '#lib/stores/userQuestion.svelte.ts';
-	import { isImageViewerOpen } from '#lib/stores/imageViewer.svelte.ts';
+	import { isImageViewerOpen, openImageViewer } from '#lib/stores/imageViewer.svelte.ts';
 
 	const pending = $derived(getPendingQuestion());
 
@@ -140,6 +140,27 @@
 					<!-- Sanitised by renderMarkdown, as chat answers are. -->
 					<div class="qbody-text markdown">{@html renderMarkdown(pending.body)}</div>
 				{/if}
+				{#if pending.images?.length}
+					{@const images = pending.images}
+					<!-- Small and capped: a long sequence has dozens of stills, and the
+					     options must stay in reach. The viewer shows them full size. -->
+					<div class="strip">
+						{#each images as img, i (i)}
+							<button
+								type="button"
+								class="thumb"
+								title={img.alt}
+								aria-label="View {img.alt}"
+								onclick={() => openImageViewer(images, i)}
+							>
+								<img src={img.src} alt={img.alt} />
+							</button>
+						{/each}
+					</div>
+					<button type="button" class="view-all" onclick={() => openImageViewer(images, 0)}>
+						View {images.length === 1 ? 'still' : `all ${images.length} stills`}
+					</button>
+				{/if}
 				{#if pending.allowMultiple}
 					<p class="hint">Tick all that apply.</p>
 				{/if}
@@ -208,6 +229,52 @@
 </Modal>
 
 <style>
+	.strip {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 0.25rem 0 0.5rem;
+		/* Three rows of thumbnails, then the strip scrolls on its own. */
+		max-height: calc(3 * 64px + 2 * 6px);
+		overflow-y: auto;
+	}
+
+	.thumb {
+		height: 64px;
+		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: none;
+		cursor: zoom-in;
+		overflow: hidden;
+	}
+
+	.thumb:hover,
+	.thumb:focus-visible {
+		border-color: var(--accent);
+	}
+
+	.thumb img {
+		display: block;
+		height: 100%;
+		width: auto;
+	}
+
+	.view-all {
+		margin-bottom: 0.75rem;
+		padding: 6px 12px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text-primary);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.view-all:hover {
+		border-color: var(--accent);
+	}
+
 	.qbody-text {
 		font-size: 0.9rem;
 		font-weight: normal;
