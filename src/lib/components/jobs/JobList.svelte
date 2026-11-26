@@ -14,7 +14,17 @@
 </script>
 
 <script lang="ts">
-	import { getJobs, storedScheduleLabel, type JobSummary } from '#lib/stores/jobs.svelte.ts';
+	import {
+		deleteJob,
+		duplicateJob,
+		getJobs,
+		storedScheduleLabel,
+		type JobSummary
+	} from '#lib/stores/jobs.svelte.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { rowMenu } from '#lib/actions/rowMenu.ts';
+	import type { RowMenuItem } from '#lib/stores/rowMenu.svelte.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import {
 		getActiveRuns,
 		getOneRunAtATime,
@@ -49,9 +59,11 @@
 		onselect: (id: number | 'new') => void;
 		/** Asks the tab to run this job — it may prompt about unsaved edits first. */
 		onrun: (jobId: number) => void;
+		/** A job deleted from its row menu. */
+		ondeleted?: (jobId: number) => void;
 	}
 
-	const { selectedId, onselect, onrun }: Props = $props();
+	const { selectedId, onselect, onrun, ondeleted = () => {} }: Props = $props();
 
 	const runningRuns = $derived(getActiveRuns().filter((r) => r.status === 'running'));
 	const running = $derived(runningRuns.length > 0);
@@ -75,6 +87,62 @@
 	}
 
 	const jobs = $derived(getJobs());
+
+	/** Why a job can't run now, or null when it can. */
+	function runBlocker(job: JobSummary): string | null {
+		if (!isJobTypeAvailable(job.job_type)) return 'This job type is not available on this platform';
+		if (job.step_count === 0 && getJobType(job.job_type)?.hasPlannedSteps !== false)
+			return 'This job has no steps yet';
+		return null;
+	}
+
+	let deleting = $state<JobSummary | null>(null);
+	const deletingStarted = $derived(
+		deleting ? jobs.filter((j) => j.parent_job_id === deleting?.id).length : 0
+	);
+
+	function menuItems(job: JobSummary): RowMenuItem[] {
+		const blocker = runBlocker(job);
+		const isRunning = runningJobIds.has(job.id);
+		return [
+			{
+				label: 'Run now',
+				disabled: blocker !== null,
+				title:
+					blocker ??
+					(pausedByLean(job.job_type)
+						? 'Turn off lean mode in Settings → General to run this'
+						: undefined),
+				run: () => onrun(job.id)
+			},
+			{
+				label: 'Duplicate',
+				title: 'A copy of this job, without its run history',
+				run: () => void duplicate(job.id)
+			},
+			{
+				label: 'Delete…',
+				danger: true,
+				disabled: isRunning,
+				title: isRunning ? 'Cancel or finish its run first' : undefined,
+				run: () => (deleting = job)
+			}
+		];
+	}
+
+	async function duplicate(id: number): Promise<void> {
+		const copy = await duplicateJob(id);
+		if (copy === null) showToast("Couldn't duplicate the job.", { kind: 'error' });
+		else onselect(copy);
+	}
+
+	async function confirmDelete(): Promise<void> {
+		const job = deleting;
+		deleting = null;
+		if (!job) return;
+		if (await deleteJob(job.id)) ondeleted(job.id);
+		else showToast("Couldn't delete the job.", { kind: 'error' });
+	}
 	// Jobs a Home card made, badged so they aren't mistaken for the user's own.
 	const homeJobs = $derived(ownedJobIds());
 	$effect(() => {
@@ -206,8 +274,11 @@
 					style="padding-left: {6 + depth * 16}px"
 					role="button"
 					tabindex="0"
-					title={job.parent_run_id !== null ? `Started by run ${job.parent_run_id}` : undefined}
+					title={job.parent_run_id !== null
+						? `Started by run ${job.parent_run_id}. Right-click to run, duplicate or delete.`
+						: 'Right-click to run, duplicate or delete'}
 					use:activatable={() => onselect(job.id)}
+					use:rowMenu={() => menuItems(job)}
 				>
 					{#if hasChildren}
 						<button
@@ -286,6 +357,20 @@
 		title="Drag to resize"
 	></button>
 </div>
+
+<ConfirmDialog
+	open={deleting !== null}
+	title="Delete job?"
+	message={deleting
+		? `Delete job "${deleting.name}" and its run history? This cannot be undone.` +
+			(deletingStarted > 0
+				? ` The ${deletingStarted === 1 ? 'job' : `${deletingStarted} jobs`} it started will stay.`
+				: '')
+		: ''}
+	confirmLabel="Delete job"
+	onconfirm={() => void confirmDelete()}
+	oncancel={() => (deleting = null)}
+/>
 
 <style>
 	.running-dot {

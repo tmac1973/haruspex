@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import ConversationSidebar from './ConversationSidebar.svelte';
+import { pickFromRowMenu, renderRowMenuHost } from '#lib/testing/rowMenu.ts';
 import {
 	clearAllConversations,
 	deleteConversation,
@@ -89,16 +90,21 @@ beforeEach(() => {
 	vi.mocked(getConversations).mockReturnValue(
 		conversations as unknown as ReturnType<typeof getConversations>
 	);
+	renderRowMenuHost();
 });
 
-function rowDeleteButtons() {
-	return screen.getAllByTitle('Delete conversation');
+function row(title: string): HTMLElement {
+	return screen.getByText(title).closest<HTMLElement>('.conversation-item')!;
+}
+
+async function deleteFromMenu(title: string) {
+	await pickFromRowMenu(row(title), 'Delete…');
 }
 
 describe('ConversationSidebar delete confirmation', () => {
-	it('clicking a row delete opens the dialog without deleting', async () => {
+	it("the row menu's Delete opens the dialog without deleting", async () => {
 		render(ConversationSidebar);
-		await fireEvent.click(rowDeleteButtons()[0]);
+		await deleteFromMenu('First chat');
 		screen.getByText('Delete conversation?');
 		screen.getByText('"First chat" will be permanently deleted.');
 		expect(deleteConversation).not.toHaveBeenCalled();
@@ -106,7 +112,7 @@ describe('ConversationSidebar delete confirmation', () => {
 
 	it('confirming deletes the right conversation and closes the dialog', async () => {
 		render(ConversationSidebar);
-		await fireEvent.click(rowDeleteButtons()[1]);
+		await deleteFromMenu('Second chat');
 		await fireEvent.click(screen.getByText('Delete'));
 		expect(deleteConversation).toHaveBeenCalledTimes(1);
 		expect(deleteConversation).toHaveBeenCalledWith('c2');
@@ -115,7 +121,7 @@ describe('ConversationSidebar delete confirmation', () => {
 
 	it('cancelling leaves everything untouched', async () => {
 		render(ConversationSidebar);
-		await fireEvent.click(rowDeleteButtons()[0]);
+		await deleteFromMenu('First chat');
 		await fireEvent.click(screen.getByText('Cancel'));
 		expect(deleteConversation).not.toHaveBeenCalled();
 		expect(screen.queryByText('Delete conversation?')).toBeNull();
@@ -123,7 +129,7 @@ describe('ConversationSidebar delete confirmation', () => {
 
 	it('Escape cancels without deleting', async () => {
 		render(ConversationSidebar);
-		await fireEvent.click(rowDeleteButtons()[0]);
+		await deleteFromMenu('First chat');
 		await fireEvent.keyDown(window, { key: 'Escape' });
 		expect(deleteConversation).not.toHaveBeenCalled();
 		expect(screen.queryByText('Delete conversation?')).toBeNull();
@@ -145,17 +151,17 @@ describe('ConversationSidebar delete confirmation', () => {
 });
 
 describe('ConversationSidebar rename affordance', () => {
-	it('pencil button enters the inline rename state', async () => {
+	it("the row menu's Rename enters the inline rename state", async () => {
 		render(ConversationSidebar);
-		await fireEvent.click(screen.getAllByLabelText('Rename conversation')[0]);
+		await pickFromRowMenu(row('First chat'), 'Rename');
 		const input = screen.getByDisplayValue('First chat');
 		expect(input).toBeTruthy();
 		expect(renameConversation).not.toHaveBeenCalled();
 	});
 
-	it('pencil-initiated rename commits on Enter', async () => {
+	it('a double-click rename commits on Enter', async () => {
 		render(ConversationSidebar);
-		await fireEvent.click(screen.getAllByLabelText('Rename conversation')[1]);
+		await fireEvent.dblClick(row('Second chat'));
 		const input = screen.getByDisplayValue('Second chat');
 		await fireEvent.input(input, { target: { value: 'Renamed chat' } });
 		await fireEvent.keyDown(input, { key: 'Enter' });
@@ -238,8 +244,9 @@ describe('ConversationSidebar select', () => {
 		peers.list = [peerView('demogorgon')];
 		render(ConversationSidebar);
 		await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
-		// Rows have checkboxes now, and no per-row delete.
-		expect(screen.queryAllByTitle('Delete conversation')).toHaveLength(0);
+		// Rows have checkboxes now, and no row menu.
+		await fireEvent.contextMenu(row('First chat'));
+		expect(screen.queryByRole('menu')).toBeNull();
 
 		await fireEvent.click(screen.getByLabelText('Select First chat'));
 		await fireEvent.click(screen.getByLabelText('Select Plans on demogorgon'), { shiftKey: true });
@@ -272,5 +279,19 @@ describe('ConversationSidebar select', () => {
 		screen.getByRole('button', { name: 'Delete 1' });
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 		expect(screen.queryByLabelText('Select First chat')).toBeNull();
+	});
+});
+
+describe("ConversationSidebar: another computer's chat menu", () => {
+	it('deletes it there after asking, and offers nothing for an offline one', async () => {
+		peers.list = [peerView('demogorgon'), peerView('nas', false)];
+		render(ConversationSidebar);
+		await pickFromRowMenu(row('Plans on demogorgon'), 'Delete…');
+		screen.getByText('"Plans on demogorgon" will be permanently deleted on demogorgon.');
+		await fireEvent.click(screen.getByText('Delete'));
+		expect(remote.deleteRemoteChat).toHaveBeenCalledWith(peers.list[0], 'demogorgon-1');
+
+		await fireEvent.contextMenu(row('Kept on nas'));
+		expect(screen.queryByRole('menu')).toBeNull();
 	});
 });

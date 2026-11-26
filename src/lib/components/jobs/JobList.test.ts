@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import JobList, { _resetForTests } from './JobList.svelte';
+import { pickFromRowMenu, renderRowMenuHost } from '#lib/testing/rowMenu.ts';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, () => {
@@ -43,11 +44,17 @@ const coding = {
 };
 const headlines = { ...job, id: 10, name: 'Morning headlines', description: 'news' };
 
-const store = vi.hoisted(() => ({ jobs: [] as unknown[] }));
+const store = vi.hoisted(() => ({
+	jobs: [] as unknown[],
+	deleteJob: vi.fn<(id: number) => Promise<boolean>>(async () => true),
+	duplicateJob: vi.fn<(id: number) => Promise<number | null>>(async () => 11)
+}));
 
 vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/jobs.svelte.ts')>()),
-	getJobs: () => store.jobs
+	getJobs: () => store.jobs,
+	deleteJob: store.deleteJob,
+	duplicateJob: store.duplicateJob
 }));
 
 const runner = vi.hoisted(() => ({
@@ -223,5 +230,46 @@ describe('JobList', () => {
 	it('has a handle to resize the list', () => {
 		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
 		screen.getByLabelText('Drag to resize');
+	});
+});
+
+describe('JobList row menu', () => {
+	beforeEach(() => {
+		renderRowMenuHost();
+	});
+
+	const row = () => screen.getByText('Hangman plan').closest('.row')!;
+
+	it('duplicates a job and selects the copy', async () => {
+		const onselect = vi.fn();
+		render(JobList, { selectedId: null, onselect, onrun: vi.fn() });
+		await pickFromRowMenu(row(), 'Duplicate');
+		expect(store.duplicateJob).toHaveBeenCalledWith(7);
+		await vi.waitFor(() => expect(onselect).toHaveBeenCalledWith(11));
+	});
+
+	it('deletes a job after asking, and says so', async () => {
+		store.jobs = [job, assets];
+		const ondeleted = vi.fn();
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn(), ondeleted });
+		await pickFromRowMenu(row(), 'Delete…');
+		screen.getByText(/The job it started will stay/);
+		expect(store.deleteJob).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete job' }));
+		expect(store.deleteJob).toHaveBeenCalledWith(7);
+		await vi.waitFor(() => expect(ondeleted).toHaveBeenCalledWith(7));
+	});
+
+	it("won't delete a running job, and runs one through the tab", async () => {
+		store.jobs = [{ ...job, step_count: 2 }];
+		runner.current = { jobId: 7, jobName: 'Hangman plan', status: 'running' };
+		const onrun = vi.fn();
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun });
+		await fireEvent.contextMenu(row());
+		expect((screen.getByRole('menuitem', { name: 'Delete…' }) as HTMLButtonElement).disabled).toBe(
+			true
+		);
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Run now' }));
+		expect(onrun).toHaveBeenCalledWith(7);
 	});
 });

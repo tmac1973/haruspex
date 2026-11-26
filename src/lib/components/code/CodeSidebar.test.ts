@@ -59,6 +59,16 @@ vi.mock('#lib/peers/store.svelte.ts', async (importOriginal) => ({
 }));
 
 import CodeSidebar from './CodeSidebar.svelte';
+import RowMenuHost from '#lib/components/RowMenuHost.svelte';
+
+const remote = vi.hoisted(() => ({
+	deleteRemoteSession: vi.fn(async () => {}),
+	renameRemoteSession: vi.fn(async () => {})
+}));
+vi.mock('#lib/peers/remoteCodeSession.svelte.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/peers/remoteCodeSession.svelte.ts')>()),
+	...remote
+}));
 
 /** Another computer as the sidebar reads it: live lists, or kept ones while offline. */
 function peerView(
@@ -164,10 +174,14 @@ describe('CodeSidebar', () => {
 });
 
 describe('deleting a session', () => {
+	beforeEach(() => {
+		render(RowMenuHost);
+	});
+
 	async function deleteFromMenu(name: string) {
 		const row = await waitFor(() => screen.getByRole('button', { name }));
 		await fireEvent.contextMenu(row);
-		await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }));
 	}
 
 	it('offers to remove the worktree a fork was given, and says what happened', async () => {
@@ -269,5 +283,33 @@ describe('deleting a session', () => {
 		expect(kept.classList.contains('offline')).toBe(true);
 		// In lean mode a computer has no Code sessions to show.
 		expect(screen.queryByRole('region', { name: 'On tablet' })).toBeNull();
+	});
+});
+
+describe("another computer's sessions", () => {
+	beforeEach(() => {
+		render(RowMenuHost);
+	});
+
+	it('renames and deletes one there from its menu', async () => {
+		peers.list = [peerView('demogorgon')];
+		render(CodeSidebar, { onNew: vi.fn() });
+		const row = await waitFor(() => screen.getByRole('button', { name: 'Work on demogorgon' }));
+
+		await fireEvent.contextMenu(row);
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+		const input = screen.getByRole('textbox', { name: 'Session name' });
+		await fireEvent.input(input, { target: { value: 'Ship it' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(remote.renameRemoteSession).toHaveBeenCalledWith(
+			peers.list[0],
+			'demogorgon-1',
+			'Ship it'
+		);
+
+		await fireEvent.contextMenu(screen.getByRole('button', { name: 'Work on demogorgon' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+		expect(remote.deleteRemoteSession).toHaveBeenCalledWith(peers.list[0], 'demogorgon-1');
 	});
 });

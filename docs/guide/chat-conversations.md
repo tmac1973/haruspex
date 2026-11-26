@@ -35,6 +35,7 @@ While any conversation is answering or waiting, the **Chat** tab has a dot too, 
 
 ## Find, tidy and delete conversations
 
+- Right-click a conversation to **Rename** or **Delete…** it; double-click also renames.
 - **Search chats**, above the list, keeps the conversations whose title has every word you type, and the ones where those words were said (yours or an answer; not tool results). It searches your other computers' chats too (see `other-computers`). `Esc` clears it.
 - **Select** puts a checkbox on each row. Click rows to pick them, shift-click to pick a range, or **Select all shown** for everything the search keeps, then **Delete N**. It asks first, saying how many go on each computer. An offline computer's chats can't be picked.
 - **Clear all on this computer** deletes every conversation here. Your other computers' chats stay.

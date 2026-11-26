@@ -418,6 +418,31 @@ export async function startRemoteSession(
 	return openRemoteSession(view, made.id);
 }
 
+/** Rename a session there. */
+export async function renameRemoteSession(
+	view: PeerView,
+	sessionId: string,
+	title: string
+): Promise<void> {
+	await view.client.op({ type: 'session.rename', id: sessionId, title });
+	view.client.refreshListSoon();
+}
+
+/**
+ * Delete a session there, closing its tab here. A worktree it works in
+ * stays: removing one is for the Code tab on that computer.
+ */
+export async function deleteRemoteSession(view: PeerView, sessionId: string): Promise<void> {
+	await view.client.op({ type: 'session.delete', id: sessionId });
+	const id = remoteViewId(view.id, sessionId);
+	const open = getOpenViews().find((v) => v.id === id);
+	if (open instanceof RemoteCodeSession) {
+		unregisterOpenView(id);
+		void open.close();
+	}
+	view.client.refreshListSoon();
+}
+
 /** Close every tab of a computer's sessions: it was removed, or rebuilt. */
 export function closeRemoteSessionsOf(peerId: string): void {
 	for (const v of getOpenViews()) {

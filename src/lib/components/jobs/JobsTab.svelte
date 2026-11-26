@@ -203,7 +203,14 @@
 </script>
 
 <div class="jobs-tab">
-	<JobList {selectedId} onselect={selectJob} onrun={requestRun} />
+	<JobList
+		{selectedId}
+		onselect={selectJob}
+		onrun={requestRun}
+		ondeleted={(id) => {
+			if (selectedId === id) clearSelection();
+		}}
+	/>
 	<div class="center-pane">
 		{#if runLive && !showRunView}
 			<LiveRunBar onopen={() => (runViewOpen = true)} />

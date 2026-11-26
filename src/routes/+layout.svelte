@@ -58,6 +58,7 @@
 	import { startCardWatch } from '#lib/home/cardWatch.svelte.ts';
 	import { startNotebookIndexer } from '#lib/notebooks/indexer.svelte.ts';
 	import NotebookPickerHost from '#lib/components/notebooks/NotebookPickerHost.svelte';
+	import RowMenuHost from '#lib/components/RowMenuHost.svelte';
 	import SelectionMenu from '#lib/components/notebooks/SelectionMenu.svelte';
 	import { startFetchedCards } from '#lib/home/fetchedCards.svelte.ts';
 	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
@@ -971,6 +972,7 @@
 <!-- One picture viewer per window, for any tab or modal that enlarges one. -->
 <ImageViewerHost />
 <NotebookPickerHost />
+<RowMenuHost />
 <SelectionMenu />
 
 <!-- Toast host lives outside the detached-shell branch: each webview

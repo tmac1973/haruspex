@@ -3,7 +3,7 @@
 	 * Saved Code sessions, newest first, each with its folder and when it was
 	 * last active. A folder with several sessions holds them under one row.
 	 * Click opens a session as a sub-tab (or brings forward the window that has
-	 * it); right-click renames or deletes it. A fork shows a branch glyph, and
+	 * it); right-click (or double-click to rename) renames or deletes it. A fork shows a branch glyph, and
 	 * a session open in a window of its own a small window mark, kept current
 	 * from Rust's claim announcements (`code://claims`) rather than polled.
 	 */
@@ -38,6 +38,8 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import { tick } from 'svelte';
 	import { openFile, openFolder } from '#lib/editor/openFiles.ts';
+	import { rowMenu } from '#lib/actions/rowMenu.ts';
+	import type { RowMenuItem } from '#lib/stores/rowMenu.svelte.ts';
 
 	let { onNew }: { onNew: () => void } = $props();
 
@@ -132,7 +134,6 @@
 	}
 
 	// Right-click menu, rename and delete.
-	let menu = $state<{ x: number; y: number; session: CodeSessionSummary } | null>(null);
 	/** The Open menu: any file, or a folder of models, images and sounds. */
 	let modelMenu = $state<{ x: number; y: number } | null>(null);
 
@@ -149,13 +150,21 @@
 	const offeredWorktree = $derived(deleting ? worktreeOffer(deleting, list) : null);
 	let removeWorktree = $state(true);
 
-	function openMenu(e: MouseEvent, session: CodeSessionSummary) {
-		e.preventDefault();
-		menu = { x: e.clientX, y: e.clientY, session };
+	function menuItems(session: CodeSessionSummary): RowMenuItem[] {
+		return [
+			{ label: 'Rename', run: () => void startRename(session) },
+			{
+				label: 'Delete…',
+				danger: true,
+				run: () => {
+					deleting = session;
+					removeWorktree = true;
+				}
+			}
+		];
 	}
 
 	async function startRename(session: CodeSessionSummary) {
-		menu = null;
 		renamingId = session.id;
 		renameText = isUnsetTitle(session.title) ? '' : session.title;
 		await tick();
@@ -238,9 +247,10 @@
 					? ` ${forkedFromTitle(s, list)}.`
 					: ''}{elsewhereIds.has(s.id)
 					? ' Open in its own window; click to bring it forward.'
-					: ''} Right-click to rename or delete."
+					: ''} Right-click to rename or delete; double-click to rename."
 				onclick={() => openOne(s.id)}
-				oncontextmenu={(e) => openMenu(e, s)}
+				ondblclick={() => void startRename(s)}
+				use:rowMenu={() => menuItems(s)}
 			>
 				<span class="name">
 					{#if s.forked_from}<span class="fork" data-testid="fork-glyph">
@@ -262,15 +272,9 @@
 {/snippet}
 
 <svelte:window
-	onclick={() => {
-		menu = null;
-		modelMenu = null;
-	}}
+	onclick={() => (modelMenu = null)}
 	onkeydown={(e) => {
-		if (e.key === 'Escape') {
-			menu = null;
-			modelMenu = null;
-		}
+		if (e.key === 'Escape') modelMenu = null;
 	}}
 />
 
@@ -375,23 +379,6 @@
 			onclick={() => void openFolder()}
 		>
 			Folder…
-		</button>
-	</div>
-{/if}
-
-{#if menu}
-	<div class="menu" role="menu" style="left: {menu.x}px; top: {menu.y}px">
-		<button role="menuitem" onclick={() => menu && startRename(menu.session)}>Rename</button>
-		<button
-			role="menuitem"
-			class="danger"
-			onclick={() => {
-				deleting = menu?.session ?? null;
-				removeWorktree = true;
-				menu = null;
-			}}
-		>
-			Delete
 		</button>
 	</div>
 {/if}
@@ -703,9 +690,5 @@
 
 	.menu button:hover {
 		background: var(--bg-secondary);
-	}
-
-	.menu button.danger {
-		color: var(--error-text);
 	}
 </style>

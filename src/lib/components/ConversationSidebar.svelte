@@ -13,9 +13,8 @@
 	 * checkbox per row, shift-click for a range, to delete many at once.
 	 * Dragging the right edge sets the width (Settings' `chatSidebarWidth`).
 	 *
-	 * Rename UX: click the pencil (visible on row hover / focus-within)
-	 * or double-click a row to enter rename mode, Enter to commit,
-	 * Escape (or blur) to cancel. Active row is highlighted.
+	 * Right-click a row (or the Menu key) to rename or delete it; double-click
+	 * also renames. Enter commits a rename, Escape (or blur) cancels it.
 	 */
 	import {
 		clearAllConversations,
@@ -39,6 +38,9 @@
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { rowMenu } from '#lib/actions/rowMenu.ts';
+	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
+	import type { RowMenuItem } from '#lib/stores/rowMenu.svelte.ts';
 
 	let collapsed = $state(false);
 	let renamingId = $state<string | null>(null);
@@ -240,7 +242,7 @@
 	}
 
 	/** Show one of this computer's chats, leaving another's; or select it. */
-	function openLocal(id: string, event: MouseEvent) {
+	function openLocal(id: string, event: { shiftKey: boolean }) {
 		if (selecting) {
 			toggle(`local:${id}`, event.shiftKey);
 			return;
@@ -257,6 +259,18 @@
 		if (run.generating || run.compacting) return { kind: 'running', title: 'Working' };
 		if (conv.unread) return { kind: 'unread', title: 'Finished while you were elsewhere' };
 		return null;
+	}
+
+	function menuItems(conv: Conversation): RowMenuItem[] {
+		if (selecting) return [];
+		return [
+			{ label: 'Rename', run: () => startRename(conv.id, conv.title) },
+			{
+				label: 'Delete…',
+				danger: true,
+				run: () => (pendingDelete = { kind: 'one', id: conv.id, title: conv.title })
+			}
+		];
 	}
 
 	function startRename(id: string, currentTitle: string) {
@@ -332,12 +346,20 @@
 				<p class="empty">No chats match.</p>
 			{/if}
 			{#each shownLocal as conv (conv.id)}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					class="conversation-item"
 					class:active={conv.id === activeId}
+					role="button"
+					tabindex="0"
 					onclick={(e) => openLocal(conv.id, e)}
+					onkeydown={(e) => {
+						if (e.target !== e.currentTarget) return;
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							openLocal(conv.id, e);
+						}
+					}}
+					use:rowMenu={() => menuItems(conv)}
 					ondblclick={(e) => {
 						e.stopPropagation();
 						if (!selecting) startRename(conv.id, conv.title);
@@ -359,6 +381,9 @@
 						<input
 							class="rename-input"
 							type="text"
+							aria-label="Chat name"
+							use:focusOnMount
+							onfocus={(e) => e.currentTarget.select()}
 							bind:value={renameText}
 							onblur={finishRename}
 							onkeydown={handleRenameKeydown}
@@ -374,34 +399,13 @@
 								aria-label={mark.title}
 							></span>
 						{/if}
-						<span class="conv-title" class:unread={mark?.kind === 'unread'} title={conv.title}>
+						<span
+							class="conv-title"
+							class:unread={mark?.kind === 'unread'}
+							title="{conv.title} — right-click to rename or delete"
+						>
 							{conv.title}
 						</span>
-						{#if !selecting}
-							<button
-								class="rename-btn"
-								onclick={(e) => {
-									e.stopPropagation();
-									startRename(conv.id, conv.title);
-								}}
-								aria-label="Rename conversation"
-								title="Rename"
-							>
-								&#9998;
-							</button>
-						{/if}
-					{/if}
-					{#if !selecting}
-						<button
-							class="delete-btn"
-							onclick={(e) => {
-								e.stopPropagation();
-								pendingDelete = { kind: 'one', id: conv.id, title: conv.title };
-							}}
-							title="Delete conversation"
-						>
-							&times;
-						</button>
 					{/if}
 				</div>
 			{/each}
@@ -575,37 +579,6 @@
 		.mark.running {
 			animation: none;
 		}
-	}
-	/* The rename pencil and delete × share the opacity-on-hover treatment:
-	   invisible until the row is hovered — or contains keyboard focus, so
-	   tabbing users can see what they've reached. */
-	.rename-btn,
-	.delete-btn {
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: var(--text-secondary);
-		font-size: 1rem;
-		padding: 0 4px;
-		margin-right: 2px;
-		opacity: 0;
-		transition: opacity 0.15s;
-		flex-shrink: 0;
-	}
-	.rename-btn {
-		font-size: 0.85rem;
-	}
-	.conversation-item:hover .rename-btn,
-	.conversation-item:focus-within .rename-btn,
-	.conversation-item:hover .delete-btn,
-	.conversation-item:focus-within .delete-btn {
-		opacity: 1;
-	}
-	.rename-btn:hover {
-		color: var(--text-primary);
-	}
-	.delete-btn:hover {
-		color: var(--error-text);
 	}
 	.rename-input {
 		flex: 1;

@@ -9,7 +9,7 @@ How to find, fork, rewind and move sessions in the Code tab. For what a session 
 
 ## Find and reopen sessions
 
-The list on the left holds every saved session, newest first, with its folder and last activity; **Search sessions** keeps those whose title or folder has every word, and dragging its edge widens it. Sessions sharing a folder sit under a folder row; click it to fold. Click a session to open it as a tab. Right-click a session to **Rename** or **Delete** it; deleting keeps your files (but see worktrees below). Closing its tab (**×**) keeps it listed. The **‹** button hides the list. Extra tabs scroll sideways (mouse wheel too); **←** **→** move between them.
+The list on the left holds every saved session, newest first, with folder and last activity; **Search sessions** keeps those whose title or folder has every word; drag its edge to widen it. Sessions sharing a folder sit under a folder row; click it to fold. Click a session to open it as a tab. Right-click a session to **Rename** or **Delete** it (double-click renames); deleting keeps your files (but see worktrees below). Closing its tab (**×**) keeps it listed. The **‹** button hides the list. Extra tabs scroll sideways (mouse wheel too); **←** **→** move between them.
 
 Long sessions show their last 20 turns; **Show earlier** loads more.
 
