@@ -17,7 +17,8 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
 import klein from '#lib/toolchest/fixtures/models-asmodean-klein.json';
-import { _resetForTests, toolchestBackend, toolchestInstance } from './backend';
+import { _resetForTests, toolchestBackend, toolchestInstance, upscaleWithEntry } from './backend';
+import type { UpscalerEntry } from '#lib/upscale/types.ts';
 import { backendForEntry } from '#lib/image/registry.ts';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -459,25 +460,33 @@ describe('llama-toolchest image backend', () => {
 		}
 		const picture = { name: 'p.png', bytes: [1, 2, 3] };
 
-		it('can upscale when the server runs an upscaler, whichever model is chosen', async () => {
+		/** An entry in Settings → Image → Upscalers for asmodean's upscaler. */
+		const upscaler: UpscalerEntry = {
+			id: 'u1',
+			name: 'real-esrgan',
+			backend: 'llama-toolchest',
+			url: 'http://box:3000',
+			keyId: 'k1',
+			model: 'real-esrgan',
+			options: {},
+			caps: null,
+			capsAt: null,
+			renamed: false
+		};
+
+		it("never claims its server's upscaler: those are entries of their own", async () => {
 			editEntry({ model: 'klein' });
-			use({ 'GET /v1/models': klein });
-			await toolchestBackend.probe();
-			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: false });
 			use({ 'GET /v1/models': withUpscaler() });
-			await toolchestBackend.probe();
-			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: true });
-			use({ 'GET /v1/models': withUpscaler('failed') });
 			await toolchestBackend.probe();
 			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: false });
 		});
 
-		it('sends the picture to the upscaler instance and returns what it made', async () => {
+		it("sends the picture to the entry's upscaler instance and returns what it made", async () => {
 			use({
 				'GET /v1/models': withUpscaler(),
 				'POST /v1/images/upscale': { images: [{ b64_json: 'BwgJ' }] }
 			});
-			const out = await toolchestBackend.upscale!(picture);
+			const out = await upscaleWithEntry(upscaler, picture);
 			expect([...out]).toEqual([7, 8, 9]);
 			const sent = httpCalls<Call>(vi.mocked(invoke), 'toolchest_json').find(
 				(c) => c.path === '/v1/images/upscale'
@@ -486,14 +495,19 @@ describe('llama-toolchest image backend', () => {
 			expect(sent.api_key).toBe('sekrit');
 		});
 
-		it('says so when the server has no upscaler, or answers with no picture', async () => {
+		it('says so when the upscaler is gone or failed, or answers with no picture', async () => {
 			use({ 'GET /v1/models': klein });
-			await expect(toolchestBackend.upscale!(picture)).rejects.toMatchObject({
+			await expect(upscaleWithEntry(upscaler, picture)).rejects.toMatchObject({
 				kind: 'unconfigured',
-				message: 'box:3000 has no upscaler — add one in llama-toolchest.'
+				message: 'real-esrgan is not on box:3000 any more.'
+			});
+			use({ 'GET /v1/models': withUpscaler('failed') });
+			await expect(upscaleWithEntry(upscaler, picture)).rejects.toMatchObject({
+				kind: 'unconfigured',
+				message: 'real-esrgan is failed — check it in llama-toolchest.'
 			});
 			use({ 'GET /v1/models': withUpscaler(), 'POST /v1/images/upscale': { images: [] } });
-			await expect(toolchestBackend.upscale!(picture)).rejects.toBeInstanceOf(ImageBackendError);
+			await expect(upscaleWithEntry(upscaler, picture)).rejects.toBeInstanceOf(ImageBackendError);
 		});
 	});
 });

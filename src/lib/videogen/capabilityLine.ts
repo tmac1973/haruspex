@@ -17,7 +17,6 @@ export function videoCapabilityLine(caps: VideoCaps): { text: string; title?: st
 	if (caps.sound) parts.push('with sound');
 	const most = longestClip(caps);
 	parts.push(`up to ${clipSeconds(most.frames, most.fps)} s at ${most.width}×${most.height}`);
-	if (caps.upscale) parts.push('upscales clips');
 	const licence = caps.licence
 		? `${caps.licence}${caps.commercialUse === false ? ' · not for commercial use' : caps.commercialUse ? ' · commercial use allowed' : ''}`
 		: undefined;

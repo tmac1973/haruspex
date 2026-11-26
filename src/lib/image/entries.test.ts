@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ImageModelEntry } from './types';
 
 const settings = vi.hoisted(() => ({
-	imageModels: undefined as ImageModelEntry[] | undefined
+	imageModels: undefined as ImageModelEntry[] | undefined,
+	imageUpscalers: [] as unknown[]
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -40,6 +41,7 @@ const toolchest = () =>
 
 beforeEach(() => {
 	settings.imageModels = undefined;
+	settings.imageUpscalers = [];
 });
 
 describe('the image models', () => {
@@ -180,13 +182,24 @@ describe('what the image models can do, together', () => {
 		];
 		expect(entryNamesFor('draw')).toEqual(['Ming', 'klein', 'new']);
 		expect(entryNamesFor('edit')).toEqual(['klein', 'new']);
-		expect(entryNamesFor('upscale')).toEqual(['new']);
+		// A toolchest model never upscales: its server's upscalers are in the list.
+		expect(entryNamesFor('upscale')).toEqual([]);
+		settings.imageModels.push({ ...entry('comfy', null), backend: 'comfyui' });
+		settings.imageUpscalers = [{ id: 'u', name: 'real-esrgan' }];
+		expect(entryNamesFor('upscale')).toEqual(['real-esrgan', 'comfy']);
 	});
 
 	it('can edit or upscale when one model can, or may', () => {
-		settings.imageModels = [entry('a', {}), entry('b', { upscale: true })];
+		settings.imageModels = [
+			entry('a', {}),
+			{ ...entry('b', { upscale: true }), backend: 'comfyui' }
+		];
 		expect(anyEntryCan('upscale')).toBe(true);
 		expect(anyEntryCan('edit')).toBe(false);
+		settings.imageModels = [entry('a', {}), entry('b', { upscale: true })];
+		expect(anyEntryCan('upscale')).toBe(false);
+		settings.imageUpscalers = [{ id: 'u', name: 'real-esrgan' }];
+		expect(anyEntryCan('upscale')).toBe(true);
 		settings.imageModels = [entry('a', {}), entry('c', null)];
 		expect(anyEntryCan('edit')).toBe(true);
 	});

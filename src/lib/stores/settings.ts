@@ -14,6 +14,7 @@ import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageModelEntry } from '#lib/image/types.ts';
 import type { VideoModelEntry } from '#lib/videogen/types.ts';
+import type { UpscalerEntry } from '#lib/upscale/types.ts';
 import { videoModelsFromFields, type LegacyVideoFields } from '#lib/videogen/fields.ts';
 import {
 	LEGACY_IMAGE_FIELDS,
@@ -982,6 +983,19 @@ export interface AppSettings {
 	 */
 	videoModels: VideoModelEntry[];
 	/**
+	 * The upscalers `upscale_image` tries before an image model's own, in
+	 * order (see `#lib/upscale/entries.ts`), edited in Settings → Image →
+	 * Upscalers. Only llama-toolchest instances so far.
+	 */
+	imageUpscalers: UpscalerEntry[];
+	/** The video upscalers `upscale_video` picks among, in order; Settings → Video generation → Upscalers. */
+	videoUpscalers: UpscalerEntry[];
+	/**
+	 * Whether each list has been filled once from the upscalers its models'
+	 * servers have (`#lib/upscale/seed.ts`), so a removed one stays removed.
+	 */
+	upscalersSeeded: { image: boolean; video: boolean };
+	/**
 	 * Which helpers are on (Settings → Code → Helpers), by helper id; absent
 	 * or false is off. See `#lib/helpers/registry.ts`.
 	 */
@@ -1330,6 +1344,9 @@ const defaults: AppSettings = {
 	generationServers: [],
 	imageModels: [],
 	videoModels: [],
+	imageUpscalers: [],
+	videoUpscalers: [],
+	upscalersSeeded: { image: false, video: false },
 	codeHelpers: {},
 	codeHelperConfig: {},
 	videoEditingEnabled: false,
@@ -1559,6 +1576,12 @@ function load(): AppSettings {
 							videoGenToolchestApiKeyId,
 							videoGenToolchestModelId
 						}),
+				imageUpscalers: Array.isArray(rest.imageUpscalers) ? rest.imageUpscalers : [],
+				videoUpscalers: Array.isArray(rest.videoUpscalers) ? rest.videoUpscalers : [],
+				upscalersSeeded: {
+					image: rest.upscalersSeeded?.image === true,
+					video: rest.upscalersSeeded?.video === true
+				},
 				codeHelpers: booleanRecord(rest.codeHelpers),
 				codeHelperConfig: jsonRecord(rest.codeHelperConfig),
 				cameras: storedCameras(rest.cameras),

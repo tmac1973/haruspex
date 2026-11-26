@@ -4,6 +4,7 @@ import type { ImageBackendCapabilities, ImageModelEntry } from '#lib/image/types
 
 const state = vi.hoisted(() => ({
 	models: [] as unknown[],
+	upscalers: [] as unknown[],
 	generate: vi.fn(),
 	upscale: vi.fn()
 }));
@@ -13,7 +14,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
-		settings: () => ({ imageModels: state.models }),
+		settings: () => ({ imageModels: state.models, imageUpscalers: state.upscalers }),
 		overDefaults: true
 	})
 );
@@ -33,11 +34,15 @@ const DRAWS: ImageBackendCapabilities = {
 	maxLoras: 0
 };
 
-function model(name: string, caps: Partial<ImageBackendCapabilities> | null): ImageModelEntry {
+function model(
+	name: string,
+	caps: Partial<ImageBackendCapabilities> | null,
+	backend: ImageModelEntry['backend'] = 'llama-toolchest'
+): ImageModelEntry {
 	return {
 		id: name,
 		name,
-		backend: 'llama-toolchest',
+		backend,
 		url: 'http://asmodean:3000',
 		keyId: null,
 		model: name,
@@ -49,7 +54,8 @@ function model(name: string, caps: Partial<ImageBackendCapabilities> | null): Im
 }
 
 const ming = model('Ming sprites', {});
-const klein = model('klein', { edit: true, maxEditImages: 4, upscale: true });
+// On ComfyUI, which upscales with its own server's upscaler.
+const klein = model('klein', { edit: true, maxEditImages: 4, upscale: true }, 'comfyui');
 const flux3 = model('FLUX.3 Image Klein', { edit: true, maxEditImages: 10 });
 
 const SRC = 'a'.repeat(64);
@@ -68,6 +74,7 @@ function params(tool: string) {
 
 beforeEach(() => {
 	state.models = [];
+	state.upscalers = [];
 	vi.stubGlobal('createImageBitmap', async () => ({ width: 1024, height: 1024, close: () => {} }));
 	vi.mocked(invoke)
 		.mockReset()
@@ -105,8 +112,15 @@ describe('the image tools offered', () => {
 	});
 
 	it('offers both for a model no probe has answered for', () => {
-		state.models = [ming, model('new', null)];
+		state.models = [ming, model('new', null, 'comfyui')];
 		expect(names()).toContain('edit_image');
+		expect(names()).toContain('upscale_image');
+	});
+
+	it("offers upscaling for an upscaler in the list, never for a toolchest model's own", () => {
+		state.models = [ming, model('new', null), model('old', { upscale: true })];
+		expect(names()).not.toContain('upscale_image');
+		state.upscalers = [{ id: 'u', name: 'real-esrgan', backend: 'llama-toolchest' }];
 		expect(names()).toContain('upscale_image');
 	});
 });

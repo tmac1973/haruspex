@@ -5,6 +5,7 @@
 	import { probePythonRuntime } from '#lib/sandbox/availability.ts';
 	import { initTasks } from '#lib/tasks/store.svelte.ts';
 	import { startTaskRunner } from '#lib/tasks/followers.ts';
+	import { seedAllUpscalers } from '#lib/upscale/seed.ts';
 	import favicon from '#lib/assets/favicon.svg';
 	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '#lib/components/ContextIndicator.svelte';
@@ -213,6 +214,8 @@
 	// The main window does the background tasks the frontend follows (a picture
 	// drawn after its turn), and picks up the ones a restart cut short.
 	onMount(() => void startTaskRunner().catch(() => {}));
+	// The upscaler lists start from the upscalers the models' servers have, once.
+	onMount(() => seedAllUpscalers());
 
 	// A model call waiting out a rate limit on the one provider it can use
 	// says so, in whichever window made the call.

@@ -1,6 +1,7 @@
 /**
- * `upscale_video`: a clip made larger and sharper by a video upscaler on a
- * llama-toolchest server (RelayVSR or SeedVR2), which looks at several frames
+ * `upscale_video`: a clip made larger and sharper by a video upscaler in
+ * Settings → Video generation → Upscalers (a RelayVSR or SeedVR2 instance on a
+ * llama-toolchest server), which looks at several frames
  * at once so the result doesn't flicker. The clip is one made in the
  * conversation or a file in the working folder.
  *
@@ -84,8 +85,8 @@ registerTool({
 		function: {
 			name: 'upscale_video',
 			description:
-				'Make a video clip larger and sharper, two or four times, with a video upscaler on a ' +
-				'llama-toolchest server in Settings → Video generation: a clip made in this conversation ' +
+				'Make a video clip larger and sharper, two or four times, with a video upscaler in ' +
+				'Settings → Video generation → Upscalers: a clip made in this conversation ' +
 				'or a video file in the working folder. Short clips only (a few seconds; the answer says ' +
 				'when one is too long). Keeps the sound. It takes minutes and always runs in the ' +
 				'background: the answer says it started, and the clip arrives later as a notification.',
@@ -101,13 +102,13 @@ registerTool({
 					scale: {
 						type: 'integer',
 						enum: [2, 4],
-						description: 'How many times larger. Default the smallest the server has, usually 2.'
+						description: 'How many times larger. Default the smallest there is, usually 2.'
 					},
 					model: {
 						type: 'string',
 						description:
-							'The upscaler instance, such as relayvsr-x2 or seedvr2-3b. Leave out to use the ' +
-							'first at the scale that takes the clip.'
+							'The upscaler, by its name in Settings, such as relayvsr-x2 or seedvr2-3b. Leave ' +
+							'out to use the first in the list at the scale that takes the clip.'
 					},
 					seed: SEED_PARAM,
 					title: { type: 'string', description: 'A short title for the player and the file.' },
@@ -126,16 +127,16 @@ registerTool({
 	execute: async (args, ctx) => {
 		const refused = argsRefusal(args, ctx);
 		if (refused) return toolResult(toolError(refused));
-		let routed;
+		let listed;
 		try {
-			routed = await routeUpscale(ctx.signal);
+			listed = await routeUpscale(ctx.signal);
 		} catch (e) {
 			return toolResult(toolError(`Could not upscale it: ${errMessage(e)}`));
 		}
 		const video = trimmed(args.video);
 		const clip = await clipOf(video, ctx);
 		if (typeof clip === 'string') return toolResult(toolError(clip));
-		const up = pickUpscaler(routed.upscalers, clip, {
+		const up = pickUpscaler(listed, clip, {
 			named: trimmed(args.model) || undefined,
 			scale: typeof args.scale === 'number' ? args.scale : undefined
 		});
@@ -160,6 +161,6 @@ registerTool({
 			scale: up.limits.scale,
 			seed: (parseSeed(args.seed) as number | undefined) ?? randomSeed()
 		};
-		return startVideoUpscaleTask(request, [], save, ctx, routed.entry.id);
+		return startVideoUpscaleTask(request, [], save, ctx, up.entry.id);
 	}
 });

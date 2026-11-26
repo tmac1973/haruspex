@@ -41,7 +41,6 @@ import type {
 	VideoProgress,
 	VideoRequest,
 	VideoResult,
-	VideoUpscaler,
 	VideoUpscaleRequest
 } from '#lib/videogen/types.ts';
 
@@ -341,13 +340,7 @@ export function toolchestVideoFor(entry: VideoModelEntry): VideoBackend {
 	return {
 		kind: 'llama-toolchest',
 		probe: () => mapped(() => server.probe()),
-		capabilities: (signal) =>
-			mapped(async () => {
-				const caps = capsFromInstance(await ready(signal))!;
-				return { ...caps, upscale: server.upscalers().length > 0 };
-			}),
-		upscalers: (): VideoUpscaler[] =>
-			server.upscalers().flatMap((i) => (i.vupscale ? [{ id: i.id, limits: i.vupscale }] : [])),
+		capabilities: (signal) => mapped(async () => capsFromInstance(await ready(signal))!),
 		upscale: (req, opts = {}) => mapped(() => upscaleOn(server, req, opts)),
 		resumeUpscale: (handle, req, opts = {}) =>
 			mapped(async () => {

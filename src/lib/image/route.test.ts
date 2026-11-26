@@ -73,6 +73,9 @@ describe('routeImage', () => {
 		expect(await ranOn(draw)).toBe('A');
 		expect(await ranOn(edit(2))).toBe('B');
 		expect(await ranOn(edit(4))).toBe('B');
+		// A toolchest model's own upscaler isn't used: those are in Settings → Image → Upscalers.
+		await expect(ranOn(upscaleNeed())).rejects.toThrow('Settings → Image → Upscalers');
+		state.entries = state.entries.map((e) => (e.id === 'C' ? { ...e, backend: 'comfyui' } : e));
 		expect(await ranOn(upscaleNeed())).toBe('C');
 	});
 

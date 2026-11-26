@@ -13,7 +13,9 @@ const state = vi.hoisted(() => ({
 		loras: false,
 		maxLoras: 0
 	} as ImageBackendCapabilities,
-	generate: vi.fn()
+	generate: vi.fn(),
+	upscalers: [] as { id: string; name: string }[],
+	upscaleWithEntry: vi.fn()
 }));
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -28,12 +30,17 @@ vi.mock('./registry', async (importOriginal) => ({
 		generate: state.generate
 	})
 }));
+vi.mock('#lib/image/toolchest/backend.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/image/toolchest/backend.ts')>()),
+	upscaleWithEntry: state.upscaleWithEntry
+}));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: () => ({
 			imageModels: imageModelsFor(state.kind, {
 				model: state.kind === 'local' ? state.localModel : state.comfyCheckpoint
-			})
+			}),
+			imageUpscalers: state.upscalers
 		})
 	})
 );
@@ -233,6 +240,52 @@ describe('generateForTool inpaints', () => {
 });
 
 describe('upscaleForTool', () => {
+	const picture = { name: 'a.png', bytes: [1] };
+	const noUpscale = { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };
+	beforeEach(() => {
+		state.upscalers = [];
+		state.upscaleWithEntry.mockReset();
+	});
+
+	it('goes to the first upscaler in the list that answers', async () => {
+		state.kind = 'comfyui';
+		state.caps = noUpscale;
+		state.upscalers = [
+			{ id: 'a', name: 'esrgan-asmodean' },
+			{ id: 'b', name: 'esrgan-compute2' }
+		];
+		state.upscaleWithEntry.mockImplementation(async (e: { id: string }) => {
+			if (e.id === 'a') throw new ImageBackendError('unreachable', "Can't reach asmodean.");
+			return new Uint8Array([9]);
+		});
+		expect([...(await upscaleForTool(picture))]).toEqual([9]);
+		expect(state.upscaleWithEntry.mock.calls.map((c) => c[0].id)).toEqual(['a', 'b']);
+	});
+
+	it('uses only the upscaler the call names', async () => {
+		state.upscalers = [
+			{ id: 'a', name: 'esrgan-asmodean' },
+			{ id: 'b', name: 'esrgan-compute2' }
+		];
+		state.upscaleWithEntry.mockResolvedValue(new Uint8Array([1]));
+		await upscaleForTool(picture, { named: 'esrgan-compute2' });
+		expect(state.upscaleWithEntry.mock.calls.map((c) => c[0].id)).toEqual(['b']);
+	});
+
+	it('says why each upscaler failed when no image model can upscale either', async () => {
+		state.kind = 'comfyui';
+		state.caps = noUpscale;
+		state.upscalers = [{ id: 'a', name: 'esrgan' }];
+		state.upscaleWithEntry.mockRejectedValue(
+			new ImageBackendError('unconfigured', 'real-esrgan is failed — check it in llama-toolchest.')
+		);
+		await expect(upscaleForTool(picture)).rejects.toMatchObject({
+			kind: 'unreachable',
+			message:
+				'No upscaler could be reached: esrgan: real-esrgan is failed — check it in llama-toolchest.'
+		});
+	});
+
 	it('says what can upscale when the backend can’t', async () => {
 		state.kind = 'comfyui';
 		state.caps = { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };

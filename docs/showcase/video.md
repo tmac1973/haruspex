@@ -62,10 +62,10 @@ Read more: video-generation, speech
 
 ## Upscale a clip
 
-Make a short clip two or four times larger and sharper with a video upscaler on llama-toolchest. It keeps the clip's sound.
+Make a short clip two or four times larger and sharper with a video upscaler from Settings → Video generation → Upscalers. It keeps the clip's sound.
 
 Tab: Chat or Code
-Required settings: Settings → Video generation → a video model on a llama-toolchest server (a server you run) that also has a RelayVSR or SeedVR2 instance
+Required settings: Settings → Video generation → Upscalers → a RelayVSR or SeedVR2 instance on a llama-toolchest server (a server you run)
 
 Prompt:
 

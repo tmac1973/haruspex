@@ -12,9 +12,10 @@
  * OpenAI route, cancelled by dropping the request, which toolchest honours
  * only while the request still waits in its queue.
  *
- * Upscaling uses the server's upscaler instance (`meta.kind: "upscale"`), not
- * the chosen one, as the other backends use their server's Real-ESRGAN. The
- * route answers at once, so an upscale is never a job and can't be resumed.
+ * Upscaling is not the image instance's: it goes to an upscaler instance
+ * (`meta.kind: "upscale"`) in Settings → Image → Upscalers
+ * ({@link upscaleWithEntry}). The route answers at once, so an upscale is
+ * never a job and can't be resumed.
  */
 
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
@@ -43,13 +44,14 @@ import { editUploads, imagesFrom, upscaleVia } from '#lib/image/openaiImages.ts'
 import { familyOfRecipe, type ToolchestInstance } from '#lib/toolchest/models.ts';
 import {
 	ToolchestError,
-	hostOf,
 	toolchestBytes,
 	toolchestJson,
 	toolchestUpload,
 	type ToolchestConfig
 } from '#lib/toolchest/client.ts';
 import { settleJob, toolchestServer } from '#lib/toolchest/kind.ts';
+import { readyUpscaler } from '#lib/upscale/toolchest.ts';
+import type { UpscalerEntry } from '#lib/upscale/types.ts';
 import {
 	ROUTES,
 	buildEditFields,
@@ -211,7 +213,7 @@ function toolchestFor(entry: ImageModelEntry): ImageBackend {
 				maxLoras: 0,
 				edit: canEdit(instance),
 				maxEditImages: instance && canEdit(instance) ? maxEditImages(instance) : 0,
-				upscale: server.upscalers().length > 0
+				upscale: false
 			};
 		},
 
@@ -222,8 +224,6 @@ function toolchestFor(entry: ImageModelEntry): ImageBackend {
 		},
 
 		generate: (req, opts) => generateWith(server, req, opts),
-
-		upscale: (input, opts) => upscaleWith(server, input, opts),
 
 		async resume(handle: ImageJobHandle, opts: GenerateOptions = {}): Promise<ImageResult> {
 			// The server it went to, whatever Settings → Image says now.
@@ -334,32 +334,24 @@ async function generateWith(
 	});
 }
 
-/** The server's upscaler instance; see the top of this file. */
-async function upscaleWith(
-	server: Server,
+/**
+ * A picture made larger by upscaler entry `e` (Settings → Image →
+ * Upscalers): its instance, read fresh from its server, since it may have
+ * been stopped or removed since the last read.
+ */
+export async function upscaleWithEntry(
+	e: UpscalerEntry,
 	input: ImageInput,
 	opts: GenerateOptions = {}
 ): Promise<Uint8Array> {
-	const cfg = await server.config();
-	if (!cfg.baseUrl) {
-		throw new ImageBackendError(
-			'unconfigured',
-			'No llama-toolchest server is set — Settings → Image.'
-		);
-	}
-	let upscaler: ToolchestInstance | undefined;
+	let cfg: ToolchestConfig;
+	let id: string;
 	try {
-		// Fresh, since an upscaler may have been added or stopped since the last read.
-		await server.instances(cfg, opts.signal);
-		upscaler = server.upscalers()[0];
-	} catch (e) {
-		throw asImageError(e);
-	}
-	if (!upscaler) {
-		throw new ImageBackendError(
-			'unconfigured',
-			`${hostOf(cfg.baseUrl)} has no upscaler — add one in llama-toolchest.`
-		);
+		const ready = await readyUpscaler('image', e, opts.signal);
+		cfg = ready.cfg;
+		id = ready.instance.id;
+	} catch (err) {
+		throw asImageError(err);
 	}
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
 	return upscaleVia(
@@ -368,10 +360,10 @@ async function upscaleWith(
 				cfg,
 				{ method: 'POST', path: ROUTES.upscale, body, timeoutMs: SYNC_TIMEOUT_MS },
 				opts.signal
-			).catch((e) => {
-				throw asImageError(e);
+			).catch((err) => {
+				throw asImageError(err);
 			}),
-		upscaler.id,
+		id,
 		input,
 		'images',
 		'llama-toolchest'

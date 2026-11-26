@@ -13,15 +13,12 @@ describe('capabilityLine', () => {
 	it('says what an editing model on llama-toolchest can and can’t do, and how to get the rest', () => {
 		const line = capabilityLine({ ...base, edit: true, maxEditImages: 4 }, 'llama-toolchest');
 		expect(line.can).toBe('draw pictures, edit pictures (up to 4 together)');
-		expect(line.cannot).toBe(
-			'upscale pictures, extend pictures, transparent backgrounds, tiling textures'
-		);
-		expect(line.howTo).toContain(
-			'Upscaling needs an upscaler instance (Real-ESRGAN) in llama-toolchest.'
-		);
+		// Its server's upscalers are entries of their own, in Settings → Image → Upscalers.
+		expect(line.cannot).toBe('extend pictures, transparent backgrounds, tiling textures');
+		expect(line.howTo).not.toContain('Upscal');
 		expect(line.howTo).not.toContain('Editing needs');
 		expect(line.text).toBe(
-			"Can: draw pictures, edit pictures (up to 4 together). Can't: upscale pictures, extend pictures, transparent backgrounds, tiling textures."
+			"Can: draw pictures, edit pictures (up to 4 together). Can't: extend pictures, transparent backgrounds, tiling textures."
 		);
 	});
 

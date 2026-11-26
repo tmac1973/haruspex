@@ -41,7 +41,7 @@ const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	none: '',
 	local: 'Upscaling needs the upscaler, under Bundled engine.',
 	comfyui: 'Upscaling needs the upscaler, under Models on the server.',
-	'llama-toolchest': 'Upscaling needs an upscaler instance (Real-ESRGAN) in llama-toolchest.',
+	'llama-toolchest': 'Upscalers are in Settings → Image → Upscalers.',
 	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 
@@ -65,7 +65,13 @@ export function capabilityLine(
 			'edit pictures',
 			EDIT_HOW[kind]
 		],
-		[!!caps.upscale, 'upscale pictures', 'upscale pictures', UPSCALE_HOW[kind]],
+		// A toolchest server's upscalers are their own entries (Settings → Image →
+		// Upscalers), so a toolchest model's row says nothing about upscaling.
+		...(kind === 'llama-toolchest'
+			? []
+			: ([[!!caps.upscale, 'upscale pictures', 'upscale pictures', UPSCALE_HOW[kind]]] as Array<
+					[boolean, string, string, string]
+				>)),
 		[!!caps.inpaint, 'extend pictures', 'extend pictures', EXTEND_HOW],
 		[caps.transparency, 'transparent backgrounds', 'transparent backgrounds', TRANSPARENT_HOW],
 		[caps.seamlessTiling, 'tiling textures', 'tiling textures', TILING_HOW]
@@ -90,14 +96,16 @@ export function capabilityLine(
  * can do, so the prompt grows by one short line per model. LoRAs are left
  * out: only the asset job uses them, and it asks the model itself.
  */
-export function entryLine(entry: Pick<ImageModelEntry, 'name' | 'caps'>): string {
+export function entryLine(
+	entry: Pick<ImageModelEntry, 'name' | 'caps'> & { backend?: ImageModelEntry['backend'] }
+): string {
 	const caps = entry.caps;
 	if (!caps) return `${entry.name}: draws; not probed yet, so what else it can do is unknown.`;
 	const most = caps.maxEditImages ?? 1;
 	const can = [
 		'draws',
 		...(caps.edit ? [most > 1 ? `edits up to ${most} pictures` : 'edits one picture'] : []),
-		...(caps.upscale ? ['upscales'] : []),
+		...(caps.upscale && entry.backend !== 'llama-toolchest' ? ['upscales'] : []),
 		...(caps.inpaint ? ['extends pictures'] : []),
 		...(caps.transparency ? ['transparent backgrounds'] : []),
 		...(caps.seamlessTiling ? ['tiling textures'] : [])

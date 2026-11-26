@@ -26,8 +26,10 @@ import type {
 	VideoProgress,
 	VideoRequest,
 	VideoResult,
+	VideoModelEntry,
 	VideoUpscaleRequest
 } from '#lib/videogen/types.ts';
+import { UPSCALERS_SECTION, upscalerAsVideoEntry, upscalerById } from '#lib/upscale/entries.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { clipSeconds } from '#lib/videogen/fit.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
@@ -50,6 +52,7 @@ export interface VideoGenTaskSpec extends VideoTaskCommon {
 export interface VideoUpscaleTaskSpec extends VideoTaskCommon {
 	op: 'upscale';
 	request: VideoUpscaleRequest;
+	/** The upscaler's entry in Settings; a video model's in a task from before the list. */
 	entryId: string;
 }
 
@@ -182,16 +185,14 @@ export async function runVideoJob(
 		conversationId: spec.conversationId ?? undefined,
 		codeSessionId: spec.codeSessionId ?? undefined
 	};
-	const entry = handle
-		? videoEntryForHandle(handle)
-		: spec.entryId
-			? videoEntryById(spec.entryId)
-			: firstVideoEntry();
+	const entry = handle ? videoEntryForHandle(handle) : entryFor(spec);
 	if (!entry) {
 		throw new Error(
-			spec.entryId
-				? 'The video model this clip was for is no longer in Settings → Video generation.'
-				: NOT_SET_UP
+			spec.op === 'upscale'
+				? `The video upscaler this clip was for is no longer in ${UPSCALERS_SECTION.video}.`
+				: spec.entryId
+					? 'The video model this clip was for is no longer in Settings → Video generation.'
+					: NOT_SET_UP
 		);
 	}
 	const backend = videoBackendForEntry(entry);
@@ -217,6 +218,19 @@ export async function runVideoJob(
 			? { upscaledFrom: { width: spec.request.input.width, height: spec.request.input.height } }
 			: {})
 	};
+}
+
+/**
+ * What a spec that has no job yet is sent to: an upscale's upscaler in the
+ * list (or, for a spec from before the list, the video model it named), else
+ * the video model it named, else the first.
+ */
+function entryFor(spec: VideoTaskSpec): VideoModelEntry | undefined {
+	if (spec.op === 'upscale') {
+		const up = upscalerById('video', spec.entryId);
+		return up ? upscalerAsVideoEntry(up) : videoEntryById(spec.entryId);
+	}
+	return spec.entryId ? videoEntryById(spec.entryId) : (firstVideoEntry() ?? undefined);
 }
 
 /**

@@ -70,7 +70,7 @@ describe('needsNotes', () => {
 			imageModels: [entry('klein', { transparency: false, maxEditImages: 4 }), entry('new', null)]
 		});
 		expect(await needsNotes(['image'])).toEqual([
-			'klein: draws, edits up to 4 pictures, upscales.',
+			'klein: draws, edits up to 4 pictures.',
 			expect.stringMatching(/^new: draws; not probed yet/),
 			MODELS_NOTE
 		]);

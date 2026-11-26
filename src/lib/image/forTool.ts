@@ -27,7 +27,8 @@ import {
 	type ImageRequest
 } from '#lib/image/types.ts';
 import { familyOf } from '#lib/image/comfyui/families.ts';
-import { toolchestInstance } from '#lib/image/toolchest/backend.ts';
+import { toolchestInstance, upscaleWithEntry } from '#lib/image/toolchest/backend.ts';
+import { upscalerByName, upscalerEntries } from '#lib/upscale/entries.ts';
 
 export { NO_EDIT_SENTENCE, NO_EXTEND_SENTENCE, NO_UPSCALE_SENTENCE } from '#lib/image/route.ts';
 
@@ -70,13 +71,42 @@ async function explained<T>(entry: ImageModelEntry, run: () => Promise<T>): Prom
 }
 
 /**
- * A picture four times larger, from the first saved model that upscales, or a
- * sentence the model can pass on when none can. RGB: the caller restores alpha.
+ * A picture made larger: by the first upscaler in Settings → Image →
+ * Upscalers that answers (or the one the call names), else by the first image
+ * model that upscales with its own server's upscaler; or a sentence the model
+ * can pass on when none can. RGB: the caller restores alpha.
  */
 export async function upscaleForTool(
 	input: ImageInput,
 	opts: ForToolOptions = {}
 ): Promise<Uint8Array> {
+	const named = opts.named ? upscalerByName('image', opts.named) : undefined;
+	const list = named ? [named] : opts.named ? [] : upscalerEntries('image');
+	const reasons: string[] = [];
+	for (const e of list) {
+		try {
+			return await upscaleWithEntry(e, input, opts);
+		} catch (err) {
+			if (named || !(err instanceof ImageBackendError) || err.kind === 'cancelled') throw err;
+			reasons.push(`${e.name}: ${err.message.replace(/\.$/, '')}`);
+		}
+	}
+	if (named) throw new ImageBackendError('unconfigured', `${opts.named} could not upscale it.`);
+	try {
+		return await upscaleOnModel(input, opts);
+	} catch (err) {
+		if (reasons.length === 0 || !(err instanceof ImageBackendError) || err.kind === 'cancelled') {
+			throw err;
+		}
+		throw new ImageBackendError(
+			'unreachable',
+			`No upscaler could be reached: ${reasons.join('; ')}.`
+		);
+	}
+}
+
+/** An upscale on the first image model that upscales with its own server's upscaler. */
+async function upscaleOnModel(input: ImageInput, opts: ForToolOptions): Promise<Uint8Array> {
 	const routed = await routeImage(
 		upscaleNeed(),
 		(entry, backend) =>

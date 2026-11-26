@@ -6,7 +6,8 @@ const state = vi.hoisted(() => ({
 	resume: vi.fn(),
 	upscale: vi.fn(),
 	resumeUpscale: vi.fn(),
-	muxed: [] as Record<string, unknown>[]
+	muxed: [] as Record<string, unknown>[],
+	builtFor: [] as { id: string; url: string; model: string }[]
 }));
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore(
@@ -27,12 +28,15 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })
 }));
 vi.mock('#lib/videogen/index.ts', () => ({
-	videoBackendForEntry: () => ({
-		generate: state.generate,
-		resume: state.resume,
-		upscale: state.upscale,
-		resumeUpscale: state.resumeUpscale
-	})
+	videoBackendForEntry: (e: { id: string; url: string; model: string }) => (
+		state.builtFor.push(e),
+		{
+			generate: state.generate,
+			resume: state.resume,
+			upscale: state.upscale,
+			resumeUpscale: state.resumeUpscale
+		}
+	)
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
@@ -45,6 +49,20 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 					url: 'http://box:3000',
 					keyId: null,
 					model: 'ti2v',
+					options: {},
+					caps: null,
+					capsAt: null,
+					renamed: false
+				}
+			],
+			videoUpscalers: [
+				{
+					id: 'u',
+					name: 'relayvsr-x2',
+					backend: 'llama-toolchest',
+					url: 'http://compute2:3000',
+					keyId: null,
+					model: 'relayvsr-x2',
 					options: {},
 					caps: null,
 					capsAt: null,
@@ -124,6 +142,7 @@ function task(over: Partial<BackgroundTask> = {}): BackgroundTask {
 
 beforeEach(() => {
 	state.updates = [];
+	state.builtFor = [];
 	state.generate.mockReset();
 	state.resume.mockReset();
 	state.upscale.mockReset();
@@ -216,6 +235,25 @@ describe('the video follower, upscaling', () => {
 			width: 1664,
 			hasAudio: true,
 			upscaledFrom: { width: 832, height: 480 }
+		});
+	});
+
+	it("sends it to the upscaler's server in Settings → Video generation → Upscalers", async () => {
+		state.upscale.mockResolvedValue(upMade);
+		await dispatch(task({ spec: { ...upSpec(false), entryId: 'u' } }), 'run');
+		expect(state.builtFor[0]).toMatchObject({
+			id: 'u',
+			url: 'http://compute2:3000',
+			model: 'relayvsr-x2'
+		});
+	});
+
+	it('says so when the upscaler was removed before it ran', async () => {
+		await dispatch(task({ spec: { ...upSpec(false), entryId: 'gone' } }), 'run');
+		expect(state.upscale).not.toHaveBeenCalled();
+		expect(state.updates.at(-1)).toMatchObject({
+			state: 'failed',
+			error: expect.stringContaining('no longer in Settings → Video generation → Upscalers')
 		});
 	});
 

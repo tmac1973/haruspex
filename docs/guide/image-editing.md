@@ -44,7 +44,7 @@ When no model in the list can edit, the assistant says so and what can. Lemonade
 
 Ask the assistant to upscale a picture, two or four times: "make it four times bigger". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
-This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** on the **Upscaler** in a bundled-engine model (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`; a ComfyUI on another machine may give you the file to copy) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance there. An upscale goes to the first model whose server has one.
+This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** on the **Upscaler** in a bundled-engine model (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance, then add it in Settings → Image → Upscalers; that list is tried first, in order.
 
 ## Draw, edit or upscale in the background
 

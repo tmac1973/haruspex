@@ -12,7 +12,6 @@ import type {
 	VideoJobHandle,
 	VideoRequest,
 	VideoResult,
-	VideoUpscaler,
 	VideoUpscaleRequest
 } from '#lib/videogen/types.ts';
 
@@ -47,11 +46,10 @@ export interface VideoBackend {
 	/** The models the server offers, for Settings' dropdown. */
 	models?(signal?: AbortSignal): Promise<ModelOption[]>;
 	/**
-	 * The server's video upscalers, as `capabilities` last saw them. Only
-	 * where `capabilities().upscale` says so, with `upscale` and
-	 * `resumeUpscale` beside it.
+	 * Send an upscale to the instance `req.upscaler` names on this backend's
+	 * server, and pick one up after a restart. A backend built from an entry in
+	 * Settings → Video generation → Upscalers (`upscalerAsVideoEntry`).
 	 */
-	upscalers?(): VideoUpscaler[];
 	upscale?(req: VideoUpscaleRequest, opts?: VideoGenerateOptions): Promise<VideoResult>;
 	resumeUpscale?(
 		handle: VideoJobHandle,
