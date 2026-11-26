@@ -42,6 +42,9 @@
 	// The panel's width: dragged at its left edge, kept for next time.
 	const WIDTH_KEY = 'haruspex.notebookChatWidth';
 	const MIN_WIDTH = 300;
+	// The notebook beside it keeps 560px with the list; in a narrow window
+	// (the 800px a first start opens at) the panel gives way down to this.
+	const NARROW_WIDTH = 240;
 	const maxWidth = () => Math.max(MIN_WIDTH, window.innerWidth - 560);
 	function savedWidth(): number {
 		try {
@@ -52,11 +55,13 @@
 		}
 	}
 	let width = $state(savedWidth());
+	let windowWidth = $state(window.innerWidth);
+	const shownWidth = $derived(Math.min(width, Math.max(NARROW_WIDTH, windowWidth - 560)));
 
 	function startResize(event: MouseEvent) {
 		// On the right: dragging its edge left widens it.
 		startDragResize(event, {
-			width,
+			width: shownWidth,
 			widens: 'left',
 			clamp: (w) => Math.max(MIN_WIDTH, Math.min(maxWidth(), w)),
 			onResize: (w) => (width = w),
@@ -125,8 +130,10 @@
 	}
 </script>
 
+<svelte:window bind:innerWidth={windowWidth} />
+
 <aside
-	style="width: {width}px"
+	style="width: {shownWidth}px"
 	class="panel"
 	class:file-over={fileOver}
 	aria-label="Notebook chat"
