@@ -1,6 +1,6 @@
 /**
  * `generate_image`: Chat draws a picture with the image backend set up in
- * Settings → Image, and the picture appears in the answer.
+ * Settings → Image generation, and the picture appears in the answer.
  *
  * The image goes into the same content-addressed cache as pictures fetched
  * from the web, linked to the conversation so the startup sweep keeps it, and

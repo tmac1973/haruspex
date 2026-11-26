@@ -30,7 +30,7 @@ choice where you can. Stop asking when you have:
   sections. Default: crossfades.
 - **Existing clips or pictures:** any in the working folder to use as a
   section or a start picture, by file name.
-- **Music:** a style and mood, or none. It needs Settings → Music.
+- **Music:** a style and mood, or none. It needs Settings → Music generation.
 - **Narration:** the words, or none. Write them for the ear: about 2.5
   words a second of video.
 - **Someone speaking:** a person on screen saying lines, with a picture

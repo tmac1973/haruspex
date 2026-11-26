@@ -110,7 +110,7 @@ registerTool({
 			description:
 				'Make a picture larger and sharper, two or four times: a picture the user attached, one ' +
 				'you drew earlier, or a file in the working folder. Uses the image generation in ' +
-				`Settings → Image. Up to ${MAX_EDGE} px on the longest side. The original is kept.`,
+				`Settings → Image generation. Up to ${MAX_EDGE} px on the longest side. The original is kept.`,
 			parameters: {
 				type: 'object',
 				properties: {

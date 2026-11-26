@@ -1,7 +1,7 @@
 import type { ImageProgress } from '#lib/image/types.ts';
 
 /**
- * One line for a generation in flight, shared by Settings → Image and the
+ * One line for a generation in flight, shared by Settings → Image generation and the
  * chat tool so both say the same thing. `seconds` is time since the request
  * started: a cold ComfyUI can spend a minute loading before its first step,
  * and a counter that keeps moving is what tells the user it has not hung.

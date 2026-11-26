@@ -125,10 +125,12 @@ describe('edit_image', () => {
 
 	it('passes on why the backend can’t edit', async () => {
 		state.generate.mockRejectedValue(
-			new ImageBackendError('unconfigured', "Settings → Image can't edit pictures.")
+			new ImageBackendError('unconfigured', "Settings → Image generation can't edit pictures.")
 		);
 		const out = await executeTool('edit_image', { image: 'attached', prompt: 'x' }, chat);
-		expect(out.result).toMatch(/Could not edit it: Settings → Image can't edit pictures/);
+		expect(out.result).toMatch(
+			/Could not edit it: Settings → Image generation can't edit pictures/
+		);
 	});
 });
 

@@ -85,7 +85,7 @@ async function chooseToolchest() {
 	await fireEvent.change(backend, { target: { value: 'llama-toolchest' } });
 }
 
-describe('Settings → Music', () => {
+describe('Settings → Music generation', () => {
 	it('is off by default and says when the inference toolchest has music models', async () => {
 		render(MusicSection);
 		expect((screen.getByLabelText('Backend:') as HTMLSelectElement).value).toBe('none');

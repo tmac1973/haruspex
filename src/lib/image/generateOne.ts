@@ -4,7 +4,7 @@
  * This is the primitive the whole layer is arranged around. It needs no
  * project directory, no job and no run — which is what makes it the call a
  * later image tab or an inline chat image would make, unchanged. Settings →
- * Image's "Test generation" button uses exactly this, so the additive claim is
+ * Image generation's "Test generation" button uses exactly this, so the additive claim is
  * exercised rather than asserted.
  *
  * It adds nothing on top of the backend. No palette, no downscale, no cut-out:

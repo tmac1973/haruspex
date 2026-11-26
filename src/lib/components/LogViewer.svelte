@@ -79,7 +79,7 @@
 
 	let { open, onclose }: Props = $props();
 	let activeTab = $state<LogTab>('app');
-	// Opens on the backend Settings → Image has chosen.
+	// Opens on the backend Settings → Image generation has chosen.
 	let imageSource = $state<ImageLogSource>(
 		firstImageEntry()?.backend === 'comfyui' ? 'comfyui' : 'engine'
 	);

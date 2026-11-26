@@ -8,7 +8,7 @@ description: Make and change songs, hear answers read aloud, record voiceovers, 
 Ask for a song with a length, mood or your own lyrics. The assistant writes the style tags and lyrics, and the song plays in the answer.
 
 Tab: Chat
-Required settings: Settings → Music → Music backend (a llama-toolchest or ace-server you run)
+Required settings: Settings → Music generation → Music backend (a llama-toolchest or ace-server you run)
 
 Prompt:
 
@@ -27,7 +27,7 @@ Read more: music, media-skills
 Restyle, redo a stretch, extend, trim, or add or pull out an instrument. Works on a song it made, or an audio file you drop on the message box.
 
 Tab: Chat or Code
-Required settings: Settings → Music → Music backend; a base model such as ACE-Step 1.5 XL base for instrument changes
+Required settings: Settings → Music generation → Music backend; a base model such as ACE-Step 1.5 XL base for instrument changes
 
 Prompt:
 
@@ -46,7 +46,7 @@ Read more: music, media-skills
 Ask for a loop and the assistant saves it where your code loads its music.
 
 Tab: Code
-Required settings: Settings → Music → Music backend
+Required settings: Settings → Music generation → Music backend
 
 Prompt:
 

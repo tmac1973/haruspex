@@ -12,7 +12,7 @@
 //   One to three sentences on what it does.
 //
 //   Tab: Chat
-//   Required settings: Settings → Image → add a backend
+//   Required settings: Settings → Image generation → add a backend
 //
 //   Prompt:
 //

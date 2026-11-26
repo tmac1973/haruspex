@@ -129,9 +129,11 @@ describe('upscale_image', () => {
 
 	it('passes on why the backend can’t upscale', async () => {
 		state.upscale.mockRejectedValue(
-			new ImageBackendError('unconfigured', "Settings → Image can't upscale pictures.")
+			new ImageBackendError('unconfigured', "Settings → Image generation can't upscale pictures.")
 		);
 		const out = await executeTool('upscale_image', { image: SRC_URL }, chat);
-		expect(out.result).toMatch(/Could not upscale it: Settings → Image can't upscale pictures/);
+		expect(out.result).toMatch(
+			/Could not upscale it: Settings → Image generation can't upscale pictures/
+		);
 	});
 });

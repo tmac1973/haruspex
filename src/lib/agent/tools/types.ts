@@ -391,9 +391,9 @@ export interface ToolRegistration {
 		| 'calendar'
 		| 'contacts'
 		| 'desktop'
-		/** Uses the image backend (Settings → Image). Chat only, and only interactive. */
+		/** Uses the image backend (Settings → Image generation). Chat only, and only interactive. */
 		| 'image'
-		/** Uses the music backend (Settings → Music). Chat and the Code tab, interactive only. */
+		/** Uses the music backend (Settings → Music generation). Chat and the Code tab, interactive only. */
 		| 'music'
 		/** Speaks text into a WAV with the bundled koko. Chat and the Code tab, interactive only. */
 		| 'speech'
@@ -431,7 +431,7 @@ export interface ToolRegistration {
 	/**
 	 * The schema as settings shape it for this turn, or null to leave the tool
 	 * out: the image tools' `model` choices and picture limit follow the image
-	 * models in Settings → Image. Asked only once every other gate has passed.
+	 * models in Settings → Image generation. Asked only once every other gate has passed.
 	 */
 	liveSchema?: (schema: ToolDefinition, opts: ToolSchemaOpts) => ToolDefinition | null;
 	/** Calls the model while it runs, in the turn's slot; the turn keeps its

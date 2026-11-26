@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Settings → Image: the image models the image tools use, in the order they
+	 * Settings → Image generation: the image models the image tools use, in the order they
 	 * try them (`#lib/image/route.ts`). One row's editor is open at a time.
 	 */
 	import { invoke } from '@tauri-apps/api/core';

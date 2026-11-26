@@ -55,7 +55,7 @@ const GPU_FULL =
 
 export const GPU_FULL_SENTENCE =
 	'The image engine ran out of GPU memory beside the chat model. A smaller chat model in ' +
-	'Settings → Inference → Models, or ComfyUI on another machine in Settings → Image, would leave room.';
+	'Settings → Inference → Models, or ComfyUI on another machine in Settings → Image generation, would leave room.';
 
 /** `run`, with the bundled engine's full-GPU failure said in words. */
 async function explained<T>(entry: ImageModelEntry, run: () => Promise<T>): Promise<T> {
@@ -71,7 +71,7 @@ async function explained<T>(entry: ImageModelEntry, run: () => Promise<T>): Prom
 }
 
 /**
- * A picture made larger: by the first upscaler in Settings → Image →
+ * A picture made larger: by the first upscaler in Settings → Image generation →
  * Upscalers that answers (or the one the call names), else by the first image
  * model that upscales with its own server's upscaler; or a sentence the model
  * can pass on when none can. RGB: the caller restores alpha.

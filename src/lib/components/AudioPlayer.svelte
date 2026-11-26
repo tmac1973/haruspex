@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * The player for generated audio: on a tool step card, in Settings →
-	 * Music, and in answers, where `audio/playable.ts` mounts one for each
+	 * Music generation, and in answers, where `audio/playable.ts` mounts one for each
 	 * song markdown names. One plays at a time: see `audio/exclusive.ts`.
 	 *
 	 * Its own controls, not the `<audio>` element's: with the DMA-BUF

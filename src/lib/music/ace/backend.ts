@@ -67,7 +67,7 @@ function unusable(p: AceProps, model: string, host: string): string | null {
 	if (p.lmModels.length === 0) return `${host} has no composing model loaded.`;
 	if (p.synthModels.length === 0) return `${host} has no synthesis model loaded.`;
 	if (model && !p.synthModels.includes(model)) {
-		return `${model} is not on ${host} any more — Settings → Music.`;
+		return `${model} is not on ${host} any more — Settings → Music generation.`;
 	}
 	return null;
 }
@@ -215,7 +215,7 @@ export const aceMusicBackend: MusicBackend = {
 
 	async probe(): Promise<ProbeResult> {
 		const base = baseUrl();
-		if (!base) return { ok: false, detail: 'No server address — Settings → Music.' };
+		if (!base) return { ok: false, detail: 'No server address — Settings → Music generation.' };
 		const host = hostOf(base);
 		let p: AceProps;
 		try {
@@ -244,7 +244,7 @@ export const aceMusicBackend: MusicBackend = {
 		const base = baseUrl();
 		if (!base) {
 			return Promise.reject(
-				new MusicBackendError('unconfigured', 'No ace-server is set — Settings → Music.')
+				new MusicBackendError('unconfigured', 'No ace-server is set — Settings → Music generation.')
 			);
 		}
 		return run(base, req, opts);
@@ -255,7 +255,7 @@ export const aceMusicBackend: MusicBackend = {
 		req: MusicRequest,
 		opts: MusicGenerateOptions = {}
 	): Promise<MusicResult> {
-		// The server it went to, whatever Settings → Music says now.
+		// The server it went to, whatever Settings → Music generation says now.
 		const t: AceTarget = {
 			base: handle.baseUrl,
 			synthModel: handle.extra?.synthModel ?? '',

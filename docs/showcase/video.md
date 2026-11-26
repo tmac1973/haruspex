@@ -185,7 +185,7 @@ Read more: video-adjust
 The render runs in the background and is checked when it finishes. A thumbnail comes from a frame, or is drawn by the image backend.
 
 Tab: Chat or Code
-Required settings: Settings → Video editing → Let the assistant edit videos; Settings → Image for a drawn thumbnail
+Required settings: Settings → Video editing → Let the assistant edit videos; Settings → Image generation for a drawn thumbnail
 
 Prompt:
 
@@ -204,7 +204,7 @@ Read more: video-render
 The Video sequence job makes sections of chained clips, joins them, adds music and narration, and renders a Shotcut or Kdenlive project.
 
 Tab: Jobs
-Required settings: Settings → Video editing → Let the assistant edit videos; Settings → Video generation; Settings → Music for music; Settings → Image for stills
+Required settings: Settings → Video editing → Let the assistant edit videos; Settings → Video generation; Settings → Music generation for music; Settings → Image generation for stills
 
 Prompt:
 

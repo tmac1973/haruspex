@@ -44,13 +44,13 @@ The coding agent in the Code tab and the Shell's Full access.
 
 See the `code` page.
 
-## Image
+## Image generation
 
 - **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest.
 
 See the `images` page.
 
-## Music
+## Music generation
 
 - **Backend**: None (default) or llama-toolchest.
 - **Default length**: 30 seconds.

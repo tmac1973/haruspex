@@ -239,7 +239,7 @@ export function patchSettings(patch: unknown): { changed: string[] } {
 	if (changed.length) {
 		updateSettings(Object.fromEntries(changed.map((k) => [k, merged[k]])) as Partial<AppSettings>);
 	}
-	// Settings → Image and Video ask a model they add what it can do; one added
+	// Settings → Image generation and Video ask a model they add what it can do; one added
 	// here would otherwise stay unknown to the tools and the prompt until a
 	// restart, and a video model would be tried after every one that is known.
 	if (changed.includes('imageModels')) {

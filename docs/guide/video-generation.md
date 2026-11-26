@@ -61,7 +61,7 @@ The model's own size and length are used unless you ask otherwise. The assistant
 
 ## Where clips are kept
 
-Haruspex downloads each clip and keeps its own copy beside your songs. A clip that belongs to a chat or a Code session stays until you delete that chat or session. Settings → Music → **Clear unused audio** clears unused clips too.
+Haruspex downloads each clip and keeps its own copy beside your songs. A clip that belongs to a chat or a Code session stays until you delete that chat or session. Settings → Music generation → **Clear unused audio** clears unused clips too.
 
 ## What it doesn't do
 

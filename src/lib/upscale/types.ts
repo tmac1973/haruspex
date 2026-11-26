@@ -1,6 +1,6 @@
 /**
  * An upscaler Settings keeps: one upscaler instance on one server, in the
- * Upscalers list of Settings → Image or Settings → Video generation. Only
+ * Upscalers list of Settings → Image generation or Settings → Video generation. Only
  * llama-toolchest instances so far (`meta.kind` `upscale` for pictures,
  * `vupscale` for clips); the other image backends still upscale with their
  * image model's own upscaler.

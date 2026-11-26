@@ -1,5 +1,5 @@
 /**
- * Image model entries for tests: what Settings → Image keeps in
+ * Image model entries for tests: what Settings → Image generation keeps in
  * `imageModels`, with everything a test doesn't name left blank.
  *
  *   updateSettings({ imageModels: [imageModel('comfyui', { url: 'http://box:8188' })] });

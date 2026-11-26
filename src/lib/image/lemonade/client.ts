@@ -15,7 +15,7 @@ export interface LemonadeConfig {
 	apiKey: string;
 }
 
-/** The server Settings → Image is working with; see {@link useLemonadeServer}. */
+/** The server Settings → Image generation is working with; see {@link useLemonadeServer}. */
 let working: LemonadeConfig | null = null;
 
 /**

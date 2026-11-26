@@ -218,6 +218,6 @@ describe('generate_music', () => {
 	it('is refused at run time with no backend', async () => {
 		state.backend = 'none';
 		const out = await executeTool('generate_music', { caption: 'x' }, chat);
-		expect(out.result).toContain('Settings → Music');
+		expect(out.result).toContain('Settings → Music generation');
 	});
 });

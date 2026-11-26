@@ -376,7 +376,7 @@ describe('the run refuses to start', () => {
 
 		expect(h.finished).toEqual({
 			status: 'failed',
-			error: 'No image backend configured — Settings → Image.'
+			error: 'No image backend configured — Settings → Image generation.'
 		});
 		expect(files.has('a/sword.png')).toBe(false);
 	});

@@ -75,7 +75,7 @@ describe('validateSequenceSpec', () => {
 		const v = validateSequenceSpec(spec, ctx({ musicBackend: false, clipSound: false }));
 		expect(v.errors).toEqual([
 			'Music piano: there is no section beach.',
-			'The spec asks for music; set up music generation in Settings → Music first.',
+			'The spec asks for music; set up music generation in Settings → Music generation first.',
 			'Narration in section forest: at_secs must be inside the section.'
 		]);
 		expect(v.spec.sound.clip_sound).toBe(false);

@@ -65,7 +65,7 @@ pub struct ComfyModelFile {
     pub size_bytes: u64,
 }
 
-/// What a set's model makes: Settings → Image lists one kind, Settings →
+/// What a set's model makes: Settings → Image generation lists one kind, Settings →
 /// Video generation the other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[ts(export)]

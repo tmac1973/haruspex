@@ -1,7 +1,7 @@
 /**
  * Finding a llama-toolchest the user already has. When the chat model comes
  * from a toolchest (Settings → Inference), its address and key are the
- * likely answer for Settings → Image and Settings → Music too: they prefill
+ * likely answer for Settings → Image generation and Settings → Music generation too: they prefill
  * when the user picks llama-toolchest there, and a one-line hint says when
  * that server has image or music models while the section is off. Nothing
  * turns itself on.

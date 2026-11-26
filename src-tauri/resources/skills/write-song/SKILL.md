@@ -54,7 +54,7 @@ and say in your answer what you chose. Pass `bpm`, `key` or
 ## Length
 
 Use the length the user asked for, from 5 to 240 seconds. Without one, the
-default from Settings → Music applies. A short song can come out a little
+default from Settings → Music generation applies. A short song can come out a little
 shorter than asked. If it does, say so.
 
 ## Music for a game or a video

@@ -27,16 +27,16 @@ Ask for it wider or taller: "extend it by half on the right, continuing the road
 
 ## Combine pictures
 
-Name several pictures in one request, such as "put the cat from my second picture on the sofa in the first". Settings → Image shows how many each model takes (FLUX.2 klein takes four); the edit goes to one that takes that many.
+Name several pictures in one request, such as "put the cat from my second picture on the sofa in the first". Settings → Image generation shows how many each model takes (FLUX.2 klein takes four); the edit goes to one that takes that many.
 
 ## Which backends can edit
 
-Settings → Image says what each model can do (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. An edit goes to the first model in the list that can make it. If no model edits or upscales, the assistant can't offer to. Editing needs a model made for it:
+Settings → Image generation says what each model can do (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. An edit goes to the first model in the list that can make it. If no model edits or upscales, the assistant can't offer to. Editing needs a model made for it:
 
-- **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** in the bundled-engine model in Settings → Image. Qwen-Image may not be used commercially. Ming-Image can't edit.
+- **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** in the bundled-engine model in Settings → Image generation. Qwen-Image may not be used commercially. Ming-Image can't edit.
 - **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later, **FLUX.2 klein 4B** (12.4 GB) **or Qwen-Image-Edit-2511** (31 GB, about 24 GB of VRAM). Both are Apache 2.0, commercial use allowed; **Install** them under **Models on the server**. The files a model draws with are enough. Pictures are uploaded to the server's input folder.
-- **Lemonade with Qwen-Image 2.1.** Installing it from Settings → Image now includes the vision weights; for one installed earlier, press **Add editing** under **Models on the server**. Haruspex also installs Lemonade's image engine the first time, if the server has none.
-- **llama-toolchest** with a model that edits, such as FLUX.2 klein 4B (Apache 2.0, commercial use allowed). Add it in llama-toolchest; Settings → Image lists it like any other model.
+- **Lemonade with Qwen-Image 2.1.** Installing it from Settings → Image generation now includes the vision weights; for one installed earlier, press **Add editing** under **Models on the server**. Haruspex also installs Lemonade's image engine the first time, if the server has none.
+- **llama-toolchest** with a model that edits, such as FLUX.2 klein 4B (Apache 2.0, commercial use allowed). Add it in llama-toolchest; it is listed like any other model.
 
 When no model in the list can edit, the assistant says so and what can. Lemonade's own edit models, such as its FLUX.2 klein, can't be chosen in Haruspex yet.
 
@@ -44,7 +44,7 @@ When no model in the list can edit, the assistant says so and what can. Lemonade
 
 Ask the assistant to upscale a picture, two or four times: "make it four times bigger". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
-This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** on the **Upscaler** in a bundled-engine model (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance, then add it in Settings → Image → Upscalers; that list is tried first, in order.
+This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** on the **Upscaler** in a bundled-engine model (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance, then add it in Settings → Image generation → Upscalers; that list is tried first, in order.
 
 ## Draw, edit or upscale in the background
 

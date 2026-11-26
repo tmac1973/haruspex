@@ -1,5 +1,5 @@
 /**
- * The image models Settings → Image keeps (`imageModels`), each one model on
+ * The image models Settings → Image generation keeps (`imageModels`), each one model on
  * one server, in the order the image tools try them: the list, and editing
  * it; the one a job was sent for; the key a call to one sends. A backend is
  * built from an entry (`#lib/image/registry.ts`).
@@ -50,7 +50,7 @@ export function entryNamesFor(op: 'draw' | 'edit' | 'upscale'): string[] {
 /**
  * An image model that upscales with its own server's upscaler, or may (no
  * probe has said): the bundled engine, ComfyUI and Lemonade. A toolchest
- * server's upscalers are entries of their own in Settings → Image → Upscalers.
+ * server's upscalers are entries of their own in Settings → Image generation → Upscalers.
  */
 export function modelUpscales(e: ImageModelEntry): boolean {
 	return e.backend !== 'llama-toolchest' && (!e.caps || !!e.caps.upscale);

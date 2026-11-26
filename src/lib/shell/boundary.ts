@@ -137,7 +137,7 @@ function localPort(url: string): ProtectedPort[] {
 	}
 }
 
-/** The ports of the ComfyUI servers Settings → Image names that run on this machine. */
+/** The ports of the ComfyUI servers Settings → Image generation names that run on this machine. */
 function imageBackendPort(): ProtectedPort[] {
 	const urls = new Set(
 		imageEntries()

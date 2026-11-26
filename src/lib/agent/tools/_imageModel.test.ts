@@ -205,7 +205,9 @@ describe('how many pictures edit_image combines', () => {
 	it('refuses ten before any request when no model takes them', async () => {
 		state.models = [klein];
 		const out = await executeTool('edit_image', ten, chat);
-		expect(out.result).toMatch(/at most 4 pictures with the image models in Settings → Image/);
+		expect(out.result).toMatch(
+			/at most 4 pictures with the image models in Settings → Image generation/
+		);
 		expect(state.generate).not.toHaveBeenCalled();
 	});
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * The Upscalers list of Settings → Image or Settings → Video generation:
+	 * The Upscalers list of Settings → Image generation or Settings → Video generation:
 	 * the upscalers `upscale_image` or `upscale_video` use, in order
 	 * (`#lib/upscale/entries.ts`). One row's editor is open at a time.
 	 */

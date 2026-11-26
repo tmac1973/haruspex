@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * One upscaler in Settings → Image or Settings → Video generation →
+	 * One upscaler in Settings → Image generation or Settings → Video generation →
 	 * Upscalers: its name, llama-toolchest server, key and upscaler instance,
 	 * and a Probe that asks the server.
 	 */

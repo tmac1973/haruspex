@@ -81,7 +81,7 @@ function checkSpeaking(
 		errors.push(`${name}: ${s.portrait} is not in the episode folder.`);
 	} else if (!s.portrait && !ctx.imageBackend) {
 		errors.push(
-			`${name}: give a portrait of the person, or set up an image backend in Settings → Image to draw one.`
+			`${name}: give a portrait of the person, or set up an image backend in Settings → Image generation to draw one.`
 		);
 	}
 	for (const l of s.lines) {
@@ -127,7 +127,7 @@ function checkSection(s: Section, ctx: ValidateContext, errors: string[], notes:
 	const keyframe = ctx.imageBackend && can('start_image');
 	if (!keyframe && !can('text')) {
 		errors.push(
-			`${name}: ${ctx.instance} needs a picture to start from. Give a start_image, or set up an image backend in Settings → Image for a keyframe.`
+			`${name}: ${ctx.instance} needs a picture to start from. Give a start_image, or set up an image backend in Settings → Image generation for a keyframe.`
 		);
 	} else if (!keyframe) {
 		notes.push(`${name} opens from its prompt alone, with no keyframe.`);
@@ -171,7 +171,9 @@ function checkMusic(spec: SequenceSpec, ctx: ValidateContext, errors: string[]):
 		if (lufs < -40 || lufs > -10) errors.push(`${name}: lufs is -40 to -10.`);
 	}
 	if (spec.sound.music.length > 0 && !ctx.musicBackend) {
-		errors.push('The spec asks for music; set up music generation in Settings → Music first.');
+		errors.push(
+			'The spec asks for music; set up music generation in Settings → Music generation first.'
+		);
 	}
 }
 

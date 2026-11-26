@@ -6,7 +6,7 @@ until you opt in.
 
 ## Choosing a backend
 
-Settings → Image offers two, and they are genuinely different trades.
+Settings → Image generation offers two, and they are genuinely different trades.
 
 **ComfyUI** talks to a server you run, started as it comes (`python
 main.py`); Haruspex calls it from Rust, so it needs no CORS flag. Pick it if
@@ -15,7 +15,7 @@ default: transparent sprites, seamless textures) and Qwen-Image-2.1 Turbo
 (non-commercial). A Qwen-Image-2.1 base model already on the server keeps
 working, at its own 25 steps.
 
-The models go on the server. After Probe, Settings → Image lists each model
+The models go on the server. After Probe, Settings → Image generation lists each model
 family with what the server is missing, and Install puts the files there:
 
 - **ComfyUI on this machine**: Haruspex downloads into ComfyUI's own model
@@ -31,13 +31,13 @@ family with what the server is missing, and Install puts the files there:
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
 you want image generation with nothing to install. It starts on demand and
 stops when you say. It runs Ming-Image (the default) and, as an opt-in,
-Qwen-Image-2.1 Turbo, from GGUF weights downloaded in Settings → Image. Sheets,
+Qwen-Image-2.1 Turbo, from GGUF weights downloaded in Settings → Image generation. Sheets,
 transparency and tiling textures work as on ComfyUI.
 
 **Lemonade** is a [Lemonade](https://lemonade-server.ai) server the user
 runs, whose `sd-cpp` recipe is stable-diffusion.cpp again. It runs the bundled
 engine's catalogue — the same GGUF files, installed on the server from
-Settings → Image — with the same transparency, but no tiling textures. Pick
+Settings → Image generation — with the same transparency, but no tiling textures. Pick
 it to draw on another machine's GPU without ComfyUI. See
 [Lemonade](#the-lemonade-backend) below.
 
@@ -459,7 +459,7 @@ It serves three HTTP APIs: its own `/sdcpp/v1/*`, an AUTOMATIC1111-compatible
 
 ## Models
 
-**On ComfyUI**, Settings → Image installs these into the server (see Choosing
+**On ComfyUI**, Settings → Image generation installs these into the server (see Choosing
 a backend):
 
 | Model | Licence | Commercial | Files | Size |

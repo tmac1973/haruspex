@@ -41,10 +41,12 @@ describe('unmetNeed', () => {
 	});
 
 	it('names the settings path of the first need that is off', () => {
-		expect(unmetNeed(['image'])).toBe('Needs an image backend: Settings → Image.');
+		expect(unmetNeed(['image'])).toBe('Needs an image backend: Settings → Image generation.');
 		updateSettings({ imageModels: imageModelsFor('comfyui') });
 		expect(unmetNeed(['image'])).toBeNull();
-		expect(unmetNeed(['image', 'music'])).toBe('Needs a music backend: Settings → Music.');
+		expect(unmetNeed(['image', 'music'])).toBe(
+			'Needs a music backend: Settings → Music generation.'
+		);
 		updateSettings({ musicBackendKind: 'ace-server' });
 		expect(unmetNeed(['image', 'music', 'video'])).toContain('Settings → Video editing');
 		video.on = true;
@@ -80,7 +82,7 @@ describe('needsNotes', () => {
 	it('says what the image backend can do, and how to get the rest', async () => {
 		updateSettings({ imageModels: imageModelsFor('lemonade') });
 		const [note] = await needsNotes(['image']);
-		expect(note).toContain('The image backend, Lemonade (Settings → Image).');
+		expect(note).toContain('The image backend, Lemonade (Settings → Image generation).');
 		expect(note).toContain('Can: draw pictures, edit pictures, upscale pictures');
 		expect(note).toContain("Can't: extend pictures, tiling textures.");
 		expect(note).toContain('Only the bundled engine and ComfyUI extend pictures');
@@ -113,7 +115,7 @@ describe('unmetFor in lean mode', () => {
 
 	it('still says what a skill needs when lean mode is off', () => {
 		expect(unmetFor({ needs: ['image'], tools: ['edit_image'] })).toBe(
-			'Needs an image backend: Settings → Image.'
+			'Needs an image backend: Settings → Image generation.'
 		);
 	});
 });

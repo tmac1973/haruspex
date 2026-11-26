@@ -30,7 +30,7 @@
 		probeCount: number;
 		/** Ask the parent to probe again: a new model shows up in its list. */
 		onInstalled: () => void;
-		/** Which models the card offers: Settings → Image's, or Settings → Video generation's. */
+		/** Which models the card offers: Settings → Image generation's, or Settings → Video generation's. */
 		kind?: 'image' | 'video';
 	}
 	let { baseUrl, apiKey, probeCount, onInstalled, kind = 'image' }: Props = $props();

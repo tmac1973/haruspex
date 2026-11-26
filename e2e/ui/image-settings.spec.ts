@@ -19,9 +19,9 @@ test.use({
 	}
 });
 
-test('Settings → Image probes ComfyUI and lists its model', async ({ app }) => {
+test('Settings → Image generation probes ComfyUI and lists its model', async ({ app }) => {
 	await app.getByRole('button', { name: 'Settings' }).click();
-	await app.getByRole('button', { name: 'Image', exact: true }).click();
+	await app.getByRole('button', { name: 'Image generation', exact: true }).click();
 	await app.getByRole('button', { name: /^e2e-sd15/ }).click();
 	await app.getByRole('button', { name: 'Probe' }).click();
 	await expect(app.getByText('Connected — E2E GPU.')).toBeVisible();
@@ -35,9 +35,9 @@ test('Settings → Image probes ComfyUI and lists its model', async ({ app }) =>
 	).toHaveCount(2);
 });
 
-test('Settings → Image adds, orders and removes image models', async ({ app }) => {
+test('Settings → Image generation adds, orders and removes image models', async ({ app }) => {
 	await app.getByRole('button', { name: 'Settings' }).click();
-	await app.getByRole('button', { name: 'Image', exact: true }).click();
+	await app.getByRole('button', { name: 'Image generation', exact: true }).click();
 	await app.getByRole('button', { name: 'Add model' }).click();
 	// A new one opens, and only one editor is open at a time.
 	await expect(app.getByLabel('Name:')).toHaveCount(1);

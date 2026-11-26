@@ -9,7 +9,7 @@ import { findUpscaler } from '#lib/image/comfyui/families.ts';
 
 /**
  * The server's upscaler, or null. Asked every time rather than kept, so an
- * install from Settings → Image counts at once; a server that won't answer
+ * install from Settings → Image generation counts at once; a server that won't answer
  * has none.
  */
 export async function upscalerOf(cfg: api.ClientConfig): Promise<string | null> {

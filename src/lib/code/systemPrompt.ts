@@ -75,10 +75,10 @@ export function isMacOS(
 export function assetLine(): string {
 	return imageEntries().length > 0
 		? '\n- make_asset — make art for the project: a sprite, icon or tiling texture (or a plain picture), written as a PNG at the size the project uses. Pass palette_from with an existing asset to keep a set consistent. A texture, or a transition set where two textures meet (pass the recipes you used), is drawn by code from recipes you write, in a second; the rest take a minute or more. For a painted material that must tile, pass seamless: true with kind image. Check the result before moving on.'
-		: '\n- make_asset — make a tiling texture for the project, or a transition set where two textures meet, drawn by code from recipes you write, as PNGs at the size the project uses. Sprites and icons need image generation in Settings → Image. Check the result before moving on.';
+		: '\n- make_asset — make a tiling texture for the project, or a transition set where two textures meet, drawn by code from recipes you write, as PNGs at the size the project uses. Sprites and icons need image generation in Settings → Image generation. Check the result before moving on.';
 }
 
-/** generate_music and edit_music, when Settings → Music has a backend. */
+/** generate_music and edit_music, when Settings → Music generation has a backend. */
 export function musicLine(readOnly: boolean | undefined): string {
 	if (getSettings().musicBackendKind === 'none') return '';
 	const save = readOnly

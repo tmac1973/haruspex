@@ -283,7 +283,7 @@ describe('ComfyUI edits', () => {
 		const loras = LISTS.LoraLoaderModelOnly[1].splice(0);
 		server({ editPlus: true });
 		await expect(comfyUiBackend.generate(edit())).rejects.toThrow(
-			/Lightning LoRA in models\/loras — Settings → Image → Install/
+			/Lightning LoRA in models\/loras — Settings → Image generation → Install/
 		);
 		LISTS.LoraLoaderModelOnly[1].push(...loras);
 	});

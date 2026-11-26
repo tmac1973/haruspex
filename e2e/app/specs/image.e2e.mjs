@@ -2,7 +2,7 @@ import { REMOTE, seed } from '../helpers.mjs';
 import { createFakeComfy, CHECKPOINT } from '../../fakes/comfyui.mjs';
 
 /**
- * Settings → Image → Generate a test image, through the app's real ComfyUI
+ * Settings → Image generation → Generate a test image, through the app's real ComfyUI
  * client (IPC into comfy.rs, HTTP from Rust) against a fake ComfyUI.
  */
 describe('a test image from ComfyUI', () => {
@@ -72,7 +72,7 @@ describe('a test image from ComfyUI', () => {
 			]
 		});
 		await (await $('button[aria-label="Settings"]')).click();
-		await (await $('button=Image')).click();
+		await (await $('button=Image generation')).click();
 		// Open the image model seeded above.
 		await (await $('button.entry-name')).click();
 		await clickWhenStill(await $('button=Generate a test image'));

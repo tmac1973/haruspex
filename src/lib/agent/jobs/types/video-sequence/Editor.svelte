@@ -114,7 +114,7 @@
 		Open each section on a keyframe
 		<Tooltip
 			label="About keyframes"
-			text="Makes an opening still for each generated section with the image backend in Settings → Image, so every clip of it starts from a picture of the subject."
+			text="Makes an opening still for each generated section with the image backend in Settings → Image generation, so every clip of it starts from a picture of the subject."
 		/>
 	</label>
 {/if}

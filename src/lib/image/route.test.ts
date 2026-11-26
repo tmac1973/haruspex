@@ -73,8 +73,8 @@ describe('routeImage', () => {
 		expect(await ranOn(draw)).toBe('A');
 		expect(await ranOn(edit(2))).toBe('B');
 		expect(await ranOn(edit(4))).toBe('B');
-		// A toolchest model's own upscaler isn't used: those are in Settings → Image → Upscalers.
-		await expect(ranOn(upscaleNeed())).rejects.toThrow('Settings → Image → Upscalers');
+		// A toolchest model's own upscaler isn't used: those are in Settings → Image generation → Upscalers.
+		await expect(ranOn(upscaleNeed())).rejects.toThrow('Settings → Image generation → Upscalers');
 		state.entries = state.entries.map((e) => (e.id === 'C' ? { ...e, backend: 'comfyui' } : e));
 		expect(await ranOn(upscaleNeed())).toBe('C');
 	});
@@ -191,6 +191,6 @@ describe('routeImage', () => {
 
 	it('says image generation isn’t set up when the list is empty', async () => {
 		state.entries = [];
-		await expect(ranOn(draw)).rejects.toThrow(/Settings → Image/);
+		await expect(ranOn(draw)).rejects.toThrow(/Settings → Image generation/);
 	});
 });

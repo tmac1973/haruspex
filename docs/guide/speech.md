@@ -51,7 +51,7 @@ See the `media-skills` page for how skills are offered, and the `video-skills` p
 
 ## Where the files are kept
 
-Spoken audio goes in the audio cache with songs. A file that belongs to a chat or a Code session stays until you delete that chat or session. Settings → Music → **Audio cache** shows the space used, and **Clear unused audio** deletes what nothing plays.
+Spoken audio goes in the audio cache with songs. A file that belongs to a chat or a Code session stays until you delete that chat or session. Settings → Music generation → **Audio cache** shows the space used, and **Clear unused audio** deletes what nothing plays.
 
 ## What it doesn't do
 

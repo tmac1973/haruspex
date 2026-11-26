@@ -116,7 +116,7 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
   - a tool call writing a real file, through a research job's working
     directory (Chat's needs a native folder dialog, which WebDriver can't
     drive);
-  - Settings → Image → Generate a test image, against the fake ComfyUI in
+  - Settings → Image generation → Generate a test image, against the fake ComfyUI in
     `e2e/fakes/comfyui.mjs`;
   - phase 13's guarantee: kill the app outright, and the model server goes
     within 2 s;

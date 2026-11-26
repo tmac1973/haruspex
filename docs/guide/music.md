@@ -5,19 +5,19 @@ description: Turning on music generation with llama-toolchest or ace-server, mak
 
 # Music generation
 
-Haruspex can have a server make songs with ACE-Step. It is off by default: nothing happens until you pick a backend in Settings → Music.
+Haruspex can have a server make songs with ACE-Step. It is off by default: nothing happens until you pick a backend in Settings → Music generation.
 
 ## Turn it on
 
-Open Settings → Music → **Music backend** and choose a **Backend**:
+Open Settings → Music generation → **Music backend** and choose a **Backend**:
 
 - **None** — the default.
 - **llama-toolchest** — a llama-toolchest server you run with generation on and an ACE-Step model added.
 - **ace-server** — acestep.cpp's own server, which you run yourself.
 
-While it is off, Settings → Music says so if the llama-toolchest your chat model comes from has music models.
+While it is off, Settings → Music generation says so if your chat model's llama-toolchest has music models.
 
-A server you probe or **Add** is kept under **Saved servers**; a llama-toolchest is listed in Settings → Image and Video too.
+A server you probe or **Add** is kept under **Saved servers**; the other generation sections list a llama-toolchest too.
 
 ### Set up llama-toolchest
 

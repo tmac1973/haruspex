@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * One image model in Settings → Image, open for editing: its backend, its
+	 * One image model in Settings → Image generation, open for editing: its backend, its
 	 * server, key and model, Probe, what it can do, and the backend's own
 	 * install list or catalogue. Writes go to the entry (`#lib/image/entries.ts`),
 	 * never to the old single-backend fields.

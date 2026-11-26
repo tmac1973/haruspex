@@ -963,14 +963,14 @@ export interface AppSettings {
 	 * offered only off it.
 	 */
 	/**
-	 * Generation servers saved in Settings → Image, Music and Video, to switch
+	 * Generation servers saved in Settings → Image generation, Music and Video, to switch
 	 * between without typing the address again. A llama-toolchest is listed in
 	 * all three; the others only where their backend is.
 	 */
 	generationServers: GenerationServer[];
 	/**
 	 * The image models the image tools use, in the order they are tried (see
-	 * `#lib/image/entries.ts`), edited in Settings → Image. An install from
+	 * `#lib/image/entries.ts`), edited in Settings → Image generation. An install from
 	 * before the list is seeded once from its old single-backend fields
 	 * (`#lib/image/fields.ts`).
 	 */
@@ -984,7 +984,7 @@ export interface AppSettings {
 	videoModels: VideoModelEntry[];
 	/**
 	 * The upscalers `upscale_image` tries before an image model's own, in
-	 * order (see `#lib/upscale/entries.ts`), edited in Settings → Image →
+	 * order (see `#lib/upscale/entries.ts`), edited in Settings → Image generation →
 	 * Upscalers. Only llama-toolchest instances so far.
 	 */
 	imageUpscalers: UpscalerEntry[];
@@ -1703,7 +1703,7 @@ export function updateSettings(partial: Partial<AppSettings>): void {
 }
 
 /**
- * Drop Settings → Image's fields from before the image model list, which an
+ * Drop Settings → Image generation's fields from before the image model list, which an
  * older install still has stored. For `#lib/image/keys.ts`, once it has moved
  * their keys; nothing is written when none is there.
  */

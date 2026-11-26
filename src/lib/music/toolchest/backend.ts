@@ -138,7 +138,7 @@ export const toolchestMusicBackend: MusicBackend = {
 		req: MusicRequest,
 		opts: MusicGenerateOptions = {}
 	): Promise<MusicResult> {
-		// The server it went to, whatever Settings → Music says now.
+		// The server it went to, whatever Settings → Music generation says now.
 		const cfg = await server.configFor(handle.baseUrl, handle.extra?.keyId);
 		try {
 			return await finish(cfg, readMusicJob({ id: handle.id })!, handle.model, req, opts);

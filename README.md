@@ -73,7 +73,7 @@ Audit, guided planning and autonomous coding are coding-focused. They need a lar
 - **Pictures in Chat** — Ask Chat to draw something and the picture appears in the answer, and stays with the conversation. ([details](https://haruspex.spronglehump.com/guide/images/))
 - **Art for the project you are coding** — In the Code tab or a Shell with Full access, ask for "a 32 px coin sprite in assets/" and the assistant writes a finished sprite, icon or tiling texture into your project, made the same way the asset job makes them. It can match the colours of an asset you already have.
 - **Game art from a description** — The asset generation job draws a project's sprites, icons and tiling textures in one consistent style, checks each one, and writes them into the project. Guided planning can hand off to it and then to autonomous coding, so you can go from an idea to a game with its own art in one unattended run. ([details](https://haruspex.spronglehump.com/guide/images/))
-- **Runs on your machine** — Either a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, or a bundled engine that needs nothing installed. Nothing starts until you pick one in Settings → Image.
+- **Runs on your machine** — Either a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, or a bundled engine that needs nothing installed. Nothing starts until you pick one in Settings → Image generation.
 
 ### Where the model runs
 

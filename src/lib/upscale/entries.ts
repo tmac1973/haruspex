@@ -1,5 +1,5 @@
 /**
- * The upscalers Settings → Image and Settings → Video generation keep
+ * The upscalers Settings → Image generation and Settings → Video generation keep
  * (`imageUpscalers`, `videoUpscalers`), in the order the upscale tools try
  * them: the list, and editing it. As `#lib/videogen/entries.ts` does for
  * video models.
@@ -15,7 +15,7 @@ const FIELD = { image: 'imageUpscalers', video: 'videoUpscalers' } as const;
 
 /** Where each list is set, for messages. */
 export const UPSCALERS_SECTION: Record<UpscalerKind, string> = {
-	image: 'Settings → Image → Upscalers',
+	image: 'Settings → Image generation → Upscalers',
 	video: 'Settings → Video generation → Upscalers'
 };
 

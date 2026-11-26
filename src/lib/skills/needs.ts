@@ -7,7 +7,7 @@
  * own schemas are offered by (`agent/tools/registry.ts`).
  *
  * An image skill also gets a note, when it loads, of what the image backend
- * can do now: the same line Settings → Image shows, so a skill that branches
+ * can do now: the same line Settings → Image generation shows, so a skill that branches
  * on it ("only the bundled engine and ComfyUI extend") need not spend a tool
  * call finding out. With several image models, a line for each (`entryLine`),
  * in the order the tools use them.
@@ -22,12 +22,12 @@ import { leanOffers } from '#lib/agent/tools/_leanProfile.ts';
 
 /** Why each need is unmet, in the words Settings uses. */
 const UNMET: Record<SkillNeed, string> = {
-	image: 'Needs an image backend: Settings → Image.',
-	music: 'Needs a music backend: Settings → Music.',
+	image: 'Needs an image backend: Settings → Image generation.',
+	music: 'Needs a music backend: Settings → Music generation.',
 	video: 'Needs the video tools on and ffmpeg, ffprobe and melt found: Settings → Video editing.'
 };
 
-/** The image backend as Settings → Image names it. */
+/** The image backend as Settings → Image generation names it. */
 const BACKEND_NAME: Record<ImageBackendKind, string> = {
 	none: 'none',
 	local: 'the bundled engine',
@@ -75,7 +75,7 @@ export function unmetFor(skill: {
 
 /** What a list of image models is told to do with it, after its lines. */
 export const MODELS_NOTE =
-	'These are the image models in Settings → Image, in the order the tools use them; the user ' +
+	'These are the image models in Settings → Image generation, in the order the tools use them; the user ' +
 	'can add another there. Pass `model` only when the user names one.';
 
 /**
@@ -101,7 +101,7 @@ export async function needsNotes(needs: readonly SkillNeed[]): Promise<string[]>
 		const line = capabilityLine(await backend.capabilities(), backend.kind);
 		const how = line.howTo ? ` ${line.howTo}` : '';
 		return [
-			`The image backend, ${BACKEND_NAME[backend.kind]} (Settings → Image). ${line.text}${how}`
+			`The image backend, ${BACKEND_NAME[backend.kind]} (Settings → Image generation). ${line.text}${how}`
 		];
 	} catch (e) {
 		console.warn('Could not read the image backend for a skill', e);

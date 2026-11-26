@@ -116,7 +116,10 @@ pub enum ImageEngineError {
 impl std::fmt::Display for ImageEngineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoModel => write!(f, "No image model is configured — Settings → Image"),
+            Self::NoModel => write!(
+                f,
+                "No image model is configured — Settings → Image generation"
+            ),
             Self::ModelMissing(p) => write!(f, "The image model was not found at {p}"),
             Self::SidecarMissing(p) => write!(f, "The image sidecar is missing: {p}"),
             Self::Timeout(s) => write!(f, "The image engine did not become ready: {s}"),

@@ -1,7 +1,7 @@
 /**
  * `video_thumbnail`: a 1280×720 YouTube thumbnail under 2 MB, from a frame of
  * the footage, the cut or a render, or drawn by the image backend set in
- * Settings → Image. Saved in the episode folder; the old one is backed up.
+ * Settings → Image generation. Saved in the episode folder; the old one is backed up.
  * Same gate as the other video tools; see `video.ts`.
  */
 import { invoke } from '@tauri-apps/api/core';
@@ -49,7 +49,7 @@ async function fromPrompt(
 	if (!prompt) throw new Error('A generated thumbnail needs "prompt".');
 	if (imageEntries().length === 0) {
 		throw new Error(
-			'Image generation is off. The user can add an image model in Settings → Image.'
+			'Image generation is off. The user can add an image model in Settings → Image generation.'
 		);
 	}
 	const result = await generateOneImage({

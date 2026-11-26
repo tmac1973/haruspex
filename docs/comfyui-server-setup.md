@@ -2,7 +2,7 @@
 
 How to run ComfyUI on another machine so Haruspex can generate images on it.
 You install plain ComfyUI with its built-in Manager and start it listening on
-the network. Haruspex does the rest from Settings → Image: it finds the
+the network. Haruspex does the rest from Settings → Image generation: it finds the
 server, installs the model files through Manager, and picks the workflows.
 
 Written for Linux with an AMD GPU (ROCm). Notes for NVIDIA and Windows are at
@@ -183,7 +183,7 @@ Manager answers on `/manager/version` instead.
 
 ## 6. Connect Haruspex
 
-In Settings → Image:
+In Settings → Image generation:
 
 1. **Backend:** ComfyUI.
 2. **Server address:** `http://SERVER:8188`. Leave **API key** empty; it is
@@ -207,7 +207,7 @@ called directly.
 
 ## Installing the models by hand
 
-If Manager is not available, or it installed nothing, Settings → Image shows
+If Manager is not available, or it installed nothing, Settings → Image generation shows
 **Copy file list** instead: one line per file with its folder, size and URL.
 Download each into that folder under `~/ComfyUI/models/`. For Ming-Image:
 
@@ -228,7 +228,7 @@ Then Probe again in Haruspex. ComfyUI picks up new files without a restart.
 | Install finishes, but the files are still listed as missing | Manager refused: `network_mode` isn't `personal_cloud`, or `security_level` is `strong`. ComfyUI's console logs the refusal. |
 | No Install button, only Copy file list | Manager isn't enabled, or isn't answering (step 5). |
 | A generation fails with an out-of-memory error | Something else holds the GPU's memory, or the server has less than 24 GB of RAM for the text encoder. |
-| Transparent sprites come out opaque | The server runs a modified Ming workflow. Haruspex's own (`src/lib/image/comfyui/templates/`) needs only core nodes; a custom workflow in Settings → Image replaces it. |
+| Transparent sprites come out opaque | The server runs a modified Ming workflow. Haruspex's own (`src/lib/image/comfyui/templates/`) needs only core nodes; a custom workflow in Settings → Image generation replaces it. |
 
 ## Other platforms
 
@@ -254,4 +254,4 @@ Then Probe again in Haruspex. ComfyUI picks up new files without a restart.
   fault on compute.
 - The remote case was verified end to end on 2026-10-05, on that server:
   Haruspex, on another machine, installed Ming-Image through Manager, and
-  Settings → Image generated a test image on it.
+  Settings → Image generation generated a test image on it.

@@ -1,6 +1,6 @@
 /**
  * The image tools' `model` argument, and their schemas as the image models in
- * Settings → Image shape them. With two or more models the chat model may name
+ * Settings → Image generation shape them. With two or more models the chat model may name
  * one (an enum of their names); left out, the router picks the first that can
  * do the job (`#lib/image/route.ts`). With one there is nothing to choose and
  * no argument.

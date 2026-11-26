@@ -33,8 +33,8 @@ import type { JobLike } from '#lib/toolchest/jobs.ts';
 
 /** The section that sets each kind. */
 const SECTIONS: Record<GenerationKind, string> = {
-	image: 'Settings → Image',
-	music: 'Settings → Music',
+	image: 'Settings → Image generation',
+	music: 'Settings → Music generation',
 	video: 'Settings → Video generation'
 };
 

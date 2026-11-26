@@ -69,7 +69,7 @@ describe('Settings → Skills', () => {
 		updateSettings({ musicBackendKind: 'none' });
 		listed.push(skill('write-song', { needs: ['music'] }));
 		render(SkillsSection);
-		await screen.findByText('Not offered: Needs a music backend: Settings → Music.');
+		await screen.findByText('Not offered: Needs a music backend: Settings → Music generation.');
 	});
 
 	it('labels shipped skills, and restores an edited or deleted one', async () => {

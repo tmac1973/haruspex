@@ -191,7 +191,7 @@ const TABLE: Record<string, Handler> = {
 	image_engine_logs: empty,
 	whisper_video_logs: empty,
 	comfy_logs: empty,
-	// Settings → Image asks whether to offer the bundled engine.
+	// Settings → Image generation asks whether to offer the bundled engine.
 	image_engine_status: () => ({ status: { type: 'Stopped' }, model: null, available: true }),
 	// Not in a repo: the guided-planning skill picker lists only user skills.
 	skills_project_root: none,
@@ -202,7 +202,7 @@ const TABLE: Record<string, Handler> = {
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
 	// Nothing bundled to put on the shell's PATH.
 	media_shims_set: () => false,
-	// Settings → Music: no songs kept yet.
+	// Settings → Music generation: no songs kept yet.
 	audio_cache_size: () => 0,
 	// No cameras: none is watching.
 	camera_watch_status: () => ({ running: [], errors: {} }),

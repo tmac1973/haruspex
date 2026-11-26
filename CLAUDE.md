@@ -13,16 +13,16 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
   sd-server sidecar (port 8767, stable-diffusion.cpp), a Lemonade server's
   sd-cpp recipe (the user runs it; `lemonade.rs`), or a llama-toolchest
   server's image instances (`toolchest.rs`). Off by default; nothing
-  starts until Settings → Image selects one. See `docs/image-generation.md`.
+  starts until Settings → Image generation selects one. See `docs/image-generation.md`.
 - **Music generation**: a llama-toolchest server's ACE-Step instances
-  (`src/lib/music/`). Off by default (Settings → Music). Songs are kept in
+  (`src/lib/music/`). Off by default (Settings → Music generation). Songs are kept in
   the audio cache (`audio_cache/`, `haruspex-audio:`), since toolchest
   deletes them after a day.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)
 - **Image models**: Ming-Image 0.1 Design (MIT; the default, ComfyUI) and
   Qwen-Image-2.1 (non-commercial), installed into the user's ComfyUI from
-  Settings → Image (`comfy_models.rs`); the bundled engine runs the same two
+  Settings → Image generation (`comfy_models.rs`); the bundled engine runs the same two
   as GGUF (`image_models.rs`, Ming converted by us and hosted on Hugging Face),
   downloaded to `models/image/<id>/`, or installed on a Lemonade server.
   Licence and commercial use are first-class fields in both

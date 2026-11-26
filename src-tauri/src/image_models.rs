@@ -466,7 +466,7 @@ fn remove_stale(dir: &Path, entry: &ImageModelInfo) {
     }
 }
 
-/// The upscaler, for Settings → Image → Bundled engine.
+/// The upscaler, for Settings → Image generation → Bundled engine.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct UpscalerInfo {

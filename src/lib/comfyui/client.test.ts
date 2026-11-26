@@ -388,7 +388,7 @@ describe('rejectionMessage', () => {
 		});
 		expect(api.rejectionMessage('/prompt', body)).toBe(
 			"The image backend refused /prompt: UNETLoader — unet_name: 'ming.safetensors' not in [] — " +
-				'a file the workflow needs is not on the server (Settings → Image).'
+				'a file the workflow needs is not on the server (Settings → Image generation).'
 		);
 	});
 
