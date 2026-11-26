@@ -3,6 +3,11 @@ import type { ToolResult } from '#lib/sandbox/sandbox.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { setActiveConversationId } from '#lib/stores/session.svelte.ts';
+import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
+// Imported once here, not in each test: the tests run shuffled, and the first
+// to import the whole tool registry paid for it inside its own 5 s timeout,
+// which a busy CI runner overran.
+import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 
 const mocks = vi.hoisted(() => ({
 	runPython: vi.fn(),
@@ -60,7 +65,6 @@ describe('sandbox tools', () => {
 
 	it('refuses run_python and skips runPython when the sandbox is disabled', async () => {
 		updateSettings({ sandboxEnabled: false });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: '1+1' }, ctx);
 		expect(JSON.parse(out.result).error).toMatch(/sandbox is disabled/i);
 		expect(mocks.runPython).not.toHaveBeenCalled();
@@ -68,7 +72,6 @@ describe('sandbox tools', () => {
 
 	it('routes run_python to runPython and formats stdout + result', async () => {
 		mocks.runPython.mockResolvedValue(ok({ stdout: 'hello\n', result: '4' }));
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'print("hello"); 2+2' }, ctx);
 		expect(mocks.runPython).toHaveBeenCalledWith(
 			'c1',
@@ -85,7 +88,6 @@ describe('sandbox tools', () => {
 		mocks.runPython.mockResolvedValue(
 			ok({ error: 'NameError: name "x" is not defined', stderr: 'Traceback...' })
 		);
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'print(x)' }, ctx);
 		expect(out.result).toContain('Error:');
 		expect(out.result).toContain('NameError');
@@ -93,7 +95,6 @@ describe('sandbox tools', () => {
 	});
 
 	it('rejects empty code with a structured error', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: '   ' }, ctx);
 		expect(JSON.parse(out.result)).toHaveProperty('error');
 		expect(mocks.runPython).not.toHaveBeenCalled();
@@ -106,7 +107,6 @@ describe('sandbox tools', () => {
 				notes: ['DataFrame truncated to 200 of 5000 rows']
 			})
 		);
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'df' }, ctx);
 		expect(out.result).toContain('2 figures/artifacts');
 		expect(out.result).toContain('do NOT embed');
@@ -115,7 +115,6 @@ describe('sandbox tools', () => {
 
 	it('routes reset_python to resetSandbox', async () => {
 		mocks.resetSandbox.mockResolvedValue(undefined);
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('reset_python', {}, ctx);
 		expect(mocks.resetSandbox).toHaveBeenCalled();
 		expect(out.result).toMatch(/reset/i);
@@ -123,7 +122,6 @@ describe('sandbox tools', () => {
 
 	it('routes install_package to installPackage', async () => {
 		mocks.installPackage.mockResolvedValue(ok({ result: 'installed numpy' }));
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('install_package', { package: 'numpy' }, ctx);
 		expect(mocks.installPackage).toHaveBeenCalledWith(
 			'c1',
@@ -134,7 +132,6 @@ describe('sandbox tools', () => {
 	});
 
 	it('rejects empty package name', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('install_package', { package: '' }, ctx);
 		expect(JSON.parse(out.result)).toHaveProperty('error');
 		expect(mocks.installPackage).not.toHaveBeenCalled();
@@ -142,7 +139,6 @@ describe('sandbox tools', () => {
 
 	it('returns "User denied code execution" and skips runPython on deny', async () => {
 		mocks.askApproval.mockResolvedValueOnce('deny');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: '1+1' }, ctx);
 		expect(JSON.parse(out.result)).toEqual({ error: 'User denied code execution.' });
 		expect(mocks.runPython).not.toHaveBeenCalled();
@@ -151,9 +147,6 @@ describe('sandbox tools', () => {
 	it("still asks in a chat while a job's auto-approve scope is active", async () => {
 		// A job running beside the chat must not approve the chat's Python.
 		mocks.runPython.mockResolvedValue(ok({ result: 'chat ok' }));
-		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
-		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxApproval: 'every-run' });
 		try {
 			const out = await runWithAutoApprove(() =>
@@ -177,7 +170,6 @@ describe('sandbox tools', () => {
 		it("runs a job turn's Python in the run's own sandbox, not the open chat's", async () => {
 			setActiveConversationId('open-chat');
 			mocks.runPython.mockResolvedValue(ok({ result: 'job ok' }));
-			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			const out = await executeTool('run_python', { code: '1+1' }, jobCtx);
 			expect(mocks.runPython).toHaveBeenCalledWith('job:7', '1+1', expect.anything());
 			expect(out.result).toContain('job ok');
@@ -190,7 +182,6 @@ describe('sandbox tools', () => {
 			mocks.runPython.mockResolvedValue(ok());
 			mocks.installPackage.mockResolvedValue(ok());
 			mocks.resetSandbox.mockResolvedValue(undefined);
-			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			await executeTool('run_python', { code: '1+1' }, jobCtx);
 			await executeTool('install_package', { package: 'numpy' }, jobCtx);
 			await executeTool('reset_python', {}, jobCtx);
@@ -203,7 +194,6 @@ describe('sandbox tools', () => {
 		it('runs a chat turn in its own chat, whichever chat is open, and still asks', async () => {
 			setActiveConversationId('open-chat');
 			mocks.runPython.mockResolvedValue(ok());
-			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			await executeTool('run_python', { code: '1+1' }, ctx);
 			expect(mocks.askApproval).toHaveBeenCalledWith(
 				expect.objectContaining({ chatId: 'c1' }),
@@ -214,7 +204,6 @@ describe('sandbox tools', () => {
 
 		it('refuses a turn that is neither a chat nor a job rather than borrow the open chat', async () => {
 			setActiveConversationId('open-chat');
-			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			const out = await executeTool('run_python', { code: '1+1' }, makeToolContext());
 			expect(JSON.parse(out.result).error).toMatch(/only in a chat or a job/);
 			expect(mocks.runPython).not.toHaveBeenCalled();
@@ -222,8 +211,6 @@ describe('sandbox tools', () => {
 	});
 
 	it('exposes sandbox tool schemas via getToolSchemas regardless of working dir', async () => {
-		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
-		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxEnabled: true });
 		try {
 			const schemas = getToolSchemas({ hasWorkingDir: false });
@@ -242,8 +229,6 @@ describe('sandbox tools', () => {
 		// (wrong fpdf API, latin-1 encoding errors, install thrash). The
 		// dedicated writers produce much better output and should always
 		// be the model's first choice for documents.
-		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
-		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxEnabled: true });
 		try {
 			const schemas = getToolSchemas({ hasWorkingDir: true });
@@ -258,8 +243,6 @@ describe('sandbox tools', () => {
 	});
 
 	it('exposes the document writers when the Python sandbox is disabled', async () => {
-		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
-		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxEnabled: false });
 		const schemas = getToolSchemas({ hasWorkingDir: true });
 		const names = schemas.map((s) => s.function.name);
