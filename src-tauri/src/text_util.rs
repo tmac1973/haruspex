@@ -162,20 +162,65 @@ fn redact_word(word: &str, is_value: bool) -> (String, bool) {
     if TOKEN_PREFIXES.iter().any(|p| bare.starts_with(p)) && bare.len() >= 16 {
         return (word.replacen(bare, REDACTED, 1), false);
     }
-    // `key=value` / `key:value` in one word; `key=` / `key:` with the value
-    // in the next.
-    if let Some(i) = bare.rfind(['=', ':']) {
-        let (key, value) = (&bare[..i], &bare[i + 1..]);
-        if names_a_secret(key) {
-            if value.is_empty() {
-                return (word.to_string(), true);
-            }
-            if !value.starts_with("//") {
-                return (word.replacen(value, REDACTED, 1), false);
-            }
+    redact_pairs(word)
+}
+
+/// Characters that end one `key:value` pair in a word and start the next:
+/// compact JSON (`{"a":1,"b":2}`) and query strings (`?a=1&b=2`).
+const PAIR_DELIMS: &[char] = &[',', '{', '}', '[', ']', '?', '&', ';', '(', ')'];
+
+/// `word` with the value of every `key=value` / `key:value` pair whose key
+/// names a secret redacted, and whether the next word is a value to redact
+/// (`key=` / `key:` at the end of the word). Every pair, not only the last:
+/// a compact JSON line is one word, and a secret before its last field used
+/// to go through.
+fn redact_pairs(word: &str) -> (String, bool) {
+    let mut out = String::with_capacity(word.len());
+    let mut redact_next = false;
+    let mut rest = word;
+    while !rest.is_empty() {
+        let end = rest.find(PAIR_DELIMS).unwrap_or(rest.len());
+        let (segment, tail) = rest.split_at(end);
+        let (redacted, then_next) = redact_pair(segment);
+        out.push_str(&redacted);
+        if then_next && tail.chars().all(|c| PAIR_DELIMS.contains(&c)) {
+            redact_next = true;
         }
+        let delims = tail.len() - tail.trim_start_matches(PAIR_DELIMS).len();
+        out.push_str(&tail[..delims]);
+        rest = &tail[delims..];
     }
-    (word.to_string(), false)
+    (out, redact_next)
+}
+
+/// One `key=value` / `key:value` pair, split at its first `=` or `:`.
+fn redact_pair(segment: &str) -> (String, bool) {
+    let Some(i) = segment.find(['=', ':']) else {
+        return (segment.to_string(), false);
+    };
+    let (key, value) = (&segment[..i], &segment[i + 1..]);
+    if !names_a_secret(key) {
+        return (segment.to_string(), false);
+    }
+    let bare = value.trim_matches(|c: char| "\"'`<>".contains(c));
+    if bare.is_empty() {
+        return (segment.to_string(), true);
+    }
+    // A URL (`auth_url:https://…`; its userinfo is redacted separately) or a
+    // count (`"max_tokens":4096`, `"cached_tokens":96768`) is not a secret.
+    if bare.contains("//") || is_token_count(key, bare) {
+        return (segment.to_string(), false);
+    }
+    let value = value.replacen(bare, REDACTED, 1);
+    (format!("{}{value}", &segment[..=i]), false)
+}
+
+/// A number under a key that counts tokens (`prompt_tokens`, `max_tokens`).
+fn is_token_count(key: &str, value: &str) -> bool {
+    let key = key
+        .trim_matches(|c: char| "\"'`".contains(c))
+        .to_ascii_lowercase();
+    key.ends_with("tokens") && value.chars().all(|c| c.is_ascii_digit())
 }
 
 fn names_a_secret(key: &str) -> bool {
@@ -382,6 +427,24 @@ mod tests {
                 "https://x/mcp?api_key=zzz9",
                 format!("https://x/mcp?api_key={REDACTED}"),
             ),
+            // Compact JSON is one word: a secret before its last field.
+            (
+                r#"{"api_key":"k-123456","n":1}"#,
+                format!(r#"{{"api_key":"{REDACTED}","n":1}}"#),
+            ),
+            (
+                r#"{"a":1,"auth":{"password":"hunter2"},"b":2}"#,
+                format!(r#"{{"a":1,"auth":{{"password":"{REDACTED}"}},"b":2}}"#),
+            ),
+            (
+                "x?a=1&token=t0k3n&b=2",
+                format!("x?a=1&token={REDACTED}&b=2"),
+            ),
+            // A numeric value under a key that is not a count is still a secret.
+            (
+                r#"{"token":"12345678"}"#,
+                format!(r#"{{"token":"{REDACTED}"}}"#),
+            ),
         ];
         for (input, want) in cases {
             assert_eq!(redact_secrets(input, &known), want, "{input}");
@@ -396,6 +459,10 @@ mod tests {
             "listening on http://127.0.0.1:3000/mcp",
             "  at Object.<anonymous> (/srv/index.js:12:5)",
             "skipping sk-short",
+            // Token counts in a usage object are numbers, not credentials.
+            r#"{"usage":{"prompt_tokens":10125,"prompt_tokens_details":{"cached_tokens":96768}}}"#,
+            r#"{"max_tokens":4096,"stream":true}"#,
+            r#"{"auth_url":"https://accounts.example.com/o/oauth2"}"#,
         ] {
             assert_eq!(redact_secrets(line, &[]), line);
         }
