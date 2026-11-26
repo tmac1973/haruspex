@@ -9,7 +9,7 @@ The Notebooks tab keeps notes and research you want to hold on to. A notebook is
 
 ## Make a notebook
 
-Click **+ New** in the list, type a title and press Enter. The list puts pinned notebooks first, then the rest by when they were last changed. Pin a notebook with 📌 next to its title.
+Click **+ New** in the list, type a title and press Enter. The list puts pinned notebooks first, then the rest by when they were last changed. Right-click a notebook in the list (or double-click to rename) to **Rename**, **Pin to top** or **Move to Trash**; 📌 next to an open notebook's title pins it too.
 
 Tags go in the line under the title, separated by commas. The tag chips above the list show only the notebooks with that tag; click the chip again to show all of them.
 
@@ -55,7 +55,7 @@ A card an agent changed shows where the change came from, such as "From Chat: Bl
 
 ## Get something back from Trash
 
-**⋯ → Delete** on a card, or **⋯ → Delete notebook**, moves it to Trash; the message that appears has **Undo**. **🗑 Trash** at the bottom of the list shows everything deleted in the last 30 days: **Restore** puts it back, **Delete forever** removes it now. After 30 days it is removed on the next start.
+**⋯ → Delete** on a card, **⋯ → Delete notebook**, or right-click → **Move to Trash** in the list, moves it to Trash; the message that appears has **Undo**. **🗑 Trash** at the bottom of the list shows everything deleted in the last 30 days: **Restore** puts it back, **Delete forever** removes it now. After 30 days it is removed on the next start.
 
 ## If someone else changed a card
 

@@ -1,7 +1,9 @@
 <script lang="ts">
 	/**
 	 * The notebook list: pinned first, then by last edit, with tag chips to
-	 * filter, a New button, and Trash at the bottom.
+	 * filter, a New button, and Trash at the bottom. Right-click a notebook
+	 * (or double-click it) to rename it; the menu also pins it or moves it to
+	 * Trash.
 	 */
 	import type { Snippet } from 'svelte';
 	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
@@ -15,8 +17,13 @@
 		newNotebook,
 		openNotebook,
 		openTrash,
-		setTagFilter
+		patchNotebook,
+		setTagFilter,
+		trashNotebook
 	} from '#lib/stores/notebooks.svelte.ts';
+	import type { NotebookSummary } from '#lib/notebooks/api.ts';
+	import { rowMenu } from '#lib/actions/rowMenu.ts';
+	import type { RowMenuItem } from '#lib/stores/rowMenu.svelte.ts';
 
 	interface Props {
 		/** Above the list: the search box. */
@@ -37,6 +44,38 @@
 	const notebooks = $derived(
 		getNotebookList().filter((n) => filter === null || n.tags.includes(filter))
 	);
+
+	let renamingId = $state<string | null>(null);
+	let renameText = $state('');
+
+	function startRename(nb: NotebookSummary): void {
+		renamingId = nb.id;
+		renameText = nb.title;
+	}
+
+	function finishRename(): void {
+		const id = renamingId;
+		const title = renameText.trim();
+		renamingId = null;
+		const nb = notebooks.find((n) => n.id === id);
+		if (id && nb && title && title !== nb.title) void patchNotebook(id, { title });
+	}
+
+	function menuItems(nb: NotebookSummary): RowMenuItem[] {
+		return [
+			{ label: 'Rename', run: () => startRename(nb) },
+			{
+				label: nb.pinned ? 'Unpin' : 'Pin to top',
+				run: () => void patchNotebook(nb.id, { pinned: !nb.pinned })
+			},
+			{
+				label: 'Move to Trash',
+				danger: true,
+				title: 'Kept in Trash for 30 days',
+				run: () => void trashNotebook(nb.id)
+			}
+		];
+	}
 
 	async function create() {
 		const t = newTitle.trim();
@@ -99,19 +138,37 @@
 	<ul class:hidden={searching}>
 		{#each notebooks as nb (nb.id)}
 			<li>
-				<button
-					class="item"
-					class:active={getOpenNotebookId() === nb.id}
-					onclick={() => void openNotebook(nb.id)}
-				>
-					<span class="name">
-						{#if nb.pinned}<span class="pin" aria-label="Pinned">📌</span>{/if}{nb.title}
-					</span>
-					<span class="meta">
-						{nb.card_count}
-						{nb.card_count === 1 ? 'card' : 'cards'} · {ago(nb.updated_at)}
-					</span>
-				</button>
+				{#if renamingId === nb.id}
+					<input
+						class="rename"
+						use:focusOnMount
+						onfocus={(e) => e.currentTarget.select()}
+						bind:value={renameText}
+						aria-label="Notebook title"
+						onblur={finishRename}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') finishRename();
+							if (e.key === 'Escape') renamingId = null;
+						}}
+					/>
+				{:else}
+					<button
+						class="item"
+						class:active={getOpenNotebookId() === nb.id}
+						title="{nb.title} — right-click to rename, pin or delete"
+						onclick={() => void openNotebook(nb.id)}
+						ondblclick={() => startRename(nb)}
+						use:rowMenu={() => menuItems(nb)}
+					>
+						<span class="name">
+							{#if nb.pinned}<span class="pin" aria-label="Pinned">📌</span>{/if}{nb.title}
+						</span>
+						<span class="meta">
+							{nb.card_count}
+							{nb.card_count === 1 ? 'card' : 'cards'} · {ago(nb.updated_at)}
+						</span>
+					</button>
+				{/if}
 			</li>
 		{:else}
 			<li class="empty">
@@ -165,6 +222,18 @@
 		cursor: pointer;
 		padding: 4px 10px;
 		font-size: 0.8rem;
+	}
+
+	.rename {
+		width: 100%;
+		box-sizing: border-box;
+		margin: 2px 0;
+		padding: 6px 8px;
+		border: 1px solid var(--accent);
+		border-radius: 6px;
+		background: var(--bg-input);
+		color: var(--text-primary);
+		font-size: 0.85rem;
 	}
 
 	.new-title {

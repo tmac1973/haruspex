@@ -21,7 +21,7 @@ Runs start side by side while their model has room (Settings → Inference → P
 
 ## Find and organize jobs
 
-A job another job's run started sits under it. **Filter jobs** matches names, descriptions and types. Deleting a job keeps the jobs it started. A job a Home card made has a **Home** badge (see the `home` page).
+Right-click a job in the list to **Run now**, **Duplicate** it (without its run history) or **Delete…** it; the editor has Delete and Duplicate too. A running job can't be deleted. A job another job's run started sits under it. **Filter jobs** matches names, descriptions and types. Deleting a job keeps the jobs it started. A job a Home card made has a **Home** badge (see the `home` page).
 
 ## Turn a chat into a job
 

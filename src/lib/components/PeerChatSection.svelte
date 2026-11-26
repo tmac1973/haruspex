@@ -17,6 +17,9 @@
 	import { getActiveChatSource } from '#lib/stores/activeChatSource.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { rowMenu } from '#lib/actions/rowMenu.ts';
+	import type { RowMenuItem } from '#lib/stores/rowMenu.svelte.ts';
+	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
 
 	let {
 		peer,
@@ -60,7 +63,7 @@
 		);
 	}
 
-	function open(c: ListedChat, event: MouseEvent): void {
+	function open(c: ListedChat, event: { shiftKey: boolean }): void {
 		if (selecting) {
 			if (!c.offline) ontoggle(c.id, event.shiftKey);
 			return;
@@ -70,6 +73,25 @@
 			return;
 		}
 		act('open that chat', () => openRemoteChat(peer, c.id));
+	}
+
+	function startRename(c: ListedChat): void {
+		renamingId = c.id;
+		renameText = c.title;
+	}
+
+	/** Rename and delete reach the other computer, so an offline chat has none. */
+	function menuItems(c: ListedChat): RowMenuItem[] {
+		if (c.offline || selecting) return [];
+		return [
+			{ label: 'Rename', run: () => startRename(c) },
+			{
+				label: 'Delete…',
+				danger: true,
+				title: `Delete this chat on ${peer.config.name}`,
+				run: () => (deleting = c)
+			}
+		];
 	}
 
 	function finishRename(): void {
@@ -90,18 +112,25 @@
 		On {peer.config.name}{#if offline}<span class="offline"> · offline</span>{/if}
 	</h4>
 	{#each chats as c (c.id)}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="conversation-item"
 			class:active={c.id === activeId}
 			class:offline={c.offline}
+			role="button"
+			tabindex="0"
 			onclick={(e) => open(c, e)}
+			onkeydown={(e) => {
+				if (e.target !== e.currentTarget) return;
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					open(c, e);
+				}
+			}}
+			use:rowMenu={() => menuItems(c)}
 			ondblclick={(e) => {
 				e.stopPropagation();
 				if (c.offline || selecting) return;
-				renamingId = c.id;
-				renameText = c.title;
+				startRename(c);
 			}}
 		>
 			{#if selecting}
@@ -122,6 +151,8 @@
 					class="rename-input"
 					type="text"
 					aria-label="Chat name"
+					use:focusOnMount
+					onfocus={(e) => e.currentTarget.select()}
 					bind:value={renameText}
 					onblur={finishRename}
 					onkeydown={(e) => {
@@ -135,20 +166,12 @@
 				{#if mark}
 					<span class="mark {mark.kind}" data-mark={mark.kind} title={mark.title}></span>
 				{/if}
-				<span class="conv-title" title={c.title}>{c.title}</span>
-			{/if}
-			{#if !c.offline && !selecting}
-				<button
-					class="delete-btn"
-					title="Delete this chat on {peer.config.name}"
-					aria-label="Delete {c.title}"
-					onclick={(e) => {
-						e.stopPropagation();
-						deleting = c;
-					}}
+				<span
+					class="conv-title"
+					title={c.offline ? c.title : `${c.title} — right-click to rename or delete`}
 				>
-					&times;
-				</button>
+					{c.title}
+				</span>
 			{/if}
 		</div>
 	{/each}
@@ -260,18 +283,5 @@
 	.rename-input {
 		flex: 1;
 		font-size: 0.85rem;
-	}
-
-	.delete-btn {
-		appearance: none;
-		background: none;
-		border: 0;
-		color: var(--text-secondary);
-		cursor: pointer;
-		opacity: 0;
-	}
-
-	.conversation-item:hover .delete-btn {
-		opacity: 1;
 	}
 </style>
