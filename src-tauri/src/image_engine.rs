@@ -40,8 +40,8 @@ use crate::sidecar_util::{
 const READY_PATH: &str = "/sdcpp/v1/capabilities";
 
 /// Loading a multi-GB checkpoint and initializing Vulkan takes appreciably
-/// longer than any other sidecar's start, so this does not reuse
-/// `HEALTH_POLL_TIMEOUT_SLOW`.
+/// longer than the speech sidecars' start, so this does not reuse
+/// `HEALTH_POLL_TIMEOUT`.
 const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Where sd-server's private shared libraries live, relative to a root.
