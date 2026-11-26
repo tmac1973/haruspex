@@ -90,3 +90,15 @@ test('a table in a Chat answer saves to a new notebook', async ({ app }) => {
 	await expect(app.getByRole('link', { name: 'example.com/b' })).toBeVisible();
 	await expect(app.getByText('$79.99')).toBeVisible();
 });
+
+test.describe('in the window a first start opens', () => {
+	test.use({ viewport: { width: 800, height: 600 } });
+
+	test('the chat panel leaves the notebook room to read', async ({ app }) => {
+		await newNotebook(app, 'Groceries');
+		await expect(app.getByRole('complementary', { name: 'Notebook chat' })).toBeVisible();
+		const notebook = app.locator('.view', { has: app.getByLabel('Notebook title') });
+		const view = await notebook.boundingBox();
+		expect(view?.width ?? 0).toBeGreaterThan(280);
+	});
+});
