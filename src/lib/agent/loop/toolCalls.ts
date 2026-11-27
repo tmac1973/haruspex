@@ -27,6 +27,7 @@ import {
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
 import { appendMessage, type LoopContext } from '#lib/agent/loop/context.ts';
 import { raceWithAbort } from '#lib/agent/loop/modelCall.ts';
+import { startRecallRound } from '#lib/agent/loop/responseRoom.ts';
 import { runReleasingSlot } from '#lib/agent/loop/slotRelease.ts';
 
 /** The family `name` belongs to, when this turn defers it and it is not loaded. */
@@ -119,7 +120,6 @@ export async function executeToolCalls(
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { signal, options } = ctx;
 	toolCalls = toolCalls.map((call) => withDeferredName(call, ctx));
-	ctx.recallArchive?.startRound();
 	// Count calls that were web reads blocked by an external resource. When
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;
@@ -144,6 +144,7 @@ export async function executeToolCalls(
 		})),
 		...reasoningEcho(response)
 	});
+	startRecallRound(ctx);
 
 	// Read-only calls run side by side when the lane takes parallel requests;
 	// everything else, and every call on a serialized lane, one at a time.

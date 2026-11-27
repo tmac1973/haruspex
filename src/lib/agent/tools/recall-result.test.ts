@@ -38,14 +38,14 @@ describe('recall_result', () => {
 
 	it('refuses a recall that would overfill the round, then allows it next round', async () => {
 		// Two 16K-char pages are about 9K estimated tokens; the cap holds one.
-		const archive = new RecallArchive(6_000);
+		const archive = new RecallArchive();
 		archive.keep('c1', 'fs_read_text(a.py)', 'a'.repeat(16_000));
 		archive.keep('c2', 'fs_read_text(b.py)', 'b'.repeat(16_000));
-		archive.startRound();
+		archive.startRound(6_000);
 		expect((await recall({ id: 'r1' }, archive)).result).toContain('aaaa');
 		const refused = (await recall({ id: 'r2' }, archive)).result;
 		expect(refused).toMatch(/"error":"Not read: .*Recall \\"r2\\" in a later call/);
-		archive.startRound();
+		archive.startRound(6_000);
 		expect((await recall({ id: 'r2' }, archive)).result).toContain('bbbb');
 	});
 

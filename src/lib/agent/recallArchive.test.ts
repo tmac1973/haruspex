@@ -26,10 +26,11 @@ describe('RecallArchive', () => {
 	});
 
 	it("caps one round's recalls, and lets the first through", () => {
-		const a = new RecallArchive(10_000);
+		const a = new RecallArchive();
+		a.startRound(10_000);
 		expect(a.take(12_000)).toBe(true);
 		expect(a.take(1)).toBe(false);
-		a.startRound();
+		a.startRound(10_000);
 		expect(a.take(6_000)).toBe(true);
 		expect(a.take(4_000)).toBe(true);
 		expect(a.take(1)).toBe(false);
