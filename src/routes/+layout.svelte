@@ -131,6 +131,7 @@
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
 	import { listenForJobDrafts } from '#lib/agent/jobs/openDraft.ts';
+	import { listenForOtherWindowsNotebookChanges } from '#lib/stores/notebooks.svelte.ts';
 	import { listenForSendToChat } from '#lib/editor/chatBridge.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
@@ -344,7 +345,10 @@
 		const stopDrafts = listenForJobDrafts();
 		// A command an editor window's transcript viewer hands to the chat.
 		const stopSend = listenForSendToChat();
+		// A notebook an agent in a detached Shell or Code window changed.
+		const stopNotebooks = listenForOtherWindowsNotebookChanges();
 		return () => {
+			void stopNotebooks.then((f) => f()).catch(() => {});
 			void stop.then((f) => f()).catch(() => {});
 			void stopDrafts.then((f) => f()).catch(() => {});
 			void stopSend.then((f) => f()).catch(() => {});

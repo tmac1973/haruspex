@@ -19,6 +19,7 @@ import type {
 	RowOp
 } from '#lib/notebooks/api.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
+import { forwardToMain, listenForNotebookChanges } from '#lib/notebooks/windowSync.ts';
 import { localBackend, onlyThere, type NotebookBackend } from '#lib/notebooks/backend.svelte.ts';
 import type { EngineClient } from '#lib/engine/client.svelte.ts';
 import {
@@ -451,9 +452,20 @@ export function onNotebookChanged(fn: ChangeListener): () => void {
 
 /**
  * Say a notebook changed outside the Notebooks tab's own controls: the
- * open notebook and the list refresh, and listeners hear of it.
+ * open notebook and the list refresh, and listeners hear of it. In a
+ * detached Shell or Code window, the main window hears of it too.
  */
 export function emitNotebookChanged(notebookId: string, cardIds: string[] = []): void {
+	noteChangeHere(notebookId, cardIds);
+	forwardToMain({ notebookId, cardIds });
+}
+
+/** Main window only: refresh for changes other windows make. */
+export function listenForOtherWindowsNotebookChanges(): Promise<() => void> {
+	return listenForNotebookChanges((c) => noteChangeHere(c.notebookId, c.cardIds));
+}
+
+function noteChangeHere(notebookId: string, cardIds: string[]): void {
 	if (notebookId === openId && backend.kind === 'local') void reloadOpen();
 	if (listLoaded) void loadNotebookList();
 	for (const fn of listeners) {
