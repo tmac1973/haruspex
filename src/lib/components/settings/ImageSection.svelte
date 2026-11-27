@@ -37,7 +37,7 @@
 
 	/** Where an entry runs, for its row. */
 	function place(e: ImageModelEntry): string {
-		if (e.backend === 'local') return IMAGE_BACKEND_LABEL.local;
+		if (e.backend === 'local' || e.backend === 'openrouter') return IMAGE_BACKEND_LABEL[e.backend];
 		const host = e.url.trim() ? hostOf(e.url) : 'no address';
 		return `${IMAGE_BACKEND_LABEL[e.backend]} on ${host}`;
 	}

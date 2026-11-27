@@ -46,7 +46,7 @@ See the `code` page.
 
 ## Image generation
 
-- **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest.
+- **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade, llama-toolchest or OpenRouter.
 
 See the `images` page.
 

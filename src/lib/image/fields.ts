@@ -14,9 +14,12 @@ export const LEGACY_ENTRY_ID = 'legacy';
 
 type EntryKind = ImageModelEntry['backend'];
 
+/** The kinds the old fields could name: OpenRouter came after them. */
+type LegacyKind = Exclude<EntryKind, 'openrouter'>;
+
 /** The old fields, as stored. None is in `AppSettings` any more. */
 export interface LegacyImageFields {
-	imageBackendKind?: EntryKind | 'none';
+	imageBackendKind?: LegacyKind | 'none';
 	/** ComfyUI's address. */
 	imageBackendBaseUrl?: string;
 	/** ComfyUI's key, inline where no secret store worked; else in `comfy:key`. */
@@ -65,7 +68,8 @@ export const IMAGE_BACKEND_LABEL: Record<EntryKind, string> = {
 	comfyui: 'ComfyUI',
 	local: 'Bundled engine',
 	lemonade: 'Lemonade',
-	'llama-toolchest': 'llama-toolchest'
+	'llama-toolchest': 'llama-toolchest',
+	openrouter: 'OpenRouter'
 };
 
 /**
@@ -76,6 +80,7 @@ export const IMAGE_BACKEND_LABEL: Record<EntryKind, string> = {
 export function defaultImageName(e: Pick<ImageModelEntry, 'backend' | 'model'>): string {
 	const model = e.model.trim();
 	if (!model) return IMAGE_BACKEND_LABEL[e.backend];
+	if (e.backend === 'openrouter') return model.replace(/^.*\//, '');
 	if (e.backend !== 'comfyui') return model;
 	return model.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
 }
@@ -83,7 +88,7 @@ export function defaultImageName(e: Pick<ImageModelEntry, 'backend' | 'model'>):
 /** The fields a kind's address, key and model live in. */
 function fieldsOf(
 	s: LegacyImageFields,
-	kind: EntryKind
+	kind: LegacyKind
 ): { url: string; keyId: string | null; model: string; options: Record<string, string> } {
 	switch (kind) {
 		case 'comfyui':
@@ -116,7 +121,7 @@ function fieldsOf(
 }
 
 /** The entry `kind`'s fields describe. */
-function entryFromFields(s: LegacyImageFields, kind: EntryKind): ImageModelEntry {
+function entryFromFields(s: LegacyImageFields, kind: LegacyKind): ImageModelEntry {
 	const f = fieldsOf(s, kind);
 	const model = f.model.trim();
 	return {

@@ -126,6 +126,8 @@ async function upscaleOnModel(input: ImageInput, opts: ForToolOptions): Promise<
 export function nonCommercialModel(entry: ImageModelEntry | null): boolean {
 	if (!entry) return false;
 	if (entry.backend === 'local' || entry.backend === 'lemonade') return entry.model === 'qwen21';
+	// A paid API's pictures are the user's under its provider's terms, not a weights licence.
+	if (entry.backend === 'openrouter') return false;
 	// As the last probe or generation saw it; an unknown recipe isn't flagged.
 	if (entry.backend === 'llama-toolchest') {
 		return toolchestInstance(entry)?.commercialUse === false;

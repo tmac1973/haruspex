@@ -9,6 +9,7 @@ import '#lib/image/comfyui/backend.ts';
 import '#lib/image/local/backend.ts';
 import '#lib/image/lemonade/backend.ts';
 import '#lib/image/toolchest/backend.ts';
+import '#lib/image/openrouter/backend.ts';
 
 export {
 	resolveImageBackend,

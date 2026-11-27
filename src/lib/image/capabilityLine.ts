@@ -34,7 +34,8 @@ const EDIT_HOW: Record<ImageBackendKind, string> = {
 	'llama-toolchest':
 		'Editing needs an instance whose model edits, such as FLUX.2 klein or Qwen-Image-Edit 2511.',
 	lemonade:
-		'Editing needs Qwen-Image 2.1 with its editing weights (Add editing, under Models on the server).'
+		'Editing needs Qwen-Image 2.1 with its editing weights (Add editing, under Models on the server).',
+	openrouter: 'Editing needs an OpenRouter model that takes pictures, such as FLUX.2 or GPT Image.'
 };
 
 const UPSCALE_HOW: Record<ImageBackendKind, string> = {
@@ -42,7 +43,9 @@ const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	local: 'Upscaling needs the upscaler, under Bundled engine.',
 	comfyui: 'Upscaling needs the upscaler, under Models on the server.',
 	'llama-toolchest': 'Upscalers are in Settings → Image generation → Upscalers.',
-	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
+	lemonade: 'Upscaling needs the upscaler, under Models on the server.',
+	// Its row says nothing about upscaling: see below.
+	openrouter: ''
 };
 
 const EXTEND_HOW = 'Only the bundled engine and ComfyUI extend pictures past their edges.';
@@ -66,8 +69,8 @@ export function capabilityLine(
 			EDIT_HOW[kind]
 		],
 		// A toolchest server's upscalers are their own entries (Settings → Image generation →
-		// Upscalers), so a toolchest model's row says nothing about upscaling.
-		...(kind === 'llama-toolchest'
+		// Upscalers), and OpenRouter has none, so neither's row says anything about upscaling.
+		...(kind === 'llama-toolchest' || kind === 'openrouter'
 			? []
 			: ([[!!caps.upscale, 'upscale pictures', 'upscale pictures', UPSCALE_HOW[kind]]] as Array<
 					[boolean, string, string, string]

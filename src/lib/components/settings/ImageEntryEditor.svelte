@@ -13,7 +13,7 @@
 	import { formatGigabytes } from '#lib/utils/format.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings } from '#lib/stores/settings.ts';
-	import type { GenerationServer, GenerationServerKind } from '#lib/stores/settings.ts';
+	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
 	import LemonadeModels from '#lib/components/settings/LemonadeModels.svelte';
@@ -33,6 +33,7 @@
 	import { withSavedModel } from '#lib/toolchest/kind.ts';
 	import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 	import { useLemonadeServer } from '#lib/image/lemonade/client.ts';
+	import { inferenceOpenRouterKeyId } from '#lib/image/openrouter/backend.ts';
 	import { backendForEntry } from '#lib/image/index.ts';
 	import {
 		IMAGE_BACKEND_LABEL,
@@ -88,7 +89,10 @@
 	let fieldMapPath = $state(entry.options.fieldMapPath ?? '');
 
 	/** What each server backend's Model dropdown is about, for its tooltip. */
-	const SERVER_TIPS: Record<Exclude<Kind, 'local'>, { placeholder: string; modelTip: string }> = {
+	const SERVER_TIPS: Record<
+		Exclude<Kind, 'local' | 'openrouter'>,
+		{ placeholder: string; modelTip: string }
+	> = {
 		comfyui: {
 			placeholder: 'http://127.0.0.1:8188',
 			modelTip:
@@ -109,8 +113,12 @@
 	const isLocal = $derived(backend === 'local');
 	const isComfy = $derived(backend === 'comfyui');
 	const isToolchest = $derived(backend === 'llama-toolchest');
-	const serverKind = $derived<GenerationServerKind | null>(backend === 'local' ? null : backend);
-	const server = $derived(backend === 'local' ? null : SERVER_TIPS[backend]);
+	const isOpenRouter = $derived(backend === 'openrouter');
+	/** A server the user keeps, with an address; not the bundled engine or OpenRouter. */
+	const serverKind = $derived<keyof typeof SERVER_TIPS | null>(
+		backend === 'local' || backend === 'openrouter' ? null : backend
+	);
+	const server = $derived(serverKind ? SERVER_TIPS[serverKind] : null);
 
 	/** The entry as saved now, for building its backend. */
 	const current = () => entryById(id) ?? entry;
@@ -184,6 +192,8 @@
 			url = found.baseUrl;
 			keyId = found.apiKeyId;
 		}
+		// The key Settings → Inference uses for OpenRouter, when there is one.
+		if (backend === 'openrouter') keyId = inferenceOpenRouterKeyId() ?? keyId;
 		patch({ backend, url, keyId, model, options: {} });
 		probeResult = null;
 		capabilities = null;
@@ -199,7 +209,7 @@
 	function chooseKey(next: string | null) {
 		keyId = next;
 		patch({ keyId });
-		if (url.trim()) void probe();
+		if (url.trim() || isOpenRouter) void probe();
 	}
 
 	function chooseModel(e: Event) {
@@ -238,7 +248,7 @@
 	// Probe once on opening, so the model list is there without a click.
 	let probedOnOpen = false;
 	$effect(() => {
-		if (server && !probedOnOpen && url.trim()) {
+		if (!probedOnOpen && ((server && url.trim()) || isOpenRouter)) {
 			probedOnOpen = true;
 			void probe();
 		}
@@ -492,6 +502,7 @@
 		{/if}
 		<option value="lemonade">Lemonade</option>
 		<option value="llama-toolchest">llama-toolchest</option>
+		<option value="openrouter">OpenRouter</option>
 	</select>
 </div>
 
@@ -648,6 +659,54 @@
 		{:else}
 			<LemonadeModels {probeCount} onInstalled={() => void probe()} />
 		{/if}
+	{/if}
+{/if}
+
+{#if isOpenRouter}
+	<p
+		class="help"
+		title="Each picture is paid for from the key's OpenRouter credit. A failed or cancelled picture isn't charged."
+	>
+		Prompts and pictures are sent to OpenRouter.
+	</p>
+	<div class="fields">
+		<label for="image-key">API key:</label>
+		<div id="image-key" title="Keys are kept in Settings → Inference → API Keys.">
+			<ApiKeyPicker selectedId={keyId} onSelect={chooseKey} />
+		</div>
+
+		<label for="image-model">
+			Model:
+			<Tooltip
+				label="About the model"
+				text="OpenRouter's image models, listed by Probe. Each draws at sizes of its own; the picture is cut and scaled to the size asked for. None makes tiling textures or upscales."
+			/>
+		</label>
+		<select
+			id="image-model"
+			value={model}
+			onchange={chooseModel}
+			disabled={modelOptions.length === 0}
+		>
+			{#if modelOptions.length === 0}
+				<option value="">Probe to list OpenRouter's models</option>
+			{:else if !model}
+				<option value="" disabled>Choose a model</option>
+			{/if}
+			{#each modelOptions as m (m.name)}
+				<option value={m.name}>{m.label}</option>
+			{/each}
+		</select>
+	</div>
+
+	<div class="actions">
+		<button onclick={probe} disabled={probing}>{probing ? 'Probing…' : 'Probe'}</button>
+		{#if probeResult}
+			<span class="detail" class:bad={!probeResult.ok}>{probeResult.detail}</span>
+		{/if}
+	</div>
+	{#if capabilities}
+		{@render canLine(capabilityLine(capabilities, backend))}
 	{/if}
 {/if}
 
