@@ -8,6 +8,8 @@ const {
 	useRunnerFixtures,
 	makeJob,
 	freshRunner,
+	routeInvoke,
+	defaultInvokeRoutes,
 	tick
 } = await vi.hoisted(() => import('./runner.fixtures.ts'));
 
@@ -115,6 +117,68 @@ describe('jobs runner — audit jobs', () => {
 		const synth = getCurrentRun()!.steps.at(-1)!;
 		expect(synth.output).toContain('_No findings survived source verification._');
 		expect(synth.output).toContain('Filtered out');
+	});
+
+	describe('saving the findings to a notebook', () => {
+		function wireNotebooks() {
+			const made: { title: string }[] = [];
+			const added: { notebookId: string; title: string; source: string }[] = [];
+			routeInvoke({
+				...defaultInvokeRoutes(),
+				notebook_create: (a) => {
+					made.push({ title: String(a?.title) });
+					return { id: 'nb1', title: String(a?.title) };
+				},
+				notebook_card_add: (a) => {
+					const card = a?.card as { title: string };
+					added.push({
+						notebookId: String(a?.notebookId),
+						title: card.title,
+						source: String(a?.source)
+					});
+					return { id: `c${added.length}` };
+				}
+			});
+			return { made, added };
+		}
+
+		it('makes a new notebook of the findings after a run, when the job asks', async () => {
+			mocks.getJob.mockResolvedValueOnce(
+				auditJob({ type_config: JSON.stringify({ num_runs: 1, notebook_output: 'new' }) })
+			);
+			wireFindingsAndVerdict('confirmed');
+			const { made, added } = wireNotebooks();
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			const runId = await enqueue(1);
+			await settle(getCurrentRun);
+			for (let i = 0; i < 20 && added.length < 2; i++) await tick();
+
+			expect(getCurrentRun()!.status).toBe('succeeded');
+			expect(made).toHaveLength(1);
+			expect(made[0].title).toMatch(/^Test job · /);
+			expect(added.map((c) => c.title)).toEqual(['Audit summary', 'Findings']);
+			expect(added.every((c) => c.notebookId === 'nb1')).toBe(true);
+			expect(JSON.parse(added[0].source)).toEqual({
+				kind: 'job',
+				ref: `1:${runId}`,
+				label: 'Test job'
+			});
+		});
+
+		it('makes none by default', async () => {
+			mocks.getJob.mockResolvedValueOnce(auditJob());
+			wireFindingsAndVerdict('confirmed');
+			const { made } = wireNotebooks();
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+			for (let i = 0; i < 20; i++) await tick();
+
+			expect(getCurrentRun()!.status).toBe('succeeded');
+			expect(made).toEqual([]);
+		});
 	});
 });
 

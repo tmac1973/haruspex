@@ -7,6 +7,7 @@ import {
 } from '#lib/agent/jobs/types/audit/auditPipeline.ts';
 import { auditNotebookCards } from '#lib/agent/jobs/types/audit/notebookCards.ts';
 import Editor from '#lib/agent/jobs/types/audit/Editor.svelte';
+import { NOTEBOOK_OUTPUT_MODES, type NotebookOutputMode } from '#lib/agent/jobs/notebookOutput.ts';
 
 /**
  * The audit editor's working state: every field concrete (presentation
@@ -20,6 +21,7 @@ export interface AuditEditorState {
 	max_iterations: number;
 	sample_instructions: string;
 	verify_instructions: string;
+	notebook_output: NotebookOutputMode;
 }
 
 export const auditJobType: JobTypeDefinition = {
@@ -36,7 +38,8 @@ export const auditJobType: JobTypeDefinition = {
 		read_only: true,
 		max_iterations: 200,
 		sample_instructions: DEFAULT_SAMPLE_INSTRUCTIONS,
-		verify_instructions: DEFAULT_VERIFY_INSTRUCTIONS
+		verify_instructions: DEFAULT_VERIFY_INSTRUCTIONS,
+		notebook_output: 'off'
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAuditConfig(typeConfig);
@@ -46,7 +49,8 @@ export const auditJobType: JobTypeDefinition = {
 			read_only: c.read_only,
 			max_iterations: c.max_iterations ?? 200,
 			sample_instructions: c.sample_instructions ?? DEFAULT_SAMPLE_INSTRUCTIONS,
-			verify_instructions: c.verify_instructions ?? DEFAULT_VERIFY_INSTRUCTIONS
+			verify_instructions: c.verify_instructions ?? DEFAULT_VERIFY_INSTRUCTIONS,
+			notebook_output: c.notebook_output
 		};
 	},
 	configToJson: (config) => {
@@ -61,7 +65,8 @@ export const auditJobType: JobTypeDefinition = {
 			read_only: s.read_only,
 			max_iterations: s.max_iterations,
 			sample_instructions: custom(s.sample_instructions, DEFAULT_SAMPLE_INSTRUCTIONS),
-			verify_instructions: custom(s.verify_instructions, DEFAULT_VERIFY_INSTRUCTIONS)
+			verify_instructions: custom(s.verify_instructions, DEFAULT_VERIFY_INSTRUCTIONS),
+			notebook_output: s.notebook_output === 'off' ? undefined : s.notebook_output
 		});
 	},
 	validate: ({ workingDir, steps, config }) => {
@@ -79,7 +84,11 @@ export const auditJobType: JobTypeDefinition = {
 			num_runs: { help: 'Independent runs of the prompt, 1 to 20. Default 5.' },
 			output_file: { help: 'The report file, relative to the folder. Default AUDIT.md.' },
 			read_only: { help: 'Runs may only read the code. Default true.' },
-			max_iterations: { help: 'Model steps per run, 1 to 400. Default 200.' }
+			max_iterations: { help: 'Model steps per run, 1 to 400. Default 200.' },
+			notebook_output: {
+				help: 'Save each successful run\'s findings to a new notebook ("new") or not. Default off.',
+				values: NOTEBOOK_OUTPUT_MODES
+			}
 		},
 		// The brief is what to audit: the one prompt every run gets.
 		brief: (draft, brief) =>

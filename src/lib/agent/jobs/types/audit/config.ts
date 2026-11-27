@@ -5,6 +5,11 @@
  */
 
 import { finiteOrNull, nonEmptyOrNull } from '#lib/utils/coerce.ts';
+import {
+	NOTEBOOK_OUTPUT_KEY,
+	parseNotebookOutput,
+	type NotebookOutputMode
+} from '#lib/agent/jobs/notebookOutput.ts';
 
 export interface AuditConfig {
 	/** Independent sample runs. null = runner default (3). */
@@ -19,6 +24,8 @@ export interface AuditConfig {
 	sample_instructions: string | null;
 	/** Custom verification rubric. null = built-in default. */
 	verify_instructions: string | null;
+	/** Whether a finished run saves its findings to a notebook (see notebookOutput.ts). */
+	notebook_output: NotebookOutputMode;
 }
 
 export function parseAuditConfig(json: string | null): AuditConfig {
@@ -37,6 +44,7 @@ export function parseAuditConfig(json: string | null): AuditConfig {
 		read_only: typeof raw.read_only === 'boolean' ? raw.read_only : true,
 		max_iterations: finiteOrNull(raw.max_iterations),
 		sample_instructions: nonEmptyOrNull(raw.sample_instructions),
-		verify_instructions: nonEmptyOrNull(raw.verify_instructions)
+		verify_instructions: nonEmptyOrNull(raw.verify_instructions),
+		notebook_output: parseNotebookOutput(raw[NOTEBOOK_OUTPUT_KEY])
 	};
 }

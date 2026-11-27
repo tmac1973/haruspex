@@ -96,6 +96,20 @@
 	</div>
 </div>
 
+<div class="field">
+	<span class="label">
+		Save findings to a notebook
+		<Tooltip
+			label="About saving findings to a notebook"
+			text="After each successful run, make a notebook named after the job and the time, with a summary, a Findings table to triage and a table of what wasn't verified. Off still leaves Save to notebook on the run."
+		/>
+	</span>
+	<select bind:value={cfg.notebook_output} aria-label="Save findings to a notebook">
+		<option value="off">Off</option>
+		<option value="new">A new notebook each run</option>
+	</select>
+</div>
+
 <div class="field checkbox">
 	<label class="check">
 		<input type="checkbox" bind:checked={cfg.read_only} />

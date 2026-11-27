@@ -1040,7 +1040,8 @@ function buildRunContext(
 	job: JobWithSteps,
 	runId: number,
 	abort: AbortController,
-	trigger: RunTrigger
+	trigger: RunTrigger,
+	outcome: RunOutcome = { status: null, result: undefined }
 ): JobRunContext {
 	return {
 		job,
@@ -1060,6 +1061,7 @@ function buildRunContext(
 		visionSupported: () => jobDescriptor(job).vision,
 		describeModel,
 		finalizeRun: (status, error) => {
+			outcome.status = status;
 			finalizeRun(runId, job.id, status, error);
 			void reflectOnRun(job, runId, status, error);
 		},
@@ -1076,19 +1078,77 @@ function buildRunContext(
 		startChainedRun: (jobId) => enqueue(jobId, 'chained'),
 		setResult: async (value) => {
 			await setRunResult(runId, value);
+			outcome.result = value;
 		}
 	};
 }
 
+/** How a run ended and what it stored, as its pipeline reported them. */
+interface RunOutcome {
+	status: RunStatus | null;
+	result: unknown;
+}
+
 async function runPipeline(queued: QueuedRun, abort: AbortController): Promise<void> {
 	const { job, runId, trigger } = queued;
-	const ctx = buildRunContext(job, runId, abort, trigger);
+	const outcome: RunOutcome = { status: null, result: undefined };
+	const ctx = buildRunContext(job, runId, abort, trigger, outcome);
 	const def = getJobType(job.job_type);
-	if (def) return def.runPipeline(ctx);
+	if (def) {
+		await def.runPipeline(ctx);
+		await saveResultsToNotebook(job, runId, outcome);
+		return;
+	}
 	// Unknown type: enqueue() guards against this, but fail honestly rather
 	// than silently doing nothing if a foreign DB row slips through.
 	finalizeRun(runId, job.id, 'failed', `Job type "${job.job_type}" is not registered.`);
 	ctx.onSettled();
+}
+
+/**
+ * A successful run's results as a new notebook, when its job asks for one
+ * (`notebook_output`, see notebookOutput.ts). It runs after the run has
+ * finished, so a failure here is told in a toast and never fails the run.
+ */
+async function saveResultsToNotebook(
+	job: JobWithSteps,
+	runId: number,
+	outcome: RunOutcome
+): Promise<void> {
+	const toCards = getJobType(job.job_type)?.notebookCards;
+	if (outcome.status !== 'succeeded' || outcome.result === undefined || !toCards) return;
+	const out = await import('#lib/agent/jobs/notebookOutput.ts');
+	if (out.readNotebookOutput(job.type_config) !== 'new') return;
+	const settings = getSettings();
+	if (!settings.notebooksTab || settings.leanMode) return;
+	const { showToast } = await import('#lib/stores/toasts.svelte.ts');
+	try {
+		const notebook = await out.saveRunToNewNotebook({
+			jobId: job.id,
+			jobName: job.name,
+			runId,
+			cards: toCards(outcome.result),
+			finishedAt: new Date()
+		});
+		if (!notebook) return;
+		const nb = await import('#lib/stores/notebooks.svelte.ts');
+		nb.emitNotebookChanged(notebook.id, []);
+		showToast(`Saved ${job.name}'s results to ${notebook.title}.`, {
+			kind: 'success',
+			actionLabel: 'Open',
+			onAction: () => {
+				void import('#lib/stores/activeTab.svelte.ts').then(({ setActiveTab }) => {
+					setActiveTab('notebooks');
+					void nb.openNotebook(notebook.id);
+				});
+			}
+		});
+	} catch (e) {
+		console.warn('Could not save the run to a notebook:', errMessage(e));
+		showToast(`Saving ${job.name}'s results to a notebook failed: ${errMessage(e)}`, {
+			kind: 'error'
+		});
+	}
 }
 
 function finalizeRun(runId: number, jobId: number, status: RunStatus, error: string | null): void {
