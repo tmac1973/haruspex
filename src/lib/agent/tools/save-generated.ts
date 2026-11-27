@@ -1,6 +1,6 @@
 /**
- * `save_generated`: save a picture or song made earlier (by `generate_image`
- * or `generate_music`) into the working folder: Chat's, or the Code tab's
+ * `save_generated`: save a picture, song or clip made earlier (by
+ * `generate_image`, `generate_music` or `generate_video`) into the working folder: Chat's, or the Code tab's
  * project. It comes from the image or audio cache, by the URL in its
  * markdown, so it works after the server that made it has forgotten it.
  * In Chat an existing file asks the user first (`_saveGenerated.ts`).
@@ -16,9 +16,10 @@ import {
 
 const EXTENSIONS = {
 	image: /\.(png|jpe?g|webp|gif)$/i,
-	audio: /\.(mp3|wav|ogg|flac)$/i
+	audio: /\.(mp3|wav|ogg|flac)$/i,
+	video: /\.webm$/i
 };
-const WANTED = { image: '.png', audio: '.mp3 or .wav' };
+const WANTED = { image: '.png', audio: '.mp3 or .wav', video: '.webm' };
 
 registerTool({
 	category: 'fs',
@@ -27,20 +28,20 @@ registerTool({
 		function: {
 			name: 'save_generated',
 			description:
-				'Save a picture or song you made earlier into the working folder, by the URL in its ' +
-				'markdown (haruspex-img://… or haruspex-audio://…).',
+				'Save a picture, song or video you made earlier into the working folder, by the URL in ' +
+				'its markdown.',
 			parameters: {
 				type: 'object',
 				properties: {
 					url: {
 						type: 'string',
 						description:
-							'The haruspex-img:// or haruspex-audio:// URL from generate_image, edit_image, generate_music or edit_music.'
+							'The haruspex-img://, haruspex-audio:// or haruspex-video:// URL of something made here.'
 					},
 					path: {
 						type: 'string',
 						description:
-							'Where to save it in the working folder: .png for a picture, .mp3 or .wav for a song.'
+							'Where to save it in the working folder: .png for a picture, .mp3 or .wav for a song, .webm for a video.'
 					},
 					overwrite: {
 						type: 'boolean',
@@ -58,7 +59,7 @@ registerTool({
 		if (!made) {
 			return toolResult(
 				toolError(
-					'url must be a haruspex-img:// or haruspex-audio:// URL from a picture or song made here.'
+					'url must be a haruspex-img://, haruspex-audio:// or haruspex-video:// URL from something made here.'
 				)
 			);
 		}

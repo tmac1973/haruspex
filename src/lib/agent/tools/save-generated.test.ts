@@ -31,6 +31,7 @@ import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const SONG = `haruspex-audio://localhost/${'a'.repeat(64)}`;
 const PICTURE = `haruspex-img://localhost/${'b'.repeat(64)}`;
+const CLIP = `haruspex-video://localhost/${'c'.repeat(64)}`;
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
 const writes = () => invokeCalls(vi.mocked(invoke), 'fs_write_bytes');
@@ -73,6 +74,16 @@ describe('save_generated in Chat', () => {
 			{ hash: 'a'.repeat(64), workdir: '/home/me/out', relPath: 'rain.mp3', overwrite: false },
 			{ hash: 'b'.repeat(64), workdir: '/home/me/out', relPath: 'fox.png', overwrite: false }
 		]);
+	});
+
+	it('saves a video clip from the audio cache, as .webm only', async () => {
+		const out = await executeTool('save_generated', { url: CLIP, path: 'fox.webm' }, chat());
+		expect(out.result).toBe('Saved fox.webm.');
+		expect(invokeCalls(vi.mocked(invoke), 'fs_save_cached_audio')).toEqual([
+			{ hash: 'c'.repeat(64), workdir: '/home/me/out', relPath: 'fox.webm', overwrite: false }
+		]);
+		const wrong = await executeTool('save_generated', { url: CLIP, path: 'fox.mp3' }, chat());
+		expect(wrong.result).toMatch(/must end in \.webm/);
 	});
 
 	it('asks before replacing a file, whatever the model passed', async () => {

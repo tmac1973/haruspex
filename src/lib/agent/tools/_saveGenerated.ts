@@ -1,7 +1,8 @@
 /**
- * Saving what Haruspex made, a picture or a song, into the turn's folder:
+ * Saving what Haruspex made, a picture, song or clip, into the turn's folder:
  * `generate_image` and `generate_music` with a `path`, and `save_generated`
- * for one made earlier. The bytes come from the image or audio cache.
+ * for one made earlier. The bytes come from the image or audio cache (clips
+ * live in the audio cache too).
  *
  * Where it goes decides how it is written:
  *
@@ -26,18 +27,21 @@ import { saveFromCache } from '#lib/agent/tools/_cacheSave.ts';
 import { resolveWritePathInteractive, userCanceledWriteError } from '#lib/agent/tools/fs-write.ts';
 import { audioHashFromUrl } from '#lib/audio/url.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
+import { videoHashFromUrl } from '#lib/videogen/url.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
-/** Something Haruspex made, by its cache URL. */
+/** Something Haruspex made, by its cache URL. A clip is in the audio cache. */
 export interface Generated {
-	kind: 'image' | 'audio';
+	kind: 'image' | 'audio' | 'video';
 	hash: string;
 }
 
-/** The picture or song a cache URL names, or null for any other URL. */
+/** The picture, song or clip a cache URL names, or null for any other URL. */
 export function generatedFromUrl(url: string): Generated | null {
 	const image = imageHashFromUrl(url);
 	if (image) return { kind: 'image', hash: image };
+	const video = videoHashFromUrl(url);
+	if (video) return { kind: 'video', hash: video };
 	const audio = audioHashFromUrl(url);
 	return audio ? { kind: 'audio', hash: audio } : null;
 }
