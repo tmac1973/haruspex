@@ -108,7 +108,7 @@ export const PROMPTS = {
 };
 
 /**
- * The Search helper's live rerun (plan/search-code/phase-06-live-rerun.md):
+ * The Search helper's live rerun (plan/archive/search-code/phase-06-live-rerun.md):
  * the #951 spike's ten "where is X" tasks, run in a Code session on Haruspex
  * itself at the commit the answers were taken from (`SEARCH_COMMIT`). A run
  * passes when a path on the answer's `FILES:` line is one of the accepted

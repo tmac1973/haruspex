@@ -1,6 +1,6 @@
 /**
  * A Code session running on another computer, shown in this one's Code pane
- * (plan/instance-sync/): a `CodeSessionView` over that computer's mirror
+ * (plan/archive/instance-sync/): a `CodeSessionView` over that computer's mirror
  * (`store.svelte.ts`), whose actions are operations on it. Its turns,
  * files, shell and models are that computer's; nothing runs here.
  */

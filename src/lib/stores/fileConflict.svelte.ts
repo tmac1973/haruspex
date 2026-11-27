@@ -21,7 +21,7 @@
  * `engine/prompts`, as a `file-conflict` prompt.
  *
  * Asks wait their turn (`approvalQueue.svelte.ts`): several turns, or
- * another computer's prompt (plan/instance-sync/), can ask at once.
+ * another computer's prompt (plan/archive/instance-sync/), can ask at once.
  */
 
 import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';

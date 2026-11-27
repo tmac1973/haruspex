@@ -284,7 +284,7 @@ smaller sheets of their own group.
    gold in it made every gold coin a rejection.
 
 Reference images were tried and dropped: they made sets less consistent, not
-more (`plan/local-image-generation/measurements-phase-17.md`).
+more (`plan/archive/local-image-generation/measurements-phase-17.md`).
 
 ## Reading a report
 
@@ -527,7 +527,7 @@ Qwen is Turbo in both engines: the same model distilled to 8 steps, sampled
 on the noise schedule it ships with (`--sigmas` for sd-server, `ManualSigmas`
 in ComfyUI). About 2.6× faster than the base model on sd-server and 3.3× on
 ComfyUI, with no loss measured
-([`measurements-qwen-turbo.md`](../plan/local-image-generation/measurements-qwen-turbo.md)).
+([`measurements-qwen-turbo.md`](../plan/archive/local-image-generation/measurements-qwen-turbo.md)).
 The bundled entry kept its id, `qwen21`, so a user who had the base model
 downloads only the new DiT, and the finished download deletes the old one.
 
@@ -550,7 +550,7 @@ Ming for Z-Image and fail with `cap_pad_token not in model metadata`
 
 GGUF, not the int8/bf16 safetensors ComfyUI loads: on Vulkan without bf16
 support those ran at 40–120 s a step, GGUF draws a 1024 sheet in about 35–50 s
-(`plan/local-image-generation/measurements-phase-24-gguf.md`). Ming has no
+(`plan/archive/local-image-generation/measurements-phase-24-gguf.md`). Ming has no
 published GGUF; ours is converted from Comfy-Org's bf16 files with
 `sd-cli -M convert` and hosted at
 [voltaire321/Ming-Image-0.2-Design-GGUF](https://huggingface.co/voltaire321/Ming-Image-0.2-Design-GGUF)

@@ -3,7 +3,7 @@
  * sessions and chats it follows (each a `Mirror`, rebuilt from events), and
  * the prompts waiting on a person. The web client keeps one for the desktop
  * it's served by; the desktop keeps one per other computer
- * (plan/instance-sync/).
+ * (plan/archive/instance-sync/).
  *
  * That Haruspex is the source of truth: nothing here is ever patched by
  * guesswork, only by events, and a gap is a resync.

@@ -1,6 +1,6 @@
 /**
  * Chat, for clients other than the main window's own chat tab
- * (plan/remote-api phase 5): read the desktop's chats, follow the ones with
+ * (plan/archive/remote-api phase 5): read the desktop's chats, follow the ones with
  * something going on, and drive them.
  *
  * The page drives the desktop's own chat store, so every chat feature (tools,

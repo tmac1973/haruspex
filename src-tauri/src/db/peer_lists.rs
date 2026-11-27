@@ -1,6 +1,6 @@
 //! Each trusted computer's last-known session and chat lists, so its section
 //! in the Code and Chat lists can still be drawn while it's offline
-//! (plan/instance-sync). The frontend writes them as JSON arrays of a few
+//! (plan/archive/instance-sync). The frontend writes them as JSON arrays of a few
 //! fields each; nothing here looks inside.
 
 use super::*;

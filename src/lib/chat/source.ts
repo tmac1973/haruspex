@@ -1,7 +1,7 @@
 /**
  * What the Chat view shows of a conversation and asks of it, whoever runs
  * it: this computer's chat store (`localChatSource`), or a chat on another
- * computer seen through its Remote control (plan/instance-sync/). Each type
+ * computer seen through its Remote control (plan/archive/instance-sync/). Each type
  * is the local store's, so the two can't drift.
  *
  * `capabilities` says which controls apply; a control whose capability is

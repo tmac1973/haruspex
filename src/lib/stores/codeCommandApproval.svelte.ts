@@ -28,7 +28,7 @@ export interface CommandApprovalRequest {
 	requester: string | null;
 	/** The Code session asking, so a client elsewhere knows whose prompt it is. */
 	sessionId: string | null;
-	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	/** Another computer's prompt, asked here (plan/archive/instance-sync/). */
 	origin?: PromptOrigin;
 }
 

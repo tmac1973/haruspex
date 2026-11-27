@@ -158,7 +158,7 @@ model. The steps are the `release-test` skill
 ## The Code tab inside WSL (Windows)
 
 On Windows the Code tab works inside a WSL2 distro (`code_tools/wsl.rs`, and
-`plan/code-tab/phase-10-windows-wsl.md`). GitHub's hosted Windows runners have
+`plan/archive/code-tab/phase-10-windows-wsl.md`). GitHub's hosted Windows runners have
 no distro, so the tests that need one are `#[ignore]`d and run by hand on a
 Windows machine with one (git installed inside it):
 
@@ -265,7 +265,7 @@ directories (under the system temp dir), control socket and driver; without
 it, the usual single app. `npm run drive -- peers-check` uses two in one
 process (`scripts/drive/peers-check.mjs`, the `peers` scenario): A with
 Remote control on, and B following it as one of its other computers
-(plan/instance-sync/). B starts a session on A, answers its command prompt in
+(plan/archive/instance-sync/). B starts a session on A, answers its command prompt in
 B's own dialog (marked **On <A>**), carries on a chat there, sees A go
 offline and come back, and stops trusting A when A's certificate changes.
 It checks nothing listens on the sidecar ports, so the two never collide.
@@ -345,7 +345,7 @@ node scripts/drive/motion-sheet.mjs run-a/attack.png run-a/final.glb Attack
 Code prompts, each in a new chat or session, through the Remote control API, and
 checks each run from what it left: the answer, the tools that ran and the files
 written. It was written for the deferred-tools evaluation
-(`plan/deferred-tools/phase-05-results.md`) and is how to compare models, or
+(`plan/archive/deferred-tools/phase-05-results.md`) and is how to compare models, or
 Settings → General → Load tools when needed on and off, on the same tasks.
 
 The app under test is any build with Settings → Remote control on (on this
@@ -375,7 +375,7 @@ npm run model-eval -- summary                   # pass rates, requests, first pr
 - **The conversation** is 12 turns in one chat across every tool group, for how
   a small context window holds up; it has no pass checks, so read its answers.
 - **The search group** (`--prompts search`, not part of `all`) is the Search
-  helper's ten "where is X" tasks (`plan/search-code/phase-06-live-rerun.md`),
+  helper's ten "where is X" tasks (`plan/archive/search-code/phase-06-live-rerun.md`),
   run in Code sessions on a clone of Haruspex that `setup` makes at the commit
   the answers come from. A run passes when a path after the answer's `FILES:`
   is one of the task's files. `--search off|keyword|rerank` sets the helper

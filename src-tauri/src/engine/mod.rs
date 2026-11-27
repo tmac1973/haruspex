@@ -7,7 +7,7 @@
 //! the owning window as an event, and the window answers through
 //! [`engine_reply`]. Each window also pushes what its sessions do through
 //! [`engine_events`], and this module fans those out to subscribers: the
-//! owner API's WebSocket in phase 3 of `plan/remote-api/`, the driver's
+//! owner API's WebSocket in phase 3 of `plan/archive/remote-api/`, the driver's
 //! hooks before that.
 //!
 //! Operations and events are JSON this module does not look inside, beyond

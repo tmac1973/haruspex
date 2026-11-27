@@ -1,6 +1,6 @@
 /**
  * Another computer's prompts, answered in this app's own dialogs
- * (plan/instance-sync/): a turn there waiting on the owner (Run this
+ * (plan/archive/instance-sync/): a turn there waiting on the owner (Run this
  * command?, a question, an MCP tool, a skill write…) opens the modal for its
  * kind here, labelled with the computer, and the answer goes back as
  * `prompts.answer`, the shape the web page sends. Answered there first (or

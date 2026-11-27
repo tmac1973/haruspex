@@ -10,7 +10,7 @@
  * where it was. Chat's compaction (`agent/compaction.ts`) rewrites its
  * history instead; a coding session's scrollback is worth more.
  *
- * See plan/code-compaction/.
+ * See plan/archive/code-compaction/.
  */
 
 import { messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';

@@ -1,5 +1,5 @@
 /**
- * The engine surface for Code sessions (plan/remote-api/phase-02): how a
+ * The engine surface for Code sessions (plan/archive/remote-api/phase-02): how a
  * client other than this window's own UI acts on its sessions and follows
  * them. Started in every window from the root layout; it only runs in the
  * main and detached Code windows, and only while Rust has it on (the e2e

@@ -1,4 +1,4 @@
-//! Your other computers' Haruspex (plan/instance-sync): this side is a
+//! Your other computers' Haruspex (plan/archive/instance-sync): this side is a
 //! client of their owner API (`owner/`), the same one the Remote control web
 //! page uses. Nothing is copied; their sessions run on them.
 //!

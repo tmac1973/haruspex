@@ -3,7 +3,7 @@
  * Evaluate the model a running Haruspex is set to: a fixed set of Chat and
  * Code prompts, each run in a new chat or session through the Remote control
  * API, checked from what the run left. Written for the deferred-tools
- * evaluation (plan/deferred-tools/phase-05-results.md); used to compare
+ * evaluation (plan/archive/deferred-tools/phase-05-results.md); used to compare
  * models, and Settings → General → Load tools when needed on and off. See
  * docs/testing.md, "Evaluating a model".
  */

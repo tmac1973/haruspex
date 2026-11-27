@@ -1,6 +1,6 @@
 /**
  * A chat on another computer, carried on in this one's Chat view
- * (plan/instance-sync/): a `ChatSource` over that computer's chat mirror
+ * (plan/archive/instance-sync/): a `ChatSource` over that computer's chat mirror
  * (`store.svelte.ts`), whose actions are operations on it. Its turns, model
  * and memory are that computer's.
  */

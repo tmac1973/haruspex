@@ -44,7 +44,7 @@ export const watchedIO: EditorIO = {
 };
 
 /**
- * Read-only, through `read`: another computer's files (plan/instance-sync/),
+ * Read-only, through `read`: another computer's files (plan/archive/instance-sync/),
  * which this one never writes.
  */
 export function readOnlyIO(read: (relPath: string) => Promise<string>): EditorIO {

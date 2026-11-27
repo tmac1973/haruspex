@@ -1,6 +1,6 @@
 /**
  * Which conversations the Chat view shows: this computer's (the chat store's
- * active one), or a chat on another computer (plan/instance-sync/). Showing
+ * active one), or a chat on another computer (plan/archive/instance-sync/). Showing
  * another's leaves the local active conversation as it was, so going back
  * resumes it.
  */

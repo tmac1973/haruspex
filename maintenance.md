@@ -734,7 +734,7 @@ so old rows go quiet instead of being compared across embedding spaces.
 
 ## 11d. Integrations: MCP, DAV, screen capture
 
-Plan: `plan/integrations-expansion/`, with the record of what was actually
+Plan: `plan/archive/integrations-expansion/`, with the record of what was actually
 verified in `verification.md`.
 
 ### Bundled runtimes

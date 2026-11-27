@@ -3,7 +3,7 @@
 	 * Left-rail conversation list with inline rename, per-row delete,
 	 * "+ New Chat" button, collapse toggle, and a "Clear all" footer for this
 	 * computer's chats. Below them, each of the owner's other computers'
-	 * chats (plan/instance-sync/), in its colour.
+	 * chats (plan/archive/instance-sync/), in its colour.
 	 *
 	 * Reads from and writes back to the chat store directly — no props,
 	 * no emitted events. The root route mounts this once and forgets it.

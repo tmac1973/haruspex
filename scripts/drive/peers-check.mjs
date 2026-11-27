@@ -1,5 +1,5 @@
 /**
- * Two Haruspex side by side (plan/instance-sync/ phase 13): A with Remote
+ * Two Haruspex side by side (plan/archive/instance-sync/ phase 13): A with Remote
  * control on, and B following it as one of its other computers. B starts a
  * Code session on A, answers the command prompt it asks in B's own dialog,
  * carries on a chat there, sees A go offline and come back, and stops

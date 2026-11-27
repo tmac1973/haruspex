@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * Which computer a prompt came from, at the top of its modal, when it
-	 * isn't this one (plan/instance-sync/). Answering it decides there.
+	 * isn't this one (plan/archive/instance-sync/). Answering it decides there.
 	 */
 	import type { PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 

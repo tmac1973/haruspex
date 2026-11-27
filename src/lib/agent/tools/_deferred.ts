@@ -1,5 +1,5 @@
 /**
- * Deferred tool loading (plan/deferred-tools, phase 03).
+ * Deferred tool loading (plan/archive/deferred-tools, phase 03).
  *
  * A turn sends its core tools in full, plus `load_tools` and `use_tool`. The
  * other families it is offered are loaded on request: `load_tools` returns a

@@ -1494,7 +1494,7 @@ export function getActiveSession(): CodeSession | null {
 
 /**
  * Sessions running on other computers, open as sub-tabs here beside the
- * local ones (plan/instance-sync/). Kept apart from `sessions`: everything
+ * local ones (plan/archive/instance-sync/). Kept apart from `sessions`: everything
  * that runs or reports this computer's sessions (the engine, Home, the
  * tasks chip, lean mode) reads `getOpenSessions`, and must not see them.
  */

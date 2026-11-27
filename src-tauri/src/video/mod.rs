@@ -1,7 +1,7 @@
 //! Video editing: finding ffmpeg and melt, reading an episode's clips, and
 //! (in later modules) building and rendering Kdenlive projects.
 //!
-//! See `plan/video-editing/` for the design and `docs/guide/video-editing.md` for what
+//! See `plan/archive/video-editing/` for the design and `docs/guide/video-editing.md` for what
 //! the user sees.
 
 pub mod binaries;

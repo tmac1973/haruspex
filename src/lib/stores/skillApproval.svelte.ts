@@ -29,7 +29,7 @@ export interface SkillApprovalRequest {
 	current: string | null;
 	/** Write the approved text; rejects with what is wrong with it. */
 	save: (text: string) => Promise<void>;
-	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	/** Another computer's prompt, asked here (plan/archive/instance-sync/). */
 	origin?: PromptOrigin;
 }
 

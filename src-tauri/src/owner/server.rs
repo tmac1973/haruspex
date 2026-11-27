@@ -7,7 +7,7 @@
 //! `Authorization: Bearer`, and every operation is checked against that
 //! device's scopes (`clients.rs`).
 //!
-//! The web client (plan/remote-api phase 4) is served from `/app/` and uses
+//! The web client (plan/archive/remote-api phase 4) is served from `/app/` and uses
 //! a cookie instead, set by redeeming a one-time pairing code
 //! (`pairing.rs`). A cookie alone is never enough: the request must also
 //! carry `X-Haruspex: 1`, a header a page on another site can't add without

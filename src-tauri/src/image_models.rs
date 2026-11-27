@@ -9,7 +9,7 @@
 //! VAE and, for Ming, a tokenizer — because both models this engine runs ship
 //! them separately. SD1.5 and SDXL, the single-file checkpoints this catalogue
 //! started with, are gone: their output was not worth shipping
-//! (`plan/local-image-generation/measurements-phase-24-gguf.md`).
+//! (`plan/archive/local-image-generation/measurements-phase-24-gguf.md`).
 //!
 //! The weights are GGUF, not the int8/bf16 safetensors ComfyUI uses. On Vulkan
 //! without bf16 support those ran at ~40-120 s a step; GGUF runs a 1024 sheet
@@ -391,7 +391,7 @@ pub fn engine_options(entry: &ImageModelInfo) -> Vec<String> {
     // Turbo's own schedule (`sample_sigmas` in its `model_index.json`), which
     // overrides the step count. sd.cpp's default schedule at 8 steps drew
     // grainier pictures and seamed textures worse
-    // (`plan/local-image-generation/measurements-qwen-turbo.md`). A partial
+    // (`plan/archive/local-image-generation/measurements-qwen-turbo.md`). A partial
     // repaint starts part way down it, as with any schedule.
     if entry.family == "qwen21_turbo" {
         args.push("--sigmas".to_string());

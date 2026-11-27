@@ -15,7 +15,7 @@
  *      unblocking the awaiting caller; the next question takes its place.
  *
  * Questions wait their turn: several turns, or another computer's question
- * (plan/instance-sync/), can ask at once. Cancelling or aborting one rejects
+ * (plan/archive/instance-sync/), can ask at once. Cancelling or aborting one rejects
  * its caller with an `AbortError`.
  *
  * Note: this primitive always assumes an interactive surface is mounted

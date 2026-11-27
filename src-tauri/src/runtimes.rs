@@ -3,7 +3,7 @@
 //! MCP servers are third-party programs published to npm or PyPI. Shipping the
 //! runtimes that install and launch them is what lets a non-technical user add
 //! an integration without ever opening a terminal — see
-//! `plan/integrations-expansion/phase-01-bundled-runtimes.md`. `uv` provisions
+//! `plan/archive/integrations-expansion/phase-01-bundled-runtimes.md`. `uv` provisions
 //! its own CPython on demand, so Python itself is not bundled.
 //!
 //! **Why paths rather than `app.shell().sidecar(...)`.** `lint.rs` runs ruff
