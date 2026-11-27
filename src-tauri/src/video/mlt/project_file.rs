@@ -63,9 +63,9 @@ fn backup(project: &Path) -> Result<Option<PathBuf>, String> {
         .map(|rd| {
             rd.filter_map(|e| e.ok().map(|e| e.path()))
                 .filter(|p| {
-                    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                        n.starts_with(&format!("{stem}-")) && n.ends_with(&format!(".{ext}"))
-                    })
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| is_backup_of(n, stem, ext))
                 })
                 .collect()
         })
@@ -75,6 +75,29 @@ fn backup(project: &Path) -> Result<Option<PathBuf>, String> {
         let _ = std::fs::remove_file(old.remove(0));
     }
     Ok(Some(to))
+}
+
+/// Whether `name` is one of `backup`'s copies of the project `<stem>.<ext>`:
+/// `<stem>-<stamp>.<ext>`. The stamp has to be one `chrono_stamp` makes, or
+/// `ep.kdenlive` would claim `ep-final.kdenlive`'s backups and prune them.
+fn is_backup_of(name: &str, stem: &str, ext: &str) -> bool {
+    let Some(stamp) = name
+        .strip_prefix(stem)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .and_then(|rest| rest.strip_suffix(ext))
+        .and_then(|rest| rest.strip_suffix('.'))
+    else {
+        return false;
+    };
+    let b = stamp.as_bytes();
+    b.len() == 18
+        && b.iter().enumerate().all(|(i, c)| {
+            if i == 8 {
+                *c == b'T'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
 }
 
 /// `20261025T143005123`, UTC, sorting the way it reads.
@@ -145,4 +168,67 @@ pub async fn save(project: &Path, text: &str, melt: &str) -> Result<(), String> 
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stamp_is_what_is_backup_of_expects() {
+        let name = format!("ep-{}.kdenlive", chrono_stamp());
+        assert!(is_backup_of(&name, "ep", "kdenlive"));
+    }
+
+    #[test]
+    fn is_backup_of_ignores_a_sibling_whose_stem_shares_a_prefix() {
+        let sibling = "ep-final-20261025T143005123.kdenlive";
+        assert!(!is_backup_of(sibling, "ep", "kdenlive"));
+        assert!(is_backup_of(sibling, "ep-final", "kdenlive"));
+    }
+
+    #[test]
+    fn is_backup_of_wants_the_same_extension_and_a_whole_stamp() {
+        assert!(!is_backup_of("ep-20261025T143005123.mlt", "ep", "kdenlive"));
+        assert!(!is_backup_of("ep-2026.kdenlive", "ep", "kdenlive"));
+        assert!(!is_backup_of(
+            "ep-20261025X143005123.kdenlive",
+            "ep",
+            "kdenlive"
+        ));
+        assert!(!is_backup_of("ep.kdenlive", "ep", "kdenlive"));
+    }
+
+    #[test]
+    fn pruning_one_project_leaves_a_siblings_backups_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let ep = dir.path().join("ep.kdenlive");
+        let ep_final = dir.path().join("ep-final.kdenlive");
+        std::fs::write(&ep, "<mlt/>").unwrap();
+        std::fs::write(&ep_final, "<mlt/>").unwrap();
+        let backups = backups_dir(&ep);
+        std::fs::create_dir_all(&backups).unwrap();
+        // Older stamps than any real one, so these are the first to go.
+        for i in 0..BACKUPS_KEPT {
+            let stamp = format!("20000101T000000{i:03}");
+            std::fs::write(backups.join(format!("ep-{stamp}.kdenlive")), "").unwrap();
+            std::fs::write(backups.join(format!("ep-final-{stamp}.kdenlive")), "").unwrap();
+        }
+
+        backup(&ep).unwrap();
+
+        let count = |stem: &str| {
+            std::fs::read_dir(&backups)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| is_backup_of(e.file_name().to_str().unwrap(), stem, "kdenlive"))
+                .count()
+        };
+        assert_eq!(count("ep"), BACKUPS_KEPT);
+        assert_eq!(count("ep-final"), BACKUPS_KEPT);
+        assert!(!backups.join("ep-20000101T000000000.kdenlive").exists());
+        assert!(backups
+            .join("ep-final-20000101T000000000.kdenlive")
+            .exists());
+    }
 }
