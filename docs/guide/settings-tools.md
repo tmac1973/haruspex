@@ -96,4 +96,4 @@ See the `troubleshooting` page.
 
 ## Licences
 
-Every open-source package and program Haruspex ships, with its licence.
+Every open-source program and package Haruspex ships, with its licence text: the programs it runs beside itself (llama.cpp, whisper.cpp, FFmpeg and the rest), and the npm, Rust and Python packages built into it. Open an entry to read its text. Type `npm`, `Rust` or `Python` in the filter to list one kind.
