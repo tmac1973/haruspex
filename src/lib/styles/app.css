@@ -821,6 +821,24 @@ body[data-notebooks-off] .notebook-save {
 	color: var(--warning);
 }
 
+/* The broken link the notebook's banner just pointed at. */
+.link-flash {
+	border-radius: 3px;
+	animation: link-flash 1.6s ease-out;
+}
+
+@keyframes link-flash {
+	0%,
+	40% {
+		background: color-mix(in srgb, var(--warning) 35%, transparent);
+		outline: 2px solid var(--warning);
+	}
+	100% {
+		background: transparent;
+		outline-color: transparent;
+	}
+}
+
 /* A `notebook:` link: a button (markdownActions routes it) that reads as a link. */
 .notebook-link {
 	display: inline;

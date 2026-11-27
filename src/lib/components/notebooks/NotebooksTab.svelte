@@ -152,14 +152,26 @@
 		}
 	}
 
-	const brokenCount = $derived(
-		Object.values(getLinkStatuses()).filter((l) => l.state === 'broken').length
+	const brokenLinks = $derived(
+		Object.values(getLinkStatuses()).filter((l) => l.state === 'broken')
 	);
+	const brokenCount = $derived(brokenLinks.length);
+	const brokenTitle = $derived(brokenLinks.map((l) => `${l.url} — ${l.status}`).join('\n'));
 
-	function showFirstBroken() {
-		document
-			.querySelector('.notebooks .link-broken')
-			?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+	/** Which broken link the banner showed last; each click moves to the next. */
+	let brokenShown = -1;
+
+	function showNextBroken() {
+		const found = [...document.querySelectorAll<HTMLElement>('.notebooks .link-broken')];
+		if (found.length === 0) return;
+		brokenShown = (brokenShown + 1) % found.length;
+		const el = found[brokenShown];
+		el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		// A link already on screen doesn't move, so mark it too.
+		el.classList.remove('link-flash');
+		void el.offsetWidth;
+		el.classList.add('link-flash');
+		el.addEventListener('animationend', () => el.classList.remove('link-flash'), { once: true });
 	}
 
 	/** The open notebook's chat when it's on another computer. */
@@ -222,7 +234,7 @@
 	{/if}
 </div>
 {#snippet brokenBanner()}
-	<button class="broken-banner" onclick={showFirstBroken} title="Show the first one">
+	<button class="broken-banner" onclick={showNextBroken} title={brokenTitle}>
 		⚠ {brokenCount} broken {brokenCount === 1 ? 'link' : 'links'}
 	</button>
 {/snippet}

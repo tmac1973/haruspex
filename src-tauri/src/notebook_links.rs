@@ -3,7 +3,8 @@
 //! proxy and its rules. A link is **broken** when the page is gone (404,
 //! 410, a server error) or the name or connection fails; **skipped** when it
 //! points at this computer or the local network (web fetches may not reach
-//! those) or the server didn't answer in time or asked us to slow down.
+//! those), the server didn't answer in time or asked us to slow down, or it
+//! was down for now (502, 503, 504) — the page is likely still there.
 //! Results are kept per notebook in `notebook_link_status`.
 
 use crate::db::Database;
@@ -42,6 +43,7 @@ pub fn classify(outcome: &Outcome) -> (&'static str, String) {
     match outcome {
         Outcome::Status(s) if (200..400).contains(s) => ("ok", format!("{s}")),
         Outcome::Status(429) => ("skipped", "Didn't answer (too many requests)".into()),
+        Outcome::Status(s @ (502..=504)) => ("skipped", format!("Site down for now ({s})")),
         Outcome::Status(s @ (404 | 410)) => ("broken", format!("Page not found ({s})")),
         Outcome::Status(s) if *s >= 500 => ("broken", format!("Server error ({s})")),
         // 401/403 and the like: the page is there, just not for us.
@@ -176,6 +178,9 @@ mod tests {
         assert_eq!(v(Outcome::Status(404)), "broken");
         assert_eq!(v(Outcome::Status(410)), "broken");
         assert_eq!(v(Outcome::Status(500)), "broken");
+        for s in [502, 503, 504] {
+            assert_eq!(v(Outcome::Status(s)), "skipped");
+        }
         assert_eq!(v(Outcome::Status(429)), "skipped");
         assert_eq!(v(Outcome::Timeout), "skipped");
         assert_eq!(v(Outcome::Local), "skipped");
