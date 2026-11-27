@@ -482,6 +482,7 @@ pub fn run() {
             image_cache::commands::image_mask_change,
             image_cache::commands::image_rehydrate_local,
             image_cache::commands::image_read_bytes,
+            image_cache::commands::image_read_rgb,
             image_cache::commands::image_save_as,
             audio_cache::commands::audio_store_url,
             audio_cache::commands::audio_store_bytes,

@@ -11,7 +11,7 @@
 
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
 import { backendForEntry } from '#lib/image/registry.ts';
-import { imageEntries, saveImageCaps } from '#lib/image/entries.ts';
+import { allImageEntries, imageEntries, saveImageCaps } from '#lib/image/entries.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
 import { couldNotStart } from '#lib/toolchest/startFailure.ts';
 import { logDebug } from '#lib/debugLog.ts';
@@ -243,9 +243,14 @@ async function routeNamed<T>(name: string, need: ImageNeed, run: Run<T>): Promis
 	const entry =
 		entries.find((e) => e.name === name) ?? entries.find((e) => e.name.toLowerCase() === want);
 	if (!entry) {
+		const names = entries.map((e) => e.name).join(', ');
+		// A model it used earlier in the chat, turned off since (#1352).
+		const off = allImageEntries().find((e) => e.disabled && e.name.toLowerCase() === want);
 		throw new ImageBackendError(
 			'rejected',
-			`There is no image model called "${name}". The models are: ${entries.map((e) => e.name).join(', ')}.`
+			off
+				? `${off.name} is turned off in Settings → Image generation. The models on are: ${names}.`
+				: `There is no image model called "${name}". The models are: ${names}.`
 		);
 	}
 	if (entry.caps && !meetsNeed(entry.caps, need)) throw namedCannot(entry, entry.caps, need);

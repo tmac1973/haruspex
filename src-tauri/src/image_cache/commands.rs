@@ -507,6 +507,19 @@ pub async fn image_read_bytes(
     read_cached(&db, &cache_dir(&app)?, &hash).map(tauri::ipc::Response::new)
 }
 
+/// One cached picture as an RGB PNG, for an upscaler on a server (llama-toolchest,
+/// Lemonade): sd.cpp's upscaler refuses a picture with alpha. The caller puts
+/// the alpha back (`image_store_upscaled`).
+#[tauri::command]
+pub async fn image_read_rgb(
+    app: AppHandle,
+    db: State<'_, Database>,
+    hash: String,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = read_cached(&db, &cache_dir(&app)?, &hash)?;
+    crate::image_engine::rgb_png(&bytes).map(tauri::ipc::Response::new)
+}
+
 /// A cached picture's bytes by hash, or why not.
 pub fn read_cached(db: &Database, dir: &std::path::Path, hash: &str) -> Result<Vec<u8>, String> {
     std::fs::read(cached_path(db, dir, hash)?).map_err(|_| NOT_FOUND.to_string())

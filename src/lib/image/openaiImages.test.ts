@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+
 import { editUploads, imagesFrom, upscaleVia } from './openaiImages';
 
 describe('imagesFrom', () => {
@@ -59,5 +63,27 @@ describe('upscaleVia', () => {
 		await expect(upscaleVia(async () => null, 'm', input, 'data', 'X')).rejects.toThrow(
 			'X returned no upscaled picture.'
 		);
+	});
+
+	it('sends a cached picture flattened to RGB, since sd.cpp refuses alpha (#1352)', async () => {
+		tauri.invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === 'image_read_rgb') return new Uint8Array([4, 5, 6]).buffer;
+			throw new Error(`unexpected invoke: ${cmd}`);
+		});
+		const sent: unknown[] = [];
+		const post = async (body: unknown) => {
+			sent.push(body);
+			return { images: [{ b64_json: 'BwgJ' }] };
+		};
+		await upscaleVia(post, 'esrgan', { name: 'a.png', hash: 'abc' }, 'images', 'S');
+		expect(tauri.invoke).toHaveBeenCalledWith('image_read_rgb', { hash: 'abc' });
+		expect(sent).toEqual([{ model: 'esrgan', image: 'BAUG' }]);
+	});
+
+	it('says a picture gone from the cache is gone', async () => {
+		tauri.invoke.mockRejectedValue('Image not found');
+		await expect(
+			upscaleVia(async () => null, 'm', { name: 'a.png', hash: 'abc' }, 'images', 'S')
+		).rejects.toThrow('That picture is no longer in the image cache.');
 	});
 });

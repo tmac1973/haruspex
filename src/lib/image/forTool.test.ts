@@ -287,8 +287,7 @@ describe('upscaleForTool', () => {
 		);
 		await expect(upscaleForTool(picture)).rejects.toMatchObject({
 			kind: 'unreachable',
-			message:
-				'No upscaler could be reached: esrgan: real-esrgan is failed — check it in llama-toolchest.'
+			message: 'No upscaler worked: esrgan: real-esrgan is failed — check it in llama-toolchest.'
 		});
 	});
 
