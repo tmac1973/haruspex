@@ -9,6 +9,7 @@ import { parseCell } from '#lib/notebooks/columns.ts';
 import { columnId, parseCsv, splitHeader } from '#lib/notebooks/csv.ts';
 import {
 	cellsOf,
+	checkCsvWidths,
 	columnsFor,
 	findColumn,
 	parseUpdates,
@@ -30,7 +31,7 @@ registerTool({
 		function: {
 			name: 'notebook_table_rows',
 			description:
-				'Change rows of a table or checklist card without rewriting it. add_csv: rows to add at the end, as CSV with the header row. update: one line per row, "row_id: Column=value; Column=value". delete: row ids, separated by commas. Checklists have the columns text and done.',
+				'Change rows of a table or checklist card without rewriting it. add_csv: rows to add at the end, as CSV with the header row; quote a value that has a comma. update: one line per row, "row_id: Column=value; Column=value", or JSON {"row_id": {"Column": "value"}} when a value has ";". delete: row ids, separated by commas. Checklists have the columns text and done.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -57,8 +58,12 @@ registerTool({
 				const del = str(args.delete)
 					.split(/[\s,]+/)
 					.filter(Boolean);
-				const updates = str(args.update);
-				if (updates.trim()) {
+				const updates = args.update;
+				const hasUpdates =
+					typeof updates === 'string'
+						? updates.trim() !== ''
+						: !!updates && typeof updates === 'object';
+				if (hasUpdates) {
 					const all = await api.getRows(card.id, 0, 5000);
 					const current = new Map(all.map((r) => [r.id, cellsOf(r)]));
 					ops.push(...parseUpdates(updates, cols, current));
@@ -68,6 +73,7 @@ registerTool({
 				let added = 0;
 				if (csv.trim()) {
 					const [header, ...body] = parseCsv(csv);
+					checkCsvWidths(header ?? [], body);
 					const map = (header ?? []).map((h) => {
 						const name = splitHeader(h).name;
 						if (name.toLowerCase() === 'row_id') return null;

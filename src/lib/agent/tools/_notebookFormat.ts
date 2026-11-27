@@ -6,7 +6,7 @@
 import * as api from '#lib/notebooks/api.ts';
 import type { NotebookCard, RowOp } from '#lib/notebooks/api.ts';
 import { columnsOf, parseCell, rawCell, type Column } from '#lib/notebooks/columns.ts';
-import { rowsFromCsv, writeCsv } from '#lib/notebooks/csv.ts';
+import { parseCsv, rowsFromCsv, writeCsv } from '#lib/notebooks/csv.ts';
 
 const OUTLINE_TEXT = 300;
 const OUTLINE_ROWS = 10;
@@ -105,39 +105,134 @@ export function unknownColumn(name: string, cols: Column[]): Error {
 	);
 }
 
+const JSON_HINT =
+	'If ";" is part of a value, pass update as JSON: {"row_id": {"Column": "value"}}.';
+
+/** Could this text be a column name the model meant, rather than part of a value? */
+function looksLikeColumnName(text: string): boolean {
+	return text.length <= 60 && /^[\p{L}\p{N} _\-/().#%&]+$/u.test(text);
+}
+
+function setCell(next: Record<string, unknown>, col: Column, raw: string): void {
+	const value = parseCell(col, raw);
+	if (value === '' || value === undefined) delete next[col.id];
+	else next[col.id] = value;
+}
+
 /**
- * `row_id: Price=79.99; In stock=yes` lines into update ops, values parsed
- * by column type and merged into the row's current cells.
+ * `Price=79.99; In stock=yes` into column/value pairs. A `;` starts a new
+ * pair only when a column name and `=` follow it, so values may hold `;`
+ * and `=` (shell commands, prose).
+ */
+function splitAssignments(text: string, cols: Column[], rowId: string): [Column, string][] {
+	const pairs: [Column, string][] = [];
+	for (const part of text.split(';')) {
+		if (!part.trim()) continue;
+		const eq = part.indexOf('=');
+		const name = eq < 0 ? '' : part.slice(0, eq).trim();
+		const col = eq < 0 ? undefined : findColumn(cols, name);
+		if (col) {
+			pairs.push([col, part.slice(eq + 1)]);
+			continue;
+		}
+		const last = pairs[pairs.length - 1];
+		if (!last) {
+			if (eq < 0) throw new Error(`Row ${rowId}: "${part.trim()}" isn't "Column=value".`);
+			throw unknownColumn(name, cols);
+		}
+		if (eq >= 0 && looksLikeColumnName(name)) {
+			throw new Error(
+				`Row ${rowId}: "${name}" after a ";" is no column. Columns: ${cols.map((c) => c.name).join(', ')}. ${JSON_HINT}`
+			);
+		}
+		last[1] += `;${part}`;
+	}
+	return pairs;
+}
+
+/** `{"row_id": {"Column": value}}`, as the model may send `update`. */
+function jsonUpdates(value: unknown): [string, Record<string, unknown>][] | null {
+	let v = value;
+	if (typeof v === 'string') {
+		if (!v.trim().startsWith('{')) return null;
+		try {
+			v = JSON.parse(v);
+		} catch (e) {
+			throw new Error(`update isn't valid JSON: ${e instanceof Error ? e.message : String(e)}`, {
+				cause: e
+			});
+		}
+	}
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+	return Object.entries(v as Record<string, unknown>).map(([id, cells]) => {
+		if (!cells || typeof cells !== 'object' || Array.isArray(cells)) {
+			throw new Error(`Row ${id}: give its cells as {"Column": "value"}.`);
+		}
+		return [id.trim(), cells as Record<string, unknown>];
+	});
+}
+
+/**
+ * `row_id: Price=79.99; In stock=yes` lines (or the same as JSON,
+ * `{"row_id": {"Price": 79.99}}`) into update ops, values parsed by column
+ * type and merged into the row's current cells.
  */
 export function parseUpdates(
-	text: string,
+	update: unknown,
 	cols: Column[],
 	current: Map<string, Record<string, unknown>>
 ): RowOp[] {
+	const rows: [string, [Column, string][]][] = [];
+	const json = jsonUpdates(update);
+	if (json) {
+		for (const [rowId, cells] of json) {
+			const pairs = Object.entries(cells).map(([name, v]): [Column, string] => {
+				const col = findColumn(cols, name);
+				if (!col) throw unknownColumn(name.trim(), cols);
+				return [col, v == null ? '' : typeof v === 'string' ? v : String(v)];
+			});
+			rows.push([rowId, pairs]);
+		}
+	} else {
+		const text = typeof update === 'string' ? update : '';
+		for (const line of text.split(/\r?\n/)) {
+			if (!line.trim()) continue;
+			const colon = line.indexOf(':');
+			if (colon < 0) throw new Error(`"${line.trim()}" isn't "row_id: Column=value".`);
+			const rowId = line.slice(0, colon).trim();
+			rows.push([rowId, splitAssignments(line.slice(colon + 1), cols, rowId)]);
+		}
+	}
 	const ops: RowOp[] = [];
-	for (const line of text.split(/\r?\n/)) {
-		if (!line.trim()) continue;
-		const colon = line.indexOf(':');
-		if (colon < 0) throw new Error(`"${line.trim()}" isn't "row_id: Column=value".`);
-		const rowId = line.slice(0, colon).trim();
+	for (const [rowId, pairs] of rows) {
 		const cells = current.get(rowId);
 		if (!cells) throw new Error(`No row ${rowId} in this card.`);
 		const next = { ...cells };
-		for (const part of line.slice(colon + 1).split(';')) {
-			if (!part.trim()) continue;
-			const eq = part.indexOf('=');
-			if (eq < 0) throw new Error(`"${part.trim()}" isn't "Column=value".`);
-			const name = part.slice(0, eq);
-			const col = findColumn(cols, name);
-			if (!col) throw unknownColumn(name.trim(), cols);
-			const value = parseCell(col, part.slice(eq + 1));
-			if (value === '' || value === undefined) delete next[col.id];
-			else next[col.id] = value;
-		}
+		for (const [col, raw] of pairs) setCell(next, col, raw);
 		current.set(rowId, next);
 		ops.push({ op: 'update', row_id: rowId, cells: JSON.stringify(next) });
 	}
 	return ops;
+}
+
+/**
+ * Refuse CSV rows with more fields than the header: an unquoted comma in a
+ * value split it, and adding it would shift text into the wrong columns.
+ * Trailing empty fields (a trailing comma) are fine.
+ */
+export function checkCsvWidths(header: string[], body: string[][]): void {
+	const bad: string[] = [];
+	body.forEach((fields, i) => {
+		const extra = fields.slice(header.length);
+		if (extra.some((f) => f.trim() !== '')) {
+			bad.push(`row ${i + 1} has ${fields.length} fields`);
+		}
+	});
+	if (bad.length === 0) return;
+	const shown = bad.length > 5 ? [...bad.slice(0, 5), `${bad.length - 5} more`] : bad;
+	throw new Error(
+		`The header has ${header.length} columns, but ${shown.join(', ')}. A value with a comma needs quotes: "Paris, France". Nothing was changed.`
+	);
 }
 
 /** Checklist `items`: one per line, `[x] ` for done. */
@@ -156,6 +251,8 @@ export function checklistRows(items: string): string[] {
 
 /** A table card's meta and rows from CSV (typed `Name:type` headers allowed). */
 export function tableFromCsv(csv: string): { meta: string; rows: string[] } {
+	const [header, ...body] = parseCsv(csv);
+	if (header) checkCsvWidths(header, body);
 	const t = rowsFromCsv(csv);
 	if (t.columns.length === 0) throw new Error('The CSV needs a header row.');
 	return {

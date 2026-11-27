@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { NotebookCard } from '#lib/notebooks/api.ts';
+import type { NotebookCard, RowOp } from '#lib/notebooks/api.ts';
 
 const api = vi.hoisted(() => ({
 	getCard: vi.fn(),
@@ -25,6 +25,7 @@ import './notebook-table';
 import { resolveNotebook } from './_notebookShared';
 import {
 	cardOutline,
+	checkCsvWidths,
 	checklistRows,
 	parseUpdates,
 	rowsToCsv,
@@ -32,6 +33,12 @@ import {
 } from './_notebookFormat';
 import type { Column } from '#lib/notebooks/columns.ts';
 import type { ToolContext } from './types';
+
+/** An update op's cells, parsed. */
+function cellsOfOp(op: RowOp): Record<string, unknown> {
+	if (!('cells' in op)) throw new Error('not an update');
+	return JSON.parse(op.cells);
+}
 
 const COLS: Column[] = [
 	{ id: 'name', name: 'Name', type: 'text' },
@@ -92,6 +99,55 @@ describe('notebook tool helpers', () => {
 			/Columns: Name, Price/
 		);
 		expect(() => parseUpdates('r9: Name=x', COLS, new Map())).toThrow(/No row r9/);
+	});
+
+	it('keeps ";" and "=" inside a value unless a column name follows', () => {
+		const current = new Map([['r1', {}]]);
+		const ops = parseUpdates(
+			'r1: Name=set -a; . /etc/env; set +a; env | grep x; Price=5',
+			COLS,
+			current
+		);
+		expect(cellsOfOp(ops[0])).toEqual({
+			name: 'set -a; . /etc/env; set +a; env | grep x',
+			price: 5
+		});
+		const eq = parseUpdates(
+			'r1: Name=Custom Model = X and Base URL = http://h:1/v1',
+			COLS,
+			current
+		);
+		expect(cellsOfOp(eq[0]).name).toBe('Custom Model = X and Base URL = http://h:1/v1');
+	});
+
+	it('refuses an unknown column after ";" and points at the JSON form', () => {
+		expect(() => parseUpdates('r1: Name=x; Colour=red', COLS, new Map([['r1', {}]]))).toThrow(
+			/"Colour" after a ";" is no column.*JSON/
+		);
+	});
+
+	it('takes updates as JSON', () => {
+		const current = new Map([['r1', { name: 'Old', price: 1 }]]);
+		const ops = parseUpdates('{"r1": {"Name": "a; b=c", "Price": 7}}', COLS, current);
+		expect(cellsOfOp(ops[0])).toEqual({ name: 'a; b=c', price: 7 });
+		const obj = parseUpdates({ r1: { Price: null } }, COLS, current);
+		expect(cellsOfOp(obj[0])).toEqual({ name: 'a; b=c' });
+		expect(() => parseUpdates('{"r1": {"Colour": "red"}}', COLS, current)).toThrow(/No column/);
+		expect(() => parseUpdates('{"r1": ', COLS, current)).toThrow(/valid JSON/);
+	});
+
+	it('refuses CSV rows wider than the header', () => {
+		expect(() => checkCsvWidths(['a', 'b'], [['1', '2', '']])).not.toThrow();
+		expect(() =>
+			checkCsvWidths(
+				['a', 'b'],
+				[
+					['1', '2'],
+					['x', 'y', 'z']
+				]
+			)
+		).toThrow(/2 columns, but row 2 has 3 fields.*quotes/);
+		expect(() => tableFromCsv('Name,Note\nA,one, two')).toThrow(/row 1 has 3 fields/);
 	});
 
 	it('reads checklist items with done marks', () => {
@@ -160,6 +216,15 @@ describe('notebook_table_rows', () => {
 		]);
 		const err = await run('notebook_table_rows', { card: 'c1', add_csv: 'Colour\nred' });
 		expect(err).toMatch(/No column \\"Colour\\"/);
+	});
+
+	it('adds nothing when a CSV row has an unquoted comma', async () => {
+		const err = await run('notebook_table_rows', {
+			card: 'c1',
+			add_csv: 'Name,Price\nBose,149\nSony, the big one,99'
+		});
+		expect(err).toMatch(/row 2 has 3 fields/);
+		expect(api.applyRows).not.toHaveBeenCalled();
 	});
 
 	it('re-reads once on a clash, then gives up', async () => {
