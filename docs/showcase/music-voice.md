@@ -98,6 +98,25 @@ The script appears first, in short sentences, with the chosen voice. After your 
 
 Read more: speech, media-skills
 
+## Voice a scene for your game
+
+Each character gets one voice, kept for all their lines, and every line is saved as its own WAV where the game loads its sounds.
+
+Tab: Code
+Required settings: None
+
+Prompt:
+
+> /narrate the innkeeper greets the player, the player asks for a room, and the innkeeper says it's two silver. Gruff man and young woman.
+
+Example output:
+
+The script appears first with a voice for each character. After your OK all three lines are made in one go, a player for each, saved under the game's sound folder with names like `innkeeper_greet.wav`, and a table lists character, line and file.
+
+<!-- media: narrate skill's script with two voices, then three line players -->
+
+Read more: speech, media-skills
+
 ## Save your own voice and use it
 
 Save a clean 5–30 s clip of yourself, then ask for speech in your voice. Only use your own voice, or one you have clear permission to use.

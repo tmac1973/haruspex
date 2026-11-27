@@ -19,6 +19,7 @@ Ask in Chat or the Code tab: "read this intro as a voiceover", "say these three 
 
 - **Voice:** any of the voices in Settings → Audio, or a saved voice with a llama.cpp server. The assistant picks one when you describe it ("a deep male voice"); otherwise it uses yours.
 - **Speed:** from half to twice the normal pace. Ask for "slower" or "a bit faster".
+- **Several speakers:** a scene's lines in one request, each in its character's voice, one file a line (up to 40 lines).
 - **Length:** up to about 15 minutes in one file (12,000 characters). For longer, ask for it in parts.
 - **Save it:** with a working folder in Chat, or in the Code tab, ask for it to be saved ("save it as audio/intro.wav"). In Chat you are asked before a file is replaced. `save_generated` saves one made earlier.
 
@@ -42,7 +43,7 @@ A clean 5–10 s of one person speaking is enough; clips under 5 s or over 30 s 
 The `narrate` skill can load by itself the first time the assistant makes speech, or type `/narrate` and what you want. It:
 
 - writes the script for listening (short sentences, numbers as they are said, no lists), shows it with the voice it picked, and **stops** for your OK. Give the exact words ("read this: …") to skip that;
-- keeps one voice for each character, and makes game lines one file each, named for what the code calls them and saved where it loads sounds;
+- keeps one voice for each character, and makes a scene's game lines together, one file each, named for what the code calls them and saved where it loads sounds;
 - for a set length ("a 30-second voiceover"), measures what it made and records it again faster or slower to fit;
 - with a llama.cpp server, speaks in the saved voice you name ("in my voice"), and for another take records again with a new seed into a second file, keeping both for you to pick;
 - saves a voiceover next to the video, and with the video tools on puts it under the picture in the Shotcut or Kdenlive project at the time you say (see the `video-cut` page).
@@ -56,7 +57,7 @@ Spoken audio goes in the audio cache with songs. A file that belongs to a chat o
 ## What it doesn't do
 
 - Only WAV files. Convert to MP3 yourself if you need one.
-- One voice per file: each character's lines are made separately.
+- One voice per file: a scene with several speakers comes out as one file a line, not one joined file.
 - Most voices are American English. Text in other languages is read with English sounds.
 - No copying a voice without its owner's consent: Haruspex saves a voice only after you confirm it is yours or you may use it.
 - Kokoro can't speak in a saved voice; only a llama.cpp server can.

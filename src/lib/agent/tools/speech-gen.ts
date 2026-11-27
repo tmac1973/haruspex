@@ -9,6 +9,9 @@
  * (`tts_synthesize_to_cache`), so a voiceover of several minutes is no harder
  * than a line. `path` also writes the file into the working folder, checked
  * before koko starts (`_saveGenerated.ts`).
+ *
+ * `lines` in place of `text` speaks several lines, each in its own voice and
+ * into its own file: a scene's character lines for a game, in one call.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
@@ -37,6 +40,8 @@ import { trimmed } from '#lib/utils/coerce.ts';
 export const MAX_CHARS = 12_000;
 export const MIN_SPEED = 0.5;
 export const MAX_SPEED = 2;
+/** The most `lines` one call speaks. */
+export const MAX_LINES = 40;
 
 const VOICE_IDS = TTS_VOICES.map((v) => v.id);
 
@@ -123,6 +128,81 @@ export function parseSpeechArgs(
 	};
 }
 
+const LINES_SHAPE = 'lines must be a list of {voice, text}.';
+
+/** The file name of `path` without its folder or `.wav`. */
+function stemOf(path: string): string {
+	return (path.split(/[\\/]/).pop() ?? '').replace(/\.wav$/i, '');
+}
+
+/** The `lines` list, also sent as a JSON string, or what is wrong with the call. */
+function rawLines(args: Record<string, unknown>): unknown[] | string {
+	let raw = args.lines;
+	if (typeof raw === 'string') {
+		try {
+			raw = JSON.parse(raw);
+		} catch {
+			return LINES_SHAPE;
+		}
+	}
+	if (!Array.isArray(raw) || raw.length === 0) return LINES_SHAPE;
+	if (trimmed(args.text)) return 'Give "text" or "lines", not both.';
+	if (trimmed(args.path)) return 'With lines, give each line its own path.';
+	if (raw.length > MAX_LINES) {
+		return `There are ${raw.length} lines; the most is ${MAX_LINES} a call. Split them.`;
+	}
+	return raw;
+}
+
+/**
+ * Parse `lines`, one `SpeechArgs` a line, or say what is wrong. A line's
+ * voice and speed default to the call's; `seed` and `overwrite` are the
+ * call's for every line.
+ */
+export function parseSpeechLines(
+	args: Record<string, unknown>,
+	defaultVoice: string,
+	engine: SpeechEngine = 'kokoro'
+): SpeechArgs[] | string {
+	const raw = rawLines(args);
+	if (typeof raw === 'string') return raw;
+	const parsed: SpeechArgs[] = [];
+	const paths = new Map<string, number>();
+	let chars = 0;
+	for (const [i, item] of raw.entries()) {
+		const n = i + 1;
+		if (!item || typeof item !== 'object') return `Line ${n} must be {voice, text}.`;
+		const line = item as Record<string, unknown>;
+		const path = trimmed(line.path);
+		const one = parseSpeechArgs(
+			{
+				text: line.text,
+				voice: trimmed(line.voice) || args.voice,
+				speed: line.speed ?? args.speed,
+				seed: args.seed,
+				title: trimmed(line.title) || stemOf(path),
+				path,
+				overwrite: args.overwrite
+			},
+			defaultVoice,
+			engine
+		);
+		if (typeof one === 'string') return `Line ${n}: ${one}`;
+		if (one.path) {
+			const key = one.path.toLowerCase();
+			const first = paths.get(key);
+			if (first) return `Lines ${first} and ${n} both save to ${one.path}.`;
+			paths.set(key, n);
+		}
+		chars += one.text.length;
+		parsed.push(one);
+	}
+	if (chars > MAX_CHARS) {
+		return `The lines are ${chars} characters together; the most is ${MAX_CHARS}. Split them.`;
+	}
+	return parsed;
+}
+
 /** Speech runs about 15 characters a second at normal speed. */
 const CHARS_PER_SECOND = 15;
 
@@ -142,7 +222,11 @@ function minutesAndSeconds(sec: number): string {
 }
 
 /** Speak what `args` asks for and answer with its player line. */
-export async function runSpeech(args: SpeechArgs, ctx: ToolContext): Promise<ToolExecOutput> {
+export async function runSpeech(
+	args: SpeechArgs,
+	ctx: ToolContext,
+	progress = 'Speaking'
+): Promise<ToolExecOutput> {
 	let target: SaveTarget | null = null;
 	if (args.path) {
 		const settled = await prepareSave(args.path, args.overwrite, ctx, 'generate_speech');
@@ -150,7 +234,7 @@ export async function runSpeech(args: SpeechArgs, ctx: ToolContext): Promise<Too
 		target = settled;
 	}
 
-	ctx.onProgress?.('Speaking');
+	ctx.onProgress?.(progress);
 	let made: Spoken;
 	try {
 		made = await speak({
@@ -194,6 +278,51 @@ export async function runSpeech(args: SpeechArgs, ctx: ToolContext): Promise<Too
 	};
 }
 
+/** The error a `runSpeech` answer carries, or null when it made the line. */
+function errorOf(out: ToolExecOutput): string | null {
+	if (out.artifacts?.length) return null;
+	try {
+		const parsed = JSON.parse(out.result) as { error?: unknown };
+		return typeof parsed.error === 'string' ? parsed.error : out.result;
+	} catch {
+		return out.result;
+	}
+}
+
+/**
+ * Speak each line into its own file, one after another. A line that fails
+ * doesn't stop the rest; only when none is made is the answer an error.
+ */
+export async function runSpeechLines(
+	lines: SpeechArgs[],
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const said: string[] = [];
+	const artifacts: NonNullable<ToolExecOutput['artifacts']> = [];
+	let failed = 0;
+	for (const [i, line] of lines.entries()) {
+		const out = await runSpeech(line, ctx, `Speaking line ${i + 1} of ${lines.length}`);
+		const error = errorOf(out);
+		if (error) failed++;
+		said.push(`Line ${i + 1}: ${error ? `Not made: ${error}` : out.result}`);
+		artifacts.push(...(out.artifacts ?? []));
+	}
+	if (failed === lines.length) return toolResult(toolError(said.join('\n')));
+	if (failed) said.push(`${failed} of ${lines.length} lines were not made.`);
+	return { result: said.join('\n'), artifacts };
+}
+
+const LINE_PROPS = {
+	text: { type: 'string', description: 'What this line says.' },
+	voice: { type: 'string', description: 'Its voice; default the call\'s "voice".' },
+	speed: { type: 'number', description: 'Its speed; default the call\'s "speed".' },
+	title: { type: 'string', description: 'A short title; default the file name.' },
+	path: {
+		type: 'string',
+		description: 'Save it here, in the working folder, ending .wav.'
+	}
+};
+
 registerTool({
 	category: 'speech',
 	schema: {
@@ -209,7 +338,12 @@ registerTool({
 				properties: {
 					text: {
 						type: 'string',
-						description: `What to say, up to ${MAX_CHARS} characters.`
+						description: `What to say, up to ${MAX_CHARS} characters. Leave it out when you give lines.`
+					},
+					lines: {
+						type: 'array',
+						description: `Instead of text: up to ${MAX_LINES} lines, each spoken into its own file in its own voice, such as a scene's character lines for a game.`,
+						items: { type: 'object', properties: LINE_PROPS, required: ['text'] }
 					},
 					voice: {
 						type: 'string',
@@ -231,17 +365,23 @@ registerTool({
 					},
 					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' }
 				},
-				required: ['text']
+				required: []
 			}
 		}
 	},
-	displayLabel: (args) => `speech: ${String(args.title ?? args.text ?? '').slice(0, 60)}`,
+	displayLabel: (args) => {
+		const what =
+			args.title ?? args.text ?? (Array.isArray(args.lines) ? `${args.lines.length} lines` : '');
+		return `speech: ${String(what).slice(0, 60)}`;
+	},
 	execute: async (args, ctx) => {
-		const parsed = parseSpeechArgs(
-			args,
-			getSettings().ttsVoice || DEFAULT_TTS_VOICE,
-			speechEngine()
-		);
+		const voice = getSettings().ttsVoice || DEFAULT_TTS_VOICE;
+		if (args.lines !== undefined && args.lines !== null) {
+			const lines = parseSpeechLines(args, voice, speechEngine());
+			if (typeof lines === 'string') return toolResult(toolError(lines));
+			return runSpeechLines(lines, ctx);
+		}
+		const parsed = parseSpeechArgs(args, voice, speechEngine());
 		if (typeof parsed === 'string') return toolResult(toolError(parsed));
 		return runSpeech(parsed, ctx);
 	}

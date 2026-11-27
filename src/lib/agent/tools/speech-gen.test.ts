@@ -6,7 +6,7 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
-import { MAX_CHARS, parseSpeechArgs, shortNote } from './speech-gen';
+import { MAX_CHARS, MAX_LINES, parseSpeechArgs, parseSpeechLines, shortNote } from './speech-gen';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
@@ -125,6 +125,124 @@ describe('generate_speech', () => {
 		vi.mocked(invoke).mockRejectedValueOnce('TTS failed: no model');
 		const out = await executeTool('generate_speech', { text: 'Hi.' }, chat);
 		expect(out.result).toContain('Could not make it: TTS failed: no model');
+	});
+});
+
+describe('parseSpeechLines', () => {
+	it("gives each line its own voice, or the call's, and a title from its file", () => {
+		const got = parseSpeechLines(
+			{
+				voice: 'am_adam',
+				speed: 0.9,
+				seed: 3,
+				overwrite: true,
+				lines: [
+					{ voice: 'af_bella', text: 'Welcome, traveller.', path: 'sfx/inn_greet.wav' },
+					{ text: 'A room, please.', speed: 1.1 }
+				]
+			},
+			'af_heart'
+		);
+		expect(got).toMatchObject([
+			{ voice: 'af_bella', speed: 0.9, seed: 3, overwrite: true, title: 'inn_greet' },
+			{ voice: 'am_adam', speed: 1.1, title: 'A room, please', path: '' }
+		]);
+	});
+
+	it('takes lines sent as a JSON string', () => {
+		const got = parseSpeechLines({ lines: '[{"voice":"am_eric","text":"Halt."}]' }, 'af_heart');
+		expect(got).toMatchObject([{ voice: 'am_eric', text: 'Halt.' }]);
+	});
+
+	it('refuses a bad shape, text as well, one path for all, and too many lines', () => {
+		expect(parseSpeechLines({ lines: [] }, 'af_heart')).toContain('list of {voice, text}');
+		expect(parseSpeechLines({ lines: 'nope' }, 'af_heart')).toContain('list of {voice, text}');
+		expect(parseSpeechLines({ lines: ['Hi'] }, 'af_heart')).toBe('Line 1 must be {voice, text}.');
+		expect(parseSpeechLines({ text: 'Hi.', lines: [{ text: 'Yo.' }] }, 'af_heart')).toContain(
+			'not both'
+		);
+		expect(parseSpeechLines({ path: 'a.wav', lines: [{ text: 'Yo.' }] }, 'af_heart')).toContain(
+			'its own path'
+		);
+		const many = Array.from({ length: MAX_LINES + 1 }, () => ({ text: 'Hi.' }));
+		expect(parseSpeechLines({ lines: many }, 'af_heart')).toContain('Split them');
+	});
+
+	it('names the line that is wrong, and two lines saving to one file', () => {
+		expect(parseSpeechLines({ lines: [{ text: 'Hi.' }, { voice: 'am_adam' }] }, 'af_heart')).toBe(
+			'Line 2: generate_speech needs the "text" to speak.'
+		);
+		expect(
+			parseSpeechLines(
+				{
+					lines: [
+						{ text: 'Hi.', path: 'a.wav' },
+						{ text: 'Yo.', path: 'A.wav' }
+					]
+				},
+				'af_heart'
+			)
+		).toBe('Lines 1 and 2 both save to A.wav.');
+	});
+
+	it('holds all the lines together to the character limit', () => {
+		const half = 'a'.repeat(MAX_CHARS / 2 + 1);
+		expect(parseSpeechLines({ lines: [{ text: half }, { text: half }] }, 'af_heart')).toContain(
+			'characters together'
+		);
+	});
+});
+
+describe('generate_speech with lines', () => {
+	it('speaks each line in its voice, with a player each', async () => {
+		const out = await executeTool(
+			'generate_speech',
+			{
+				lines: [
+					{ voice: 'am_michael', text: 'Who goes there?', title: 'Guard' },
+					{ voice: 'af_sky', text: 'Only a friend.', title: 'Thief' }
+				]
+			},
+			chat
+		);
+		const spoken = vi
+			.mocked(invoke)
+			.mock.calls.filter(([cmd]) => cmd === 'tts_synthesize_to_cache')
+			.map(([, a]) => (a as { voice: string; text: string }).voice);
+		expect(spoken).toEqual(['am_michael', 'af_sky']);
+		expect(out.result).toContain('Line 1: Made "Guard"');
+		expect(out.result).toContain('Line 2: Made "Thief"');
+		expect(out.artifacts?.map((a) => a.kind === 'audio' && a.title)).toEqual(['Guard', 'Thief']);
+	});
+
+	it('goes on past a line that fails, and is an error only when none is made', async () => {
+		vi.mocked(invoke).mockRejectedValueOnce('TTS failed: no model');
+		const out = await executeTool(
+			'generate_speech',
+			{ lines: [{ text: 'One.' }, { text: 'Two.' }] },
+			chat
+		);
+		expect(out.result).toContain('Line 1: Not made: Could not make it: TTS failed: no model');
+		expect(out.result).toContain('Line 2: Made "Two"');
+		expect(out.result).toContain('1 of 2 lines were not made.');
+		expect(out.artifacts).toHaveLength(1);
+
+		vi.mocked(invoke).mockRejectedValue('TTS failed: no model');
+		const none = await executeTool('generate_speech', { lines: [{ text: 'One.' }] }, chat);
+		expect(JSON.parse(none.result).error).toContain('Line 1: Not made');
+	});
+
+	it('has no path in a line without a working folder', () => {
+		const schema = getToolSchemas({ hasWorkingDir: false, interactive: true }).find(
+			(s) => s.function.name === 'generate_speech'
+		)!;
+		const lines = (
+			schema.function.parameters as {
+				properties: { lines: { items: { properties: Record<string, unknown> } } };
+			}
+		).properties.lines;
+		expect(Object.keys(lines.items.properties)).not.toContain('path');
+		expect(Object.keys(lines.items.properties)).toContain('voice');
 	});
 });
 
