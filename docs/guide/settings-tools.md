@@ -61,6 +61,7 @@ See the `music` page.
 
 - **Backend**: None (default), llama-toolchest, ComfyUI or OpenRouter.
 - **Most per clip ($)**, for an OpenRouter model: $2.
+- What OpenRouter pictures and clips have cost since the last **Reset**, in Settings → Image generation and Settings → Video generation.
 
 See the `video-generation` page.
 

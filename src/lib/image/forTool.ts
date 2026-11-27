@@ -42,6 +42,8 @@ export interface ToolImage {
 	model: string;
 	/** Which backend made it (`imageServedBy`); empty when that's not known. */
 	servedBy: string;
+	/** What it cost in US dollars, from a backend that charges and said so. */
+	costUsd?: number;
 	/** Things the model should know: options dropped, licence limits, which model made it. */
 	notes: string[];
 }
@@ -240,6 +242,7 @@ export async function generateForTool(
 		seed: result.meta.seed,
 		model: result.meta.model,
 		servedBy: imageServedBy(entry),
+		...costOf(result.meta.costUsd),
 		notes
 	};
 }
@@ -267,6 +270,12 @@ export async function resumeForTool(
 		seed: result.meta.seed,
 		model: result.meta.model,
 		servedBy: entry ? imageServedBy(entry) : '',
+		...costOf(result.meta.costUsd),
 		notes: []
 	};
+}
+
+/** `{ costUsd }` when there is a cost to carry, else nothing. */
+function costOf(usd: number | undefined): { costUsd?: number } {
+	return usd === undefined ? {} : { costUsd: usd };
 }

@@ -314,5 +314,12 @@ describe('a finished clip’s notice', () => {
 		expect(noticeFor(task).text).toContain(
 			'Video ready (832×480, 1.4 s, ltx, seed 7, with sound, backend: ComfyUI at asmodean:8188).'
 		);
+		const paid = {
+			...task,
+			result: { ...(task.result as object), servedBy: 'OpenRouter', costUsd: 0.4 }
+		} as BackgroundTask;
+		expect(noticeFor(paid).text).toContain(
+			'Video ready (832×480, 1.4 s, ltx, seed 7, with sound, backend: OpenRouter, cost $0.40).'
+		);
 	});
 });

@@ -6,6 +6,7 @@
 	import VideoPlayer from '#lib/components/VideoPlayer.svelte';
 	import { clipSeconds, clipUrl, type VideoTaskResult } from '#lib/agent/tools/_videoJob.ts';
 	import type { BackgroundTask } from '#lib/tasks/types.ts';
+	import { formatUsd } from '#lib/utils/format.ts';
 
 	let { task }: { task: BackgroundTask } = $props();
 
@@ -19,7 +20,9 @@
 <p class="detail">
 	{result.width}×{result.height} · {clipSeconds(result.frames, result.fps)} s{result.servedBy
 		? ` · ${result.servedBy}`
-		: ''}{result.saved ? ` · ${result.saved}` : ''}
+		: ''}{result.costUsd === undefined ? '' : ` · ${formatUsd(result.costUsd)}`}{result.saved
+		? ` · ${result.saved}`
+		: ''}
 </p>
 
 <style>

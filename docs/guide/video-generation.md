@@ -24,13 +24,13 @@ A ComfyUI entry lists the four models Haruspex can run there, with their licence
 - **Wan 2.2 S2V**: a person in a picture says some speech, 16 fps, up to 4.8 s. Apache 2.0.
 - **LTX-2.3**: from a prompt or a picture, with its own sound. Its licence allows commercial use only below a revenue threshold, so you're asked before it downloads.
 
-Install downloads straight into ComfyUI's model folders when ComfyUI runs on this computer. On another computer it goes through ComfyUI-Manager if the server has it, or shows the files and folders to copy by hand. ComfyUI 0.39 or later has every node these need.
+Install downloads into ComfyUI's model folders when it runs on this computer. Elsewhere it goes through ComfyUI-Manager if the server has it, or shows the files to copy by hand. ComfyUI 0.39 or later has every node these need.
 
 On llama-toolchest, adding a model happens in llama-toolchest. A stopped instance starts when Haruspex first uses it.
 
 ## Use a video model on OpenRouter
 
-Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more goes to the next model; 0 is no limit. Prompts and pictures are sent to OpenRouter, and each clip is paid for from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. A model makes clips of set lengths (Veo: 4, 6 or 8 seconds), so the nearest is used.
+Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more goes to the next model; 0 is no limit. Prompts and pictures are sent to OpenRouter, and each clip is paid for from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. A model makes clips of set lengths (Veo: 4, 6 or 8 seconds), so the nearest is used. A clip's result says what it cost, and Settings → Video generation keeps a total until you press **Reset**.
 
 ## Choose which model makes a clip
 
@@ -57,11 +57,11 @@ With the video tools on (see the `video-editing` page), ask "continue that clip:
 
 ## Sound
 
-LTX-2.3 and speaking clips have sound; Wan clips are silent. The assistant says whether a clip has sound when it arrives.
+LTX-2.3 and speaking clips have sound; Wan clips are silent. The assistant says whether a clip has sound.
 
 ## How long a clip can be
 
-The model's own size and length are used unless you ask otherwise. The assistant knows each model's longest clip, which its row in Settings → Video generation shows too; a longer request is shortened to fit, with a note. A video-sequence job plans its clips to that length. On llama-toolchest the limit is what each instance was measured for; measure it larger on llama-toolchest's Server page for longer clips.
+The model's own size and length are used unless you ask otherwise. The assistant knows each model's longest clip, also shown on its row in Settings → Video generation; a longer request is cut to fit, with a note. A video-sequence job plans its clips to that length. On llama-toolchest the limit is what each instance was measured for; measure it larger on its Server page for longer clips.
 
 ## Where clips are kept
 
@@ -70,7 +70,7 @@ Haruspex downloads each clip and keeps its own copy beside your songs. A clip th
 ## What it doesn't do
 
 - The bundled image engine makes no video.
-- It doesn't run your own ComfyUI video workflows, only the four models above.
+- It doesn't run your own ComfyUI video workflows.
 - It can't change a clip once made, or add sound to a silent one.
 - Clips are WebM, or MP4 from OpenRouter; to edit one with your footage, see the `video-editing` page.
 - The Shell assistant and scheduled jobs don't make clips.

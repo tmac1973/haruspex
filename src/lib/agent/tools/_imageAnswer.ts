@@ -4,6 +4,8 @@
  * No tool registers here, so the notice text can import it.
  */
 
+import { formatUsd } from '#lib/utils/format.ts';
+
 /**
  * The line telling the model where the picture goes. It also says the picture
  * is the answer: one of a fox otherwise reads as an answer about foxes, and
@@ -30,6 +32,11 @@ function backendPart(servedBy: string | undefined): string {
 	return servedBy ? `, backend: ${servedBy}` : '';
 }
 
+/** ", cost $0.04", or nothing when it cost nothing or wasn't said. */
+export function costPart(costUsd: number | undefined): string {
+	return costUsd === undefined ? '' : `, cost ${formatUsd(costUsd)}`;
+}
+
 /** A drawn or edited picture's answer. */
 export function imageAnswerText(a: {
 	verb: string;
@@ -39,6 +46,8 @@ export function imageAnswerText(a: {
 	seed: number;
 	/** Which backend made it; absent from a task recorded before it was kept. */
 	servedBy?: string;
+	/** What it cost, from a backend that charges. */
+	costUsd?: number;
 	markdown: string;
 	/** The model can see it: it is attached. */
 	sees: boolean;
@@ -46,7 +55,7 @@ export function imageAnswerText(a: {
 	notes: string[];
 }): string {
 	return [
-		`${a.verb} (${a.width}×${a.height}, ${a.model}, seed ${a.seed}${backendPart(a.servedBy)}).`,
+		`${a.verb} (${a.width}×${a.height}, ${a.model}, seed ${a.seed}${backendPart(a.servedBy)}${costPart(a.costUsd)}).`,
 		placeLine(a.markdown),
 		...(a.sees
 			? [

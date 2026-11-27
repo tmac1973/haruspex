@@ -35,7 +35,7 @@ Prompt:
 
 Example output:
 
-The picture appears in the answer, cut and scaled to the shape asked for. Probe in Settings → Image generation shows the model's price before you use it.
+The picture appears in the answer, cut and scaled to the shape asked for, and the answer says what it cost. Probe in Settings → Image generation shows the model's price before you use it, and the section keeps a running total.
 
 <!-- media: Settings → Image generation with an OpenRouter model chosen and its price after Probe -->
 

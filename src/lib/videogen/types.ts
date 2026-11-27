@@ -118,6 +118,8 @@ export interface VideoResult {
 	model: string;
 	/** The clip has a sound track (LTX-2.3 makes one; Wan doesn't). */
 	hasAudio: boolean;
+	/** What it cost in US dollars, from a backend that charges and said so (OpenRouter). */
+	costUsd?: number;
 }
 
 /**

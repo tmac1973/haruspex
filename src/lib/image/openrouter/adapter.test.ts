@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { formatUsd } from '#lib/utils/format.ts';
 import {
 	buildImageBody,
 	capabilitiesOf,
 	costOf,
 	drawsPictures,
-	formatUsd,
 	mimeOf,
 	modelOptions,
 	nearestAspectRatio,

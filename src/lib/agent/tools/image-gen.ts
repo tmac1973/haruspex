@@ -155,6 +155,7 @@ export async function answerWithImage(
 			model: image.model,
 			seed: image.seed,
 			servedBy: image.servedBy,
+			costUsd: image.costUsd,
 			markdown,
 			sees,
 			saved,

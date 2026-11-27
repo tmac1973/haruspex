@@ -13,25 +13,23 @@ This page is about drawing new pictures. To change one, see the `image-editing` 
 
 In Settings → Image generation, press **Add model**, then choose its **Backend**:
 
-- **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, here or elsewhere.
+- **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run.
 - **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex, on Linux, Windows and Apple Silicon Macs.
 - **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, with the bundled engine's models.
 - **llama-toolchest** — a llama-toolchest server you run with generation on.
 - **OpenRouter** — paid image models on [OpenRouter](https://openrouter.ai).
 
-The image tools use the first model in the list that can do the job. Use ↑ and ↓ to change the order, and clear a model's box to stop using it without removing it. A model that doesn't answer or won't fit in VRAM is skipped. To use a certain one, name it ("draw it with klein"). **Generate a test image** checks a model works.
+The image tools use the first model in the list that can do the job. ↑ and ↓ change the order; clear a model's box to stop using it without removing it. A model that doesn't answer or won't fit in VRAM is skipped. To use a certain one, name it ("draw it with klein"). **Generate a test image** checks a model works.
 
 Every model's **API key** is a named key from Settings → Inference → API Keys. A server you probe is kept under **Saved servers**.
 
 ### Set up the bundled engine
 
-Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when needed or on **Start**, and stops on **Stop**, on removing it, or on quitting. Two bundled-engine models take turns.
+Under **Bundled engine**, press **Download** on a model (17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when needed or on **Start**, and stops on **Stop**, on removing it, or on quitting. Two bundled-engine models take turns.
 
 ### Set up ComfyUI
 
 Enter the **Server address** (`http://127.0.0.1:8188`), pick an **API key** if your server needs one, and press **Probe**. **Models on the server** shows what each model lacks. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager elsewhere. Otherwise **Copy file list** lists the files to place by hand. Then choose the **Model**.
-
-The first picture after ComfyUI starts waits for the model to load.
 
 ### Set up Lemonade
 
@@ -44,6 +42,8 @@ If your chat model comes from a toolchest, its address and key are filled in; ot
 ### Set up OpenRouter
 
 Pick an **API key** (Settings → Inference's OpenRouter key is filled in) and the **Model**; **Probe** shows its price. Prompts and pictures you edit go to OpenRouter, and each picture is paid for from the key's credit. A model draws at its own sizes, so it is cut and scaled to the size asked for. It does not tile, extend or upscale.
+
+Each result says what it cost. Settings → Image generation totals OpenRouter pictures and clips until you press **Reset**.
 
 ## Pick a model and check its licence
 
@@ -61,7 +61,7 @@ Ask Chat to draw something. It takes 30 seconds to minutes, or ask for it in the
 
 ## Make art for a project
 
-In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent, cropped and reduced to a palette. Point it at an asset to match its colours. See the `code` and `shell` pages.
+In the Code tab, or the Shell assistant with Full access, ask for "a 32 px coin sprite in assets/". It writes a sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent, cropped and reduced to a palette. Point it at an asset to match its colours. See the `code` and `shell` pages.
 
 A tiling texture ("a 32 px gravel tile") or the edge tiles where two textures meet are drawn by code, not the image model, and work without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model can tile, the picture is still written, and the assistant says so.
 
