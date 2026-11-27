@@ -2,6 +2,8 @@
 	/** A job pinned to Home: what its latest successful run produced, with Run now and Open. */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import { jobSourceAttr } from '#lib/notebooks/source.ts';
+	import { getJobs } from '#lib/stores/jobs.svelte.ts';
 	import { enqueue, getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
@@ -48,7 +50,17 @@
 		</p>
 	{/if}
 	{#if output}
-		<div class="output" class:clamped={!expanded && fullHeight > CLAMP_PX}>
+		<div
+			class="output"
+			class:clamped={!expanded && fullHeight > CLAMP_PX}
+			data-notebook-source={jobId !== null
+				? jobSourceAttr(
+						jobId,
+						latestRun?.latestSucceeded?.id ?? null,
+						getJobs().find((j) => j.id === jobId)?.name
+					)
+				: undefined}
+		>
 			<div bind:offsetHeight={fullHeight}>
 				<ChatMessage message={{ role: 'assistant', content: output }} />
 			</div>

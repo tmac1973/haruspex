@@ -6,6 +6,7 @@
 	 */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import { jobSourceAttr } from '#lib/notebooks/source.ts';
 	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { CARD_JOB_WAIT_TIP } from '#lib/home/jobsCard.ts';
@@ -172,7 +173,12 @@
 							{/if}
 						</button>
 						{#if open === row.id}
-							<div class="detail">
+							<div
+								class="detail"
+								data-notebook-source={jobId !== null
+									? jobSourceAttr(jobId, row.runId, getJobs().find((j) => j.id === jobId)?.name)
+									: undefined}
+							>
 								{#if row.question}
 									<p class="question">{row.question}</p>
 								{/if}

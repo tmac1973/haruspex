@@ -239,9 +239,10 @@
 					class="icon-btn notebook-save"
 					title="Save to a notebook"
 					onclick={(e) => {
-						const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+						const btn = e.currentTarget as HTMLElement;
+						const r = btn.getBoundingClientRect();
 						void import('#lib/notebooks/capture.ts').then((m) =>
-							m.captureText(channels.answer, { x: r.left, y: r.bottom })
+							m.captureText(channels.answer, { x: r.left, y: r.bottom }, btn)
 						);
 					}}
 				>

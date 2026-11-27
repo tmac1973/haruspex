@@ -2,6 +2,7 @@
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { jobReport } from '#lib/reportLogs.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import { jobSourceAttr } from '#lib/notebooks/source.ts';
 	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '#lib/utils/format.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -138,7 +139,10 @@
 	}
 </script>
 
-<div class="run-detail">
+<div
+	class="run-detail"
+	data-notebook-source={run ? jobSourceAttr(run.job_id, run.id, fullJob?.name) : undefined}
+>
 	<div class="header">
 		<div class="header-left">
 			<h3>Run #{runId}</h3>
