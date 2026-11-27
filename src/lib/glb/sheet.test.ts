@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { CELL, closeUpBounds, framedBounds, sheetLayout } from './sheet';
+import { CELL, closeUpBounds, framedBounds, releaseRenderer, sheetLayout } from './sheet';
 import type { Bounds } from './report';
 
 const bounds = (min: [number, number, number], max: [number, number, number]): Bounds => ({
@@ -120,5 +120,27 @@ describe('closeUpBounds', () => {
 		expect(closeUpBounds(THREE, knight(), 'Tail', whole)).toEqual({
 			error: 'No node named Tail: pass a mesh or pivot name, or "head".'
 		});
+	});
+});
+
+describe('releaseRenderer', () => {
+	it('loses the context after disposing, and empties the canvas', () => {
+		const calls: string[] = [];
+		const renderer = {
+			dispose: vi.fn(() => calls.push('dispose')),
+			forceContextLoss: vi.fn(() => calls.push('lose'))
+		};
+		const canvas = document.createElement('canvas');
+		canvas.width = 800;
+		canvas.height = 600;
+		releaseRenderer(renderer, canvas);
+		expect(calls).toEqual(['dispose', 'lose']);
+		expect([canvas.width, canvas.height]).toEqual([0, 0]);
+	});
+
+	it('still empties the canvas when no renderer was made', () => {
+		const canvas = document.createElement('canvas');
+		releaseRenderer(null, canvas);
+		expect(canvas.width).toBe(0);
 	});
 });

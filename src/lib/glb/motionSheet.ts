@@ -18,7 +18,7 @@ import {
 } from '#lib/glb/motionPose.ts';
 import { sampleTimes } from '#lib/glb/motion.ts';
 import type { Vec3 } from '#lib/glb/report.ts';
-import { SHEET_HEIGHT, SHEET_WIDTH } from '#lib/glb/sheet.ts';
+import { releaseRenderer, SHEET_HEIGHT, SHEET_WIDTH } from '#lib/glb/sheet.ts';
 
 export const FRAMES = 8;
 const STRIP_HEIGHT = 200;
@@ -350,6 +350,6 @@ export function renderMotionSheet(
 		pose.stop();
 		if (parent) parent.add(root);
 		else root.removeFromParent();
-		renderer?.dispose();
+		releaseRenderer(renderer, glCanvas);
 	}
 }
