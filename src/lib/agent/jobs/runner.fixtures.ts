@@ -169,6 +169,8 @@ function settingsModule(importOriginal: <T>() => Promise<T>) {
 			imageModels: settingsState.imageModels,
 			codeSubtasks: settingsState.codeSubtasks,
 			agentFeedbackEnabled: settingsState.agentFeedbackEnabled,
+			// A run's results are saved to a notebook only while the tab is on.
+			notebooksTab: true,
 			inferenceBackend: { mode: 'local' as const },
 			// What a job inherits when it sets no reasoning policy of its own —
 			// the runner records the RESOLVED values with the run.

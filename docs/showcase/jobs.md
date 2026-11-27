@@ -46,7 +46,7 @@ Read more: job-types, jobs
 
 ## Triage an audit's findings in a notebook
 
-When an audit finishes, **📓 Save to notebook** at the top of the run puts its findings in a notebook as a table, with a Triage column to mark each one as you work through it.
+When an audit finishes, **📓 Save to notebook** at the top of the run puts its findings in a notebook as a table, with a Triage column to mark each one as you work through it. Set **Save findings to a notebook** to _A new notebook each run_ and every run does it by itself.
 
 Tab: Jobs
 Required settings: None (a working directory)
