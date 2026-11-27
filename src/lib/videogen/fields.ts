@@ -5,7 +5,7 @@
  * use it.
  */
 
-import { entryConfigKey } from '#lib/generation/entry.ts';
+import { entryConfigKey, servedByOf } from '#lib/generation/entry.ts';
 import type { VideoBackendKind, VideoModelEntry } from '#lib/videogen/types.ts';
 
 /** The id of the entry these fields describe, kept by the entry seeded from them. */
@@ -33,6 +33,11 @@ export const VIDEO_BACKEND_LABEL: Record<VideoBackendKind, string> = {
 	comfyui: 'ComfyUI',
 	openrouter: 'OpenRouter'
 };
+
+/** Which backend `e` runs on, for a tool's answer: "ComfyUI at asmodean:8188". */
+export function videoServedBy(e: Pick<VideoModelEntry, 'backend' | 'url'>): string {
+	return servedByOf(VIDEO_BACKEND_LABEL[e.backend], e.url);
+}
 
 /**
  * A name for `e` that needs no probe: the instance id, a ComfyUI model's file

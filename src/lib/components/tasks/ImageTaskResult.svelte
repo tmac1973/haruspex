@@ -25,7 +25,9 @@
 	</button>
 {/if}
 <p class="detail">
-	{result.width}×{result.height}{result.saved ? ` · ${result.saved}` : ''}
+	{result.width}×{result.height}{result.servedBy ? ` · ${result.servedBy}` : ''}{result.saved
+		? ` · ${result.saved}`
+		: ''}
 </p>
 
 <style>

@@ -25,7 +25,7 @@ Every model's **API key** is a named key from Settings → Inference → API Key
 
 ### Set up the bundled engine
 
-Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when something needs it or on **Start**, and stops on **Stop**, on removing it, or on quitting. Two bundled-engine models take turns.
+Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when needed or on **Start**, and stops on **Stop**, on removing it, or on quitting. Two bundled-engine models take turns.
 
 ### Set up ComfyUI
 
@@ -57,13 +57,13 @@ Settings → Image generation marks Qwen-Image as not for commercial use and ask
 
 ## Draw a picture in Chat
 
-Ask Chat to draw something. It takes 30 seconds to minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking first before it replaces a file.
+Ask Chat to draw something. It takes 30 seconds to minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Its result names the backend that drew it. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking first before it replaces a file.
 
 ## Make art for a project
 
 In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent, cropped and reduced to a palette. Point it at an asset to match its colours. See the `code` and `shell` pages.
 
-A tiling texture, such as "a 32 px gravel tile", or the edge tiles where two textures meet, is drawn by code, not by the image model, and works without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model can tile, the picture is still written, and the assistant says so.
+A tiling texture ("a 32 px gravel tile") or the edge tiles where two textures meet are drawn by code, not the image model, and work without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If no model can tile, the picture is still written, and the assistant says so.
 
 ## Make a whole set of game art
 
@@ -71,8 +71,8 @@ The **Asset generation** job draws all of a project's sprites, icons and tiling 
 
 ## What it costs your computer
 
-The bundled engine holds most of a 16 GB card, so your chat model and games may not fit; stop it when done.
+The bundled engine holds most of a 16 GB card, so the chat model and games may not fit; stop it after.
 
 ## What has been tested
 
-The asset job has been run end to end on Linux with an AMD GPU; drawing in Chat, project art and OpenRouter by automated tests only. If something fails, see the `troubleshooting` page.
+The asset job has been run end to end on Linux with an AMD GPU; drawing in Chat, project art and OpenRouter by automated tests only. If it fails, see the `troubleshooting` page.

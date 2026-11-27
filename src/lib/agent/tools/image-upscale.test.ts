@@ -62,7 +62,10 @@ beforeEach(() => {
 				(_cmd: string, args: unknown) => args ?? null
 			)
 		);
-	state.upscale.mockReset().mockResolvedValue(new Uint8Array([9, 9, 9]));
+	state.upscale.mockReset().mockResolvedValue({
+		bytes: new Uint8Array([9, 9, 9]),
+		servedBy: 'llama-toolchest at compute2:9000'
+	});
 });
 
 describe('upscale_image is offered', () => {
@@ -103,7 +106,9 @@ describe('upscale_image', () => {
 				'x-conversation-id': 'chat-1'
 			}
 		});
-		expect(out.result).toContain('Upscaled to 1024×768.');
+		expect(out.result).toContain(
+			'Upscaled to 1024×768 (backend: llama-toolchest at compute2:9000).'
+		);
 		expect(out.result).toContain(OUT);
 	});
 

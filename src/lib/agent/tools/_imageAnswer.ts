@@ -25,6 +25,11 @@ export function savedLineOf(path: string, failed: string | null): string {
 	return failed ? `It is in the chat, but ${failed}` : `Wrote ${path}.`;
 }
 
+/** ", backend: ComfyUI at asmodean", or nothing when it isn't known. */
+function backendPart(servedBy: string | undefined): string {
+	return servedBy ? `, backend: ${servedBy}` : '';
+}
+
 /** A drawn or edited picture's answer. */
 export function imageAnswerText(a: {
 	verb: string;
@@ -32,6 +37,8 @@ export function imageAnswerText(a: {
 	height: number;
 	model: string;
 	seed: number;
+	/** Which backend made it; absent from a task recorded before it was kept. */
+	servedBy?: string;
 	markdown: string;
 	/** The model can see it: it is attached. */
 	sees: boolean;
@@ -39,7 +46,7 @@ export function imageAnswerText(a: {
 	notes: string[];
 }): string {
 	return [
-		`${a.verb} (${a.width}×${a.height}, ${a.model}, seed ${a.seed}).`,
+		`${a.verb} (${a.width}×${a.height}, ${a.model}, seed ${a.seed}${backendPart(a.servedBy)}).`,
 		placeLine(a.markdown),
 		...(a.sees
 			? [
@@ -57,11 +64,14 @@ export function upscaleAnswerText(a: {
 	width: number;
 	height: number;
 	url: string;
+	servedBy?: string;
 	saved: string | null;
 	note?: string;
 }): string {
 	return [
-		`Upscaled to ${a.width}×${a.height}.`,
+		a.servedBy
+			? `Upscaled to ${a.width}×${a.height} (backend: ${a.servedBy}).`
+			: `Upscaled to ${a.width}×${a.height}.`,
 		placeLine(`![upscaled picture](${a.url})`),
 		a.saved ?? NOT_SAVED_LINE,
 		...(a.note ? [a.note] : [])

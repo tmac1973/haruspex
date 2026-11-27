@@ -6,7 +6,7 @@
  * Reads no settings itself, so the settings store can use it.
  */
 
-import { entryConfigKey } from '#lib/generation/entry.ts';
+import { entryConfigKey, servedByOf } from '#lib/generation/entry.ts';
 import type { ImageModelEntry } from '#lib/image/types.ts';
 
 /** The id of the entry these fields describe, kept by the entry seeded from them. */
@@ -71,6 +71,11 @@ export const IMAGE_BACKEND_LABEL: Record<EntryKind, string> = {
 	'llama-toolchest': 'llama-toolchest',
 	openrouter: 'OpenRouter'
 };
+
+/** Which backend `e` runs on, for a tool's answer: "ComfyUI at asmodean:8188". */
+export function imageServedBy(e: Pick<ImageModelEntry, 'backend' | 'url'>): string {
+	return servedByOf(IMAGE_BACKEND_LABEL[e.backend], e.url);
+}
 
 /**
  * A name for `e` that needs no probe: the instance or catalogue id, a ComfyUI

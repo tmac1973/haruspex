@@ -154,6 +154,7 @@ export async function answerWithImage(
 			height: image.height,
 			model: image.model,
 			seed: image.seed,
+			servedBy: image.servedBy,
 			markdown,
 			sees,
 			saved,
