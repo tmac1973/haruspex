@@ -23,6 +23,7 @@
  */
 
 import { errMessage } from '#lib/utils/error.ts';
+import { inlineSecrets } from '#lib/engine/settings.ts';
 
 const RING_CAPACITY = 5000;
 
@@ -216,7 +217,7 @@ export async function startDebugLogFile(
 		if (!fileQueue || fileQueue.length === 0) return;
 		const lines = fileQueue;
 		fileQueue = [];
-		void invoke('debug_log_append', { lines }).catch(() => {
+		void invoke('debug_log_append', { lines, inline: inlineSecrets() }).catch(() => {
 			// A failing write would fail again every second: stop mirroring.
 			fileQueue = null;
 			if (fileTimer !== null) clearInterval(fileTimer);

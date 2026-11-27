@@ -13,6 +13,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { buildFeedbackUrl, buildFullBundle, gatherDiagnostics } from '#lib/feedback.ts';
+import { redactForReport } from '#lib/reportRedact.ts';
 
 export interface IssueReport {
 	/** Where it failed, as the user knows it: "Chat", "Code tab", "Job run". */
@@ -69,7 +70,7 @@ export function issueTitle(r: IssueReport): string {
 }
 
 async function redact(lines: string[]): Promise<string[]> {
-	return invoke<string[]>('feedback_redact', { lines });
+	return redactForReport(lines);
 }
 
 /**

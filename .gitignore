@@ -60,6 +60,12 @@ service-account*.json
 id_rsa*
 id_ed25519*
 id_ecdsa*
+.netrc
+*.env
+# Haruspex's own secret and pairing files, if a data folder is copied in
+secrets.bin
+secrets.key
+owner-clients.json
 
 # Local databases and backups (chats, memories, job runs)
 *.sqlite

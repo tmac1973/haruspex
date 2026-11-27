@@ -114,6 +114,8 @@ pub struct ImageEngine {
     /// (see [`discrete_vulkan_devices`]). `None` until then; `Some(None)` when
     /// nothing needs pinning.
     vk_devices: Mutex<Option<Option<String>>>,
+    /// The key file the running process was started with, deleted on stop.
+    key_file: Mutex<Option<PathBuf>>,
 }
 
 /// The discrete Vulkan devices, when an integrated one sits beside them.
@@ -293,6 +295,7 @@ impl ImageEngine {
             model: Mutex::new(None),
             args: Mutex::new(None),
             vk_devices: Mutex::new(None),
+            key_file: Mutex::new(None),
         }
     }
 
@@ -371,6 +374,7 @@ impl ImageEngine {
                 key_file.display()
             ))
         })?;
+        *self.key_file.lock().await = Some(key_file.clone());
 
         *self.status.lock().await = SidecarStatus::Starting;
         *self.model.lock().await = Some(want.to_string());
@@ -511,6 +515,13 @@ impl ImageEngine {
         *self.status.lock().await = SidecarStatus::Stopped;
         *self.model.lock().await = None;
         *self.args.lock().await = None;
+        if let Some(path) = self.key_file.lock().await.take() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    warn!("could not delete {}: {e}", path.display());
+                }
+            }
+        }
     }
 }
 
@@ -1052,6 +1063,17 @@ mod tests {
         assert_eq!(e.status().await, SidecarStatus::Stopped);
         assert!(e.loaded_model().await.is_none());
         assert!(e.logs().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stopping_deletes_the_key_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("sd-engine.key");
+        write_key_file(&path, "abc123").unwrap();
+        let e = ImageEngine::new();
+        *e.key_file.lock().await = Some(path.clone());
+        e.stop().await;
+        assert!(!path.exists());
     }
 
     #[tokio::test]

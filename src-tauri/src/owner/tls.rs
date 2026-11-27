@@ -56,11 +56,14 @@ impl Identity {
 /// unreadable, near its end, or doesn't cover `names`.
 pub fn load_or_create(path: &Path, names: &[String], ips: &[IpAddr]) -> Result<Identity, String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    if let Some(kept) = std::fs::read(path)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Identity>(&b).ok())
-    {
+    if let Some((kept, wrapped)) = std::fs::read(path).ok().and_then(from_disk) {
         if kept.fits(names, now) {
+            if !wrapped {
+                // Written before the key was wrapped on Windows: wrap it now.
+                if let Err(e) = save(path, &kept) {
+                    log::warn!("[owner] could not rewrite the HTTPS certificate: {e}");
+                }
+            }
             return Ok(kept);
         }
         log::info!("[owner] replacing the HTTPS certificate (expiring or new names)");
@@ -70,9 +73,30 @@ pub fn load_or_create(path: &Path, names: &[String], ips: &[IpAddr]) -> Result<I
     Ok(made)
 }
 
-/// Kept readable by this user only: it holds the private key.
+/// The identity from what is on disk, and whether it was stored as [`save`]
+/// writes it now. On Windows that is wrapped with DPAPI, so only this user's
+/// login can read the private key; a plain file is from an older build.
+fn from_disk(bytes: Vec<u8>) -> Option<(Identity, bool)> {
+    if let Ok(plain) = serde_json::from_slice::<Identity>(&bytes) {
+        return Some((plain, cfg!(not(windows))));
+    }
+    #[cfg(windows)]
+    {
+        let json = crate::secrets::dpapi::unprotect(&bytes).ok()?;
+        serde_json::from_slice::<Identity>(&json)
+            .ok()
+            .map(|i| (i, true))
+    }
+    #[cfg(not(windows))]
+    None
+}
+
+/// Kept readable by this user only: it holds the private key. Owner-only
+/// mode on Unix; wrapped with DPAPI on Windows.
 fn save(path: &Path, identity: &Identity) -> Result<(), String> {
     let json = serde_json::to_vec_pretty(identity).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let json = crate::secrets::dpapi::protect(&json)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("could not create {dir:?}: {e}"))?;
     }
@@ -277,5 +301,33 @@ mod tests {
         let (_dir, path) = tmp("junk");
         std::fs::write(&path, b"not json").unwrap();
         assert!(load_or_create(&path, &names_for(Some("box"), &[]), &[]).is_ok());
+    }
+
+    #[test]
+    fn what_is_saved_loads_back_as_saved_now() {
+        let (_dir, path) = tmp("roundtrip");
+        let names = names_for(Some("box"), &[]);
+        let made = load_or_create(&path, &names, &[]).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        // Wrapped on Windows, so the private key is not there in the clear.
+        assert_eq!(
+            serde_json::from_slice::<Identity>(&bytes).is_ok(),
+            cfg!(not(windows))
+        );
+        let (back, current) = from_disk(bytes).unwrap();
+        assert!(current);
+        assert_eq!(back.fingerprint, made.fingerprint);
+    }
+
+    #[test]
+    fn a_plain_file_from_an_older_build_is_kept() {
+        let (_dir, path) = tmp("plain");
+        let names = names_for(Some("box"), &[]);
+        let made = load_or_create(&path, &names, &[]).unwrap();
+        std::fs::write(&path, serde_json::to_vec(&made).unwrap()).unwrap();
+        let again = load_or_create(&path, &names, &[]).unwrap();
+        assert_eq!(again.fingerprint, made.fingerprint);
+        let (_, current) = from_disk(std::fs::read(&path).unwrap()).unwrap();
+        assert!(current);
     }
 }

@@ -240,7 +240,12 @@ pub async fn debug_log_file_path(app: tauri::AppHandle) -> Result<Option<String>
 }
 
 #[tauri::command]
-pub async fn debug_log_append(app: tauri::AppHandle, lines: Vec<String>) -> Result<(), String> {
+pub async fn debug_log_append(
+    app: tauri::AppHandle,
+    lines: Vec<String>,
+    inline: Option<Vec<String>>,
+) -> Result<(), String> {
+    crate::secrets::note_values(&inline.unwrap_or_default());
     if !debug_log_file_enabled() || lines.is_empty() {
         return Ok(());
     }

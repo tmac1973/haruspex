@@ -38,6 +38,15 @@ let nextRequestId = 1;
 const MAX_TRANSIENT_RETRIES = 3; // attempts after the first → 4 tries total
 const RETRY_BASE_DELAY_MS = 800; // 0.8s, 1.6s, 3.2s exponential backoff
 
+/** Longest provider error body an ApiError carries; an HTML error page can run to megabytes. */
+const MAX_ERROR_BODY_CHARS = 1000;
+
+function clipErrorBody(text: string): string {
+	return text.length > MAX_ERROR_BODY_CHARS
+		? `${text.slice(0, MAX_ERROR_BODY_CHARS)}… (+${text.length - MAX_ERROR_BODY_CHARS} more chars)`
+		: text;
+}
+
 /**
  * Whether an HTTP status is worth retrying. 5xx covers server/proxy/upstream
  * failures (including the router's own 500 when its llama-server child dies);
@@ -773,7 +782,7 @@ async function tryChatRequest(
 		body: previewPayload(text),
 		attempt
 	});
-	const error = new ApiError(`Server error: ${text}`, response.status);
+	const error = new ApiError(`Server error: ${clipErrorBody(text)}`, response.status);
 	if (!isRetriableStatus(response.status)) throw error; // client error (4xx) — retrying won't help
 	return { error, retryAfterMs: parseRetryAfter(response.headers?.get('retry-after')) };
 }

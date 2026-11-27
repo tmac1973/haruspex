@@ -14,6 +14,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { FeedbackEntry } from '#lib/harnessFeedback/report.ts';
 import type { AgentFeedbackExport } from '#lib/ipc/gen/AgentFeedbackExport.ts';
+import { redactForReport } from '#lib/reportRedact.ts';
 
 /** A report as it is stored: the entry plus what Rust stamped on it. */
 export interface StoredReport extends FeedbackEntry {
@@ -143,7 +144,7 @@ export function issueUrl(reports: readonly StoredReport[], body: string, os: str
 }
 
 async function redact(text: string): Promise<string> {
-	const lines = await invoke<string[]>('feedback_redact', { lines: text.split('\n') });
+	const lines = await redactForReport(text.split('\n'));
 	return lines.join('\n');
 }
 

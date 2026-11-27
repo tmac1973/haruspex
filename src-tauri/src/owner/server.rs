@@ -576,7 +576,10 @@ async fn op(
     }
     match state.dispatch.op(op).await {
         Ok(value) => Json(json!({ "value": value })).into_response(),
-        Err(e) => refuse(engine_status(&e), &e),
+        Err(e) => refuse(
+            engine_status(&e),
+            &crate::text_util::redact_secrets(&e, &crate::secrets::known_values()),
+        ),
     }
 }
 

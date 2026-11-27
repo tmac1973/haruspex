@@ -26,7 +26,7 @@
 //! password with that service and account, a Credential Manager generic
 //! credential with the target `{key}.{SERVICE}`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
@@ -194,7 +194,10 @@ pub fn keychain_available() -> bool {
 /// OS is available to protect it with when there is no keychain. That is the
 /// keychain's job, and it is always preferred when it works.
 pub struct EncryptedFile {
-    dir: PathBuf,
+    /// None before [`init`] names the app data directory: nothing is written
+    /// then, rather than to a folder in the shared temp dir that another user
+    /// could make first.
+    dir: Option<PathBuf>,
     /// One writer at a time: every write rewrites the whole file.
     lock: Mutex<()>,
 }
@@ -205,13 +208,34 @@ const KEY_FILE: &str = "secrets.key";
 impl EncryptedFile {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         Self {
-            dir: dir.into(),
+            dir: Some(dir.into()),
             lock: Mutex::new(()),
         }
     }
 
+    /// A file store with no folder yet: reads find nothing, writes fail.
+    fn unplaced() -> Self {
+        Self {
+            dir: None,
+            lock: Mutex::new(()),
+        }
+    }
+
+    fn dir(&self) -> Result<&Path, String> {
+        self.dir
+            .as_deref()
+            .ok_or_else(|| "The secret file has no folder yet".to_string())
+    }
+
+    /// Whether the secrets file exists. False before [`init`].
+    fn exists(&self) -> bool {
+        self.dir
+            .as_deref()
+            .is_some_and(|d| d.join(SECRETS_FILE).exists())
+    }
+
     fn key(&self) -> Result<LessSafeKey, String> {
-        let path = self.dir.join(KEY_FILE);
+        let path = self.dir()?.join(KEY_FILE);
         let bytes = match std::fs::read(&path) {
             Ok(stored) => unwrap_key(&path, stored)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -230,7 +254,7 @@ impl EncryptedFile {
     }
 
     fn load(&self, key: &LessSafeKey) -> Result<HashMap<String, String>, String> {
-        let path = self.dir.join(SECRETS_FILE);
+        let path = self.dir()?.join(SECRETS_FILE);
         let mut data = match std::fs::read(&path) {
             Ok(d) => d,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
@@ -257,7 +281,7 @@ impl EncryptedFile {
             .map_err(|_| "could not encrypt the secrets file".to_string())?;
         let mut out = nonce.to_vec();
         out.extend_from_slice(&body);
-        write_private(&self.dir.join(SECRETS_FILE), &out)
+        write_private(&self.dir()?.join(SECRETS_FILE), &out)
     }
 
     fn update(&self, f: impl FnOnce(&mut HashMap<String, String>)) -> Result<(), String> {
@@ -314,7 +338,7 @@ fn unwrap_key(path: &Path, stored: Vec<u8>) -> Result<Vec<u8>, String> {
 /// DPAPI (`CryptProtectData`), scoped to the current user: only this user's
 /// login can unwrap what it wraps, and a copy of the disk can't.
 #[cfg(windows)]
-mod dpapi {
+pub(crate) mod dpapi {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
         CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
@@ -409,7 +433,7 @@ impl Store for EncryptedFile {
 
     fn get(&self, key: &str) -> Result<Option<String>, String> {
         let _guard = self.lock.lock_or_recover();
-        if !self.dir.join(SECRETS_FILE).exists() {
+        if !self.exists() {
             return Ok(None);
         }
         let k = self.key()?;
@@ -417,7 +441,7 @@ impl Store for EncryptedFile {
     }
 
     fn delete(&self, key: &str) -> Result<(), String> {
-        if !self.dir.join(SECRETS_FILE).exists() {
+        if !self.exists() {
             return Ok(());
         }
         self.update(|m| {
@@ -516,12 +540,10 @@ fn lasting_store() -> Layered<Keychain, EncryptedFile> {
     Layered {
         session: None,
         keychain: keychain_available().then_some(Keychain),
-        file: EncryptedFile::new(
-            DATA_DIR
-                .get()
-                .cloned()
-                .unwrap_or_else(|| std::env::temp_dir().join("haruspex-secrets-uninitialised")),
-        ),
+        file: DATA_DIR
+            .get()
+            .cloned()
+            .map_or_else(EncryptedFile::unplaced, EncryptedFile::new),
     }
 }
 
@@ -533,10 +555,35 @@ fn cache() -> &'static Mutex<HashMap<String, String>> {
     CACHE.get_or_init(Default::default)
 }
 
-/// Every secret value read this session, so a report can blank out the exact
+/// Every secret value seen this session: read, written, or handed over by the
+/// webview from its inline settings. Kept apart from the cache and never
+/// emptied, so a key the user rotated or deleted is still blanked out of a log
+/// line written while it was in use.
+fn seen() -> &'static Mutex<HashSet<String>> {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    SEEN.get_or_init(Default::default)
+}
+
+fn remember(value: &str) {
+    if !value.is_empty() {
+        seen().lock_or_recover().insert(value.to_string());
+    }
+}
+
+/// Add secrets Rust never stores itself (the webview's inline settings, on a
+/// computer with no secret store) to what [`known_values`] blanks out.
+pub fn note_values(values: &[String]) {
+    for v in values {
+        remember(v);
+    }
+}
+
+/// Every secret value seen this session, so a report can blank out the exact
 /// strings rather than only the shapes credentials usually take.
 pub fn known_values() -> Vec<String> {
-    cache().lock_or_recover().values().cloned().collect()
+    let mut all: HashSet<String> = seen().lock_or_recover().clone();
+    all.extend(cache().lock_or_recover().values().cloned());
+    all.into_iter().collect()
 }
 
 /// A secret's value, from the cache or the store, read off the async runtime.
@@ -550,6 +597,7 @@ pub async fn get(key: &str) -> Result<Option<String>, String> {
         .await
         .map_err(|e| e.to_string())??;
     if let Some(v) = &found {
+        remember(v);
         cache().lock_or_recover().insert(key.to_string(), v.clone());
     }
     Ok(found)
@@ -563,6 +611,7 @@ pub fn get_blocking(key: &str) -> Result<Option<String>, String> {
     }
     let found = store().get(key)?;
     if let Some(v) = &found {
+        remember(v);
         cache().lock_or_recover().insert(key.to_string(), v.clone());
     }
     Ok(found)
@@ -571,6 +620,7 @@ pub fn get_blocking(key: &str) -> Result<Option<String>, String> {
 /// Seed the cache, so a test can resolve a secret without a real store.
 #[cfg(test)]
 pub fn seed_for_test(key: &str, value: &str) {
+    remember(value);
     cache()
         .lock_or_recover()
         .insert(key.to_string(), value.to_string());
@@ -681,6 +731,7 @@ pub async fn secret_store_kind() -> &'static str {
 #[tauri::command]
 pub async fn secret_set(key: String, value: String) -> Result<(), String> {
     check_key(&key)?;
+    remember(&value);
     cache().lock_or_recover().remove(&key);
     tokio::task::spawn_blocking(move || store().set(&key, &value))
         .await
@@ -712,18 +763,17 @@ impl Store for Memory {
             return Err("refused".into());
         }
         self.map
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .insert(key.to_string(), value.to_string());
         Ok(())
     }
 
     fn get(&self, key: &str) -> Result<Option<String>, String> {
-        Ok(self.map.lock().unwrap().get(key).cloned())
+        Ok(self.map.lock_or_recover().get(key).cloned())
     }
 
     fn delete(&self, key: &str) -> Result<(), String> {
-        self.map.lock().unwrap().remove(key);
+        self.map.lock_or_recover().remove(key);
         Ok(())
     }
 }
@@ -732,6 +782,30 @@ impl Store for Memory {
 mod tests {
     use super::*;
     use crate::test_util::temp_dir;
+
+    #[test]
+    fn a_secret_stays_known_once_it_leaves_the_cache() {
+        seed_for_test("apikey:rotated-test", "old-rotated-value-1");
+        // What secret_set and secret_delete do to the cache.
+        cache().lock_or_recover().remove("apikey:rotated-test");
+        assert!(known_values().contains(&"old-rotated-value-1".to_string()));
+    }
+
+    #[test]
+    fn values_noted_from_the_webview_are_known() {
+        note_values(&["noted-inline-value-9".to_string(), String::new()]);
+        let known = known_values();
+        assert!(known.contains(&"noted-inline-value-9".to_string()));
+        assert!(!known.contains(&String::new()));
+    }
+
+    #[test]
+    fn an_unplaced_file_store_finds_nothing_and_writes_nothing() {
+        let f = EncryptedFile::unplaced();
+        assert_eq!(f.get("email:a").unwrap(), None);
+        assert!(f.set("email:a", "pw").is_err());
+        assert!(f.delete("email:a").is_ok());
+    }
 
     #[test]
     fn a_secret_round_trips() {

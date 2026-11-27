@@ -22,6 +22,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { getSettings, hasBraveApiKey, startableMcpServers } from '#lib/stores/settings.ts';
 import { getDebugLogs } from '#lib/debugLog.ts';
+import { redactForReport } from '#lib/reportRedact.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 
 export { urlForReport };
@@ -129,7 +130,7 @@ async function gatherMcpLogs(): Promise<McpServerLog[]> {
 		startableMcpServers().map(async (s) => {
 			try {
 				const raw = await invoke<string[]>('mcp_server_logs', { id: s.id });
-				const lines = await invoke<string[]>('feedback_redact', { lines: raw });
+				const lines = await redactForReport(raw);
 				return { label: s.label, lines };
 			} catch {
 				return null;
@@ -147,7 +148,7 @@ async function gatherMcpLogs(): Promise<McpServerLog[]> {
 export async function gatherDiagnostics(): Promise<Diagnostics> {
 	const [rust, debug_log, mcp_logs] = await Promise.all([
 		invoke<RustDiagnostics>('get_diagnostics'),
-		invoke<string[]>('feedback_redact', { lines: getDebugLogs() }),
+		redactForReport(getDebugLogs()),
 		gatherMcpLogs()
 	]);
 	return { ...rust, debug_log, mcp_logs };
