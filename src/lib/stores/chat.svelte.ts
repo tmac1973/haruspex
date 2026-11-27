@@ -23,6 +23,7 @@ import {
 } from '#lib/agent/loop/turnTools.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { withoutRecalls } from '#lib/agent/recallArchive.ts';
 import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
 import {
 	shouldCompact,
@@ -1366,7 +1367,7 @@ function commitMessage(
  * them back in. We filter what the loop reported adding down to just
  * the messages that need to stay paired (assistant tool_calls + their
  * tool results) — recovery nudges like "Continue." aren't useful on
- * the next turn.
+ * the next turn, and neither are `recall_result` pairs (`withoutRecalls`).
  */
 function captureToolPairsForNextTurn(
 	conversation: Conversation,
@@ -1374,8 +1375,8 @@ function captureToolPairsForNextTurn(
 	keepRecentTools: boolean
 ): void {
 	if (keepRecentTools) {
-		const toolPairs = appended.filter(
-			(m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)
+		const toolPairs = withoutRecalls(
+			appended.filter((m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls))
 		);
 		conversation.lastTurnTools = toolPairs.length > 0 ? toolPairs : undefined;
 	} else {
