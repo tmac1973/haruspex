@@ -206,7 +206,9 @@ export function costOf(payload: unknown): number | null {
 /** `$0.018`, `$0.13`: a price to the cent, or to two significant figures below one. */
 export function formatUsd(n: number): string {
 	if (n >= 1) return `$${n.toFixed(2)}`;
-	return `$${Number(n.toPrecision(2))}`;
+	const rounded = Number(n.toPrecision(2));
+	const places = (String(rounded).split('.')[1] ?? '').length;
+	return `$${rounded.toFixed(Math.max(2, places))}`;
 }
 
 /**

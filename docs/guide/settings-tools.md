@@ -59,7 +59,8 @@ See the `music` page.
 
 ## Video generation
 
-- **Backend**: None (default) or llama-toolchest.
+- **Backend**: None (default), llama-toolchest, ComfyUI or OpenRouter.
+- **Most per clip ($)**, for an OpenRouter model: $2.
 
 See the `video-generation` page.
 

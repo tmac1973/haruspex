@@ -30,6 +30,7 @@
 	void toolchestHint('video').then((h) => (hint = h));
 
 	function place(e: VideoModelEntry): string {
+		if (e.backend === 'openrouter') return VIDEO_BACKEND_LABEL.openrouter;
 		const host = e.url.trim() ? hostOf(e.url) : 'no address';
 		return `${VIDEO_BACKEND_LABEL[e.backend]} on ${host}`;
 	}

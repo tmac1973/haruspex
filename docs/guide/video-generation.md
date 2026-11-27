@@ -1,11 +1,11 @@
 ---
 title: Video generation
-description: Video models on ComfyUI or llama-toolchest, installing them, which model makes a clip, start and end pictures, making someone speak, sound, clip length, and where clips are kept.
+description: Video models on ComfyUI, llama-toolchest or OpenRouter, which model makes a clip, start and end pictures, making someone speak, sound, clip length, cost, and where clips are kept.
 ---
 
 # Video generation
 
-Haruspex can have a ComfyUI or llama-toolchest server make short video clips. It is off until you add a video model in Settings → Video generation.
+Haruspex can have a ComfyUI or llama-toolchest server, or OpenRouter, make short video clips. It is off until you add a video model in Settings → Video generation.
 
 This page is about making new clips. Cutting and rendering your own footage is on the `video-editing` page, and making a clip larger is on the `video-upscaling` page.
 
@@ -27,6 +27,10 @@ A ComfyUI entry lists the four models Haruspex can run there, with their licence
 Install downloads straight into ComfyUI's model folders when ComfyUI runs on this computer. On another computer it goes through ComfyUI-Manager if the server has it, or shows the files and folders to copy by hand. ComfyUI 0.39 or later has every node these need.
 
 On llama-toolchest, adding a model happens in llama-toolchest. A stopped instance starts when Haruspex first uses it.
+
+## Use a video model on OpenRouter
+
+Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more goes to the next model; 0 is no limit. Prompts and pictures are sent to OpenRouter, and each clip is paid for from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. A model makes clips of set lengths (Veo: 4, 6 or 8 seconds), so the nearest is used.
 
 ## Choose which model makes a clip
 
@@ -68,5 +72,5 @@ Haruspex downloads each clip and keeps its own copy beside your songs. A clip th
 - The bundled image engine makes no video.
 - It doesn't run your own ComfyUI video workflows, only the four models above.
 - It can't change a clip once made, or add sound to a silent one.
-- Clips are WebM; to edit one with your footage, see the `video-editing` page.
+- Clips are WebM, or MP4 from OpenRouter; to edit one with your footage, see the `video-editing` page.
 - The Shell assistant and scheduled jobs don't make clips.

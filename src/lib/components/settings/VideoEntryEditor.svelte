@@ -2,7 +2,8 @@
 	/**
 	 * One video model in Settings → Video generation: its name, backend,
 	 * server, key and model, a Probe that asks its own server, and the
-	 * server's video instances.
+	 * server's video instances. An OpenRouter model has no server address, and
+	 * has a resolution and a limit on what one clip may cost instead.
 	 */
 	import { errMessage } from '#lib/utils/error.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
@@ -17,6 +18,8 @@
 	import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 	import { videoBackendForEntry, videoBackendKinds } from '#lib/videogen/index.ts';
 	import { seenToolchestVideoInstances } from '#lib/videogen/toolchest/backend.ts';
+	import { DEFAULT_MAX_CLIP_USD, modelTiers } from '#lib/videogen/openrouter/backend.ts';
+	import { inferenceOpenRouterKeyId } from '#lib/image/openrouter/backend.ts';
 	import {
 		VIDEO_BACKEND_LABEL,
 		renameVideoModel,
@@ -45,6 +48,12 @@
 	let keyId = $state<string | null>(entry.keyId);
 	// svelte-ignore state_referenced_locally
 	let model = $state(entry.model);
+	// svelte-ignore state_referenced_locally
+	let resolution = $state(entry.options.resolution ?? '');
+	// svelte-ignore state_referenced_locally
+	let maxClipUsd = $state(entry.options.maxClipUsd ?? String(DEFAULT_MAX_CLIP_USD));
+	/** The chosen OpenRouter model's resolutions, read after each probe. */
+	let tiers = $state<string[]>([]);
 
 	let probing = $state(false);
 	let probeResult = $state<ProbeResult | null>(null);
@@ -55,7 +64,9 @@
 	let apiKey = $state('');
 	const modelOptions = $derived(withSavedModel(model, serverModels));
 
-	const SERVER_TIPS: Record<VideoBackendKind, { placeholder: string; model: string }> = {
+	type ServerKind = Exclude<VideoBackendKind, 'openrouter'>;
+
+	const SERVER_TIPS: Record<ServerKind, { placeholder: string; model: string }> = {
 		'llama-toolchest': {
 			placeholder: 'http://host:3000',
 			model:
@@ -66,6 +77,13 @@
 			model: "The video models in the server's diffusion_models folder that Haruspex can run."
 		}
 	};
+
+	const OPENROUTER_MODEL_TIP =
+		"OpenRouter's video models, listed by Probe. Each makes clips of set lengths; a clip is made at the nearest one.";
+
+	const isOpenRouter = $derived(backend === 'openrouter');
+	/** A server the user keeps, with an address; not OpenRouter. */
+	const serverKind = $derived<ServerKind | null>(backend === 'openrouter' ? null : backend);
 
 	/** The entry as saved now: the editor's copy may be behind a save made elsewhere. */
 	function current(): VideoModelEntry {
@@ -89,7 +107,10 @@
 			serverModels = probeResult.models ?? (b.models ? await b.models().catch(() => []) : []);
 			probeCount++;
 			if (backend === 'llama-toolchest') instances = seenToolchestVideoInstances(current());
-			if (probeResult.ok || serverModels.length) rememberServer(backend, url, keyId);
+			if (backend === 'openrouter') tiers = model ? await modelTiers(model) : [];
+			if (serverKind && (probeResult.ok || serverModels.length)) {
+				rememberServer(serverKind, url, keyId);
+			}
 			// With one model there is nothing to choose.
 			if (!model && serverModels.length === 1) {
 				model = serverModels[0].name;
@@ -113,8 +134,20 @@
 		serverModels = [];
 		instances = [];
 		probeResult = null;
-		patch({ backend, model: '', options: {} });
-		if (url.trim()) void probe();
+		tiers = [];
+		resolution = '';
+		maxClipUsd = String(DEFAULT_MAX_CLIP_USD);
+		// The key Settings → Inference uses for OpenRouter, when there is one.
+		if (backend === 'openrouter') keyId = inferenceOpenRouterKeyId() ?? keyId;
+		patch({ backend, keyId, model: '', options: {} });
+		if (url.trim() || backend === 'openrouter') void probe();
+	}
+
+	/** Save the resolution and the per-clip limit; a new resolution changes what the model makes. */
+	function saveOpenRouterOptions() {
+		const limit = maxClipUsd.trim();
+		patch({ options: { resolution, maxClipUsd: limit } });
+		void probe();
 	}
 
 	function pickServer(saved: GenerationServer | null) {
@@ -135,7 +168,7 @@
 	function chooseKey(id: string | null) {
 		keyId = id;
 		patch({ keyId: id });
-		if (url.trim()) void probe();
+		if (url.trim() || isOpenRouter) void probe();
 	}
 
 	function chooseModel(e: Event) {
@@ -152,7 +185,7 @@
 
 	let probedOnOpen = false;
 	$effect(() => {
-		if (!probedOnOpen && url.trim()) {
+		if (!probedOnOpen && (url.trim() || isOpenRouter)) {
 			probedOnOpen = true;
 			void probe();
 		}
@@ -179,15 +212,17 @@
 		{/each}
 	</select>
 
-	<ServerAddress
-		kind={backend}
-		id="video-url-{entry.id}"
-		placeholder={SERVER_TIPS[backend].placeholder}
-		{keyId}
-		bind:value={url}
-		onCommit={saveUrl}
-		onPick={pickServer}
-	/>
+	{#if serverKind}
+		<ServerAddress
+			kind={serverKind}
+			id="video-url-{entry.id}"
+			placeholder={SERVER_TIPS[serverKind].placeholder}
+			{keyId}
+			bind:value={url}
+			onCommit={saveUrl}
+			onPick={pickServer}
+		/>
+	{/if}
 
 	<label for="video-key-{entry.id}">API key:</label>
 	<div id="video-key-{entry.id}" title="Keys are kept in Settings → Inference → API Keys.">
@@ -196,7 +231,10 @@
 
 	<label for="video-model-{entry.id}">
 		Model:
-		<Tooltip label="About the model" text={SERVER_TIPS[backend].model} />
+		<Tooltip
+			label="About the model"
+			text={serverKind ? SERVER_TIPS[serverKind].model : OPENROUTER_MODEL_TIP}
+		/>
 	</label>
 	<select
 		id="video-model-{entry.id}"
@@ -213,10 +251,43 @@
 			<option value={m.name}>{m.label}</option>
 		{/each}
 	</select>
+
+	{#if isOpenRouter}
+		<label for="video-resolution-{entry.id}">Resolution:</label>
+		<select
+			id="video-resolution-{entry.id}"
+			bind:value={resolution}
+			onchange={saveOpenRouterOptions}
+			disabled={tiers.length === 0}
+			title="Higher resolutions cost more a second."
+		>
+			<option value="">{tiers.includes('720p') ? '720p' : (tiers[0] ?? 'Default')}</option>
+			{#each tiers.filter((t) => t !== (tiers.includes('720p') ? '720p' : tiers[0])) as t (t)}
+				<option value={t}>{t}</option>
+			{/each}
+		</select>
+
+		<label for="video-limit-{entry.id}">Most per clip ($):</label>
+		<input
+			id="video-limit-{entry.id}"
+			type="number"
+			min="0"
+			step="0.5"
+			bind:value={maxClipUsd}
+			onblur={saveOpenRouterOptions}
+			title="A clip that would cost more is not made, and goes to the next model. OpenRouter can't cancel a clip once it is sent. 0 is no limit."
+		/>
+	{/if}
 </div>
 
+{#if isOpenRouter}
+	<p class="help" title="Each clip is paid for from the key's OpenRouter credit.">
+		Prompts and pictures are sent to OpenRouter.
+	</p>
+{/if}
+
 <div class="actions">
-	<button onclick={probe} disabled={probing || !url.trim()}>
+	<button onclick={probe} disabled={probing || (!url.trim() && !isOpenRouter)}>
 		{probing ? 'Probing…' : 'Probe'}
 	</button>
 	{#if probeResult}
