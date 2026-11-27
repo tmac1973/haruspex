@@ -72,15 +72,23 @@ export function inLoopTrimBudget(contextSize: number, promptTokens: number): num
 	if (promptTokens / contextSize < IN_LOOP_TRIM_THRESHOLD) return null;
 	return Math.floor(contextSize * IN_LOOP_TRIM_TARGET);
 }
+// Where a round's recalls aim: a little under IN_LOOP_TRIM_THRESHOLD. Aimed
+// at the threshold itself, three pages filled the room to 70.4% in a live run and the
+// trim fired anyway: the round's results carry per-message overhead and the
+// estimate is only an estimate (#1022).
+const RECALL_CEILING = 0.65;
+
 /**
  * The room a tool round's `recall_result` calls have, in (calibrated) tokens:
- * what is left below the in-loop trim threshold with the prompt at
- * `promptTokens`. Recalls past it set off the next trim, which stubs them
- * again before the model reads them. No cap when the window size is unknown.
+ * what is left below `RECALL_CEILING`, a little under the trim threshold, with
+ * the prompt at `promptTokens`. Recalls past it set off the next trim, which
+ * stubs them again before the model reads them. No cap when the window size
+ * is unknown.
  */
 export function recallRoom(contextSize: number, promptTokens: number): number {
 	if (contextSize <= 0) return Infinity;
-	return Math.max(0, Math.floor(contextSize * IN_LOOP_TRIM_THRESHOLD) - promptTokens);
+	const ceiling = Math.floor(contextSize * RECALL_CEILING);
+	return Math.max(0, ceiling - promptTokens);
 }
 
 // Last-resort per-call output cap, used only if the settings store can't be

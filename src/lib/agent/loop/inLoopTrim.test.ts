@@ -62,9 +62,9 @@ describe('the in-loop trim, end to end', () => {
 });
 
 describe('recallRoom', () => {
-	it('is what is left below the trim threshold', () => {
-		// 70% of 100K is 70K.
-		expect(recallRoom(100_000, 36_000)).toBe(34_000);
+	it('is what is left a little below the trim threshold', () => {
+		// 70% − 5% of 100K is 65K.
+		expect(recallRoom(100_000, 36_000)).toBe(29_000);
 		expect(recallRoom(100_000, 80_000)).toBe(0);
 		expect(recallRoom(0, 36_000)).toBe(Infinity);
 	});
