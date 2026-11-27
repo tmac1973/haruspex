@@ -149,6 +149,40 @@ vendored "$D/vendor-libwebm" thirdparty/libwebm/LICENSE.TXT webmproject/libwebm 
 vendored "$D/vendor-libwebm-patents" thirdparty/libwebm/PATENTS.TXT webmproject/libwebm "$WEBM" PATENTS.TXT
 UI="$(submodule leejet/stable-diffusion.cpp "$SDCPP" examples/server/frontend)"
 vendored "$D/vendor-sdcpp-webui" "examples/server/frontend (sdcpp-webui)" leejet/sdcpp-webui "$UI" LICENSE
+
+# The npm code built into that page, at the versions its pnpm-lock.yaml pins:
+# Vue's runtime (its compilers run only at build time), plugin-vue's export
+# helper and Vite's module-preload polyfill. Vite's LICENSE.md goes on to the
+# licences of its own build-time dependencies, which never reach the page.
+raw leejet/sdcpp-webui "$UI" pnpm-lock.yaml "$TMP/pnpm-lock.yaml"
+lockver() {
+    sed -n '/^packages:/,/^snapshots:/p' "$TMP/pnpm-lock.yaml" |
+        sed -n "s/^  '\{0,1\}$(printf '%s' "$1" | sed 's/[/.]/\\&/g')@\([^':(]*\).*/\1/p" | head -1
+}
+# webui <dest> <npm package> [<line the text stops before>]
+webui() {
+    local version tgz
+    version="$(lockver "$1")"
+    [ -n "$version" ] || { echo "ERROR: $1 is not in sdcpp-webui's pnpm-lock.yaml" >&2; exit 1; }
+    tgz="$TMP/npm/${1//\//_}"
+    mkdir -p "$tgz"
+    curl -fsSL "https://registry.npmjs.org/$1/-/${1##*/}-$version.tgz" | tar -xz -C "$tgz"
+    local file
+    file="$(find "$tgz/package" -maxdepth 1 -type f -iname 'licen[cs]e*' | sort | head -1)"
+    [ -n "$file" ] || { echo "ERROR: no licence file in $1@$version" >&2; exit 1; }
+    local name="${1#@}"
+    name="webui-${name//\//-}"
+    mkdir -p "$OUT/$D"
+    {
+        printf 'examples/server/frontend: %s %s (npm)\n\n' "$1" "$version"
+        if [ -n "${2:-}" ]; then sed "/^$2/,\$d" "$file"; else cat "$file"; fi
+    } > "$OUT/$D/$name"
+    echo "   $D/$name ($1@$version)"
+}
+for p in vue @vue/runtime-dom @vue/runtime-core @vue/reactivity @vue/shared @vitejs/plugin-vue; do
+    webui "$p"
+done
+webui vite '# Licenses of bundled dependencies'
 get sidecars/uv/LICENSE-MIT astral-sh/uv "$UV" LICENSE-MIT
 get sidecars/uv/LICENSE-APACHE astral-sh/uv "$UV" LICENSE-APACHE
 get sidecars/ruff/LICENSE astral-sh/ruff "$RUFF" LICENSE
