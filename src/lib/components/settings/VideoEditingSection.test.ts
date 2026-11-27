@@ -10,12 +10,6 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
-const flags = vi.hoisted(() => ({ youtube: true }));
-vi.mock('#lib/video/youtube.ts', () => ({
-	get YOUTUBE_UPLOAD() {
-		return flags.youtube;
-	}
-}));
 
 const settings = vi.hoisted(() => ({
 	videoEditingEnabled: false,
@@ -70,9 +64,6 @@ beforeEach(() => {
 		invokeRouter({
 			video_binaries_status: () => status,
 			whisper_video_model_path: () => null,
-			google_sign_in_available: () => true,
-			youtube_account: () => null,
-			youtube_sign_in: () => ({ email: 'tim@example.com' }),
 			whisper_video_model_download: () => '/models/whisper/ggml-large-v3-turbo.bin',
 			video_encoders_test: () => [
 				{ id: 'libx264', label: 'x264 (software)' },
@@ -163,20 +154,6 @@ describe('VideoEditingSection', () => {
 		const button = await screen.findByText('Download large-v3-turbo (1.6 GB)');
 		await fireEvent.click(button);
 		await screen.findByText('whisper large-v3-turbo');
-	});
-
-	it('shows no YouTube sign-in while the upload is hidden', async () => {
-		flags.youtube = false;
-		render(VideoEditingSection);
-		await screen.findByText('melt 7.1 (Shotcut or Kdenlive)');
-		expect(screen.queryByText('Sign in to YouTube')).toBeNull();
-		flags.youtube = true;
-	});
-
-	it('signs in to YouTube for uploads', async () => {
-		render(VideoEditingSection);
-		await fireEvent.click(await screen.findByText('Sign in to YouTube'));
-		await screen.findByText('Signed in as tim@example.com');
 	});
 
 	it('saves the format', async () => {

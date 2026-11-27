@@ -1,8 +1,8 @@
 <script lang="ts">
 	/**
-	 * What a finished render or upload made, under its task card: the render
-	 * playing in place (streamed from its folder by `media_http.rs`) with its
-	 * check, Open and Show in folder, or the video's links.
+	 * What a finished render made, under its task card: the render playing in
+	 * place (streamed from its folder by `media_http.rs`) with its check, Open
+	 * and Show in folder.
 	 */
 	import VideoFrame from '#lib/components/VideoFrame.svelte';
 	import { cannotPlay, openMediaRoot } from '#lib/media/mediaRoot.ts';
@@ -11,12 +11,11 @@
 	import type { IpcCommand } from '#lib/ipc/commands.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { describeCheck } from '#lib/tasks/noticeText.ts';
-	import { renderResult, uploadResult, type BackgroundTask } from '#lib/tasks/types.ts';
+	import { renderResult, type BackgroundTask } from '#lib/tasks/types.ts';
 
 	let { task }: { task: BackgroundTask } = $props();
 
 	const render = $derived(renderResult(task));
-	const upload = $derived(uploadResult(task));
 	let error = $state('');
 	let playUrl = $state('');
 	let playError = $state('');
@@ -82,18 +81,6 @@
 			onclick={() => run('task_open', { id: task.id, folder: true })}
 		>
 			Show in folder
-		</button>
-	</div>
-{:else if upload}
-	<p class="detail">
-		Uploaded, {upload.visibility}.{upload.problems.length ? ` ${upload.problems.join(' ')}` : ''}
-	</p>
-	<div class="actions">
-		<button class="btn" type="button" onclick={() => run('open_url', { url: upload.url })}>
-			Open on YouTube
-		</button>
-		<button class="btn" type="button" onclick={() => run('open_url', { url: upload.studioUrl })}>
-			Open in Studio
 		</button>
 	</div>
 {/if}

@@ -50,7 +50,6 @@ import '#lib/agent/tools/voice-from-clip.ts';
 import '#lib/agent/tools/video-speech-edits.ts';
 import '#lib/agent/tools/video-frames.ts';
 import '#lib/agent/tools/video-thumbnail.ts';
-import '#lib/agent/tools/youtube-upload.ts';
 import '#lib/agent/tools/save-generated.ts';
 import '#lib/agent/tools/skills.ts';
 import '#lib/agent/tools/create-skill.ts';

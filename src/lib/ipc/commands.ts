@@ -608,12 +608,7 @@ export const IPC = {
 	whisper_video_logs: 'whisper_video_logs',
 	whisper_video_model_delete: 'whisper_video_model_delete',
 	whisper_video_model_download: 'whisper_video_model_download',
-	whisper_video_model_path: 'whisper_video_model_path',
-	youtube_account: 'youtube_account',
-	youtube_sign_in: 'youtube_sign_in',
-	youtube_sign_out: 'youtube_sign_out',
-	youtube_upload_plan: 'youtube_upload_plan',
-	youtube_upload_start: 'youtube_upload_start'
+	whisper_video_model_path: 'whisper_video_model_path'
 } as const;
 
 export type IpcCommand = (typeof IPC)[keyof typeof IPC];

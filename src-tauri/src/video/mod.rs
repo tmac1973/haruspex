@@ -24,7 +24,6 @@ pub mod tasks;
 pub mod thumbnail;
 pub mod timeline;
 pub mod transcribe;
-pub mod youtube;
 
 /// Copy `from`'s bytes to `to`, removing `to` again if the copy fails.
 ///

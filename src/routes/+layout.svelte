@@ -19,7 +19,6 @@
 	import ScreenCaptureApprovalModal from '#lib/components/ScreenCaptureApprovalModal.svelte';
 	import CameraApprovalModal from '#lib/components/CameraApprovalModal.svelte';
 	import CameraIndicator from '#lib/components/CameraIndicator.svelte';
-	import YoutubeUploadDialog from '#lib/components/video/YoutubeUploadDialog.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
 	import GitHubIssueModal from '#lib/components/GitHubIssueModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
@@ -818,7 +817,6 @@
 	<SkillApprovalModal />
 	<ScreenCaptureApprovalModal />
 	<CameraApprovalModal />
-	<YoutubeUploadDialog />
 	<UserQuestionModal />
 {/snippet}
 

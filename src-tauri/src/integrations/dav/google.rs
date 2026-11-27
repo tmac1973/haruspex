@@ -82,11 +82,6 @@ struct TokenError {
     error_description: Option<String>,
 }
 
-/// The YouTube upload sign-in's scopes: who signed in, and uploading videos.
-/// Nothing else: not reading, editing or deleting a channel's videos.
-pub const YOUTUBE_SCOPES: &str = "openid email https://www.googleapis.com/auth/youtube.upload";
-pub const YOUTUBE_UPLOAD_SCOPE: &str = "https://www.googleapis.com/auth/youtube.upload";
-
 /// What a finished consent hands back, before a caller checks its scopes.
 pub struct Consent {
     pub email: String,
@@ -112,11 +107,6 @@ pub async fn sign_in(proxy: Option<&ProxyConfig>) -> Result<Grant, String> {
         );
     }
     Ok(grant)
-}
-
-/// Whether `granted` (space-separated) includes `scope`.
-pub fn granted(granted: &str, scope: &str) -> bool {
-    has_scope(granted, scope)
 }
 
 /// The consent flow for `scopes`, with no opinion on what was granted.
@@ -430,12 +420,6 @@ fn cache_token(refresh_token: &str, tokens: &TokenResponse) {
     );
 }
 
-/// Drop a cached access token, so the next `access_token` asks Google again
-/// (after a 401: the token was revoked or expired early).
-pub fn forget_access_token(refresh_token: &str) {
-    cache().lock_or_recover().remove(refresh_token);
-}
-
 fn cached_token(refresh_token: &str) -> Option<String> {
     let cache = cache().lock_or_recover();
     let (token, expires) = cache.get(refresh_token)?;
@@ -575,28 +559,6 @@ mod tests {
             Some("me@gmail.com")
         );
         assert_eq!(email_from_id_token("garbage"), None);
-    }
-
-    #[test]
-    fn the_youtube_consent_asks_for_upload_only() {
-        let url = consent_url(
-            "id.apps",
-            YOUTUBE_SCOPES,
-            "http://127.0.0.1:5000",
-            "chal",
-            "st",
-        );
-        let parsed = url::Url::parse(&url).unwrap();
-        let scope: String = parsed
-            .query_pairs()
-            .find(|(k, _)| k == "scope")
-            .map(|(_, v)| v.into_owned())
-            .unwrap();
-        assert_eq!(
-            scope,
-            "openid email https://www.googleapis.com/auth/youtube.upload"
-        );
-        assert!(!scope.contains("calendar"));
     }
 
     #[test]

@@ -43,7 +43,7 @@ Ask "add chapters to ep012". The assistant reads the cut's speech in the video's
 
 Ask "write captions for ep012". The SRT is made from the clips' transcripts, and a voiceover's on an audio track, mapped into the cut, so removed parts have none. It is saved next to the newest render (`renders/ep012-…srt`), or next to the project before there is one. Lines are at most 42 characters, two to a caption, and each caption stays up for at most seven seconds.
 
-Haruspex doesn't upload captions. Add the file in YouTube Studio → Subtitles.
+Haruspex doesn't upload anything to YouTube. Add the file in YouTube Studio → Subtitles.
 
 ## What it doesn't do
 
