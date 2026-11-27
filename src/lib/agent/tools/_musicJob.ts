@@ -15,6 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { toolResult, type ToolContext, type ToolExecOutput } from '#lib/agent/tools/types.ts';
 import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
+import { saveFromCache } from '#lib/agent/tools/_cacheSave.ts';
 import { detachedTarget } from '#lib/agent/tools/_helpers.ts';
 import { resolveMusicBackend } from '#lib/music/index.ts';
 import { getMusicBackend } from '#lib/music/registry.ts';
@@ -32,7 +33,6 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
-import { trackWrite } from '#lib/agent/tools/_created.ts';
 import { NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
 
 /** A `music` task's spec. Every song in `request` is named by its audio-cache hash. */
@@ -141,15 +141,13 @@ export async function saveCachedAudio(target: SaveTarget, hash: string): Promise
 		);
 	}
 	try {
-		const bytes = await invoke<ArrayBuffer>('audio_read_bytes', { hash });
-		await trackWrite(target.scope ?? null, target.workdir, target.path, target.overwrite, () =>
-			invoke('fs_write_bytes', {
-				workdir: target.workdir,
-				relPath: target.path,
-				bytes: Array.from(new Uint8Array(bytes)),
-				overwrite: target.overwrite,
-				dryRun: false
-			})
+		// Copied in Rust: a video clip is past what a write from here may carry.
+		await saveFromCache(
+			{ kind: 'audio', hash },
+			target.workdir,
+			target.path,
+			target.overwrite,
+			target.scope ?? null
 		);
 		return savedLineOf(target.path, null);
 	} catch (e) {

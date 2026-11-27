@@ -13,7 +13,6 @@
  * `lines` in place of `text` speaks several lines, each in its own voice and
  * into its own file: a scene's character lines for a game, in one call.
  */
-import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { speak, speechEngine, type SpeechEngine, type Spoken } from '#lib/audio/speak.ts';
 import { savedVoiceNames } from '#lib/audio/savedVoices.ts';
@@ -28,7 +27,7 @@ import {
 import {
 	isSaveTarget,
 	prepareSave,
-	writeSaved,
+	writeCached,
 	type SaveTarget
 } from '#lib/agent/tools/_saveGenerated.ts';
 import { savedLineOf } from '#lib/agent/tools/_musicJob.ts';
@@ -253,10 +252,8 @@ export async function runSpeech(
 
 	let saved: string | null = null;
 	if (target) {
-		const bytes = new Uint8Array(
-			await invoke<ArrayBuffer>('audio_read_bytes', { hash: made.hash })
-		);
-		saved = savedLineOf(target.path, await writeSaved(target, bytes, ctx));
+		const failed = await writeCached(target, { kind: 'audio', hash: made.hash }, ctx);
+		saved = savedLineOf(target.path, failed);
 	}
 	const voice = args.voice ?? "the server's own voice";
 	// The server makes a new take each time, so its hash tells two apart.

@@ -14,6 +14,9 @@ vi.mock('@tauri-apps/api/core', async () => {
 		if (cmd === 'fs_save_cached_image' && args.hash === 'f'.repeat(64)) {
 			throw 'That picture is no longer cached; make it again.';
 		}
+		if (cmd === 'fs_save_cached_audio' && args.hash === 'f'.repeat(64)) {
+			throw 'That file is no longer cached; make it again.';
+		}
 		if (cmd === 'fs_path_exists') return state.existing.has(String(args.relPath));
 		if (cmd === 'fs_find_available_path') return 'rain (1).mp3';
 		return null;
@@ -31,7 +34,10 @@ const PICTURE = `haruspex-img://localhost/${'b'.repeat(64)}`;
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
 const writes = () => invokeCalls(vi.mocked(invoke), 'fs_write_bytes');
-const copies = () => invokeCalls(vi.mocked(invoke), 'fs_save_cached_image');
+const copies = () => [
+	...invokeCalls(vi.mocked(invoke), 'fs_save_cached_audio'),
+	...invokeCalls(vi.mocked(invoke), 'fs_save_cached_image')
+];
 
 beforeEach(() => {
 	state.existing = new Set();
@@ -61,17 +67,10 @@ describe('save_generated in Chat', () => {
 		const pic = await executeTool('save_generated', { url: PICTURE, path: 'fox.png' }, chat());
 		expect(song.result).toBe('Saved rain.mp3.');
 		expect(pic.result).toBe('Saved fox.png.');
-		expect(writes()).toEqual([
-			{
-				workdir: '/home/me/out',
-				relPath: 'rain.mp3',
-				bytes: [1, 2, 3],
-				overwrite: false,
-				dryRun: false
-			}
-		]);
-		// A picture is copied from the cache in Rust, whatever its size.
+		// Both are copied from the cache in Rust, whatever their size.
+		expect(writes()).toEqual([]);
 		expect(copies()).toEqual([
+			{ hash: 'a'.repeat(64), workdir: '/home/me/out', relPath: 'rain.mp3', overwrite: false },
 			{ hash: 'b'.repeat(64), workdir: '/home/me/out', relPath: 'fox.png', overwrite: false }
 		]);
 	});
@@ -86,15 +85,15 @@ describe('save_generated in Chat', () => {
 		);
 		expect(state.ask).toHaveBeenCalledWith('rain.mp3', 'c1');
 		expect(out.result).toMatch(/User canceled/);
-		expect(writes()).toEqual([]);
+		expect(copies()).toEqual([]);
 
 		state.ask.mockResolvedValueOnce('overwrite');
 		await executeTool('save_generated', { url: SONG, path: 'rain.mp3' }, chat());
-		expect(writes().at(-1)).toMatchObject({ relPath: 'rain.mp3', overwrite: true });
+		expect(copies().at(-1)).toMatchObject({ relPath: 'rain.mp3', overwrite: true });
 
 		state.ask.mockResolvedValueOnce('rename');
 		await executeTool('save_generated', { url: SONG, path: 'rain.mp3' }, chat());
-		expect(writes().at(-1)).toMatchObject({ relPath: 'rain (1).mp3', overwrite: false });
+		expect(copies().at(-1)).toMatchObject({ relPath: 'rain (1).mp3', overwrite: false });
 	});
 
 	it('gives the turn’s slot back before it asks', async () => {
@@ -128,6 +127,7 @@ describe('save_generated in Chat', () => {
 			expect(out.result).toMatch(why);
 		}
 		expect(writes()).toEqual([]);
+		expect(copies()).toEqual([]);
 	});
 
 	it('says when the picture or song is gone from the cache', async () => {
@@ -137,7 +137,7 @@ describe('save_generated in Chat', () => {
 		const song = `haruspex-audio://localhost/${'f'.repeat(64)}`;
 		expect(
 			(await executeTool('save_generated', { url: song, path: 'old.mp3' }, chat())).result
-		).toMatch(/song is no longer cached/);
+		).toMatch(/file is no longer cached/);
 	});
 });
 
@@ -146,8 +146,10 @@ describe('save_generated in a Code session', () => {
 		const code = makeToolContext({ interactive: true, codeSessionId: 'cs', workingDir: '/proj' });
 		const out = await executeTool('save_generated', { url: SONG, path: 'assets/bgm.mp3' }, code);
 		expect(writes().map((w) => [w.relPath, w.dryRun, w.overwrite])).toEqual([
-			['/proj/assets/bgm.mp3', true, false],
-			['/proj/assets/bgm.mp3', false, false]
+			['/proj/assets/bgm.mp3', true, false]
+		]);
+		expect(copies()).toEqual([
+			{ hash: 'a'.repeat(64), workdir: '/proj', relPath: '/proj/assets/bgm.mp3', overwrite: false }
 		]);
 		expect(state.ask).not.toHaveBeenCalled();
 		expect(out.result).toBe('Saved /proj/assets/bgm.mp3.');

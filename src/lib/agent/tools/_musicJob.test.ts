@@ -171,12 +171,12 @@ describe('runMusicJob', () => {
 			spec({ save: { mode: 'chat', workdir: '/w', path: 'rain.mp3', overwrite: false } }),
 			{}
 		);
-		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_write_bytes', {
+		// Copied in Rust: a video clip is past the cap on a write from here.
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_save_cached_audio', {
+			hash: HASH,
 			workdir: '/w',
 			relPath: 'rain.mp3',
-			bytes: [9, 9],
-			overwrite: false,
-			dryRun: false
+			overwrite: false
 		});
 		expect(out.saved).toBe('Wrote rain.mp3.');
 	});

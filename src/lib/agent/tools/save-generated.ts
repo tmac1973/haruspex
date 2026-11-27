@@ -8,12 +8,10 @@
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import {
-	generatedBytes,
 	generatedFromUrl,
 	isSaveTarget,
 	prepareSave,
-	writeCachedImage,
-	writeSaved
+	writeCached
 } from '#lib/agent/tools/_saveGenerated.ts';
 
 const EXTENSIONS = {
@@ -68,21 +66,11 @@ registerTool({
 		if (!EXTENSIONS[made.kind].test(raw)) {
 			return toolResult(toolError(`path must end in ${WANTED[made.kind]}.`));
 		}
-		// A picture is copied from the cache in Rust: an upscaled one is past
-		// what a write from here may carry. A song still comes through here.
-		let bytes: Uint8Array | null = null;
-		if (made.kind === 'audio') {
-			try {
-				bytes = await generatedBytes(made);
-			} catch {
-				return toolResult(toolError('That song is no longer cached; make it again.'));
-			}
-		}
+		// Copied from the cache in Rust: an upscale or a long song is past
+		// what a write from here may carry.
 		const target = await prepareSave(raw, args.overwrite === true, ctx, 'save_generated');
 		if (!isSaveTarget(target)) return target;
-		const failed = bytes
-			? await writeSaved(target, bytes, ctx)
-			: await writeCachedImage(target, made.hash, ctx);
+		const failed = await writeCached(target, made, ctx);
 		return toolResult(failed ? toolError(failed) : `Saved ${target.path}.`);
 	}
 });

@@ -19,7 +19,7 @@ import {
 	type ToolContext,
 	type ToolExecOutput
 } from '#lib/agent/tools/types.ts';
-import { isSaveTarget, writeCachedImage } from '#lib/agent/tools/_saveGenerated.ts';
+import { isSaveTarget, writeCached } from '#lib/agent/tools/_saveGenerated.ts';
 import { saveTarget } from '#lib/agent/tools/image-gen.ts';
 import { savedLineOf, upscaleAnswerText } from '#lib/agent/tools/_imageAnswer.ts';
 import {
@@ -179,7 +179,7 @@ registerTool({
 		});
 		if (!url) return toolResult(toolError('The picture was upscaled but could not be stored.'));
 		const saved = save
-			? savedLineOf(save.path, await writeCachedImage(save, stored.hash, ctx))
+			? savedLineOf(save.path, await writeCached(save, { kind: 'image', hash: stored.hash }, ctx))
 			: null;
 		return toolResult(
 			upscaleAnswerText({

@@ -22,6 +22,7 @@ import { ctxCwd, fsWorkdir } from '#lib/agent/tools/_helpers.ts';
 import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
+import { saveFromCache } from '#lib/agent/tools/_cacheSave.ts';
 import { resolveWritePathInteractive, userCanceledWriteError } from '#lib/agent/tools/fs-write.ts';
 import { audioHashFromUrl } from '#lib/audio/url.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
@@ -108,27 +109,22 @@ export function isSaveTarget(v: SaveTarget | ToolExecOutput): v is SaveTarget {
 }
 
 /**
- * Write a picture from the image cache to a settled target, by hash; the
- * refusal, or null. Rust reads and writes it (`fs_save_cached_image`), so a
- * large one, an upscale of 20 MB or more, never crosses the bridge and isn't
- * held to the cap on what a model writes.
+ * Write a picture, song or clip from its cache to a settled target, by hash;
+ * the refusal, or null. Rust reads and writes it (`fs_save_cached_image`,
+ * `fs_save_cached_audio`), so a large one, an upscale or a video of 20 MB or
+ * more, never crosses the bridge and isn't held to the cap on what a model
+ * writes.
  */
-export async function writeCachedImage(
+export async function writeCached(
 	target: SaveTarget,
-	hash: string,
+	made: Generated,
 	ctx: ToolContext
 ): Promise<string | null> {
 	const workdir = target.mode === 'chat' ? target.workdir : fsWorkdir(ctx);
 	if (!workdir) return `Could not write ${target.path}: there is no folder to save into.`;
+	const scope = target.mode === 'chat' ? (target.scope ?? null) : createdScope(ctx);
 	try {
-		await trackWrite(createdScope(ctx), workdir, target.path, target.overwrite, () =>
-			invoke('fs_save_cached_image', {
-				hash,
-				workdir,
-				relPath: target.path,
-				overwrite: target.overwrite
-			})
-		);
+		await saveFromCache(made, workdir, target.path, target.overwrite, scope);
 		ctx.filesWrittenThisTurn.add(target.path);
 		return null;
 	} catch (e) {

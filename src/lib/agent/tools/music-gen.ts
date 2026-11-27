@@ -14,7 +14,6 @@
  * made earlier.
  */
 import { parseSeed, randomSeed } from '#lib/utils/random.ts';
-import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
@@ -27,7 +26,7 @@ import {
 import {
 	isSaveTarget,
 	prepareSave,
-	writeSaved,
+	writeCached,
 	type SaveTarget
 } from '#lib/agent/tools/_saveGenerated.ts';
 import { resolveMusicBackend, MusicBackendError, type MusicRequest } from '#lib/music/index.ts';
@@ -200,10 +199,8 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 	const title = args.req.title;
 	let saved: string | null = null;
 	if (target) {
-		const bytes = new Uint8Array(
-			await invoke<ArrayBuffer>('audio_read_bytes', { hash: made.hash })
-		);
-		saved = savedLineOf(target.path, await writeSaved(target, bytes, ctx));
+		const failed = await writeCached(target, { kind: 'audio', hash: made.hash }, ctx);
+		saved = savedLineOf(target.path, failed);
 	}
 	return {
 		result: musicAnswerText({ made, title, saved, notes: [...args.notes, ...checked.notes] }),

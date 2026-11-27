@@ -795,6 +795,7 @@ pub fn run() {
             fs_tools::bytes::fs_read_bytes,
             fs_tools::bytes::fs_write_bytes,
             fs_tools::bytes::fs_save_cached_image,
+            fs_tools::bytes::fs_save_cached_audio,
             fs_tools::bytes::fs_move_in_workdir,
             fs_tools::text::fs_read_text,
             fs_tools::text::fs_read_text_full,

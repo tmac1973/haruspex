@@ -76,6 +76,28 @@ pub async fn fs_save_cached_image(
     write_bytes_to_workdir(&resolved, &bytes).await
 }
 
+/// Write a song, speech or video clip from the audio cache into the working
+/// directory, by hash: [`fs_save_cached_image`] for the audio cache. A
+/// five-second video is 25 MB, past [`MAX_WRITE_BYTES`]; the audio cache's
+/// own per-file limit holds it instead.
+#[tauri::command]
+pub async fn fs_save_cached_audio(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    hash: String,
+    workdir: String,
+    rel_path: String,
+    overwrite: Option<bool>,
+) -> Result<(), String> {
+    let workdir = workdir_path_for_write(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
+    let dir = crate::audio_cache::cache_dir(&app)?;
+    let bytes = crate::audio_cache::commands::read_bytes(&db, &dir, &hash)
+        .map_err(|_| "That file is no longer cached; make it again.".to_string())?;
+    write_bytes_to_workdir(&resolved, &bytes).await
+}
+
 /// Move a file within the working directory, creating the destination's
 /// parents. Never overwrites: a destination that exists is an error, so a
 /// move cannot destroy a file it was not asked about.
