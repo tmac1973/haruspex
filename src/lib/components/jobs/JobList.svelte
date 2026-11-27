@@ -7,9 +7,13 @@
 	 */
 	const openIds = new SvelteSet<number>();
 
-	/** Test-only: close every parent again. */
+	/** "Show archived": module state like `openIds`, off after a restart. */
+	let showArchived = $state(false);
+
+	/** Test-only: close every parent again and hide archived jobs. */
 	export function _resetForTests(): void {
 		openIds.clear();
+		showArchived = false;
 	}
 </script>
 
@@ -18,6 +22,7 @@
 		deleteJob,
 		duplicateJob,
 		getJobs,
+		setJobArchived,
 		storedScheduleLabel,
 		type JobSummary
 	} from '#lib/stores/jobs.svelte.ts';
@@ -49,6 +54,8 @@
 		containsJob,
 		filterJobTree,
 		flattenJobTree,
+		isArchived,
+		withoutArchived,
 		type JobNode
 	} from '#lib/components/jobs/jobTree.ts';
 
@@ -120,6 +127,18 @@
 				title: 'A copy of this job, without its run history',
 				run: () => void duplicate(job.id)
 			},
+			!isArchived(job)
+				? {
+						label: 'Archive',
+						disabled: isRunning || job.schedule_kind !== 'manual',
+						title: isRunning
+							? 'Cancel or finish its run first'
+							: job.schedule_kind !== 'manual'
+								? 'Set its schedule to Manual first'
+								: 'Hide it, and the jobs it started, until Show archived is on',
+						run: () => void archive(job, true)
+					}
+				: { label: 'Unarchive', run: () => void archive(job, false) },
 			{
 				label: 'Delete…',
 				danger: true,
@@ -134,6 +153,19 @@
 		const copy = await duplicateJob(id);
 		if (copy === null) showToast("Couldn't duplicate the job.", { kind: 'error' });
 		else onselect(copy);
+	}
+
+	async function archive(job: JobSummary, archived: boolean): Promise<void> {
+		if (!(await setJobArchived(job.id, archived))) {
+			showToast(archived ? "Couldn't archive the job." : "Couldn't unarchive the job.", {
+				kind: 'error'
+			});
+		} else if (archived && !showArchived) {
+			showToast(`Archived "${job.name}".`, {
+				actionLabel: 'Undo',
+				onAction: () => void setJobArchived(job.id, false)
+			});
+		}
 	}
 
 	async function confirmDelete(): Promise<void> {
@@ -154,7 +186,9 @@
 		const def = getJobType(job.job_type);
 		return `${def?.badgeLabel ?? ''} ${job.job_type.replace(/_/g, ' ')}`;
 	};
-	const tree = $derived(buildJobTree(jobs));
+	const archivedCount = $derived(jobs.filter(isArchived).length);
+	const listed = $derived(showArchived ? jobs : withoutArchived(jobs, runningJobIds));
+	const tree = $derived(buildJobTree(listed));
 	const rows = $derived(
 		flattenJobTree(filterJobTree(tree, query, typeLabel), (id) => openIds.has(id))
 	);
@@ -251,6 +285,17 @@
 				bind:value={query}
 				onkeydown={onSearchKeydown}
 			/>
+			{#if archivedCount > 0 || showArchived}
+				<button
+					type="button"
+					class="archived-btn"
+					aria-pressed={showArchived}
+					title={showArchived ? 'Hide archived jobs' : 'Show archived jobs'}
+					onclick={() => (showArchived = !showArchived)}
+				>
+					Archived {archivedCount}
+				</button>
+			{/if}
 		</div>
 	{/if}
 	<div class="rows">
@@ -259,7 +304,9 @@
 				No jobs yet. Click <strong>+ New</strong> to create one.
 			</div>
 		{:else if rows.length === 0}
-			<div class="empty">No jobs match.</div>
+			<div class="empty">
+				{listed.length === 0 ? 'Every job is archived.' : 'No jobs match.'}
+			</div>
 		{:else}
 			{#each rows as { node, depth, open } (node.job.id)}
 				{@const job = node.job}
@@ -269,14 +316,15 @@
 				<div
 					class="row"
 					class:paused
+					class:archived={isArchived(job)}
 					class:selected={selectedId === job.id}
 					class:child={depth > 0}
 					style="padding-left: {6 + depth * 16}px"
 					role="button"
 					tabindex="0"
 					title={job.parent_run_id !== null
-						? `Started by run ${job.parent_run_id}. Right-click to run, duplicate or delete.`
-						: 'Right-click to run, duplicate or delete'}
+						? `Started by run ${job.parent_run_id}. Right-click to run, duplicate, archive or delete.`
+						: 'Right-click to run, duplicate, archive or delete'}
 					use:activatable={() => onselect(job.id)}
 					use:rowMenu={() => menuItems(job)}
 				>
@@ -314,6 +362,9 @@
 								<span class="badge" title="A Home card made this job and shows its results">
 									Home
 								</span>
+							{/if}
+							{#if isArchived(job)}
+								<span class="paused-tag" title="Right-click to unarchive">Archived</span>
 							{/if}
 							{#if paused}
 								<span
@@ -481,7 +532,14 @@
 		border-bottom: 1px solid var(--border);
 	}
 
+	.search {
+		display: flex;
+		gap: 6px;
+	}
+
 	.search input {
+		flex: 1;
+		min-width: 0;
 		width: 100%;
 		box-sizing: border-box;
 		padding: 4px 8px;
@@ -494,6 +552,28 @@
 
 	.search input:focus {
 		outline: none;
+		border-color: var(--accent);
+	}
+
+	.archived-btn {
+		flex-shrink: 0;
+		padding: 2px 8px;
+		font-size: 0.75rem;
+		border: 1px solid var(--border);
+		background: var(--bg-primary);
+		color: var(--text-secondary);
+		border-radius: 4px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.archived-btn:hover {
+		border-color: var(--text-secondary);
+	}
+
+	.archived-btn[aria-pressed='true'] {
+		background: var(--accent-soft);
+		color: var(--text-primary);
 		border-color: var(--accent);
 	}
 
@@ -624,7 +704,8 @@
 	}
 
 	/* Kept readable: the row still opens to show its past runs. */
-	.row.paused .row-main {
+	.row.paused .row-main,
+	.row.archived .row-main {
 		opacity: 0.6;
 	}
 

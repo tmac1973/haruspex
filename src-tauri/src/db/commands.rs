@@ -436,6 +436,16 @@ pub async fn db_set_job_next_due_at(
 }
 
 #[tauri::command]
+pub async fn db_job_set_archived(
+    state: tauri::State<'_, Database>,
+    job_id: i64,
+    archived: bool,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_job_archived(job_id, archived)).await
+}
+
+#[tauri::command]
 pub async fn db_list_due_jobs(
     state: tauri::State<'_, Database>,
     now_ms: i64,

@@ -179,6 +179,7 @@ export const IPC = {
 	db_home_cards_update: 'db_home_cards_update',
 	db_job_runs_list_recent: 'db_job_runs_list_recent',
 	db_job_runs_set_result: 'db_job_runs_set_result',
+	db_job_set_archived: 'db_job_set_archived',
 	db_list_conversations: 'db_list_conversations',
 	db_list_due_jobs: 'db_list_due_jobs',
 	db_list_job_runs: 'db_list_job_runs',

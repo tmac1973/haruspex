@@ -671,6 +671,37 @@ fn deleting_a_parent_keeps_its_children() {
 }
 
 #[test]
+fn archiving_a_job_lists_when_and_a_schedule_unarchives_it() {
+    let db = test_db();
+    let id = db.create_job(&sample_job_input("Old plan")).unwrap();
+    assert_eq!(db.list_jobs().unwrap()[0].archived_at, None);
+
+    db.set_job_archived(id, true).unwrap();
+    assert!(db.list_jobs().unwrap()[0].archived_at.is_some());
+
+    // A manual edit keeps it archived.
+    db.update_job(id, &sample_job_input("Old plan, renamed"))
+        .unwrap();
+    assert!(db.list_jobs().unwrap()[0].archived_at.is_some());
+
+    db.set_job_archived(id, false).unwrap();
+    assert_eq!(db.list_jobs().unwrap()[0].archived_at, None);
+
+    db.set_job_archived(id, true).unwrap();
+    db.update_job(
+        id,
+        &JobInput {
+            schedule_kind: "daily".into(),
+            ..sample_job_input("Old plan")
+        },
+    )
+    .unwrap();
+    assert_eq!(db.list_jobs().unwrap()[0].archived_at, None);
+
+    assert!(db.set_job_archived(id + 99, true).is_err());
+}
+
+#[test]
 fn delete_job_cascades_to_steps() {
     let db = test_db();
     let id = db.create_job(&sample_job_input("Doomed")).unwrap();

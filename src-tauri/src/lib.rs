@@ -782,6 +782,7 @@ pub fn run() {
             db::db_email_requests_count_since,
             db::db_email_requests_prune,
             db::db_set_job_next_due_at,
+            db::db_job_set_archived,
             db::db_list_due_jobs,
             fs_tools::absolute::fs_read_text_absolute,
             fs_tools::absolute::fs_list_dir_absolute,

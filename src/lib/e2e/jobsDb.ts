@@ -19,7 +19,7 @@ interface Run extends JobRunSummary {
 	steps: JobRunStep[];
 }
 
-type StoredJob = JobWithSteps & Partial<JobLineage>;
+type StoredJob = JobWithSteps & Partial<JobLineage> & { archived_at?: number | null };
 
 const jobs = new Map<number, StoredJob>();
 const runs = new Map<number, Run>();
@@ -40,7 +40,8 @@ function summary(j: StoredJob): JobSummary {
 		updated_at: j.updated_at,
 		step_count: j.steps.length,
 		parent_job_id: j.parent_job_id ?? null,
-		parent_run_id: j.parent_run_id ?? null
+		parent_run_id: j.parent_run_id ?? null,
+		archived_at: j.archived_at ?? null
 	};
 }
 
@@ -65,7 +66,11 @@ export const JOBS_DB: Record<string, (a: Args) => unknown> = {
 	},
 	db_update_job: (a) => {
 		const j = jobs.get(a?.id as number);
-		if (j) jobs.set(j.id, { ...j, ...(a?.input as JobInput), updated_at: Date.now() });
+		if (j) {
+			const input = a?.input as JobInput;
+			const archived_at = input.schedule_kind === 'manual' ? j.archived_at : null;
+			jobs.set(j.id, { ...j, ...input, updated_at: Date.now(), archived_at });
+		}
 		return null;
 	},
 	db_delete_job: (a) => {
@@ -91,6 +96,11 @@ export const JOBS_DB: Record<string, (a: Args) => unknown> = {
 	},
 	db_list_due_jobs: () => [],
 	db_set_job_next_due_at: () => null,
+	db_job_set_archived: (a) => {
+		const j = jobs.get(a?.jobId as number);
+		if (j) j.archived_at = a?.archived ? Date.now() : null;
+		return null;
+	},
 
 	db_list_job_runs: (a) =>
 		[...runs.values()]

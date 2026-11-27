@@ -21,7 +21,9 @@ Runs start side by side while their model has room (Settings → Inference → P
 
 ## Find and organize jobs
 
-Right-click a job in the list to **Run now**, **Duplicate** it (without its run history) or **Delete…** it; the editor has Delete and Duplicate too. A running job can't be deleted. A job another job's run started sits under it. **Filter jobs** matches names, descriptions and types. Deleting a job keeps the jobs it started. A job a Home card made has a **Home** badge (see the `home` page).
+Right-click a job in the list to **Run now**, **Duplicate** it (without its run history), **Archive** it or **Delete…** it; the editor has Delete and Duplicate too. A running job can't be deleted. A job another job's run started sits under it. **Filter jobs** matches names, descriptions and types. Deleting a job keeps the jobs it started. A job a Home card made has a **Home** badge (see the `home` page).
+
+Archiving hides a job you're done with, and the jobs it started, without deleting its runs. **Archived** next to the filter shows them again, and right-click → **Unarchive** brings one back. Only a job with its schedule set to Manual can be archived, and giving an archived job a schedule unarchives it. A running job stays in the list even when it, or the job above it, is archived. Archiving doesn't stop a run or change the job.
 
 ## Turn a chat into a job
 
