@@ -135,10 +135,13 @@ pub fn problems(
             out.push(format!(
                 "Loudness is {:.1} LUFS, under YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}, and \
                  video_normalize can't raise it: {} already {} the most gain allowed \
-                 (+{MAX_GAIN} dB). Tell the user that footage is too quiet to bring up.",
+                 (+{MAX_GAIN} dB), so {} own sound is close to silence and more gain would \
+                 only raise noise. Tell the user that sound is near-silent, and that music or \
+                 narration over it would bring the mix up.",
                 l.lufs,
                 at_limit.join(", "),
-                if at_limit.len() == 1 { "has" } else { "have" }
+                if at_limit.len() == 1 { "has" } else { "have" },
+                if at_limit.len() == 1 { "its" } else { "their" }
             ));
         } else if (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE && gains.normalized {
             out.push(format!(
@@ -326,6 +329,7 @@ mod tests {
         let p = problems(50.0, 50.0, true, Some(&quiet), 1.0 / 60.0, &at_limit);
         assert_eq!(p.len(), 1);
         assert!(p[0].contains("can't raise it: raw/02-demo.mp4 already has"));
+        assert!(p[0].contains("so its own sound is close to silence"));
         assert!(!p[0].contains("evens it out"));
         // Too loud: normalising still helps, whatever the bound.
         let loud = Loudness {
