@@ -212,11 +212,13 @@ describe('OpenRouter image backend', () => {
 		);
 	});
 
-	it('maps refusals: a bad key is unconfigured, a 5xx or 429 transient, a 400 rejected', async () => {
+	it('maps refusals: a bad key is unconfigured, a 5xx or 429 transient, a 404 passed over, a 400 rejected', async () => {
 		const cases: Array<[number, ImageBackendError['kind']]> = [
 			[401, 'unconfigured'],
 			[402, 'rejected'],
 			[400, 'rejected'],
+			// "No endpoint found for model": try the next model.
+			[404, 'unconfigured'],
 			[429, 'unreachable'],
 			[502, 'unreachable']
 		];

@@ -2,9 +2,8 @@
  * OpenRouter's image models as the image backend: `POST /v1/images`, one
  * picture per request, paid for from the key the entry names.
  *
- * Calls are plain `fetch` from the webview, as the rest of `#lib/openrouter`
- * makes them: OpenRouter is CORS-open. The entry's `url` is unused; every
- * entry goes to {@link OPENROUTER_BASE_URL}.
+ * Calls go through `#lib/openrouterCalls.ts`. The entry's `url` is unused;
+ * every entry goes to OpenRouter.
  *
  * A model draws at its own sizes (`./adapter.ts`), so the picture that comes
  * back is cut and scaled to the size asked for (`image_fit_cover`), which
@@ -17,14 +16,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debugLog.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { errorBody, readErrorText } from '#lib/utils/http.ts';
 import { bytesToBase64 } from '#lib/utils/base64.ts';
 import { randomSeed } from '#lib/utils/random.ts';
+import { fetchOpenRouterKeyStatus } from '#lib/openrouter.ts';
 import {
-	OPENROUTER_ATTRIBUTION_HEADERS,
-	OPENROUTER_BASE_URL,
-	fetchOpenRouterKeyStatus
-} from '#lib/openrouter.ts';
+	fetchWithin,
+	jsonOf,
+	openRouterHeaders,
+	openRouterUrl,
+	type MakeError
+} from '#lib/openrouterCalls.ts';
 import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import { entryApiKey } from '#lib/image/entries.ts';
@@ -81,83 +82,20 @@ export function _resetForTests(): void {
 	listed = null;
 }
 
-const url = (path: string) => `${OPENROUTER_BASE_URL}${path}`;
-
-/**
- * `fetch` that gives up after `ms`, or when `signal` aborts. Made by hand:
- * `AbortSignal.any` is missing from the older webviews the app runs in.
- */
-async function fetchWithin(
-	ms: number,
-	input: string,
-	init: RequestInit,
-	signal?: AbortSignal
-): Promise<Response> {
-	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-	const ctrl = new AbortController();
-	let timedOut = false;
-	const timer = setTimeout(() => {
-		timedOut = true;
-		ctrl.abort();
-	}, ms);
-	const cancel = () => ctrl.abort();
-	signal?.addEventListener('abort', cancel, { once: true });
-	try {
-		// The body is read here too, so the timeout covers it.
-		const res = await fetch(input, { ...init, signal: ctrl.signal });
-		const text = await res.text();
-		return new Response(text, { status: res.status, statusText: res.statusText });
-	} catch (e) {
-		if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-		if (timedOut) throw new ImageBackendError('timeout', 'OpenRouter did not answer in time.');
-		throw new ImageBackendError('unreachable', `Could not reach OpenRouter: ${errMessage(e)}`);
-	} finally {
-		clearTimeout(timer);
-		signal?.removeEventListener('abort', cancel);
-	}
-}
-
-/** A refusal as the image layer's: a bad key or no credit isn't worth a retry; a 5xx or 429 is. */
-async function refusal(res: Response): Promise<ImageBackendError> {
-	const body = await readErrorText(res);
-	const said = errorBody(body).message ?? `status ${res.status}`;
-	const opts = { status: res.status, body: body.slice(0, 200) };
-	if (res.status === 401) {
-		return new ImageBackendError(
-			'unconfigured',
-			`OpenRouter refused the key: ${said} — Settings → Inference → API Keys.`,
-			opts
-		);
-	}
-	if (res.status === 402) {
-		return new ImageBackendError(
-			'rejected',
-			`OpenRouter: ${said} (the key is out of credit).`,
-			opts
-		);
-	}
-	const kind = res.status === 429 || res.status >= 500 ? 'unreachable' : 'rejected';
-	return new ImageBackendError(kind, `OpenRouter refused the picture: ${said}`, opts);
-}
-
-/** An answer's JSON, or a refusal saying what OpenRouter said. */
-async function jsonOf(res: Response): Promise<unknown> {
-	if (!res.ok) throw await refusal(res);
-	try {
-		return await res.json();
-	} catch {
-		throw new ImageBackendError('rejected', 'OpenRouter sent an answer that is not JSON.');
-	}
-}
+/** The image layer's error, for the shared calls. */
+const make: MakeError = (kind, message, opts) => new ImageBackendError(kind, message, opts);
 
 async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
 	return jsonOf(
 		await fetchWithin(
 			LIST_TIMEOUT_MS,
-			url(path),
-			{ headers: OPENROUTER_ATTRIBUTION_HEADERS },
+			openRouterUrl(path),
+			{ headers: openRouterHeaders() },
+			make,
 			signal
-		)
+		),
+		make,
+		'request'
 	);
 }
 
@@ -274,18 +212,13 @@ async function draw(
 	const payload = await jsonOf(
 		await fetchWithin(
 			GENERATE_TIMEOUT_MS,
-			url('/v1/images'),
-			{
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${apiKey}`,
-					'Content-Type': 'application/json',
-					...OPENROUTER_ATTRIBUTION_HEADERS
-				},
-				body: JSON.stringify(body)
-			},
+			openRouterUrl('/v1/images'),
+			{ method: 'POST', headers: openRouterHeaders(apiKey, true), body: JSON.stringify(body) },
+			make,
 			signal
-		)
+		),
+		make,
+		'picture'
 	);
 	const pictures = picturesFrom(payload);
 	if (pictures.length === 0) {

@@ -30,16 +30,20 @@ export const LEGACY_VIDEO_FIELDS = [
 /** What each backend is called where no model names it. */
 export const VIDEO_BACKEND_LABEL: Record<VideoBackendKind, string> = {
 	'llama-toolchest': 'llama-toolchest',
-	comfyui: 'ComfyUI'
+	comfyui: 'ComfyUI',
+	openrouter: 'OpenRouter'
 };
 
 /**
  * A name for `e` that needs no probe: the instance id, a ComfyUI model's file
- * name without its folder or extension, or "Video model" when none is chosen.
+ * name without its folder or extension, an OpenRouter id without its maker,
+ * or "Video model" when none is chosen.
  */
 export function defaultVideoName(e: Pick<VideoModelEntry, 'backend' | 'model'>): string {
 	const model = e.model.trim();
 	if (!model) return 'Video model';
+	// OpenRouter's ids name their maker first: `google/veo-3.1` is called `veo-3.1`.
+	if (e.backend === 'openrouter') return model.replace(/^.*\//, '');
 	if (e.backend !== 'comfyui') return model;
 	return model.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
 }

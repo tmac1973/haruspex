@@ -9,7 +9,7 @@ import type { GenerationEntry } from '#lib/generation/entry.ts';
 import type { VideoLimits, VupscaleLimits } from '#lib/toolchest/models.ts';
 
 /** A server kind that can make clips. */
-export type VideoBackendKind = 'llama-toolchest' | 'comfyui';
+export type VideoBackendKind = 'llama-toolchest' | 'comfyui' | 'openrouter';
 
 /**
  * What one video model can do and make, as its backend reports it: the same

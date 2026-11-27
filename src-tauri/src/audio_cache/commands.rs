@@ -315,8 +315,9 @@ pub async fn store_file(
 }
 
 /// Keep a song the webview already holds: a file from the working folder that
-/// a background music task works on, so its spec can name it by hash. The
-/// bytes are the raw body; `x-mime` is required, and `x-conversation-id` or
+/// a background music task works on, so its spec can name it by hash, or a
+/// clip downloaded from OpenRouter. The bytes are the raw body; `x-mime` is
+/// required, `x-title` (percent-encoded) names it, and `x-conversation-id` or
 /// `x-code-session-id` links it.
 #[tauri::command]
 pub async fn audio_store_bytes(
@@ -329,14 +330,22 @@ pub async fn audio_store_bytes(
     };
     let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok());
     let mime = header("x-mime").ok_or("No x-mime was given.")?;
-    store_bytes(
+    let title = header("x-title").and_then(decode_title);
+    store_bytes_titled(
         &db,
         &cache_dir(&app)?,
         bytes,
         mime,
+        title,
         header("x-conversation-id"),
         header("x-code-session-id"),
     )
+}
+
+/// A percent-encoded `x-title`, decoded; none when it is empty or not UTF-8.
+fn decode_title(raw: &str) -> Option<String> {
+    let title = urlencoding::decode(raw).ok()?.trim().to_string();
+    (!title.is_empty()).then_some(title)
 }
 
 pub fn store_bytes(
@@ -344,6 +353,19 @@ pub fn store_bytes(
     dir: &Path,
     bytes: &[u8],
     mime: &str,
+    conversation_id: Option<&str>,
+    code_session_id: Option<&str>,
+) -> Result<StoredAudio, String> {
+    store_bytes_titled(db, dir, bytes, mime, None, conversation_id, code_session_id)
+}
+
+/// [`store_bytes`], with a title for the player and a saved file.
+pub fn store_bytes_titled(
+    db: &Database,
+    dir: &Path,
+    bytes: &[u8],
+    mime: &str,
+    title: Option<String>,
     conversation_id: Option<&str>,
     code_session_id: Option<&str>,
 ) -> Result<StoredAudio, String> {
@@ -366,7 +388,7 @@ pub fn store_bytes(
     let hash = hash_bytes(bytes);
     let meta = StoreMeta {
         mime,
-        title: None,
+        title,
         duration_ms: None,
         conversation_id,
         code_session_id,
@@ -970,6 +992,27 @@ mod tests {
         );
         assert!(store_bytes(&db, &dir, &[1u8; 8], "text/html", None, None).is_err());
         assert!(store_bytes(&db, &dir, &[], "audio/wav", None, None).is_err());
+    }
+
+    #[test]
+    fn titled_bytes_keep_their_title() {
+        let (db, dir) = setup("audio-bytes-titled");
+        let title = decode_title("Lighthouse%20at%20dusk%20%E2%80%94%20take%202");
+        assert_eq!(title.as_deref(), Some("Lighthouse at dusk — take 2"));
+        let stored = store_bytes_titled(
+            &db,
+            &dir,
+            &[3u8; 64],
+            "video/mp4",
+            title,
+            Some("chat-1"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(stored.mime, "video/mp4");
+        let row = db.audio_by_hash(&stored.hash).unwrap().unwrap();
+        assert_eq!(row.title.as_deref(), Some("Lighthouse at dusk — take 2"));
+        assert_eq!(decode_title("%20"), None);
     }
 
     #[test]

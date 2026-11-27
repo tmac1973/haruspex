@@ -232,6 +232,8 @@ describe('formatUsd', () => {
 		expect(formatUsd(1.234)).toBe('$1.23');
 		expect(formatUsd(0.0184)).toBe('$0.018');
 		expect(formatUsd(0.13)).toBe('$0.13');
+		expect(formatUsd(0.4)).toBe('$0.40');
+		expect(formatUsd(0)).toBe('$0.00');
 	});
 });
 

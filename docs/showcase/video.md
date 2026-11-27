@@ -41,6 +41,25 @@ The clip moves from the first picture to the second and plays in the conversatio
 
 Read more: video-generation
 
+## Make a clip with Veo or Wan on OpenRouter
+
+No video GPU? Add an OpenRouter video model, such as Veo 3.1 or Wan 3.0, and set the most one clip may cost. The prompt is sent to OpenRouter, and the clip is paid for from your OpenRouter credit.
+
+Tab: Chat or Code
+Required settings: Settings → Video generation → Add model → Backend: OpenRouter, with an OpenRouter API key and Most per clip ($)
+
+Prompt:
+
+> Make a six-second clip of waves breaking on a rocky shore at sunset, with sound.
+
+Example output:
+
+The clip plays in the conversation, with sound from a model that makes it. A clip that would cost more than the limit is passed to the next video model in the list, and the answer says so.
+
+<!-- media: Settings → Video generation with an OpenRouter model, its price after Probe and the per-clip limit -->
+
+Read more: video-generation
+
 ## Make someone in a picture speak
 
 Give a portrait and some speech, and a speaking model makes a clip of the person saying it, up to about 5 seconds.
