@@ -15,7 +15,7 @@ Each stub names the call and its size, and keeps a few facts read from the outpu
 
 ## Read a trimmed result back
 
-In Chat, Code and the Shell, the model can call `recall_result` with the stub's id to read the exact text again, a page at a time or only the lines that contain a word. It is the original output, not a new run: a command does not run twice and a page is not fetched again.
+In Chat, Code and the Shell, the model can call `recall_result` with the stub's id to read the exact text again: a range of lines, numbered from 1 as `fs_read_text` numbers them, or only the lines that contain a word. It is the original output, not a new run: a command does not run twice and a page is not fetched again.
 
 ## What it doesn't do
 

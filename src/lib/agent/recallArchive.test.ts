@@ -25,20 +25,19 @@ describe('RecallArchive', () => {
 		expect(a.size).toBe(2);
 	});
 
-	it("caps one round's recalls, and lets the first through", () => {
+	it("tracks one round's room, and has none to track by default", () => {
 		const a = new RecallArchive();
+		expect(a.roomLeft).toBe(Infinity);
 		a.startRound(10_000);
-		expect(a.take(12_000)).toBe(true);
-		expect(a.take(1)).toBe(false);
+		expect(a.recalledThisRound).toBe(false);
+		a.spend(6_000);
+		expect(a.roomLeft).toBe(4_000);
+		expect(a.recalledThisRound).toBe(true);
+		a.spend(6_000);
+		expect(a.roomLeft).toBe(0);
 		a.startRound(10_000);
-		expect(a.take(6_000)).toBe(true);
-		expect(a.take(4_000)).toBe(true);
-		expect(a.take(1)).toBe(false);
-	});
-
-	it('has no cap by default', () => {
-		const a = new RecallArchive();
-		for (let i = 0; i < 20; i++) expect(a.take(50_000)).toBe(true);
+		expect(a.roomLeft).toBe(10_000);
+		expect(a.recalledThisRound).toBe(false);
 	});
 });
 
