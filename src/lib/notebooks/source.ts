@@ -31,6 +31,34 @@ export function canOpenSource(source: NotebookSource): boolean {
 	return !!source.ref && ['chat', 'notebook_chat', 'code', 'job', 'python'].includes(source.kind);
 }
 
+/**
+ * Marks what a container shows when the active tab doesn't say: a job run's
+ * output, in the Jobs tab or on a Home card. Its value is `jobSourceAttr`'s.
+ */
+export const SOURCE_ATTR = 'data-notebook-source';
+
+/** `SOURCE_ATTR`'s value for a job run's output. */
+export function jobSourceAttr(jobId: number, runId: number | null, name?: string): string {
+	const source: NotebookSource = {
+		kind: 'job',
+		ref: runId === null ? String(jobId) : `${jobId}:${runId}`,
+		label: name || undefined
+	};
+	return JSON.stringify(source);
+}
+
+/** The source the nearest marked container around `el` names, if any. */
+export function markedSource(el: Element | null | undefined): NotebookSource | null {
+	const raw = el?.closest(`[${SOURCE_ATTR}]`)?.getAttribute(SOURCE_ATTR);
+	if (!raw) return null;
+	try {
+		const v = JSON.parse(raw) as NotebookSource;
+		return v && typeof v.kind === 'string' ? v : null;
+	} catch {
+		return null;
+	}
+}
+
 /** A job source's ref: `<jobId>:<runId>`. */
 export function parseJobRef(ref: string): { jobId: number; runId: number | null } | null {
 	const m = /^(\d+)(?::(\d+))?$/.exec(ref);

@@ -23,7 +23,7 @@ In Chat, Shell or Code, ask in your own words: "make a notebook called speakers 
 
 ## Save from a chat
 
-In Chat, Shell and Code, **📓** under an answer saves it as a text card, and **📓 Save to notebook** on a table (shown on hover) saves it as a table card, with link cells kept as links. Right-click text you've selected in an answer for **Add selection to notebook…**. Each asks which notebook, or makes a new one; the card links back to the conversation.
+In Chat, Shell and Code, **📓** under an answer saves it as a text card, and **📓 Save to notebook** on a table (shown on hover) saves it as a table card, with link cells kept as links. Right-click text you've selected in an answer for **Add selection to notebook…**. Each asks which notebook, or makes a new one; the card links back to the conversation. A job run's output, in the Jobs tab or on a Home card, saves the same way, and its card says "From Jobs" and links back to the run.
 
 ## Email a notebook
 

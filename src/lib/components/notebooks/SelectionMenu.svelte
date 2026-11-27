@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * A right-click on text selected in an answer (Chat, Shell or Code)
+	 * A right-click on text selected in an answer (Chat, Shell, Code or a job run)
 	 * offers "Add selection to notebook…" beside Copy. Anywhere else the
 	 * usual menu shows.
 	 */
@@ -11,9 +11,9 @@
 	/** Where answers are drawn: Chat and Shell's messages, Code's steps. */
 	const ANSWER = '.message.assistant .message-content, .code-steps .lead';
 
-	let menu = $state<{ x: number; y: number; text: string } | null>(null);
+	let menu = $state<{ x: number; y: number; text: string; origin: Element } | null>(null);
 
-	function selectionIn(target: EventTarget | null): string | null {
+	function selectionIn(target: EventTarget | null): { text: string; origin: Element } | null {
 		const sel = window.getSelection();
 		const text = sel?.toString().trim();
 		if (!sel || !text || sel.rangeCount === 0) return null;
@@ -21,16 +21,16 @@
 		const el = node instanceof Element ? node : node.parentElement;
 		if (!el?.closest(ANSWER)) return null;
 		if (!(target instanceof Node) || !el.closest(ANSWER)?.contains(target)) return null;
-		return text;
+		return { text, origin: el };
 	}
 
 	function oncontextmenu(e: MouseEvent) {
 		const s = getLiveSettings();
 		if (!s.notebooksTab || s.leanMode) return;
-		const text = selectionIn(e.target);
-		if (!text) return;
+		const picked = selectionIn(e.target);
+		if (!picked) return;
 		e.preventDefault();
-		menu = { x: e.clientX, y: e.clientY, text };
+		menu = { x: e.clientX, y: e.clientY, ...picked };
 	}
 
 	function close() {
@@ -68,7 +68,7 @@
 			onclick={() => {
 				const m = menu;
 				close();
-				if (m) void captureText(m.text, { x: m.x, y: m.y });
+				if (m) void captureText(m.text, { x: m.x, y: m.y }, m.origin);
 			}}
 		>
 			Add selection to notebook…

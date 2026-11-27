@@ -2,6 +2,7 @@
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { jobReport } from '#lib/reportLogs.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import { jobSourceAttr } from '#lib/notebooks/source.ts';
 	import SearchStepView from '#lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
@@ -104,7 +105,7 @@
 </script>
 
 {#if run}
-	<div class="run-view">
+	<div class="run-view" data-notebook-source={jobSourceAttr(run.jobId, run.id, run.jobName)}>
 		<div class="header">
 			<div class="header-left">
 				<h3>{run.jobName}</h3>

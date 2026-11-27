@@ -1,12 +1,13 @@
 /**
- * "Save to notebook" from Chat, Shell and Code: a rendered table becomes a
- * table card, an answer or a selection a text card. The picker chooses the
- * notebook; the card's source is where it was saved from, so its badge
- * links back.
+ * "Save to notebook" from Chat, Shell, Code and job output: a rendered table
+ * becomes a table card, an answer or a selection a text card. The picker
+ * chooses the notebook; the card's source is where it was saved from, so its
+ * badge links back.
  */
 import * as api from '#lib/notebooks/api.ts';
 import type { NotebookSource } from '#lib/notebooks/api.ts';
 import { rowsFromCsv, writeCsv } from '#lib/notebooks/csv.ts';
+import { markedSource } from '#lib/notebooks/source.ts';
 import { pickNotebook } from '#lib/notebooks/notebookPicker.svelte.ts';
 import { emitNotebookChanged, openNotebook } from '#lib/stores/notebooks.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -43,8 +44,13 @@ export function titleFor(markdown: string): string {
 	return text.length > 60 ? `${text.slice(0, 57).trimEnd()}…` : text;
 }
 
-/** Where a capture comes from: the tab on screen, and its conversation or session. */
-export async function captureSource(): Promise<NotebookSource> {
+/**
+ * Where a capture comes from: the container it was made in when that is
+ * marked, else the tab on screen and its conversation or session.
+ */
+export async function captureSource(origin?: Element | null): Promise<NotebookSource> {
+	const marked = markedSource(origin);
+	if (marked) return marked;
 	const { getActiveTab } = await import('#lib/stores/activeTab.svelte.ts');
 	const tab = getActiveTab();
 	if (tab === 'code') {
@@ -58,11 +64,16 @@ export async function captureSource(): Promise<NotebookSource> {
 	return c ? { kind: 'chat', ref: c.id, label: c.title } : { kind: 'chat' };
 }
 
-async function save(at: { x: number; y: number }, what: string, card: api.NewCard): Promise<void> {
+async function save(
+	at: { x: number; y: number },
+	what: string,
+	card: api.NewCard,
+	origin?: Element | null
+): Promise<void> {
 	const notebookId = await pickNotebook(at, `Save ${what} to`);
 	if (!notebookId) return;
 	try {
-		const added = await api.addCard(notebookId, card, await captureSource());
+		const added = await api.addCard(notebookId, card, await captureSource(origin));
 		emitNotebookChanged(notebookId, [added.id]);
 		const nb = (await api.listNotebooks()).find((n) => n.id === notebookId);
 		showToast(`Added to ${nb?.title ?? 'the notebook'}.`, {
@@ -86,23 +97,40 @@ export async function captureTable(button: HTMLElement): Promise<void> {
 	if (!table) return;
 	const t = rowsFromCsv(tableToCsv(table));
 	const r = button.getBoundingClientRect();
-	await save({ x: r.left, y: r.bottom }, 'table', {
-		kind: 'table',
-		title: '',
-		body: '',
-		meta: JSON.stringify({ columns: t.columns }),
-		rows: t.rows.map((row) => JSON.stringify(row))
-	});
+	await save(
+		{ x: r.left, y: r.bottom },
+		'table',
+		{
+			kind: 'table',
+			title: '',
+			body: '',
+			meta: JSON.stringify({ columns: t.columns }),
+			rows: t.rows.map((row) => JSON.stringify(row))
+		},
+		button
+	);
 }
 
-/** An answer, or a selection from one, as a text card. */
-export async function captureText(markdown: string, at: { x: number; y: number }): Promise<void> {
+/**
+ * An answer, or a selection from one, as a text card. `origin` is the
+ * element it was saved from, for its source.
+ */
+export async function captureText(
+	markdown: string,
+	at: { x: number; y: number },
+	origin?: Element | null
+): Promise<void> {
 	if (!markdown.trim()) return;
-	await save(at, 'text', {
-		kind: 'text',
-		title: titleFor(markdown),
-		body: markdown,
-		meta: '{}',
-		rows: null
-	});
+	await save(
+		at,
+		'text',
+		{
+			kind: 'text',
+			title: titleFor(markdown),
+			body: markdown,
+			meta: '{}',
+			rows: null
+		},
+		origin
+	);
 }
