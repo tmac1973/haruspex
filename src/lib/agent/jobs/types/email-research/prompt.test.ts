@@ -38,7 +38,7 @@ import type { EmailRequestRow } from '#lib/stores/emailRequests.ts';
 import { newReplyId, RESEARCH_TOOLS, researchMessage } from './prompt';
 
 describe('email research turn', () => {
-	it('is offered exactly the four web tools', () => {
+	it('is offered exactly the four web tools, and recall_result', () => {
 		const names = offeredSchemas({
 			toolAllowlist: RESEARCH_TOOLS,
 			interactive: false,
@@ -46,7 +46,13 @@ describe('email research turn', () => {
 			hasWorkingDir: false,
 			harnessFeedback: true
 		}).map((s) => s.function.name);
-		expect(names.sort()).toEqual(['fetch_url', 'haruspex_docs', 'research_url', 'web_search']);
+		expect(names.sort()).toEqual([
+			'fetch_url',
+			'haruspex_docs',
+			'recall_result',
+			'research_url',
+			'web_search'
+		]);
 	});
 
 	it('puts a thread’s earlier answered exchanges before the new question', () => {
