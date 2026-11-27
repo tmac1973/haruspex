@@ -4,9 +4,16 @@
  * thread's earlier exchanges.
  */
 import type { EmailRequestRow } from '#lib/stores/emailRequests.ts';
+import { RECALL_TOOL } from '#lib/agent/recallArchive.ts';
 
 /** The only tools a research turn is offered. No files, shell, memory, email or MCP. */
-export const RESEARCH_TOOLS = ['web_search', 'fetch_url', 'research_url', 'haruspex_docs'];
+export const RESEARCH_TOOLS = [
+	'web_search',
+	'fetch_url',
+	'research_url',
+	'haruspex_docs',
+	RECALL_TOOL
+];
 
 /** Earlier exchanges of a thread a follow-up carries. */
 export const THREAD_CONTEXT = 3;

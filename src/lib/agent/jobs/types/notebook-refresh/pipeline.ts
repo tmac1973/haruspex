@@ -17,9 +17,16 @@ import {
 } from '#lib/stores/jobRuns.svelte.ts';
 import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
 import { parseNotebookRefreshConfig } from '#lib/agent/jobs/types/notebook-refresh/config.ts';
+import { RECALL_TOOL } from '#lib/agent/recallArchive.ts';
 
 /** The notebook tools, and the web tools to look things up with. */
-export const REFRESH_TOOLS = [...NOTEBOOK_TOOLS, 'web_search', 'research_url', 'fetch_url'];
+export const REFRESH_TOOLS = [
+	...NOTEBOOK_TOOLS,
+	'web_search',
+	'research_url',
+	'fetch_url',
+	RECALL_TOOL
+];
 const MAX_ITERATIONS = 20;
 const OUTLINE_CHARS = 6000;
 

@@ -62,6 +62,7 @@ import {
 	extractDecisionCommand,
 	VERIFICATION_COMMAND_HEADING
 } from '#lib/agent/jobs/types/autonomous-coding/planParse.ts';
+import { RECALL_TOOL } from '#lib/agent/recallArchive.ts';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at
@@ -112,7 +113,8 @@ export const GUIDED_PLANNING_TOOLS = [
 	// user to delete a phase file by hand because it had spotted a
 	// contradiction in what it had just written and had no way to fix it.
 	'fs_edit_text',
-	'ask_user_question'
+	'ask_user_question',
+	RECALL_TOOL
 ];
 
 /**
@@ -127,6 +129,7 @@ const OUTLINE_TOOLS = [
 	'code_grep',
 	'code_glob',
 	'ask_user_question',
+	RECALL_TOOL,
 	SUBMIT_PLAN_OUTLINE_TOOL
 ];
 

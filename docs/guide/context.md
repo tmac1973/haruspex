@@ -22,5 +22,5 @@ In Chat, Code and the Shell, the model can call `recall_result` with the stub's 
 - One step reads back only as much as fits below the trim point, so a recall does not set off the next trim. The model asks for the rest in a later step.
 - The ids last for one turn. Between turns, long chats and Code sessions summarise older messages instead (see the `chat` and `code-sessions` pages).
 - Lean mode leaves `recall_result` out to keep the tool list short. Its stubs ask the model to run the tool again (see the `lean-mode` page).
-- Jobs keep the old stubs unless their job type lists the tool.
+- Jobs that read files, run commands or fetch pages can use `recall_result` too: autonomous coding, guided planning, audits, asset and model generation, email research and notebook refresh. A job that has the model only judge or report, such as a news or email digest, has no use for it.
 - A larger Settings → Inference → Context Size means fewer trims.

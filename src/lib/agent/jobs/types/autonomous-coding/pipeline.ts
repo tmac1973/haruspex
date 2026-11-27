@@ -84,6 +84,7 @@ import {
 	phaseTurnPrompt,
 	preflightPrompt
 } from '#lib/agent/jobs/types/autonomous-coding/prompts.ts';
+import { RECALL_TOOL } from '#lib/agent/recallArchive.ts';
 
 export const PREFLIGHT = 0;
 export const DECOMPOSE = 1;
@@ -127,6 +128,7 @@ const PREFLIGHT_TOOLS = [
 	'code_glob',
 	'fs_write_text',
 	'run_command',
+	RECALL_TOOL,
 	'ask_user_question',
 	SUBMIT_PREFLIGHT_TOOL
 ];
@@ -138,6 +140,7 @@ const DECOMPOSE_TOOLS = [
 	'fs_read_pdf',
 	'code_grep',
 	'code_glob',
+	RECALL_TOOL,
 	SUBMIT_TASK_LIST_TOOL
 ];
 
@@ -158,7 +161,8 @@ const CODING_TURN_TOOLS = [
 	'code_glob',
 	'run_command',
 	'web_search',
-	'research_url'
+	'research_url',
+	RECALL_TOOL
 ];
 
 const LOOP_TOOLS = [...CODING_TURN_TOOLS, SUBMIT_ITERATION_RESULT_TOOL];
@@ -186,7 +190,8 @@ const FINALIZE_TOOLS = [
 	'code_grep',
 	'code_glob',
 	'run_command',
-	'fs_write_text'
+	'fs_write_text',
+	RECALL_TOOL
 ];
 
 /** Turn budget: a plan-wide interview can take many question round-trips. */
