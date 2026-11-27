@@ -47,6 +47,23 @@ function configOf(typeConfig: string | null): Record<string, unknown> {
 	}
 }
 
+/**
+ * Keys a run writes into its own job's `type_config`. The job editor's copy
+ * may be older than the run, so its save keeps these from the stored job.
+ */
+const RUN_WRITTEN_KEYS = [NOTEBOOK_ID_KEY];
+
+/** `next` (the editor's `type_config`) with the run-written keys `stored` holds. */
+export function keepRunWritten(next: string | null, stored: string | null): string | null {
+	const kept = configOf(stored);
+	const keys = RUN_WRITTEN_KEYS.filter((k) => kept[k] !== undefined && kept[k] !== null);
+	if (keys.length === 0) return next;
+	return JSON.stringify({
+		...configOf(next),
+		...Object.fromEntries(keys.map((k) => [k, kept[k]]))
+	});
+}
+
 /** The mode a job's `type_config` JSON holds. */
 export function readNotebookOutput(typeConfig: string | null): NotebookOutputMode {
 	return parseNotebookOutput(configOf(typeConfig)[NOTEBOOK_OUTPUT_KEY]);

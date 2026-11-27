@@ -38,6 +38,7 @@
 	} from '#lib/agent/jobs/types/index.ts';
 	import type { JobDraft } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { writeDraftSpec } from '#lib/agent/jobs/draftSpec.ts';
+	import { keepRunWritten } from '#lib/agent/jobs/notebookOutput.ts';
 
 	// Platform-gated types (autonomous coding) hide from the picker until
 	// their probe says otherwise; idempotent, so fire per mount.
@@ -163,6 +164,12 @@
 	 * derives its output folder from the job name on mount, which would
 	 * otherwise register as an edit the user never made.
 	 */
+	/** A run may have written to the job since this editor loaded it; keep that. */
+	async function withRunWritten(id: number, typeConfig: string | null): Promise<string | null> {
+		const stored = await getJob(id);
+		return keepRunWritten(typeConfig, stored?.type_config ?? null);
+	}
+
 	async function captureBaseline() {
 		await tick();
 		baseline = formSignature();
@@ -359,6 +366,7 @@
 				}
 				id = created;
 			} else {
+				input.type_config = await withRunWritten(jobId, input.type_config);
 				const ok = await updateJob(jobId, input);
 				if (!ok) {
 					error = 'Failed to save job.';
