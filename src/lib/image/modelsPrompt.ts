@@ -9,15 +9,23 @@ import { imageEntries } from '#lib/image/entries.ts';
 import { entryLine } from '#lib/image/capabilityLine.ts';
 import { upscalerEntries } from '#lib/upscale/entries.ts';
 
-export function imageModelsPrompt(): string {
-	const entries = imageEntries();
-	if (entries.length < 2) return '';
+/**
+ * The image upscalers that are on, as one line: empty with none. Chat's
+ * prompt and an image skill's "Set up now" both say it, so the model knows
+ * `upscale_image` can run.
+ */
+export function upscalersLine(): string {
 	const ups = upscalerEntries('image').map((e) =>
 		e.caps ? `${e.name} (×${e.caps.scale})` : e.name
 	);
-	const upLine = ups.length
-		? `\n- Upscalers, which upscale_image tries first: ${ups.join(', ')}.`
-		: '';
+	return ups.length ? `Upscalers, which upscale_image tries first: ${ups.join(', ')}.` : '';
+}
+
+export function imageModelsPrompt(): string {
+	const entries = imageEntries();
+	if (entries.length < 2) return '';
+	const ups = upscalersLine();
+	const upLine = ups ? `\n- ${ups}` : '';
 	return `
 
 IMAGE MODELS, in the order the image tools use them:
