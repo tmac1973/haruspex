@@ -42,6 +42,15 @@ const LIST = {
 			pricing_skus: { cents_per_video_output_second_720p: '7' }
 		},
 		{
+			id: 'alibaba/wan-3.0',
+			name: 'Alibaba: Wan 3.0',
+			supported_durations: [3, 5],
+			supported_resolutions: ['720p'],
+			supported_aspect_ratios: ['16:9', '9:16'],
+			supported_frame_images: ['first_frame', 'last_frame'],
+			pricing_skus: { duration_seconds: '0.10' }
+		},
+		{
 			id: 'tbc/odd',
 			name: 'Odd',
 			supported_durations: [5],
@@ -237,6 +246,30 @@ describe('OpenRouter video backend', () => {
 		expect(invokeArgs(vi.mocked(invoke), 'image_read_bytes')).toEqual({ hash: 'a' });
 	});
 
+	it('sends reference pictures as data URLs to a model that takes them', async () => {
+		const wan = backend({ model: 'alibaba/wan-3.0' });
+		await wan.generate({ ...request, references: [{ name: 'r.png', hash: 'r' }] });
+		const refs = submitted().input_references;
+		expect(refs).toHaveLength(1);
+		expect(refs[0]).toMatchObject({ type: 'image_url' });
+		expect(refs[0].image_url.url).toMatch(/^data:image\/png;base64,/);
+	});
+
+	it('refuses reference pictures for a model not known to take them, and says why a 400 came', async () => {
+		const references = [{ name: 'r.png', hash: 'r' }];
+		await expect(backend().generate({ ...request, references })).rejects.toThrow(
+			"Google: Veo 3.1 on OpenRouter can't keep the look of reference pictures."
+		);
+		expect(sent.some((s) => s.init.method === 'POST')).toBe(false);
+		answer = (url, init) =>
+			url.endsWith('/v1/videos') && init.method === 'POST'
+				? json({ error: { message: 'input_references not supported' } }, 400)
+				: defaultAnswer(url, init);
+		await expect(
+			backend({ model: 'alibaba/wan-3.0' }).generate({ ...request, references })
+		).rejects.toThrow(/input_references not supported.*may not take reference pictures/);
+	});
+
 	it('refuses what the model cannot do, before anything is sent', async () => {
 		const grok = backend({ model: 'x-ai/grok-imagine-video' });
 		await expect(
@@ -336,6 +369,7 @@ describe('probe and capabilities', () => {
 			detail: 'Connected — $0.40 a second at 720p, with sound.'
 		});
 		expect(result.models?.map((m) => m.name)).toEqual([
+			'alibaba/wan-3.0',
 			'google/veo-3.1',
 			'tbc/odd',
 			'x-ai/grok-imagine-video'

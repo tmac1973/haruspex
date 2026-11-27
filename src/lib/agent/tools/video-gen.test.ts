@@ -287,6 +287,23 @@ describe('a finished clip’s notice', () => {
 		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'task_create')).toBe(false);
 	});
 
+	it('asks for a model that takes reference pictures, and refuses more than three', async () => {
+		state.route.mockRejectedValue(new Error('None can keep the look of reference pictures.'));
+		await executeTool('generate_video', { prompt: 'a fox', reference_images: ['fox.png'] }, chat);
+		expect(state.route).toHaveBeenCalledWith(
+			expect.objectContaining({ references: true }),
+			expect.anything()
+		);
+		state.route.mockClear();
+		const many = await executeTool(
+			'generate_video',
+			{ prompt: 'a fox', reference_images: ['a.png', 'b.png', 'c.png', 'd.png'] },
+			chat
+		);
+		expect(many.result).toMatch(/reference_images takes up to 3 pictures/);
+		expect(state.route).not.toHaveBeenCalled();
+	});
+
 	it('says whether a finished clip has sound', () => {
 		const task = {
 			id: 'video-2',

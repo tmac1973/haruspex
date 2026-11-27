@@ -61,19 +61,28 @@ function argsRefusal(args: Record<string, unknown>, ctx: ToolContext): string | 
 		return 'generate_video runs in the background, which needs a chat or a Code session.';
 	}
 	if (trimmed(args.path) && !/\.webm$/i.test(trimmed(args.path))) return 'path must end in .webm.';
+	if (referencesOf(args).length > MAX_REFERENCES) {
+		return `reference_images takes up to ${MAX_REFERENCES} pictures.`;
+	}
 	const seed = seedOf(args.seed);
 	return typeof seed === 'string' ? seed : null;
 }
 
 type Kept = { image: VideoStartImage; portrait: boolean };
 
-/** The picture `field` names, kept in the image cache, and its way round. Or why not. */
-async function keptPicture(
-	field: 'start_image' | 'end_image',
-	args: Record<string, unknown>,
-	ctx: ToolContext
-): Promise<Kept | string> {
-	const source = await resolveImage(trimmed(args[field]), field, ctx);
+/** The most reference pictures one clip takes. */
+const MAX_REFERENCES = 3;
+
+/** `reference_images`, as the pictures it names. */
+function referencesOf(args: Record<string, unknown>): string[] {
+	const v = args.reference_images;
+	const list = Array.isArray(v) ? v : typeof v === 'string' ? [v] : [];
+	return list.map((r) => trimmed(r)).filter((r) => r !== '');
+}
+
+/** The picture `ref` names, kept in the image cache, and its way round. Or why not. */
+async function keptPicture(ref: string, field: string, ctx: ToolContext): Promise<Kept | string> {
+	const source = await resolveImage(ref, field, ctx);
 	if (typeof source === 'string') return source;
 	const input = await hashedInput(
 		source.input,
@@ -96,18 +105,43 @@ async function keptPicture(
 export async function picturesFrom(
 	args: Record<string, unknown>,
 	ctx: ToolContext
-): Promise<{ image?: VideoStartImage; endImage?: VideoStartImage; portrait: boolean } | string> {
+): Promise<
+	| {
+			image?: VideoStartImage;
+			endImage?: VideoStartImage;
+			references?: VideoStartImage[];
+			portrait: boolean;
+	  }
+	| string
+> {
 	const asked = trimmed(args.orientation);
 	const wants = (f: string) => trimmed(args[f]) !== '';
-	const start = wants('start_image') ? await keptPicture('start_image', args, ctx) : null;
+	const pick = (f: string) => keptPicture(trimmed(args[f]), f, ctx);
+	const start = wants('start_image') ? await pick('start_image') : null;
 	if (typeof start === 'string') return start;
-	const end = wants('end_image') ? await keptPicture('end_image', args, ctx) : null;
+	const end = wants('end_image') ? await pick('end_image') : null;
 	if (typeof end === 'string') return end;
+	const references: VideoStartImage[] = [];
+	for (const ref of referencesOf(args)) {
+		const kept = await keptPicture(ref, 'reference_images', ctx);
+		if (typeof kept === 'string') return kept;
+		references.push(kept.image);
+	}
 	const shape = start ?? end;
 	return {
 		...(start ? { image: start.image } : {}),
 		...(end ? { endImage: end.image } : {}),
+		...(references.length ? { references } : {}),
 		portrait: asked ? asked === 'portrait' : (shape?.portrait ?? false)
+	};
+}
+
+/** The request's picture fields, from what `picturesFrom` kept. */
+function requestPictures(p: Exclude<Awaited<ReturnType<typeof picturesFrom>>, string>) {
+	return {
+		...(p.image ? { startImage: p.image } : {}),
+		...(p.endImage ? { endImage: p.endImage } : {}),
+		...(p.references ? { references: p.references } : {})
 	};
 }
 
@@ -143,7 +177,8 @@ function needOfArgs(args: Record<string, unknown>): VideoNeed {
 		startImage: wants('start_image'),
 		endImage: wants('end_image'),
 		speech: wants('audio'),
-		sound: args.sound === true
+		sound: args.sound === true,
+		...(referencesOf(args).length > 0 ? { references: true } : {})
 	};
 }
 
@@ -247,6 +282,14 @@ registerTool({
 							'A picture to end on, as for start_image, when the model can. With start_image, ' +
 							'the clip moves from one to the other.'
 					},
+					reference_images: {
+						type: 'array',
+						items: { type: 'string' },
+						description:
+							`Up to ${MAX_REFERENCES} pictures whose look the clip keeps (a character, a ` +
+							'product, a style), as for start_image, on a model that takes reference pictures. ' +
+							'Unlike start_image, the clip need not begin on them.'
+					},
 					sound: {
 						type: 'boolean',
 						description: 'True when the clip must have its own sound track. Default false.'
@@ -309,10 +352,12 @@ registerTool({
 			frames: fit.frames,
 			fps: fit.fps,
 			seed: seedOf(args.seed) as number,
-			...(start.image ? { startImage: start.image } : {}),
-			...(start.endImage ? { endImage: start.endImage } : {}),
+			...requestPictures(start),
 			...(speech ? { audio: { name: speech.name, hash: speech.hash }, followAudio: !given } : {})
 		};
-		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx, routed.entry.id);
+		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx, routed.entry.id, {
+			named: !!trimmed(args.model),
+			sound: args.sound === true
+		});
 	}
 });

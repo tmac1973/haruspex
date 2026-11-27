@@ -26,6 +26,11 @@ export interface VideoCaps {
 	needsSpeech: boolean;
 	/** The clip has its own sound track (LTX-2.3). */
 	sound: boolean;
+	/**
+	 * It keeps the look of reference pictures (a character, a product, a
+	 * style) without starting from one. Absent from caps saved before it.
+	 */
+	references?: boolean;
 	limits: VideoLimits;
 	/** Frame counts are `frameStep × n + 1`: 4 for Wan, 8 for LTX. */
 	frameStep: number;
@@ -58,6 +63,8 @@ export interface VideoRequest {
 	startImage?: VideoStartImage;
 	/** A picture the clip ends on, on an instance with `end_image`. */
 	endImage?: VideoStartImage;
+	/** Pictures whose look the clip keeps, on a model with `references`. */
+	references?: VideoStartImage[];
 	/**
 	 * Speech the clip's person says, in the audio cache, on an instance with
 	 * the `audio` capability (Wan2.2 S2V).

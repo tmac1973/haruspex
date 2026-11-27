@@ -60,6 +60,25 @@ The clip plays in the conversation, with sound from a model that makes it, and t
 
 Read more: video-generation
 
+## Keep a character the same across clips
+
+Give a picture or two of a character, and each clip keeps their look without having to start on that picture. It works with OpenRouter's Wan 3.0, Seedance 2 and Runway models.
+
+Tab: Chat or Code
+Required settings: Settings → Video generation → Add model → Backend: OpenRouter, with Wan 3.0, a Seedance 2 model or a Runway model
+
+Prompt:
+
+> Using the robot from the two pictures I drew earlier as reference, make a clip of it walking through a rainy market at night.
+
+Example output:
+
+The clip plays in the conversation with the robot's colours and shape kept, though the scene is new. A model that doesn't take reference pictures is skipped for one that does.
+
+<!-- media: a clip of the robot in a rainy market beside the two reference pictures -->
+
+Read more: video-generation
+
 ## Make someone in a picture speak
 
 Give a portrait and some speech, and a speaking model makes a clip of the person saying it, up to about 5 seconds.
