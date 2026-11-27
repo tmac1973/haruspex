@@ -1,6 +1,6 @@
 ---
 title: Shell tab
-description: The Shell tab's terminal and assistant sidebar, sending output to it, Read-only and Full access, Open in Code, tabs opened by the Code tab, command approval, the memory limit and repo instructions.
+description: The Shell tab's terminal and assistant sidebar, sending output to it, Read-only and Full access, password prompts, Open in Code, tabs opened by the Code tab, the memory limit and repo instructions.
 ---
 
 # Shell tab
@@ -9,9 +9,9 @@ The Shell tab is a real terminal with an assistant beside it. By default the ass
 
 ## Open a terminal
 
-It works on Linux, macOS and Windows. On Windows a picker in the tab chooses a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and assistant. Tabs that don't fit scroll sideways, also by mouse wheel; **←** **→** move between them. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
+It works on Linux, macOS and Windows; on Windows a picker chooses a PowerShell version or a WSL2 distro. Click **+** for another tab, each with its own terminal and assistant. Tabs that don't fit scroll sideways; **←** **→** move between them. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
 
-Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, without capture: copy what you need into the assistant box. A badge in the sidebar header shows whether capture works.
+Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the markers itself. Other shells work without capture. A badge in the sidebar header shows whether capture works.
 
 ## Tabs the Code tab opens
 
@@ -19,11 +19,11 @@ When the Code tab needs a command run in a terminal (a `sudo`, a password prompt
 
 ## Ask about what just happened
 
-- **F4**, or the `>_` button by the input box, sends your recent commands and their output to the assistant with no question.
-- Anything you type is sent with your last 3 completed commands (command, output, exit code, folder). Change the number in Settings → Shell → Recent shell commands attached to each chat message; `0` sends only your question.
+- **F4**, or the `>_` button by the input box, sends your recent commands and their output with no question.
+- Anything you type is sent with your last 3 completed commands (command, output, exit code, folder); Settings → Shell → Recent shell commands attached to each chat message changes the number.
 - The camera button sends the screen, a window or a region.
 
-Long output is cut in the middle (Settings → Shell → Max output bytes per captured command, 8 KiB by default). By default the last 10 lines of your shell history file are also sent; turn that off in Settings → Shell → Include your shell history file in prompts.
+Long output is cut in the middle (Settings → Shell → Max output bytes per captured command). The last 10 lines of your shell history file are also sent unless you turn off Settings → Shell → Include your shell history file in prompts.
 
 **Ctrl+Shift+A** shows or hides the sidebar, and **Ctrl+`** moves focus between terminal and assistant.
 
@@ -35,17 +35,19 @@ The lock in the sidebar header reads **Read-only**. The assistant can read confi
 
 Click the lock (**Read-only**) in the sidebar header to switch that tab to **Full access**, and again to go back. Each tab has its own. New tabs start Read-only unless you turn on Settings → Shell → Start new shells with Full access. A tab moved to its own window keeps its setting.
 
-With Full access the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. It can edit and write files, search the project, drive a program waiting for input, and start servers or long builds in the background. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny** (the model is told it was denied). A command that reaches outside the project always asks. In a detached Shell window the question shows in that window.
+With Full access the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. It can edit and write files, search the project, drive a program waiting for input, and start servers or long builds in the background. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny**. A command that reaches outside the project always asks. In a detached window the question shows in that window.
 
-Settings → Code → Auto-approve commands skips that prompt. It is off by default; turn it on only if you fully trust the model. Settings → Code also holds the command time limit (30 seconds by default), shared with the Code tab. Settings → Shell → Max steps per turn (40) caps a turn in either mode.
+When its command asks for a password or passphrase (`sudo`, `su`, `ssh`), **🔑 Type your password in the terminal** shows and the terminal takes the keyboard; type it there. The command waits up to 10 minutes, and the assistant never sees what you type.
 
-Full access needs a capable model. Small local models get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
+Settings → Code → Auto-approve commands skips that prompt; turn it on only if you fully trust the model. Settings → Code also holds the command time limit (30 seconds by default), shared with the Code tab. Settings → Shell → Max steps per turn (40) caps a turn in either mode.
+
+Full access needs a capable model; small ones get stuck (see the `models` page). Read the AI safety disclaimer in the README first.
 
 ## Continue in the Code tab
 
 **Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab. This conversation stays here. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
 
-The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes. Near three quarters of the model's context, older turns are summarised; the sidebar still shows every message.
+The Shell assistant's conversation is not saved: it ends when you close the tab or quit. Near three quarters of the model's context, older turns are summarised; the sidebar still shows every message.
 
 ## Stop runaway commands (memory limit)
 

@@ -18,7 +18,8 @@ import {
 	unhookableShellMessage,
 	type NestedShell
 } from '#lib/shell/nestedShell.ts';
-import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
+import { setPtyBusy, setSecretWait } from '#lib/stores/shellPtyBusy.svelte.ts';
+import { SECRET_WAIT_MAX_MS, secretClock } from '#lib/agent/tools/_ptySecret.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 import { isFish } from '#lib/shell/fish.ts';
 import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
@@ -232,6 +233,7 @@ export async function runInPty(
 		if (released) return;
 		released = true;
 		setPtyBusy(sessionId, null);
+		setSecretWait(sessionId, null);
 	};
 	const onAbort = () => {
 		void invoke('shell_write', { sessionId, data: '\x03' }).catch(() => {});
@@ -261,9 +263,10 @@ export async function runInPty(
 
 		// Poll for completion — check first, then sleep, so a fast command isn't
 		// held for a full interval after it already finished.
-		const deadline = Date.now() + timeoutSecs * 1000;
+		let deadline = Date.now() + timeoutSecs * 1000;
 		let completed = false;
 		const rejected = rejectionWatch(sessionId, start);
+		const secrets = secretClock(sessionId, start.output_total, timeoutSecs);
 		while (!signal?.aborted) {
 			const now = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
 			if (now.completed_total > before) {
@@ -276,6 +279,8 @@ export async function runInPty(
 				release();
 				return result;
 			}
+			// A password prompt stops the clock: the user is the one typing.
+			deadline = await secrets.poll(now.output_total, deadline);
 			if (Date.now() >= deadline) break;
 			await sleep(PTY_POLL_MS);
 		}
@@ -293,7 +298,8 @@ export async function runInPty(
 		const result = await formatPtyResult(region, {
 			completed,
 			aborted: !!signal?.aborted,
-			timeoutSecs
+			timeoutSecs,
+			secretTimedOut: secrets.gaveUp
 		});
 		return await withOomNote(sessionId, memBefore, result);
 	} finally {
@@ -446,7 +452,12 @@ export async function runInPtyBackground(
 
 async function formatPtyResult(
 	region: CapturedRegion | null,
-	state: { completed: boolean; aborted: boolean; timeoutSecs: number }
+	state: {
+		completed: boolean;
+		aborted: boolean;
+		timeoutSecs: number;
+		secretTimedOut?: boolean;
+	}
 ): Promise<string> {
 	if (!region) {
 		return state.aborted
@@ -456,6 +467,11 @@ async function formatPtyResult(
 	let header: string;
 	if (state.aborted) {
 		header = 'Command interrupted (Ctrl-C). Output so far:';
+	} else if (state.secretTimedOut) {
+		header =
+			`Command still waiting for a password after ${SECRET_WAIT_MAX_MS / 60000} minutes; the user ` +
+			`hasn't typed it. Ask them to type it in the terminal, then use shell_read to see the result, ` +
+			`or shell_interrupt to give up. Output so far:`;
 	} else if (region.exitCode !== null && state.completed) {
 		header = `Exit code: ${region.exitCode}${region.cwd ? ` (cwd ${region.cwd})` : ''}`;
 	} else {

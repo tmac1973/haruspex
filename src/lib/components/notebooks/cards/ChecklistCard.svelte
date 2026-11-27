@@ -1,26 +1,28 @@
 <script lang="ts">
 	/**
 	 * A checklist card: items to tick off. Enter adds the next item, Backspace
-	 * in an empty one removes it, and items drag to reorder.
+	 * in an empty one removes it, and items drag to reorder. An item can
+	 * carry a note under it (✎), such as how an agent's step went.
 	 */
 	import { tick } from 'svelte';
-	import * as api from '#lib/notebooks/api.ts';
+	import { autosizeTextarea } from '#lib/utils/autosize.ts';
 	import { applyRows } from '#lib/stores/notebooks.svelte.ts';
 	import type { CardViewProps } from '#lib/notebooks/cardKinds.ts';
+	import {
+		checklistCells,
+		parseChecklistItem,
+		type ChecklistItem
+	} from '#lib/notebooks/checklist.ts';
 
 	let { card, readonly = false }: CardViewProps = $props();
 
-	interface Item {
+	interface Item extends ChecklistItem {
 		id: string;
-		text: string;
-		done: boolean;
+		cells: string;
 	}
 
 	const items = $derived<Item[]>(
-		card.rows.map((r) => {
-			const c = api.parseMeta<{ text?: unknown; done?: unknown }>(r.cells);
-			return { id: r.id, text: typeof c.text === 'string' ? c.text : '', done: c.done === true };
-		})
+		card.rows.map((r) => ({ id: r.id, cells: r.cells, ...parseChecklistItem(r.cells) }))
 	);
 
 	let hideDone = $state(false);
@@ -28,10 +30,37 @@
 	const doneCount = $derived(items.filter((i) => i.done).length);
 
 	let drafts = $state<Record<string, string>>({});
+	let noteDrafts = $state<Record<string, string>>({});
+	/** Items whose note box is open though the note is still empty. */
+	let noteOpen = $state<Record<string, boolean>>({});
 	let dragId: string | null = null;
 
-	const cellsOf = (i: Item, patch: Partial<Item> = {}) =>
-		JSON.stringify({ text: patch.text ?? i.text, done: patch.done ?? i.done });
+	const cellsOf = (i: Item, patch: Partial<ChecklistItem> = {}) =>
+		checklistCells({ text: i.text, done: i.done, note: i.note, ...patch }, i.cells);
+
+	/** A note box as tall as its text, also when the text arrives from an agent. */
+	function fitNote(el: HTMLTextAreaElement, value: string) {
+		const fit = (text: string) => {
+			if (text) requestAnimationFrame(() => autosizeTextarea(el));
+		};
+		fit(value);
+		return { update: fit };
+	}
+
+	async function openNote(i: Item) {
+		noteOpen[i.id] = true;
+		await tick();
+		document.getElementById(`nb-note-${i.id}`)?.focus();
+	}
+
+	async function saveNote(i: Item) {
+		const note = noteDrafts[i.id];
+		delete noteOpen[i.id];
+		if (note === undefined) return;
+		delete noteDrafts[i.id];
+		if (note.trim() === i.note) return;
+		await applyRows(card, [{ op: 'update', row_id: i.id, cells: cellsOf(i, { note }) }]);
+	}
 
 	async function toggle(i: Item) {
 		if (readonly) return;
@@ -121,17 +150,51 @@
 				aria-label="Done"
 				onchange={() => void toggle(item)}
 			/>
-			<input
-				class="text"
-				id="nb-check-{item.id}"
-				value={drafts[item.id] ?? item.text}
-				{readonly}
-				placeholder="Item"
-				aria-label="Item"
-				oninput={(e) => (drafts[item.id] = e.currentTarget.value)}
-				onblur={() => void saveText(item)}
-				onkeydown={(e) => void onKey(e, item)}
-			/>
+			<div class="body">
+				<div class="line">
+					<input
+						class="text"
+						id="nb-check-{item.id}"
+						value={drafts[item.id] ?? item.text}
+						{readonly}
+						placeholder="Item"
+						aria-label="Item"
+						oninput={(e) => (drafts[item.id] = e.currentTarget.value)}
+						onblur={() => void saveText(item)}
+						onkeydown={(e) => void onKey(e, item)}
+					/>
+					{#if !readonly && !item.note && !noteOpen[item.id]}
+						<button
+							class="mini add-note"
+							title="Add a note"
+							aria-label="Add a note"
+							onclick={() => void openNote(item)}
+						>
+							✎
+						</button>
+					{/if}
+				</div>
+				{#if item.note || noteOpen[item.id]}
+					{@const value = noteDrafts[item.id] ?? item.note}
+					<textarea
+						class="note"
+						id="nb-note-{item.id}"
+						{value}
+						rows="1"
+						use:fitNote={value}
+						{readonly}
+						placeholder="Note"
+						aria-label="Note"
+						oninput={(e) => {
+							noteDrafts[item.id] = e.currentTarget.value;
+							autosizeTextarea(e.currentTarget);
+						}}
+						onblur={() => void saveNote(item)}
+						onkeydown={(e) => {
+							if (e.key === 'Escape') e.currentTarget.blur();
+						}}></textarea>
+				{/if}
+			</div>
 		</li>
 	{/each}
 </ul>
@@ -156,9 +219,56 @@
 
 	li {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 6px;
 		padding: 2px 0;
+	}
+
+	li > .grip,
+	li > input[type='checkbox'] {
+		margin-top: 6px;
+	}
+
+	.body {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.line {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.add-note {
+		opacity: 0;
+	}
+
+	li:hover .add-note,
+	.add-note:focus-visible {
+		opacity: 1;
+	}
+
+	.note {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		resize: none;
+		overflow: hidden;
+		border: none;
+		background: none;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: 0.82rem;
+		line-height: 1.4;
+		padding: 2px 4px;
+		border-radius: 4px;
+	}
+
+	.note:focus {
+		outline: 1px solid var(--border-strong);
+		background: var(--bg-input);
+		color: var(--text-primary);
 	}
 
 	.grip {

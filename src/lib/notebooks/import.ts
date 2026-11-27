@@ -8,6 +8,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Marked, type Token, type Tokens } from 'marked';
 import * as api from '#lib/notebooks/api.ts';
 import type { NewCard, NotebookSource } from '#lib/notebooks/api.ts';
+import { checklistCells } from '#lib/notebooks/checklist.ts';
 import { rowsFromCsv, writeCsv } from '#lib/notebooks/csv.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -92,12 +93,17 @@ export function cardsFromMarkdown(
 				title: titled(),
 				body: '',
 				meta: '{}',
-				rows: l.items.map((i) =>
-					JSON.stringify({
-						text: i.text.replace(/^\[[ xX]\]\s*/, '').trim(),
-						done: !!i.checked
-					})
-				)
+				rows: l.items.map((i) => {
+					// A paragraph after the item's first is its note.
+					const [first, ...rest] = i.text.replace(/^\[[ xX]\]\s*/, '').split(/\n[ \t]*\n/);
+					const note = rest
+						.join('\n\n')
+						.split('\n')
+						.map((l) => l.trim())
+						.join('\n')
+						.trim();
+					return checklistCells({ text: first.trim(), done: !!i.checked, note });
+				})
 			});
 			continue;
 		}

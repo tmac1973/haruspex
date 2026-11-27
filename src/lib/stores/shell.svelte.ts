@@ -203,6 +203,12 @@ export class ShellSession {
 	sidebarOpen = $state(false);
 	lastError = $state<string | null>(null);
 	composerFocused = $state(false);
+	/**
+	 * Text to put in the assistant box when the sidebar next mounts or sees
+	 * it, then cleared: a notebook's Work through in Shell… drafts its
+	 * message here for the user to read and send.
+	 */
+	composerSeed = $state<string | null>(null);
 	searchSteps = $state<SearchStep[]>([]);
 	messageSteps = $state<Record<number, SearchStep[]>>({});
 	// Per-assistant-message tok/s timing, keyed by message index — drives the
@@ -1183,6 +1189,18 @@ function dropSession(idx: number, id: string): void {
 		const neighbour = sessions[idx] ?? sessions[idx - 1] ?? null;
 		activeShellId = neighbour?.id ?? null;
 	}
+}
+
+/**
+ * A new Shell tab with its assistant open and `text` typed into the box, not
+ * sent: the user gets to `ssh` somewhere, choose Full access and read it first.
+ */
+export function openShellWithDraft(text: string): ShellSession {
+	const session = createShellSession();
+	session.sidebarOpen = true;
+	session.composerSeed = text;
+	setActiveTab('shell');
+	return session;
 }
 
 /** Ensure at least one session exists, returning the active one. */

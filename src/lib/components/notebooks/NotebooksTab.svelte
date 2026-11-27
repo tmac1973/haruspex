@@ -135,6 +135,13 @@
 		if (getOpenBackend().kind === 'local' && open) {
 			items.push(...shareItems(open.notebook.id, card));
 		}
+		if (card.kind === 'checklist' && getOpenBackend().kind === 'local' && open) {
+			const notebook = open.notebook;
+			items.push({
+				label: 'Work through in Shell…',
+				run: () => void workThroughInShell(notebook.id, notebook.title, card)
+			});
+		}
 		if (card.kind === 'table' && getOpenBackend().kind === 'local') {
 			items.push(
 				{ label: 'Export table as CSV…', run: () => void exportTable(card, 'csv') },
@@ -142,6 +149,17 @@
 			);
 		}
 		return items;
+	}
+
+	/** A new Shell tab with a message drafted to work through `card`, step by step. */
+	async function workThroughInShell(notebookId: string, notebookTitle: string, card: NotebookCard) {
+		const [{ openShellWithDraft }, { runbookPrompt }] = await Promise.all([
+			import('#lib/stores/shell.svelte.ts'),
+			import('#lib/notebooks/runbook.ts')
+		]);
+		openShellWithDraft(
+			runbookPrompt({ notebookId, notebookTitle, cardId: card.id, cardTitle: card.title })
+		);
 	}
 
 	async function importNew() {

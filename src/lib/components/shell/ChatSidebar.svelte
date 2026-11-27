@@ -5,7 +5,7 @@
 	import { autosizeTextarea } from '#lib/utils/autosize.ts';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
@@ -185,6 +185,18 @@
 	}
 
 	let slashMenu = $state<SlashMenu>();
+
+	// A draft handed over from elsewhere (a notebook's Work through in Shell…).
+	$effect(() => {
+		const seed = session.composerSeed;
+		if (seed === null || !composerEl) return;
+		session.composerSeed = null;
+		composerText = seed;
+		void tick().then(() => {
+			autosize();
+			composerEl?.focus();
+		});
+	});
 
 	const slashHost: SlashHost = {
 		projectRoot: () => session.slashProjectRoot(),

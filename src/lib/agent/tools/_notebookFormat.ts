@@ -13,7 +13,8 @@ const OUTLINE_ROWS = 10;
 export const PAGE_ROWS = 100;
 const CHECKLIST_COLUMNS: Column[] = [
 	{ id: 'text', name: 'text', type: 'text' },
-	{ id: 'done', name: 'done', type: 'checkbox' }
+	{ id: 'done', name: 'done', type: 'checkbox' },
+	{ id: 'note', name: 'note', type: 'text' }
 ];
 
 export function columnsFor(card: NotebookCard): Column[] {

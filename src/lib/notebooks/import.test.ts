@@ -89,6 +89,36 @@ Bring cash.
 		expect(JSON.parse(back.cards[0].rows![0])).toEqual({ name: 'JBL', price: 129 });
 	});
 
+	it("keeps a checklist item's note through export and import", () => {
+		const detail = {
+			notebook: { id: 'n', title: 'Setup', tags: [] },
+			cards: [
+				{
+					id: 'c',
+					kind: 'checklist',
+					title: 'Steps',
+					body: '',
+					meta: '{}',
+					rows: [
+						{
+							id: 'x',
+							position: 1,
+							cells:
+								'{"text":"Install Docker","done":true,"note":"Installed 27.3.\\nAdded tim to docker."}'
+						},
+						{ id: 'y', position: 2, cells: '{"text":"Open port 3000","done":false}' }
+					]
+				}
+			] as unknown as NotebookCard[]
+		} as unknown as NotebookDetail;
+		const back = cardsFromMarkdown(notebookToMarkdown(detail).markdown, 'x');
+		expect(back.cards[0].kind).toBe('checklist');
+		expect(back.cards[0].rows!.map((r) => JSON.parse(r))).toEqual([
+			{ text: 'Install Docker', done: true, note: 'Installed 27.3.\nAdded tim to docker.' },
+			{ text: 'Open port 3000', done: false }
+		]);
+	});
+
 	it('names a notebook after its file', () => {
 		expect(baseName('/home/u/Trip notes.md')).toBe('Trip notes');
 		expect(baseName('C:\\x\\prices.csv')).toBe('prices');

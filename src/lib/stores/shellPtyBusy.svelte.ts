@@ -31,3 +31,19 @@ export function isPtyBusy(sessionId: number | null | undefined): boolean {
 export function ptyBusyCommand(sessionId: number | null | undefined): string | null {
 	return sessionId != null ? (busy.get(sessionId) ?? null) : null;
 }
+
+/**
+ * Sessions whose agent command is waiting at a password or passphrase prompt
+ * (see `shell/secretPrompt.ts`), with the prompt line. The terminal shows
+ * "Type your password in the terminal" and takes focus while it's set.
+ */
+const secretWait = new SvelteMap<number, string>();
+
+export function setSecretWait(sessionId: number, prompt: string | null): void {
+	if (prompt !== null) secretWait.set(sessionId, prompt);
+	else secretWait.delete(sessionId);
+}
+
+export function secretWaitPrompt(sessionId: number | null | undefined): string | null {
+	return sessionId != null ? (secretWait.get(sessionId) ?? null) : null;
+}

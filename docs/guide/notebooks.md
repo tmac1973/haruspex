@@ -31,7 +31,7 @@ Pasting several lines copied from a spreadsheet into a cell adds them as rows. T
 
 ## Tick off a checklist
 
-**+ Add card → Checklist** adds a list of items to tick. Enter starts the next item; Backspace in an empty item removes it. Drag items by their ⋮⋮ to reorder, and **Hide done** hides the ticked ones.
+**+ Add card → Checklist** adds a list of items to tick. Enter starts the next item; Backspace in an empty item removes it. **✎** on an item adds a note under it. Drag items by their ⋮⋮ to reorder, and **Hide done** hides the ticked ones.
 
 ## Keep files, run Python, export
 
@@ -59,7 +59,7 @@ A card an agent changed shows where the change came from, such as "From Chat: Bl
 
 ## If someone else changed a card
 
-If a card changed somewhere else while you were editing it, Haruspex reloads it and says so. What you typed stays in the editor, so you can copy it back in.
+If a card changed elsewhere while you were editing it, Haruspex reloads it and says so. What you typed stays in the editor to copy back in.
 
 ## Notebooks on your other computers
 
