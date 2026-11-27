@@ -150,7 +150,7 @@ describe('runImageJob', () => {
 	});
 
 	it('upscales by hash and saves where the chat asked', async () => {
-		state.upscale.mockResolvedValue(new Uint8Array([5]));
+		state.upscale.mockResolvedValue({ bytes: new Uint8Array([5]), servedBy: 'Lemonade' });
 		const out = await runImageJob(
 			spec({
 				job: { op: 'upscale', sourceHash: 'src', width: 4096, height: 3072 },
@@ -165,7 +165,12 @@ describe('runImageJob', () => {
 			relPath: 'big.png',
 			overwrite: false
 		});
-		expect(out).toMatchObject({ op: 'upscale', hash: 'big', saved: 'Wrote big.png.' });
+		expect(out).toMatchObject({
+			op: 'upscale',
+			hash: 'big',
+			servedBy: 'Lemonade',
+			saved: 'Wrote big.png.'
+		});
 	});
 });
 

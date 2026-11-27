@@ -17,9 +17,9 @@
 	<VideoPlayer {src} title={result.title} />
 {/if}
 <p class="detail">
-	{result.width}×{result.height} · {clipSeconds(result.frames, result.fps)} s{result.saved
-		? ` · ${result.saved}`
-		: ''}
+	{result.width}×{result.height} · {clipSeconds(result.frames, result.fps)} s{result.servedBy
+		? ` · ${result.servedBy}`
+		: ''}{result.saved ? ` · ${result.saved}` : ''}
 </p>
 
 <style>

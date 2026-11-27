@@ -87,6 +87,7 @@ function imageNotice(t: BackgroundTask, name: string): { text: string; images: s
 			width: r.width,
 			height: r.height,
 			url,
+			servedBy: r.servedBy,
 			saved: r.saved,
 			note: r.notes[0]
 		});
@@ -99,6 +100,7 @@ function imageNotice(t: BackgroundTask, name: string): { text: string; images: s
 		height: r.height,
 		model: r.model ?? 'unknown model',
 		seed: r.seed ?? 0,
+		servedBy: r.servedBy,
 		markdown: `![${r.alt}](${url})`,
 		sees,
 		saved: r.saved,

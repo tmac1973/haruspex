@@ -40,7 +40,7 @@ Haruspex uses the first model in the list that can make what you asked for: a pi
 
 Ask for one in Chat or the Code tab: "a five-second clip of a red fox running through snow". You can ask for portrait, a seed to repeat one, a clip with sound, or give a picture from the conversation (or an image file in the working folder) to start from. With an end picture too, the clip moves from one to the other.
 
-A clip takes minutes, so it runs in the background. It gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in the conversation, where it plays; **Save as…** under the player saves a copy. With a working folder set, ask "save it as fox.webm" to save it there, then or later.
+A clip takes minutes, so it runs in the background. It gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in the conversation, where it plays; **Save as…** under the player saves a copy. The card and the result name the backend that made it. With a working folder set, ask "save it as fox.webm" to save it there, then or later.
 
 If Haruspex closes first, the clip is picked up when it reopens, as long as the server still has the job.
 

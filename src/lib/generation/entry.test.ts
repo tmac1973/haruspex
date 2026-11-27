@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { entryConfigKey, uniqueName, type GenerationEntry } from './entry';
+import { entryConfigKey, servedByOf, uniqueName, type GenerationEntry } from './entry';
 
 const entry = (
 	over: Partial<GenerationEntry<string, null>> = {}
@@ -40,5 +40,16 @@ describe('uniqueName', () => {
 		expect(uniqueName('klein', 'asmodean', ['klein'])).toBe('klein (asmodean)');
 		expect(uniqueName('klein', 'asmodean', ['klein', 'klein (asmodean)'])).toBe('klein 2');
 		expect(uniqueName('ComfyUI', '', ['ComfyUI', 'ComfyUI 2'])).toBe('ComfyUI 3');
+	});
+});
+
+describe('servedByOf', () => {
+	it('names the backend and the host it runs on', () => {
+		expect(servedByOf('ComfyUI', 'http://asmodean:8188/')).toBe('ComfyUI at asmodean:8188');
+	});
+
+	it('names the backend alone when there is no address, or the host already says it', () => {
+		expect(servedByOf('Bundled engine', '')).toBe('Bundled engine');
+		expect(servedByOf('OpenRouter', 'https://openrouter.ai/api/v1')).toBe('OpenRouter');
 	});
 });

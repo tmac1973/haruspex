@@ -39,6 +39,7 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { VideoBackend } from '#lib/videogen/backend.ts';
 import { NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
+import { videoServedBy } from '#lib/videogen/fields.ts';
 
 /** A `video` task's spec: a clip to make, or (`op: 'upscale'`) one to make larger. */
 export type VideoTaskSpec = VideoGenTaskSpec | VideoUpscaleTaskSpec;
@@ -78,6 +79,8 @@ export interface VideoTaskResult {
 	fps: number;
 	seed: number;
 	model: string;
+	/** Which backend made it; absent from a task finished before it was kept. */
+	servedBy?: string;
 	/** Missing in results saved before clips were probed for sound. */
 	hasAudio?: boolean;
 	notes: string[];
@@ -103,6 +106,7 @@ export { clipSeconds };
 export function videoAnswerText(o: {
 	made: Pick<VideoResult, 'width' | 'height' | 'frames' | 'fps' | 'model' | 'seed' | 'url'> & {
 		hasAudio?: boolean;
+		servedBy?: string;
 	};
 	title: string;
 	saved: string | null;
@@ -112,10 +116,11 @@ export function videoAnswerText(o: {
 	const m = o.made;
 	const sound = m.hasAudio === undefined ? '' : m.hasAudio ? ', with sound' : ', no sound';
 	const from = o.upscaledFrom;
+	const backend = m.servedBy ? `, backend: ${m.servedBy}` : '';
 	const lines = [
 		from
-			? `Upscaled clip ready (${from.width}×${from.height} → ${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}${sound}).`
-			: `Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}${sound}).`,
+			? `Upscaled clip ready (${from.width}×${from.height} → ${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}${sound}${backend}).`
+			: `Video ready (${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}, seed ${m.seed}${sound}${backend}).`,
 		`Put ![${o.title}](${m.url}) in your answer.`
 	];
 	lines.push(o.saved ?? NOT_SAVED_LINE);
@@ -211,6 +216,7 @@ export async function runVideoJob(
 		fps: made.fps,
 		seed: made.seed,
 		model: made.model,
+		servedBy: videoServedBy(entry),
 		hasAudio: made.hasAudio,
 		notes,
 		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null,

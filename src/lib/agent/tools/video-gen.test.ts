@@ -305,13 +305,14 @@ describe('a finished clip’s notice', () => {
 				fps: 24,
 				seed: 7,
 				model: 'ltx',
+				servedBy: 'ComfyUI at asmodean:8188',
 				hasAudio: true,
 				notes: [],
 				saved: null
 			}
 		} as unknown as BackgroundTask;
 		expect(noticeFor(task).text).toContain(
-			'Video ready (832×480, 1.4 s, ltx, seed 7, with sound).'
+			'Video ready (832×480, 1.4 s, ltx, seed 7, with sound, backend: ComfyUI at asmodean:8188).'
 		);
 	});
 });

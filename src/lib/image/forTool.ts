@@ -26,6 +26,8 @@ import {
 	type ImageProgress,
 	type ImageRequest
 } from '#lib/image/types.ts';
+import { imageServedBy } from '#lib/image/fields.ts';
+import { servedByOf } from '#lib/generation/entry.ts';
 import { familyOf } from '#lib/image/comfyui/families.ts';
 import { toolchestInstance, upscaleWithEntry } from '#lib/image/toolchest/backend.ts';
 import { upscalerByName, upscalerEntries } from '#lib/upscale/entries.ts';
@@ -38,8 +40,16 @@ export interface ToolImage {
 	height: number;
 	seed: number;
 	model: string;
+	/** Which backend made it (`imageServedBy`); empty when that's not known. */
+	servedBy: string;
 	/** Things the model should know: options dropped, licence limits, which model made it. */
 	notes: string[];
+}
+
+/** An upscaled picture (RGB) and which backend made it. */
+export interface ToolUpscale {
+	bytes: Uint8Array;
+	servedBy: string;
 }
 
 export interface ForToolOptions extends RouteOptions {
@@ -79,13 +89,14 @@ async function explained<T>(entry: ImageModelEntry, run: () => Promise<T>): Prom
 export async function upscaleForTool(
 	input: ImageInput,
 	opts: ForToolOptions = {}
-): Promise<Uint8Array> {
+): Promise<ToolUpscale> {
 	const named = opts.named ? upscalerByName('image', opts.named) : undefined;
 	const list = named ? [named] : opts.named ? [] : upscalerEntries('image');
 	const reasons: string[] = [];
 	for (const e of list) {
 		try {
-			return await upscaleWithEntry(e, input, opts);
+			const bytes = await upscaleWithEntry(e, input, opts);
+			return { bytes, servedBy: servedByOf(e.backend, e.url) };
 		} catch (err) {
 			if (named || !(err instanceof ImageBackendError) || err.kind === 'cancelled') throw err;
 			reasons.push(`${e.name}: ${err.message.replace(/\.$/, '')}`);
@@ -106,7 +117,7 @@ export async function upscaleForTool(
 }
 
 /** An upscale on the first image model that upscales with its own server's upscaler. */
-async function upscaleOnModel(input: ImageInput, opts: ForToolOptions): Promise<Uint8Array> {
+async function upscaleOnModel(input: ImageInput, opts: ForToolOptions): Promise<ToolUpscale> {
 	const routed = await routeImage(
 		upscaleNeed(),
 		(entry, backend) =>
@@ -119,7 +130,7 @@ async function upscaleOnModel(input: ImageInput, opts: ForToolOptions): Promise<
 			),
 		opts
 	);
-	return routed.value;
+	return { bytes: routed.value, servedBy: imageServedBy(routed.entry) };
 }
 
 /** `entry`'s model can't be used commercially. */
@@ -228,6 +239,7 @@ export async function generateForTool(
 		height: image.height,
 		seed: result.meta.seed,
 		model: result.meta.model,
+		servedBy: imageServedBy(entry),
 		notes
 	};
 }
@@ -254,6 +266,7 @@ export async function resumeForTool(
 		height: image.height,
 		seed: result.meta.seed,
 		model: result.meta.model,
+		servedBy: entry ? imageServedBy(entry) : '',
 		notes: []
 	};
 }

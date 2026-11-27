@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
 		maxLoras: 0
 	} as ImageBackendCapabilities,
 	generate: vi.fn(),
-	upscalers: [] as { id: string; name: string }[],
+	upscalers: [] as { id: string; name: string; backend?: string; url?: string }[],
 	upscaleWithEntry: vi.fn()
 }));
 
@@ -118,6 +118,10 @@ describe('generateForTool', () => {
 			expect((err as Error).message).toContain(GPU_FULL_SENTENCE);
 			expect((err as Error).message).toContain(detail);
 		}
+	});
+
+	it('says which backend drew it', async () => {
+		expect((await generateForTool(req())).servedBy).toBe('Bundled engine');
 	});
 
 	it('passes other failures through untouched', async () => {
@@ -251,21 +255,23 @@ describe('upscaleForTool', () => {
 		state.kind = 'comfyui';
 		state.caps = noUpscale;
 		state.upscalers = [
-			{ id: 'a', name: 'esrgan-asmodean' },
-			{ id: 'b', name: 'esrgan-compute2' }
+			{ id: 'a', name: 'esrgan-asmodean', backend: 'llama-toolchest', url: 'http://asmodean:9000' },
+			{ id: 'b', name: 'esrgan-compute2', backend: 'llama-toolchest', url: 'http://compute2:9000' }
 		];
 		state.upscaleWithEntry.mockImplementation(async (e: { id: string }) => {
 			if (e.id === 'a') throw new ImageBackendError('unreachable', "Can't reach asmodean.");
 			return new Uint8Array([9]);
 		});
-		expect([...(await upscaleForTool(picture))]).toEqual([9]);
+		const up = await upscaleForTool(picture);
+		expect([...up.bytes]).toEqual([9]);
+		expect(up.servedBy).toBe('llama-toolchest at compute2:9000');
 		expect(state.upscaleWithEntry.mock.calls.map((c) => c[0].id)).toEqual(['a', 'b']);
 	});
 
 	it('uses only the upscaler the call names', async () => {
 		state.upscalers = [
-			{ id: 'a', name: 'esrgan-asmodean' },
-			{ id: 'b', name: 'esrgan-compute2' }
+			{ id: 'a', name: 'esrgan-asmodean', backend: 'llama-toolchest', url: 'http://asmodean:9000' },
+			{ id: 'b', name: 'esrgan-compute2', backend: 'llama-toolchest', url: 'http://compute2:9000' }
 		];
 		state.upscaleWithEntry.mockResolvedValue(new Uint8Array([1]));
 		await upscaleForTool(picture, { named: 'esrgan-compute2' });

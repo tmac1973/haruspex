@@ -74,6 +74,8 @@ export interface ImageTaskResult {
 	height: number;
 	model: string | null;
 	seed: number | null;
+	/** Which backend made it; absent from a task finished before it was kept. */
+	servedBy?: string;
 	alt: string;
 	verb: string;
 	notes: string[];
@@ -163,18 +165,19 @@ export async function runImageJob(
 			height,
 			model: image.model,
 			seed: image.seed,
+			servedBy: image.servedBy,
 			alt: job.alt,
 			verb: job.verb,
 			notes: image.notes
 		};
 	} else {
 		const upscaled = handle
-			? (await resumeForTool(handle, env)).bytes
+			? await resumeForTool(handle, env)
 			: await upscaleForTool(
 					{ name: 'image.png', hash: job.sourceHash },
 					{ ...env, prefer: spec.entry, named: spec.named }
 				);
-		const stored = await invoke<StoredUpscale>('image_store_upscaled', upscaled, {
+		const stored = await invoke<StoredUpscale>('image_store_upscaled', upscaled.bytes, {
 			headers: {
 				'x-width': String(job.width),
 				'x-height': String(job.height),
@@ -189,6 +192,7 @@ export async function runImageJob(
 			height: stored.height,
 			model: null,
 			seed: null,
+			servedBy: upscaled.servedBy,
 			alt: 'upscaled picture',
 			verb: 'Upscaled',
 			notes: job.note ? [job.note] : []

@@ -5,6 +5,8 @@
  * kind (two ComfyUI servers, two toolchest instances) work side by side.
  */
 
+import { urlHost } from '#lib/utils/http.ts';
+
 export interface GenerationEntry<B extends string, C> {
 	/** Stable across edits: `crypto.randomUUID()`. */
 	id: string;
@@ -24,6 +26,18 @@ export interface GenerationEntry<B extends string, C> {
 	capsAt: number | null;
 	/** The user named it, so a probe leaves the name alone. */
 	renamed: boolean;
+}
+
+/**
+ * Which backend made something, for a tool's answer and its task card:
+ * `label` and the server's host ("ComfyUI at asmodean:8188"), or `label`
+ * alone when the entry has no address or the host already says it
+ * ("OpenRouter").
+ */
+export function servedByOf(label: string, url: string): string {
+	const host = urlHost(url.trim());
+	if (!host || host.toLowerCase().includes(label.toLowerCase())) return label;
+	return `${label} at ${host}`;
 }
 
 /** The fields that change what a backend built from `e` sends, as one string. */

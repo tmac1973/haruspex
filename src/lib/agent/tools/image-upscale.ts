@@ -80,14 +80,14 @@ async function upscaleAndStore(
 	size: { width: number; height: number },
 	ctx: ToolContext,
 	named: string | undefined
-): Promise<StoredUpscale | ToolExecOutput> {
+): Promise<(StoredUpscale & { servedBy: string }) | ToolExecOutput> {
 	try {
 		const hash = await cachedHash(source, ctx);
 		const upscaled = await upscaleForTool(
 			{ name: 'image.png', hash },
 			{ signal: ctx.signal, named }
 		);
-		return await invoke<StoredUpscale>('image_store_upscaled', upscaled, {
+		const stored = await invoke<StoredUpscale>('image_store_upscaled', upscaled.bytes, {
 			headers: {
 				'x-width': String(size.width),
 				'x-height': String(size.height),
@@ -95,6 +95,7 @@ async function upscaleAndStore(
 				...(ctx.conversationId ? { 'x-conversation-id': ctx.conversationId } : {})
 			}
 		});
+		return { ...stored, servedBy: upscaled.servedBy };
 	} catch (e) {
 		if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
 		return toolResult(toolError(`Could not upscale it: ${errMessage(e)}`));
@@ -186,6 +187,7 @@ registerTool({
 				width: stored.width,
 				height: stored.height,
 				url,
+				servedBy: stored.servedBy,
 				saved,
 				note: size.note
 			})
