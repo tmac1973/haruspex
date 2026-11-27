@@ -220,6 +220,7 @@ export async function executeToolCalls(
 				feedbackThisTurn: ctx.feedbackThisTurn,
 				feedback: options.feedback,
 				toolCallId: call.id,
+				recallArchive: ctx.recallArchive,
 				onSubtask: (state) => options.onSubtaskUpdate?.(call, state),
 				onSubtaskUsage: options.onSubtaskUsage,
 				subtaskStops: options.subtaskStops,

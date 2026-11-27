@@ -9,6 +9,7 @@ import type { PendingImage, ToolContext } from '#lib/agent/tools/index.ts';
 import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
 import { LOAD_TOOLS } from '#lib/agent/tools/_deferred.ts';
 import { readableSkills, resolveTurnTools } from '#lib/agent/loop/turnTools.ts';
+import { archiveFor, type RecallArchive } from '#lib/agent/recallArchive.ts';
 import { familyResult, loadedFamilies } from '#lib/agent/tools/_deferredLoaded.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
@@ -156,6 +157,8 @@ export interface LoopContext {
 	maxResponseTokens: number;
 	/** The room the turn's calls got for a response; see `ResponseRoom`. */
 	responseRoom: ResponseRoom;
+	/** Results the fit trimmed, for `recall_result`; set when the turn offers it. */
+	recallArchive?: RecallArchive;
 	shellCwd: string | null;
 	shellSessionId: number | null;
 	codeSessionId?: string;
@@ -342,6 +345,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		samplingParams: options.samplingParams ?? null,
 		maxResponseTokens,
 		responseRoom: { limit: maxResponseTokens, fullReserve: false },
+		recallArchive: archiveFor(tools),
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
 		codeSessionId: options.codeSessionId,

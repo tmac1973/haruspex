@@ -22,7 +22,9 @@ const CODE_TOOLS = [
 	'code_glob',
 	'run_command',
 	'web_search',
-	'research_url'
+	'research_url',
+	// Not a code tool, but in every profile but lean Chat.
+	'recall_result'
 ];
 const SHELL_INTERACTIVE = ['shell_read', 'shell_input', 'shell_interrupt', 'shell_snapshot'];
 

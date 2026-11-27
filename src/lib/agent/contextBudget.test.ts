@@ -13,6 +13,7 @@ import {
 	OVERSIZED_MESSAGE_MAX_TOKENS
 } from './contextBudget';
 import type { ChatMessage } from '#lib/api.ts';
+import { RecallArchive } from '#lib/agent/recallArchive.ts';
 
 // Calibration is module-global; keep tests isolated.
 beforeEach(() => resetTokenCalibration());
@@ -707,5 +708,62 @@ describe('loaded skills survive trimming', () => {
 		const msgs = [sys('s'), user(skill('deploy')), asst('ok'), user('x'.repeat(40_000))];
 		fitMessagesToBudget(msgs, 6000, { reserveOutput: 500 });
 		expect(msgs.some((m) => m.content === skill('deploy'))).toBe(true);
+	});
+});
+
+describe('trimming with a recall archive', () => {
+	const call = (id: string, command: string): ChatMessage => ({
+		role: 'assistant',
+		content: '',
+		tool_calls: [
+			{
+				id,
+				type: 'function',
+				function: { name: 'run_command', arguments: JSON.stringify({ command }) }
+			}
+		]
+	});
+	const run = (id: string, body: string): ChatMessage[] => [
+		call(id, `cmd ${id}`),
+		tool(`Exit code: 1 (9ms)\nE   AssertionError: boom ${id}\n${body}`, id)
+	];
+
+	it('keeps what it stubs, and says how to get it back', () => {
+		const msgs: ChatMessage[] = [
+			sys('p'),
+			user('go'),
+			...run('a', 'x'.repeat(40_000)),
+			...run('b', 'y'.repeat(40_000)),
+			...run('c', 'recent'),
+			...run('d', 'recent'),
+			...run('e', 'recent')
+		];
+		const before = msgs.map((m) => m.content);
+		const archive = new RecallArchive();
+		const info = fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192, archive });
+		expect(info?.trimmedTools).toBe(true);
+		const i = msgs.findIndex((m) => String(m.content).startsWith('[Trimmed to free context'));
+		expect(i).toBeGreaterThan(0);
+		const stub = String(msgs[i].content);
+		expect(stub).toContain('the result of run_command(cmd ');
+		expect(stub).toContain('Exit code 1');
+		expect(stub).toContain('First error (AssertionError)');
+		// The archive holds the result exactly as it was before the fit.
+		const id = /recall_result id="(r\d+)"/.exec(stub)![1];
+		expect(archive.get(id)!.text).toBe(before[i]);
+	});
+
+	it('points a cut result at its whole text, and keeps one id when it is stubbed later', () => {
+		const msgs: ChatMessage[] = [sys('p'), user('go'), ...run('big', 'z'.repeat(200_000))];
+		const archive = new RecallArchive();
+		fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192, archive });
+		const cut = String(msgs[3].content);
+		expect(cut).toContain('Exact full text: recall_result id="r1".');
+		expect(archive.get('r1')!.text.length).toBeGreaterThan(200_000);
+		// Later rounds push it out of the protected tail: the stub keeps r1.
+		msgs.push(...run('n1', 'q'), ...run('n2', 'q'), ...run('n3', 'q'));
+		trimOldToolMessages(msgs, { archive });
+		expect(String(msgs[3].content)).toContain('recall_result id="r1"');
+		expect(archive.size).toBe(1);
 	});
 });

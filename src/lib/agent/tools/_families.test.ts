@@ -156,9 +156,11 @@ describe('tool families', () => {
 		// The audit's profiles, so these hold real families, not empty ones.
 		expect(chatAll.some((s) => s.function.name === 'video_cut')).toBe(true);
 		expect(codeAll.some((s) => s.function.name === 'make_asset')).toBe(true);
-		expect(size(chatAll, false)).toBeLessThan(18 * 1024);
+		// 18.25: recall_result joined every core (about 420 bytes).
+		expect(size(chatAll, false)).toBeLessThan(18.25 * 1024);
 		// 14.75: fs_read_image joined the Code tab's core (about 320 bytes).
 		// 15.25: show_preview, the Web preview helper's tool, is on by default.
-		expect(size(codeAll, true)).toBeLessThan(15.25 * 1024);
+		// 15.75: recall_result.
+		expect(size(codeAll, true)).toBeLessThan(15.75 * 1024);
 	});
 });

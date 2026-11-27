@@ -28,7 +28,8 @@ export function applyContextGuard(
 	const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
 		reserveOutput,
 		tools,
-		calibrationKey: ctx.descriptor.calibrationKey
+		calibrationKey: ctx.descriptor.calibrationKey,
+		archive: ctx.recallArchive
 	});
 	if (info) {
 		logDebug('agent', 'pre-send context guard reduced prompt', info);
@@ -61,7 +62,8 @@ function trimAhead(ctx: LoopContext, tools?: ToolDefinition[]): void {
 	const target = inLoopTrimBudget(ctx.contextSize, prompt);
 	if (target === null) return;
 	const budget = Math.floor(target / calibration);
-	if (!trimOldToolMessages(ctx.messages, { budget, tools })) return;
+	const archive = ctx.recallArchive;
+	if (!trimOldToolMessages(ctx.messages, { budget, tools, archive })) return;
 	const afterEst = estimateMessagesTokens(ctx.messages, tools);
 	logDebug('agent', 'in-loop trim stubbed older tool results', {
 		prompt,

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { contextResponseFloor, latestUserAudio } from './context';
+import { buildLoopContext, contextResponseFloor, latestUserAudio } from './context';
+import { RecallArchive } from '#lib/agent/recallArchive.ts';
+import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import { attachedAudioLine } from '#lib/audio/attached.ts';
-import type { ChatMessage } from '#lib/api.ts';
+import type { ChatMessage, ToolDefinition } from '#lib/api.ts';
 
 describe('contextResponseFloor', () => {
 	it('is an eighth of the window', () => {
@@ -41,5 +43,29 @@ describe('latestUserAudio', () => {
 		];
 		expect(latestUserAudio(messages)).toEqual([A, B]);
 		expect(latestUserAudio([{ role: 'user', content: 'no audio' }])).toEqual([]);
+	});
+});
+
+describe('the recall archive', () => {
+	const schema = (name: string): ToolDefinition => ({
+		type: 'function',
+		function: { name, description: '', parameters: { type: 'object', properties: {} } }
+	});
+	const ctxWith = (names: string[]) =>
+		buildLoopContext({
+			messages: [],
+			contextSize: 65536,
+			turnTools: { tools: names.map(schema) },
+			onToolStart: () => {},
+			onToolEnd: () => {},
+			onStreamChunk: () => {},
+			onComplete: () => {},
+			onError: () => {}
+		} as unknown as AgentLoopOptions);
+
+	it('is kept only for a turn that offers recall_result', () => {
+		expect(ctxWith(['fs_read_text', 'recall_result']).recallArchive).toBeInstanceOf(RecallArchive);
+		// A lean Chat turn, or a job that did not name it: the old stubs.
+		expect(ctxWith(['fs_read_text']).recallArchive).toBeUndefined();
 	});
 });
