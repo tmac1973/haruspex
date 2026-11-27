@@ -138,11 +138,16 @@ describe('lean mode tool profile', () => {
 		const shell = { hasWorkingDir: true, interactive: true, shellMode: true };
 		const job = { hasWorkingDir: true, interactive: false };
 		const allow = { hasWorkingDir: true, toolAllowlist: ['fs_write_text', 'web_search'] };
-		const leanSets = [code, shell, job, allow].map((o) => names(o).sort());
+		// The notebook tools follow the Notebooks tab, which lean mode hides,
+		// not the lean profile: notebook.offered.test.ts.
+		const notNotebook = (n: string) => !n.startsWith('notebook_');
+		const leanSets = [code, shell, job, allow].map((o) => names(o).filter(notNotebook).sort());
+		const leanJob = names(job);
 		lean.on = false;
-		const fullSets = [code, shell, job, allow].map((o) => names(o).sort());
+		const fullSets = [code, shell, job, allow].map((o) => names(o).filter(notNotebook).sort());
 		expect(leanSets).toEqual(fullSets);
 		expect(leanSets[2]).toContain('fs_write_text');
+		expect(leanJob.filter((n) => !notNotebook(n))).toEqual([]);
 	});
 
 	it('changes nothing for Chat with lean mode off', () => {

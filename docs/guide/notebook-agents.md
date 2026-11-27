@@ -15,7 +15,7 @@ A turn gets 25 steps (searches, reads, table edits). If it stops before it has w
 
 ## Ask an agent to make or change a notebook
 
-In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). Agents only see notebooks when asked.
+In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). A research job's step can do the same when its prompt asks ("put the prices you found in a table in notebook Speakers"); its changes say "From Jobs" (see `job-types`). Agents only see notebooks when asked.
 
 ## Work through a checklist in a terminal
 
@@ -37,4 +37,4 @@ In Chat, with an email account that has **Allow sending** on, ask "email the Tri
 
 - They don't look in your notebooks unless you ask, and Memory never reads them (see the `memory` page).
 - They can't open the files a notebook keeps. They can only attach one to an email draft you review.
-- With Settings → General → **Show the Notebooks tab** off, agents have no notebook tools.
+- With Settings → General → **Show the Notebooks tab** off, or in lean mode, agents and jobs have no notebook tools.

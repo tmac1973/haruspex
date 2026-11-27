@@ -577,8 +577,10 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		memoryWritable: memoryActive(),
 		taskOwner: opts.taskOwner,
 		lean: getSettings().leanMode,
-		// Lean mode's Chat turns have their own fixed set (`_leanProfile.ts`).
-		notebooks: getSettings().notebooksTab,
+		// Lean mode hides the Notebooks tab, so no turn gets them there: its
+		// Chat turns have their own fixed set (`_leanProfile.ts`), and a job's
+		// would write to notebooks the person can't see.
+		notebooks: getSettings().notebooksTab && !getSettings().leanMode,
 		leanFileWrites: getSettings().leanFileWrites
 	};
 	const schemas: ToolDefinition[] = [];
