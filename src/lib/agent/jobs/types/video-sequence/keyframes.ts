@@ -7,8 +7,9 @@
  * each later one is an edit of it ("the same subject, in this place") when
  * the image backend can edit, so the summer fox is the snow fox. A backend
  * that can't edit draws each from the style and its prompt. A section with
- * the user's own start picture uses it as it is, and with no image backend a
- * section opens from its prompt alone.
+ * the user's own start picture uses it as it is. With no image backend, or
+ * a job whose sections start from the prompt, a section opens from its
+ * prompt alone; speaking sections still get a drawn portrait when they can.
  *
  * Every still is cut and scaled to the video's size, since a video model's
  * start picture has to be. One already done, whose key still matches, is
@@ -23,8 +24,10 @@ import { KEYFRAMES_DIR } from '#lib/sequence/spec/paths.ts';
 
 /** What the stage reaches outside itself for. */
 export interface KeyframeDeps {
-	/** An image backend is set up and keyframes are on. */
+	/** An image backend is set up: portraits can be drawn. */
 	draws: boolean;
+	/** Generated sections open on a still (needs `draws`); else from their prompts. */
+	keyframes: boolean;
 	/** It can edit a picture with a prompt. */
 	canEdit: boolean;
 	generate(req: ImageRequest): Promise<ImageResult>;
@@ -147,7 +150,7 @@ export async function makeKeyframes(run: KeyframeRun, deps: KeyframeDeps): Promi
 			stills.push({ id: s.id, section: s.id, file: s.start_image, how: 'user' });
 			continue;
 		}
-		if (!deps.draws) continue;
+		if (!deps.keyframes) continue;
 		const note = run.redo?.section === s.id ? run.redo.note : undefined;
 		const id = s.id;
 		if (await isDone(id)) {

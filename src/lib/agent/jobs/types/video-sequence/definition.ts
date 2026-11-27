@@ -81,12 +81,13 @@ export const videoSequenceJobType: JobTypeDefinition = {
 				help: 'attended asks what the brief leaves open and stops to show the spec; unattended does neither. Default attended.',
 				values: ['attended', 'unattended']
 			},
-			image_keyframes: {
-				help: 'Open each generated section on a still from the image backend. Default true.'
+			section_start: {
+				help: "How each generated section's first clip starts: still (a keyframe from the image backend) or prompt (text to video). Later clips continue from the last frame either way. Default still.",
+				values: ['still', 'prompt']
 			},
 			vision_checks: { help: 'Check each seam with a vision model. Default true.' },
 			reanchor_every: {
-				help: `End every this-many clips of a section on a fresh still, 0 to ${MAX_REANCHOR}. Default 6.`
+				help: `End every this-many clips of a section on a fresh still, 0 to ${MAX_REANCHOR}; only with section_start still. Default 6.`
 			},
 			editor: {
 				help: 'The project editor; empty for Settings → Video editing.',

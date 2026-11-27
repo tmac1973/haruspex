@@ -8,6 +8,13 @@ import { videoEntries } from '#lib/videogen/entries.ts';
 
 export type SequenceRunMode = 'attended' | 'unattended';
 export type SequenceEditor = '' | 'shotcut' | 'kdenlive';
+/**
+ * How a generated section's first clip starts: `still` opens it on a
+ * keyframe from the image backend, `prompt` makes it from its prompt alone
+ * (text to video). Later clips of a section start from the last frame of the
+ * one before either way, and a section's own start_image always wins.
+ */
+export type SectionStart = 'still' | 'prompt';
 
 export interface VideoSequenceConfig {
 	/** The episode folder, relative to the job's working folder; '' is the folder itself. */
@@ -25,8 +32,7 @@ export interface VideoSequenceConfig {
 	 * sections: its id, '' for Automatic (the first that can), or `none`.
 	 */
 	speaking_model_id: string;
-	/** Open each generated section on a keyframe from the image backend. */
-	image_keyframes: boolean;
+	section_start: SectionStart;
 	/** Check each seam with a vision model, when the job's model can see. */
 	vision_checks: boolean;
 	/** What the spec turn writes into `reanchor_every`; the spec's own value wins. */
@@ -44,7 +50,7 @@ export function configDefaults(): VideoSequenceConfig {
 		run_mode: 'attended',
 		video_model_id: '',
 		speaking_model_id: '',
-		image_keyframes: true,
+		section_start: 'still',
 		vision_checks: true,
 		reanchor_every: DEFAULT_REANCHOR,
 		editor: ''
@@ -66,6 +72,12 @@ function modelId(saved: unknown, oldInstance: unknown): string {
 		(e) => e.backend === 'llama-toolchest' && e.model.trim() === instance
 	);
 	return entry?.id ?? instance;
+}
+
+/** `section_start`, or from `image_keyframes` in a config saved before it. */
+function sectionStart(o: Record<string, unknown>): SectionStart {
+	if (o.section_start === 'still' || o.section_start === 'prompt') return o.section_start;
+	return o.image_keyframes === false ? 'prompt' : 'still';
 }
 
 /**
@@ -90,7 +102,7 @@ export function parseConfig(typeConfig: string | null): VideoSequenceConfig {
 		run_mode: o.run_mode === 'unattended' ? 'unattended' : 'attended',
 		video_model_id: modelId(o.video_model_id, o.video_instance_id),
 		speaking_model_id: modelId(o.speaking_model_id, o.speaking_instance_id),
-		image_keyframes: typeof o.image_keyframes === 'boolean' ? o.image_keyframes : d.image_keyframes,
+		section_start: sectionStart(o),
 		vision_checks: typeof o.vision_checks === 'boolean' ? o.vision_checks : d.vision_checks,
 		reanchor_every:
 			Number.isFinite(reanchor) && reanchor >= 0 && reanchor <= MAX_REANCHOR
@@ -107,7 +119,7 @@ export function configToJson(c: VideoSequenceConfig): string {
 		run_mode: c.run_mode,
 		video_model_id: c.video_model_id.trim() || undefined,
 		speaking_model_id: c.speaking_model_id.trim() || undefined,
-		image_keyframes: c.image_keyframes,
+		section_start: c.section_start,
 		vision_checks: c.vision_checks,
 		reanchor_every: c.reanchor_every,
 		editor: c.editor || undefined

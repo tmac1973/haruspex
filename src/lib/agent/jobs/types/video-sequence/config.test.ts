@@ -40,7 +40,7 @@ describe('the Video sequence config', () => {
 			run_mode: 'unattended' as const,
 			video_model_id: 'entry-ltx',
 			speaking_model_id: 'none',
-			image_keyframes: false,
+			section_start: 'prompt' as const,
 			reanchor_every: 4,
 			editor: 'kdenlive' as const
 		};
@@ -55,6 +55,16 @@ describe('the Video sequence config', () => {
 		const json = JSON.parse(configToJson(parseConfig('{"video_instance_id":"ltx-2.3"}')));
 		expect(json).not.toHaveProperty('video_instance_id');
 		expect(json.video_model_id).toBe('entry-ltx');
+	});
+
+	it('reads the keyframe switch a config saved before section_start', () => {
+		expect(parseConfig('{"image_keyframes":false}').section_start).toBe('prompt');
+		expect(parseConfig('{"image_keyframes":true}').section_start).toBe('still');
+		expect(parseConfig('{}').section_start).toBe('still');
+		expect(parseConfig('{"section_start":"text"}').section_start).toBe('still');
+		const json = JSON.parse(configToJson(parseConfig('{"image_keyframes":false}')));
+		expect(json).not.toHaveProperty('image_keyframes');
+		expect(json.section_start).toBe('prompt');
 	});
 
 	it('reads a broken or odd config safely: attended, defaults in range', () => {

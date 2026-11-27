@@ -10,7 +10,8 @@ const ctx = (over: Partial<ValidateContext> = {}): ValidateContext => ({
 	imageBackend: true,
 	musicBackend: true,
 	files: new Set(['raw/phone.mp4', 'stills/fox.png']),
-	...over
+	...over,
+	keyframes: over.keyframes ?? over.imageBackend ?? true
 });
 
 describe('validateSequenceSpec', () => {
@@ -55,6 +56,19 @@ describe('validateSequenceSpec', () => {
 		const ti2v = validateSequenceSpec(foxSpec(), ctx({ imageBackend: false }));
 		expect(ti2v.errors).toEqual([]);
 		expect(ti2v.notes[0]).toBe('Section snow opens from its prompt alone, with no keyframe.');
+	});
+
+	it('opens from the prompt without a note, and re-anchors nothing, when the job chose it', () => {
+		const v = validateSequenceSpec(foxSpec(), ctx({ keyframes: false }));
+		expect(v.errors).toEqual([]);
+		expect(v.spec.reanchor_every).toBe(0);
+		expect(v.notes).toEqual([
+			'Re-anchoring is off: sections start from their prompts, so there are no stills.'
+		]);
+		const lightning = ctx({ capabilities: ['start_image', 'end_image'], keyframes: false });
+		expect(validateSequenceSpec(foxSpec(), lightning).errors[0]).toMatch(
+			/Sections start from to A still/
+		);
 	});
 
 	it('on Automatic, keeps a clip another model can make, and says so once', () => {
