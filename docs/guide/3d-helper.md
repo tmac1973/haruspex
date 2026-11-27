@@ -65,7 +65,7 @@ Each clip is sampled at 16 frames. Idle, Walk, Run, Swim and flight (Fly, Hover,
 - The render sheet: a 1200 × 800 image of front, right, back, left, top and three-quarter views over a labelled floor grid, height marked; "right" shows the model's left. With `view`, the same views framed on that part, drawing only what is near it (a part as long as the model looks whole).
 - The motion sheet, with `clip`: 8 frames from the side, 8 from the front, then all frames overlaid with trails of the parts that move most.
 
-The agent sees the sheets only if its model reads images. The step card keeps each sheet in the image cache until you delete the session, or the 500 MB cache drops the least used.
+The agent sees the sheets only if its model reads images.
 
 ## What it doesn't do
 
