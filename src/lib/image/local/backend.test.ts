@@ -316,8 +316,7 @@ describe('upscale', () => {
 		image_models: [{ id: 'ming', can_edit: false }],
 		image_upscaler: { downloaded },
 		image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
-		image_engine_request: () =>
-			JSON.stringify({ upscaler: 'RealESRGAN_x4plus', scale: 4, images: [{ b64_json: 'BAUG' }] })
+		image_engine_upscale: () => 'BAUG'
 	});
 
 	it('says it can upscale once the upscaler is downloaded', async () => {
@@ -332,7 +331,7 @@ describe('upscale', () => {
 		expect(await localBackend.capabilities()).toMatchObject({ upscale: false });
 	});
 
-	it('starts the engine and sends the cached picture to /sdcpp/v1/upscale', async () => {
+	it('starts the engine and hands the cached picture to image_engine_upscale', async () => {
 		useModel('ming');
 		vi.mocked(invoke)
 			.mockReset()
@@ -340,9 +339,32 @@ describe('upscale', () => {
 		const out = await localBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) });
 		expect(Array.from(out)).toEqual([4, 5, 6]);
 		expect(vi.mocked(invoke)).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
-		const call = invokeArgs<EngineRequest>(vi.mocked(invoke), 'image_engine_request');
-		expect(call.path).toBe('/sdcpp/v1/upscale');
-		expect(JSON.parse(call.body)).toEqual({ image: 'AQID' });
+		const call = invokeArgs<{ image: string }>(vi.mocked(invoke), 'image_engine_upscale');
+		expect(call.image).toBe('AQID');
+		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'image_engine_request')).toBe(false);
+	});
+
+	it('passes on why the engine could not upscale', async () => {
+		useModel('ming');
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(
+				invokeRouter(
+					{
+						...routes(true),
+						image_engine_upscale: () => {
+							throw new Error('The upscale failed: out of memory');
+						}
+					},
+					undefined
+				)
+			);
+		await expect(
+			localBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) })
+		).rejects.toMatchObject({
+			kind: 'rejected',
+			message: expect.stringContaining('out of memory')
+		});
 	});
 
 	it('refuses without the upscaler, saying where to get it', async () => {

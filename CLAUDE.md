@@ -69,10 +69,13 @@ call plain `node`, so we link one into the app's data directory.
 | `haruspex-ffprobe-{triple}` | FFmpeg (GPL, with x264) | — | Video tools, cameras |
 | `haruspex-melt-{triple}` | MLT, with Qt for qtblend | — | Renders Shotcut and Kdenlive projects |
 
-`sd-server` is DOWNLOADED, not built — upstream ships a Vulkan/Metal binary for
-every triple we target. Its shared libraries live in `binaries/sd-libs/`, apart
-from `binaries/libs/`, because it carries its own ggml whose sonames collide
-with llama.cpp's; see `docs/image-generation.md`.
+`sd-server` is DOWNLOADED on macOS and Windows and BUILT on Linux, both by
+`./scripts/fetch-sdcpp.sh`: upstream's Linux binary needs a newer glibc than
+the one we build the app against. It is started with a per-run key in a file
+(`--api-key-file`), and every request to it goes through Rust. Its shared
+libraries live in `binaries/sd-libs/`, apart from `binaries/libs/`, because it
+carries its own ggml whose sonames collide with llama.cpp's; see
+`docs/image-generation.md`.
 
 `ffmpeg`, `ffprobe` and `melt` are the media bundle, DOWNLOADED from this repo's
 `media-<tag>` release by `./scripts/fetch-media.sh` (checked against its

@@ -281,7 +281,8 @@ jobs:
       # so without this the whole build fails with "resource path ... doesn't
       # exist". Calls the same script dev setup uses, so the pinned
       # stable-diffusion.cpp version cannot drift between dev and release.
-      - name: Download sd-server (bundled image engine)
+      # On Linux it builds from source with the Vulkan SDK installed above.
+      - name: Fetch or build sd-server (bundled image engine)
         shell: bash
         env:
           # Resolves the asset through api.github.com, which allows only 60

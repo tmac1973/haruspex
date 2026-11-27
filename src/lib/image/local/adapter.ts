@@ -30,10 +30,9 @@ export interface SdCapabilityFixture {
 export const FIXTURE = capabilities as unknown as SdCapabilityFixture;
 
 export const ROUTES = {
-	/** Answers only once the weights are loaded, so it doubles as readiness. */
+	/** Answers once the server listens; it loads weights on the first request. */
 	ready: '/sdcpp/v1/capabilities',
 	txt2img: '/sdapi/v1/txt2img',
-	upscale: '/sdcpp/v1/upscale',
 	img2img: '/sdapi/v1/img2img',
 	models: '/sdapi/v1/sd-models'
 } as const;

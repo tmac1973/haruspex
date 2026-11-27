@@ -171,7 +171,7 @@ pub fn upscaler_dir(models_dir: &Path) -> PathBuf {
     models_dir.join(IMAGE_SUBDIR).join("upscalers")
 }
 
-fn upscaler_path(models_dir: &Path) -> PathBuf {
+pub fn upscaler_path(models_dir: &Path) -> PathBuf {
     upscaler_dir(models_dir).join(filename_of(UPSCALER.url))
 }
 
@@ -356,9 +356,15 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
     }
     args.extend(engine_options(&entry));
     // The upscaler, when it is downloaded; any model can be upscaled with.
+    // `--model-dir` too: a DGL script (how the engine upscales) may load
+    // models only from under a model root, and the upscalers directory does
+    // not count as one.
     if upscaler_path(models_dir).is_file() {
+        let dir = upscaler_dir(models_dir).to_string_lossy().to_string();
         args.push("--hires-upscalers-dir".to_string());
-        args.push(upscaler_dir(models_dir).to_string_lossy().to_string());
+        args.push(dir.clone());
+        args.push("--model-dir".to_string());
+        args.push(dir);
     }
     Some(args)
 }
@@ -708,6 +714,9 @@ mod tests {
             .position(|a| a == "--hires-upscalers-dir")
             .unwrap();
         assert_eq!(args[at + 1], upscaler_dir(&dir).to_string_lossy());
+        // The DGL upscale loads it, and DGL loads only from a model root.
+        let root = args.iter().position(|a| a == "--model-dir").unwrap();
+        assert_eq!(args[root + 1], upscaler_dir(&dir).to_string_lossy());
         assert!(UPSCALER.url.ends_with("RealESRGAN_x4plus.pth"));
         assert_eq!(UPSCALER.sha256.len(), 64);
     }

@@ -307,6 +307,7 @@ export const IPC = {
 	image_engine_start: 'image_engine_start',
 	image_engine_status: 'image_engine_status',
 	image_engine_stop: 'image_engine_stop',
+	image_engine_upscale: 'image_engine_upscale',
 	image_extract_palette: 'image_extract_palette',
 	image_fit_cover: 'image_fit_cover',
 	image_mask_change: 'image_mask_change',
