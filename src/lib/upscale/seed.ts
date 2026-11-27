@@ -8,9 +8,9 @@
 
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-import { imageEntries } from '#lib/image/entries.ts';
-import { videoEntries } from '#lib/videogen/entries.ts';
-import { addUpscaler, upscalerEntries } from '#lib/upscale/entries.ts';
+import { allImageEntries } from '#lib/image/entries.ts';
+import { allVideoEntries } from '#lib/videogen/entries.ts';
+import { addUpscaler, allUpscalerEntries } from '#lib/upscale/entries.ts';
 import { listUpscalers, upscalerCaps, upscalerConfig } from '#lib/upscale/toolchest.ts';
 import { usable } from '#lib/toolchest/kind.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -18,7 +18,7 @@ import type { UpscalerKind } from '#lib/upscale/types.ts';
 
 /** The toolchest servers `kind`'s models are on, each once. */
 function modelServers(kind: UpscalerKind): { url: string; keyId: string | null }[] {
-	const entries = kind === 'image' ? imageEntries() : videoEntries();
+	const entries = kind === 'image' ? allImageEntries() : allVideoEntries();
 	const seen = new Map<string, { url: string; keyId: string | null }>();
 	for (const e of entries) {
 		const url = e.url.trim();
@@ -36,7 +36,7 @@ export async function seedUpscalers(kind: UpscalerKind, signal?: AbortSignal): P
 		try {
 			const found = await listUpscalers(kind, await upscalerConfig(server), signal);
 			for (const i of found.filter(usable)) {
-				const have = upscalerEntries(kind).some(
+				const have = allUpscalerEntries(kind).some(
 					(e) => e.url.trim() === server.url && e.model === i.id
 				);
 				if (!have) addUpscaler(kind, { ...server, model: i.id, caps: upscalerCaps(kind, i) });

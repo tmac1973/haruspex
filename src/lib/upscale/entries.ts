@@ -7,7 +7,7 @@
 
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
-import { uniqueName } from '#lib/generation/entry.ts';
+import { enabledEntries, uniqueName, withEnabled } from '#lib/generation/entry.ts';
 import type { UpscalerCaps, UpscalerEntry, UpscalerKind } from '#lib/upscale/types.ts';
 import type { VideoModelEntry } from '#lib/videogen/types.ts';
 
@@ -19,14 +19,20 @@ export const UPSCALERS_SECTION: Record<UpscalerKind, string> = {
 	video: 'Settings → Video generation → Upscalers'
 };
 
-/** The upscalers of `kind`, in the order they are tried. */
-export function upscalerEntries(kind: UpscalerKind): UpscalerEntry[] {
+/** Every upscaler of `kind` Settings keeps, turned off or not: for Settings and editing the list. */
+export function allUpscalerEntries(kind: UpscalerKind): UpscalerEntry[] {
 	const list = getSettings()[FIELD[kind]];
 	return Array.isArray(list) ? list : [];
 }
 
+/** The upscalers of `kind` that are turned on, in the order they are tried. */
+export function upscalerEntries(kind: UpscalerKind): UpscalerEntry[] {
+	return enabledEntries(allUpscalerEntries(kind));
+}
+
+/** The upscaler with this id, turned off or not. */
 export function upscalerById(kind: UpscalerKind, id: string): UpscalerEntry | undefined {
-	return upscalerEntries(kind).find((e) => e.id === id);
+	return allUpscalerEntries(kind).find((e) => e.id === id);
 }
 
 export function upscalerByName(kind: UpscalerKind, name: string): UpscalerEntry | undefined {
@@ -44,7 +50,7 @@ function save(kind: UpscalerKind, list: UpscalerEntry[]): void {
 }
 
 function freeName(kind: UpscalerKind, name: string, e: Pick<UpscalerEntry, 'id' | 'url'>): string {
-	const taken = upscalerEntries(kind)
+	const taken = allUpscalerEntries(kind)
 		.filter((o) => o.id !== e.id)
 		.map((o) => o.name);
 	return uniqueName(name, e.url.trim() ? hostOf(e.url) : '', taken);
@@ -70,7 +76,7 @@ export function addUpscaler(
 		capsAt: fill.caps ? Date.now() : null,
 		renamed: false
 	};
-	save(kind, [...upscalerEntries(kind), entry]);
+	save(kind, [...allUpscalerEntries(kind), entry]);
 	return id;
 }
 
@@ -85,7 +91,7 @@ export function updateUpscaler(
 ): void {
 	save(
 		kind,
-		upscalerEntries(kind).map((e) => {
+		allUpscalerEntries(kind).map((e) => {
 			if (e.id !== id) return e;
 			const next = { ...e, ...patch };
 			const config = next.url !== e.url || next.keyId !== e.keyId || next.model !== e.model;
@@ -114,7 +120,7 @@ export function renameUpscaler(kind: UpscalerKind, id: string, name: string): vo
 
 /** Move upscaler `id` up (-1) or down (+1) the list. */
 export function moveUpscaler(kind: UpscalerKind, id: string, delta: -1 | 1): void {
-	const list = [...upscalerEntries(kind)];
+	const list = [...allUpscalerEntries(kind)];
 	const at = list.findIndex((e) => e.id === id);
 	const to = at + delta;
 	if (at < 0 || to < 0 || to >= list.length) return;
@@ -125,13 +131,21 @@ export function moveUpscaler(kind: UpscalerKind, id: string, delta: -1 | 1): voi
 export function removeUpscaler(kind: UpscalerKind, id: string): void {
 	save(
 		kind,
-		upscalerEntries(kind).filter((e) => e.id !== id)
+		allUpscalerEntries(kind).filter((e) => e.id !== id)
+	);
+}
+
+/** Turn upscaler `id` on or off, keeping it and its place in the list. */
+export function setUpscalerEnabled(kind: UpscalerKind, id: string, on: boolean): void {
+	save(
+		kind,
+		allUpscalerEntries(kind).map((e) => (e.id === id ? withEnabled(e, on) : e))
 	);
 }
 
 /** Remember what a probe of upscaler `id` said. Nothing is written when it is unchanged. */
 export function saveUpscalerCaps(kind: UpscalerKind, id: string, caps: UpscalerCaps): void {
-	const list = upscalerEntries(kind);
+	const list = allUpscalerEntries(kind);
 	const at = list.findIndex((e) => e.id === id);
 	if (at < 0 || JSON.stringify(list[at].caps) === JSON.stringify(caps)) return;
 	save(

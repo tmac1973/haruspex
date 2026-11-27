@@ -11,7 +11,7 @@ import type { ImageBackendCapabilities, ImageModelEntry } from '#lib/image/types
 import type { ImageJobHandle } from '#lib/image/backend.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
-import { uniqueName } from '#lib/generation/entry.ts';
+import { enabledEntries, uniqueName, withEnabled } from '#lib/generation/entry.ts';
 import { imageKeysReady } from '#lib/image/keys.ts';
 import { defaultImageName } from '#lib/image/fields.ts';
 
@@ -19,10 +19,15 @@ export { IMAGE_BACKEND_LABEL, defaultImageName } from '#lib/image/fields.ts';
 
 type EntryKind = ImageModelEntry['backend'];
 
-/** The image models, in the order they are tried. */
-export function imageEntries(): ImageModelEntry[] {
+/** Every image model Settings keeps, turned off or not: for Settings and editing the list. */
+export function allImageEntries(): ImageModelEntry[] {
 	const list = getSettings().imageModels;
 	return Array.isArray(list) ? list : [];
+}
+
+/** The image models that are turned on, in the order they are tried. */
+export function imageEntries(): ImageModelEntry[] {
+	return enabledEntries(allImageEntries());
 }
 
 /** The first image model, or null when there is none. */
@@ -84,9 +89,9 @@ export function anyEntryCan(op: 'edit' | 'upscale'): boolean {
 	return imageEntries().some((e) => !e.caps || !!e.caps[op]);
 }
 
-/** The image model with this id, or undefined. */
+/** The image model with this id, turned off or not, or undefined. */
 export function entryById(id: string): ImageModelEntry | undefined {
-	return imageEntries().find((e) => e.id === id);
+	return allImageEntries().find((e) => e.id === id);
 }
 
 /** An entry for `kind` with nothing set, apart from `fill`. */
@@ -129,7 +134,7 @@ function hostOfEntry(e: Pick<ImageModelEntry, 'url'>): string {
 
 /** `name`, made different from every other entry's. */
 function freeName(name: string, e: Pick<ImageModelEntry, 'id' | 'url'>): string {
-	const taken = imageEntries()
+	const taken = allImageEntries()
 		.filter((o) => o.id !== e.id)
 		.map((o) => o.name);
 	return uniqueName(name, hostOfEntry(e), taken);
@@ -148,7 +153,7 @@ export function addImageModel(
 		url: fill.url ?? '',
 		keyId: fill.keyId ?? null
 	});
-	save([...imageEntries(), entry]);
+	save([...allImageEntries(), entry]);
 	return id;
 }
 
@@ -159,7 +164,7 @@ export function addImageModel(
  */
 export function updateImageModel(id: string, patch: Partial<Omit<ImageModelEntry, 'id'>>): void {
 	save(
-		imageEntries().map((e) => {
+		allImageEntries().map((e) => {
 			if (e.id !== id) return e;
 			const next = { ...e, ...patch };
 			const config =
@@ -193,7 +198,7 @@ export function renameImageModel(id: string, name: string): void {
 
 /** Move entry `id` up (-1) or down (+1) the list. */
 export function moveImageModel(id: string, delta: -1 | 1): void {
-	const list = [...imageEntries()];
+	const list = [...allImageEntries()];
 	const at = list.findIndex((e) => e.id === id);
 	const to = at + delta;
 	if (at < 0 || to < 0 || to >= list.length) return;
@@ -202,7 +207,12 @@ export function moveImageModel(id: string, delta: -1 | 1): void {
 }
 
 export function removeImageModel(id: string): void {
-	save(imageEntries().filter((e) => e.id !== id));
+	save(allImageEntries().filter((e) => e.id !== id));
+}
+
+/** Turn entry `id` on or off, keeping it and its place in the list. */
+export function setImageModelEnabled(id: string, on: boolean): void {
+	save(allImageEntries().map((e) => (e.id === id ? withEnabled(e, on) : e)));
 }
 
 /**
@@ -242,7 +252,9 @@ export async function entryApiKey(e: ImageModelEntry): Promise<string> {
  */
 export function entryForHandle(handle: ImageJobHandle): ImageModelEntry | null {
 	if (handle.backend === 'none') return null;
-	const saved = imageEntries().find((e) => e.id === handle.entryId && e.backend === handle.backend);
+	const saved = allImageEntries().find(
+		(e) => e.id === handle.entryId && e.backend === handle.backend
+	);
 	if (saved) return saved;
 	return blankEntry(handle.backend, {
 		id: handle.entryId || handle.backend,

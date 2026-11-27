@@ -8,7 +8,7 @@
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
-import { uniqueName } from '#lib/generation/entry.ts';
+import { enabledEntries, uniqueName, withEnabled } from '#lib/generation/entry.ts';
 import { defaultVideoName } from '#lib/videogen/fields.ts';
 import type {
 	VideoBackendKind,
@@ -19,10 +19,15 @@ import type {
 
 export { VIDEO_BACKEND_LABEL, defaultVideoName } from '#lib/videogen/fields.ts';
 
-/** The video models, in the order they are tried. */
-export function videoEntries(): VideoModelEntry[] {
+/** Every video model Settings keeps, turned off or not: for Settings and editing the list. */
+export function allVideoEntries(): VideoModelEntry[] {
 	const list = getSettings().videoModels;
 	return Array.isArray(list) ? list : [];
+}
+
+/** The video models that are turned on, in the order they are tried. */
+export function videoEntries(): VideoModelEntry[] {
+	return enabledEntries(allVideoEntries());
 }
 
 /** The first video model, or null when there is none. */
@@ -35,9 +40,9 @@ export function videoEntryNames(): string[] {
 	return videoEntries().map((e) => e.name);
 }
 
-/** The video model with this id, or undefined. */
+/** The video model with this id, turned off or not, or undefined. */
 export function videoEntryById(id: string): VideoModelEntry | undefined {
-	return videoEntries().find((e) => e.id === id);
+	return allVideoEntries().find((e) => e.id === id);
 }
 
 /** The video model with this name, or undefined. */
@@ -68,7 +73,7 @@ function save(list: VideoModelEntry[]): void {
 
 /** `name`, made different from every other entry's. */
 function freeName(name: string, e: Pick<VideoModelEntry, 'id' | 'url'>): string {
-	const taken = videoEntries()
+	const taken = allVideoEntries()
 		.filter((o) => o.id !== e.id)
 		.map((o) => o.name);
 	return uniqueName(name, e.url.trim() ? hostOf(e.url) : '', taken);
@@ -86,7 +91,7 @@ export function addVideoModel(
 		url: fill.url ?? '',
 		keyId: fill.keyId ?? null
 	});
-	save([...videoEntries(), entry]);
+	save([...allVideoEntries(), entry]);
 	return id;
 }
 
@@ -97,7 +102,7 @@ export function addVideoModel(
  */
 export function updateVideoModel(id: string, patch: Partial<Omit<VideoModelEntry, 'id'>>): void {
 	save(
-		videoEntries().map((e) => {
+		allVideoEntries().map((e) => {
 			if (e.id !== id) return e;
 			const next = { ...e, ...patch };
 			const config =
@@ -131,7 +136,7 @@ export function renameVideoModel(id: string, name: string): void {
 
 /** Move entry `id` up (-1) or down (+1) the list. */
 export function moveVideoModel(id: string, delta: -1 | 1): void {
-	const list = [...videoEntries()];
+	const list = [...allVideoEntries()];
 	const at = list.findIndex((e) => e.id === id);
 	const to = at + delta;
 	if (at < 0 || to < 0 || to >= list.length) return;
@@ -140,7 +145,12 @@ export function moveVideoModel(id: string, delta: -1 | 1): void {
 }
 
 export function removeVideoModel(id: string): void {
-	save(videoEntries().filter((e) => e.id !== id));
+	save(allVideoEntries().filter((e) => e.id !== id));
+}
+
+/** Turn entry `id` on or off, keeping it and its place in the list. */
+export function setVideoModelEnabled(id: string, on: boolean): void {
+	save(allVideoEntries().map((e) => (e.id === id ? withEnabled(e, on) : e)));
 }
 
 /**
@@ -148,7 +158,7 @@ export function removeVideoModel(id: string): void {
  * it is what was already kept.
  */
 export function saveVideoCaps(id: string, caps: VideoCaps): void {
-	const list = videoEntries();
+	const list = allVideoEntries();
 	const at = list.findIndex((e) => e.id === id);
 	if (at < 0 || JSON.stringify(list[at].caps) === JSON.stringify(caps)) return;
 	save(
@@ -168,7 +178,9 @@ export function videoEntryApiKey(e: Pick<VideoModelEntry, 'keyId'>): Promise<str
  * `resume` asks the server, backend and key the handle names.
  */
 export function videoEntryForHandle(handle: VideoJobHandle): VideoModelEntry {
-	const saved = videoEntries().find((e) => e.id === handle.entryId && e.backend === handle.backend);
+	const saved = allVideoEntries().find(
+		(e) => e.id === handle.entryId && e.backend === handle.backend
+	);
 	if (saved) return saved;
 	return blankEntry(handle.backend, {
 		id: handle.entryId || handle.backend,

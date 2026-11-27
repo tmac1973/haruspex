@@ -16,6 +16,7 @@ vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.res
 
 import {
 	addImageModel,
+	allImageEntries,
 	anyEntryCan,
 	entryApiKey,
 	entryNames,
@@ -29,6 +30,7 @@ import {
 	removeImageModel,
 	renameImageModel,
 	saveImageCaps,
+	setImageModelEnabled,
 	updateImageModel
 } from './entries';
 import { imageModel } from '#lib/testing/imageModels.ts';
@@ -202,5 +204,47 @@ describe('what the image models can do, together', () => {
 		expect(anyEntryCan('upscale')).toBe(true);
 		settings.imageModels = [entry('a', {}), entry('c', null)];
 		expect(anyEntryCan('edit')).toBe(true);
+	});
+});
+
+describe('turning an image model off', () => {
+	beforeEach(() => {
+		settings.imageModels = [
+			imageModel('comfyui', { id: 'a', name: 'ming' }),
+			imageModel('llama-toolchest', { id: 'b', name: 'klein', url: 'http://box:3000' })
+		];
+	});
+
+	it('keeps it in the list and its place, but out of what the tools use', () => {
+		setImageModelEnabled('a', false);
+		expect(allImageEntries().map((e) => e.name)).toEqual(['ming', 'klein']);
+		expect(ids()).toEqual(['klein']);
+		expect(firstImageEntry()?.name).toBe('klein');
+		expect(entryNames()).toEqual(['klein']);
+	});
+
+	it('gives it back as it was when turned on again', () => {
+		const before = structuredClone(settings.imageModels);
+		setImageModelEnabled('a', false);
+		setImageModelEnabled('a', true);
+		expect(settings.imageModels).toEqual(before);
+	});
+
+	it('still moves, renames and follows a job sent to it', () => {
+		setImageModelEnabled('a', false);
+		moveImageModel('a', 1);
+		renameImageModel('a', 'old ming');
+		expect(allImageEntries().map((e) => e.name)).toEqual(['klein', 'old ming']);
+		const handle = {
+			backend: 'comfyui' as const,
+			entryId: 'a',
+			baseUrl: '',
+			id: 'j',
+			model: 'm',
+			seed: 1,
+			width: 1024,
+			height: 1024
+		};
+		expect(entryForHandle(handle)?.name).toBe('old ming');
 	});
 });

@@ -5,7 +5,7 @@ description: Video models on ComfyUI, llama-toolchest or OpenRouter, which model
 
 # Video generation
 
-Haruspex can have a ComfyUI or llama-toolchest server, or OpenRouter, make short video clips. It is off until you add a video model in Settings → Video generation.
+A ComfyUI or llama-toolchest server, or OpenRouter, can make short video clips. It is off until you add a video model in Settings → Video generation.
 
 This page is about making new clips. Cutting and rendering your own footage is on the `video-editing` page, and making a clip larger is on the `video-upscaling` page.
 
@@ -13,7 +13,7 @@ This page is about making new clips. Cutting and rendering your own footage is o
 
 Open Settings → Video generation and press **Add model**. Choose the **Backend**, enter the **Server address** (`http://host:8188` for ComfyUI, `http://host:3000` for llama-toolchest) and pick an **API key** from Settings → Inference → API Keys if the server needs one. If your chat model comes from a toolchest, its address and key are filled in. Press **Probe**, then choose the **Model**; with only one, it is chosen for you.
 
-Add as many as you like: two ComfyUI servers, or a toolchest's LTX-2.3 and its S2V. Each row says where the model runs and what it can do. Use ↑ and ↓ to set the order.
+Add as many as you like: two ComfyUI servers, or a toolchest's LTX-2.3 and its S2V. Use ↑ and ↓ to set the order; clear a box to stop using a model but keep it.
 
 ## Install a model into ComfyUI
 

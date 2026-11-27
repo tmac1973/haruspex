@@ -14,14 +14,17 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 
 import {
 	addUpscaler,
+	allUpscalerEntries,
 	moveUpscaler,
 	removeUpscaler,
 	renameUpscaler,
 	saveUpscalerCaps,
+	setUpscalerEnabled,
 	updateUpscaler,
 	upscalerAsVideoEntry,
 	upscalerById,
-	upscalerByName
+	upscalerByName,
+	upscalerEntries
 } from './entries.ts';
 
 beforeEach(() => {
@@ -68,5 +71,17 @@ describe('the upscaler lists', () => {
 			keyId: 'k1',
 			model: 'relayvsr-x2'
 		});
+	});
+});
+
+describe('turning an upscaler off', () => {
+	it('keeps it in the list, but out of what the upscale tools try', () => {
+		const a = addUpscaler('image', { url: 'http://compute2:3000', model: 'esrgan' });
+		setUpscalerEnabled('image', a, false);
+		expect(allUpscalerEntries('image')).toHaveLength(1);
+		expect(upscalerEntries('image')).toEqual([]);
+		expect(upscalerByName('image', 'esrgan')).toBeUndefined();
+		setUpscalerEnabled('image', a, true);
+		expect(upscalerEntries('image').map((e) => e.name)).toEqual(['esrgan']);
 	});
 });

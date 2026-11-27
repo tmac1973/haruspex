@@ -12,17 +12,18 @@
 	import {
 		VIDEO_BACKEND_LABEL,
 		addVideoModel,
+		allVideoEntries,
 		moveVideoModel,
 		removeVideoModel,
-		videoEntries
+		setVideoModelEnabled
 	} from '#lib/videogen/entries.ts';
 	import { videoCapabilityLine } from '#lib/videogen/capabilityLine.ts';
 	import { videoBackendKinds } from '#lib/videogen/index.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
 	import type { VideoModelEntry } from '#lib/videogen/types.ts';
 
-	let entries = $state<VideoModelEntry[]>(videoEntries());
-	const refresh = () => (entries = videoEntries());
+	let entries = $state<VideoModelEntry[]>(allVideoEntries());
+	const refresh = () => (entries = allVideoEntries());
 	let openId = $state<string | null>(null);
 
 	/** "llama-toolchest on host has video models", while there are none here. */
@@ -73,6 +74,7 @@
 		{place}
 		capsLine={(e) => (e.caps ? videoCapabilityLine(e.caps) : null)}
 		onMove={(id, delta) => (moveVideoModel(id, delta), refresh())}
+		onEnable={(e, on) => (setVideoModelEnabled(e.id, on), refresh(), invalidateTypeAvailability())}
 		onRemove={remove}
 		bind:openId
 	>
