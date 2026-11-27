@@ -13,6 +13,7 @@ describe('runbookPrompt', () => {
 		expect(p).toContain('[OpenHands setup](notebook:nb1#c9)');
 		expect(p).toContain('notebook_table_rows');
 		expect(p).toContain('first item that is not done');
+		expect(p).toContain('Read in full (notebook_read with that card)');
 		expect(p).toContain('I type it in the terminal');
 	});
 
