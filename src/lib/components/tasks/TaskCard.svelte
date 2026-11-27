@@ -59,7 +59,7 @@
 			<button class="btn" type="button" onclick={() => void cancel()}>Cancel</button>
 		</div>
 	{:else if task?.state === 'done'}
-		{#if task.kind === 'video_render' || task.kind === 'youtube_upload'}
+		{#if task.kind === 'video_render'}
 			<VideoTaskResult {task} />
 		{:else if task.kind === 'image' && task.result}
 			<ImageTaskResult {task} />

@@ -214,7 +214,6 @@ const TABLE: Record<string, Handler> = {
 	voice_listen_start: () => 1,
 	voice_listen_stop: none,
 	voice_listen_hold: none,
-	youtube_account: none,
 	download_status: none,
 	remote_status: () => ({
 		running: false,

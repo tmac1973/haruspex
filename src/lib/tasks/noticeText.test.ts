@@ -109,26 +109,6 @@ describe('notices', () => {
 		expect(cancelled).toContain('Nothing was saved');
 	});
 
-	it('report an upload with its links', () => {
-		const uploaded: BackgroundTask = {
-			...base,
-			id: 'upload-1',
-			kind: 'youtube_upload',
-			state: 'done',
-			result: {
-				url: 'https://youtu.be/x',
-				studioUrl: 'https://studio.youtube.com/video/x/edit',
-				videoId: 'x',
-				visibility: 'unlisted',
-				problems: []
-			}
-		};
-		const text = noticeFor(uploaded).text;
-		expect(text).toMatch(/^Video upload finished: https:\/\/youtu\.be\/x\b/);
-		expect(text).toContain('unlisted');
-		expect(text).toContain('https://studio.youtube.com/video/x/edit');
-	});
-
 	it('say a render that died with the app failed', () => {
 		const lost: BackgroundTask = { ...base, state: 'failed', error: 'Ended when the app closed.' };
 		expect(noticeFor(lost).text).toBe('Video render failed: Ended when the app closed.');

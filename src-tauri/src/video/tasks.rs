@@ -1,4 +1,4 @@
-//! Background video work: renders and uploads.
+//! Background video work: renders.
 //!
 //! A task starts and the tool returns at once. The task is a record in the
 //! background-task registry (`crate::tasks`), which sends its progress out,
@@ -16,7 +16,6 @@ use super::loudness::MAX_GAIN;
 use super::project::VideoSettings;
 use super::{binaries, encode, paths, project};
 use crate::orphans::{self, RunningServer};
-use crate::sync_util::LockExt;
 use crate::tasks::{BackgroundTask, BackgroundTasks, TaskFollower, TaskKind, TaskPatch, TaskState};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -44,19 +43,6 @@ pub struct RenderResult {
     /// The same file, absolute: what Open and Show in folder use.
     pub abs_path: String,
     pub check: Option<RenderCheck>,
-}
-
-/// A finished upload, as its task's `result`. `problems` are what didn't
-/// work (a thumbnail).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct UploadResult {
-    pub url: String,
-    pub studio_url: String,
-    pub video_id: String,
-    pub visibility: String,
-    pub problems: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -364,128 +350,6 @@ pub async fn start_render(
             let _ = std::fs::remove_file(&part);
         }
         orphans::deregister_pid(video.registry.as_deref(), &id, pid);
-        let _ = worker.update(&id, ending.patch());
-    });
-    Ok(task)
-}
-
-#[derive(Clone, Debug, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct UploadRequest {
-    pub working_dir: String,
-    pub owner: String,
-    /// The render, relative to the working folder.
-    pub render: String,
-    /// A thumbnail JPEG, relative to the working folder.
-    pub thumbnail: Option<String>,
-    pub meta: super::youtube::VideoMeta,
-    pub proxy: Option<crate::proxy::ProxyConfig>,
-}
-
-/// Start uploading a render the user confirmed.
-pub async fn start_upload(
-    tasks: BackgroundTasks,
-    req: UploadRequest,
-) -> Result<BackgroundTask, String> {
-    use super::youtube;
-    if let Some(id) = tasks.running(TaskKind::YoutubeUpload) {
-        return Err(format!(
-            "An upload is already running (id {id}). Wait for it or cancel it."
-        ));
-    }
-    let problems = youtube::check_meta(&req.meta);
-    if !problems.is_empty() {
-        return Err(problems.join(" "));
-    }
-    let file = paths::resolve_in_working(&req.working_dir, &req.render)?;
-    if !file.is_file() || file.extension().is_none_or(|e| e != "mp4") {
-        return Err(format!(
-            "{} is not a rendered MP4 in the working folder.",
-            req.render
-        ));
-    }
-    let thumbnail = match req
-        .thumbnail
-        .as_deref()
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-    {
-        Some(t) => Some(
-            std::fs::read(paths::resolve_in_working(&req.working_dir, t)?)
-                .map_err(|e| format!("can't read the thumbnail: {e}"))?,
-        ),
-        None => None,
-    };
-    let refresh = crate::secrets::get(youtube::REFRESH_KEY)
-        .await?
-        .ok_or("Sign in to YouTube in Settings → Video editing first.")?;
-    let auth = youtube::account_auth(refresh, req.proxy.clone());
-    let http = crate::proxy::apply_proxy(
-        reqwest::Client::builder().timeout(Duration::from_secs(10 * 60)),
-        req.proxy.as_ref(),
-    )?
-    .build()
-    .map_err(|e| format!("could not create an HTTP client: {e}"))?;
-    let name = file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("video")
-        .to_string();
-    let task = tasks.create(
-        TaskKind::YoutubeUpload,
-        &req.owner,
-        &format!("Uploading {name} to YouTube"),
-        TaskFollower::Rust,
-        serde_json::json!({ "workingDir": req.working_dir }),
-    );
-    let id = task.id.clone();
-    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-    tasks.attach_cancel(&id, cancel_tx);
-    let worker = tasks.clone();
-    let meta = req.meta.clone();
-    tauri::async_runtime::spawn(async move {
-        let started = Instant::now();
-        let ep = youtube::Endpoints::default();
-        let progress = {
-            let (worker, id) = (worker.clone(), id.clone());
-            let last = Mutex::new(Instant::now() - EMIT_EVERY);
-            move |sent: u64, total: u64| {
-                let pct = if total > 0 {
-                    sent as f64 * 100.0 / total as f64
-                } else {
-                    0.0
-                };
-                let mut l = last.lock_or_recover();
-                if l.elapsed() < EMIT_EVERY && sent < total {
-                    return;
-                }
-                *l = Instant::now();
-                progress(&worker, &id, pct, started);
-            }
-        };
-        let never = || false;
-        let ending = tokio::select! {
-            r = youtube::upload(&http, &ep, &auth, &file, &meta, &never, &progress) => match r {
-                Ok(video_id) => {
-                    let mut problems = Vec::new();
-                    if let Some(jpeg) = thumbnail {
-                        if let Err(e) = youtube::set_thumbnail(&http, &ep, &auth, &video_id, jpeg).await {
-                            problems.push(e);
-                        }
-                    }
-                    Ending::done(&UploadResult {
-                        url: format!("https://youtu.be/{video_id}"),
-                        studio_url: format!("https://studio.youtube.com/video/{video_id}/edit"),
-                        visibility: meta.visibility.api().into(),
-                        video_id,
-                        problems,
-                    })
-                }
-                Err(message) => Ending::failed(message, String::new()),
-            },
-            _ = &mut cancel_rx => Ending::cancelled(),
-        };
         let _ = worker.update(&id, ending.patch());
     });
     Ok(task)
@@ -807,14 +671,5 @@ mod tests {
         })
         .unwrap();
         assert_eq!(v["absPath"], "/v/ep1/renders/a.mp4");
-        let v = serde_json::to_value(UploadResult {
-            url: "u".into(),
-            studio_url: "s".into(),
-            video_id: "i".into(),
-            visibility: "private".into(),
-            problems: vec![],
-        })
-        .unwrap();
-        assert_eq!(v["studioUrl"], "s");
     }
 }

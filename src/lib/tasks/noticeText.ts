@@ -5,7 +5,7 @@
  */
 import type { RenderCheck } from '#lib/ipc/gen/RenderCheck.ts';
 import { formatDuration } from '#lib/video/report.ts';
-import { renderResult, uploadResult, type BackgroundTask } from '#lib/tasks/types.ts';
+import { renderResult, type BackgroundTask } from '#lib/tasks/types.ts';
 import { imageAnswerText, upscaleAnswerText } from '#lib/agent/tools/_imageAnswer.ts';
 import type { ImageTaskResult, ImageTaskSpec } from '#lib/agent/tools/_imageJob.ts';
 import { imageSrc } from '#lib/images/url.ts';
@@ -26,7 +26,7 @@ export function describeCheck(c: RenderCheck): string {
 	return `${parts.join(', ')}. ${problems}`;
 }
 
-const OPENING = /^(Video (render|upload)|Background task ".*") (finished|failed|cancelled)/;
+const OPENING = /^(Video render|Background task ".*") (finished|failed|cancelled)/;
 
 /** Whether a user-role message is a notice this module wrote. */
 export function isTaskNotice(text: string): boolean {
@@ -47,28 +47,18 @@ export function taskNoticeTitle(text: string): string {
 }
 
 function videoNotice(t: BackgroundTask): string {
-	const what = t.kind === 'youtube_upload' ? 'upload' : 'render';
 	const render = renderResult(t);
-	const upload = uploadResult(t);
 	if (render) {
 		return (
 			`Video render finished: ${render.path}. ` +
 			(render.check ? describeCheck(render.check) : 'It could not be checked.')
 		);
 	}
-	if (upload) {
-		return (
-			`Video upload finished: ${upload.url} (${upload.visibility}). YouTube Studio: ${upload.studioUrl}. ` +
-			(upload.problems.length ? upload.problems.join(' ') : 'Everything was set.')
-		);
-	}
 	if (t.state === 'failed') {
-		return `Video ${what} failed: ${t.error ?? 'it stopped.'}${t.logTail ? `\n--- melt said ---\n${t.logTail}` : ''}`;
+		return `Video render failed: ${t.error ?? 'it stopped.'}${t.logTail ? `\n--- melt said ---\n${t.logTail}` : ''}`;
 	}
 	if (t.state === 'cancelled') {
-		return what === 'upload'
-			? 'Video upload cancelled. YouTube keeps nothing of it.'
-			: 'Video render cancelled. Nothing was saved.';
+		return 'Video render cancelled. Nothing was saved.';
 	}
 	return '';
 }
@@ -136,7 +126,7 @@ const RESULT_TEXT: Partial<Record<BackgroundTask['kind'], (t: BackgroundTask) =>
  * them into what the model reads).
  */
 export function noticeFor(t: BackgroundTask): { text: string; images: string[] } {
-	if (t.kind === 'video_render' || t.kind === 'youtube_upload') {
+	if (t.kind === 'video_render') {
 		return { text: videoNotice(t), images: [] };
 	}
 	const name = `Background task "${t.label}"`;

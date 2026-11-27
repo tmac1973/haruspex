@@ -28,3 +28,4 @@ Haruspex doesn't put text on a thumbnail. An image model can draw a short title 
 - It doesn't render anything but the project's main sequence, at the project's size and frame rate. Change those in the editor (Shotcut: Settings → Video Mode; Kdenlive: Project → Project Settings) or ask for another format before the first cut.
 - It doesn't keep a render going after Haruspex quits, or run two at once.
 - It doesn't fix what the check finds by itself; ask for the fix.
+- It doesn't upload anything. Upload the render, thumbnail and chapters yourself in YouTube Studio.

@@ -1,5 +1,5 @@
 //! Background tasks: long work a Chat conversation or a Code session started
-//! that runs on after the turn (a video render, an upload, later a
+//! that runs on after the turn (a video render, or a
 //! generation job), with its progress, its result, and whether its owner has
 //! heard how it ended.
 //!
@@ -9,7 +9,7 @@
 //! (percent, ETA, phase, queue position) is memory-only.
 //!
 //! A task is followed either here (`TaskFollower::Rust`: the video module's
-//! renders and uploads) or by the main window (`Frontend`: phase 06's
+//! renders) or by the main window (`Frontend`: phase 06's
 //! generation runner, through `task_update`). At launch a Rust task that was
 //! still running has died with the app, so it ends as failed, and its owner
 //! hears about it.
@@ -37,7 +37,6 @@ pub const ENDED_WITH_APP: &str = "Ended when the app closed.";
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     VideoRender,
-    YoutubeUpload,
     Image,
     Music,
     Video,
@@ -277,7 +276,6 @@ impl BackgroundTasks {
     ) -> BackgroundTask {
         let prefix = match kind {
             TaskKind::VideoRender => "render",
-            TaskKind::YoutubeUpload => "upload",
             TaskKind::Image => "image",
             TaskKind::Music => "music",
             TaskKind::Video => "video",
@@ -740,8 +738,8 @@ mod tests {
 
     #[test]
     fn enums_serialise_snake_case() {
-        let v = serde_json::to_value(TaskKind::YoutubeUpload).unwrap();
-        assert_eq!(v, "youtube_upload");
+        let v = serde_json::to_value(TaskKind::VideoRender).unwrap();
+        assert_eq!(v, "video_render");
         assert_eq!(
             serde_json::to_value(TaskFollower::Frontend).unwrap(),
             "frontend"

@@ -13,7 +13,7 @@ const sources = import.meta.glob(['./*.ts', '!./*.test.ts'], {
 
 /** Calls that put a prompt in front of the user. */
 const ASKS =
-	/\b(askCommandApproval|askApproval|askMcpApproval|askSkillApproval|askMemoryApproval|askYoutubeUpload|askEmailReview|askUserQuestion)\(|ctx\.askUser!?\(/;
+	/\b(askCommandApproval|askApproval|askMcpApproval|askSkillApproval|askMemoryApproval|askEmailReview|askUserQuestion)\(|ctx\.askUser!?\(/;
 
 /** Each line of `text` matching `re`, as a 0-based index. */
 function linesMatching(text: string, re: RegExp): number[] {
