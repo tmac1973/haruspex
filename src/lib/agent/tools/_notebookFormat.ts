@@ -7,6 +7,7 @@ import * as api from '#lib/notebooks/api.ts';
 import type { NotebookCard, RowOp } from '#lib/notebooks/api.ts';
 import { columnsOf, parseCell, rawCell, type Column } from '#lib/notebooks/columns.ts';
 import { parseCsv, rowsFromCsv, writeCsv } from '#lib/notebooks/csv.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 const OUTLINE_TEXT = 300;
 const OUTLINE_ROWS = 10;
@@ -170,7 +171,7 @@ function jsonUpdates(value: unknown): [string, Record<string, unknown>][] | null
 		try {
 			v = JSON.parse(v);
 		} catch (e) {
-			throw new Error(`update isn't valid JSON: ${e instanceof Error ? e.message : String(e)}`, {
+			throw new Error(`update isn't valid JSON: ${errMessage(e)}`, {
 				cause: e
 			});
 		}

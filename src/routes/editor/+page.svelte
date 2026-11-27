@@ -29,13 +29,7 @@
 		type ReadyPayload
 	} from '#lib/editor/windows.ts';
 	import type { EditorFileChanged } from '#lib/ipc/gen/EditorFileChanged.ts';
-	import {
-		SETTINGS_KEY,
-		applyAccent,
-		applyTheme,
-		type AccentColor,
-		type ThemeMode
-	} from '#lib/stores/settings.ts';
+	import { followSettingsStorage } from '#lib/stores/settings.ts';
 
 	const win = getCurrentWindow();
 	const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
@@ -106,18 +100,6 @@
 		}
 	}
 
-	/** Follow the theme when Settings changes it in the main window. */
-	function onStorage(e: StorageEvent): void {
-		if (e.key !== SETTINGS_KEY || !e.newValue) return;
-		try {
-			const s = JSON.parse(e.newValue) as { theme?: ThemeMode; accentColor?: AccentColor };
-			if (s.theme) applyTheme(s.theme);
-			if (s.accentColor) applyAccent(s.accentColor);
-		} catch {
-			// A half-written value: the next change will do.
-		}
-	}
-
 	onMount(() => {
 		const webview = getCurrentWebviewWindow();
 		const stops: Promise<() => void>[] = [
@@ -150,7 +132,7 @@
 	});
 </script>
 
-<svelte:window onkeydown={onKeydown} onstorage={onStorage} />
+<svelte:window onkeydown={onKeydown} onstorage={followSettingsStorage} />
 
 <div class="editor-window">
 	<div class="strip" role="tablist" aria-label="Open files">

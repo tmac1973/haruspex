@@ -24,13 +24,7 @@
 		tauriBus
 	} from '#lib/code/windows.ts';
 	import { closeSession, openSession, type CodeSession } from '#lib/stores/code.svelte.ts';
-	import {
-		SETTINGS_KEY,
-		applyAccent,
-		applyTheme,
-		getLiveSettings,
-		reloadSettingsFromStorage
-	} from '#lib/stores/settings.ts';
+	import { followSettingsStorage, getLiveSettings } from '#lib/stores/settings.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -87,14 +81,6 @@
 		}
 	}
 
-	/** Each window loads the settings once; follow the main window's changes. */
-	function onStorage(e: StorageEvent): void {
-		if (e.key !== SETTINGS_KEY) return;
-		reloadSettingsFromStorage();
-		applyTheme();
-		applyAccent();
-	}
-
 	onMount(() => {
 		void (async () => {
 			try {
@@ -119,7 +105,7 @@
 	});
 </script>
 
-<svelte:window onstorage={onStorage} />
+<svelte:window onstorage={followSettingsStorage} />
 
 <div class="detached">
 	<div class="bar">

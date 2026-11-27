@@ -1,17 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { logDebug, privateTextForLog } from '#lib/debugLog.ts';
+import { logDebug } from '#lib/debugLog.ts';
+import type { LintDiagnostic } from '#lib/ipc/gen/LintDiagnostic.ts';
 import { errMessage } from '#lib/utils/error.ts';
-
-interface RuffLocation {
-	row: number;
-	column: number;
-}
-
-interface RuffDiagnostic {
-	code: string | null;
-	message: string;
-	location: RuffLocation;
-}
 
 const MAX_DIAGS = 20;
 
@@ -28,31 +18,18 @@ export async function lintPythonIfApplicable(
 ): Promise<string> {
 	if (!workdir || !relPath.toLowerCase().endsWith('.py')) return '';
 
-	let raw: string;
+	let diags: LintDiagnostic[];
 	try {
-		raw = await invoke<string>('fs_lint_python', { workdir, relPath });
+		diags = await invoke<LintDiagnostic[]>('fs_lint_python', { workdir, relPath });
 	} catch (e) {
 		logDebug('lint', 'fs_lint_python invocation failed', { relPath, error: errMessage(e) });
-		return '';
-	}
-
-	let diags: RuffDiagnostic[];
-	try {
-		diags = JSON.parse(raw) as RuffDiagnostic[];
-	} catch {
-		logDebug('lint', 'ruff output was not valid JSON', { rawPreview: privateTextForLog(raw, 200) });
 		return '';
 	}
 
 	if (!Array.isArray(diags) || diags.length === 0) return '';
 
 	const shown = diags.slice(0, MAX_DIAGS);
-	const lines = shown.map((d) => {
-		const code = d.code ?? '?';
-		const row = d.location?.row ?? 0;
-		const col = d.location?.column ?? 0;
-		return `${code} [${row}:${col}] ${d.message}`;
-	});
+	const lines = shown.map((d) => `${d.code} [${d.line}:${d.column}] ${d.message}`);
 	const more = diags.length > MAX_DIAGS ? `\n... ${diags.length - MAX_DIAGS} more` : '';
 
 	return (

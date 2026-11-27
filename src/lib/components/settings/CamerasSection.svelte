@@ -18,9 +18,9 @@
 		getSettings,
 		setCameraEventRetentionDays,
 		setCameraTrustedServers,
-		setCameras,
-		snapshot
+		setCameras
 	} from '#lib/stores/settings.ts';
+	import { snapshot } from '#lib/utils/snapshot.ts';
 	import { newId } from '#lib/utils/id.ts';
 	import { defaultAlertConfig } from '#lib/camera/alertConfig.ts';
 

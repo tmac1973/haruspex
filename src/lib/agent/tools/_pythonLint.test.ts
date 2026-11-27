@@ -11,6 +11,16 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 
 import { lintPythonIfApplicable } from './_pythonLint';
 
+const diag = (code: string, message: string, line: number, column: number) => ({
+	code,
+	message,
+	line,
+	column,
+	endLine: line,
+	endColumn: column + 1,
+	url: null
+});
+
 describe('lintPythonIfApplicable', () => {
 	beforeEach(() => {
 		vi.mocked(invoke).mockReset();
@@ -29,20 +39,10 @@ describe('lintPythonIfApplicable', () => {
 	});
 
 	it('formats ruff diagnostics into a <diagnostics> block', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce(
-			JSON.stringify([
-				{
-					code: 'F821',
-					message: 'Undefined name `requets`',
-					location: { row: 12, column: 5 }
-				},
-				{
-					code: 'F401',
-					message: '`os` imported but unused',
-					location: { row: 3, column: 1 }
-				}
-			])
-		);
+		vi.mocked(invoke).mockResolvedValueOnce([
+			diag('F821', 'Undefined name `requets`', 12, 5),
+			diag('F401', '`os` imported but unused', 3, 1)
+		]);
 		const out = await lintPythonIfApplicable('/work', 'analyzer.py');
 		expect(out).toContain('<diagnostics file="analyzer.py">');
 		expect(out).toContain('F821 [12:5] Undefined name `requets`');
@@ -51,18 +51,14 @@ describe('lintPythonIfApplicable', () => {
 	});
 
 	it('returns empty string when ruff reports no diagnostics', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce('[]');
+		vi.mocked(invoke).mockResolvedValueOnce([]);
 		const out = await lintPythonIfApplicable('/work', 'clean.py');
 		expect(out).toBe('');
 	});
 
 	it('caps output at 20 diagnostics and notes the overflow', async () => {
-		const many = Array.from({ length: 25 }, (_, i) => ({
-			code: 'F401',
-			message: `dup ${i}`,
-			location: { row: i + 1, column: 1 }
-		}));
-		vi.mocked(invoke).mockResolvedValueOnce(JSON.stringify(many));
+		const many = Array.from({ length: 25 }, (_, i) => diag('F401', `dup ${i}`, i + 1, 1));
+		vi.mocked(invoke).mockResolvedValueOnce(many);
 		const out = await lintPythonIfApplicable('/work', 'noisy.py');
 		expect(out).toContain('... 5 more');
 		expect((out.match(/F401/g) ?? []).length).toBe(20);
@@ -74,14 +70,8 @@ describe('lintPythonIfApplicable', () => {
 		expect(out).toBe('');
 	});
 
-	it('swallows malformed JSON from ruff and returns empty', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce('not json');
-		const out = await lintPythonIfApplicable('/work', 'foo.py');
-		expect(out).toBe('');
-	});
-
 	it('treats uppercase .PY as Python too', async () => {
-		vi.mocked(invoke).mockResolvedValueOnce('[]');
+		vi.mocked(invoke).mockResolvedValueOnce([]);
 		await lintPythonIfApplicable('/work', 'WEIRD.PY');
 		expect(invoke).toHaveBeenCalled();
 	});

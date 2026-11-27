@@ -27,6 +27,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listSandboxGlobals } from '#lib/sandbox/sandbox.ts';
+import type { LintDiagnostic } from '#lib/ipc/gen/LintDiagnostic.ts';
 
 export interface LintIssue {
 	code: string;
@@ -38,16 +39,6 @@ export interface LintIssue {
 	url?: string;
 }
 
-interface RawLintIssue {
-	code: string;
-	message: string;
-	line: number;
-	column: number;
-	endLine: number;
-	endColumn: number;
-	url?: string | null;
-}
-
 /**
  * Lint the snippet about to run in the chat's sandbox. Its persistent
  * Python globals are sent along as ruff `builtins` so F821 doesn't false-
@@ -56,7 +47,7 @@ interface RawLintIssue {
 export async function lintSandboxCode(chatId: string, code: string): Promise<LintIssue[]> {
 	try {
 		const builtins = await listSandboxGlobals(chatId);
-		const raw = await invoke<RawLintIssue[]>('lint_python_source', { code, builtins });
+		const raw = await invoke<LintDiagnostic[]>('lint_python_source', { code, builtins });
 		return raw.map((d) => ({
 			code: d.code,
 			message: d.message,

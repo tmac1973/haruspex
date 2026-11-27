@@ -3,8 +3,7 @@
  * was said in them, through each computer's own full-text index
  * (`db_search_conversations`, or `chats.search` on another computer).
  */
-import { invoke } from '@tauri-apps/api/core';
-
+import { dbQuery } from '#lib/stores/dbCall.ts';
 import type { PeerView } from '#lib/peers/store.svelte.ts';
 
 /** Whether `title` contains every word of `filter`, ignoring case. */
@@ -17,12 +16,13 @@ export function titleMatches(title: string, filter: string): boolean {
 /** This computer's chats whose messages match `query`. */
 export async function searchLocalChats(query: string): Promise<string[]> {
 	if (!query.trim()) return [];
-	try {
-		return await invoke<string[]>('db_search_conversations', { query });
-	} catch (e) {
-		console.warn('Chat search:', e);
-		return [];
-	}
+	return dbQuery<string[]>({
+		cmd: 'db_search_conversations',
+		category: 'chat',
+		args: { query },
+		onError: 'Chat search failed',
+		fallback: []
+	});
 }
 
 /**

@@ -4,6 +4,7 @@
 //! segments in `<app data>/camera_watch/<camera_id>/`; a snapshot or a
 //! listen on that camera reads those instead of opening the device.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
@@ -29,7 +30,7 @@ const PICTURE_WAIT: Duration = Duration::from_secs(5);
 static SHARED: LazyLock<Mutex<HashMap<String, PathBuf>>> = LazyLock::new(Default::default);
 
 fn shared() -> std::sync::MutexGuard<'static, HashMap<String, PathBuf>> {
-    SHARED.lock().unwrap_or_else(|p| p.into_inner())
+    SHARED.lock_or_recover()
 }
 
 /// The shared-files folder of the camera's running watcher, if one is.

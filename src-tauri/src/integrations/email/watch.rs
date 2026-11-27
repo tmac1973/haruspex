@@ -27,6 +27,7 @@
 //!
 //! The watchers run only while the app is open.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
@@ -220,7 +221,7 @@ pub struct EmailWatch {
 
 impl EmailWatch {
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        self.state.lock_or_recover()
     }
 
     pub fn status(&self) -> Vec<EmailWatchStatus> {

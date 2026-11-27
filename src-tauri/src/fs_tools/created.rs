@@ -11,6 +11,7 @@
 //! Kept in `<app data>/created_files.json`, so a chat reopened tomorrow can
 //! still tidy what it made today.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -86,7 +87,7 @@ impl CreatedFiles {
     }
 
     fn with<T>(&self, f: impl FnOnce(&mut Store) -> T) -> T {
-        let mut guard = self.store.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = self.store.lock_or_recover();
         let store = guard.get_or_insert_with(|| {
             self.file
                 .as_ref()

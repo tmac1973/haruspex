@@ -11,6 +11,7 @@
 //! WebView2's print preview on Windows. On macOS wry builds the print
 //! operation but never runs it, so the dialog is run here instead.
 
+use crate::sync_util::LockExt;
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
 
@@ -64,10 +65,7 @@ impl Store {
 
 fn store() -> std::sync::MutexGuard<'static, Store> {
     static STORE: OnceLock<Mutex<Store>> = OnceLock::new();
-    STORE
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    STORE.get_or_init(Mutex::default).lock_or_recover()
 }
 
 /// A window title for `title`: never empty, never long.

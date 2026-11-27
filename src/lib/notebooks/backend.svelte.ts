@@ -20,6 +20,7 @@ import type {
 } from '#lib/notebooks/api.ts';
 import type { EngineClient } from '#lib/engine/client.svelte.ts';
 import type { NotebookChatView } from '#lib/engine/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** What only the computer a notebook is on can do. */
 export interface BackendAbilities {
@@ -203,7 +204,7 @@ export class PeerNotebookChat {
 				notebookId: this.notebookId
 			});
 		} catch (e) {
-			this.view = { ...this.view, error: e instanceof Error ? e.message : String(e) };
+			this.view = { ...this.view, error: errMessage(e) };
 		}
 	}
 

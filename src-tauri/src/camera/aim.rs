@@ -348,6 +348,7 @@ pub(crate) async fn aim(
 pub(crate) mod position {
     use super::{pulses_for, Aim, AimDirection, CameraAimResult};
     use crate::camera::{CameraConfig, PtzCalibration};
+    use crate::sync_util::LockExt;
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
 
@@ -361,7 +362,7 @@ pub(crate) mod position {
     static AT: LazyLock<Mutex<HashMap<String, At>>> = LazyLock::new(Default::default);
 
     fn at() -> std::sync::MutexGuard<'static, HashMap<String, At>> {
-        AT.lock().unwrap_or_else(|p| p.into_inner())
+        AT.lock_or_recover()
     }
 
     /// Where the camera points now, as far as it is known.
@@ -532,6 +533,7 @@ fn direction_of(aim: &Aim) -> Option<AimDirection> {
 mod last_turn {
     use super::AimDirection;
     use crate::camera::capture::same_view;
+    use crate::sync_util::LockExt;
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
 
@@ -541,7 +543,7 @@ mod last_turn {
     static LAST: LazyLock<Mutex<Turns>> = LazyLock::new(Default::default);
 
     fn last() -> std::sync::MutexGuard<'static, Turns> {
-        LAST.lock().unwrap_or_else(|p| p.into_inner())
+        LAST.lock_or_recover()
     }
 
     pub(super) fn record(camera_id: &str, direction: AimDirection, before: Vec<u8>) {

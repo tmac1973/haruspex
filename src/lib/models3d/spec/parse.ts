@@ -10,6 +10,7 @@ import type { ModelClip, ModelEntry, ModelSpec } from '#lib/models3d/spec/types.
 import { LOOPING_CLIP } from '#lib/glb/clipNames.ts';
 import { modelDir } from '#lib/models3d/spec/paths.ts';
 import { numberOrNaN, stringOr } from '#lib/utils/coerce.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type ModelParseResult = { spec: ModelSpec } | { errors: string[] };
 
@@ -57,7 +58,7 @@ export function parseModelSpec(json: string): ModelParseResult {
 	try {
 		raw = JSON.parse(json);
 	} catch (e) {
-		return { errors: [`The spec is not valid JSON — ${e instanceof Error ? e.message : e}`] };
+		return { errors: [`The spec is not valid JSON — ${errMessage(e)}`] };
 	}
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
 		return { errors: ['The spec must be a JSON object.'] };

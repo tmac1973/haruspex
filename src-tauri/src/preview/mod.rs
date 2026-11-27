@@ -15,6 +15,7 @@ pub mod paths;
 pub mod watch;
 
 use crate::fs_tools::path::strip_verbatim;
+use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -64,7 +65,7 @@ pub(crate) struct Shared {
 
 impl Shared {
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.state.lock_or_recover()
     }
 
     /// The folder `token` serves, if any.

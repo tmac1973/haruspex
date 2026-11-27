@@ -12,6 +12,7 @@
 //! A system ffmpeg or an editor's melt is never given any of this: our libav*
 //! would load into it in place of its own.
 
+use crate::sync_util::LockExt;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -175,7 +176,7 @@ pub fn set_shims(app: &tauri::AppHandle, enabled: bool) -> Result<bool, String> 
                 .map(|p| (*t, p))
         })
         .collect();
-    let mut on = SHIMS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut on = SHIMS.lock_or_recover();
     if !enabled || binaries.len() != SHIMMED.len() {
         let _ = std::fs::remove_dir_all(&dir);
         *on = None;
@@ -191,7 +192,7 @@ pub fn set_shims(app: &tauri::AppHandle, enabled: bool) -> Result<bool, String> 
 /// needs set so `ffmpeg`, `ffprobe` and `melt` are the bundled ones, given the
 /// `PATH` it would otherwise get. Empty while the shims are off.
 pub fn shell_env(path: Option<&std::ffi::OsStr>) -> Vec<(&'static str, OsString)> {
-    let on = SHIMS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let on = SHIMS.lock_or_recover().clone();
     let Some(dir) = on else { return Vec::new() };
     shell_env_for(&dir, path)
 }

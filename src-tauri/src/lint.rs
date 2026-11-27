@@ -3,27 +3,25 @@ use tauri_plugin_shell::ShellExt;
 
 use crate::fs_tools::{resolve_in_workdir, workdir_path};
 
-/// Run ruff against a single file inside `workdir` and return its raw JSON
-/// output (`[{"code":"F821", "message":"...", "location":{"row":..,"column":..}}, ...]`).
-/// Limited to syntax errors (E9*) and pyflakes (F*) so style noise doesn't
-/// drown the signal. Returns an empty array string `"[]"` if ruff is missing,
-/// crashes, or produces non-UTF-8 output — diagnostics are best-effort and
-/// must never block a successful write.
+/// Run ruff against a single file inside `workdir` and return its
+/// diagnostics, as [`lint_python_source`] does. Limited to syntax errors (E9*)
+/// and pyflakes (F*) so style noise doesn't drown the signal. Empty if ruff is
+/// missing, crashes, or prints something that isn't its JSON — diagnostics are
+/// best-effort and must never block a successful write.
 #[tauri::command]
 pub async fn fs_lint_python(
     app: tauri::AppHandle,
     workdir: String,
     rel_path: String,
-) -> Result<String, String> {
+) -> Result<Vec<LintDiagnostic>, String> {
     let workdir = workdir_path(&workdir)?;
     let abs = resolve_in_workdir(&workdir, &rel_path)?;
 
     let path = abs.to_string_lossy();
     let stdout = run_ruff(&app, &["--select=E9,F", path.as_ref()]).await;
-    Ok(stdout.map_or_else(
-        || "[]".to_string(),
-        |out| String::from_utf8_lossy(&out).into_owned(),
-    ))
+    Ok(stdout
+        .map(|raw| parse_ruff_diagnostics(&raw))
+        .unwrap_or_default())
 }
 
 /// Run `ruff check` with JSON output plus `args`, and return its stdout.
@@ -51,10 +49,11 @@ async fn run_ruff(app: &tauri::AppHandle, args: &[&str]) -> Option<Vec<u8>> {
     }
 }
 
-/// Diagnostic returned by the sandbox lint pass — a flattened view of the
+/// Diagnostic returned by both lint passes — a flattened view of the
 /// fields ruff emits in `--output-format=json` that the frontend cares about.
 /// Coordinates are 1-based (ruff's convention).
-#[derive(serde::Serialize, Debug)]
+#[derive(serde::Serialize, Debug, ts_rs::TS)]
+#[ts(export)]
 pub struct LintDiagnostic {
     pub code: String,
     pub message: String,

@@ -109,9 +109,51 @@ pub(super) fn classify(line: &str) -> LogSignal {
     LogSignal::None
 }
 
+/// The level a llama-server stderr line goes to the app log at. llama-server
+/// writes its routine progress to stderr, so the stream says nothing about
+/// severity: a line that says it failed or errored is a warning, and the rest
+/// is info. The known-benign lines stay info.
+pub fn stderr_level(line: &str) -> log::Level {
+    let lower = line.to_lowercase();
+    if BENIGN_PATTERNS.iter().any(|p| lower.contains(p)) {
+        return log::Level::Info;
+    }
+    let says_failed = lower.contains("error")
+        || lower.contains("failed")
+        || lower.contains("ggml_assert")
+        || lower.contains("exception");
+    if says_failed {
+        log::Level::Warn
+    } else {
+        log::Level::Info
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_error_line_is_a_warning_and_progress_is_info() {
+        assert_eq!(
+            stderr_level("error: failed to load model '/m/q.gguf'"),
+            log::Level::Warn
+        );
+        assert_eq!(
+            stderr_level("GGML_ASSERT(ctx_tgt && ctx_dft) failed"),
+            log::Level::Warn
+        );
+        assert_eq!(
+            stderr_level("srv  update_slots: all slots are idle"),
+            log::Level::Info
+        );
+        assert_eq!(
+            stderr_level(
+                "failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort"
+            ),
+            log::Level::Info
+        );
+    }
 
     #[test]
     fn detect_mtp_error_ahead_of_the_gpu_and_ctx_signals() {

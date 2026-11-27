@@ -11,10 +11,10 @@
 	import {
 		getSettings,
 		setEmailAccounts,
-		snapshot,
 		type EmailAccount,
 		type EmailProviderId
 	} from '#lib/stores/settings.ts';
+	import { snapshot } from '#lib/utils/snapshot.ts';
 	import type { EmailProviderPreset } from '#lib/ipc/gen/EmailProviderPreset.ts';
 	import EmailAccountForm from '#lib/components/EmailAccountForm.svelte';
 	import { forgetEmailPassword } from '#lib/stores/emailSecrets.ts';

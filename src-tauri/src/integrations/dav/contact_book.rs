@@ -7,6 +7,7 @@
 //! The `contacts_*` tools still fetch afresh: someone asking about a contact
 //! they just added must find it.
 
+use crate::sync_util::LockExt;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
@@ -98,7 +99,7 @@ fn key_of(accounts: &[DavAccount]) -> u64 {
 }
 
 fn fresh(key: u64) -> Option<Vec<ContactAddress>> {
-    let guard = kept().lock().unwrap_or_else(|e| e.into_inner());
+    let guard = kept().lock_or_recover();
     guard
         .as_ref()
         .filter(|k| k.key == key && k.at.elapsed() < KEEP_FOR)
@@ -109,7 +110,7 @@ fn fresh(key: u64) -> Option<Vec<ContactAddress>> {
 fn keep(key: u64, result: ContactQueryResult) -> ContactAddresses {
     let addresses = addresses_of(&result.contacts);
     if result.problems.is_empty() {
-        *kept().lock().unwrap_or_else(|e| e.into_inner()) = Some(Kept {
+        *kept().lock_or_recover() = Some(Kept {
             key,
             at: Instant::now(),
             addresses: addresses.clone(),

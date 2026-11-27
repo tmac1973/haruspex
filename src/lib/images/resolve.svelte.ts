@@ -232,7 +232,7 @@ export async function sweepImages(): Promise<void> {
 	try {
 		await invoke('image_sweep');
 	} catch (e) {
-		logDebug('images', `sweep failed: ${e}`);
+		logDebug('images', `sweep failed: ${errMessage(e)}`);
 	}
 }
 
@@ -264,7 +264,7 @@ async function runResolve(
 	} catch (e) {
 		// An image that cannot be resolved is one the reply does not show.
 		// There is nothing the user could do about it, so it stays in the log.
-		logDebug('images', `${reason} resolve failed: ${e}`);
+		logDebug('images', `${reason} resolve failed: ${errMessage(e)}`);
 	}
 }
 

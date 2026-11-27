@@ -15,6 +15,7 @@
  */
 import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
 import { urlForReport } from '#lib/utils/http.ts';
+import { snapshot } from '#lib/utils/snapshot.ts';
 
 /**
  * Every field that holds a secret, wherever it sits. A new one goes here:
@@ -152,7 +153,7 @@ export function redactSecrets(value: unknown): {
 		}
 		return v;
 	};
-	const plain = JSON.parse(JSON.stringify(value ?? null)) as Json;
+	const plain = snapshot(value) as Json;
 	return { value: walk(plain, '', '', false), redacted, secrets };
 }
 
@@ -231,7 +232,7 @@ export function patchSettings(patch: unknown): { changed: string[] } {
 		const refused = REFUSED.find((r) => r.test(key));
 		if (refused) throw new Error(`${key} can't be changed remotely: use ${refused.where}`);
 	}
-	const current = JSON.parse(JSON.stringify(getSettings())) as Record<string, Json>;
+	const current = snapshot(getSettings()) as unknown as Record<string, Json>;
 	const merged = mergePatch(current, patch, '') as Record<string, Json>;
 	const changed = Object.keys(patch).filter(
 		(k) => JSON.stringify(merged[k]) !== JSON.stringify(current[k])

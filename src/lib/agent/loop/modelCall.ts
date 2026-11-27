@@ -197,14 +197,14 @@ async function sendGuardedCompletion(
 	params: CompletionParams,
 	send: CompletionSender
 ): Promise<ChatCompletionResponse> {
-	const max_tokens = fitForCall(ctx, tools);
+	const maxTokens = fitForCall(ctx, tools);
 	const backend = ctx.backend ?? undefined;
 	let sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	try {
 		// A streamed send fails here too when the server refuses the prompt:
 		// the overflow 400 comes back before any stream data.
 		const res = await send(
-			{ messages: ctx.messages, tools, backend, ...params, max_tokens },
+			{ messages: ctx.messages, tools, backend, ...params, max_tokens: maxTokens },
 			ctx.signal
 		);
 		if (res.usage)
@@ -227,7 +227,7 @@ async function sendGuardedCompletion(
 			calibration: getTokenCalibration(ctx.descriptor.calibrationKey)
 		});
 		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
-			reserveOutput: max_tokens,
+			reserveOutput: maxTokens,
 			tools,
 			calibrationKey: ctx.descriptor.calibrationKey,
 			archive: ctx.recallArchive
@@ -235,7 +235,7 @@ async function sendGuardedCompletion(
 		if (info) ctx.options.onContextManaged?.(info);
 		sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 		const res = await send(
-			{ messages: ctx.messages, tools, backend, ...params, max_tokens },
+			{ messages: ctx.messages, tools, backend, ...params, max_tokens: maxTokens },
 			ctx.signal
 		);
 		if (res.usage)

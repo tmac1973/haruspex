@@ -39,9 +39,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { attachImages, slashFor } from '#lib/engine/attach.ts';
 import { LIVE_MS } from '#lib/engine/watch.svelte.ts';
 import type { ChatEvent, ChatListItem, ChatState } from '#lib/engine/types.ts';
-
-/** Plain data, whatever Svelte's proxies make of it. */
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T;
+import { snapshot } from '#lib/utils/snapshot.ts';
 
 function find(id: string): Conversation {
 	const conv = getConversations().find((c) => c.id === id);
@@ -72,7 +70,7 @@ function turnFields(conv: Conversation) {
 		waitingForSlot: run.waitingForSlot || run.queuedForStartup,
 		compacting: run.compacting,
 		streamingContent: run.streamingContent,
-		searchSteps: plain(conv.searchSteps) as SearchStep[],
+		searchSteps: snapshot(conv.searchSteps) as SearchStep[],
 		error: run.errorMessage,
 		lastTurnFailed: run.lastTurnFailed
 	};
@@ -94,12 +92,12 @@ export function liveChatState(conv: Conversation): ChatState {
 	return {
 		id: conv.id,
 		title: conv.title,
-		messages: plain(conv.messages),
-		messageSteps: plain(conv.messageSteps),
-		messageStats: plain(conv.messageStats),
-		messageStops: plain(conv.messageStops),
+		messages: snapshot(conv.messages),
+		messageSteps: snapshot(conv.messageSteps),
+		messageStats: snapshot(conv.messageStats),
+		messageStops: snapshot(conv.messageStops),
 		...turnFields(conv),
-		contextUsage: plain(conv.contextUsage),
+		contextUsage: snapshot(conv.contextUsage),
 		workingDir: getWorkingDirFor(conv.id),
 		memoryEnabled: conv.memoryEnabled !== false
 	};
@@ -113,14 +111,14 @@ export async function chatState(id: string): Promise<ChatState> {
 	return {
 		id,
 		title: conv.title,
-		messages: plain(messages),
-		messageSteps: plain(steps) as Record<number, SearchStep[]>,
+		messages: snapshot(messages),
+		messageSteps: snapshot(steps) as Record<number, SearchStep[]>,
 		messageStats: {},
 		messageStops: {},
 		...IDLE,
 		error: getRun(id).errorMessage,
 		lastTurnFailed: getRun(id).lastTurnFailed,
-		contextUsage: plain(conv.contextUsage),
+		contextUsage: snapshot(conv.contextUsage),
 		workingDir: getWorkingDirFor(id),
 		memoryEnabled: conv.memoryEnabled !== false
 	};
