@@ -640,6 +640,49 @@ describe('fitMessagesToBudget and the system prompt', () => {
 		expect(msgs[1].content).toBe('hello');
 		expect(describeContextManaged(info!)).toContain('Settings → Inference → Context Size');
 	});
+
+	it('removes tool results, however small, before it cuts the system prompt', () => {
+		// The newest round is protected from the earlier stages, and none of
+		// its results is big enough to halve: they used to rank below the
+		// system prompt, which was cut while they all stayed.
+		const prompt = 'Instructions. '.repeat(500);
+		const ids = Array.from({ length: 10 }, (_, i) => `c${i}`);
+		const msgs: ChatMessage[] = [
+			sys(prompt),
+			user('Read all ten files.'),
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: ids.map((id) => ({
+					id,
+					type: 'function' as const,
+					function: { name: 'fs_read_text', arguments: '{}' }
+				}))
+			},
+			...ids.map((id) => tool('y'.repeat(3_500), id))
+		];
+		const info = fitMessagesToBudget(msgs, 8192, { reserveOutput: 2048 });
+		expect(info!.truncatedSystem).toBe(false);
+		expect(msgs[0].content).toBe(prompt);
+		expect(msgs[1].content).toBe('Read all ten files.');
+		const removed = msgs.filter((m) => m.content === '[Removed to fit context.]');
+		expect(removed.length).toBeGreaterThan(0);
+		expect(removed.every((m) => m.role === 'tool')).toBe(true);
+	});
+
+	it('cuts the system prompt before the question it is answering', () => {
+		// An older exchange goes first, the system prompt next, the question last.
+		const question = 'q'.repeat(2_500);
+		const msgs = [
+			sys('Instructions. '.repeat(2000)),
+			user('earlier question'),
+			asst('a'.repeat(2_500)),
+			user(question)
+		];
+		const info = fitMessagesToBudget(msgs, 8192, { reserveOutput: 2048 });
+		expect(info!.truncatedSystem).toBe(true);
+		expect(msgs[3].content).toBe(question);
+	});
 });
 
 describe('describeContextManaged', () => {

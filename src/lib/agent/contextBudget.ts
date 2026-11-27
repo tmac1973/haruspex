@@ -30,13 +30,21 @@ import {
 	type RecallArchive
 } from '#lib/agent/recallArchive.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
+import {
+	PER_MESSAGE_OVERHEAD_TOKENS,
+	TOKEN_BYTES_RATIO,
+	byteLength,
+	estimateMessagesTokens,
+	estimateTokens,
+	messageTokens
+} from '#lib/agent/tokenEstimate.ts';
 
-// Bytes per token. Real English is ~4 bytes/token; dividing by a smaller
-// number over-estimates tokens, so we trim a touch early — safe.
-export const TOKEN_BYTES_RATIO = 3.5;
-// Per-message framing overhead (role tags, delimiters) the server adds
-// that isn't in the content itself.
-const PER_MESSAGE_OVERHEAD_TOKENS = 4;
+export {
+	TOKEN_BYTES_RATIO,
+	estimateMessagesTokens,
+	estimateTokens
+} from '#lib/agent/tokenEstimate.ts';
+
 // Always keep this many of the most recent tool messages verbatim — the
 // model needs the freshest results to answer. (Mirrors the constant the
 // agent loop used before this module owned trimming.)
@@ -69,32 +77,6 @@ const DROP_TARGET_FRACTION = 0.8;
 // Fixed text, without a count: it sits in the system message, so a count
 // that changed with each drop changed the very start of the prompt.
 export const DROPPED_TURNS_NOTE = '[Older messages were dropped to fit the context window.]';
-
-const encoder = new TextEncoder();
-
-function byteLength(s: string): number {
-	return encoder.encode(s).length;
-}
-
-/** Conservative token estimate for a string. */
-export function estimateTokens(text: string): number {
-	if (!text) return 0;
-	return Math.ceil(byteLength(text) / TOKEN_BYTES_RATIO);
-}
-
-function messageTokens(m: ChatMessage): number {
-	let t = estimateTokens(messageText(m.content)) + PER_MESSAGE_OVERHEAD_TOKENS;
-	if (m.tool_calls) t += estimateTokens(JSON.stringify(m.tool_calls));
-	return t;
-}
-
-/** Conservative token estimate for a whole request (messages + tool schemas). */
-export function estimateMessagesTokens(messages: ChatMessage[], tools?: ToolDefinition[]): number {
-	let total = 0;
-	for (const m of messages) total += messageTokens(m);
-	if (tools && tools.length) total += estimateTokens(JSON.stringify(tools));
-	return total;
-}
 
 /**
  * Name the call a tool result answered, for its stub.
@@ -585,48 +567,71 @@ function pickDrops(
 const REMOVED = '[Removed to fit context.]';
 
 /**
- * Last-resort guaranteed fit: repeatedly halve the largest string
- * message (replacing with a placeholder once it gets tiny) until the
- * estimate is under budget. Converges geometrically.
+ * Last-resort guaranteed fit: cut string messages until the estimate is under
+ * budget, in this order:
  *
- * The system prompt goes after every other message bigger than a quarter of
- * the budget, and before the small ones: a chat's latest question is worth
- * more than the end of the instructions, a giant paste is not. Returns
- * whether the system prompt was cut.
+ * 1. Any non-system message bigger than a quarter of the budget, halved, the
+ *    biggest first. A giant paste is worth less than the instructions.
+ * 2. Every other message but the latest user message, replaced whole with a
+ *    marker, the biggest first. Halving these took several passes each, and
+ *    older tool results are worth less than the instructions too: ranked below
+ *    the system prompt, they kept their halves while it was cut (#1022).
+ * 3. The system prompt, halved.
+ * 4. The latest user message, halved: the question is worth more than the
+ *    end of the instructions.
+ *
+ * Returns whether the system prompt was cut.
  */
 function forceFit(messages: ChatMessage[], budget: number, tools?: ToolDefinition[]): boolean {
 	const bigEnough = Math.floor(budget * OVERSIZED_MESSAGE_FRACTION);
+	const question = messages.findLastIndex((m) => m.role === 'user');
 	let cutSystem = false;
 	for (let guard = 0; guard < 100; guard++) {
 		if (estimateMessagesTokens(messages, tools) <= budget) break;
-		let best = -1;
-		let bestRank = -1;
-		for (let i = 0; i < messages.length; i++) {
-			if (typeof messages[i].content !== 'string' || messages[i].content === REMOVED) continue;
-			const t = messageTokens(messages[i]);
-			const system = messages[i].role === 'system';
-			// Rank: big non-system messages, then the system prompt, then the rest.
-			const tier = !system && t > bigEnough ? 2 : system ? 1 : 0;
-			const rank = tier * 1e9 + t;
-			if (rank > bestRank) {
-				bestRank = rank;
-				best = i;
-			}
-		}
-		if (best < 0) break; // nothing left to truncate
-		if (messages[best].role === 'system') cutSystem = true;
-		const m = messages[best];
-		const text = m.content as string;
-		const half = Math.floor(byteLength(text) / 2);
-		if (half < 32) {
-			messages[best] = { ...m, content: REMOVED };
+		const pick = nextToCut(messages, bigEnough, question);
+		if (!pick) break; // nothing left to cut
+		const { idx, tier } = pick;
+		const m = messages[idx];
+		if (m.role === 'system') cutSystem = true;
+		if (tier === CutTier.Whole) {
+			messages[idx] = { ...m, content: REMOVED };
 			continue;
 		}
-		const result = truncateCapturedOutput(text, half);
-		messages[best] = {
-			...m,
-			content: result.truncated ? result.text : REMOVED
-		};
+		const text = m.content as string;
+		const half = Math.floor(byteLength(text) / 2);
+		const result = half < 32 ? null : truncateCapturedOutput(text, half);
+		messages[idx] = { ...m, content: result?.truncated ? result.text : REMOVED };
 	}
 	return cutSystem;
+}
+
+/** `forceFit`'s order: the higher tier is cut first. */
+const CutTier = { Question: 0, System: 1, Whole: 2, Big: 3 } as const;
+type CutTier = (typeof CutTier)[keyof typeof CutTier];
+
+/** The message `forceFit` cuts next: the highest tier, then the biggest. */
+function nextToCut(
+	messages: ChatMessage[],
+	bigEnough: number,
+	question: number
+): { idx: number; tier: CutTier } | null {
+	let best: { idx: number; tier: CutTier } | null = null;
+	let bestRank = -1;
+	for (let i = 0; i < messages.length; i++) {
+		if (typeof messages[i].content !== 'string' || messages[i].content === REMOVED) continue;
+		const t = messageTokens(messages[i]);
+		const tier: CutTier =
+			messages[i].role === 'system'
+				? CutTier.System
+				: t > bigEnough
+					? CutTier.Big
+					: i === question
+						? CutTier.Question
+						: CutTier.Whole;
+		if (tier * 1e9 + t > bestRank) {
+			bestRank = tier * 1e9 + t;
+			best = { idx: i, tier };
+		}
+	}
+	return best;
 }
