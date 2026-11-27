@@ -36,11 +36,46 @@ get() {
     echo "   $1 ($2@$3)"
 }
 
+# vendored <dest> <owner/repo> <ref> <path> [<pattern>]: the licence of code a
+# project bundles, headed by where it is. With a pattern, the file is a source
+# file whose licence is a comment in it: the first /* … */ block matching it.
+vendored() {
+    mkdir -p "$(dirname "$OUT/$1")"
+    gh api -H "Accept: application/vnd.github.raw+json" "repos/$2/contents/$4?ref=$3" |
+        node -e '
+            const [path, pattern] = process.argv.slice(1);
+            let text = require("fs").readFileSync(0, "utf8");
+            if (pattern) {
+                const block = (text.match(/\/\*[\s\S]*?\*\//g) ?? []).find((b) => new RegExp(pattern, "i").test(b));
+                if (!block) { console.error(`no licence comment matching ${pattern} in ${path}`); process.exit(1); }
+                const lines = block.slice(2, -2).split("\n");
+                const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length));
+                text = lines.map((l) => l.slice(indent)).join("\n");
+            }
+            process.stdout.write(`${path}\n\n${text.trim()}\n`);
+        ' "$4" "${5:-}" > "$OUT/$1.part"
+    mv -f "$OUT/$1.part" "$OUT/$1"
+    echo "   $1 ($2@$3 $4)"
+}
+
 echo "==> Licence texts into licences/"
 get sidecars/llama.cpp/LICENSE ggml-org/llama.cpp "$LLAMA" LICENSE
 for f in $(gh api "repos/ggml-org/llama.cpp/contents/licenses?ref=$LLAMA" --jq '.[].name'); do
     get "sidecars/llama.cpp/$f" ggml-org/llama.cpp "$LLAMA" "licenses/$f"
 done
+# What llama.cpp builds in from vendor/. nlohmann/json is LICENSE-jsonhpp above.
+L=sidecars/llama.cpp
+vendored "$L/vendor-cpp-httplib" ggml-org/llama.cpp "$LLAMA" vendor/cpp-httplib/LICENSE
+vendored "$L/vendor-hash-rotate-bits" ggml-org/llama.cpp "$LLAMA" vendor/hash/rotate-bits/LICENSE.md
+vendored "$L/vendor-hash-sha256" ggml-org/llama.cpp "$LLAMA" vendor/hash/sha256/LICENSE
+vendored "$L/vendor-hash-xxhash" ggml-org/llama.cpp "$LLAMA" vendor/hash/xxhash/LICENSE
+vendored "$L/vendor-hash-sha1" ggml-org/llama.cpp "$LLAMA" vendor/hash/sha1/sha1.c 'public domain'
+vendored "$L/vendor-miniaudio" ggml-org/llama.cpp "$LLAMA" vendor/miniaudio/miniaudio.h \
+    'choice of the following licenses'
+vendored "$L/vendor-sheredom-subprocess" ggml-org/llama.cpp "$LLAMA" vendor/sheredom/subprocess.h \
+    'free and unencumbered'
+vendored "$L/vendor-stb-image" ggml-org/llama.cpp "$LLAMA" vendor/stb/stb_image.h \
+    'available under 2 licenses'
 get sidecars/whisper.cpp/LICENSE ggml-org/whisper.cpp "$WHISPER" LICENSE
 
 # Kokoros is built from its default branch, with espeak-ng (and its pcaudiolib
