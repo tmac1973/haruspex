@@ -29,6 +29,7 @@ import {
 	spillIfLarge
 } from '#lib/agent/tools/_ptyExec.ts';
 import { registerWatch } from '#lib/shell/backgroundWatch.ts';
+import { trackUnwatched } from '#lib/shell/backgroundMemory.ts';
 import { startCodeBackground } from '#lib/agent/tools/command.ts';
 import { ttyHintFor } from '#lib/code/ttyHint.ts';
 import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
@@ -366,12 +367,22 @@ async function startBackground(
 			logPath: handle.logPath,
 			donePath: handle.donePath,
 			...ctxWslDistroArg(ctx),
+			...(handle.oomKillsAtStart != null && { oomKillsAtStart: handle.oomKillsAtStart }),
 			startedAtMs: Date.now()
 		});
 		return (
 			`Started in the background with watch on (PID ${handle.pid}). Output is collecting in ${handle.logPath}. ` +
 			`You'll get a notification turn here when it finishes — do NOT poll for it; continue with other work or wrap up.`
 		);
+	}
+	if (handle.oomKillsAtStart != null) {
+		trackUnwatched({
+			ptySessionId: ctx.shellSessionId,
+			logPath: handle.logPath,
+			donePath: handle.donePath,
+			...ctxWslDistroArg(ctx),
+			killsAtStart: handle.oomKillsAtStart
+		});
 	}
 	return (
 		`Started in the background (PID ${handle.pid}). Output → ${handle.logPath} (read it with fs_read_text). ` +

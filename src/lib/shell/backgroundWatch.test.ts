@@ -18,6 +18,7 @@ import {
 	readCodeBgLog,
 	takeCodeWatches,
 	adoptCodeWatches,
+	buildWatchNotification,
 	_resetForTests
 } from '#lib/shell/backgroundWatch.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
@@ -89,6 +90,71 @@ describe('backgroundWatch', () => {
 		});
 		await vi.advanceTimersByTimeAsync(4000);
 		expect(peekCompletedWatches(1)[0]?.exitCode).toBe(17);
+	});
+
+	it('marks a failed command out of memory when the terminal killed something while it ran', async () => {
+		let kills = 2;
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					fs_read_text_absolute: (args) => (args!.path === '/tmp/m.done' ? '137' : 'log'),
+					shell_memory_status: () => ({ limitMb: 8192, oomKills: kills })
+				},
+				undefined
+			)
+		);
+		setWatchCompletionHandler(() => {});
+		registerWatch({
+			ptySessionId: 3,
+			command: 'go test ./...',
+			logPath: '/tmp/m.log',
+			donePath: '/tmp/m.done',
+			oomKillsAtStart: 1,
+			startedAtMs: 0
+		});
+		await vi.advanceTimersByTimeAsync(4000);
+		const [w] = peekCompletedWatches(3);
+		expect(w).toMatchObject({ exitCode: 137, outOfMemory: true, memoryLimitMb: 8192 });
+		const note = await buildWatchNotification([w]);
+		expect(note).toContain('8.0 GB memory limit');
+
+		// No kill since it started: an ordinary failure.
+		consumeWatches([w.id]);
+		kills = 1;
+		registerWatch({
+			ptySessionId: 3,
+			command: 'go test ./...',
+			logPath: '/tmp/m.log',
+			donePath: '/tmp/m.done',
+			oomKillsAtStart: 1,
+			startedAtMs: 0
+		});
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(peekCompletedWatches(3)[0]?.outOfMemory).toBeUndefined();
+	});
+
+	it('does not blame a command that succeeded for a kill in the terminal', async () => {
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					fs_read_text_absolute: '0',
+					shell_memory_status: { limitMb: 8192, oomKills: 5 }
+				},
+				undefined
+			)
+		);
+		setWatchCompletionHandler(() => {});
+		registerWatch({
+			ptySessionId: 4,
+			command: 'make',
+			logPath: '/tmp/n.log',
+			donePath: '/tmp/n.done',
+			oomKillsAtStart: 1,
+			startedAtMs: 0
+		});
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(peekCompletedWatches(4)[0]?.outOfMemory).toBeUndefined();
+		expect(invoke).not.toHaveBeenCalledWith('shell_memory_status', expect.anything());
 	});
 
 	it('clearWatchesForSession drops a session’s pending watches', async () => {

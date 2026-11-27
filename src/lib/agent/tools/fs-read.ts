@@ -4,6 +4,7 @@ import { fsWorkdir, labelArg, toolInvokeError, wslDistroArg } from '#lib/agent/t
 import { resolveShellPath } from '#lib/utils/shellPath.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { isSpillFile } from '#lib/agent/tools/_ptyExec.ts';
+import { unwatchedOomNote } from '#lib/shell/backgroundMemory.ts';
 import { withLocalScopeNote } from '#lib/agent/tools/_nestedSession.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 
@@ -184,11 +185,16 @@ registerTool({
 		const window = readWindowArgs(args);
 		// A command's spilled output is outside a Code session's folder, but
 		// the command's result pointed the model at it.
-		const text = ctx.shellMode
-			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd), window)
-			: isSpillFile(path)
-				? await fsReadAbsolute('fs_read_text_absolute', path, window)
-				: await fsRead('fs_read_text', fsWorkdir(ctx)!, path, window);
+		if (ctx.shellMode) {
+			const abs = resolveShellPath(path, ctx.shellCwd);
+			const text = await fsReadAbsolute('fs_read_text_absolute', abs, window);
+			// A background command's log: say so if the memory cap killed it.
+			const oom = await unwatchedOomNote(abs);
+			return toolResult(await withLocalScopeNote(oom ? `${text}\n\n${oom}` : text, ctx));
+		}
+		const text = isSpillFile(path)
+			? await fsReadAbsolute('fs_read_text_absolute', path, window)
+			: await fsRead('fs_read_text', fsWorkdir(ctx)!, path, window);
 		return toolResult(await withLocalScopeNote(text, ctx));
 	}
 });

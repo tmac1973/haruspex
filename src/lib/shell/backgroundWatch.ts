@@ -25,6 +25,7 @@ import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import { formatDuration } from '#lib/utils/format.ts';
 import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
+import { killedForMemory } from '#lib/shell/backgroundMemory.ts';
 
 interface WatchBase {
 	id: string;
@@ -36,8 +37,10 @@ interface WatchBase {
 	 * was killed by a signal.
 	 */
 	exitCode?: number;
-	/** A code_bg watch whose process was stopped for going over its memory limit. */
+	/** Killed for going over its memory limit. */
 	outOfMemory?: boolean;
+	/** That limit in MB, when known. */
+	memoryLimitMb?: number;
 	completedAtMs?: number;
 }
 
@@ -49,6 +52,8 @@ export interface BackgroundWatch extends WatchBase {
 	donePath: string;
 	/** The WSL distro the paths live in, for a WSL session (Windows). */
 	wslDistro?: string;
+	/** The terminal's memory-cap kill count when the command started; unset without a cap. */
+	oomKillsAtStart?: number;
 }
 
 /** A Rust-side background process (`code_bg_*`) owned by a Code session. */
@@ -98,6 +103,7 @@ export function registerWatch(info: {
 	logPath: string;
 	donePath: string;
 	wslDistro?: string;
+	oomKillsAtStart?: number;
 	startedAtMs: number;
 }): string {
 	const id = nextId();
@@ -237,7 +243,7 @@ export async function buildWatchNotification(completed: AnyWatch[]): Promise<str
 				`ran ${formatDuration(finishedMs - w.startedAtMs)}, finished ${describeAgo(finishedMs)}\n` +
 				`--- output ---\n${tail.text || '(no output)'}\n---` +
 				(w.outOfMemory
-					? `\n${outOfMemoryNote({ out_of_memory: true, memory_limit_mb: null })}`
+					? `\n${outOfMemoryNote({ out_of_memory: true, memory_limit_mb: w.memoryLimitMb ?? null })}`
 					: '')
 		);
 	}
@@ -294,8 +300,13 @@ async function tick(): Promise<void> {
 			}
 			const code = Number.parseInt(content.trim(), 10);
 			if (Number.isNaN(code)) continue;
-			w.exitCode = code;
 			w.completedAtMs = Date.now();
+			const limitMb = await killedForMemory(w.ptySessionId, w.oomKillsAtStart, code);
+			if (limitMb != null) {
+				w.outOfMemory = true;
+				w.memoryLimitMb = limitMb;
+			}
+			w.exitCode = code;
 			onComplete?.(w.ptySessionId);
 		}
 		await tickCodeBg(running.filter((w): w is CodeBgWatch => w.source === 'code_bg'));

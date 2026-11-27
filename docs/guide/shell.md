@@ -11,7 +11,7 @@ The Shell tab is a real terminal with an assistant beside it. By default the ass
 
 It works on Linux, macOS and Windows. On Windows a picker in the tab chooses a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and assistant. Tabs that don't fit scroll sideways, also by mouse wheel; **←** **→** move between them. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
 
-Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, but their commands are not captured: copy what you need into the assistant box. A badge in the sidebar header shows whether capture works.
+Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, without capture: copy what you need into the assistant box. A badge in the sidebar header shows whether capture works.
 
 ## Tabs the Code tab opens
 
@@ -23,7 +23,7 @@ When the Code tab needs a command run in a terminal (a `sudo`, a password prompt
 - Anything you type is sent with your last 3 completed commands (command, output, exit code, folder). Change the number in Settings → Shell → Recent shell commands attached to each chat message; `0` sends only your question.
 - The camera button sends the screen, a window or a region.
 
-Long output is cut in the middle before it is sent (Settings → Shell → Max output bytes per captured command, 8 KiB by default). By default the last 10 lines of your shell history file are also sent; turn that off in Settings → Shell → Include your shell history file in prompts.
+Long output is cut in the middle (Settings → Shell → Max output bytes per captured command, 8 KiB by default). By default the last 10 lines of your shell history file are also sent; turn that off in Settings → Shell → Include your shell history file in prompts.
 
 **Ctrl+Shift+A** shows or hides the sidebar, and **Ctrl+`** moves focus between terminal and assistant.
 
@@ -39,17 +39,17 @@ With Full access the assistant runs commands in your live terminal, so they shar
 
 Settings → Code → Auto-approve commands skips that prompt. It is off by default; turn it on only if you fully trust the model. Settings → Code also holds the command time limit (30 seconds by default), shared with the Code tab. Settings → Shell → Max steps per turn (40) caps a turn in either mode.
 
-Full access needs a capable model. Small local models make mistakes and get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
+Full access needs a capable model. Small local models get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
 
 ## Continue in the Code tab
 
 **Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab. This conversation stays here. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
 
-The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes. At about three quarters of the model's context, its older turns are summarised before the next one; the sidebar still shows every message.
+The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes. Near three quarters of the model's context, older turns are summarised; the sidebar still shows every message.
 
 ## Stop runaway commands (memory limit)
 
-Settings → Shell → Memory limit caps each command the assistant runs on its own, and each tab's terminal as a whole (your own commands too), at a share of your RAM: 50% by default, `0` turns it off. Over the limit, only the offending process is killed; the shell and its scrollback stay. The assistant is told why. It needs Linux with a systemd user session (in WSL, lingering too); in PowerShell, the assistant's commands only. Tabs opened after a change use the new limit.
+Settings → Shell → Memory limit caps each command the assistant runs on its own, and each tab's terminal as a whole (your own commands too), at a share of your RAM: 50% by default, `0` turns it off. Over the limit, only the offending process is killed; the shell and its scrollback stay. The assistant is told why, also for a background command: in the watch notice, or when it next reads the log. It needs Linux with a systemd user session (in WSL, lingering too); in PowerShell, the assistant's commands only. Tabs opened after a change use the new limit.
 
 ## Repo instructions (AGENTS.md)
 
