@@ -33,7 +33,8 @@ const BACKEND_NAME: Record<ImageBackendKind, string> = {
 	local: 'the bundled engine',
 	comfyui: 'ComfyUI',
 	lemonade: 'Lemonade',
-	'llama-toolchest': 'llama-toolchest'
+	'llama-toolchest': 'llama-toolchest',
+	openrouter: 'OpenRouter'
 };
 
 function met(need: SkillNeed): boolean {

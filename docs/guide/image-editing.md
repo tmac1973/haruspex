@@ -23,7 +23,7 @@ Say which part: "change only the sky", "just the left half". The assistant marks
 
 ## Extend a picture past its edges
 
-Ask for it wider or taller: "extend it by half on the right, continuing the road". The picture is kept, apart from a narrow blend where it meets the new part, which is painted to continue it, on the bundled engine or ComfyUI with any of their models. Say what the scene's light is like if it matters; a faint seam can still show in an even sky. Lemonade and llama-toolchest can't extend.
+Ask for it wider or taller: "extend it by half on the right, continuing the road". The picture is kept, apart from a narrow blend where it meets the new part, which is painted to continue it, on the bundled engine or ComfyUI with any of their models. Say what the scene's light is like if it matters; a faint seam can still show in an even sky. Lemonade, llama-toolchest and OpenRouter can't.
 
 ## Combine pictures
 
@@ -34,9 +34,10 @@ Name several pictures in one request, such as "put the cat from my second pictur
 Settings → Image generation says what each model can do (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. An edit goes to the first model in the list that can make it. If no model edits or upscales, the assistant can't offer to. Editing needs a model made for it:
 
 - **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** in the bundled-engine model in Settings → Image generation. Qwen-Image may not be used commercially. Ming-Image can't edit.
-- **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later, **FLUX.2 klein 4B** (12.4 GB) **or Qwen-Image-Edit-2511** (31 GB, about 24 GB of VRAM). Both are Apache 2.0, commercial use allowed; **Install** them under **Models on the server**. The files a model draws with are enough. Pictures are uploaded to the server's input folder.
-- **Lemonade with Qwen-Image 2.1.** Installing it from Settings → Image generation now includes the vision weights; for one installed earlier, press **Add editing** under **Models on the server**. Haruspex also installs Lemonade's image engine the first time, if the server has none.
+- **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later, **FLUX.2 klein 4B** (12.4 GB) **or Qwen-Image-Edit-2511** (31 GB, about 24 GB of VRAM). Both are Apache 2.0, commercial use allowed; **Install** them under **Models on the server**. Pictures are uploaded to the server's input folder.
+- **Lemonade with Qwen-Image 2.1.** Installing it from Settings → Image generation includes the vision weights; for one installed earlier, press **Add editing** under **Models on the server**.
 - **llama-toolchest** with a model that edits, such as FLUX.2 klein 4B (Apache 2.0, commercial use allowed). Add it in llama-toolchest; it is listed like any other model.
+- **OpenRouter** with a model that takes pictures, such as GPT Image. A change to only part of a picture goes to another model.
 
 When no model in the list can edit, the assistant says so and what can. Lemonade's own edit models, such as its FLUX.2 klein, can't be chosen in Haruspex yet.
 

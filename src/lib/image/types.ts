@@ -16,7 +16,8 @@
 import type { GenerationEntry } from '#lib/generation/entry.ts';
 
 /** Which backend implementation a request is served by. */
-export type ImageBackendKind = 'none' | 'comfyui' | 'local' | 'lemonade' | 'llama-toolchest';
+export type ImageBackendKind =
+	'none' | 'comfyui' | 'local' | 'lemonade' | 'llama-toolchest' | 'openrouter';
 
 /**
  * One image model on one server: the backend is built from it (see

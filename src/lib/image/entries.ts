@@ -50,10 +50,12 @@ export function entryNamesFor(op: 'draw' | 'edit' | 'upscale'): string[] {
 /**
  * An image model that upscales with its own server's upscaler, or may (no
  * probe has said): the bundled engine, ComfyUI and Lemonade. A toolchest
- * server's upscalers are entries of their own in Settings → Image generation → Upscalers.
+ * server's upscalers are entries of their own in Settings → Image generation → Upscalers,
+ * and OpenRouter has none.
  */
 export function modelUpscales(e: ImageModelEntry): boolean {
-	return e.backend !== 'llama-toolchest' && (!e.caps || !!e.caps.upscale);
+	if (e.backend === 'llama-toolchest' || e.backend === 'openrouter') return false;
+	return !e.caps || !!e.caps.upscale;
 }
 
 /** The pictures one edit took before models said: what an unprobed one is assumed to take. */

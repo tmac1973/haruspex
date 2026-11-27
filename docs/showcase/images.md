@@ -22,6 +22,25 @@ The picture appears in the answer and is kept with the conversation. Click it fo
 
 Read more: images, image-editing
 
+## Draw with a cloud model on OpenRouter
+
+No GPU to spare? Add an OpenRouter image model, such as GPT Image or FLUX.2, and the same tools draw with it. Each picture is paid for from your OpenRouter credit, and the prompt is sent to OpenRouter.
+
+Tab: Chat
+Required settings: Settings → Image generation → Add model → Backend: OpenRouter, with an OpenRouter API key
+
+Prompt:
+
+> Draw a lighthouse on a rocky coast at dusk, with OpenRouter.
+
+Example output:
+
+The picture appears in the answer, cut and scaled to the shape asked for. Probe in Settings → Image generation shows the model's price before you use it.
+
+<!-- media: Settings → Image generation with an OpenRouter model chosen and its price after Probe -->
+
+Read more: images
+
 ## Change a picture
 
 Attach a picture, or point at one drawn earlier, and say what to change. The original is kept and the edit appears as a new picture.
