@@ -235,7 +235,16 @@ describe('turning an image model off', () => {
 		moveImageModel('a', 1);
 		renameImageModel('a', 'old ming');
 		expect(allImageEntries().map((e) => e.name)).toEqual(['klein', 'old ming']);
-		const handle = { backend: 'comfyui' as const, entryId: 'a', baseUrl: '', id: 'j', model: 'm' };
+		const handle = {
+			backend: 'comfyui' as const,
+			entryId: 'a',
+			baseUrl: '',
+			id: 'j',
+			model: 'm',
+			seed: 1,
+			width: 1024,
+			height: 1024
+		};
 		expect(entryForHandle(handle)?.name).toBe('old ming');
 	});
 });
