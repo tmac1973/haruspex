@@ -297,6 +297,11 @@ export interface BackendOverride {
 	discovered?: {
 		reasoning?: RemoteReasoningCaps | null;
 		sampling?: RemoteSamplingCaps | null;
+		/**
+		 * The model's own slot count, when the server runs each model as its
+		 * own instance (llama-toolchest). Gives the model a lane of its own.
+		 */
+		parallel?: number | null;
 	} | null;
 }
 

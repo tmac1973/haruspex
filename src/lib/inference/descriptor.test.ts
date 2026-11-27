@@ -26,6 +26,7 @@ function resetToLocalDefaults(): void {
 		remoteBackendKind: null,
 		remoteSampling: null,
 		remoteReasoning: null,
+		remoteParallel: null,
 		allowParallelInference: false,
 		openrouterReasoningEffort: null
 	});
@@ -631,6 +632,49 @@ describe('per-job override — discovered capabilities', () => {
 		});
 		expect(d.reasoningMode).toEqual({ kind: 'template-kwarg', kwarg: 'enable_thinking' });
 		expect(d.discoveredSampling).toBeNull();
+	});
+});
+
+describe('resolveBackendDescriptor — lane per model', () => {
+	it('names the model when a toolchest probe reported its slots', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://tc:3000',
+			remoteBackendKind: 'llama-toolchest',
+			remoteModelId: 'qwen',
+			remoteParallel: 2,
+			allowParallelInference: true
+		});
+		const d = resolveBackendDescriptor();
+		expect(d.laneModel).toBe('qwen');
+		expect(d.parallelSlots).toBe(2);
+	});
+
+	it('shares the URL lane for a remote server with no slot count', () => {
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://vllm:8000',
+			remoteBackendKind: 'openai-compat',
+			remoteModelId: 'qwen',
+			remoteParallel: null
+		});
+		expect(resolveBackendDescriptor().laneModel).toBeNull();
+	});
+
+	it("takes an override's slots from its probe, over the Settings toggle", () => {
+		updateInferenceBackend({ allowParallelInference: true });
+		const one = resolveBackendDescriptor({
+			baseUrl: 'http://tc:3000',
+			modelId: 'coder',
+			discovered: { parallel: 1 }
+		});
+		expect(one).toMatchObject({ allowParallel: false, parallelSlots: 1, laneModel: 'coder' });
+		const never = resolveBackendDescriptor({ baseUrl: 'http://tc:3000', modelId: 'coder' });
+		expect(never).toMatchObject({ allowParallel: true, parallelSlots: null, laneModel: null });
+	});
+
+	it('never gives the local backend a model lane', () => {
+		expect(resolveBackendDescriptor().laneModel).toBeNull();
 	});
 });
 

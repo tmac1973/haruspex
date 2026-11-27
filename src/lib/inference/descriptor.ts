@@ -171,6 +171,13 @@ export interface BackendDescriptor {
 	 * server with a fixed slot count. Only meaningful when `allowParallel`.
 	 */
 	parallelSlots: number | null;
+	/**
+	 * The model id when the server runs each model as its own instance with
+	 * its own slots (a llama-toolchest probe reported this model's count), so
+	 * the inference queue gives the model a lane of its own. Null when turns
+	 * for every model on `baseUrl` share one lane.
+	 */
+	laneModel: string | null;
 }
 
 /** What a recognized model identity implies. One entry per model shape. */
@@ -345,7 +352,8 @@ function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 		// Settings → Inference → Parallel streams. Every stream has the full
 		// context, so a lane admitting this many never starves one.
 		allowParallel: localParallelSlots(settings) > 1,
-		parallelSlots: localParallelSlots(settings)
+		parallelSlots: localParallelSlots(settings),
+		laneModel: null
 	};
 }
 
@@ -454,7 +462,8 @@ function resolveRemoteDescriptor(
 		allowParallel: inf.allowParallelInference,
 		// Only a toolchest probe reports a slot count; everything else stays
 		// unknown, which keeps today's unbounded behaviour for hosted APIs.
-		parallelSlots: toolchest ? inf.remoteParallel : null
+		parallelSlots: toolchest ? inf.remoteParallel : null,
+		laneModel: toolchest && inf.remoteParallel !== null ? inf.remoteModelId || 'default' : null
 	};
 }
 
@@ -484,6 +493,32 @@ function overrideReasoning(
 	return {
 		reasoningMode: drivable ? { kind: 'template-kwarg', kwarg: caps.kwarg! } : { kind: 'none' },
 		reasoningSupported: caps.supported
+	};
+}
+
+/**
+ * An override's slots. When its last probe reported the model's own slot
+ * count (only llama-toolchest does, one instance per model), that count is
+ * the truth and the model gets its own lane, as it would from Settings.
+ * Otherwise the override follows Settings' parallel toggle with no count.
+ */
+function overrideSlots(
+	settings: AppSettings,
+	override: BackendOverride,
+	openrouter: boolean
+): Pick<BackendDescriptor, 'allowParallel' | 'parallelSlots' | 'laneModel'> {
+	const parallel = openrouter ? null : (override.discovered?.parallel ?? null);
+	if (parallel === null) {
+		return {
+			allowParallel: settings.inferenceBackend.allowParallelInference,
+			parallelSlots: null,
+			laneModel: null
+		};
+	}
+	return {
+		allowParallel: parallel > 1,
+		parallelSlots: parallel,
+		laneModel: override.modelId?.trim() || 'default'
 	};
 }
 
@@ -534,8 +569,6 @@ function resolveOverrideDescriptor(
 		reasoningMode,
 		reasoningSupported,
 		reasoningEffort,
-		allowParallel: settings.inferenceBackend.allowParallelInference,
-		// A per-job override carries no probe data about slot counts.
-		parallelSlots: null
+		...overrideSlots(settings, override, openrouter)
 	};
 }

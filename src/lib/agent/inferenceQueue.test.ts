@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 	// on the backend kind, so the mock has to carry both.
 	backendKind: null as string | null,
 	remoteParallel: null as number | null,
+	remoteModelId: '',
 	// reqId -> resolver for the pending inference_acquire promise
 	acquire: new Map<string, { resolve: () => void; reject: (e: unknown) => void }>(),
 	eventHandler: undefined as ((e: { payload: unknown }) => void) | undefined
@@ -30,7 +31,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 				remoteBaseUrl: mocks.remoteBaseUrl,
 				allowParallelInference: mocks.allowParallelInference,
 				remoteBackendKind: mocks.backendKind,
-				remoteParallel: mocks.remoteParallel
+				remoteParallel: mocks.remoteParallel,
+				remoteModelId: mocks.remoteModelId
 			}
 		}),
 		// Read by resolveBackendDescriptor, which laneFor now delegates to.
@@ -80,6 +82,7 @@ import {
 	getRunningCount,
 	createSlotLender,
 	laneConcurrency,
+	laneKey,
 	_resetForTests
 } from '#lib/agent/inferenceQueue.svelte.ts';
 
@@ -112,6 +115,7 @@ beforeEach(() => {
 	mocks.allowParallelInference = false;
 	mocks.backendKind = null;
 	mocks.remoteParallel = null;
+	mocks.remoteModelId = '';
 	mocks.acquire.clear();
 	mocks.eventHandler = undefined;
 	vi.mocked(invoke).mockClear();
@@ -307,6 +311,41 @@ describe('inferenceQueue client — lane concurrency', () => {
 	it('is 1 on a remote lane without parallel inference', () => {
 		mocks.mode = 'remote';
 		expect(laneConcurrency()).toBe(1);
+	});
+});
+
+describe('inferenceQueue client — lane per model', () => {
+	const url = 'https://api.example.com';
+
+	it("gives each toolchest model its own lane when the probe reported the model's slots", () => {
+		mocks.mode = 'remote';
+		mocks.backendKind = 'llama-toolchest';
+		mocks.remoteParallel = 1;
+		mocks.remoteModelId = 'model-a';
+		const other = { baseUrl: url, modelId: 'model-b', discovered: { parallel: 2 } };
+		expect(laneKey()).toBe(`remote:${url}#model-a`);
+		expect(laneKey(other)).toBe(`remote:${url}#model-b`);
+		// Each instance has its own slot count, not the Settings toggle's.
+		expect(laneConcurrency()).toBe(1);
+		expect(laneConcurrency(other)).toBe(2);
+	});
+
+	it('keeps one lane per URL when no slot count is known', () => {
+		mocks.mode = 'remote';
+		mocks.remoteModelId = 'model-a';
+		expect(laneKey()).toBe(`remote:${url}`);
+		expect(laneKey({ baseUrl: url, modelId: 'model-b' })).toBe(`remote:${url}`);
+	});
+
+	it('puts two overrides for one model on one lane', () => {
+		const a = { baseUrl: url, modelId: 'm', discovered: { parallel: 2 } };
+		const b = { baseUrl: `${url}/`, modelId: 'm', discovered: { parallel: 2 } };
+		expect(laneKey(a)).toBe(laneKey(b));
+	});
+
+	it('ignores a slot count on an OpenRouter override', () => {
+		const o = { baseUrl: 'https://openrouter.ai/api', modelId: 'x', discovered: { parallel: 2 } };
+		expect(laneKey(o)).toBe('remote:https://openrouter.ai/api');
 	});
 });
 

@@ -183,7 +183,11 @@
 		if (caps.vision !== null) form.vision = caps.vision ? 'yes' : 'no';
 		// Caps are per model: re-picking replaces them.
 		form.discovered = picked
-			? { reasoning: picked.reasoning ?? null, sampling: picked.sampling ?? null }
+			? {
+					reasoning: picked.reasoning ?? null,
+					sampling: picked.sampling ?? null,
+					parallel: picked.parallel ?? null
+				}
 			: null;
 		if (!form.sourceTouched) form.samplingSource = defaultSourceForCaps(form.discovered);
 	}
