@@ -11,7 +11,12 @@ import {
 	trimOldToolMessages
 } from '#lib/agent/contextBudget.ts';
 import { logDebug } from '#lib/debugLog.ts';
-import { inLoopTrimBudget, promptReserve, type LoopContext } from '#lib/agent/loop/context.ts';
+import {
+	inLoopTrimBudget,
+	promptReserve,
+	recallRoom,
+	type LoopContext
+} from '#lib/agent/loop/context.ts';
 
 /**
  * Deterministically shrink `ctx.messages` to fit the server's context
@@ -105,4 +110,20 @@ export function fitForCall(ctx: LoopContext, tools?: ToolDefinition[]): number {
 /** After a call: if it ran out of room, the next one reserves the ceiling. */
 export function noteResponseFinish(ctx: LoopContext, finish: string | null | undefined): void {
 	ctx.responseRoom.fullReserve = finish === 'length';
+}
+
+/**
+ * Start a tool round's recall budget: the room left below the trim threshold
+ * with the prompt as it stands, the round's calls message included. Measured
+ * like `trimAhead` measures, then turned back into the plain estimate that
+ * `recall_result` counts its pages in. A fixed share of the window was not
+ * enough: it reset each round, so a second round of recalls still crossed the
+ * threshold, and it counted pages uncalibrated, at about two thirds of what
+ * they cost (#1022).
+ */
+export function startRecallRound(ctx: LoopContext): void {
+	if (!ctx.recallArchive) return;
+	const calibration = getTokenCalibration(ctx.descriptor.calibrationKey);
+	const prompt = Math.ceil(estimateMessagesTokens(ctx.messages, ctx.tools) * calibration);
+	ctx.recallArchive.startRound(recallRoom(ctx.contextSize, prompt) / calibration);
 }

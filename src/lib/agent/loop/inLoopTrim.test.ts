@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { inLoopTrimBudget } from './iteration';
-import { recallRoundBudget } from './context';
+import { recallRoom } from './context';
 import { trimOldToolMessages, estimateMessagesTokens } from '#lib/agent/contextBudget.ts';
 import type { ChatMessage } from '#lib/api.ts';
 
@@ -61,10 +61,11 @@ describe('the in-loop trim, end to end', () => {
 	});
 });
 
-describe('recallRoundBudget', () => {
-	it('is the gap between the trim target and its threshold', () => {
-		// 70% − 55% of the window.
-		expect(recallRoundBudget(65_536)).toBe(9830);
-		expect(recallRoundBudget(0)).toBe(Infinity);
+describe('recallRoom', () => {
+	it('is what is left below the trim threshold', () => {
+		// 70% of 100K is 70K.
+		expect(recallRoom(100_000, 36_000)).toBe(34_000);
+		expect(recallRoom(100_000, 80_000)).toBe(0);
+		expect(recallRoom(0, 36_000)).toBe(Infinity);
 	});
 });

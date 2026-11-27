@@ -31,17 +31,16 @@ export interface ArchivedResult {
 export class RecallArchive {
 	private readonly byId = new Map<string, ArchivedResult>();
 	private readonly idByCall = new Map<string, string>();
-	/** Estimated tokens handed back so far in this tool round. */
-	private roundUsed = 0;
-
 	/**
-	 * `roundTokens` is the most one tool round's recalls may hand back. A
-	 * round that recalls more than the window holds is trimmed again before
-	 * the model reads it: in a live run six parallel recalls took the prompt
-	 * to 98% and the next call stubbed them all, for a re-read that bought
+	 * The most this tool round's recalls may hand back, in estimated tokens
+	 * (`estimateTokens`, uncalibrated), and how much they have. A round that
+	 * recalls more than the window has room for is trimmed again before the
+	 * model reads it: in a live run six parallel recalls took the prompt to
+	 * 98% and the next call stubbed them all, for a re-read that bought
 	 * nothing (#1022).
 	 */
-	constructor(private readonly roundTokens = Infinity) {}
+	private roundTokens = Infinity;
+	private roundUsed = 0;
 
 	/**
 	 * Keep `text`, the full result of tool call `toolCallId`, and return the id
@@ -65,8 +64,9 @@ export class RecallArchive {
 		return this.byId.size;
 	}
 
-	/** A new tool round: its recalls start from an empty budget. */
-	startRound(): void {
+	/** A new tool round, whose recalls have `roomTokens` between them. */
+	startRound(roomTokens = Infinity): void {
+		this.roundTokens = roomTokens;
 		this.roundUsed = 0;
 	}
 
@@ -82,17 +82,9 @@ export class RecallArchive {
 	}
 }
 
-/**
- * An archive for a turn that offers `recall_result`, none otherwise.
- * `roundTokens` caps each tool round's recalls (see `RecallArchive`).
- */
-export function archiveFor(
-	tools: ToolDefinition[],
-	roundTokens = Infinity
-): RecallArchive | undefined {
-	return tools.some((t) => t.function.name === RECALL_TOOL)
-		? new RecallArchive(roundTokens)
-		: undefined;
+/** An archive for a turn that offers `recall_result`; none otherwise. */
+export function archiveFor(tools: ToolDefinition[]): RecallArchive | undefined {
+	return tools.some((t) => t.function.name === RECALL_TOOL) ? new RecallArchive() : undefined;
 }
 
 /**
