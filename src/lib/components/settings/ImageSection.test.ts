@@ -36,8 +36,8 @@ import ImageSection from './ImageSection.svelte';
 const catalogue = [
 	{
 		id: 'ming',
-		name: 'user.Ming-Image-0.1-Design-GGUF',
-		description: 'Ming-Image 0.1 Design — transparent sprites, the default (~17 GB)',
+		name: 'user.Ming-Image-0.2-Design-GGUF',
+		description: 'Ming-Image 0.2 Design — transparent sprites, the default (~17 GB)',
 		license: 'MIT — commercial use allowed.',
 		license_url: 'https://example.com/ming',
 		commercial_use: true,
@@ -163,7 +163,7 @@ describe('an open Lemonade model', () => {
 			selector: 'select'
 		})) as HTMLSelectElement;
 		await waitFor(() =>
-			expect([...select.options].map((o) => o.textContent)).toEqual(['Ming-Image 0.1 Design'])
+			expect([...select.options].map((o) => o.textContent)).toEqual(['Ming-Image 0.2 Design'])
 		);
 		await screen.findByText(/Connected — Lemonade 2026\.43\.3/);
 		await waitFor(() => expect(settings.imageModels[0].caps).toMatchObject({ transparency: true }));

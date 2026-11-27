@@ -7,7 +7,7 @@ description: Adding image models (ComfyUI, the bundled engine, Lemonade, llama-t
 
 Haruspex can draw pictures with diffusion models. It is off by default: nothing is downloaded or started until you add a model in Settings → Image generation.
 
-This page is about drawing new pictures. To change one, see the `image-editing` page; for web photos in answers, the `chat` page.
+To change a picture, see the `image-editing` page; for web photos in answers, the `chat` page.
 
 ## Add image models
 
@@ -25,7 +25,7 @@ Every model's **API key** is a named key from Settings → Inference → API Key
 
 ### Set up the bundled engine
 
-Under **Bundled engine**, press **Download** on a model (17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when needed or on **Start**, and stops on **Stop**, on removing it, or on quitting. Two bundled-engine models take turns.
+Under **Bundled engine**, press **Download** on a model (17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. A Ming-Image 0.1 download needs 0.2's; the old files go after it. The engine starts when needed or on **Start**, and stops on **Stop**, removing it, or quitting. Two models take turns.
 
 ### Set up ComfyUI
 
@@ -49,7 +49,7 @@ Each result says what it cost. Settings → Image generation totals OpenRouter p
 
 | Model                                 | Licence               | Commercial use  | Bundled engine needs        |
 | ------------------------------------- | --------------------- | --------------- | --------------------------- |
-| Ming-Image 0.1 Design (default)       | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
+| Ming-Image 0.2 Design (default)       | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
 | Qwen-Image 2.1 Turbo                  | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
 | FLUX.2 klein 4B, Qwen-Image-Edit-2511 | Apache 2.0            | Allowed         | ComfyUI only                |
 

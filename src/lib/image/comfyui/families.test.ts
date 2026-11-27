@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { familyOf, pickCompanion, resolveCompanions, hasModel } from './families';
+import {
+	familyOf,
+	pickCompanion,
+	resolveCompanions,
+	hasModel,
+	mingVersion,
+	sameRelease
+} from './families';
 
 describe('familyOf', () => {
 	it('recognises the DiT families by the filenames they ship under', () => {
@@ -113,11 +120,49 @@ describe('resolveCompanions', () => {
 		});
 	});
 
+	it("pairs a Ming model with its own release's text encoder", async () => {
+		lists.CLIPLoader = [
+			'ming_image_0.1_ling_mini_2.0_w4a8.safetensors',
+			'ming_image_0.2_ling_mini_2.0_w4a8.safetensors'
+		];
+		const pick = async (model?: string) =>
+			(await resolveCompanions(cfg, 'ming', model)).textEncoder;
+		expect(await pick('ming_image_0.2_design_int8_convrot.safetensors')).toBe(
+			'ming_image_0.2_ling_mini_2.0_w4a8.safetensors'
+		);
+		expect(await pick('ming_image_0.1_design_int8_convrot.safetensors')).toBe(
+			'ming_image_0.1_ling_mini_2.0_w4a8.safetensors'
+		);
+		// A model under a name of the user's takes the best of any release.
+		expect(await pick('my_ming.safetensors')).toBe('ming_image_0.1_ling_mini_2.0_w4a8.safetensors');
+	});
+
+	it("refuses 0.1's encoder for 0.2's model, naming the release", async () => {
+		await expect(
+			resolveCompanions(cfg, 'ming', 'ming_image_0.2_design_int8_convrot.safetensors')
+		).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: expect.stringMatching(/Ming-Image 0\.2 text encoder/)
+		});
+	});
+
 	it('treats an empty list as having none, not as "would not say"', async () => {
 		// A server with no models at all probed as "Connected".
 		lists.UNETLoader = [];
 		expect(await hasModel(cfg, 'ming', 'ming_image_0.1_design_int8_convrot.safetensors')).toBe(
 			false
 		);
+	});
+});
+
+describe('mingVersion', () => {
+	it('reads the release from every name the files ship under', () => {
+		expect(mingVersion('ming_image_0.2_design_int8_convrot.safetensors')).toBe('0.2');
+		expect(mingVersion('ming_image_0.2_ling_mini_2.0_w4a8.safetensors')).toBe('0.2');
+		expect(mingVersion('ming/ming_image_0.1_design_bf16.safetensors')).toBe('0.1');
+		expect(mingVersion('Ming-Image-0.2-Design-Q8_0.gguf')).toBe('0.2');
+		expect(mingVersion('ming_image_vae_bf16.safetensors')).toBeNull();
+		expect(sameRelease('ming_image_vae_bf16.safetensors', 'ming_image_0.2_design.gguf')).toBe(true);
+		expect(sameRelease('qwen3vl_8b_int8.safetensors', undefined)).toBe(true);
 	});
 });

@@ -32,8 +32,8 @@ const editEntry = (over: Partial<ImageModelEntry>) => {
 const catalogue = [
 	{
 		id: 'ming',
-		name: 'user.Ming-Image-0.1-Design-GGUF',
-		description: 'Ming-Image 0.1 Design — transparent sprites, the default (~17 GB)'
+		name: 'user.Ming-Image-0.2-Design-GGUF',
+		description: 'Ming-Image 0.2 Design — transparent sprites, the default (~17 GB)'
 	},
 	{
 		id: 'qwen21',
@@ -92,7 +92,7 @@ describe('lemonade backend', () => {
 			ok: true,
 			detail: 'Connected — Lemonade 2026.43.3 on AMD Radeon AI PRO R9700 (gfx1201), rocm.',
 			// Only what is installed there: the dropdown chooses among these.
-			models: [{ name: 'ming', label: 'Ming-Image 0.1 Design' }]
+			models: [{ name: 'ming', label: 'Ming-Image 0.2 Design' }]
 		});
 	});
 
@@ -100,7 +100,7 @@ describe('lemonade backend', () => {
 		editEntry({ model: 'qwen21' });
 		const missing = await lemonadeBackend.probe();
 		expect(missing.detail).toMatch(/Qwen-Image 2.1 Turbo is not installed on the server/);
-		expect(missing.models).toEqual([{ name: 'ming', label: 'Ming-Image 0.1 Design' }]);
+		expect(missing.models).toEqual([{ name: 'ming', label: 'Ming-Image 0.2 Design' }]);
 		editEntry({ model: '' });
 		const none = await lemonadeBackend.probe();
 		expect(none.detail).toMatch(/No model is chosen/);
@@ -121,7 +121,7 @@ describe('lemonade backend', () => {
 			transparent: true
 		});
 		const [call] = generations();
-		expect(call.body).toMatchObject({ model: 'user.Ming-Image-0.1-Design-GGUF', seed: 5 });
+		expect(call.body).toMatchObject({ model: 'user.Ming-Image-0.2-Design-GGUF', seed: 5 });
 		expect(String(call.body!.prompt)).toMatch(
 			/<\/sd_cpp_extra_args> RGBA, 4-channel, transparent background\. a coin$/
 		);
@@ -234,7 +234,7 @@ describe('lemonade backend', () => {
 						throw {
 							kind: 'rejected',
 							status: 404,
-							body: '{"error":{"message":"Model \'user.Ming-Image-0.1-Design-GGUF\' was not found."}}'
+							body: '{"error":{"message":"Model \'user.Ming-Image-0.2-Design-GGUF\' was not found."}}'
 						};
 					}
 				})
@@ -245,7 +245,7 @@ describe('lemonade backend', () => {
 		).rejects.toMatchObject({
 			kind: 'rejected',
 			message:
-				"Lemonade refused /api/v1/images/generations: Model 'user.Ming-Image-0.1-Design-GGUF' was not found."
+				"Lemonade refused /api/v1/images/generations: Model 'user.Ming-Image-0.2-Design-GGUF' was not found."
 		});
 	});
 });
@@ -267,7 +267,7 @@ describe('lemonade options from an older Haruspex', () => {
 						'GET /api/v1/health': health,
 						'GET /api/v1/system-info': systemInfo,
 						'GET /api/v1/models?show_all=true': { data },
-						'POST /api/v1/models/user.Ming-Image-0.1-Design-GGUF/options': {},
+						'POST /api/v1/models/user.Ming-Image-0.2-Design-GGUF/options': {},
 						'POST /api/v1/unload': {},
 						'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
 					})

@@ -31,6 +31,7 @@ import {
 	findUpscaler,
 	hasCompanions,
 	listDiffusionModels,
+	sameRelease,
 	type ModelFamily
 } from '#lib/image/comfyui/families.ts';
 
@@ -58,12 +59,14 @@ export async function missingFiles(
 		return (await findUpscaler(cfg)) ? [] : set.files;
 	}
 	const family = set.family as DitFamily;
+	// Of the set's own release: a server with only Ming 0.1 lacks 0.2.
+	const model = set.files.find((f) => f.folder === 'diffusion_models')?.filename;
 	const [dits, companions] = await Promise.all([
 		listDiffusionModels(cfg),
-		hasCompanions(cfg, family)
+		hasCompanions(cfg, family, model)
 	]);
 	const have: Record<ComfyModelFile['folder'], boolean> = {
-		diffusion_models: dits.some((n) => familyOf(n) === family),
+		diffusion_models: dits.some((n) => familyOf(n) === family && sameRelease(n, model)),
 		text_encoders: companions.textEncoder,
 		vae: companions.vae,
 		loras: companions.lora,

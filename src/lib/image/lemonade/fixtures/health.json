@@ -4,13 +4,13 @@
 			"backend_alive": true,
 			"backend_health": "ready",
 			"backend_url": "http://127.0.0.1:8001/v1",
-			"checkpoint": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
+			"checkpoint": "voltaire321/Ming-Image-0.2-Design-GGUF:ming_image_0.2_design-Q8_0.gguf",
 			"device": "gpu",
 			"is_busy": false,
 			"is_streaming": false,
 			"last_use": 790599332,
 			"loaded": true,
-			"model_name": "Ming-Image-0.1-Design-GGUF",
+			"model_name": "Ming-Image-0.2-Design-GGUF",
 			"pid": 3029048,
 			"pinned": false,
 			"recipe": "sd-cpp",
@@ -19,7 +19,7 @@
 				"ctx_size": 32768,
 				"height": 1024,
 				"sampling_method": "euler",
-				"sdcpp_args": "--tokenizer /opt/var/lib/lemonade/.cache/huggingface/hub/models--inclusionAI--Ming-Image-0.1-Design/snapshots/c57c49689d12ef7d4e24a170014f1dc43d3ce258/mllm/tokenizer.json --diffusion-fa --vae-tiling",
+				"sdcpp_args": "--tokenizer /opt/var/lib/lemonade/.cache/huggingface/hub/models--inclusionAI--Ming-Image-0.2-Design/snapshots/c57c49689d12ef7d4e24a170014f1dc43d3ce258/mllm/tokenizer.json --diffusion-fa --vae-tiling",
 				"steps": 12,
 				"width": 1024
 			},
@@ -39,7 +39,7 @@
 		"transcription": 1,
 		"tts": 1
 	},
-	"model_loaded": "Ming-Image-0.1-Design-GGUF",
+	"model_loaded": "Ming-Image-0.2-Design-GGUF",
 	"pinned_helper_models": {
 		"classification": 0,
 		"embedding": 0,

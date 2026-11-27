@@ -149,7 +149,7 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
         ComfyModelSet {
             family: "ming".into(),
             kind: ComfyModelKind::Image,
-            label: "Ming-Image 0.1 Design".into(),
+            label: "Ming-Image 0.2 Design".into(),
             license: MING_LICENCE.text.into(),
             license_url: MING_LICENCE.url.into(),
             commercial_use: MING_LICENCE.commercial_use,
@@ -160,8 +160,8 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                 file(
                     DiffusionModels,
                     MING,
-                    "diffusion_models/ming_image_0.1_design_int8_convrot.safetensors",
-                    "0d3f5bcc6d2cb830578ea6d0925b30b9fb66058bcb651cc8633e60760dceb1d0",
+                    "diffusion_models/ming_image_0.2_design_int8_convrot.safetensors",
+                    "40732a86d99e47df8decc99acdee45ee42fd5d7ea6d3c70d5b6d40ec999a55a1",
                     6_175_239_953,
                 ),
                 // w4a8, not int8: 12.8 GB against 19.5, and no difference to
@@ -169,8 +169,8 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                 file(
                     TextEncoders,
                     MING,
-                    "text_encoders/ming_image_0.1_ling_mini_2.0_w4a8.safetensors",
-                    "91de4cd0718bec1452b74ff3b0df0dfde280493dab384f0eb4007c18bf932ccd",
+                    "text_encoders/ming_image_0.2_ling_mini_2.0_w4a8.safetensors",
+                    "568f398909e5333877f8eae6167f97550541b6b568cf130da7b6900083c20cb0",
                     12_813_574_339,
                 ),
                 shared(Vae, &MING_VAE),

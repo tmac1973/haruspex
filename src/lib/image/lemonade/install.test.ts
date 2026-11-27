@@ -23,17 +23,17 @@ beforeEach(() => useLemonadeServer({ baseUrl: 'http://box:13305', apiKey: '' }))
 
 const ming = {
 	id: 'ming',
-	name: 'user.Ming-Image-0.1-Design-GGUF',
-	pull: { model_name: 'user.Ming-Image-0.1-Design-GGUF', recipe: 'sd-cpp' }
+	name: 'user.Ming-Image-0.2-Design-GGUF',
+	pull: { model_name: 'user.Ming-Image-0.2-Design-GGUF', recipe: 'sd-cpp' }
 } as unknown as LemonadeModel;
 
 const job = (over: Record<string, unknown>) => ({
-	id: 'model:user.Ming-Image-0.1-Design-GGUF',
-	model_name: 'user.Ming-Image-0.1-Design-GGUF',
+	id: 'model:user.Ming-Image-0.2-Design-GGUF',
+	model_name: 'user.Ming-Image-0.2-Design-GGUF',
 	status: 'downloading',
 	running: true,
 	complete: false,
-	file: 'ming_image_0.1_design-Q8_0.gguf',
+	file: 'ming_image_0.2_design-Q8_0.gguf',
 	file_index: 1,
 	total_files: 4,
 	cumulative_bytes_downloaded: 0,
@@ -77,7 +77,7 @@ describe('installModel', () => {
 			{
 				path: '/api/v1/pull',
 				body: {
-					model_name: 'user.Ming-Image-0.1-Design-GGUF',
+					model_name: 'user.Ming-Image-0.2-Design-GGUF',
 					recipe: 'sd-cpp',
 					stream: true,
 					subscribe: false
@@ -85,13 +85,13 @@ describe('installModel', () => {
 			},
 			{
 				path: '/api/v1/downloads/control',
-				body: { id: 'model:user.Ming-Image-0.1-Design-GGUF', action: 'remove' }
+				body: { id: 'model:user.Ming-Image-0.2-Design-GGUF', action: 'remove' }
 			},
 			{
-				path: '/api/v1/models/user.Ming-Image-0.1-Design-GGUF/options',
+				path: '/api/v1/models/user.Ming-Image-0.2-Design-GGUF/options',
 				body: { sdcpp_args: '--tokenizer /cache/tok.json --diffusion-fa' }
 			},
-			{ path: '/api/v1/load', body: { model_name: 'user.Ming-Image-0.1-Design-GGUF' } }
+			{ path: '/api/v1/load', body: { model_name: 'user.Ming-Image-0.2-Design-GGUF' } }
 		]);
 		// The tokenizer's path is under the storage the server reports.
 		expect(invoke).toHaveBeenCalledWith('lemonade_sdcpp_args', {

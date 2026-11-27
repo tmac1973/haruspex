@@ -15,7 +15,7 @@ const setComfy = (fill: Parameters<typeof imageModel>[1] = {}) =>
 		]
 	});
 
-const MING = 'ming_image_0.1_design_int8_convrot.safetensors';
+const MING = 'ming_image_0.2_design_int8_convrot.safetensors';
 const QWEN21 = 'qwen_image_2.1_int8_convrot.safetensors';
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -50,7 +50,7 @@ const LISTS: Record<string, [string, string[]]> = {
 	UNETLoader: ['unet_name', [MING, QWEN21]],
 	CLIPLoader: [
 		'clip_name',
-		['ming_image_0.1_ling_mini_2.0_w4a8.safetensors', 'qwen3vl_8b_int8_convrot.safetensors']
+		['ming_image_0.2_ling_mini_2.0_w4a8.safetensors', 'qwen3vl_8b_int8_convrot.safetensors']
 	],
 	VAELoader: [
 		'vae_name',
@@ -331,7 +331,7 @@ describe('generate', () => {
 		// Its companions came from the server's own lists, and nothing was
 		// uploaded: the canvas is built inside the graph.
 		expect(g['1'].inputs.unet_name).toBe(MING);
-		expect(g['2'].inputs.clip_name).toBe('ming_image_0.1_ling_mini_2.0_w4a8.safetensors');
+		expect(g['2'].inputs.clip_name).toBe('ming_image_0.2_ling_mini_2.0_w4a8.safetensors');
 		expect(g['3'].inputs.vae_name).toBe('ming_image_vae_bf16.safetensors');
 		expect(g['7'].inputs.noise_seed).toBe(7);
 		expect(g['4'].inputs.text).toBe('RGBA, 4-channel, transparent background. a tin can');

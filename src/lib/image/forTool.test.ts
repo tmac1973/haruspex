@@ -145,7 +145,7 @@ describe('generateForTool', () => {
 			state.comfyCheckpoint = model;
 			expect((await generateForTool(req())).notes.join(' ')).toMatch(/non-commercial/);
 		}
-		state.comfyCheckpoint = 'ming_image_0.1_design_int8_convrot.safetensors';
+		state.comfyCheckpoint = 'ming_image_0.2_design_int8_convrot.safetensors';
 		expect((await generateForTool(req())).notes.join(' ')).not.toMatch(/non-commercial/);
 	});
 

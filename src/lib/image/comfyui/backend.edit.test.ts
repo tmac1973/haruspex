@@ -14,7 +14,7 @@ const setComfy = (fill: { url?: string; model?: string }) => {
 	});
 };
 
-const MING = 'ming_image_0.1_design_int8_convrot.safetensors';
+const MING = 'ming_image_0.2_design_int8_convrot.safetensors';
 const QWEN21 = 'qwen_image_2.1_int8_convrot.safetensors';
 const TURBO = 'qwen_image_2.1_turbo_int8_convrot.safetensors';
 const KLEIN = 'flux-2-klein-4b-fp8.safetensors';
@@ -30,7 +30,7 @@ const LISTS: Record<string, [string, string[]]> = {
 	CLIPLoader: [
 		'clip_name',
 		[
-			'ming_image_0.1_ling_mini_2.0_w4a8.safetensors',
+			'ming_image_0.2_ling_mini_2.0_w4a8.safetensors',
 			'qwen3vl_8b_int8_convrot.safetensors',
 			'qwen_3_4b.safetensors',
 			'qwen_2.5_vl_7b_fp8_scaled.safetensors'

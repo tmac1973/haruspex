@@ -20,7 +20,7 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
   deletes them after a day.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)
-- **Image models**: Ming-Image 0.1 Design (MIT; the default, ComfyUI) and
+- **Image models**: Ming-Image 0.2 Design (MIT; the default, ComfyUI) and
   Qwen-Image-2.1 (non-commercial), installed into the user's ComfyUI from
   Settings → Image generation (`comfy_models.rs`); the bundled engine runs the same two
   as GGUF (`image_models.rs`, Ming converted by us and hosted on Hugging Face),

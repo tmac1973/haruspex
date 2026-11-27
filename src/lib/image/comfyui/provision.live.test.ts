@@ -19,7 +19,7 @@ const VAE_ONLY: ComfyModelSet = {
 	kind: 'image',
 	label: 'Ming-Image VAE',
 	license: 'MIT',
-	license_url: 'https://huggingface.co/inclusionAI/Ming-Image-0.1-Design',
+	license_url: 'https://huggingface.co/inclusionAI/Ming-Image-0.2-Design',
 	commercial_use: true,
 	vram_mb: 0,
 	ram_mb: 0,

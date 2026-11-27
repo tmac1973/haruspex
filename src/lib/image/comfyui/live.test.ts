@@ -26,7 +26,7 @@ declare const process: { env: Record<string, string | undefined> };
 const LIVE = process.env.HARUSPEX_IMAGE_E2E === '1';
 const BACKEND_URL = process.env.HARUSPEX_IMAGE_BACKEND_URL ?? '';
 const MING_MODEL =
-	process.env.HARUSPEX_IMAGE_MING_MODEL ?? 'ming_image_0.1_design_int8_convrot.safetensors';
+	process.env.HARUSPEX_IMAGE_MING_MODEL ?? 'ming_image_0.2_design_int8_convrot.safetensors';
 const QWEN21_MODEL = process.env.HARUSPEX_IMAGE_QWEN21_MODEL ?? '';
 const live = LIVE && BACKEND_URL ? it : it.skip;
 const liveQwen = LIVE && BACKEND_URL && QWEN21_MODEL ? it : it.skip;
