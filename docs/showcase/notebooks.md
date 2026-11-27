@@ -18,11 +18,11 @@ Example output:
 
 A notebook **Speakers** with a table card:
 
-| Name | Key features | Price | Retailer |
-| --- | --- | ---: | --- |
-| JBL Charge 5 | IP67, 20 h battery, power bank | $179.95 | amazon.com/… |
-| UE Boom 3 | 360° sound, floats, 15 h battery | $149.99 | amazon.com/… |
-| Soundcore Motion+ | aptX, IPX7, 12 h battery | $119.99 | amazon.com/… |
+| Name              | Key features                     |   Price | Retailer     |
+| ----------------- | -------------------------------- | ------: | ------------ |
+| JBL Charge 5      | IP67, 20 h battery, power bank   | $179.95 | amazon.com/… |
+| UE Boom 3         | 360° sound, floats, 15 h battery | $149.99 | amazon.com/… |
+| Soundcore Motion+ | aptX, IPX7, 12 h battery         | $119.99 | amazon.com/… |
 
 The card says "From Chat: Bluetooth speakers", and its History can undo any change.
 
@@ -163,3 +163,20 @@ Example output:
 **File on GitHub** opens with the repository you used last, the card's title and its checklist as the issue's text. Tick the `bug` label and click **Create issue**: "Opened an issue in tmac1973/haruspex." with **Open** to see it.
 
 Read more: notebook-files
+
+## Have an agent work through a setup guide
+
+Turn a step-by-step checklist into work done: an agent in a terminal does each step, ticks it, and writes a note on it with what happened. You type any `sudo` password yourself.
+
+Tab: Notebooks, then Shell
+Required settings: A capable model; the Shell tab set to Full access
+
+Prompt:
+
+> ⋯ → Work through in Shell… on the "Install OpenHands" checklist. In the new tab, `ssh` to the server, click the lock for Full access, and send the drafted message.
+
+Example output:
+
+The agent runs `sudo apt install docker.io`, and **🔑 Type your password in the terminal** shows until you do. Then it ticks "Install Docker" with the note "Installed docker.io 27.3; added tim to the docker group, log out and back in for it to apply." and stops: "Next is Open port 3000. Go on?"
+
+Read more: notebook-agents, shell

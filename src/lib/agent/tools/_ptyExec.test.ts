@@ -204,3 +204,61 @@ describe('run_command in a terminal with a memory limit', () => {
 		}
 	});
 });
+
+describe('run_command at a password prompt', () => {
+	/**
+	 * `sudo` prints its prompt and waits. The user types the password after
+	 * `typesAfterMs`; the command then finishes. Output growth is what
+	 * clears the wait, so it bumps output_total with the completion.
+	 */
+	function mockSudo(typesAfterMs: number) {
+		const state = { completedTotal: 0, outputTotal: 100, wrote: false };
+		const routes = {
+			shell_pending_command: () => null,
+			shell_get_context: () => {
+				if (state.wrote && Date.now() >= typesAfterMs && state.completedTotal === 0) {
+					state.completedTotal = 1;
+					state.outputTotal += 20;
+				}
+				return {
+					completed_total: state.completedTotal,
+					marker_total: 10,
+					output_total: state.outputTotal,
+					current_cwd: '/home/tim'
+				};
+			},
+			shell_write: () => {
+				state.wrote = true;
+				state.outputTotal += 40;
+				return null;
+			},
+			shell_output_since: () => 'sudo apt update\n[sudo] password for tim: ',
+			shell_get_recent_commands: () => [
+				{
+					commandLine: 'sudo apt update',
+					output: 'Hit:1 http://deb.debian.org',
+					exitCode: 0,
+					cwd: '/home/tim',
+					truncated: false
+				}
+			]
+		};
+		vi.mocked(invoke).mockImplementation(invokeRouter(routes));
+	}
+
+	it('waits past its time limit while the user types the password', async () => {
+		mockSudo(90_000);
+		const { runInPty } = await import('./_ptyExec');
+		const out = await runInPty(1, 'sudo apt update', 30, undefined);
+		expect(out).toContain('Exit code: 0');
+		expect(invokeCalls(vi.mocked(invoke), 'shell_output_since').length).toBeGreaterThan(0);
+	});
+
+	it('gives up after the longest wait and says why', async () => {
+		const { runInPty } = await import('./_ptyExec');
+		const { SECRET_WAIT_MAX_MS } = await import('./_ptySecret');
+		mockSudo(SECRET_WAIT_MAX_MS + 120_000);
+		const out = await runInPty(1, 'sudo apt update', 30, undefined);
+		expect(out).toContain('still waiting for a password');
+	});
+});

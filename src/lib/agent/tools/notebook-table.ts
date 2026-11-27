@@ -31,7 +31,7 @@ registerTool({
 		function: {
 			name: 'notebook_table_rows',
 			description:
-				'Change rows of a table or checklist card without rewriting it. add_csv: rows to add at the end, as CSV with the header row; quote a value that has a comma. update: one line per row, "row_id: Column=value; Column=value", or JSON {"row_id": {"Column": "value"}} when a value has ";". delete: row ids, separated by commas. Checklists have the columns text and done.',
+				'Change rows of a table or checklist card without rewriting it. add_csv: rows to add at the end, as CSV with the header row; quote a value that has a comma. update: one line per row, "row_id: Column=value; Column=value", or JSON {"row_id": {"Column": "value"}} when a value has ";". delete: row ids, separated by commas. Checklists have the columns text, done and note (a note under the item, such as how a step went).',
 			parameters: {
 				type: 'object',
 				properties: {

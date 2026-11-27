@@ -132,6 +132,9 @@
 						/>
 						<span class:done={r.cells.done === true}>{String(r.cells.text ?? '')}</span>
 					</label>
+					{#if typeof r.cells.note === 'string' && r.cells.note}
+						<p class="note">{r.cells.note}</p>
+					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -252,6 +255,13 @@
 
 	.check li {
 		padding: 3px 0;
+	}
+
+	.check .note {
+		margin: 2px 0 0 24px;
+		color: var(--text-muted);
+		font-size: 0.85rem;
+		white-space: pre-wrap;
 	}
 
 	.done {

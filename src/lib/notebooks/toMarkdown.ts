@@ -9,6 +9,7 @@ import * as api from '#lib/notebooks/api.ts';
 import type { NotebookCard, NotebookDetail, NotebookRow } from '#lib/notebooks/api.ts';
 import { columnsOf, formatCell, type Column } from '#lib/notebooks/columns.ts';
 import { outputOf } from '#lib/notebooks/pythonOutput.ts';
+import { parseChecklistItem } from '#lib/notebooks/checklist.ts';
 
 /** A file the Markdown refers to: a kept file, or a Python card's plot. */
 export interface ExportFile {
@@ -59,8 +60,16 @@ export function tableMarkdown(columns: Column[], rows: NotebookRow[]): string {
 export function checklistMarkdown(rows: NotebookRow[]): string {
 	return rows
 		.map((r) => {
-			const c = api.parseMeta<{ text?: string; done?: boolean }>(r.cells);
-			return `- [${c.done ? 'x' : ' '}] ${(c.text ?? '').replace(/\r?\n/g, ' ')}`;
+			const c = parseChecklistItem(r.cells);
+			const line = `- [${c.done ? 'x' : ' '}] ${c.text.replace(/\r?\n/g, ' ')}`;
+			if (!c.note) return line;
+			// The note as an indented paragraph of the same item, so it
+			// imports back as the note and prints under the item.
+			const note = c.note
+				.split(/\r?\n/)
+				.map((l) => (l.trim() ? `  ${l}` : ''))
+				.join('\n');
+			return `${line}\n\n${note}\n`;
 		})
 		.join('\n');
 }

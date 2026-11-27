@@ -11,7 +11,7 @@
 	import { getSettings } from '#lib/stores/settings.ts';
 	import { base64ToBytes } from '#lib/utils/base64.ts';
 	import { commandMemoryLimitPercent } from '#lib/shell/memoryLimit.ts';
-	import { isPtyBusy, ptyBusyCommand } from '#lib/stores/shellPtyBusy.svelte.ts';
+	import { isPtyBusy, ptyBusyCommand, secretWaitPrompt } from '#lib/stores/shellPtyBusy.svelte.ts';
 	import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 	import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
 	import type { ShellSpawnResult } from '#lib/ipc/gen/ShellSpawnResult.ts';
@@ -81,6 +81,12 @@
 	let serializeAddon: SerializeAddon | null = null;
 	// $state so the PTY-busy badge in the template reacts to session changes.
 	let sessionId = $state<number | null>(null);
+	// The agent's command is at a password prompt: say so, and put the
+	// keyboard in the terminal so the password goes straight there.
+	const secretPromptLine = $derived(secretWaitPrompt(sessionId));
+	$effect(() => {
+		if (secretPromptLine) term?.focus();
+	});
 	let unlistenOutput: UnlistenFn | null = null;
 	let unlistenExit: UnlistenFn | null = null;
 	let resizeObserver: ResizeObserver | null = null;
@@ -482,7 +488,11 @@
 </script>
 
 <div class="terminal-host" bind:this={container}>
-	{#if isInputBlocked?.()}
+	{#if secretPromptLine}
+		<div class="agent-running-badge secret" title={secretPromptLine}>
+			🔑 Type your password in the terminal
+		</div>
+	{:else if isInputBlocked?.()}
 		<!-- Silently dropping keystrokes reads as a frozen app, which is worse
 		     than the conflict being prevented. Say what is happening. -->
 		<div class="agent-running-badge paused" title="The coding agent is working in this shell">
@@ -503,6 +513,11 @@
 		   in both app themes. */
 		background: #0c0b0a;
 		padding: 4px 0 0 4px;
+	}
+
+	.agent-running-badge.secret {
+		background: var(--warning);
+		color: #1a1a1a;
 	}
 
 	.agent-running-badge.paused {
