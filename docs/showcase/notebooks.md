@@ -173,7 +173,7 @@ Required settings: A capable model; the Shell tab set to Full access
 
 Prompt:
 
-> ⋯ → Work through in Shell… on the "Install OpenHands" checklist. In the new tab, `ssh` to the server, click the lock for Full access, and send the drafted message.
+> ⋯ → Work through in Shell… on the "Install OpenHands" checklist, or on the notebook itself when the plan is a table per phase with a Done column. In the new tab, `ssh` to the server, click the lock for Full access, and send the drafted message.
 
 Example output:
 
