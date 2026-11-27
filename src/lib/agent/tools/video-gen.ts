@@ -355,6 +355,9 @@ registerTool({
 			...requestPictures(start),
 			...(speech ? { audio: { name: speech.name, hash: speech.hash }, followAudio: !given } : {})
 		};
-		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx, routed.entry.id);
+		return startVideoTask(request, fit.note ? [fit.note] : [], save, ctx, routed.entry.id, {
+			named: !!trimmed(args.model),
+			sound: args.sound === true
+		});
 	}
 });

@@ -30,11 +30,11 @@ On llama-toolchest, adding a model happens in llama-toolchest. A stopped instanc
 
 ## Use a video model on OpenRouter
 
-Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more is refused; 0 is no limit. Prompts and pictures are sent to OpenRouter, and each clip is paid for from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. A model makes clips of set lengths (Veo: 4, 6 or 8 seconds), so the nearest is used. A clip's result says what it cost, and Settings → Video generation keeps a total until you press **Reset**.
+Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more goes to the next model; 0 is no limit. Prompts and pictures go to OpenRouter; each clip is paid from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. Models make clips of set lengths (Veo: 4, 6 or 8 s); the nearest is used. A clip's result says what it cost, and Settings → Video generation keeps a total until you press **Reset**.
 
 ## Choose which model makes a clip
 
-Haruspex uses the first model in the list that can make what you asked for: a picture to start from, one to end on, speech, or sound. A model that doesn't answer is passed over for the next one. A model that refuses a clip isn't asked again elsewhere. You can also name one: "make it with LTX-2.3".
+Haruspex uses the first model in the list that can make what you asked for: a picture to start from, one to end on, speech, or sound. A model that doesn't answer, or turns a clip down before sending it (over its cost limit), passes it to the next, with a note. Name a model to use only it: "make it with LTX-2.3".
 
 ## Make a clip
 
@@ -44,7 +44,7 @@ To keep a character, product or style the same across clips, give up to three re
 
 A clip takes minutes, so it runs in the background. It gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in the conversation, where it plays; **Save as…** under the player saves a copy. The card and the result name the backend that made it. With a working folder set, ask "save it as fox.webm" to save it there, then or later.
 
-If Haruspex closes first, the clip is picked up when it reopens, as long as the server still has the job.
+If Haruspex closes first, the clip is picked up when it reopens, if the server still has the job.
 
 ## Make someone speak
 

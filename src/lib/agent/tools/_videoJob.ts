@@ -40,6 +40,7 @@ import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { VideoBackend } from '#lib/videogen/backend.ts';
 import { costPart, NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
 import { videoServedBy } from '#lib/videogen/fields.ts';
+import { generatePassingOn, namedFailure } from '#lib/agent/tools/_videoPassOn.ts';
 
 /** A `video` task's spec: a clip to make, or (`op: 'upscale'`) one to make larger. */
 export type VideoTaskSpec = VideoGenTaskSpec | VideoUpscaleTaskSpec;
@@ -66,6 +67,10 @@ interface VideoTaskCommon {
 	codeSessionId: string | null;
 	/** The video model it is for; absent from a task recorded before the list. */
 	entryId?: string;
+	/** The chat model named that model: no other may make the clip. */
+	named?: boolean;
+	/** The call asked for a clip with sound, which a model passed on to must make too. */
+	sound?: boolean;
 }
 
 /** A `video` task's result, from which its notice and its card are made. */
@@ -205,10 +210,18 @@ export async function runVideoJob(
 	}
 	const backend = videoBackendForEntry(entry);
 	if (!backend) throw new Error(`${entry.name} is not a kind this build can use.`);
-	const generated = await makeOrFollow(backend, spec, opts, handle).catch((e: unknown) => {
-		throw namedFailure(e, entry.name, env.signal);
-	});
-	const { made, notes } = await withSpeech(generated, spec);
+	const passed =
+		spec.op !== 'upscale' && !handle
+			? await generatePassingOn({ entry, backend }, spec.request, opts, spec)
+			: {
+					made: await makeOrFollow(backend, spec, opts, handle).catch((e: unknown) => {
+						throw namedFailure(e, entry.name, env.signal);
+					}),
+					entry,
+					notes: []
+				};
+	const { made, notes } = await withSpeech(passed.made, spec);
+	notes.push(...passed.notes);
 	return {
 		hash: made.hash,
 		mime: made.mime,
@@ -219,7 +232,7 @@ export async function runVideoJob(
 		fps: made.fps,
 		seed: made.seed,
 		model: made.model,
-		servedBy: videoServedBy(entry),
+		servedBy: videoServedBy(passed.entry),
 		...(made.costUsd === undefined ? {} : { costUsd: made.costUsd }),
 		hasAudio: made.hasAudio,
 		notes,
@@ -241,18 +254,6 @@ function entryFor(spec: VideoTaskSpec): VideoModelEntry | undefined {
 		return up ? upscalerAsVideoEntry(up) : videoEntryById(spec.entryId);
 	}
 	return spec.entryId ? videoEntryById(spec.entryId) : (firstVideoEntry() ?? undefined);
-}
-
-/**
- * A failure that says which video model it came from ("Wan 2.2 14B: …"), so
- * the model reading the notice knows what to try instead. The error keeps its
- * class, kind and status, which the task runner reads; a cancel is left alone.
- */
-export function namedFailure(e: unknown, model: string, signal?: AbortSignal): unknown {
-	if (signal?.aborted || (e as { kind?: unknown } | null)?.kind === 'cancelled') return e;
-	if (!(e instanceof Error)) return new Error(`${model}: ${errMessage(e)}`);
-	if (!e.message.startsWith(`${model}:`)) e.message = `${model}: ${e.message}`;
-	return e;
 }
 
 /** The clip the spec asks for, made or followed on `backend`. */
@@ -281,7 +282,8 @@ export async function startVideoTask(
 	notes: string[],
 	save: SaveTarget | null,
 	ctx: ToolContext,
-	entryId?: string
+	entryId?: string,
+	how: { named?: boolean; sound?: boolean } = {}
 ): Promise<ToolExecOutput> {
 	const spec: VideoGenTaskSpec = {
 		request,
@@ -289,7 +291,9 @@ export async function startVideoTask(
 		save: save && detachedTarget(save, ctx),
 		conversationId: ctx.conversationId ?? null,
 		codeSessionId: ctx.codeSessionId ?? null,
-		...(entryId ? { entryId } : {})
+		...(entryId ? { entryId } : {}),
+		...(how.named ? { named: true } : {}),
+		...(how.sound ? { sound: true } : {})
 	};
 	const task = await invoke<BackgroundTask>('task_create', {
 		kind: 'video',

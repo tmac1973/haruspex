@@ -98,7 +98,7 @@ function noneCanSay(need: VideoNeed, known: { entry: VideoModelEntry; caps: Vide
  * isn't there, or the server couldn't start it (not enough VRAM). Only the
  * unnamed path asks: a model the chat model named still fails as itself.
  */
-function passOver(e: unknown): boolean {
+export function passOver(e: unknown): boolean {
 	if (!(e instanceof VideoBackendError)) return false;
 	if (e.kind === 'unreachable' || e.kind === 'unconfigured') return true;
 	return e.kind === 'rejected' && couldNotStart(e.message);
@@ -140,8 +140,12 @@ export interface Routed {
  * The entries worth asking, in order: `prefer` first, then those known to be
  * able, then those no probe has answered for. Known unable ones are left out.
  */
-function candidates(need: VideoNeed, prefer?: VideoModelEntry): VideoModelEntry[] {
-	const list = videoEntries();
+function candidates(
+	need: VideoNeed,
+	prefer?: VideoModelEntry,
+	skip: string[] = []
+): VideoModelEntry[] {
+	const list = videoEntries().filter((e) => !skip.includes(e.id));
 	const able = list.filter((e) => e.caps && meetsNeed(e.caps, need));
 	const unknown = list.filter((e) => !e.caps);
 	const order = [...able, ...unknown];
@@ -178,13 +182,19 @@ async function routeNamed(name: string, need: VideoNeed, signal?: AbortSignal): 
  */
 export async function routeVideo(
 	need: VideoNeed,
-	opts: { named?: string; prefer?: VideoModelEntry; signal?: AbortSignal } = {}
+	opts: {
+		named?: string;
+		prefer?: VideoModelEntry;
+		/** Entries already tried, left out. */
+		skip?: string[];
+		signal?: AbortSignal;
+	} = {}
 ): Promise<Routed> {
 	if (videoEntries().length === 0) throw new VideoBackendError('unconfigured', NOT_SET_UP);
 	if (opts.named) return routeNamed(opts.named, need, opts.signal);
 	const reasons: { entry: VideoModelEntry; reason: string }[] = [];
 	const unable: { entry: VideoModelEntry; caps: VideoCaps }[] = [];
-	for (const entry of candidates(need, opts.prefer)) {
+	for (const entry of candidates(need, opts.prefer, opts.skip)) {
 		try {
 			const ready = await readyEntry(entry, opts.signal);
 			const missing = cantDo(ready.caps, need);

@@ -327,8 +327,9 @@ async function finish(
 }
 
 /**
- * `POST /v1/videos`. A 400 with reference pictures says they may be why:
- * which models take them is a guess (`takesReferences`).
+ * `POST /v1/videos`. A 400 with reference pictures says they may be why, and
+ * is passed on to the next model: which models take them is a guess
+ * (`takesReferences`).
  */
 async function submit(
 	apiKey: string,
@@ -346,7 +347,7 @@ async function submit(
 	if (res.status === 400 && body.input_references) {
 		const e = await refusal(res, make, 'clip');
 		throw new VideoBackendError(
-			'rejected',
+			'unconfigured',
 			`${e.message} (${m.name} may not take reference pictures.)`,
 			{ status: 400 }
 		);

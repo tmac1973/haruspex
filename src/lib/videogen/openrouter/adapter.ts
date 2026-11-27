@@ -88,7 +88,7 @@ export function parseVideoModels(payload: unknown): OpenRouterVideoModel[] {
 /**
  * Model families OpenRouter's docs name as taking `input_references`. The
  * model list has no field for it, so this list is all there is to go on; a
- * model that refuses them anyway says so (see `submit` in `./backend.ts`).
+ * model that refuses them anyway is passed on (see `submit` in `./backend.ts`).
  */
 const REFERENCE_FAMILIES = ['alibaba/wan-3', 'bytedance/seedance-2', 'runway/'];
 
