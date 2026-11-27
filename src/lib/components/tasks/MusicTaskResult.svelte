@@ -16,8 +16,8 @@
 {#if src}
 	<AudioPlayer {src} title={result.title} />
 {/if}
-{#if result.saved}
-	<p class="detail">{result.saved}</p>
+{#if result.servedBy || result.saved}
+	<p class="detail">{[result.servedBy, result.saved].filter(Boolean).join(' · ')}</p>
 {/if}
 
 <style>

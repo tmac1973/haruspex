@@ -6,6 +6,7 @@
 import { getSettings } from '#lib/stores/settings.ts';
 import { getMusicBackend } from '#lib/music/registry.ts';
 import { noneMusicBackend } from '#lib/music/none.ts';
+import { servedByOf } from '#lib/generation/entry.ts';
 import type {
 	MusicBackendKind,
 	MusicGenerateOptions,
@@ -39,4 +40,16 @@ export interface MusicBackend {
 /** The configured backend, or the no-op one for an unset or unknown kind. */
 export function resolveMusicBackend(): MusicBackend {
 	return getMusicBackend(getSettings().musicBackendKind) ?? noneMusicBackend;
+}
+
+/** Which backend a song came from, for its answer: "ace-server at compute2:8080". */
+export function musicServedBy(kind: MusicBackendKind, url: string): string {
+	return kind === 'none' ? '' : servedByOf(kind, url);
+}
+
+/** Which backend Settings → Music generation sends songs to now. */
+export function configuredMusicServedBy(): string {
+	const s = getSettings();
+	const url = s.musicBackendKind === 'ace-server' ? s.musicAceBaseUrl : s.musicToolchestBaseUrl;
+	return musicServedBy(s.musicBackendKind, url ?? '');
 }

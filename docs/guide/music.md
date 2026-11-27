@@ -43,7 +43,7 @@ With a working folder set in Chat, the assistant can also save the song there: a
 
 ## Make songs in the background
 
-Ask for a song "in the background" (or several) and the assistant starts it and carries on, so you can keep chatting. Each gets a card with progress and **Cancel**, then a player, and is in the **Tasks** list (see the `chat-conversations` page); the assistant places it in the conversation. If Haruspex closes first, it is picked up when it reopens, if the server still has it.
+Ask for a song "in the background" (or several) and the assistant starts it and carries on. Each gets a card with progress and **Cancel**, then a player and the backend that made it, and is in the **Tasks** list (see the `chat-conversations` page); the assistant places it in the conversation. If Haruspex closes first, it is picked up when it reopens, if the server still has it.
 
 ## Change a song you already have
 
@@ -65,7 +65,7 @@ The player's **Save as…** button (the arrow) saves the song where you choose. 
 
 ## Add music to a project
 
-In the Code tab, ask for something like "background music for the title screen at assets/bgm.mp3". The song plays on the step and is also written into the project; the path is checked before the server starts, and an existing file is kept unless you ask to replace it. A read-only session can make a song but not save it. The Shell assistant doesn't make music.
+In the Code tab, ask for something like "background music for the title screen at assets/bgm.mp3". The song plays on the step and is also written into the project; the path is checked first, and an existing file is kept unless you ask to replace it. A read-only session can make a song but not save it. The Shell assistant doesn't make music.
 
 ## Where songs are kept
 

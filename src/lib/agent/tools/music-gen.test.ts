@@ -149,7 +149,9 @@ describe('generate_music', () => {
 		const [req, opts] = state.generate.mock.calls[0];
 		expect(req).toMatchObject({ title: 'Rain', instrumental: false, durationSec: 45 });
 		expect(opts).toMatchObject({ conversationId: 'chat-1' });
-		expect(out.result).toContain('Made "Rain" (45 s, 82 bpm, D minor, seed 7).');
+		expect(out.result).toContain(
+			'Made "Rain" (45 s, 82 bpm, D minor, seed 7, backend: llama-toolchest).'
+		);
 		expect(out.result).toContain(`![Rain](${URL})`);
 		expect(out.artifacts).toEqual([{ kind: 'audio', mime: 'audio/mpeg', src: URL, title: 'Rain' }]);
 	});
