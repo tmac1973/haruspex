@@ -48,7 +48,7 @@ const KOKO_CRATES = join(root, 'src-tauri/binaries/koko-crates.json');
 const PROGRAMS = [
 	{
 		name: 'llama.cpp (llama-server)',
-		licence: 'MIT',
+		licence: 'MIT; bundled code MIT, BSD-2-Clause or public domain',
 		url: 'https://github.com/ggml-org/llama.cpp',
 		files: ['licences/sidecars/llama.cpp']
 	},
