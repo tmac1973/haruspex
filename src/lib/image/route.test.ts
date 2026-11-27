@@ -8,7 +8,8 @@ const state = vi.hoisted(() => ({
 	backends: {} as Record<string, ImageBackend>
 }));
 vi.mock('#lib/image/entries.ts', () => ({
-	imageEntries: () => state.entries,
+	imageEntries: () => state.entries.filter((e) => !e.disabled),
+	allImageEntries: () => state.entries,
 	saveImageCaps: (id: string) => state.saved.push(id)
 }));
 vi.mock('#lib/image/registry.ts', () => ({
@@ -163,6 +164,13 @@ describe('routeImage', () => {
 		await expect(ranOn(edit(2), 'A')).rejects.toThrow("A can't edit pictures. B, C can.");
 		await expect(ranOn(draw, 'nobody')).rejects.toThrow(
 			'There is no image model called "nobody". The models are: A, B, C.'
+		);
+	});
+
+	it('says a named model is turned off rather than missing (#1352)', async () => {
+		state.entries = [{ ...entry('Ming', DRAWS), disabled: true }, entry('A', DRAWS)];
+		await expect(ranOn(draw, 'ming')).rejects.toThrow(
+			'Ming is turned off in Settings → Image generation. The models on are: A.'
 		);
 	});
 

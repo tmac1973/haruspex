@@ -111,10 +111,7 @@ export async function upscaleForTool(
 		if (reasons.length === 0 || !(err instanceof ImageBackendError) || err.kind === 'cancelled') {
 			throw err;
 		}
-		throw new ImageBackendError(
-			'unreachable',
-			`No upscaler could be reached: ${reasons.join('; ')}.`
-		);
+		throw new ImageBackendError('unreachable', `No upscaler worked: ${reasons.join('; ')}.`);
 	}
 }
 

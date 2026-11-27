@@ -320,6 +320,7 @@ export const IPC = {
 	image_normalize: 'image_normalize',
 	image_palette_spread: 'image_palette_spread',
 	image_read_bytes: 'image_read_bytes',
+	image_read_rgb: 'image_read_rgb',
 	image_rehydrate_local: 'image_rehydrate_local',
 	image_resolve: 'image_resolve',
 	image_result_check: 'image_result_check',

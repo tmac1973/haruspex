@@ -306,7 +306,7 @@ describe('lemonade edits and upscaling', () => {
 			.mockImplementation(
 				invokeRouter({
 					lemonade_catalogue: catalogue,
-					image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+					image_read_rgb: () => new Uint8Array([1, 2, 3]).buffer,
 					lemonade_upload: () => ({ data: [{ b64_json: 'BAUG' }] }),
 					lemonade_json: httpRouter({
 						'GET /api/v1/health': health,
@@ -375,7 +375,7 @@ describe('lemonade edits and upscaling', () => {
 		});
 	});
 
-	it('upscales with Lemonade’s Real-ESRGAN, sending the cached picture', async () => {
+	it('upscales with Lemonade’s Real-ESRGAN, sending the cached picture as RGB', async () => {
 		use(withEditing);
 		const out = await lemonadeBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) });
 		expect(Array.from(out)).toEqual([7, 8, 9]);
