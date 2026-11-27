@@ -1106,40 +1106,43 @@ async function runPipeline(queued: QueuedRun, abort: AbortController): Promise<v
 }
 
 /**
- * A successful run's results as a new notebook, when its job asks for one
- * (`notebook_output`, see notebookOutput.ts). It runs after the run has
- * finished, so a failure here is told in a toast and never fails the run.
+ * A successful run's results in a notebook, when its job asks for that
+ * (`notebook_output`, see notebookOutput.ts): a new notebook, or the one the
+ * job keeps up to date. It runs after the run has finished, so a failure
+ * here is told in a toast and never fails the run.
  */
 async function saveResultsToNotebook(
 	job: JobWithSteps,
 	runId: number,
 	outcome: RunOutcome
 ): Promise<void> {
-	const toCards = getJobType(job.job_type)?.notebookCards;
-	if (outcome.status !== 'succeeded' || outcome.result === undefined || !toCards) return;
-	const out = await import('#lib/agent/jobs/notebookOutput.ts');
-	if (out.readNotebookOutput(job.type_config) !== 'new') return;
+	const def = getJobType(job.job_type);
+	if (outcome.status !== 'succeeded' || outcome.result === undefined || !def?.notebookCards) return;
 	const settings = getSettings();
 	if (!settings.notebooksTab || settings.leanMode) return;
+	const out = await import('#lib/agent/jobs/notebookOutput.ts');
+	if (out.readNotebookOutput(job.type_config) === 'off') return;
 	const { showToast } = await import('#lib/stores/toasts.svelte.ts');
 	try {
-		const notebook = await out.saveRunToNewNotebook({
-			jobId: job.id,
-			jobName: job.name,
+		const saved = await out.saveRunResults({
+			job,
 			runId,
-			cards: toCards(outcome.result),
+			result: outcome.result,
+			cards: def.notebookCards,
+			update: def.notebookUpdate,
 			finishedAt: new Date()
 		});
-		if (!notebook) return;
+		if (!saved) return;
+		const id = saved.notebook.id;
 		const nb = await import('#lib/stores/notebooks.svelte.ts');
-		nb.emitNotebookChanged(notebook.id, []);
-		showToast(`Saved ${job.name}'s results to ${notebook.title}.`, {
+		nb.emitNotebookChanged(id, []);
+		showToast(saved.message, {
 			kind: 'success',
 			actionLabel: 'Open',
 			onAction: () => {
 				void import('#lib/stores/activeTab.svelte.ts').then(({ setActiveTab }) => {
 					setActiveTab('notebooks');
-					void nb.openNotebook(notebook.id);
+					void nb.openNotebook(id);
 				});
 			}
 		});

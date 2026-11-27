@@ -166,6 +166,31 @@ describe('jobs runner — audit jobs', () => {
 			});
 		});
 
+		it('keeps one notebook: the first run makes it and keeps its id on the job', async () => {
+			const job = auditJob({
+				type_config: JSON.stringify({ num_runs: 1, notebook_output: 'one' })
+			});
+			mocks.getJob.mockResolvedValue(job);
+			wireFindingsAndVerdict('confirmed');
+			const { made, added } = wireNotebooks();
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+			for (let i = 0; i < 20 && mocks.updateJob.mock.calls.length === 0; i++) await tick();
+
+			expect(made).toEqual([{ title: 'Test job' }]);
+			expect(added.map((c) => c.title)).toEqual(['Audit summary', 'Findings']);
+			const [, saved] = mocks.updateJob.mock.calls.at(-1) as unknown as [
+				number,
+				{ type_config: string }
+			];
+			expect(JSON.parse(saved.type_config)).toMatchObject({
+				notebook_output: 'one',
+				notebook_output_id: 'nb1'
+			});
+		});
+
 		it('makes none by default', async () => {
 			mocks.getJob.mockResolvedValueOnce(auditJob());
 			wireFindingsAndVerdict('confirmed');

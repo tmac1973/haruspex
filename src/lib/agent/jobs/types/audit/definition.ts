@@ -6,6 +6,7 @@ import {
 	DEFAULT_VERIFY_INSTRUCTIONS
 } from '#lib/agent/jobs/types/audit/auditPipeline.ts';
 import { auditNotebookCards } from '#lib/agent/jobs/types/audit/notebookCards.ts';
+import { auditNotebookUpdate } from '#lib/agent/jobs/types/audit/notebookMerge.ts';
 import Editor from '#lib/agent/jobs/types/audit/Editor.svelte';
 import { NOTEBOOK_OUTPUT_MODES, type NotebookOutputMode } from '#lib/agent/jobs/notebookOutput.ts';
 
@@ -22,6 +23,8 @@ export interface AuditEditorState {
 	sample_instructions: string;
 	verify_instructions: string;
 	notebook_output: NotebookOutputMode;
+	/** Kept as saved: the job's notebook in the 'one' mode, which a run sets. */
+	notebook_output_id: string | null;
 }
 
 export const auditJobType: JobTypeDefinition = {
@@ -39,7 +42,8 @@ export const auditJobType: JobTypeDefinition = {
 		max_iterations: 200,
 		sample_instructions: DEFAULT_SAMPLE_INSTRUCTIONS,
 		verify_instructions: DEFAULT_VERIFY_INSTRUCTIONS,
-		notebook_output: 'off'
+		notebook_output: 'off',
+		notebook_output_id: null
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAuditConfig(typeConfig);
@@ -50,7 +54,8 @@ export const auditJobType: JobTypeDefinition = {
 			max_iterations: c.max_iterations ?? 200,
 			sample_instructions: c.sample_instructions ?? DEFAULT_SAMPLE_INSTRUCTIONS,
 			verify_instructions: c.verify_instructions ?? DEFAULT_VERIFY_INSTRUCTIONS,
-			notebook_output: c.notebook_output
+			notebook_output: c.notebook_output,
+			notebook_output_id: c.notebook_output_id
 		};
 	},
 	configToJson: (config) => {
@@ -66,7 +71,8 @@ export const auditJobType: JobTypeDefinition = {
 			max_iterations: s.max_iterations,
 			sample_instructions: custom(s.sample_instructions, DEFAULT_SAMPLE_INSTRUCTIONS),
 			verify_instructions: custom(s.verify_instructions, DEFAULT_VERIFY_INSTRUCTIONS),
-			notebook_output: s.notebook_output === 'off' ? undefined : s.notebook_output
+			notebook_output: s.notebook_output === 'off' ? undefined : s.notebook_output,
+			notebook_output_id: s.notebook_output_id ?? undefined
 		});
 	},
 	validate: ({ workingDir, steps, config }) => {
@@ -86,7 +92,7 @@ export const auditJobType: JobTypeDefinition = {
 			read_only: { help: 'Runs may only read the code. Default true.' },
 			max_iterations: { help: 'Model steps per run, 1 to 400. Default 200.' },
 			notebook_output: {
-				help: 'Save each successful run\'s findings to a new notebook ("new") or not. Default off.',
+				help: 'Save each successful run\'s findings to a new notebook ("new"), keep one notebook up to date ("one"), or neither. Default off.',
 				values: NOTEBOOK_OUTPUT_MODES
 			}
 		},
@@ -103,6 +109,7 @@ export const auditJobType: JobTypeDefinition = {
 			.map((s) => ({ prompt: s.prompt.trim(), deep_research: false }))
 			.filter((s) => s.prompt.length > 0),
 	notebookCards: auditNotebookCards,
+	notebookUpdate: auditNotebookUpdate,
 	planSteps: planAuditSteps,
 	runPipeline: runAuditPipeline
 };

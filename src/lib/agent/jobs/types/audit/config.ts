@@ -6,6 +6,7 @@
 
 import { finiteOrNull, nonEmptyOrNull } from '#lib/utils/coerce.ts';
 import {
+	NOTEBOOK_ID_KEY,
 	NOTEBOOK_OUTPUT_KEY,
 	parseNotebookOutput,
 	type NotebookOutputMode
@@ -26,6 +27,8 @@ export interface AuditConfig {
 	verify_instructions: string | null;
 	/** Whether a finished run saves its findings to a notebook (see notebookOutput.ts). */
 	notebook_output: NotebookOutputMode;
+	/** The notebook a job in the 'one' mode keeps up to date, once a run has made it. */
+	notebook_output_id: string | null;
 }
 
 export function parseAuditConfig(json: string | null): AuditConfig {
@@ -45,6 +48,7 @@ export function parseAuditConfig(json: string | null): AuditConfig {
 		max_iterations: finiteOrNull(raw.max_iterations),
 		sample_instructions: nonEmptyOrNull(raw.sample_instructions),
 		verify_instructions: nonEmptyOrNull(raw.verify_instructions),
-		notebook_output: parseNotebookOutput(raw[NOTEBOOK_OUTPUT_KEY])
+		notebook_output: parseNotebookOutput(raw[NOTEBOOK_OUTPUT_KEY]),
+		notebook_output_id: nonEmptyOrNull(raw[NOTEBOOK_ID_KEY])
 	};
 }

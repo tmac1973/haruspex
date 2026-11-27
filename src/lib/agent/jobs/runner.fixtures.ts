@@ -53,6 +53,7 @@ export const mocks = {
 	runEphemeralTurn: vi.fn(),
 	getJob: vi.fn(),
 	createJob: vi.fn(),
+	updateJob: vi.fn(async () => true),
 	createJobRun: vi.fn(),
 	markRunStarted: vi.fn(),
 	markRunFinished: vi.fn(),
@@ -194,7 +195,7 @@ export const mockModules = {
 	tauriCore: () => tauriCore,
 	runEphemeralTurn: () => ({ runEphemeralTurn: mocks.runEphemeralTurn }),
 	userQuestion: () => ({ askUserQuestion: mocks.askUserQuestion }),
-	jobs: () => ({ getJob: mocks.getJob, createJob: mocks.createJob }),
+	jobs: () => ({ getJob: mocks.getJob, createJob: mocks.createJob, updateJob: mocks.updateJob }),
 	jobRuns: () => ({
 		createJobRun: mocks.createJobRun,
 		markRunStarted: mocks.markRunStarted,
@@ -265,6 +266,7 @@ export function useRunnerFixtures() {
 		mocks.runEphemeralTurn.mockReset();
 		mocks.getJob.mockReset();
 		mocks.createJob.mockReset().mockResolvedValue(900);
+		mocks.updateJob.mockReset().mockResolvedValue(true);
 		mocks.createJobRun.mockReset();
 		mocks.markRunStarted.mockReset().mockResolvedValue(undefined);
 		mocks.markRunFinished.mockReset().mockResolvedValue(undefined);

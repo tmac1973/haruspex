@@ -69,12 +69,12 @@ export function parseLineRange(lines: string | null | undefined): LineRange | nu
 }
 
 /** Normalize a repo-relative path: trim, drop "./" prefix, unify separators. */
-function normalizeFile(file: string): string {
+export function normalizeFile(file: string): string {
 	return file.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
 }
 
 /** Lowercase + strip to alphanumeric tokens for fuzzy title comparison. */
-function titleTokens(title: string): Set<string> {
+export function titleTokens(title: string): Set<string> {
 	return new Set(
 		title
 			.toLowerCase()
@@ -84,7 +84,7 @@ function titleTokens(title: string): Set<string> {
 	);
 }
 
-function jaccard(a: Set<string>, b: Set<string>): number {
+export function jaccard(a: Set<string>, b: Set<string>): number {
 	if (a.size === 0 && b.size === 0) return 1;
 	if (a.size === 0 || b.size === 0) return 0;
 	let inter = 0;
