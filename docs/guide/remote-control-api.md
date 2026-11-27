@@ -35,9 +35,9 @@ Models: `models.list` names Settings → Inference's model, the saved remote opt
 - `jobs.update` (`jobId`): changes only what it names; `steps`, when given, replaces them all. `jobs.duplicate`, `jobs.delete`.
 - `jobs.run` (`jobId`): runs now, or queues until its model is free, answering its `runId`.
 - `run.cancel` (`runId`): stops a run, or unqueues it.
-- `runs.list` (`jobId`), `runs.get` (`runId`; a running one carries its text and steps), `runs.current` (the run in view and the queue), `runs.delete`.
+- `runs.list` (`jobId`), `runs.get` (`runId`; a running one carries its text and steps), `runs.current` (the run in view, `active` runs, the queue), `runs.delete`.
 
-Events: `job-run` when a run's status or steps change, `job-run-live` with the step's text, and `job-queue`. A guided-planning or asset job's question shows in `prompts.list` with its `runId`.
+Events, for each run going now: `job-run` when its status or steps change, `job-run-live` with its text; and `job-queue`. A guided-planning or asset job's question shows in `prompts.list` with its `runId`.
 
 ## Watching the app
 
@@ -46,7 +46,7 @@ Events: `job-run` when a run's status or steps change, `job-run-live` with the s
 - `tasks.list`: the background tasks, or one owner's (`chat:<id>`, `code:<id>`). `tasks.cancel` (`taskId`) stops one.
 - `home.cards`: Home's cards in order, each with `title`, `size` and `payload`.
 
-Events: `task` when a background task changes; `home-card` (`cardId`) when a card changes. A card's job run sends `job-run`.
+Events: `task` when a background task changes; `home-card` (`cardId`) when a card changes.
 
 ## Settings
 

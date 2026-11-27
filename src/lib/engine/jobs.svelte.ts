@@ -17,7 +17,9 @@ import {
 	cancel,
 	enqueue,
 	getActiveRunForJob,
+	getActiveRuns,
 	getCurrentRun,
+	getHeldRuns,
 	getPendingQueue,
 	getRun,
 	isRunRunning,
@@ -399,7 +401,11 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 		}
 		case 'runs.current': {
 			const current = getCurrentRun();
-			return { run: current ? runLive(current) : null, queue: plain(getPendingQueue()) };
+			return {
+				run: current ? runLive(current) : null,
+				active: getActiveRuns().map(runLive),
+				queue: plain(getPendingQueue())
+			};
 		}
 		case 'runs.delete': {
 			if (isRunRunning(op.runId)) {
@@ -413,7 +419,7 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 			return { deleted: op.runId };
 		}
 		case 'runs.resync':
-			if (!resyncRun?.(op.runId)) throw new Error(`run ${op.runId} isn't the current run`);
+			if (!resyncRun?.(op.runId)) throw new Error(`run ${op.runId} isn't one in progress here`);
 			return { resynced: op.runId };
 		default:
 			throw new Error(`unknown operation ${(op as { type?: string }).type}`);
@@ -425,12 +431,13 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 let resyncRun: ((runId: number) => boolean) | null = null;
 
 /**
- * Turn the runner into events: a `job-run` whenever the current run changes
- * other than its text, its running step's text as `job-run-live` coalesced to
- * one per `LIVE_MS`, and `job-queue` whenever the queue changes.
+ * Turn the runner into events, for every run it holds (side-by-side runs
+ * too, not only the one in view): a `job-run` whenever a run changes other
+ * than its text, its running step's text as `job-run-live` coalesced to one
+ * per `LIVE_MS`, and `job-queue` whenever the queue changes.
  */
 export function watchJobs(sink: (e: JobEvent) => void): { stop: () => void } {
-	// Bookkeeping, never rendered: not a SvelteMap.
+	// Bookkeeping, never rendered: not SvelteMaps.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const seqs = new Map<number, number>();
 	const nextSeq = (runId: number) => {
@@ -439,22 +446,27 @@ export function watchJobs(sink: (e: JobEvent) => void): { stop: () => void } {
 		return seq;
 	};
 	let queueSeq = 0;
-	let lastRun = '';
+	/** Each held run's last `job-run`, so a run goes out only when it changes. */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const lastRun = new Map<number, string>();
+	/** Each held run's text last sent, so its text goes out only when it changes. */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const lastLive = new Map<number, string>();
 	let lastQueue = '[]';
-	/** The text last sent, so a step's text goes out only when it changes. */
-	let lastLive = '';
 	let liveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const liveOf = (run: RunState) => {
 		const step = run.steps[run.currentStepIndex];
 		return { stepIndex: run.currentStepIndex, streaming: step?.streaming ?? '' };
 	};
-	const liveKey = (run: RunState) => JSON.stringify([run.id, liveOf(run)]);
+	const liveKey = (run: RunState) => JSON.stringify(liveOf(run));
 	const sendLive = () => {
-		const run = getCurrentRun();
-		if (!run || liveKey(run) === lastLive) return;
-		lastLive = liveKey(run);
-		sink({ type: 'job-run-live', seq: nextSeq(run.id), runId: run.id, ...liveOf(run) });
+		for (const run of getHeldRuns()) {
+			const key = liveKey(run);
+			if (key === lastLive.get(run.id)) continue;
+			lastLive.set(run.id, key);
+			sink({ type: 'job-run-live', seq: nextSeq(run.id), runId: run.id, ...liveOf(run) });
+		}
 	};
 	const flushLive = () => {
 		if (liveTimer === null) return;
@@ -465,34 +477,37 @@ export function watchJobs(sink: (e: JobEvent) => void): { stop: () => void } {
 	const sendRun = (run: RunState) => {
 		flushLive();
 		const live = runLive(run);
-		lastRun = JSON.stringify(live);
+		lastRun.set(run.id, JSON.stringify(live));
 		// A new run or step starts with no text: nothing to send until it has some.
-		if (!liveOf(run).streaming) lastLive = liveKey(run);
+		if (!liveOf(run).streaming) lastLive.set(run.id, liveKey(run));
 		sink({ type: 'job-run', seq: nextSeq(run.id), runId: run.id, run: live });
 	};
 	resyncRun = (runId) => {
-		const run = getCurrentRun();
-		if (!run || run.id !== runId) return false;
+		const run = getRun(runId);
+		if (!run) return false;
 		sendRun(run);
 		return true;
 	};
 
 	const stopRoot = $effect.root(() => {
 		$effect(() => {
-			const run = getCurrentRun();
-			const key = run ? JSON.stringify(runLive(run)) : '';
+			const held = getHeldRuns().map((run) => ({ run, key: JSON.stringify(runLive(run)) }));
 			untrack(() => {
-				if (run && key !== lastRun) sendRun(run);
-				if (!run) lastRun = '';
+				for (const { run, key } of held) if (key !== lastRun.get(run.id)) sendRun(run);
+				// A run the runner let go sent its last state while it still held it.
+				for (const id of [...lastRun.keys()]) {
+					if (held.some(({ run }) => run.id === id)) continue;
+					lastRun.delete(id);
+					lastLive.delete(id);
+					seqs.delete(id);
+				}
 			});
 		});
 
 		$effect(() => {
-			const run = getCurrentRun();
-			if (!run) return;
-			const key = liveKey(run);
+			const held = getHeldRuns().map((run) => ({ id: run.id, key: liveKey(run) }));
 			untrack(() => {
-				if (key === lastLive) return;
+				if (held.every(({ id, key }) => key === lastLive.get(id))) return;
 				liveTimer ??= setTimeout(() => {
 					liveTimer = null;
 					sendLive();

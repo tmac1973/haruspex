@@ -8,6 +8,8 @@ import type { JobInput, JobStepInput, JobWithSteps } from '#lib/stores/jobs.svel
 
 export const fake = $state({
 	current: null as RunState | null,
+	/** Runs going beside the one in view. */
+	side: [] as RunState[],
 	queue: [] as PendingQueueEntry[],
 	jobs: [] as JobWithSteps[],
 	cancelled: [] as number[],
@@ -20,6 +22,7 @@ let nextId = 1;
 
 export function reset(): void {
 	fake.current = null;
+	fake.side = [];
 	fake.queue = [];
 	fake.jobs = [];
 	fake.cancelled = [];
@@ -59,7 +62,20 @@ export function job(id: number, patch: Partial<JobWithSteps> = {}): JobWithSteps
 }
 
 export function running(runId: number, jobId: number, patch: Partial<RunState> = {}): RunState {
-	fake.current = {
+	fake.current = runState(runId, jobId, patch);
+	fake.runs[runId] = { id: runId, job_id: jobId, status: 'running', steps: [] };
+	return fake.current;
+}
+
+/** A run going beside the one in view. */
+export function sideRun(runId: number, jobId: number, patch: Partial<RunState> = {}): RunState {
+	fake.side = [...fake.side, runState(runId, jobId, patch)];
+	fake.runs[runId] = { id: runId, job_id: jobId, status: 'running', steps: [] };
+	return fake.side.at(-1)!;
+}
+
+function runState(runId: number, jobId: number, patch: Partial<RunState>): RunState {
+	return {
 		id: runId,
 		jobId,
 		jobName: `Job ${jobId}`,
@@ -95,17 +111,19 @@ export function running(runId: number, jobId: number, patch: Partial<RunState> =
 		finishedAt: null,
 		...patch
 	};
-	fake.runs[runId] = { id: runId, job_id: jobId, status: 'running', steps: [] };
-	return fake.current;
 }
+
+const held = () => [...(fake.current ? [fake.current] : []), ...fake.side];
 
 const find = (id: number) => fake.jobs.find((j) => j.id === id) ?? null;
 
 export const runner = {
 	getCurrentRun: () => fake.current,
+	getHeldRuns: held,
+	getActiveRuns: () => held().filter((r) => r.status === 'running' || r.status === 'needs_input'),
 	getPendingQueue: () => fake.queue,
 	isRunRunning: (runId: number) => fake.current?.status === 'running' && fake.current.id === runId,
-	getRun: (runId: number) => (fake.current?.id === runId ? fake.current : null),
+	getRun: (runId: number) => held().find((r) => r.id === runId) ?? null,
 	getActiveRunForJob: (jobId: number) =>
 		fake.current?.status === 'running' && fake.current.jobId === jobId ? fake.current : null,
 	cancel: (runId: number) => void fake.cancelled.push(runId),
