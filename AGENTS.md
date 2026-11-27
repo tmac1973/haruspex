@@ -101,3 +101,11 @@ koko `3001`.
   carrying the `windows-ci` label or on manual `workflow_dispatch`. Add
   the label to Shell-tab / Phase-17 / `fs_tools` PRs so the
   `#[cfg(windows)]` branches get compiled + tested.
+
+## How this repo is worked on
+
+Work happens inside a Docker sandbox with the checkout bind-mounted at
+`/workspace`. The shell's starting directory there is `/`, so `cd /workspace`
+before anything else — `make`, git and relative paths all assume it. The gate is
+`bash .openhands/quality.sh`; the stop hook runs it before any attempt may finish,
+and a `pre_tool_use` hook refuses any push whose destination is `main`.
