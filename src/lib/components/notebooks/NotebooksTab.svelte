@@ -16,6 +16,7 @@
 	import { persistItem } from '#lib/persist.ts';
 	import type { NotebookCard } from '#lib/notebooks/api.ts';
 	import { pickFilesAsCards } from '#lib/notebooks/files.ts';
+	import { canWorkThrough, runbookPrompt } from '#lib/notebooks/runbook.ts';
 	import { exportNotebook, exportTable, type NotebookFormat } from '#lib/notebooks/export.ts';
 	import { importFiles } from '#lib/notebooks/import.ts';
 	import { emailNotebook, fileOnGitHub, printNotebook } from '#lib/notebooks/share.ts';
@@ -93,6 +94,9 @@
 	function notebookMenu(id: string) {
 		return [
 			...shareItems(id),
+			...(open?.cards.some(canWorkThrough)
+				? [{ label: 'Work through in Shell…', run: () => void workThroughInShell() }]
+				: []),
 			...EXPORTS.map(([format, name]) => ({
 				label: `Export as ${name}…`,
 				run: () => void exportNotebook(id, format)
@@ -135,12 +139,8 @@
 		if (getOpenBackend().kind === 'local' && open) {
 			items.push(...shareItems(open.notebook.id, card));
 		}
-		if (card.kind === 'checklist' && getOpenBackend().kind === 'local' && open) {
-			const notebook = open.notebook;
-			items.push({
-				label: 'Work through in Shell…',
-				run: () => void workThroughInShell(notebook.id, notebook.title, card)
-			});
+		if (canWorkThrough(card) && getOpenBackend().kind === 'local' && open) {
+			items.push({ label: 'Work through in Shell…', run: () => void workThroughInShell(card.id) });
 		}
 		if (card.kind === 'table' && getOpenBackend().kind === 'local') {
 			items.push(
@@ -151,15 +151,21 @@
 		return items;
 	}
 
-	/** A new Shell tab with a message drafted to work through `card`, step by step. */
-	async function workThroughInShell(notebookId: string, notebookTitle: string, card: NotebookCard) {
-		const [{ openShellWithDraft }, { runbookPrompt }] = await Promise.all([
-			import('#lib/stores/shell.svelte.ts'),
-			import('#lib/notebooks/runbook.ts')
-		]);
-		openShellWithDraft(
-			runbookPrompt({ notebookId, notebookTitle, cardId: card.id, cardTitle: card.title })
-		);
+	/**
+	 * A new Shell tab with a message drafted to work through one card's steps,
+	 * or every step card in the open notebook when `cardId` is unset.
+	 */
+	async function workThroughInShell(cardId?: string) {
+		if (!open) return;
+		const draft = runbookPrompt({
+			notebookId: open.notebook.id,
+			notebookTitle: open.notebook.title,
+			cards: open.cards,
+			cardId
+		});
+		if (!draft) return;
+		const { openShellWithDraft } = await import('#lib/stores/shell.svelte.ts');
+		openShellWithDraft(draft);
 	}
 
 	async function importNew() {

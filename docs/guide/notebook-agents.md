@@ -1,6 +1,6 @@
 ---
 title: Notebook agents
-description: Having agents make, read and change notebooks — a notebook's own chat, asking from Chat, Shell or Code, working through a checklist in Shell, and saving answers and tables to a notebook.
+description: Having agents make, read and change notebooks — a notebook's own chat, asking from Chat, Shell or Code, working through a checklist or plan in Shell, and saving answers and tables to a notebook.
 ---
 
 # Notebook agents
@@ -17,9 +17,9 @@ A turn gets 25 steps (searches, reads, table edits). If it stops before it has w
 
 In Chat, Shell or Code, ask in your own words: "make a notebook called speakers with a table of the speakers, their price and a link", "add the bugs you found to a checklist in notebook Fixes", "read notebook Fixes and work through it". The agent can list, read and search notebooks, add cards, change a table a row at a time, and move or delete cards (deleted ones go to Trash). In Chat and Code it loads these tools when a notebook comes up (see the `tool-loading` page). A research job's step can do the same when its prompt asks ("put the prices you found in a table in notebook Speakers"); its changes say "From Jobs" (see `job-types`). Agents only see notebooks when asked.
 
-## Work through a checklist in a terminal
+## Work through a checklist or a plan in a terminal
 
-**⋯ → Work through in Shell…** on a checklist opens a new Shell tab with a message typed into its assistant box, not sent: work through the list one item at a time, tick each and write a note on it. `ssh` to the machine first if the steps are for another one, switch the tab to **Full access**, change the message if you like, and send it. The agent does one item, then stops and says what's next; say "go on", or ask it to run straight through. It starts again at the first unticked item, so a stopped turn or a closed tab loses nothing. When `sudo` asks for a password, you type it in the terminal (see the `shell` page).
+**⋯ → Work through in Shell…** opens a new Shell tab with a message typed into its assistant box, not sent: do the steps one at a time, tick each and write down what happened. It is on a checklist, on a table with a checkbox column (one step per row; its other columns, such as a command and the expected output, say what to do), and on the notebook's own **⋯** for every such card in order. What happened goes in the item's note, a table's Notes column, or the notebook's log table (a table with "log" in its title, such as "Build log") when there is one. `ssh` to the machine first if the steps are for another one, switch the tab to **Full access**, change the message if you like, and send it. The agent does one step, then stops and says what's next; say "go on", or ask it to run straight through. It starts again at the first unticked step, so a stopped turn or a closed tab loses nothing. When `sudo` asks for a password, you type it in the terminal (see the `shell` page).
 
 ## Keep a notebook up to date
 
