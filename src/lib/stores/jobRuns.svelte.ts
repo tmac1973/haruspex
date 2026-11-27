@@ -40,7 +40,10 @@ export interface JobRunSummary {
 	model_thinking: boolean | null;
 	model_effort: string | null;
 	context_size: number | null;
-	/** A Home card job's validated result (`{ items: [...] }`) as JSON; null for other runs. */
+	/**
+	 * What the run gave `ctx.setResult`, as JSON: a Home card job's `{ items }`,
+	 * or an audit's findings. Null for a type that stores none.
+	 */
 	result_json: string | null;
 }
 

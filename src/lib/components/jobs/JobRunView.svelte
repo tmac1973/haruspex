@@ -3,6 +3,9 @@
 	import { jobReport } from '#lib/reportLogs.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import { jobSourceAttr } from '#lib/notebooks/source.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
+	import { getJobType } from '#lib/agent/jobs/types/index.ts';
+	import type { JobType } from '#lib/stores/jobs.svelte.ts';
 	import SearchStepView from '#lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
@@ -31,6 +34,20 @@
 	const { ondone, onhide }: Props = $props();
 
 	const run = $derived(getCurrentRun());
+	/** A finished run's results as notebook cards (see `notebookCards` on its type). */
+	function saveToNotebook(e: MouseEvent, run: { id: number; jobType: JobType }) {
+		const btn = e.currentTarget as HTMLElement;
+		const r = btn.getBoundingClientRect();
+		void import('#lib/notebooks/capture.ts').then((m) =>
+			m.captureRunResult(run, { x: r.left, y: r.bottom }, btn)
+		);
+	}
+	/** Whether Save to notebook is offered: notebooks are on and the type makes cards. */
+	function offersNotebook(jobType: JobType | undefined): boolean {
+		const s = getLiveSettings();
+		return s.notebooksTab && !s.leanMode && !!jobType && !!getJobType(jobType)?.notebookCards;
+	}
+
 	/** The other runs going now, to switch the view to. */
 	const others = $derived(getActiveRuns().filter((r) => r.id !== run?.id));
 
@@ -140,6 +157,16 @@
 					{/if}
 					<button type="button" class="danger" onclick={() => cancel(run.id)}>Cancel</button>
 				{:else}
+					{#if run.status === 'succeeded' && offersNotebook(run.jobType)}
+						<button
+							type="button"
+							class="secondary"
+							title="Save this run's results as notebook cards"
+							onclick={(e) => saveToNotebook(e, { id: run.id, jobType: run.jobType })}
+						>
+							📓 Save to notebook
+						</button>
+					{/if}
 					<button type="button" class="secondary" onclick={close}>Close</button>
 				{/if}
 			</div>
