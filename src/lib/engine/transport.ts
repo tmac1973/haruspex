@@ -2,7 +2,7 @@
  * How an `EngineClient` (`client.svelte.ts`) reaches a Haruspex: run an
  * operation, follow its events, and upload a picture. The web client does it
  * over HTTP (`src/web/api.ts`); the desktop reaches another computer through
- * Rust (plan/instance-sync/).
+ * Rust (plan/archive/instance-sync/).
  */
 import type { EngineEvent, EngineOp } from '#lib/engine/types.ts';
 

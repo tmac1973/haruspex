@@ -1,7 +1,7 @@
 //! Which Haruspex this is: a random id made once per install, and the
 //! computer's name. `/api/v1/health` answers both, so another Haruspex can
 //! tell that a computer it found on the network and one the owner typed by
-//! name are the same one, and skip itself (plan/instance-sync).
+//! name are the same one, and skip itself (plan/archive/instance-sync).
 //!
 //! The id is kept in its own file in the app data folder, not in Settings,
 //! so a settings file copied to another computer never clones it. It isn't

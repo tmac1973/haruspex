@@ -1,7 +1,7 @@
 /**
  * Where an open notebook lives: this computer (the notebook commands), or
  * a paired computer, reached live through its owner API (`notebooks.*`
- * operations, plan/instance-sync/). Nothing is copied: another computer's
+ * operations, plan/archive/instance-sync/). Nothing is copied: another computer's
  * notebooks are there while it's on. The Notebooks tab works the same on
  * both; what only the owning computer can do (`can`) is hidden for the other.
  */

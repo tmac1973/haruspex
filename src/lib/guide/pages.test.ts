@@ -5,7 +5,7 @@ import { SHORTCUTS } from '#lib/shortcuts.ts';
 
 /**
  * The user guide in `docs/guide/`, checked as files: the shape every page
- * needs for the `haruspex_docs` tool's index (plan/self-docs/), a size that
+ * needs for the `haruspex_docs` tool's index (plan/archive/self-docs/), a size that
  * fits in a turn, links that go somewhere, and a Settings reference that
  * names every section the app has.
  */

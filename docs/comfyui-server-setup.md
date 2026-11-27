@@ -244,7 +244,7 @@ Then Probe again in Haruspex. ComfyUI picks up new files without a restart.
 
 - Haruspex's Manager route is live-tested against Manager 4.2.2 with the
   server on loopback, installing Ming's VAE and checking its SHA-256
-  (`plan/local-image-generation/TODO.md`, phase 27).
+  (`plan/archive/local-image-generation/TODO.md`, phase 27).
 - This install path was followed on Fedora 44 with an RX 7900 XTX
   (gfx1100, 24 GB): Python 3.12, `torch 2.10.0+rocm7.0`, ComfyUI 0.39.0
   serving `/system_stats` and reporting the card as `native`, and Manager

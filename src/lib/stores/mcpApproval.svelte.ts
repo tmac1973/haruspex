@@ -13,7 +13,7 @@
  *                   rather than throwing
  *
  * Asks wait their turn (`approvalQueue.svelte.ts`): several turns, or
- * another computer's prompt (plan/instance-sync/), can ask at once.
+ * another computer's prompt (plan/archive/instance-sync/), can ask at once.
  *
  * # Why "always" is per tool, per server
  *

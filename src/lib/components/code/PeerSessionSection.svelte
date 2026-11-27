@@ -3,7 +3,7 @@
 	 * The Code sessions of one of the owner's other computers, under the
 	 * local ones in the session list: live while it's connected, greyed as
 	 * last seen while it's offline. Opening one shows it in the Code pane,
-	 * where it runs there (plan/instance-sync/). Right-click renames or
+	 * where it runs there (plan/archive/instance-sync/). Right-click renames or
 	 * deletes one there, as for this computer's sessions.
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';

@@ -28,7 +28,7 @@ export interface SandboxApprovalRequest {
 	mode: SandboxApprovalMode;
 	/** The chat whose turn asks. */
 	chatId: string | null;
-	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	/** Another computer's prompt, asked here (plan/archive/instance-sync/). */
 	origin?: PromptOrigin;
 }
 

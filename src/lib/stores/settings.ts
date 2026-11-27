@@ -323,7 +323,7 @@ export interface SearchProxyConfig {
 
 /**
  * Agent Skills (`SKILL.md` folders; see `src-tauri/src/skills/` and
- * `plan/skills/`). Which skills exist is read from disk; this only holds the
+ * `plan/archive/skills/`). Which skills exist is read from disk; this only holds the
  * user's choices about them.
  */
 export interface SkillsConfig {
@@ -554,7 +554,7 @@ export interface AppSettings {
 	remoteAccessLinkHost: string;
 	/**
 	 * Settings → Remote control: the owner API, for the owner's own devices
-	 * (plan/remote-api/). Off by default; on, it listens on this computer only
+	 * (plan/archive/remote-api/). Off by default; on, it listens on this computer only
 	 * unless `ownerApiBindAll`. Its devices and their tokens live in Rust
 	 * (`owner-clients.json`), never here.
 	 */
@@ -582,7 +582,7 @@ export interface AppSettings {
 	 */
 	ownerApiTrustedSettings: boolean;
 	/**
-	 * Settings → Remote control → Other computers (plan/instance-sync/): show
+	 * Settings → Remote control → Other computers (plan/archive/instance-sync/): show
 	 * the owner's other computers' sessions and chats here, through their
 	 * Remote control. Off by default.
 	 */

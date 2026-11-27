@@ -8,7 +8,7 @@
 //! Nothing built from that URL or from ffmpeg's output leaves this module
 //! without going through [`Credentials::redact`].
 //!
-//! See `plan/camera-integration/` for the design.
+//! See `plan/archive/camera-integration/` for the design.
 
 pub mod aim;
 pub mod alert_mail;

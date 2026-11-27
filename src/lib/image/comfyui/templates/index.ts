@@ -194,7 +194,7 @@ const QWEN21_SAMPLER: SamplerSettings = { name: 'euler', steps: 25, cfg: 1 };
  * Turbo samples on the schedule it ships with (`sample_sigmas` in its
  * `model_index.json`), set in node 11, so there is no step count to bind.
  * ComfyUI's `simple` scheduler at 8 steps drew grainier, over-sharpened
- * pictures (`plan/local-image-generation/measurements-qwen-turbo.md`).
+ * pictures (`plan/archive/local-image-generation/measurements-qwen-turbo.md`).
  */
 const QWEN21_TURBO_BINDINGS: FieldMap = {
 	outputNode: '9',

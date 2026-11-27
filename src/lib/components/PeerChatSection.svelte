@@ -3,7 +3,7 @@
 	 * The chats of one of the owner's other computers, under this computer's
 	 * in the conversation list: live while it's connected, greyed as last seen
 	 * while it's offline. Opening one carries it on in the Chat view; it runs
-	 * there (plan/instance-sync/).
+	 * there (plan/archive/instance-sync/).
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {

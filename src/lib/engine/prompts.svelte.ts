@@ -44,7 +44,7 @@ function idFor(label: string, request: object): string {
 }
 
 /**
- * Not another computer's prompt, shown here to answer (plan/instance-sync/):
+ * Not another computer's prompt, shown here to answer (plan/archive/instance-sync/):
  * that one is its own computer's to publish. Publishing it again would hand
  * it on to this computer's clients, and back to its own computer as this
  * one's, for ever.

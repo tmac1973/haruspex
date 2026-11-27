@@ -1,6 +1,6 @@
 /**
  * Your other computers (Settings → Remote control → Other computers,
- * plan/instance-sync/): which ones this Haruspex trusts, kept in Settings,
+ * plan/archive/instance-sync/): which ones this Haruspex trusts, kept in Settings,
  * and Rust brought in line with them. Rust holds the connections; every
  * request to another computer goes through it, pinned to the fingerprint the
  * owner confirmed here.

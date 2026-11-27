@@ -9,7 +9,7 @@
 //! links and git see the path the user's own shell shows.
 //!
 //! Off Windows `wsl_distro` is always `None` and sessions are host folders,
-//! as before. See plan/code-tab/phase-10-windows-wsl.md.
+//! as before. See plan/archive/code-tab/phase-10-windows-wsl.md.
 
 use serde::Serialize;
 

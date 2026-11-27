@@ -1,5 +1,5 @@
 /**
- * The web client (src/web/, plan/remote-api phase 4): a plain Svelte app, not
+ * The web client (src/web/, plan/archive/remote-api phase 4): a plain Svelte app, not
  * a second SvelteKit build, served by the owner API at /app/. It imports
  * `#lib/...` like the desktop app. The output is bundled with the desktop app
  * as the `web-client/` resource (tauri.conf.json).

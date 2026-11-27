@@ -1,5 +1,5 @@
 /**
- * The shapes of the engine surface (plan/remote-api/phase-02): the operations
+ * The shapes of the engine surface (plan/archive/remote-api/phase-02): the operations
  * a client sends, the session state it reads, and the events that keep a copy
  * of that state current. Plain JSON throughout — they cross Tauri IPC, and in
  * phase 3 HTTP and a WebSocket. Rust routes them without looking inside
@@ -320,7 +320,7 @@ export interface SessionListItem {
 	window: string | null;
 	/**
 	 * When it was last saved (ms), or null for one never saved or listed by
-	 * a detached window. Missing from a Haruspex older than plan/instance-sync.
+	 * a detached window. Missing from a Haruspex older than plan/archive/instance-sync.
 	 */
 	updatedAt?: number | null;
 }

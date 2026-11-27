@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Settings → Remote control → Other computers (plan/instance-sync/): the
+	 * Settings → Remote control → Other computers (plan/archive/instance-sync/): the
 	 * owner's other computers running Haruspex, found on the network or added
 	 * by address, each trusted by its certificate's fingerprint. Their
 	 * sessions and chats show here through their own Remote control.

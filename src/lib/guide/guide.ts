@@ -1,7 +1,7 @@
 /**
  * The user guide in `docs/guide/`, compiled into the app so the pages always
  * match the build running. Read by the `haruspex_docs` tool, which lets the
- * model answer questions about Haruspex itself (plan/self-docs/).
+ * model answer questions about Haruspex itself (plan/archive/self-docs/).
  */
 
 const RAW = import.meta.glob('/docs/guide/*.md', {

@@ -8,7 +8,7 @@
  * missing, two drawn touching, one in the wrong place), so every cut is
  * checked against what was asked for, cell by cell, and never trusted.
  *
- * Measured in phase 17 (`plan/local-image-generation/measurements-phase-17.md`):
+ * Measured in phase 17 (`plan/archive/local-image-generation/measurements-phase-17.md`):
  * nine per sheet at 1024, with each subject's position spelled out, cut
  * exactly 8 of 8 times with every subject right and in place. 2048 is worse,
  * not better — the model draws sprites no larger and fills the space with

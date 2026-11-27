@@ -20,7 +20,7 @@ export interface ScreenCaptureRequest {
 	/** The chat or Code session whose turn asks, so the remote page shows it there. */
 	chatId: string | null;
 	sessionId: string | null;
-	/** Another computer's prompt, asked here (plan/instance-sync/). */
+	/** Another computer's prompt, asked here (plan/archive/instance-sync/). */
 	origin?: PromptOrigin;
 }
 

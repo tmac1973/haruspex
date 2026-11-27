@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Settings → Remote control: the owner API (plan/remote-api/) and its web
+	 * Settings → Remote control: the owner API (plan/archive/remote-api/) and its web
 	 * page, for using this Haruspex from the owner's other computers.
 	 *
 	 * Who can connect: devices with a token (each added below, its token or

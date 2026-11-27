@@ -1,6 +1,6 @@
 # Remote API — a phone app (deferred)
 
-Moved out of `plan/remote-api/` (it was phase 6) on 2026-10-09: the owner
+Moved out of `plan/archive/remote-api/` (it was phase 6) on 2026-10-09: the owner
 wants the web client from a desktop browser first. Builds on phase 4's web
 client, which already has a one-column phone layout. **Guide:** `remote-control`.
 

@@ -190,7 +190,7 @@ pub fn run() {
                 app.handle(),
             )));
             app.manage(ModelManager::new(app.handle())?);
-            // Other clients' way into Code sessions (plan/remote-api/): the
+            // Other clients' way into Code sessions (plan/archive/remote-api/): the
             // owner API switches it on while it runs; the e2e build keeps it on.
             let e2e = app.config().identifier.ends_with(".e2e");
             app.manage(engine::EngineHub::new(e2e));

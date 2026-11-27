@@ -1,5 +1,5 @@
 /**
- * A colour per other computer (plan/instance-sync/), the same everywhere it
+ * A colour per other computer (plan/archive/instance-sync/), the same everywhere it
  * shows: its sidebar sections, its tabs and its "Runs on" badges. Taken from
  * its install id, so it stays put across restarts and renames. This
  * computer's own rows have none.

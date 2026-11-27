@@ -7,7 +7,7 @@
 //! so a check that only looked at the edges would pass a repair that failed.
 //!
 //! Three more were built and measured on fifty generated textures at 64 px
-//! (`plan/local-image-generation/measurements-phase-23.md`) and dropped, because
+//! (`plan/archive/local-image-generation/measurements-phase-23.md`) and dropped, because
 //! ordinary texture content set them off: a border-against-middle brightness
 //! check fired on large natural patches (grey pavement among green weeds), an
 //! edge-line check on lane markings and slab joints, and a self-correlation

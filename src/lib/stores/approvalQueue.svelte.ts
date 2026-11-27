@@ -18,7 +18,7 @@
  */
 
 /**
- * Another computer a prompt came from (plan/instance-sync/): its modal says
+ * Another computer a prompt came from (plan/archive/instance-sync/): its modal says
  * where, and this computer never answers it with its own grants.
  */
 export interface PromptOrigin {

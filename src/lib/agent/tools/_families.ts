@@ -1,5 +1,5 @@
 /**
- * Tool families for deferred loading (plan/deferred-tools).
+ * Tool families for deferred loading (plan/archive/deferred-tools).
  *
  * A turn with deferred loading on sends the core tools in full and lists each
  * family in one line; the model loads a family when the request needs it.

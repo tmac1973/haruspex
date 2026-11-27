@@ -89,7 +89,7 @@ const TABLE: Record<string, Handler> = {
 			engine: null
 		};
 	},
-	// The engine (plan/remote-api/) stays off: the UI flows drive the UI.
+	// The engine (plan/archive/remote-api/) stays off: the UI flows drive the UI.
 	engine_enabled: () => false,
 	// Settings → Remote control, off.
 	owner_api_apply: () => ({

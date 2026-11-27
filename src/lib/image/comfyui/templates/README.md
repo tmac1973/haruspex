@@ -25,7 +25,7 @@ DiT that ships its text encoder and VAE as separate files.
 
 Reference conditioning (IP-Adapter) is gone. It is UNet-only, neither DiT family
 can use it, and phase 17 measured a Ming reference image as making sets less
-consistent, not more (`plan/local-image-generation/measurements-phase-17.md`).
+consistent, not more (`plan/archive/local-image-generation/measurements-phase-17.md`).
 
 ## Ming-Image makes alpha from a transparent start
 
@@ -146,5 +146,5 @@ generates as `ming_t2i.json` does, then, in the same graph:
 A border Ming draws round a texture ends up in the cross and is repainted away.
 Measured in phase 23 against a hard-edged band (the repaint showed as a stripe
 of a different tone), a 0.9 denoise (the old border survived) and an eighth-wide
-band (lane markings broke): `plan/local-image-generation/measurements-phase-23.md`.
+band (lane markings broke): `plan/archive/local-image-generation/measurements-phase-23.md`.
 It costs a second sampling pass.

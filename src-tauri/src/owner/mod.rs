@@ -1,5 +1,5 @@
 //! The owner API: the owner's own devices driving their Code sessions over
-//! HTTP (plan/remote-api phase 3). Off unless Settings → Remote control turns
+//! HTTP (plan/archive/remote-api phase 3). Off unless Settings → Remote control turns
 //! it on. See `server.rs` for the wire, `clients.rs` for devices and tokens.
 
 pub mod clients;

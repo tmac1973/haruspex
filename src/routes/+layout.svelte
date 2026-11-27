@@ -229,7 +229,7 @@
 		return () => setRateLimitWaitListener(null);
 	});
 
-	// Other clients' way into this window's Code sessions (plan/remote-api/).
+	// Other clients' way into this window's Code sessions (plan/archive/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.
 	onMount(() => void startEngine());
 

@@ -1,6 +1,6 @@
 //! Reading and editing Kdenlive projects that the user also edits in Kdenlive.
 //!
-//! The rules (see `plan/video-editing/phase-02-kdenlive-project.md`):
+//! The rules (see `plan/archive/video-editing/phase-02-kdenlive-project.md`):
 //!
 //! - Haruspex edits the main track (V1 with A1) and nothing else. Other
 //!   tracks, effects, guides, mixes made in Kdenlive and every property it

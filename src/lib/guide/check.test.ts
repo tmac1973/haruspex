@@ -32,7 +32,7 @@ describe('the guide check CI runs', () => {
 			'src/lib/agent/tools/types.ts',
 			'src/lib/stores/shell.svelte.ts',
 			'src-tauri/src/lib.rs',
-			'plan/self-docs/overview.md'
+			'plan/archive/self-docs/overview.md'
 		]);
 		expect(r).toMatchObject({ ok: true, triggered: [] });
 	});

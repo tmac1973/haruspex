@@ -1,7 +1,7 @@
 /**
  * What the Code pane shows of a session and asks of it, whoever runs it: a
  * `CodeSession` here, or a session on another computer seen through its
- * Remote control (plan/instance-sync/). Each type is the local session's,
+ * Remote control (plan/archive/instance-sync/). Each type is the local session's,
  * so the two can't drift.
  *
  * `capabilities` says which controls apply. A component hides a control
@@ -120,7 +120,7 @@ export interface CodeSessionView {
 	/** Close its tab here. A local session closes through `closeSession`. */
 	close?: () => Promise<void>;
 
-	// Another computer's session (plan/instance-sync/).
+	// Another computer's session (plan/archive/instance-sync/).
 	/** The computer it runs on; absent for a session running here. */
 	readonly peer?: { id: string; name: string };
 	/** Why nothing can be sent now (that computer is offline), or null. */

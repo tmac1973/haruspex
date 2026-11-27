@@ -1,5 +1,5 @@
 /**
- * The owner API (Settings → Remote control, plan/remote-api/): bring the
+ * The owner API (Settings → Remote control, plan/archive/remote-api/): bring the
  * server in line with Settings, and manage the devices that may use it.
  *
  * `syncOwnerApi` is idempotent: Rust leaves a server already running as
