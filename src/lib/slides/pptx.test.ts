@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { buildPptx } from './pptx';
 import { DeckFitError } from './textfit';
 import { pngHeader } from './testImages';
+import { SIZES } from './sizes';
 import type { SlideTheme } from './themes';
 import type { Slide, SlideChart, SlideImage, SlideOrientation } from './types';
 
@@ -422,8 +423,12 @@ describe('charts', () => {
 		series: [{ name: 'Sales', values: [3, 5, 4] }]
 	};
 
-	async function chartXml(chart: SlideChart, theme: SlideTheme = 'light'): Promise<string> {
-		const zip = await build([{ title: 'T', chart }], 'landscape', new Map(), theme);
+	async function chartXml(
+		chart: SlideChart,
+		theme: SlideTheme = 'light',
+		orientation: SlideOrientation = 'landscape'
+	): Promise<string> {
+		const zip = await build([{ title: 'T', chart }], orientation, new Map(), theme);
 		const name = Object.keys(zip.files).find((n) => /^ppt\/charts\/chart\d+\.xml$/.test(n));
 		if (!name) throw new Error('no chart part');
 		return part(zip, name);
@@ -450,6 +455,33 @@ describe('charts', () => {
 		const big = { ...sales, series: [{ name: 'Gorillas', values: [320000, 6800, 300] }] };
 		expect(axis(await chartXml(big))).toBe('#,##0');
 		expect(axis(await chartXml(sales))).toBe('General');
+	});
+
+	it.each(['landscape', 'portrait'] as const)(
+		'sizes the axis, legend and value text for a %s deck',
+		async (orientation) => {
+			const sz = (xml: string, element: string) => {
+				const inner = xml.slice(xml.indexOf(`<${element}>`), xml.indexOf(`</${element}>`));
+				return Number(/sz="(\d+)"/.exec(inner)?.[1]) / 100;
+			};
+			// One series has values on its bars; two have a legend.
+			const one = await chartXml(sales, 'light', orientation);
+			const two = await chartXml(
+				{ ...sales, series: [...sales.series, { name: 'Costs', values: [2, 3, 3] }] },
+				'light',
+				orientation
+			);
+			const { chart } = SIZES[orientation];
+			expect(sz(one, 'c:dLbls')).toBe(chart.label);
+			expect(sz(one, 'c:catAx')).toBe(chart.category);
+			expect(sz(one, 'c:valAx')).toBe(chart.value);
+			expect(sz(two, 'c:legend')).toBe(chart.legend);
+		}
+	);
+
+	it('sets larger chart text in portrait than in landscape', () => {
+		for (const key of ['category', 'value', 'legend', 'label'] as const)
+			expect(SIZES.portrait.chart[key]).toBeGreaterThan(SIZES.landscape.chart[key]);
 	});
 
 	it('colours the series from the theme', async () => {

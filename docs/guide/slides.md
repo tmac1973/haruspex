@@ -11,7 +11,7 @@ The assistant writes the whole deck in one go. It can't open and change a deck t
 
 ## Landscape or portrait
 
-Decks are landscape (16:9) unless you say otherwise. Portrait (9:16) suits a deck read on a phone, shown on a vertical screen, or posted as a story. Say where the deck will be shown and the assistant picks. Portrait uses larger text, sized for a phone, so a slide holds fewer words. Bullets on their own sit a little above the middle of the page, and a picture goes above the bullets instead of beside them.
+Decks are landscape (16:9) unless you say otherwise. Portrait (9:16) suits a deck read on a phone, shown on a vertical screen, or posted as a story. Say where the deck will be shown and the assistant picks. Portrait uses larger text, in charts too, sized for a phone, so a slide holds fewer words. Bullets on their own sit a little above the middle of the page, and a picture goes above the bullets instead of beside them.
 
 ## Choose a look
 

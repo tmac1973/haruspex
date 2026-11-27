@@ -20,6 +20,9 @@ export interface Sizes {
 	meaning: number;
 	imageTitle: number;
 	imageSubtitle: number;
+	/** A chart's text: its category axis, value axis, legend, and the
+	 *  values on its bars or slices. */
+	chart: { category: number; value: number; legend: number; label: number };
 }
 
 export const SIZES: Record<SlideOrientation, Sizes> = {
@@ -35,7 +38,8 @@ export const SIZES: Record<SlideOrientation, Sizes> = {
 		stat: 110,
 		meaning: 26,
 		imageTitle: 36,
-		imageSubtitle: 20
+		imageSubtitle: 20,
+		chart: { category: 14, value: 12, legend: 14, label: 13 }
 	},
 	portrait: {
 		bullets: [26, 23, 20],
@@ -49,6 +53,7 @@ export const SIZES: Record<SlideOrientation, Sizes> = {
 		stat: 104,
 		meaning: 28,
 		imageTitle: 34,
-		imageSubtitle: 22
+		imageSubtitle: 22,
+		chart: { category: 16, value: 16, legend: 18, label: 18 }
 	}
 };

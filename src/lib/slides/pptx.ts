@@ -117,7 +117,8 @@ function addContent(
 	const boxes = bodyBoxes(build.orientation, visual, bullets.length > 0);
 	let bulletBox = boxes.bullets;
 	const box = boxes.visual;
-	if (slide.chart && box) addChart(build.deck, out, build.theme, box, slide.chart);
+	if (slide.chart && box)
+		addChart(build.deck, out, build.theme, build.sizes.chart, box, slide.chart);
 	else if (slide.table && box) {
 		const { ratio, height } = addTable(out, build.theme, box, slide.table, build.orientation);
 		if (ratio > OVERFLOW_LIMIT) build.problems.push(tableProblem(where, slide.table.length, ratio));
