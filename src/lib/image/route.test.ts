@@ -159,6 +159,7 @@ describe('routeImage', () => {
 
 	it('runs a named entry, refuses one that can’t, and says who can', async () => {
 		expect(await ranOn(edit(2), 'C')).toBe('C');
+		expect(await ranOn(edit(2), ' c ')).toBe('C');
 		await expect(ranOn(edit(2), 'A')).rejects.toThrow("A can't edit pictures. B, C can.");
 		await expect(ranOn(draw, 'nobody')).rejects.toThrow(
 			'There is no image model called "nobody". The models are: A, B, C.'

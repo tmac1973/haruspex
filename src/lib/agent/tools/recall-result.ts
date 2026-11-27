@@ -39,7 +39,10 @@ registerTool({
 					id: { type: 'string', description: 'From the stub, e.g. "r3".' },
 					offset: { type: 'integer', description: '1-indexed line to start at.' },
 					limit: { type: 'integer', description: 'Most lines to return.' },
-					pattern: { type: 'string', description: 'Only lines containing this, numbered.' }
+					pattern: {
+						type: 'string',
+						description: 'Only lines with this (not regex), numbered.'
+					}
 				},
 				required: ['id']
 			}
@@ -62,12 +65,25 @@ registerTool({
 				)
 			);
 		}
-		const cap = pageCap(archive);
-		if (cap === null) return toolResult(toolError(noRoom(kept.id, archive)));
 		const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
-		const out = pattern
-			? matching(kept.id, kept.call, kept.text, pattern, cap)
-			: page(kept.id, kept.call, kept.text, lineArg(args.offset, 1), lineArg(args.limit), cap);
+		const limit = lineArg(args.limit);
+		const read = (cap: number) =>
+			pattern
+				? matching(kept.id, kept.call, kept.text, pattern, cap)
+				: page(kept.id, kept.call, kept.text, lineArg(args.offset, 1), limit, cap);
+		const cap = pageCap(archive);
+		let out: string;
+		if (cap !== null) {
+			out = read(cap);
+		} else {
+			// The room is used, but a narrow recall may still fit in what is left: five
+			// recalls with a pattern were refused before they were read (#1317).
+			out = read(PAGE_CHARS);
+			const needs = estimateTokens(out);
+			if (needs > archive.roomLeft) {
+				return toolResult(toolError(noRoom(kept.id, archive, needs, !!pattern || !!limit)));
+			}
+		}
 		archive.spend(estimateTokens(out));
 		return toolResult(out);
 	}
@@ -90,12 +106,17 @@ function pageCap(archive: RecallArchive): number | null {
  * 32K window the model sent six to eight recalls a round, round after round,
  * to "one at a time" alone (#1022).
  */
-function noRoom(id: string, archive: RecallArchive): string {
+function noRoom(id: string, archive: RecallArchive, needs: number, narrowed: boolean): string {
 	const left = Math.round(archive.roomLeft);
-	return (
+	const room =
 		`Not read: this step's recalls used the room the context has` +
-		(left > 0 ? ` (about ${left} tokens left)` : '') +
-		`. A whole page is about ${Math.round(PAGE_CHARS / TOKEN_BYTES_RATIO)} tokens. ` +
+		(left > 0 ? ` (about ${left} tokens left)` : '');
+	// Already narrowed: asking for pattern or limit again sent the model in circles (#1317).
+	if (narrowed) {
+		return `${room}, and this part is about ${Math.round(needs)} tokens. Recall "${id}" in a later step, by itself.`;
+	}
+	return (
+		`${room}. A whole page is about ${Math.round(PAGE_CHARS / TOKEN_BYTES_RATIO)} tokens. ` +
 		`Recall "${id}" in a later step, by itself, or with pattern or a small limit.`
 	);
 }
@@ -153,7 +174,11 @@ function matching(id: string, call: string, text: string, pattern: string, cap: 
 		}
 	});
 	const head = `Result ${id} (${call}): ${hits} of ${lines.length} lines contain "${pattern}".`;
-	if (hits === 0) return head;
+	if (hits === 0) {
+		return /[.*+?^$()[\]{}|\\]/.test(pattern)
+			? `${head} pattern is plain text, not a regex.`
+			: head;
+	}
 	let out = head + '\n';
 	let last = -2;
 	for (const i of [...keep].sort((a, b) => a - b)) {

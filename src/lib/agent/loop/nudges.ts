@@ -242,9 +242,20 @@ export class NudgeState {
 	 * finished tool calls and is about to synthesize. Guards: a
 	 * web_search must have happened, ≤1 page was fetched, and we
 	 * haven't already nudged this turn.
+	 *
+	 * Not on a turn that drew a picture: a search there looks something up
+	 * for the drawing (a model's name, what a thing looks like), and the
+	 * answer is the picture, not claims to cite. A model asked to fetch
+	 * pages for one called the nudge unrelated to the request (#1317).
 	 */
 	needsDiversityNudge(usedTools: boolean): boolean {
-		return usedTools && this.webSearchUsed && this.fetchedUrls.size <= 1 && !this.diversityNudged;
+		return (
+			usedTools &&
+			this.webSearchUsed &&
+			this.fetchedUrls.size <= 1 &&
+			!this.pictureMade &&
+			!this.diversityNudged
+		);
 	}
 
 	/** Mark the diversity nudge as fired; returns the fetched count. */

@@ -133,16 +133,16 @@ function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
 	};
 }
 
-function use(answers: Record<string, Answer>) {
+const SOUND_ONLY = { audio: [{ index: 1, codec: 'opus', channels: 2, sampleRate: 48000 }] };
+
+function use(answers: Record<string, Answer>, probed: Record<string, unknown> = SOUND_ONLY) {
 	vi.mocked(invoke)
 		.mockReset()
 		.mockImplementation(
 			invokeRouter({
 				comfy_cancel: null,
 				audio_store_url: { hash: HASH, mime: 'video/webm', bytes: 123456 },
-				video_probe_cached: {
-					audio: [{ index: 1, codec: 'opus', channels: 2, sampleRate: 48000 }]
-				},
+				video_probe_cached: probed,
 				toolchest_json: httpRouter(answers),
 				toolchest_upload: httpRouter(answers)
 			})
@@ -276,6 +276,18 @@ describe('making a clip', () => {
 		});
 		expect(calls('video_probe_cached')[0]).toMatchObject({ hash: HASH });
 		expect(result.url).toBe(`haruspex-video://localhost/${HASH}`);
+	});
+
+	it('reports the length the clip has, not the one asked for', async () => {
+		// A clip that follows speech is as long as the speech: 0.72 s, not the 2.1 s that
+		// 33 frames at 16 fps would be (#1317).
+		use(jobRoutes(), {
+			...SOUND_ONLY,
+			durationSecs: 0.728,
+			video: { codec: 'vp8', width: 832, height: 480, fpsNum: 16, fpsDen: 1, rotation: 0 }
+		});
+		const result = await generateVideo({ ...request, fps: 16 });
+		expect(result).toMatchObject({ frames: 12, fps: 16, hasAudio: true });
 	});
 
 	it('sends a starting picture from the image cache as a form part', async () => {
