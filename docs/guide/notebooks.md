@@ -43,7 +43,7 @@ Agents in Chat, Shell, Code and each notebook's own chat can make and change not
 
 ## Find broken links
 
-**⋯ → Check links** asks for every web link in the notebook (in text and Link columns) and marks those that no longer load with ⚠; point at one to see why. A notebook is checked again by itself when you open it a week after the last check. Links to this computer or your local network aren't checked, and a site that doesn't answer in time isn't marked. Checks use your proxy (see `search-and-network`).
+**⋯ → Check links** asks for every web link in the notebook (in text and Link columns) and marks those that no longer load with ⚠; point at one to see why. Click the banner to go to each in turn. A notebook is checked again by itself when you open it a week after the last check. Links to this computer or your local network aren't checked, and a site that doesn't answer in time or is down for now isn't marked. Checks use your proxy (see `search-and-network`).
 
 ## Link to a notebook
 
