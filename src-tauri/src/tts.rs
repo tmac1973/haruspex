@@ -310,6 +310,31 @@ impl PcmDecoder {
     }
 }
 
+/// What ends a sentence for koko.
+const SENTENCE_ENDS: [char; 5] = ['.', '!', '?', ';', ':'];
+
+/// `text` without sentences that are only punctuation. koko ends its whole
+/// stream at one, though its log says it sent everything: "shows: . A red
+/// sky" stops after "shows". Markdown made plain makes them, as a bold
+/// "Here is what it shows:" before a list comes out "shows: .".
+///
+/// A mark is dropped at the start, or when only whitespace separates it from
+/// the last one. Marks with nothing between them ("?!", "...") stay.
+fn without_empty_sentences(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if SENTENCE_ENDS.contains(&c) {
+            let before = out.trim_end();
+            let spaced = before.len() < out.len();
+            if before.is_empty() || (spaced && before.ends_with(SENTENCE_ENDS)) {
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Ask koko to speak `text` and hand each piece of audio to `on_samples` as
 /// it arrives. koko streams raw PCM one sentence at a time, far faster than
 /// it plays. `on_samples` returns false to stop early. Returns how many
@@ -320,6 +345,7 @@ async fn stream_speech(
     speed: f32,
     mut on_samples: impl FnMut(Vec<f32>) -> bool,
 ) -> Result<usize, String> {
+    let text = &without_empty_sentences(text);
     if text.trim().is_empty() {
         return Err("No text to speak".to_string());
     }
@@ -743,6 +769,34 @@ pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sentences_of_only_punctuation_are_dropped() {
+        // The read-aloud that stopped: a bold line before a list, made plain.
+        assert_eq!(
+            without_empty_sentences("the picture shows: . A red sky."),
+            "the picture shows:  A red sky."
+        );
+        assert_eq!(without_empty_sentences(". A red sky"), " A red sky");
+        assert_eq!(without_empty_sentences("Dark; ! Light"), "Dark;  Light");
+        assert_eq!(
+            without_empty_sentences("Dark.  . ? Light"),
+            "Dark.    Light"
+        );
+        assert_eq!(without_empty_sentences(" . "), "  ");
+    }
+
+    #[test]
+    fn punctuation_with_words_or_no_gap_stays() {
+        for text in [
+            "Wait... what?! Fine.",
+            "Version 3.5: it works.",
+            "A red sky, . then dark",
+            "Edited — . and done",
+        ] {
+            assert_eq!(without_empty_sentences(text), text);
+        }
+    }
 
     #[test]
     fn atempo_chains_stay_within_half_to_double() {
