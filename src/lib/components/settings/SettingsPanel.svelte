@@ -356,8 +356,7 @@
 		padding: 12px 20px;
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-primary);
-		position: sticky;
-		top: 0;
+		flex: none;
 		z-index: 10;
 	}
 
@@ -381,9 +380,11 @@
 		background: var(--bg-secondary);
 	}
 
+	/* Fills what the header leaves of the overlay, which doesn't scroll. */
 	.settings-layout {
 		display: flex;
-		height: calc(100vh - 45px - 50px);
+		flex: 1 1 auto;
+		min-height: 0;
 		align-items: stretch;
 	}
 

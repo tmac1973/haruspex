@@ -1075,7 +1075,11 @@
 		position: absolute;
 		inset: 0;
 		z-index: 20;
-		overflow-y: auto;
+		/* Settings' rail and pane scroll themselves. A scroll bar here sat on
+		   top of the pane's and took its drags. */
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 		background: var(--bg-primary);
 	}
 </style>

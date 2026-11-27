@@ -7,4 +7,19 @@
 	// navigation / deep links; closing returns to the main page.
 </script>
 
-<SettingsPanel onclose={() => goto('/')} />
+<div class="settings-page">
+	<SettingsPanel onclose={() => goto('/')} />
+</div>
+
+<style>
+	/* Laid out like +layout.svelte's .settings-overlay: the panel's rail and
+	   pane scroll, the page doesn't. Sized like the main page, below the
+	   45px header. */
+	.settings-page {
+		height: calc(100vh - 45px);
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		background: var(--bg-primary);
+	}
+</style>
