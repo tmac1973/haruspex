@@ -70,15 +70,19 @@ export class RecallArchive {
 		this.roundUsed = 0;
 	}
 
-	/**
-	 * Count `tokens` of recalled text against this round, or refuse it when
-	 * they don't fit. The round's first recall always fits: one page is
-	 * small next to the room a trim frees.
-	 */
-	take(tokens: number): boolean {
-		if (this.roundUsed > 0 && this.roundUsed + tokens > this.roundTokens) return false;
+	/** Estimated tokens this round's recalls may still hand back. */
+	get roomLeft(): number {
+		return Math.max(0, this.roundTokens - this.roundUsed);
+	}
+
+	/** Whether a recall has handed anything back this round. */
+	get recalledThisRound(): boolean {
+		return this.roundUsed > 0;
+	}
+
+	/** Count `tokens` of recalled text against this round. */
+	spend(tokens: number): void {
 		this.roundUsed += tokens;
-		return true;
 	}
 }
 

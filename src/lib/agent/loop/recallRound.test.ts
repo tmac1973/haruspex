@@ -35,16 +35,12 @@ describe('startRecallRound', () => {
 		const calibration = getTokenCalibration(ctx.descriptor.calibrationKey);
 		const prompt = Math.ceil(estimateMessagesTokens(ctx.messages, ctx.tools) * calibration);
 		const room = (Math.floor(40_000 * 0.7) - prompt) / calibration;
-		const archive = ctx.recallArchive!;
-		expect(archive.take(room - 10)).toBe(true);
-		expect(archive.take(20)).toBe(false);
+		expect(ctx.recallArchive!.roomLeft).toBeCloseTo(room, 6);
 	});
 
-	it('still lets one recall through when the prompt is past the threshold', () => {
+	it('leaves no room when the prompt is past the threshold', () => {
 		const ctx = ctxWith('x'.repeat(120_000));
 		startRecallRound(ctx);
-		const archive = ctx.recallArchive!;
-		expect(archive.take(4_000)).toBe(true);
-		expect(archive.take(1)).toBe(false);
+		expect(ctx.recallArchive!.roomLeft).toBe(0);
 	});
 });
