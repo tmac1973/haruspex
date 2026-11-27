@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { inLoopTrimBudget } from './iteration';
+import { recallRoundBudget } from './context';
 import { trimOldToolMessages, estimateMessagesTokens } from '#lib/agent/contextBudget.ts';
 import type { ChatMessage } from '#lib/api.ts';
 
@@ -57,5 +58,13 @@ describe('the in-loop trim, end to end', () => {
 		// The old sweep left exactly three. Anything close to that is the bug.
 		expect(kept.length).toBeGreaterThan(6);
 		expect(estimateMessagesTokens(msgs)).toBeLessThanOrEqual(budget);
+	});
+});
+
+describe('recallRoundBudget', () => {
+	it('is the gap between the trim target and its threshold', () => {
+		// 70% − 55% of the window.
+		expect(recallRoundBudget(65_536)).toBe(9830);
+		expect(recallRoundBudget(0)).toBe(Infinity);
 	});
 });

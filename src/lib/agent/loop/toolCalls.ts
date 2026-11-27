@@ -119,6 +119,7 @@ export async function executeToolCalls(
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { signal, options } = ctx;
 	toolCalls = toolCalls.map((call) => withDeferredName(call, ctx));
+	ctx.recallArchive?.startRound();
 	// Count calls that were web reads blocked by an external resource. When
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;

@@ -24,6 +24,21 @@ describe('RecallArchive', () => {
 		expect(a.get(' r2 ')?.call).toBe('fs_read_text(a.ts)');
 		expect(a.size).toBe(2);
 	});
+
+	it("caps one round's recalls, and lets the first through", () => {
+		const a = new RecallArchive(10_000);
+		expect(a.take(12_000)).toBe(true);
+		expect(a.take(1)).toBe(false);
+		a.startRound();
+		expect(a.take(6_000)).toBe(true);
+		expect(a.take(4_000)).toBe(true);
+		expect(a.take(1)).toBe(false);
+	});
+
+	it('has no cap by default', () => {
+		const a = new RecallArchive();
+		for (let i = 0; i < 20; i++) expect(a.take(50_000)).toBe(true);
+	});
 });
 
 describe('keepResult', () => {
