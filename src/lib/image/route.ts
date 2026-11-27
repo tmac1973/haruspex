@@ -238,7 +238,10 @@ async function ready(
 /** Run `need` on the entry the chat model named, or refuse saying who can. */
 async function routeNamed<T>(name: string, need: ImageNeed, run: Run<T>): Promise<Routed<T>> {
 	const entries = imageEntries();
-	const entry = entries.find((e) => e.name === name);
+	// A model writes "Chroma1-Flash" for chroma1-flash, from a web page or its own idea (#1317).
+	const want = name.trim().toLowerCase();
+	const entry =
+		entries.find((e) => e.name === name) ?? entries.find((e) => e.name.toLowerCase() === want);
 	if (!entry) {
 		throw new ImageBackendError(
 			'rejected',

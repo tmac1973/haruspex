@@ -31,7 +31,7 @@ import {
 } from '#lib/toolchest/kind.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
-import { clipHasAudio } from '#lib/videogen/clip.ts';
+import { whatWasMade } from '#lib/videogen/clip.ts';
 import { capsFromInstance } from '#lib/videogen/capsOf.ts';
 import { VideoBackendError, type VideoBackend } from '#lib/videogen/backend.ts';
 import { registerVideoBackendKind } from '#lib/videogen/registry.ts';
@@ -193,18 +193,20 @@ async function finish(
 		codeSessionId: opts.codeSessionId
 	});
 	removeJob(cfg, ROUTES.job(job.id));
-	const hasAudio = await clipHasAudio(stored.hash);
+	// A clip that follows speech is as long as the speech, not `req.frames` (#1317).
+	const made = await whatWasMade(stored.hash, {
+		width: job.width || req.width,
+		height: job.height || req.height,
+		frames: job.frames || req.frames,
+		fps: job.fps || req.fps
+	});
 	return {
 		hash: stored.hash,
 		url: videoSrc(stored.hash) ?? '',
 		mime: stored.mime,
-		width: job.width || req.width,
-		height: job.height || req.height,
-		frames: job.frames || req.frames,
-		fps: job.fps || req.fps,
+		...made,
 		seed: req.seed,
-		model,
-		hasAudio
+		model
 	};
 }
 

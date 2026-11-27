@@ -377,6 +377,25 @@ describe('executeToolCalls: web reads', () => {
 });
 
 describe('executeToolCalls: nudge bookkeeping', () => {
+	// A search for a model's name before a clip or a song is not research (#1317).
+	it('skips the source nudge once a clip, song or speech was started, not when it failed', async () => {
+		for (const name of ['generate_video', 'upscale_video', 'generate_music', 'generate_speech']) {
+			toolsAnswer((c) => ({ result: c.name === name ? 'Started in the background.' : '[]' }));
+			const made = new NudgeState();
+			await executeToolCalls(makeCtx(), made, [
+				call('web_search', { query: 'wan s2v' }),
+				call(name, { prompt: 'x' })
+			]);
+			expect(made.needsDiversityNudge(true), name).toBe(false);
+		}
+		toolsAnswer((c) => ({ result: c.name === 'generate_video' ? '{"error":"nope"}' : '[]' }));
+		const failed = new NudgeState();
+		await executeToolCalls(makeCtx(), failed, [
+			call('web_search', { query: 'wan s2v' }),
+			call('generate_video', { prompt: 'x' })
+		]);
+		expect(failed.needsDiversityNudge(true)).toBe(true);
+	});
 	it('marks a file written only when a write succeeds', async () => {
 		toolsAnswer(() => ({ result: '{"error":"permission denied"}' }));
 		const failed = new NudgeState();

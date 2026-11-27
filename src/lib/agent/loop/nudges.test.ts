@@ -100,6 +100,22 @@ describe('NudgeState truncation retry budget', () => {
 	});
 });
 
+describe('diversity nudge', () => {
+	it('fires after a web_search with at most one page opened', () => {
+		const n = new NudgeState();
+		n.markWebSearchUsed();
+		expect(n.needsDiversityNudge(true)).toBe(true);
+	});
+
+	// A search for an image model's name, then a drawing: there is nothing to cite (#1317).
+	it('does not fire once a picture was drawn', () => {
+		const n = new NudgeState();
+		n.markWebSearchUsed();
+		n.markSomethingMade();
+		expect(n.needsDiversityNudge(true)).toBe(false);
+	});
+});
+
 describe('research nudge', () => {
 	it('fires when the only tool used was image_search', () => {
 		const n = new NudgeState();
@@ -125,7 +141,7 @@ describe('research nudge', () => {
 	// after drawing it.
 	it('does not fire once a picture was drawn', () => {
 		const n = new NudgeState();
-		n.markPictureMade();
+		n.markSomethingMade();
 		n.markImageSearchUsed();
 		expect(n.needsResearchNudge(true, false)).toBe(false);
 	});

@@ -38,7 +38,7 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import { VideoBackendError, type VideoBackend } from '#lib/videogen/backend.ts';
 import { registerVideoBackendKind } from '#lib/videogen/registry.ts';
 import { videoEntryApiKey } from '#lib/videogen/entries.ts';
-import { cachedClipInfo } from '#lib/videogen/clip.ts';
+import { whatWasMade } from '#lib/videogen/clip.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
 import type {
 	VideoCaps,
@@ -310,35 +310,6 @@ async function finish(
 		...(await whatWasMade(stored.hash, req)),
 		seed: req.seed,
 		model
-	};
-}
-
-/**
- * The clip's real size, length and sound, as ffprobe reads it: a model makes
- * its own lengths and sizes. What was asked for when it can't be probed.
- */
-async function whatWasMade(
-	hash: string,
-	req: VideoRequest
-): Promise<Pick<VideoResult, 'width' | 'height' | 'frames' | 'fps' | 'hasAudio'>> {
-	const info = await cachedClipInfo(hash);
-	const v = info?.video;
-	if (!info || !v) {
-		return {
-			width: req.width,
-			height: req.height,
-			frames: req.frames,
-			fps: req.fps,
-			hasAudio: false
-		};
-	}
-	const fps = v.fpsDen > 0 ? v.fpsNum / v.fpsDen : req.fps;
-	return {
-		width: v.width || req.width,
-		height: v.height || req.height,
-		frames: info.durationSecs > 0 ? Math.round(info.durationSecs * fps) : req.frames,
-		fps: Math.round(fps * 100) / 100,
-		hasAudio: info.audio.length > 0
 	};
 }
 

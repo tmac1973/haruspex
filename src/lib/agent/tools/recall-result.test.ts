@@ -94,6 +94,44 @@ describe('recall_result', () => {
 		expect((await recall({ id: 'r2' }, archive)).result).toContain('Result r2');
 	});
 
+	it('still reads a narrow recall that fits what the round has left', async () => {
+		const archive = new RecallArchive();
+		archive.keep('c1', 'fs_read_text(deploy.log)', fileOf(900));
+		archive.keep('c2', 'fs_read_text(a.py)', fileOf(900));
+		archive.keep('c3', 'fs_read_text(b.py)', fileOf(900));
+		archive.startRound(2_000);
+		// An earlier recall this round left about 170 tokens, as in the live run.
+		archive.spend(1_830);
+		// Five calls like this were refused unread there (#1317).
+		const narrow = (await recall({ id: 'r2', pattern: 'nothing-here', limit: 2 }, archive)).result;
+		expect(narrow).toContain('Result r2');
+		const two = (await recall({ id: 'r3', offset: 10, limit: 2 }, archive)).result;
+		expect(two).toContain('lines 10–11 of 900');
+	});
+
+	it('does not ask for pattern or limit when the refused call had them', async () => {
+		const archive = new RecallArchive();
+		archive.keep('c1', 'fs_read_text(a.py)', fileOf(900));
+		archive.keep('c2', 'fs_read_text(b.py)', fileOf(900));
+		archive.startRound(2_000);
+		await recall({ id: 'r1' }, archive);
+		const err = JSON.parse((await recall({ id: 'r2', offset: 1, limit: 400 }, archive)).result)
+			.error as string;
+		expect(err).toMatch(/^Not read: this step's recalls used the room the context has/);
+		expect(err).toMatch(
+			/and this part is about \d+ tokens\. Recall "r2" in a later step, by itself\.$/
+		);
+		expect(err).not.toContain('pattern');
+	});
+
+	it('says pattern is plain text when a regex finds nothing', async () => {
+		const out = (await recall({ id: 'r1', pattern: 'class.*Record' }, archiveWith(fileOf(9))))
+			.result;
+		expect(out).toContain(
+			'0 of 9 lines contain "class.*Record". pattern is plain text, not a regex.'
+		);
+	});
+
 	it('still gives the first recall of a round a small page when there is no room', async () => {
 		const archive = archiveWith(fileOf(900));
 		archive.startRound(0);

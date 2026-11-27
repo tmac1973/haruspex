@@ -31,6 +31,24 @@
  * inspecting raw booleans scattered through 600 lines.
  */
 
+/**
+ * Tools whose success means the turn made something rather than answered a
+ * question: pictures, clips (the video ones start a background task), songs,
+ * speech and assets. Neither research nudge fires after one (#1317).
+ */
+export const MAKING_TOOLS: ReadonlySet<string> = new Set([
+	'generate_image',
+	'edit_image',
+	'upscale_image',
+	'generate_video',
+	'upscale_video',
+	'generate_music',
+	'edit_music',
+	'generate_speech',
+	'make_asset',
+	'delegate_3d'
+]);
+
 export const MAX_FILE_WRITE_RETRIES = 2;
 /**
  * Retries allowed after a tool call is refused for being truncated. Bounded so
@@ -78,8 +96,8 @@ export class NudgeState {
 	/** Set to true on the first web_search tool call this turn. */
 	private webSearchUsed = false;
 	private imageSearchUsed = false;
-	/** Set when generate_image, edit_image or upscale_image made a picture. */
-	private pictureMade = false;
+	/** Set when a tool in `MAKING_TOOLS` made (or started making) something. */
+	private somethingMade = false;
 	private researchNudged = false;
 	private phantomImageNudged = false;
 	/** Distinct URLs fetched via fetch_url / research_url this turn. */
@@ -120,9 +138,9 @@ export class NudgeState {
 		this.imageSearchUsed = true;
 	}
 
-	/** Record that a drawing tool put a picture in the answer. */
-	markPictureMade(): void {
-		this.pictureMade = true;
+	/** Record that a tool in `MAKING_TOOLS` made something for the answer. */
+	markSomethingMade(): void {
+		this.somethingMade = true;
 	}
 
 	/** Record a successful fetch_url / research_url call by URL. */
@@ -144,7 +162,7 @@ export class NudgeState {
 	 * for a picture has already been served and must not be nudged into
 	 * researching something they did not ask about. So has someone who asked
 	 * for a picture to be drawn, which the regex can't tell from a question;
-	 * the drawing tool having run can. Fires at most once.
+	 * a making tool having run can. Fires at most once.
 	 */
 	needsResearchNudge(usedTools: boolean, imageOnlyRequest: boolean): boolean {
 		return (
@@ -153,7 +171,7 @@ export class NudgeState {
 			!this.webSearchUsed &&
 			this.fetchedUrls.size === 0 &&
 			!imageOnlyRequest &&
-			!this.pictureMade &&
+			!this.somethingMade &&
 			!this.researchNudged
 		);
 	}
@@ -242,9 +260,20 @@ export class NudgeState {
 	 * finished tool calls and is about to synthesize. Guards: a
 	 * web_search must have happened, ≤1 page was fetched, and we
 	 * haven't already nudged this turn.
+	 *
+	 * Not on a turn that made something (a picture, clip, song, speech or
+	 * asset): a search there looks something up for it (a model's name, what a
+	 * thing looks like), and the answer is what was made, not claims to cite. A model asked to fetch
+	 * pages for one called the nudge unrelated to the request (#1317).
 	 */
 	needsDiversityNudge(usedTools: boolean): boolean {
-		return usedTools && this.webSearchUsed && this.fetchedUrls.size <= 1 && !this.diversityNudged;
+		return (
+			usedTools &&
+			this.webSearchUsed &&
+			this.fetchedUrls.size <= 1 &&
+			!this.somethingMade &&
+			!this.diversityNudged
+		);
 	}
 
 	/** Mark the diversity nudge as fired; returns the fetched count. */
