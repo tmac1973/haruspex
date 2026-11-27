@@ -22,7 +22,12 @@
 
 import { holdsSkillContent } from '#lib/skills/content.ts';
 import { messageText, type ChatMessage, type ToolDefinition } from '#lib/api.ts';
-import { callFor, droppingUnit, sanitizeOrphanToolResults } from '#lib/agent/toolRounds.ts';
+import {
+	describeToolCall,
+	droppingUnit,
+	sanitizeOrphanToolResults
+} from '#lib/agent/toolRounds.ts';
+import { forceFit } from '#lib/agent/forceFit.ts';
 import {
 	archivedStub,
 	keepResult,
@@ -33,7 +38,6 @@ import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import {
 	PER_MESSAGE_OVERHEAD_TOKENS,
 	TOKEN_BYTES_RATIO,
-	byteLength,
 	estimateMessagesTokens,
 	estimateTokens,
 	messageTokens
@@ -77,32 +81,6 @@ const DROP_TARGET_FRACTION = 0.8;
 // Fixed text, without a count: it sits in the system message, so a count
 // that changed with each drop changed the very start of the prompt.
 export const DROPPED_TURNS_NOTE = '[Older messages were dropped to fit the context window.]';
-
-/**
- * Name the call a tool result answered, for its stub.
- *
- * A stub that says only "4000 chars dropped" tells the model nothing it can
- * act on. Naming the call — `fs_read_text(crates/core/src/lib.rs)` — turns
- * "call the tool again if needed" into an instruction with an argument, and
- * distinguishes a result that was evicted from a file that does not exist.
- * That distinction is the whole problem this stub caused: a run that lost its
- * reads to trimming reported the code as missing from disk.
- */
-function describeToolCall(messages: ChatMessage[], toolIdx: number): string {
-	const call = callFor(messages, toolIdx);
-	if (!call) return '';
-	let arg = '';
-	try {
-		const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
-		const key = ['path', 'relPath', 'pattern', 'query', 'command', 'url', 'id'].find(
-			(k) => typeof args[k] === 'string'
-		);
-		if (key) arg = String(args[key]).slice(0, 120);
-	} catch {
-		// Unparseable arguments: the name alone is still worth having.
-	}
-	return arg ? `${call.function.name}(${arg})` : call.function.name;
-}
 
 /**
  * With an archive (a turn that offers `recall_result`), the stub keeps the result's
@@ -411,7 +389,13 @@ export function fitMessagesToBudget(
 
 	// Step 4: pathological fallback — guarantee the fit.
 	const forced = !fits();
-	const truncatedSystem = forced && forceFit(messages, effectiveBudget, opts.tools);
+	const truncatedSystem =
+		forced &&
+		forceFit(messages, effectiveBudget, {
+			tools: opts.tools,
+			archive: opts.archive,
+			bigEnough: Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION)
+		});
 
 	return {
 		kind: 'fit',
@@ -562,76 +546,4 @@ function pickDrops(
 		}
 	}
 	return toRemove;
-}
-
-const REMOVED = '[Removed to fit context.]';
-
-/**
- * Last-resort guaranteed fit: cut string messages until the estimate is under
- * budget, in this order:
- *
- * 1. Any non-system message bigger than a quarter of the budget, halved, the
- *    biggest first. A giant paste is worth less than the instructions.
- * 2. Every other message but the latest user message, replaced whole with a
- *    marker, the biggest first. Halving these took several passes each, and
- *    older tool results are worth less than the instructions too: ranked below
- *    the system prompt, they kept their halves while it was cut (#1022).
- * 3. The system prompt, halved.
- * 4. The latest user message, halved: the question is worth more than the
- *    end of the instructions.
- *
- * Returns whether the system prompt was cut.
- */
-function forceFit(messages: ChatMessage[], budget: number, tools?: ToolDefinition[]): boolean {
-	const bigEnough = Math.floor(budget * OVERSIZED_MESSAGE_FRACTION);
-	const question = messages.findLastIndex((m) => m.role === 'user');
-	let cutSystem = false;
-	for (let guard = 0; guard < 100; guard++) {
-		if (estimateMessagesTokens(messages, tools) <= budget) break;
-		const pick = nextToCut(messages, bigEnough, question);
-		if (!pick) break; // nothing left to cut
-		const { idx, tier } = pick;
-		const m = messages[idx];
-		if (m.role === 'system') cutSystem = true;
-		if (tier === CutTier.Whole) {
-			messages[idx] = { ...m, content: REMOVED };
-			continue;
-		}
-		const text = m.content as string;
-		const half = Math.floor(byteLength(text) / 2);
-		const result = half < 32 ? null : truncateCapturedOutput(text, half);
-		messages[idx] = { ...m, content: result?.truncated ? result.text : REMOVED };
-	}
-	return cutSystem;
-}
-
-/** `forceFit`'s order: the higher tier is cut first. */
-const CutTier = { Question: 0, System: 1, Whole: 2, Big: 3 } as const;
-type CutTier = (typeof CutTier)[keyof typeof CutTier];
-
-/** The message `forceFit` cuts next: the highest tier, then the biggest. */
-function nextToCut(
-	messages: ChatMessage[],
-	bigEnough: number,
-	question: number
-): { idx: number; tier: CutTier } | null {
-	let best: { idx: number; tier: CutTier } | null = null;
-	let bestRank = -1;
-	for (let i = 0; i < messages.length; i++) {
-		if (typeof messages[i].content !== 'string' || messages[i].content === REMOVED) continue;
-		const t = messageTokens(messages[i]);
-		const tier: CutTier =
-			messages[i].role === 'system'
-				? CutTier.System
-				: t > bigEnough
-					? CutTier.Big
-					: i === question
-						? CutTier.Question
-						: CutTier.Whole;
-		if (tier * 1e9 + t > bestRank) {
-			bestRank = tier * 1e9 + t;
-			best = { idx: i, tier };
-		}
-	}
-	return best;
 }

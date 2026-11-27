@@ -670,6 +670,51 @@ describe('fitMessagesToBudget and the system prompt', () => {
 		expect(removed.every((m) => m.role === 'tool')).toBe(true);
 	});
 
+	it('gives the results it removes or halves a recall id, with the whole text kept', () => {
+		const ids = Array.from({ length: 10 }, (_, i) => `c${i}`);
+		const big = 'B'.repeat(20_000);
+		const msgs: ChatMessage[] = [
+			sys('Instructions. '.repeat(500)),
+			user('Read all ten files.'),
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: ids.map((id) => ({
+					id,
+					type: 'function' as const,
+					function: { name: 'fs_read_text', arguments: `{"path":"${id}.py"}` }
+				}))
+			},
+			...ids.map((id, i) => tool(i === 0 ? big : `${id} `.repeat(1_000), id))
+		];
+		const archive = new RecallArchive();
+		const info = fitMessagesToBudget(msgs, 8192, { reserveOutput: 2048, archive });
+		expect(info!.forced).toBe(true);
+		const removed = msgs.filter(
+			(m) => typeof m.content === 'string' && m.content.startsWith('[Removed to fit context.')
+		);
+		expect(removed.length).toBeGreaterThan(0);
+		for (const m of removed) {
+			const id = /recall_result id="(r\d+)"/.exec(m.content as string)![1];
+			expect(archive.get(id)!.text).toMatch(/^c\d+ c\d+ /);
+		}
+		// The big one, halved or removed, is archived whole.
+		const kept = [...Array(archive.size)].map((_, i) => archive.get(`r${i + 1}`)!);
+		expect(kept.some((r) => r.text === big && r.call === 'fs_read_text(c0.py)')).toBe(true);
+	});
+
+	it('leaves a bare marker when there is no archive', () => {
+		const msgs: ChatMessage[] = [
+			sys('Instructions. '.repeat(500)),
+			user('earlier'),
+			asst('a'.repeat(3_000)),
+			asst('b'.repeat(3_000)),
+			user('now')
+		];
+		fitMessagesToBudget(msgs, 4096, { reserveOutput: 1024 });
+		expect(msgs.some((m) => m.content === '[Removed to fit context.]')).toBe(true);
+	});
+
 	it('cuts the system prompt before the question it is answering', () => {
 		// An older exchange goes first, the system prompt next, the question last.
 		const question = 'q'.repeat(2_500);
