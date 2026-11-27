@@ -107,6 +107,8 @@ describe('makeKeyframes', () => {
 		expect(stills.map((s) => [s.id, s.how])).toEqual([['host', 'drawn']]);
 		expect(requests).toHaveLength(1);
 		expect(requests[0].prompt).toMatch(/^Portrait of/);
+		// The style names the fox: the presenter's portrait mustn't get it.
+		expect(requests[0].prompt).not.toContain(spec.style);
 	});
 
 	it('uses the user’s start picture as it is', async () => {

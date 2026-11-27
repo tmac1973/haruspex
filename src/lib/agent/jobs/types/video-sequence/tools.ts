@@ -85,7 +85,8 @@ export const SUBMIT_SEQUENCE_SPEC_SCHEMA = {
 							},
 							portrait_prompt: {
 								type: 'string',
-								description: 'speaking: who the drawn portrait shows, when not the prompt.'
+								description:
+									'speaking: who the drawn portrait shows, where and in what light, when not the prompt. The style is not added.'
 							},
 							lines: {
 								type: 'array',

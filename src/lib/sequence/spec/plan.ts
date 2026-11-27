@@ -119,7 +119,10 @@ function sectionStart(s: GeneratedSection, keyframes: boolean): StartRef {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** A speaking section's windows, each one S2V clip from its portrait. */
+/**
+ * A speaking section's windows, each one S2V clip from its portrait. Its own
+ * prompt alone: the spec's style names the main subject, who isn't the speaker.
+ */
 function windowItems(spec: SequenceSpec, s: SpeakingSection, speaking: Speaking): GenerateItem[] {
 	const f = speakingFormat(speaking.limits);
 	return windowsOf(s, speaking, f.secs).map((w, i) => {
@@ -127,7 +130,7 @@ function windowItems(spec: SequenceSpec, s: SpeakingSection, speaking: Speaking)
 			kind: 'generate',
 			id: `${s.id}-${pad(i + 1)}`,
 			section: s.id,
-			prompt: withStyle(spec.style, s.prompt),
+			prompt: s.prompt,
 			frames: Math.min(f.frames, atLeast(Math.ceil(w.secs * f.fps))),
 			fps: f.fps,
 			start: { kind: 'portrait', section: s.id },

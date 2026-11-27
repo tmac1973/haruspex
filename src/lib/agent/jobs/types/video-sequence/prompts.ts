@@ -45,6 +45,7 @@ export function specPrompt(brief: string, answers: string, context: string): str
 		'Rules:',
 		'- Sections in order. A generated section has an id (a short lowercase slug), a prompt and its seconds. An existing section has an id and a path from the list above.',
 		'- `style` is one line every clip shares: the subject, the look, the light. Do not repeat it in each prompt.',
+		'- A speaking section does not get `style`: its prompt and portrait_prompt say the person, the place and the look.',
 		'- A prompt says what happens in that section: the subject, the action, the camera. Keep it to one or two sentences.',
 		'- One join between each two sections.',
 		'- Use only paths from the lists above. Do not make up files.',

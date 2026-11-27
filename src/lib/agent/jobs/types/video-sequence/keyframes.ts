@@ -93,11 +93,11 @@ function subjectOf(s: GeneratedSection, note?: string): string {
 /**
  * A speaking section's portrait: the user's picture as it is, else one
  * drawn of the person facing the camera. Drawn fresh, not edited from the
- * first keyframe: the speaker is someone else.
+ * first keyframe, and without the spec's style, which names the main subject:
+ * the speaker is someone else, and a fox in the style puts a fox beside them.
  */
 async function portrait(
 	s: SpeakingSection,
-	style: string,
 	size: { width: number; height: number },
 	h: {
 		isDone: (id: string) => Promise<boolean>;
@@ -110,7 +110,7 @@ async function portrait(
 	const file = stillPath(s.id);
 	if (await h.isDone(s.id)) return [{ id: s.id, section: s.id, file, how: 'kept' }];
 	const who = s.portrait_prompt ?? s.prompt;
-	const prompt = withStyle(`Portrait of ${who}, facing the camera, head and shoulders`, style);
+	const prompt = `Portrait of ${who}, facing the camera, head and shoulders`;
 	await h.save(s.id, await h.deps.generate({ prompt, ...size, seed: null }));
 	return [{ id: s.id, section: s.id, file, how: 'drawn' }];
 }
@@ -142,7 +142,7 @@ export async function makeKeyframes(run: KeyframeRun, deps: KeyframeDeps): Promi
 	for (const s of spec.sections) {
 		if (deps.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 		if (s.kind === 'speaking') {
-			stills.push(...(await portrait(s, spec.style, size, { isDone, save, deps })));
+			stills.push(...(await portrait(s, size, { isDone, save, deps })));
 			continue;
 		}
 		if (s.kind !== 'generated') continue;
