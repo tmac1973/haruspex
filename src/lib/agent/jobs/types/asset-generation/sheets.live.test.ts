@@ -29,7 +29,7 @@ const LIVE = process.env.HARUSPEX_IMAGE_E2E === '1';
 const URL = process.env.HARUSPEX_IMAGE_BACKEND_URL ?? '';
 const OUT = process.env.HARUSPEX_SHEET_OUT ?? '';
 const MODEL =
-	process.env.HARUSPEX_IMAGE_MING_MODEL ?? 'ming_image_0.1_design_int8_convrot.safetensors';
+	process.env.HARUSPEX_IMAGE_MING_MODEL ?? 'ming_image_0.2_design_int8_convrot.safetensors';
 const live = LIVE && URL && OUT ? it : it.skip;
 
 const SUBJECTS = [

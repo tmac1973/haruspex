@@ -73,7 +73,7 @@ pub struct LemonadeModel {
 /// it is how a server already set up is recognised.
 fn registered_name(id: &str) -> String {
     match id {
-        "ming" => "user.Ming-Image-0.1-Design-GGUF".into(),
+        "ming" => "user.Ming-Image-0.2-Design-GGUF".into(),
         "qwen21" => "user.Qwen-Image-2.1-Turbo-GGUF".into(),
         other => format!("user.Haruspex-{other}"),
     }
@@ -297,22 +297,22 @@ mod tests {
         );
     }
 
-    /// The body that registered Ming on asmodean by hand on 2026-10-23, and
-    /// measured transparent: install must produce it, name and all, so a
-    /// server set up that way is recognised as installed.
+    /// The shape of the body that registered Ming 0.1 on asmodean by hand on
+    /// 2026-10-23, and measured transparent, with 0.2's files. The name moved
+    /// with them, so a server with only 0.1 shows 0.2 as not installed.
     #[test]
     fn ming_pulls_as_measured() {
         assert_eq!(
             pull_body(&entry("ming")),
             serde_json::json!({
-                "model_name": "user.Ming-Image-0.1-Design-GGUF",
+                "model_name": "user.Ming-Image-0.2-Design-GGUF",
                 "recipe": "sd-cpp",
                 "labels": ["image"],
                 "checkpoints": {
-                    "main": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
-                    "text_encoder": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_ling_mini_2.0-Q4_K.gguf",
+                    "main": "voltaire321/Ming-Image-0.2-Design-GGUF:ming_image_0.2_design-Q8_0.gguf",
+                    "text_encoder": "voltaire321/Ming-Image-0.2-Design-GGUF:ming_image_0.2_ling_mini_2.0-Q4_K.gguf",
                     "vae": "Comfy-Org/Ming-Image:vae/ming_image_vae_bf16.safetensors",
-                    "tokenizer": "inclusionAI/Ming-Image-0.1-Design:mllm/tokenizer.json"
+                    "tokenizer": "inclusionAI/Ming-Image-0.2-Design:mllm/tokenizer.json"
                 }
             })
         );

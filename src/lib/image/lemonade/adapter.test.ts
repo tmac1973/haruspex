@@ -7,7 +7,7 @@ import { CLEAR_START_STRENGTH } from '#lib/image/local/adapter.ts';
 import { errorBody } from '#lib/utils/http.ts';
 
 const base = {
-	model: 'user.Ming-Image-0.1-Design-GGUF',
+	model: 'user.Ming-Image-0.2-Design-GGUF',
 	prompt: 'RGBA, 4-channel, transparent background. a coin',
 	seed: 7,
 	width: 1024,
@@ -33,7 +33,7 @@ describe('buildGeneration', () => {
 			sample_params: { sample_steps: 12, sample_method: 'euler', guidance: { txt_cfg: 1 } }
 		});
 		expect(body).toMatchObject({
-			model: 'user.Ming-Image-0.1-Design-GGUF',
+			model: 'user.Ming-Image-0.2-Design-GGUF',
 			size: '1024x1024',
 			seed: 7,
 			n: 1,
@@ -80,13 +80,13 @@ describe('readServer', () => {
 		const list = {
 			data: [
 				{
-					id: 'user.Ming-Image-0.1-Design-GGUF',
+					id: 'user.Ming-Image-0.2-Design-GGUF',
 					downloaded: true,
 					recipe_options: { sdcpp_args: '--tokenizer /t.json --diffusion-fa --backend te=cpu' }
 				}
 			]
 		};
-		expect([...readServer(health, systemInfo, list).stale]).toEqual(['Ming-Image-0.1-Design-GGUF']);
+		expect([...readServer(health, systemInfo, list).stale]).toEqual(['Ming-Image-0.2-Design-GGUF']);
 	});
 
 	it('reads a real server: version, GPU, storage, sd-cpp, and what is loaded and installed', () => {
@@ -95,8 +95,8 @@ describe('readServer', () => {
 		expect(s.gpu).toBe('AMD Radeon AI PRO R9700 (gfx1201)');
 		expect(s.storage).toBe('/opt/var/lib/lemonade/.cache/huggingface/hub');
 		expect(s.sdcpp).toEqual({ usable: true, backend: 'rocm', installed: true });
-		expect(s.loadedImage).toBe('Ming-Image-0.1-Design-GGUF');
-		expect(s.downloaded.has(bareName('user.Ming-Image-0.1-Design-GGUF'))).toBe(true);
+		expect(s.loadedImage).toBe('Ming-Image-0.2-Design-GGUF');
+		expect(s.downloaded.has(bareName('user.Ming-Image-0.2-Design-GGUF'))).toBe(true);
 		// Its saved arguments are current: no `--backend te=cpu`.
 		expect(s.stale.size).toBe(0);
 		expect(s.downloaded.has('Z-Image-Turbo')).toBe(false);
@@ -124,7 +124,7 @@ describe('readServer', () => {
 					downloaded: true,
 					checkpoints: { main: 'a:b.gguf', llm_vision: 'a:mmproj.gguf' }
 				},
-				{ id: 'user.Ming-Image-0.1-Design-GGUF', downloaded: true, checkpoints: { main: 'm:x' } },
+				{ id: 'user.Ming-Image-0.2-Design-GGUF', downloaded: true, checkpoints: { main: 'm:x' } },
 				{ id: 'RealESRGAN-x4plus', downloaded: true, checkpoints: { main: 'amd/r:x.pth' } }
 			]
 		};
@@ -178,7 +178,7 @@ describe('findJob', () => {
 					...failed,
 					status: 'downloading',
 					running: true,
-					file: 'ming_ling_mini_2.0-Q4_K.gguf',
+					file: 'ming_image_0.2_ling_mini_2.0-Q4_K.gguf',
 					file_index: 2,
 					total_files: 4,
 					cumulative_bytes_downloaded: 9e9,

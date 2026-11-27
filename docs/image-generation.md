@@ -114,11 +114,11 @@ recipe does not do for a model, saved as its `sdcpp_args`:
   bundled engine's flags (`image_models::engine_options`) go in on every
   backend.
 
-Models register as `user.Ming-Image-0.1-Design-GGUF` and
+Models register as `user.Ming-Image-0.2-Design-GGUF` and
 `user.Qwen-Image-2.1-Turbo-GGUF`; the names are fixed so a server already set
 up is recognised.
 
-Measured on 2026-10-23 (Lemonade 2026.43.3, Radeon AI PRO R9700, ROCm sd-cpp
+Measured with Ming 0.1 on 2026-10-23 (Lemonade 2026.43.3, Radeon AI PRO R9700, ROCm sd-cpp
 `master-957-90e86d1`), 1024 nine-sprite sheets through this backend: Ming
 24–30 s and Qwen Turbo 27–31 s, each 4 of 4 transparent and 4 of 4 laid out
 exactly across both runs. Installing Qwen Turbo from scratch took 128 s;
@@ -506,7 +506,7 @@ a backend):
 
 | Model | Licence | Commercial | Files | Size |
 | --- | --- | --- | --- | --- |
-| Ming-Image 0.1 Design (default) | MIT | yes | DiT int8, Ling-mini w4a8 encoder, VAE | ~19 GB |
+| Ming-Image 0.2 Design (default) | MIT | yes | DiT int8, Ling-mini w4a8 encoder, VAE | ~19 GB |
 | Qwen-Image-2.1 Turbo | Qwen Research License | no | DiT int8, Qwen3-VL 8B int8 encoder, VAE | ~17 GB |
 
 Ming runs in about 8 GB of VRAM and 24 GB of RAM, with its text encoder on
@@ -520,7 +520,7 @@ SHA-256:
 
 | Model | Licence | Commercial | Files | Size |
 | --- | --- | --- | --- | --- |
-| Ming-Image 0.1 Design (default) | MIT | yes | DiT Q8_0, Ling-mini-2.0 Q4_K, VAE, tokenizer | ~17 GB |
+| Ming-Image 0.2 Design (default) | MIT | yes | DiT Q8_0, Ling-mini-2.0 Q4_K, VAE, tokenizer | ~17 GB |
 | Qwen-Image-2.1 Turbo | Qwen Research License | no | DiT Q4_K_M (unsloth), Qwen3-VL-8B Q4_K_M, VAE | ~10 GB |
 
 Qwen is Turbo in both engines: the same model distilled to 8 steps, sampled
@@ -531,12 +531,31 @@ ComfyUI, with no loss measured
 The bundled entry kept its id, `qwen21`, so a user who had the base model
 downloads only the new DiT, and the finished download deletes the old one.
 
+Ming 0.2 replaced 0.1 the same way (#1341): a retrain of the same
+architecture, with a new DiT and connector and the same VAE and tokenizer. Its
+text encoder has to go with it. 0.1's loads beside 0.2's DiT, but the
+connector changed and the pictures come out different, so a 0.1 install
+counts as not downloaded and fetches both GGUFs again; the finished download
+deletes 0.1's. On Lemonade the registered name moved to 0.2's, so a server
+with only 0.1 offers the install, and 0.1 stays on it until removed there. On
+ComfyUI a server's own files are left alone: the text encoder is matched to
+the diffusion model's release by name (`mingVersion` in `families.ts`), so a
+model set to 0.1 keeps running on 0.1's encoder, and Install fetches 0.2's.
+
+The 0.2 GGUFs were converted and tested on sd.cpp `master-1142`. Do not move
+the bundled engine to `master-1116` through `master-1141`: those builds take
+Ming for Z-Image and fail with `cap_pad_token not in model metadata`
+(leejet/stable-diffusion.cpp#2441). The VRAM figure is 0.1's; 0.2 peaked at
+9.1 GiB on ROCm under llama-toolchest's defaults, which tile the VAE at 2048.
+
 GGUF, not the int8/bf16 safetensors ComfyUI loads: on Vulkan without bf16
 support those ran at 40–120 s a step, GGUF draws a 1024 sheet in about 35–50 s
 (`plan/local-image-generation/measurements-phase-24-gguf.md`). Ming has no
 published GGUF; ours is converted from Comfy-Org's bf16 files with
 `sd-cli -M convert` and hosted at
-[voltaire321/Ming-Image-0.1-Design-GGUF](https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF).
+[voltaire321/Ming-Image-0.2-Design-GGUF](https://huggingface.co/voltaire321/Ming-Image-0.2-Design-GGUF)
+(its README says how the 0.2 text encoder was built, since Comfy-Org publishes
+it only as int8 and w4a8).
 A Q4_K Ming DiT was tried and lost the pixel-art rendering; it is not offered.
 
 SD1.5 and SDXL were the bundled engine's first catalogue and are gone: their

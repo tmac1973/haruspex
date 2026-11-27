@@ -118,7 +118,7 @@ pub struct Licence {
 
 pub const MING_LICENCE: Licence = Licence {
     text: "MIT — commercial use allowed.",
-    url: "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design",
+    url: "https://huggingface.co/inclusionAI/Ming-Image-0.2-Design",
     commercial_use: true,
 };
 
@@ -185,7 +185,7 @@ pub fn filename_of(url: &str) -> String {
 }
 
 const MING_GGUF: &str =
-    "https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF/resolve/main";
+    "https://huggingface.co/voltaire321/Ming-Image-0.2-Design-GGUF/resolve/main";
 
 fn file(role: ImageFileRole, url: &str, sha256: &str, size_bytes: u64) -> ImageModelFile {
     ImageModelFile {
@@ -243,28 +243,33 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
         entry(
             "ming",
             "ming",
-            "Ming-Image 0.1 Design — transparent sprites, the default (~17 GB)",
+            "Ming-Image 0.2 Design — transparent sprites, the default (~17 GB)",
             &MING_LICENCE,
-            // Measured: 7.2 GB peak with the text encoder on the CPU, which
-            // then needs ~10 GB of RAM.
+            // Measured on 0.1: 7.2 GB peak with the text encoder on the CPU,
+            // which then needs ~10 GB of RAM. 0.2 is a retrain of the same
+            // architecture, at the same file sizes.
+            //
+            // 0.2 replaced 0.1 under the same id, so a choice made in
+            // Settings survives. Its text encoder has to go with it: 0.1's
+            // loads, but the connector changed and the pictures differ.
             8_192,
             vec![
                 file(
                     Diffusion,
-                    &format!("{MING_GGUF}/ming_image_0.1_design-Q8_0.gguf"),
-                    "260ded24503b35b80b6eb4a5949f664b26f6c00b46e8ec6e6d00942593eb120b",
-                    6_541_979_808,
+                    &format!("{MING_GGUF}/ming_image_0.2_design-Q8_0.gguf"),
+                    "0092ee7718e9a727914112d8055b0fd0f7aac06c77b4df9e3163cd9dd5fb1a86",
+                    6_541_979_936,
                 ),
                 file(
                     TextEncoder,
-                    &format!("{MING_GGUF}/ming_ling_mini_2.0-Q4_K.gguf"),
-                    "70f7ea31d3e1ffa917e70b961e5d422b2a8b19327c3522033a381b1a4b766002",
-                    10_518_620_096,
+                    &format!("{MING_GGUF}/ming_image_0.2_ling_mini_2.0-Q4_K.gguf"),
+                    "2a85b53ced2da004e6db6a0ee91b75f7a179329f8f4f70fb94b754c8f3894ca2",
+                    10_518_620_224,
                 ),
                 file(Vae, MING_VAE.url, MING_VAE.sha256, MING_VAE.size_bytes),
                 file(
                     Tokenizer,
-                    "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design/resolve/main/mllm/tokenizer.json",
+                    "https://huggingface.co/inclusionAI/Ming-Image-0.2-Design/resolve/main/mllm/tokenizer.json",
                     "e7ff01708d504f7bf4dbf7f5815adde57bab9a40e7f563ab6ad1acace4464917",
                     12_210_709,
                 ),
@@ -740,6 +745,40 @@ mod tests {
         assert!(m.files.iter().all(|f| sub.join(&f.filename).is_file()));
     }
 
+    /// A 0.1 install does not pass for 0.2: 0.1's text encoder runs with
+    /// 0.2's model but draws differently. Its files go once 0.2 is down,
+    /// bar the VAE and tokenizer, which the two share.
+    #[test]
+    fn ming_0_1_files_are_not_0_2_and_go_after_its_download() {
+        let dir = temp_dir("ming01");
+        let sub = model_dir(&dir, "ming");
+        std::fs::create_dir_all(&sub).unwrap();
+        let old = [
+            "ming_image_0.1_design-Q8_0.gguf",
+            "ming_ling_mini_2.0-Q4_K.gguf",
+            "ming_image_vae_bf16.safetensors",
+            "tokenizer.json",
+        ];
+        for f in old {
+            std::fs::write(sub.join(f), b"x").unwrap();
+        }
+        let ming = || {
+            catalogue_with_state(&dir)
+                .into_iter()
+                .find(|m| m.id == "ming")
+                .unwrap()
+        };
+        assert!(!ming().downloaded);
+        for f in &ming().files {
+            std::fs::write(sub.join(&f.filename), b"x").unwrap();
+        }
+        remove_stale(&sub, &ming());
+        assert!(!sub.join(old[0]).exists());
+        assert!(!sub.join(old[1]).exists());
+        assert!(sub.join(old[2]).is_file() && sub.join(old[3]).is_file());
+        assert!(ming().downloaded);
+    }
+
     #[test]
     fn the_engine_gets_one_flag_per_file_in_the_entrys_own_folder() {
         let dir = temp_dir("args");
@@ -758,9 +797,9 @@ mod tests {
         assert!(Path::new(&after("--diffusion-model")).ends_with(
             Path::new("image")
                 .join("ming")
-                .join("ming_image_0.1_design-Q8_0.gguf")
+                .join("ming_image_0.2_design-Q8_0.gguf")
         ));
-        assert!(after("--llm").ends_with("ming_ling_mini_2.0-Q4_K.gguf"));
+        assert!(after("--llm").ends_with("ming_image_0.2_ling_mini_2.0-Q4_K.gguf"));
         assert!(after("--vae").ends_with("ming_image_vae_bf16.safetensors"));
         assert!(after("--tokenizer").ends_with("tokenizer.json"));
         assert!(args.contains(&"--diffusion-fa".to_string()));

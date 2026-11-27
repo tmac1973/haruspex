@@ -1,18 +1,18 @@
 {
 	"data": [
 		{
-			"checkpoint": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
+			"checkpoint": "voltaire321/Ming-Image-0.2-Design-GGUF:ming_image_0.2_design-Q8_0.gguf",
 			"checkpoints": {
-				"main": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
-				"text_encoder": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_ling_mini_2.0-Q4_K.gguf",
-				"tokenizer": "inclusionAI/Ming-Image-0.1-Design:mllm/tokenizer.json",
+				"main": "voltaire321/Ming-Image-0.2-Design-GGUF:ming_image_0.2_design-Q8_0.gguf",
+				"text_encoder": "voltaire321/Ming-Image-0.2-Design-GGUF:ming_image_0.2_ling_mini_2.0-Q4_K.gguf",
+				"tokenizer": "inclusionAI/Ming-Image-0.2-Design:mllm/tokenizer.json",
 				"vae": "Comfy-Org/Ming-Image:vae/ming_image_vae_bf16.safetensors"
 			},
 			"components": [],
 			"context_length": 32768,
 			"created": 1234567890,
 			"downloaded": true,
-			"id": "Ming-Image-0.1-Design-GGUF",
+			"id": "Ming-Image-0.2-Design-GGUF",
 			"labels": ["custom", "image"],
 			"object": "model",
 			"owned_by": "lemonade",
@@ -21,7 +21,7 @@
 				"cfg_scale": 1.0,
 				"height": 1024,
 				"sampling_method": "euler",
-				"sdcpp_args": "--tokenizer /opt/var/lib/lemonade/.cache/huggingface/hub/models--inclusionAI--Ming-Image-0.1-Design/snapshots/c57c49689d12ef7d4e24a170014f1dc43d3ce258/mllm/tokenizer.json --diffusion-fa --vae-tiling",
+				"sdcpp_args": "--tokenizer /opt/var/lib/lemonade/.cache/huggingface/hub/models--inclusionAI--Ming-Image-0.2-Design/snapshots/c57c49689d12ef7d4e24a170014f1dc43d3ce258/mllm/tokenizer.json --diffusion-fa --vae-tiling",
 				"steps": 12,
 				"width": 1024
 			},

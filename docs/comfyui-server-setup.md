@@ -190,13 +190,13 @@ In Settings → Image generation:
    only for a reverse proxy that asks for one.
 3. **Probe.** Haruspex lists what the server can do and, under it, each model
    family with the files the server is missing.
-4. **Install** on Ming-Image 0.1 Design. On a remote server this goes through
+4. **Install** on Ming-Image 0.2 Design. On a remote server this goes through
    Manager, which downloads on the server itself. It shows which file it is on
    but not a percentage, and the text encoder alone is 12.8 GB. Haruspex waits
    up to six hours.
 5. When it finishes, Haruspex probes again. Choose the Ming model in
-   **Model** (`ming_image_0.1_design_int8_convrot.safetensors`). Its text
-   encoder and VAE are found by name.
+   **Model** (`ming_image_0.2_design_int8_convrot.safetensors`). Its text
+   encoder and VAE are found by name, the encoder of the same release.
 6. **Generate a test image.**
 
 Qwen-Image-2.1 Turbo installs the same way. It is licensed for research and
@@ -213,8 +213,8 @@ Download each into that folder under `~/ComfyUI/models/`. For Ming-Image:
 
 ```bash
 cd ~/ComfyUI/models
-wget -P diffusion_models https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/diffusion_models/ming_image_0.1_design_int8_convrot.safetensors
-wget -P text_encoders    https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/text_encoders/ming_image_0.1_ling_mini_2.0_w4a8.safetensors
+wget -P diffusion_models https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/diffusion_models/ming_image_0.2_design_int8_convrot.safetensors
+wget -P text_encoders    https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/text_encoders/ming_image_0.2_ling_mini_2.0_w4a8.safetensors
 wget -P vae              https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/vae/ming_image_vae_bf16.safetensors
 ```
 

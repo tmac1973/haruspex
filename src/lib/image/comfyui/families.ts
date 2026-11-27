@@ -40,6 +40,26 @@ export function familyOf(model: string): ModelFamily {
 	return 'sd';
 }
 
+/**
+ * The release a Ming file names (`ming_image_0.2_design_…` → `0.2`), or null.
+ * Ming's text encoder goes with its own release: 0.1's loads beside 0.2's
+ * model, but the connector between them changed and the pictures differ.
+ */
+export function mingVersion(name: string): string | null {
+	return /ming[_-]?image[_-]?(\d+\.\d+)/i.exec(name)?.[1] ?? null;
+}
+
+/**
+ * Whether `file` can go with `model`: the same Ming release, or one of them
+ * names none. Every other family has one release, so anything goes.
+ */
+export function sameRelease(file: string, model: string | undefined): boolean {
+	if (!model) return true;
+	const a = mingVersion(file);
+	const b = mingVersion(model);
+	return a === null || b === null || a === b;
+}
+
 /** The separate files a DiT family loads beside its diffusion model. */
 export interface Companions {
 	textEncoder: string;
@@ -98,11 +118,13 @@ const FILE_LABELS: Record<Exclude<ModelFamily, 'sd'>, string> = {
  *
  * Throws `unconfigured` naming the missing file, because a DiT graph submitted
  * without one fails validation on the server with a message about a loader
- * the user never chose.
+ * the user never chose. `model`, the diffusion model, narrows the text
+ * encoder to its own release (`sameRelease`).
  */
 export async function resolveCompanions(
 	cfg: api.ClientConfig,
-	family: Exclude<ModelFamily, 'sd'>
+	family: Exclude<ModelFamily, 'sd'>,
+	model?: string
 ): Promise<Companions> {
 	const want = WANTED[family];
 	const [encoders, vaes, loras] = await Promise.all([
@@ -110,14 +132,18 @@ export async function resolveCompanions(
 		optionsOf(cfg, 'VAELoader', 'vae_name'),
 		want.lora ? optionsOf(cfg, 'LoraLoaderModelOnly', 'lora_name') : []
 	]);
-	const textEncoder = pickCompanion(encoders, want.textEncoder);
+	const textEncoder = pickCompanion(
+		encoders.filter((n) => sameRelease(n, model)),
+		want.textEncoder
+	);
 	const vae = pickCompanion(vaes, want.vae);
 	const lora = want.lora ? pickCompanion(loras, want.lora) : undefined;
 	const label = FILE_LABELS[family];
 	if (!textEncoder) {
+		const release = model ? mingVersion(model) : null;
 		throw new ImageBackendError(
 			'unconfigured',
-			`The backend has no ${label} text encoder in models/text_encoders — Settings → Image generation → Install.`
+			`The backend has no ${label}${release ? ` ${release}` : ''} text encoder in models/text_encoders — Settings → Image generation → Install.`
 		);
 	}
 	if (!vae) {
@@ -135,10 +161,14 @@ export async function resolveCompanions(
 	return lora ? { textEncoder, vae, lora } : { textEncoder, vae };
 }
 
-/** Whether the server has an acceptable text encoder and VAE for `family`, without throwing. */
+/**
+ * Whether the server has an acceptable text encoder and VAE for `family`,
+ * without throwing; for `model`'s release when it names one.
+ */
 export async function hasCompanions(
 	cfg: api.ClientConfig,
-	family: Exclude<ModelFamily, 'sd'>
+	family: Exclude<ModelFamily, 'sd'>,
+	model?: string
 ): Promise<{ textEncoder: boolean; vae: boolean; lora: boolean }> {
 	const want = WANTED[family];
 	const [encoders, vaes, loras] = await Promise.all([
@@ -147,7 +177,11 @@ export async function hasCompanions(
 		want.lora ? optionsOf(cfg, 'LoraLoaderModelOnly', 'lora_name') : []
 	]);
 	return {
-		textEncoder: pickCompanion(encoders, want.textEncoder) !== null,
+		textEncoder:
+			pickCompanion(
+				encoders.filter((n) => sameRelease(n, model)),
+				want.textEncoder
+			) !== null,
 		vae: pickCompanion(vaes, want.vae) !== null,
 		lora: !want.lora || pickCompanion(loras, want.lora) !== null
 	};

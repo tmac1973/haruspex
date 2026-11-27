@@ -22,7 +22,7 @@ const cfg = { baseUrl: 'http://127.0.0.1:8188', apiKey: '' };
 const MING: ComfyModelSet = {
 	family: 'ming',
 	kind: 'image',
-	label: 'Ming-Image 0.1 Design',
+	label: 'Ming-Image 0.2 Design',
 	license: 'MIT',
 	license_url: 'https://example.com',
 	commercial_use: true,
@@ -31,14 +31,14 @@ const MING: ComfyModelSet = {
 	files: [
 		{
 			folder: 'diffusion_models',
-			filename: 'ming_image_0.1_design_int8_convrot.safetensors',
+			filename: 'ming_image_0.2_design_int8_convrot.safetensors',
 			url: 'https://huggingface.co/x/dm',
 			sha256: 'a'.repeat(64),
 			size_bytes: 6e9
 		},
 		{
 			folder: 'text_encoders',
-			filename: 'ming_image_0.1_ling_mini_2.0_w4a8.safetensors',
+			filename: 'ming_image_0.2_ling_mini_2.0_w4a8.safetensors',
 			url: 'https://huggingface.co/x/te',
 			sha256: 'b'.repeat(64),
 			size_bytes: 12e9
@@ -165,16 +165,28 @@ describe('missingFiles', () => {
 		// The int8 encoder instead of w4a8, and the model in a subfolder: both
 		// run, so neither is asked for again.
 		server({
-			unet: ['ming/ming_image_0.1_design_bf16.safetensors'],
-			clip: ['ming_image_0.1_ling_mini_2.0_int8_convrot.safetensors'],
+			unet: ['ming/ming_image_0.2_design_bf16.safetensors'],
+			clip: ['ming_image_0.2_ling_mini_2.0_int8_convrot.safetensors'],
 			vae: [MING.files[2].filename]
 		});
 		expect(await missingFiles(cfg, MING)).toEqual([]);
 	});
 
+	it("asks for 0.2's model and encoder on a server with only 0.1's", async () => {
+		server({
+			unet: ['ming_image_0.1_design_int8_convrot.safetensors'],
+			clip: ['ming_image_0.1_ling_mini_2.0_w4a8.safetensors'],
+			vae: [MING.files[2].filename]
+		});
+		expect((await missingFiles(cfg, MING)).map((f) => f.folder)).toEqual([
+			'diffusion_models',
+			'text_encoders'
+		]);
+	});
+
 	it('lists the catalogue file for each empty role', async () => {
 		// A "layer" encoder is a different model, not a companion.
-		server({ unet: [], clip: ['ming_image_0.1_ling_mini_2.0_layer_bf16.safetensors'], vae: [] });
+		server({ unet: [], clip: ['ming_image_0.2_ling_mini_2.0_layer_bf16.safetensors'], vae: [] });
 		expect((await missingFiles(cfg, MING)).map((f) => f.folder)).toEqual([
 			'diffusion_models',
 			'text_encoders',

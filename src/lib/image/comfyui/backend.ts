@@ -237,7 +237,7 @@ async function probeModel(
 	}
 	if (family !== 'sd') {
 		try {
-			await resolveCompanions(cfg, family);
+			await resolveCompanions(cfg, family, name);
 		} catch (e) {
 			return errMessage(e);
 		}
@@ -261,7 +261,7 @@ async function prepare(
 	const template = templateFor(req, await activeTemplates(entry, family));
 	const companions =
 		family !== 'sd' && (template.map.textEncoder || template.map.vae)
-			? await resolveCompanions(cfg, family)
+			? await resolveCompanions(cfg, family, model)
 			: undefined;
 
 	const sampler = req.sampler ?? template.defaultSampler;
