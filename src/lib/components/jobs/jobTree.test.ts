@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { JobSummary } from '#lib/stores/jobs.svelte.ts';
-import { ancestorIds, buildJobTree, containsJob, filterJobTree, flattenJobTree } from './jobTree';
+import {
+	ancestorIds,
+	buildJobTree,
+	containsJob,
+	filterJobTree,
+	flattenJobTree,
+	withoutArchived
+} from './jobTree';
 
 function job(id: number, over: Partial<JobSummary> = {}): JobSummary {
 	return {
@@ -18,6 +25,7 @@ function job(id: number, over: Partial<JobSummary> = {}): JobSummary {
 		step_count: 1,
 		parent_job_id: null,
 		parent_run_id: null,
+		archived_at: null,
 		...over
 	};
 }
@@ -121,5 +129,35 @@ describe('containsJob and ancestorIds', () => {
 	it('lists the jobs above, nearest first', () => {
 		expect(ancestorIds(chain, 3)).toEqual([2, 1]);
 		expect(ancestorIds(chain, 4)).toEqual([]);
+	});
+});
+
+describe('withoutArchived', () => {
+	const shown = (jobs: JobSummary[], keep: number[] = []) =>
+		withoutArchived(jobs, new Set(keep)).map((j) => j.id);
+
+	it('keeps everything when nothing is archived', () => {
+		expect(shown(chain)).toEqual([1, 2, 3, 4]);
+	});
+
+	it('hides an archived job with every job below it', () => {
+		const jobs = chain.map((j) => (j.id === 1 ? { ...j, archived_at: 99 } : j));
+		expect(shown(jobs)).toEqual([4]);
+	});
+
+	it('hides only the archived branch, not the job above it', () => {
+		const jobs = chain.map((j) => (j.id === 2 ? { ...j, archived_at: 99 } : j));
+		expect(shown(jobs)).toEqual([1, 4]);
+	});
+
+	it('keeps a running job and the jobs above it', () => {
+		const jobs = chain.map((j) => (j.id === 1 ? { ...j, archived_at: 99 } : j));
+		expect(shown(jobs, [3])).toEqual([1, 2, 3, 4]);
+	});
+
+	it('survives a parent loop', () => {
+		const loop = [job(1, { parent_job_id: 2, archived_at: 99 }), job(2, { parent_job_id: 1 })];
+		expect(shown(loop)).toEqual([]);
+		expect(shown(loop, [2])).toEqual([1, 2]);
 	});
 });

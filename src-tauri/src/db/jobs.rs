@@ -9,7 +9,7 @@ const JOB_SUMMARY_COLS: &str = "j.id, j.name, j.description, j.working_dir, j.au
                         j.job_type, j.schedule_kind, j.schedule_config, j.next_due_at,
                         j.created_at, j.updated_at,
                         (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count,
-                        j.parent_job_id, j.parent_run_id";
+                        j.parent_job_id, j.parent_run_id, j.archived_at";
 
 /// Every job column written from a [`JobInput`], in binding order. The
 /// INSERT (`create_job`), UPDATE (`update_job`), and full SELECT (`get_job`)
@@ -76,6 +76,7 @@ fn row_to_job_summary(row: &rusqlite::Row) -> rusqlite::Result<JobSummary> {
         step_count: row.get(11)?,
         parent_job_id: row.get(12)?,
         parent_run_id: row.get(13)?,
+        archived_at: row.get(14)?,
     })
 }
 
@@ -233,8 +234,17 @@ impl Database {
             .enumerate()
             .map(|(i, col)| format!("{} = ?{}", col, i + 1))
             .collect();
+        // A job given a schedule leaves the archive: the list never hides a
+        // job that runs by itself. SET reads the old row, so this tests the
+        // new value's placeholder, not the column.
+        let kind = 1 + JOB_WRITE_COLS
+            .iter()
+            .position(|c| *c == "schedule_kind")
+            .expect("schedule_kind is a write column");
         let sql = format!(
-            "UPDATE jobs SET {}, updated_at = ?{} WHERE id = ?{}",
+            "UPDATE jobs SET {}, updated_at = ?{}, \
+             archived_at = CASE WHEN ?{kind} = 'manual' THEN archived_at END \
+             WHERE id = ?{}",
             assignments.join(", "),
             n + 1,
             n + 2
@@ -277,6 +287,24 @@ impl Database {
             .map_err(|e| format!("next_due_at update failed: {}", e))?;
         if affected == 0 {
             return Err(format!("No job with id {}", job_id));
+        }
+        Ok(())
+    }
+
+    /// Archive (`now`) or unarchive (NULL) a job. The Jobs list hides an
+    /// archived job, and the jobs below it, until "Show archived" is on. A
+    /// scheduled job can't be archived; the list never offers it.
+    pub fn set_job_archived(&self, job_id: i64, archived: bool) -> Result<(), String> {
+        let archived_at = archived.then(chrono_now);
+        let affected = self
+            .conn()
+            .execute(
+                "UPDATE jobs SET archived_at = ?1 WHERE id = ?2",
+                params![archived_at, job_id],
+            )
+            .map_err(|e| format!("Job archive failed: {e}"))?;
+        if affected == 0 {
+            return Err(format!("No job with id {job_id}"));
         }
         Ok(())
     }

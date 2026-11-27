@@ -108,6 +108,9 @@ pub struct JobSummary {
     /// parent was deleted. The Jobs list nests a job under its parent.
     pub parent_job_id: Option<i64>,
     pub parent_run_id: Option<i64>,
+    /// When the user archived the job; NULL when they haven't. The Jobs list
+    /// hides it until "Show archived" is on.
+    pub archived_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1117,6 +1120,9 @@ impl Database {
             // A notebook's own agent chat (notebooks::); NULL for every other
             // conversation, and those are the only ones Chat lists.
             "ALTER TABLE conversations ADD COLUMN notebook_id TEXT",
+            // When the user archived a job (ms), NULL when not: the Jobs list
+            // hides it until "Show archived" is on.
+            "ALTER TABLE jobs ADD COLUMN archived_at INTEGER",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

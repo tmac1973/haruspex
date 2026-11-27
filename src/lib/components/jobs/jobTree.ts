@@ -126,3 +126,28 @@ export function ancestorIds(jobs: JobSummary[], id: number): number[] {
 	}
 	return out;
 }
+
+/** Whether the user archived it. A summary without the field isn't. */
+export function isArchived(job: JobSummary): boolean {
+	return (job.archived_at ?? null) !== null;
+}
+
+/**
+ * The jobs the list shows with "Show archived" off: an archived job hides
+ * with every job below it. A job in `keep` (the running ones) stays, with
+ * the jobs above it, so a run never vanishes from the list.
+ */
+export function withoutArchived(jobs: JobSummary[], keep: ReadonlySet<number>): JobSummary[] {
+	const byId = new Map(jobs.map((j) => [j.id, j]));
+	const chain = (job: JobSummary): JobSummary[] => [
+		job,
+		...ancestorIds(jobs, job.id).map((id) => byId.get(id)!)
+	];
+	const shown = new Set<number>();
+	for (const j of jobs) if (!chain(j).some(isArchived)) shown.add(j.id);
+	for (const id of keep) {
+		const j = byId.get(id);
+		if (j) for (const a of chain(j)) shown.add(a.id);
+	}
+	return jobs.filter((j) => shown.has(j.id));
+}

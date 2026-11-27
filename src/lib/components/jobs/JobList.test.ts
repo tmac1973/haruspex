@@ -20,7 +20,8 @@ const job = {
 	created_at: 1,
 	updated_at: 1,
 	parent_job_id: null as number | null,
-	parent_run_id: null as number | null
+	parent_run_id: null as number | null,
+	archived_at: null as number | null
 };
 
 /** What the planning job's run 3 started: assets, which started coding. */
@@ -47,14 +48,16 @@ const headlines = { ...job, id: 10, name: 'Morning headlines', description: 'new
 const store = vi.hoisted(() => ({
 	jobs: [] as unknown[],
 	deleteJob: vi.fn<(id: number) => Promise<boolean>>(async () => true),
-	duplicateJob: vi.fn<(id: number) => Promise<number | null>>(async () => 11)
+	duplicateJob: vi.fn<(id: number) => Promise<number | null>>(async () => 11),
+	setJobArchived: vi.fn<(id: number, archived: boolean) => Promise<boolean>>(async () => true)
 }));
 
 vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/jobs.svelte.ts')>()),
 	getJobs: () => store.jobs,
 	deleteJob: store.deleteJob,
-	duplicateJob: store.duplicateJob
+	duplicateJob: store.duplicateJob,
+	setJobArchived: store.setJobArchived
 }));
 
 const runner = vi.hoisted(() => ({
@@ -227,6 +230,44 @@ describe('JobList', () => {
 		});
 	});
 
+	describe('archived jobs', () => {
+		const archivedPlan = { ...job, archived_at: 100 };
+
+		beforeEach(() => {
+			store.jobs = [archivedPlan, assets, coding, headlines];
+		});
+
+		it('hides an archived job and the jobs it started until Show archived is on', async () => {
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			expect(screen.queryByText('Hangman plan')).toBeNull();
+			screen.getByText('Morning headlines');
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Archived 1' }));
+			const row = screen.getByText('Hangman plan').closest('.row')!;
+			expect(row.classList.contains('archived')).toBe(true);
+			expect(row.querySelector('.paused-tag')?.textContent).toBe('Archived');
+		});
+
+		it('keeps a running job in view, with the jobs above it', () => {
+			runner.current = { jobId: 9, jobName: 'Hangman plan — coding', status: 'running' };
+			render(JobList, { selectedId: 9, onselect: vi.fn(), onrun: vi.fn() });
+			screen.getByText('Hangman plan');
+			screen.getByText('Hangman plan — coding');
+		});
+
+		it('says so when every job is archived', () => {
+			store.jobs = [archivedPlan];
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			screen.getByText('Every job is archived.');
+		});
+
+		it('shows no toggle when nothing is archived', () => {
+			store.jobs = [job];
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			expect(screen.queryByRole('button', { name: /^Archived/ })).toBeNull();
+		});
+	});
+
 	it('has a handle to resize the list', () => {
 		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
 		screen.getByLabelText('Drag to resize');
@@ -258,6 +299,29 @@ describe('JobList row menu', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Delete job' }));
 		expect(store.deleteJob).toHaveBeenCalledWith(7);
 		await vi.waitFor(() => expect(ondeleted).toHaveBeenCalledWith(7));
+	});
+
+	it('archives a job', async () => {
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+		await pickFromRowMenu(row(), 'Archive');
+		expect(store.setJobArchived).toHaveBeenCalledWith(7, true);
+	});
+
+	it('unarchives an archived job', async () => {
+		store.jobs = [{ ...job, archived_at: 100 }];
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+		await fireEvent.click(screen.getByRole('button', { name: 'Archived 1' }));
+		await pickFromRowMenu(row(), 'Unarchive');
+		expect(store.setJobArchived).toHaveBeenCalledWith(7, false);
+	});
+
+	it("won't archive a scheduled job", async () => {
+		store.jobs = [{ ...job, schedule_kind: 'daily' }];
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+		await fireEvent.contextMenu(row());
+		const item = screen.getByRole('menuitem', { name: 'Archive' }) as HTMLButtonElement;
+		expect(item.disabled).toBe(true);
+		expect(item.title).toBe('Set its schedule to Manual first');
 	});
 
 	it("won't delete a running job, and runs one through the tab", async () => {

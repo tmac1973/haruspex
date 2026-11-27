@@ -79,6 +79,8 @@ export interface JobSummary extends JobCore, JobLineage {
 	created_at: number;
 	updated_at: number;
 	step_count: number;
+	/** When the user archived it; null when not. The Jobs list hides it. */
+	archived_at: number | null;
 }
 
 /**
@@ -338,6 +340,17 @@ export function deleteJob(id: number): Promise<boolean> {
 		args: { id },
 		onError: 'deleteJob failed',
 		ctx: { id },
+		onSuccess: loadJobs
+	});
+}
+
+/** Archive or unarchive a job, then reload the list. */
+export function setJobArchived(jobId: number, archived: boolean): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_job_set_archived',
+		args: { jobId, archived },
+		onError: 'setJobArchived failed',
+		ctx: { jobId },
 		onSuccess: loadJobs
 	});
 }
