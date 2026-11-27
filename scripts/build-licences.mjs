@@ -8,7 +8,8 @@
 //   dependencies whose runtime is bundled into the app (BUNDLED_DEV), from
 //   package-lock.json.
 // - crate: every crate compiled into the Tauri binary, from `cargo metadata`
-//   (left out, with a warning, where cargo is not installed).
+//   (left out, with a warning, where cargo is not installed), and those koko is
+//   built from, which build-sidecars.sh lists in src-tauri/binaries/ (KOKO_CRATES).
 // - python: the wheels fetch-pyodide.sh vendors into static/pyodide/, read from
 //   each wheel's .dist-info. plotly.min.js and BokehJS come out of the plotly and
 //   bokeh wheels.
@@ -27,6 +28,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { crateLicences, holderOf, LICENCE_FILE, standardText } from './crate-licences.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const lockPath = join(root, 'package-lock.json');
@@ -41,6 +43,7 @@ const BUNDLED_DEV = ['svelte', '@sveltejs/kit'];
 
 const MEDIA = 'src-tauri/binaries/media/LICENSES';
 const NODE = 'src-tauri/binaries/node-modules';
+const KOKO_CRATES = join(root, 'src-tauri/binaries/koko-crates.json');
 /** The programs the app runs beside itself. `files` are relative to the repo root. */
 const PROGRAMS = [
 	{
@@ -132,8 +135,6 @@ const PROGRAMS = [
 	}
 ];
 
-const LICENCE_FILE = /^(licen[cs]e|copying|copyright|notice)(\.|-|_|$)/i;
-
 /** Every file under `path`, sorted; [path] when it is a file; [] when it is missing. */
 function filesUnder(path) {
 	if (!existsSync(path)) return [];
@@ -158,6 +159,8 @@ const inputs = [
 	lockPath,
 	cargoLock,
 	self,
+	join(dirname(self), 'crate-licences.mjs'),
+	KOKO_CRATES,
 	...filesUnder(vendored),
 	...wheels(),
 	...filesUnder(join(root, MEDIA)),
@@ -178,21 +181,6 @@ function textIdsOf(parts) {
 	});
 }
 const readAll = (paths) => paths.map((p) => readFileSync(p, 'utf8'));
-
-/** The standard text of the licences in `expr` that licences/spdx/ has, for `holder`. */
-function standardText(expr, holder) {
-	const ids = String(expr ?? '').match(/[A-Za-z0-9.+-]+/g) ?? [];
-	const known = ids.filter(
-		(id) => !['AND', 'OR', 'WITH'].includes(id) && existsSync(join(vendored, 'spdx', `${id}.txt`))
-	);
-	// Under OR any one licence will do; under AND each applies.
-	const chosen = /\bAND\b/.test(expr) ? [...new Set(known)] : known.slice(0, 1);
-	return chosen.map((id) =>
-		readFileSync(join(vendored, 'spdx', `${id}.txt`), 'utf8').replace('{holder}', holder)
-	);
-}
-const holderOf = (authors, name) =>
-	(authors.length ? authors.join(', ') : `the ${name} authors`).replace(/\s*<[^>]*>/g, '');
 
 const packages = [];
 const missing = [];
@@ -254,51 +242,24 @@ for (const key of [...shipped].sort()) {
 }
 
 // --- crates ---
-function cargoMetadata() {
-	const args = ['metadata', '--format-version', '1', '--manifest-path', 'src-tauri/Cargo.toml'];
-	// Tauri sets the target for a build; otherwise the host's.
-	let triple = process.env.TAURI_ENV_TARGET_TRIPLE;
-	try {
-		triple ??= /host: (\S+)/.exec(execFileSync('rustc', ['-vV'], { encoding: 'utf8' }))?.[1];
-		if (triple) args.push('--filter-platform', triple);
-		return JSON.parse(
-			execFileSync('cargo', args, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 })
-		);
-	} catch (err) {
-		console.warn(`licences: no Rust crates listed (cargo metadata failed: ${err.message})`);
-		return null;
-	}
+// Tauri sets the target for a build; otherwise the host's.
+let crates = [];
+try {
+	const triple =
+		process.env.TAURI_ENV_TARGET_TRIPLE ??
+		/host: (\S+)/.exec(execFileSync('rustc', ['-vV'], { encoding: 'utf8' }))?.[1];
+	crates = crateLicences({ manifest: join(root, 'src-tauri/Cargo.toml'), triple });
+} catch (err) {
+	console.warn(`licences: no Rust crates listed (cargo metadata failed: ${err.message})`);
 }
-
-const meta = cargoMetadata();
-if (meta) {
-	const byId = new Map(meta.packages.map((p) => [p.id, p]));
-	const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
-	const crates = new Set();
-	// Normal dependencies only: build scripts, dev dependencies and proc macros
-	// run on the build machine and never reach the binary.
-	const walkCrate = (id) => {
-		const p = byId.get(id);
-		if (crates.has(id) || p.targets.every((t) => t.kind.includes('proc-macro'))) return;
-		crates.add(id);
-		for (const d of nodes.get(id).deps)
-			if (d.dep_kinds.some((k) => k.kind === null)) walkCrate(d.pkg);
-	};
-	walkCrate(meta.resolve.root);
-	const list = [...crates]
-		.map((id) => byId.get(id))
-		.filter((p) => p.source) // path crates are this repo's own
-		.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
-	for (const p of list) {
-		const dir = dirname(p.manifest_path);
-		const own = readdirSync(dir).filter((f) => LICENCE_FILE.test(f));
-		if (p.license_file) own.push(p.license_file);
-		const files = [...new Set(own)].sort().map((f) => join(dir, f));
-		let text = readAll(files.filter((f) => existsSync(f) && statSync(f).isFile()));
-		if (!text.length) text = standardText(p.license, holderOf(p.authors ?? [], p.name));
-		const url = p.repository ?? p.homepage ?? `https://crates.io/crates/${p.name}`;
-		add('crate', p.name, p.version, p.license ?? 'see text', url, text);
-	}
+if (existsSync(KOKO_CRATES)) crates.push(...JSON.parse(readFileSync(KOKO_CRATES, 'utf8')));
+else console.warn('licences: no koko crate list; ./scripts/build-sidecars.sh writes one');
+const seenCrates = new Set();
+crates.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+for (const c of crates) {
+	if (seenCrates.has(`${c.name}@${c.version}`)) continue;
+	seenCrates.add(`${c.name}@${c.version}`);
+	add('crate', c.name, c.version, c.licence, c.url, c.text);
 }
 
 // --- python ---
