@@ -25,6 +25,9 @@ describe('speaking sections', () => {
 		expect(w.map((i) => i.id)).toEqual(['host-01', 'host-02']);
 		expect(w.every((i) => i.start.kind === 'portrait' && i.start.section === 'host')).toBe(true);
 		expect(w.every((i) => !i.trimFirstFrame && i.fps === 16 && !i.estimated)).toBe(true);
+		// The style names the fox; the presenter's clips take their own prompt alone.
+		const host = 'a presenter in a winter coat, talking to the camera';
+		expect(w.every((i) => i.prompt === host)).toBe(true);
 		expect(w[0].audio).toEqual({
 			parts: [
 				{ file: 'narration/host-line-01.wav', line_hash: speech.l1.hash, from_secs: 0, to_secs: 4 },

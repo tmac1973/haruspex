@@ -35,7 +35,7 @@ The project's format follows the video model: LTX-2.3's 1280×704 at 24 fps beco
 
 ## Someone speaking
 
-A speaking section is a person in a portrait saying lines, such as a presenter between two scenes. Ask for one in the brief ("then a presenter in a winter coat says: …"). Give a picture of the person in the episode folder, or one is drawn. Each line is spoken first, in its saved voice if it names one (see the `speech` page). Then the speech is cut at its pauses into clips of at most the speaking model's longest clip (about 5 s for S2V), each made from the portrait with its stretch of speech under it. Clips are joined with a cut, or a 0.3 s crossfade when the section asks. Music under a speaking section sits low. Each clip starts afresh from the portrait, so the joins between them show. S2V makes 16 fps clips, placed in the project as they are.
+A speaking section is a person in a portrait saying lines, such as a presenter between two scenes. Ask for one in the brief ("then a presenter in a winter coat says: …"). Give a picture of the person in the episode folder, or one is drawn. The spec's `style` isn't used: the section's prompt says who, where and the look. Each line is spoken first, in its saved voice if it names one. Then the speech is cut at its pauses into clips of at most the speaking model's longest clip (about 5 s for S2V), each made from the portrait with its stretch of speech under it. Clips join with a cut, or a 0.3 s crossfade when the section asks. Music under it sits low. Each clip starts afresh from the portrait, so the joins between them show. S2V makes 16 fps clips, placed in the project as they are.
 
 ## Stop and carry on
 
@@ -43,7 +43,7 @@ Everything is saved as it is made. A run that failed or was stopped has **Resume
 
 ## How long it takes
 
-A run says how many clips it will make. The time is unknown until the first clip is made; after that it estimates from that clip. Two minutes on LTX-2.3 is about 25 clips, often two to four hours.
+A run says how many clips it will make. The time is estimated once the first clip is made. Two minutes on LTX-2.3 is about 25 clips, often two to four hours.
 
 ## What it doesn't do
 
