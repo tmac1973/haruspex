@@ -54,19 +54,19 @@ const PROGRAMS = [
 	},
 	{
 		name: 'whisper.cpp (whisper-server)',
-		licence: 'MIT',
+		licence: 'MIT; bundled code MIT, MIT-0 or public domain',
 		url: 'https://github.com/ggml-org/whisper.cpp',
 		files: ['licences/sidecars/whisper.cpp']
 	},
 	{
-		name: 'Kokoros (koko), with espeak-ng',
-		licence: 'Apache-2.0; espeak-ng GPL-3.0-or-later',
+		name: 'Kokoros (koko), with espeak-ng and ONNX Runtime',
+		licence: 'Apache-2.0; espeak-ng GPL-3.0-or-later; ONNX Runtime MIT',
 		url: 'https://github.com/lucasjinreal/Kokoros',
 		files: ['licences/sidecars/kokoros']
 	},
 	{
 		name: 'stable-diffusion.cpp (sd-server)',
-		licence: 'MIT',
+		licence: 'MIT; bundled code MIT, BSD, Unicode or public domain',
 		url: 'https://github.com/leejet/stable-diffusion.cpp',
 		files: ['licences/sidecars/stable-diffusion.cpp']
 	},
