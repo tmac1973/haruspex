@@ -83,6 +83,22 @@ describe('notebook tool helpers', () => {
 		expect(cardOutline(c)).toContain('[c1] table "Models" — 2 rows');
 	});
 
+	it('says how to read the rest of a long text card, and nothing for a short one', () => {
+		const card = (body: string) =>
+			({
+				id: 'c3',
+				kind: 'text',
+				title: 'Read first',
+				body,
+				meta: '{}',
+				rows: []
+			}) as unknown as Parameters<typeof cardOutline>[0];
+		const long = cardOutline(card('x'.repeat(450)));
+		expect(long).toContain('[c3] text "Read first"');
+		expect(long).toContain('…150 more characters; notebook_read with card="c3" for all');
+		expect(cardOutline(card('Short.'))).not.toContain('more characters');
+	});
+
 	it('merges updates into the current cells, typed by column', () => {
 		const current = new Map([
 			['r1', { name: 'Soundcore', price: 79.99 }],

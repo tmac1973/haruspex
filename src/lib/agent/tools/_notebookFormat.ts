@@ -46,14 +46,23 @@ function fileLine(card: NotebookCard): string {
 	return `${m.name ?? 'file'} (${m.mime ?? 'unknown type'}, ${m.size ?? 0} bytes)`;
 }
 
+/** The start of a long text or code body, saying how to read the rest. */
+function bodyStart(card: NotebookCard): { start: string; more: string } {
+	if (card.body.length <= OUTLINE_TEXT) return { start: card.body, more: '' };
+	const left = card.body.length - OUTLINE_TEXT;
+	return {
+		start: `${card.body.slice(0, OUTLINE_TEXT)}…`,
+		more: `\n…${left} more characters; notebook_read with card="${card.id}" for all`
+	};
+}
+
 /** One card, as the outline shows it. */
 export function cardOutline(card: NotebookCard): string {
 	const head = cardHeading(card);
 	switch (card.kind) {
 		case 'text': {
-			const body =
-				card.body.length > OUTLINE_TEXT ? `${card.body.slice(0, OUTLINE_TEXT)}…` : card.body;
-			return `${head}\n${body || '(empty)'}`;
+			const { start, more } = bodyStart(card);
+			return `${head}\n${start || '(empty)'}${more}`;
 		}
 		case 'table':
 		case 'checklist': {
@@ -63,8 +72,10 @@ export function cardOutline(card: NotebookCard): string {
 					: '';
 			return `${head} — ${card.row_count} rows\n${rowsToCsv(card, card.rows.slice(0, OUTLINE_ROWS))}${more}`;
 		}
-		case 'python':
-			return `${head}\n\`\`\`python\n${card.body.slice(0, OUTLINE_TEXT)}\n\`\`\``;
+		case 'python': {
+			const { start, more } = bodyStart(card);
+			return `${head}\n\`\`\`python\n${start}\n\`\`\`${more}`;
+		}
 		default:
 			return `${head} — ${fileLine(card)}`;
 	}

@@ -18,7 +18,7 @@ export function runbookPrompt(t: RunbookTarget): string {
 	const link = `[${t.notebookTitle || 'notebook'}](notebook:${t.notebookId}#${t.cardId})`;
 	return [
 		`Work through ${card} (card ${t.cardId}) in notebook ${link}, here in this terminal.`,
-		'Read the notebook first: its other cards may hold the details for each step.',
+		'Read the notebook first: its other cards may hold the details for each step. Read in full (notebook_read with that card) any card the checklist or the notebook refers to, such as a "Read first" card, before the first step.',
 		'Start at the first item that is not done. For each item: run what it needs, check that it worked, then tick it and write a short note on it (what you did, versions, anything I should know) with notebook_table_rows.',
 		'Do one item, then stop and tell me what comes next.',
 		'If a step fails or needs a decision from me, write the note, leave it unticked and stop.',
