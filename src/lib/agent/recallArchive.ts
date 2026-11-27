@@ -137,3 +137,35 @@ export function archivedStub(archive: RecallArchive, id: string): string {
 export function recallHint(id: string): string {
 	return `Exact full text: recall_result id="${id}".`;
 }
+
+/**
+ * `messages` without its `recall_result` calls and their replies, for carrying
+ * a finished turn's tool results into the next turn. A reply repeats text
+ * already in the original result, and its id names an entry in an archive
+ * that ends with the turn: the next turn numbers its own from `r1`, so the
+ * carried `r3` could name a different result. A call message left with no
+ * calls is dropped.
+ */
+export function withoutRecalls(messages: ChatMessage[]): ChatMessage[] {
+	const recallIds = new Set<string>();
+	for (const m of messages) {
+		for (const c of m.tool_calls ?? []) {
+			if (c.function.name === RECALL_TOOL) recallIds.add(c.id);
+		}
+	}
+	if (recallIds.size === 0) return messages;
+	const out: ChatMessage[] = [];
+	for (const m of messages) {
+		if (m.role === 'tool') {
+			if (!m.tool_call_id || !recallIds.has(m.tool_call_id)) out.push(m);
+			continue;
+		}
+		if (!m.tool_calls) {
+			out.push(m);
+			continue;
+		}
+		const calls = m.tool_calls.filter((c) => !recallIds.has(c.id));
+		if (calls.length > 0) out.push({ ...m, tool_calls: calls });
+	}
+	return out;
+}
