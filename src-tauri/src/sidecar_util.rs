@@ -144,6 +144,20 @@ pub fn http_client(timeout: Duration) -> reqwest::Client {
         .expect("reqwest::Client::builder")
 }
 
+/// [`http_client`] that sends `Authorization: Bearer <key>` on every request,
+/// for a sidecar started with a per-run key.
+pub fn http_client_with_bearer(timeout: Duration, key: &str) -> reqwest::Client {
+    let mut auth = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}"))
+        .expect("a hex key is a valid header value");
+    auth.set_sensitive(true);
+    let headers = reqwest::header::HeaderMap::from_iter([(reqwest::header::AUTHORIZATION, auth)]);
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .default_headers(headers)
+        .build()
+        .expect("reqwest::Client::builder")
+}
+
 /// Loopback host every sidecar binds to (`--host`) and every local URL
 /// points at. One definition so the bind arg and the URL host can't drift.
 pub const LOOPBACK: &str = "127.0.0.1";
@@ -552,13 +566,30 @@ pub async fn poll_health<F, Fut>(
     name: &'static str,
     timeout: Duration,
     accept_any: bool,
-    mut keep_going: F,
+    keep_going: F,
 ) -> bool
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = bool>,
 {
     let client = http_client(timing::SHORT_HTTP_TIMEOUT);
+    poll_health_with(&client, url, name, timeout, accept_any, keep_going).await
+}
+
+/// [`poll_health`] with a client of the caller's, for a sidecar whose
+/// readiness route wants a key.
+pub async fn poll_health_with<F, Fut>(
+    client: &reqwest::Client,
+    url: &str,
+    name: &'static str,
+    timeout: Duration,
+    accept_any: bool,
+    mut keep_going: F,
+) -> bool
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
     let attempts = (timeout.as_millis() / timing::HEALTH_POLL_INTERVAL.as_millis()) as usize;
     for _ in 0..attempts {
         if !keep_going().await {

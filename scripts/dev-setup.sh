@@ -68,9 +68,9 @@ if [ "$SKIP_BUILD" = false ]; then
     echo
 fi
 
-# ---- Download sd-server (stable-diffusion.cpp image sidecar) ----
-# Behind --skip-build because it is ~100 MB and only the opt-in local image
-# backend ever launches it. Nothing starts it; dev-setup just puts it on disk.
+# ---- Fetch sd-server (stable-diffusion.cpp image sidecar) ----
+# Behind --skip-build because it is ~100 MB (and on Linux a build of a few
+# minutes) and only the opt-in local image backend ever launches it. Nothing starts it; dev-setup just puts it on disk.
 # The script is idempotent and a no-op once the pinned version is present.
 if [ "$SKIP_BUILD" = false ]; then
     "$SCRIPT_DIR/fetch-sdcpp.sh" --target "$TARGET_TRIPLE"

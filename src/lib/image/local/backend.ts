@@ -47,7 +47,7 @@ import {
 	type LocalFamily
 } from '#lib/image/local/adapter.ts';
 
-/** One generation, weights already loaded. Startup has its own budget. */
+/** One generation, including the first one's weight load: the engine loads them on demand. */
 const GENERATE_TIMEOUT_MS = 600_000;
 
 async function engineStatus(): Promise<ImageEngineStatus> {
@@ -306,9 +306,9 @@ async function generateWith(
 }
 
 /**
- * `/sdcpp/v1/upscale`, with the Real-ESRGAN model the engine was started with
- * (`--hires-upscalers-dir`). The engine starts on the chosen model first, as
- * the server needs one loaded, and restarts if the upscaler came after it.
+ * Real-ESRGAN ×4, run by the engine as a DGL job (`image_engine_upscale`,
+ * which builds the script). The engine starts on the chosen model first, as
+ * the server needs one configured, and restarts if the upscaler came after it.
  */
 async function upscale(
 	id: string,
@@ -323,14 +323,18 @@ async function upscale(
 	}
 	await ensureRunning(id);
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
-	const payload = (await call(ROUTES.upscale, { image: await base64Of(input) }, opts.signal)) as {
-		images?: Array<{ b64_json?: unknown }>;
-	};
-	const b64 = payload.images?.[0]?.b64_json;
-	if (typeof b64 !== 'string') {
-		throw new ImageBackendError('rejected', 'The image engine returned no upscaled picture.');
+	const image = await base64Of(input);
+	if (opts.signal?.aborted) throw new ImageBackendError('cancelled', 'Upscale cancelled.');
+	try {
+		const b64 = await invoke<string>('image_engine_upscale', {
+			image,
+			timeoutMs: GENERATE_TIMEOUT_MS
+		});
+		return fromBase64(b64);
+	} catch (e) {
+		if (opts.signal?.aborted) throw new ImageBackendError('cancelled', 'Upscale cancelled.');
+		throw new ImageBackendError('rejected', errMessage(e));
 	}
-	return fromBase64(b64);
 }
 
 export { ROUTES };

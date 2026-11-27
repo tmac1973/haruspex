@@ -29,9 +29,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
 use crate::sidecar_util::{
-    base_url, http_client, kill_child, kill_process_on_port, library_path_env, new_log_buffer,
-    poll_health, ports::IMAGE as IMAGE_PORT, snapshot_logs, spawn_log_reader, LogBuffer,
-    SidecarStatus, LOOPBACK,
+    base_url, http_client_with_bearer, kill_child, kill_process_on_port, library_path_env,
+    new_log_buffer, poll_health_with, ports::IMAGE as IMAGE_PORT, snapshot_logs, spawn_log_reader,
+    timing, LogBuffer, SidecarStatus, LOOPBACK,
 };
 
 /// Readiness. sd-server serves no `/health`; this is the cheapest route it
@@ -46,6 +46,59 @@ const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Where sd-server's private shared libraries live, relative to a root.
 const LIBS_SUBDIR: &str = "sd-libs";
+
+/// The key sd-server demands on every request but `GET /` (its web page),
+/// made fresh for each run of the app. sd-server already refuses requests
+/// from other web origins; the key also shuts out any other local process
+/// that finds the port. sd-server reads it from a file (`--api-key-file`):
+/// argv is readable by every user on the machine, and it takes no env var.
+fn engine_key() -> &'static str {
+    static KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| crate::hash_util::random_hex(32).expect("the OS random source failed"))
+}
+
+/// A client for the running engine: it sends the key.
+fn engine_client(timeout: std::time::Duration) -> reqwest::Client {
+    http_client_with_bearer(timeout, engine_key())
+}
+
+/// Write `key` to `path`, readable by this user only.
+fn write_key_file(path: &Path, key: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    // `mode` applies only when the file is created; an older one keeps its
+    // own permissions unless they are set again.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(key.as_bytes())?;
+    file.write_all(b"\n")
+}
+
+/// The arguments sd-server runs with: the model's, then where to listen and
+/// where to read its key.
+fn server_args(model_args: Vec<String>, key_file: &Path) -> Vec<String> {
+    model_args
+        .into_iter()
+        .chain([
+            "--listen-ip".to_string(),
+            LOOPBACK.to_string(),
+            "--listen-port".to_string(),
+            IMAGE_PORT.to_string(),
+            "--api-key-file".to_string(),
+            key_file.to_string_lossy().to_string(),
+        ])
+        .collect()
+}
 
 pub struct ImageEngine {
     status: Arc<Mutex<SidecarStatus>>,
@@ -309,21 +362,22 @@ impl ImageEngine {
             .ok_or_else(|| ImageEngineError::SidecarMissing("sd-server".into()))?;
         let staged = stage_dir(app)?;
         let exe = stage(&sidecar_path, &libs, &staged)?;
+        // Beside the staged directory, not in it: staging removes whatever
+        // it did not put there.
+        let key_file = staged.with_extension("key");
+        write_key_file(&key_file, engine_key()).map_err(|e| {
+            ImageEngineError::Spawn(format!(
+                "could not write the engine's key to {}: {e}",
+                key_file.display()
+            ))
+        })?;
 
         *self.status.lock().await = SidecarStatus::Starting;
         *self.model.lock().await = Some(want.to_string());
         *self.args.lock().await = Some(model_args.clone());
         info!("Starting sd-server on port {IMAGE_PORT}");
 
-        let args: Vec<String> = model_args
-            .into_iter()
-            .chain([
-                "--listen-ip".to_string(),
-                LOOPBACK.to_string(),
-                "--listen-port".to_string(),
-                IMAGE_PORT.to_string(),
-            ])
-            .collect();
+        let args = server_args(model_args, &key_file);
         let decided = self.vk_devices.lock().await.clone();
         self.spawn(app, &exe, &staged, &args, decided.clone().flatten())
             .await?;
@@ -364,7 +418,8 @@ impl ImageEngine {
             let s = Arc::clone(&status_for_poll);
             async move { !matches!(&*s.lock().await, SidecarStatus::Error(_)) }
         };
-        if poll_health(&url, "sd-server", READY_TIMEOUT, false, keep_going).await {
+        let client = engine_client(timing::SHORT_HTTP_TIMEOUT);
+        if poll_health_with(&client, &url, "sd-server", READY_TIMEOUT, false, keep_going).await {
             *self.status.lock().await = SidecarStatus::Ready;
             info!("sd-server ready");
             return Ok(());
@@ -572,12 +627,17 @@ pub async fn image_engine_request(
     if !path.starts_with('/') || path.starts_with("//") || path.contains("://") {
         return Err(format!("Not an engine path: {path}"));
     }
+    // A DGL script reads any file this user can, so the webview may not send
+    // one; the scripts the app runs are its own (`image_engine_upscale`).
+    if is_dgl_path(&path) {
+        return Err(format!("Not an engine path: {path}"));
+    }
     // sd-server draws one picture at a time and fails a second rather than
     // queueing it, so requests take turns here: a background task's and a
     // turn's, from every window.
     let _turn = ENGINE_REQUESTS.lock().await;
     let url = format!("{}{path}", base_url(IMAGE_PORT));
-    let client = http_client(std::time::Duration::from_millis(
+    let client = engine_client(std::time::Duration::from_millis(
         timeout_ms.clamp(1_000, 1_800_000),
     ));
     let resp = client
@@ -599,6 +659,152 @@ pub async fn image_engine_request(
         ));
     }
     Ok(text)
+}
+
+/// The DGL routes, which run a script with this user's file access.
+fn is_dgl_path(path: &str) -> bool {
+    let route = path.split(['?', '#']).next().unwrap_or(path);
+    let route = route.trim_end_matches('/').to_ascii_lowercase();
+    route.starts_with("/sdcpp/v1/dgl") || route.contains("/../") || route.contains("/./")
+}
+
+/// The DGL script that upscales the picture at `input` with the ESRGAN model
+/// at `upscaler`. Paths go in as JSON string literals, as the DGL guide says
+/// to build a script, so a quote or a backslash in one cannot change it.
+fn upscale_script(upscaler: &Path, input: &Path) -> String {
+    let lit =
+        |p: &Path| serde_json::to_string(&p.to_string_lossy()).expect("a string always serializes");
+    format!(
+        "# version: 0.0.0\n\
+         fn main() {{\n\
+         \x20   upscaler = load_upscaler({})\n\
+         \x20   image = image::load({})\n\
+         \x20   return image::encode(upscale(upscaler, image))\n\
+         }}\n",
+        lit(upscaler),
+        lit(input)
+    )
+}
+
+/// The picture in a finished DGL job: the media named `result`, which is
+/// what a script that returns one `image::encode` dict produces.
+fn upscaled_from(job: &serde_json::Value) -> Option<String> {
+    job.pointer("/result/media")?
+        .as_array()?
+        .iter()
+        .find(|m| m.get("name").and_then(|n| n.as_str()) == Some("result"))?
+        .get("b64_json")?
+        .as_str()
+        .map(String::from)
+}
+
+/// How long between looks at a queued upscale.
+const JOB_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Upscale one picture ×4 with the Real-ESRGAN model the engine was started
+/// with, and return it as base64 PNG.
+///
+/// sd-server dropped its `/sdcpp/v1/upscale` route (sd.cpp #2404); an upscale
+/// is now a DGL job. The script is built here, never in the webview, because
+/// a DGL script can read any file. The picture goes to the engine through a
+/// file of our own beside the staged engine, removed once the job ends.
+#[tauri::command]
+pub async fn image_engine_upscale(
+    app: AppHandle,
+    models: tauri::State<'_, crate::models::ModelManager>,
+    image: String,
+    timeout_ms: u64,
+) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(image.trim())
+        .map_err(|e| format!("The picture to upscale is not base64: {e}"))?;
+    let upscaler = crate::image_models::upscaler_path(models.models_dir());
+    if !upscaler.is_file() {
+        return Err(
+            "The upscaler is not downloaded — Settings → Image generation → Bundled engine.".into(),
+        );
+    }
+    let input = stage_dir(&app)
+        .map_err(|e| e.to_string())?
+        .with_extension("upscale-input.png");
+    std::fs::write(&input, rgb_png(&bytes)?)
+        .map_err(|e| format!("Could not write the picture to {}: {e}", input.display()))?;
+    let result = run_upscale(&upscale_script(&upscaler, &input), timeout_ms).await;
+    let _ = std::fs::remove_file(&input);
+    result
+}
+
+/// `bytes` as an RGB PNG: the upscaler refuses any other channel count. The
+/// alpha it drops is put back afterwards (`image_gen::upscale`).
+fn rgb_png(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let rgb = image::load_from_memory(bytes)
+        .map_err(|e| format!("Could not read the picture to upscale: {e}"))?
+        .to_rgb8();
+    let mut out = std::io::Cursor::new(Vec::new());
+    rgb.write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not encode the picture to upscale: {e}"))?;
+    Ok(out.into_inner())
+}
+
+async fn run_upscale(script: &str, timeout_ms: u64) -> Result<String, String> {
+    let _turn = ENGINE_REQUESTS.lock().await;
+    let timeout = std::time::Duration::from_millis(timeout_ms.clamp(1_000, 1_800_000));
+    let client = engine_client(timing::SHORT_HTTP_TIMEOUT * 5);
+    let base = base_url(IMAGE_PORT);
+    let created: serde_json::Value = client
+        .post(format!("{base}/sdcpp/v1/dgl/jobs"))
+        .json(&serde_json::json!({ "source": script }))
+        .send()
+        .await
+        .map_err(|e| format!("The image engine did not take the upscale: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("The image engine refused the upscale: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("The image engine's reply to the upscale could not be read: {e}"))?;
+    let id = created
+        .get("id")
+        .and_then(|i| i.as_str())
+        .ok_or("The image engine queued the upscale without an id")?
+        .to_string();
+    let poll = format!("{base}/sdcpp/v1/jobs/{id}");
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        tokio::time::sleep(JOB_POLL_INTERVAL).await;
+        let job: serde_json::Value = match client.get(&poll).send().await {
+            Ok(resp) => resp
+                .json()
+                .await
+                .map_err(|e| format!("The upscale's status could not be read: {e}"))?,
+            Err(e) if tokio::time::Instant::now() < deadline => {
+                warn!("sd-server upscale poll failed: {e}");
+                continue;
+            }
+            Err(e) => return Err(format!("The image engine stopped answering: {e}")),
+        };
+        match job.get("status").and_then(|s| s.as_str()) {
+            Some("completed") => {
+                return upscaled_from(&job)
+                    .ok_or_else(|| "The image engine returned no upscaled picture.".to_string())
+            }
+            Some("failed") | Some("cancelled") => {
+                let message = job
+                    .pointer("/error/message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("no reason given");
+                return Err(format!("The upscale failed: {message}"));
+            }
+            _ => {}
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let _ = client.post(format!("{poll}/cancel")).send().await;
+            return Err(format!(
+                "The upscale did not finish within {}s",
+                timeout.as_secs()
+            ));
+        }
+    }
 }
 
 #[tauri::command]
@@ -637,6 +843,102 @@ mod tests {
                 "{bad} was allowed: {err}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn the_request_command_refuses_dgl_scripts() {
+        // A DGL script reads any file this user can; only the app's own
+        // scripts may reach those routes.
+        for bad in [
+            "/sdcpp/v1/dgl/jobs",
+            "/sdcpp/v1/dgl/jobs/",
+            "/SDCPP/v1/DGL/jobs",
+            "/sdcpp/v1/dgl/script?name=x.dgl",
+            "/sdapi/v1/../../sdcpp/v1/dgl/jobs",
+        ] {
+            let err = image_engine_request(bad.to_string(), "{}".into(), 1_000)
+                .await
+                .unwrap_err();
+            assert!(
+                err.contains("Not an engine path"),
+                "{bad} was allowed: {err}"
+            );
+        }
+        assert!(!is_dgl_path("/sdapi/v1/txt2img"));
+        assert!(!is_dgl_path("/sdcpp/v1/capabilities"));
+    }
+
+    #[test]
+    fn the_engine_reads_its_key_from_a_file_and_never_from_argv() {
+        let args = server_args(
+            vec!["--diffusion-model".into(), "/m.gguf".into()],
+            Path::new("/d/k"),
+        );
+        let at = args.iter().position(|a| a == "--api-key-file").unwrap();
+        assert_eq!(args[at + 1], "/d/k");
+        assert!(!args.iter().any(|a| a == "--api-key"));
+        assert!(!args.iter().any(|a| a.contains(engine_key())));
+        assert_eq!(engine_key(), engine_key());
+        assert_eq!(engine_key().len(), 64);
+    }
+
+    #[test]
+    fn the_key_file_holds_the_key_and_only_this_user_can_read_it() {
+        let tmp = crate::test_util::temp_dir("engine_key");
+        let path = tmp.join("sd-engine.key");
+        std::fs::write(&path, "old and longer than the key, with other permissions").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        write_key_file(&path, "abc123").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "abc123\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn the_upscale_script_quotes_its_paths() {
+        let script = upscale_script(
+            Path::new(r#"C:\Models\up "x".pth"#),
+            Path::new("/tmp/in.png"),
+        );
+        assert!(script.starts_with("# version: 0.0.0\n"), "{script}");
+        assert!(
+            script.contains(r#"load_upscaler("C:\\Models\\up \"x\".pth")"#),
+            "{script}"
+        );
+        assert!(script.contains(r#"image::load("/tmp/in.png")"#), "{script}");
+        assert!(script.contains("    return image::encode(upscale(upscaler, image))\n}\n"));
+    }
+
+    #[test]
+    fn the_upscaler_gets_rgb() {
+        let rgba = image::RgbaImage::from_pixel(3, 2, image::Rgba([200, 40, 40, 0]));
+        let mut png = std::io::Cursor::new(Vec::new());
+        rgba.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let out = image::load_from_memory(&rgb_png(&png.into_inner()).unwrap()).unwrap();
+        assert_eq!(out.color(), image::ColorType::Rgb8);
+        assert_eq!((out.width(), out.height()), (3, 2));
+        assert!(rgb_png(b"not a picture").is_err());
+    }
+
+    #[test]
+    fn the_upscaled_picture_is_the_media_named_result() {
+        let job = serde_json::json!({
+            "status": "completed",
+            "result": { "type": "dict", "outputs": [], "media": [
+                { "name": "other", "mime_type": "image/png", "b64_json": "no" },
+                { "name": "result", "mime_type": "image/png", "b64_json": "aGk=" }
+            ]}
+        });
+        assert_eq!(upscaled_from(&job).as_deref(), Some("aGk="));
+        assert_eq!(upscaled_from(&serde_json::json!({ "result": null })), None);
     }
 
     #[test]

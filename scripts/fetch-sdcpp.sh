@@ -2,14 +2,14 @@
 # Fetch the stable-diffusion.cpp server binary (sd-server) and its private
 # shared libraries.
 #
-# DOWNLOADED, not built from source — a deliberate departure from the original
-# plan for this phase, which assumed upstream published no Vulkan server binary
-# for our triples. It does: every release ships sd-server for Linux x86_64
-# (Vulkan), Windows x64 (Vulkan) and macOS arm64 (Metal). Downloading a release
-# asset pins the exact bytes, matches how pdfium/ruff/uv/node are already
-# fetched, and saves every developer and every CI run a multi-minute Vulkan
-# shader compile. llama-server and whisper-server are built locally for
-# historical reasons that do not apply here.
+# DOWNLOADED on macOS and Windows, BUILT on Linux. Every release ships
+# sd-server for Windows x64 (Vulkan) and macOS arm64 (Metal), and downloading
+# one pins the exact bytes and saves a multi-minute Vulkan shader compile.
+# The Linux asset is built on Ubuntu 26.04 since master-1126 and needs glibc
+# 2.43 (`sqrtf@GLIBC_2.43` in ggml), newer than the ubuntu:25.10 the app is
+# built in, so it would not start on Ubuntu 25.10, Fedora 43 or Debian 13.
+# On Linux this builds the same tag with upstream's own release flags, which
+# gives the same layout: the binary beside its libraries and ggml backends.
 #
 # This script produces files on disk and nothing else. It never downloads
 # weights, never starts the server, and nothing in the app runs it.
@@ -30,7 +30,7 @@ BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
 # Upstream publishes no semver tags; releases are named `master-<n>-<sha>`.
 # Recorded in docs/image-generation.md too, and check-constants.mjs fails the
 # build when the two disagree.
-SDCPP_VERSION="master-929-3f8527a"
+SDCPP_VERSION="master-1142-908965d"
 
 TARGET=""
 while [[ $# -gt 0 ]]; do
@@ -51,7 +51,7 @@ esac
 # hardcoded name would break on the next release for a reason that has nothing
 # to do with us.
 case "$TARGET" in
-    x86_64-unknown-linux-gnu)  ASSET_RE='bin-Linux-.*x86_64-vulkan\.zip' ;;
+    x86_64-unknown-linux-gnu)  ASSET_RE='' ;;  # built, see build_linux
     aarch64-apple-darwin)      ASSET_RE='bin-Darwin-.*arm64\.zip'        ;;
     x86_64-apple-darwin)       ASSET_RE='bin-Darwin-.*x86_64\.zip'       ;;
     x86_64-pc-windows-msvc)    ASSET_RE='bin-win-vulkan-x64\.zip'        ;;
@@ -82,13 +82,54 @@ if [ -f "$SD_BIN" ] && [ -x "$SD_BIN" ] && [ "$(cat "$SD_STAMP" 2>/dev/null)" = 
     exit 0
 fi
 
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+# Build the pinned tag into $TMP/build/bin, as upstream's
+# `ubuntu-latest-cmake-vulkan` job does: shared ggml with each backend and
+# every CPU variant as a module that ggml picks at run time, and an $ORIGIN
+# RUNPATH so the binary finds its libraries beside it.
+build_linux() {
+    command -v git   >/dev/null || { echo "ERROR: git is required";   exit 1; }
+    command -v cmake >/dev/null || { echo "ERROR: cmake is required"; exit 1; }
+    command -v glslc >/dev/null || {
+        echo "ERROR: glslc is required to build sd-server's Vulkan backend."
+        echo "       Install the Vulkan SDK, or your distro's glslc and Vulkan headers."
+        exit 1
+    }
+    echo ">> Building sd-server (stable-diffusion.cpp $SDCPP_VERSION) for $TARGET..."
+    # No fallback to the default branch: a typo'd tag must fail the build,
+    # not ship master under the pinned version's stamp.
+    if ! git clone --quiet --depth 1 --branch "$SDCPP_VERSION" \
+        --recurse-submodules --shallow-submodules \
+        https://github.com/leejet/stable-diffusion.cpp.git "$TMP/src"; then
+        echo "ERROR: could not clone stable-diffusion.cpp at pinned tag '$SDCPP_VERSION'"
+        exit 1
+    fi
+    cmake -S "$TMP/src" -B "$TMP/build" -DCMAKE_BUILD_TYPE=Release \
+        -DSD_VULKAN=ON -DSD_BUILD_SHARED_LIBS=ON -DSD_BUILD_SHARED_GGML_LIB=ON \
+        -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
+        -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DCMAKE_INSTALL_RPATH='$ORIGIN'
+    local nproc
+    nproc=$(nproc 2>/dev/null || echo 4)
+    cmake --build "$TMP/build" --config Release -j "$nproc"
+    # A configure that lost Vulkan still builds, CPU only, and ships an engine
+    # that is slow for no visible reason.
+    if ! find "$TMP/build/bin" -name "libggml-vulkan.so*" | grep -q .; then
+        echo "ERROR: the sd-server build produced no Vulkan backend."
+        exit 1
+    fi
+}
+
+if [ "$TARGET" = "x86_64-unknown-linux-gnu" ]; then
+    build_linux
+    SRC="$TMP/build/bin/sd-server"
+else
+
 command -v curl  >/dev/null || { echo "ERROR: curl is required";  exit 1; }
 command -v unzip >/dev/null || { echo "ERROR: unzip is required"; exit 1; }
 
 echo ">> Fetching sd-server (stable-diffusion.cpp $SDCPP_VERSION) for $TARGET..."
-
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
 
 API="https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/tags/$SDCPP_VERSION"
 
@@ -140,6 +181,7 @@ if [ -z "$SRC" ]; then
     echo "ERROR: the release asset contains no sd-server binary."
     exit 1
 fi
+fi
 
 mkdir -p "$BINARIES_DIR" "$SD_LIBS"
 # Replace rather than merge: a stale library from an older pin next to a new
@@ -152,8 +194,10 @@ chmod +x "$SD_BIN"
 # tool; we drive the server, and shipping a second entry point we never call
 # is weight with no purpose.
 SRC_DIR=$(dirname "$SRC")
-find "$SRC_DIR" -maxdepth 1 -type f ! -name "sd-server${EXT}" ! -name "sd-cli${EXT}" \
-    -exec cp -P {} "$SD_LIBS/" \;
+# Links too, as plain files: a build names each library by its soname
+# through symlinks, and the release zips held copies.
+find "$SRC_DIR" -maxdepth 1 \( -type f -o -type l \) ! -name "sd-server${EXT}" ! -name "sd-cli${EXT}" \
+    -exec cp -L {} "$SD_LIBS/" \;
 
 echo "$SDCPP_VERSION" > "$SD_STAMP"
 echo "   Done: $SD_BIN"

@@ -349,8 +349,8 @@ feature.
 | | |
 | --- | --- |
 | Upstream | [leejet/stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) |
-| Pinned version | `master-929-3f8527a` |
-| Acquired by | `./scripts/fetch-sdcpp.sh` (a download, not a build) |
+| Pinned version | `master-1142-908965d` |
+| Acquired by | `./scripts/fetch-sdcpp.sh` (a download; a build on Linux) |
 | Lands at | `src-tauri/binaries/haruspex-sd-server-<triple>` |
 | Its libraries | `src-tauri/binaries/sd-libs/` |
 | Reserved port | 8767 |
@@ -360,15 +360,57 @@ the pin is one of those. It is recorded in exactly two places, the
 `SDCPP_VERSION` line at the top of `scripts/fetch-sdcpp.sh` and the table
 above, and `scripts/check-constants.mjs` fails the build if they disagree.
 
-### Why it is downloaded rather than built
+### How it is locked to the app
+
+sd-server refuses a request from any web origin not named in
+`--cors-origins`, which we never pass, so a page open in the user's browser
+gets a 403 (sd.cpp #2367; earlier builds reflected any `Origin`). It also
+wants a key on every request but `GET /`, its own web page: a fresh one each
+run of the app (`image_engine::engine_key`), written to
+`<app local data>/sd-engine.key`, readable by the user only, and passed as
+`--api-key-file`. Not `--api-key`, because argv is readable by every user on
+the machine, and sd-server reads no key from the environment. Every request
+goes through Rust (`image_engine_request`, `image_engine_upscale`, the
+readiness poll), which sends the key; the webview never sees it.
+
+### What changed in `master-1131` and after
+
+- **Weights load on demand** (sd.cpp #2404). `/sdcpp/v1/capabilities`
+  answers as soon as the server listens, so "ready" no longer means loaded:
+  the first generation after a start also loads the model, and a weight file
+  that fails to load fails that generation, not the start.
+- **No `/sdcpp/v1/upscale`.** An upscale is a DGL job now:
+  `image_engine_upscale` writes the picture as RGB to
+  `<app local data>/sd-engine.upscale-input.png`, queues a fixed script on
+  `POST /sdcpp/v1/dgl/jobs`, and polls `/sdcpp/v1/jobs/{id}`. A DGL script
+  may load models only from under a `--model-dir`, and the upscalers
+  directory does not count as one, so `engine_args` passes it as both. A DGL
+  script can read any file the user can, so `image_engine_request` refuses
+  the DGL routes: the webview never sends a script.
+- **Ming needs `master-1142` or later.** From `master-1116` (#2396) to
+  `master-1141`, a split-file Ming was taken for Z-Image and failed to load
+  (sd.cpp #2438). #2441 tells the two apart by Z-Image's pad tokens.
+- `--diffusion-fa` is deprecated (in favour of
+  `--flash-attn off,diffusion=on`) but still works. It stays, because
+  `engine_options` is shared with Lemonade, whose sd-server may be older.
+
+### Why it is downloaded on macOS and Windows, and built on Linux
 
 `llama-server` and `whisper-server` are compiled from source because upstream
 did not publish binaries covering our triples when they were added. sd-server
-does: every release ships a Vulkan build for Linux x86_64 and Windows x64 and a
-Metal build for macOS arm64, each containing `sd-server` itself. Downloading a
-release asset pins the exact bytes, matches how `pdfium`, `ruff`, `uv` and
-`node` are already fetched, and saves every developer and CI run a multi-minute
-Vulkan shader compile.
+ships a Vulkan build for Windows x64 and a Metal build for macOS arm64 with
+every release, and downloading one pins the exact bytes and saves a
+multi-minute Vulkan shader compile.
+
+Linux is the exception. Since `master-1126` upstream builds its Linux binary
+on Ubuntu 26.04, and ggml then needs glibc 2.43 (`sqrtf@GLIBC_2.43`). The app
+is built in `ubuntu:25.10` (glibc 2.42), so the download would not start on
+Ubuntu 25.10, Fedora 43 or Debian 13. On Linux, `fetch-sdcpp.sh` clones the
+same tag and builds it with upstream's own release flags (shared ggml,
+`GGML_BACKEND_DL`, every CPU variant, an `$ORIGIN` RUNPATH), which gives the
+layout described below. It needs `glslc` and the Vulkan headers, the same
+toolchain llama-server's Vulkan build needs, and it refuses a build that
+produced no Vulkan backend.
 
 ### Why its libraries live in their own directory
 
