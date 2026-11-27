@@ -17,7 +17,7 @@ In lean mode only research jobs run; the rest show as paused (see the `lean-mode
 
 ## Run several jobs at once
 
-Runs start side by side while their model has room (Settings → Inference → Parallel streams, or a server's slots), and a job on another model never waits. A run still waits for another run of its job, one in its working directory, or another type that asks you things. **1×** at the top of the job list runs one at a time, for benchmarks; so does lean mode. A run's view names the others under **Also running**.
+Runs start side by side while their model has room (Settings → Inference → Parallel streams, or a server's slots), and a job on another model never waits. On a llama-toolchest server each model has its own slots; on other servers, models at one address share them. A job set up before this version picks up its model's slots when you open it and press **Probe**, then save. A run still waits for another run of its job, one in its working directory, or another type that asks you things. **1×** at the top of the job list runs one at a time, for benchmarks; so does lean mode. A run's view names the others under **Also running**.
 
 ## Find and organize jobs
 

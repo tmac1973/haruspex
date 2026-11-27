@@ -10,7 +10,8 @@
 //! Design:
 //!   - FIFO, but admission is scoped per *lane* — an opaque provider key the
 //!     frontend supplies (e.g. `"local"` for the single llama-server slot, or
-//!     `"remote:<baseUrl>"` for a remote server). Lanes are independent: a turn
+//!     `"remote:<baseUrl>"`, or `"remote:<baseUrl>#<model>"` when the server runs
+//!     each model as its own instance). Lanes are independent: a turn
 //!     in one lane never blocks a turn in another, so local chat/shell keep
 //!     running while a job streams against a remote provider.
 //!   - Each lane carries a capacity the frontend supplies on every acquire

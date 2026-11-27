@@ -58,6 +58,12 @@ export interface ReasoningOverride {
 export interface DiscoveredCaps {
 	reasoning: RemoteReasoningCaps | null;
 	sampling: RemoteSamplingCaps | null;
+	/**
+	 * The model's own slot count, when the server runs each model as its own
+	 * instance (only llama-toolchest reports it). Absent from jobs probed
+	 * before it was kept; those share their server's lane until re-probed.
+	 */
+	parallel?: number | null;
 }
 
 export interface JobModelAdvanced {
@@ -182,7 +188,11 @@ function parseDiscovered(v: unknown): DiscoveredCaps | null {
 	const raw = v as Record<string, unknown>;
 	const reasoning = parseReasoningCaps(raw.reasoning);
 	const sampling = parseSamplingCaps(raw.sampling);
-	return reasoning || sampling ? { reasoning, sampling } : null;
+	const parallel =
+		typeof raw.parallel === 'number' && Number.isInteger(raw.parallel) && raw.parallel > 0
+			? raw.parallel
+			: null;
+	return reasoning || sampling || parallel !== null ? { reasoning, sampling, parallel } : null;
 }
 
 function parseReasoningCaps(v: unknown): RemoteReasoningCaps | null {

@@ -127,6 +127,20 @@ describe('parseModelAdvanced', () => {
 	});
 });
 
+describe('parseModelAdvanced — slot count', () => {
+	it("keeps the model's slot count from a probe", () => {
+		const back = parseModelAdvanced(JSON.stringify({ discovered: { parallel: 2 } }));
+		expect(back.discovered).toEqual({ reasoning: null, sampling: null, parallel: 2 });
+	});
+
+	it('drops a slot count that is not a positive whole number', () => {
+		for (const parallel of [0, -1, 1.5, '2', null]) {
+			const back = parseModelAdvanced(JSON.stringify({ discovered: { parallel } }));
+			expect(back.discovered).toBeNull();
+		}
+	});
+});
+
 describe('serializeModelAdvanced', () => {
 	it('stores NULL for an untouched config', () => {
 		// An all-defaults job should leave the column empty rather than

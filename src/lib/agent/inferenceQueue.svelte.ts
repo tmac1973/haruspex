@@ -162,7 +162,9 @@ function nextReqId(): string {
  * remote/OpenRouter backends get a per-URL lane whose concurrency follows
  * `descriptor.allowParallel` plus the slot count the server advertises (the
  * Settings "provider supports parallel
- * inference" toggle); the local lane admits as many turns as the local
+ * inference" toggle). A server that runs each model as its own instance
+ * (`descriptor.laneModel`) gets a lane per model, so two models on one URL
+ * don't share a slot count. The local lane admits as many turns as the local
  * llama-server has streams (Settings → Inference → Parallel streams, 1 by
  * default).
  */
@@ -171,13 +173,14 @@ function laneFor(backend?: BackendOverride): { lane: string; maxParallel: number
 	if (descriptor.kind === 'local') {
 		return { lane: 'local', maxParallel: descriptor.parallelSlots ?? 1 };
 	}
-	if (!descriptor.allowParallel) {
-		return { lane: `remote:${descriptor.baseUrl}`, maxParallel: 1 };
-	}
+	const lane = descriptor.laneModel
+		? `remote:${descriptor.baseUrl}#${descriptor.laneModel}`
+		: `remote:${descriptor.baseUrl}`;
+	if (!descriptor.allowParallel) return { lane, maxParallel: 1 };
 	// A server that advertises N slots gets N. Unbounded only when the count
 	// is unknown: exceeding a known slot count doesn't buy concurrency, it just
 	// moves the queue inside the server where nothing can report it.
-	return { lane: `remote:${descriptor.baseUrl}`, maxParallel: descriptor.parallelSlots };
+	return { lane, maxParallel: descriptor.parallelSlots };
 }
 
 /**

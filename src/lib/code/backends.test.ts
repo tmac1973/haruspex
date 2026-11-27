@@ -26,7 +26,7 @@ const remote: BackendOverride = {
 	modelId: 'qwen3.8-27b',
 	contextSize: 131072,
 	visionSupported: true,
-	discovered: { reasoning: null, sampling: null }
+	discovered: { reasoning: null, sampling: null, parallel: 2 }
 };
 
 const openrouter: BackendOverride = {

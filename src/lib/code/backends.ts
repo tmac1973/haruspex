@@ -88,7 +88,13 @@ export function modelFormFromBackend(backend: BackendOverride | null): JobModelF
 		modelId: backend.modelId ?? '',
 		contextSize: backend.contextSize ?? '',
 		vision: backend.visionSupported == null ? 'auto' : backend.visionSupported ? 'yes' : 'no',
-		discovered: d ? { reasoning: d.reasoning ?? null, sampling: d.sampling ?? null } : null
+		discovered: d
+			? {
+					reasoning: d.reasoning ?? null,
+					sampling: d.sampling ?? null,
+					parallel: d.parallel ?? null
+				}
+			: null
 	};
 }
 
