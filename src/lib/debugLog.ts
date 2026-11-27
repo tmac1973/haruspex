@@ -23,7 +23,6 @@
  */
 
 import { errMessage } from '#lib/utils/error.ts';
-import { inlineSecrets } from '#lib/engine/settings.ts';
 
 const RING_CAPACITY = 5000;
 
@@ -194,6 +193,18 @@ export function loggedFallback<T>(
 let fileQueue: string[] | null = null;
 let fileTimer: ReturnType<typeof setInterval> | null = null;
 const FILE_FLUSH_MS = 1000;
+
+/**
+ * The secrets the settings hold inline, for the mirror file's redaction.
+ * Set once the settings have loaded (`hooks.client.ts`): reading them from
+ * here would load the settings store before the shared settings file is in
+ * localStorage, and it would start from defaults.
+ */
+let inlineSecrets: () => string[] = () => [];
+
+export function setInlineSecretsSource(source: () => string[]): void {
+	inlineSecrets = source;
+}
 
 /**
  * Mirror the buffer to `<app data>/logs/agent-debug.log` when the build allows

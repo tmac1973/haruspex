@@ -11,7 +11,11 @@
  * `VITE_HARUSPEX_E2E=1` (`e2e/app/build.mjs`) carries.
  */
 import type { HandleClientError } from '@sveltejs/kit/hooks';
-import { forwardConsoleToDebugLog, startDebugLogFile } from '#lib/debugLog.ts';
+import {
+	forwardConsoleToDebugLog,
+	setInlineSecretsSource,
+	startDebugLogFile
+} from '#lib/debugLog.ts';
 import { loadSavedItems } from '#lib/persist.ts';
 
 /**
@@ -35,6 +39,9 @@ export async function init(): Promise<void> {
 	// Settings shared by every build, into localStorage before any route (and
 	// the stores it imports) loads. See persist.ts.
 	await loadSavedItems();
+	// Only now: importing the settings store loads the settings.
+	const { inlineSecrets } = await import('#lib/engine/settings.ts');
+	setInlineSecretsSource(inlineSecrets);
 	if (import.meta.env.VITE_HARUSPEX_E2E === '1') {
 		const { installDriveHooks } = await import('#lib/e2e/driveHooks.ts');
 		installDriveHooks();
