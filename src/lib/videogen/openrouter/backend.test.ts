@@ -14,6 +14,7 @@ import { videoBackendForEntry } from '#lib/videogen/index.ts';
 import { VideoBackendError, type VideoBackend } from '#lib/videogen/backend.ts';
 import type { VideoModelEntry, VideoRequest } from '#lib/videogen/types.ts';
 import { NOT_CANCELLED, _resetForTests, maxClipUsd } from './backend';
+import { generationSpend, _resetForTests as resetSpend } from '#lib/generation/spend.svelte.ts';
 
 const LIST = {
 	data: [
@@ -204,8 +205,24 @@ describe('OpenRouter video backend', () => {
 			frames: 96,
 			fps: 24,
 			model: 'veo-3.1',
-			hasAudio: true
+			hasAudio: true,
+			costUsd: 1.6
 		});
+	});
+
+	it('counts what the clip cost, even when it is not kept', async () => {
+		localStorage.clear();
+		resetSpend();
+		await backend().generate(request);
+		expect(generationSpend()).toMatchObject({ usd: 1.6, pictures: 0, clips: 1 });
+		const routed = vi.mocked(invoke).getMockImplementation()!;
+		vi.mocked(invoke).mockImplementation((cmd, args, opts) =>
+			cmd === 'audio_store_bytes' ? Promise.reject(new Error('disk full')) : routed(cmd, args, opts)
+		);
+		polls = [{ id: 'job-1', status: 'completed', usage: { cost: 0.4 } }];
+		await expect(backend().generate(request)).rejects.toMatchObject({ kind: 'rejected' });
+		expect(generationSpend()).toMatchObject({ clips: 2 });
+		expect(generationSpend().usd).toBeCloseTo(2);
 	});
 
 	it('sends start and end pictures as data URLs', async () => {

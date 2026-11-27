@@ -26,10 +26,12 @@ import {
 	openRouterUrl,
 	type MakeError
 } from '#lib/openrouterCalls.ts';
+import { formatUsd } from '#lib/utils/format.ts';
 import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import { entryApiKey } from '#lib/image/entries.ts';
 import { toImageResult } from '#lib/image/result.ts';
+import { recordSpend } from '#lib/generation/spend.svelte.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
@@ -44,7 +46,6 @@ import {
 	capabilitiesOf,
 	costOf,
 	drawsPictures,
-	formatUsd,
 	mimeOf,
 	modelOptions,
 	parseImageModels,
@@ -202,13 +203,17 @@ function refuseUnsupported(req: ImageRequest): void {
 	}
 }
 
-/** `POST /v1/images`: the answer's pictures, as base64. */
+/**
+ * `POST /v1/images`: the answer's pictures, as base64, and what they cost.
+ * The cost is counted (`recordSpend`) here, where it was paid, whatever
+ * happens to the pictures after.
+ */
 async function draw(
 	apiKey: string,
 	model: OpenRouterImageModel,
 	body: Record<string, unknown>,
 	signal?: AbortSignal
-): Promise<string[]> {
+): Promise<{ pictures: string[]; cost: number | null }> {
 	const payload = await jsonOf(
 		await fetchWithin(
 			GENERATE_TIMEOUT_MS,
@@ -225,8 +230,9 @@ async function draw(
 		throw new ImageBackendError('rejected', 'OpenRouter returned no picture.');
 	}
 	const cost = costOf(payload);
+	recordSpend('picture', pictures.length, cost);
 	if (cost !== null) logDebug('image', `openrouter: ${model.id} cost ${formatUsd(cost)}`);
-	return pictures;
+	return { pictures, cost };
 }
 
 /** Each picture cut and scaled to `width` × `height`, as a PNG: what every backend returns. */
@@ -278,7 +284,7 @@ async function generateWith(
 
 	opts.onProgress?.({ phase: 'running' });
 	const started = Date.now();
-	const pictures = await draw(apiKey, model, body, opts.signal);
+	const { pictures, cost } = await draw(apiKey, model, body, opts.signal);
 	opts.onProgress?.({ phase: 'downloading' });
 	const images = await fitted(pictures, req.width, req.height);
 	const transparencyFailed = transparent ? await lostTransparency(images[0]) : undefined;
@@ -292,7 +298,8 @@ async function generateWith(
 		sampler: PROVIDER_SAMPLER,
 		started,
 		seamFailed: req.seamless ? NO_TILING : undefined,
-		transparencyFailed
+		transparencyFailed,
+		costUsd: cost
 	});
 }
 

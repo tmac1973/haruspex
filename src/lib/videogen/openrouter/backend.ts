@@ -31,7 +31,9 @@ import {
 	refusal,
 	type MakeError
 } from '#lib/openrouterCalls.ts';
-import { formatUsd, mimeOf } from '#lib/image/openrouter/adapter.ts';
+import { formatUsd } from '#lib/utils/format.ts';
+import { mimeOf } from '#lib/image/openrouter/adapter.ts';
+import { recordSpend } from '#lib/generation/spend.svelte.ts';
 import type { ProbeResult } from '#lib/image/backend.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
@@ -300,6 +302,8 @@ async function finish(
 		const why = job.error ?? `the job was ${job.status}`;
 		throw new VideoBackendError('rejected', `OpenRouter made no clip: ${why}.`);
 	}
+	// Paid for now, whether or not the download works.
+	recordSpend('clip', 1, job.cost);
 	if (job.cost !== null) logDebug('video', `openrouter: ${model} cost ${formatUsd(job.cost)}`);
 	opts.onProgress?.({ phase: 'saving' });
 	const stored = await keep(apiKey, id, req, opts);
@@ -309,7 +313,8 @@ async function finish(
 		mime: stored.mime,
 		...(await whatWasMade(stored.hash, req)),
 		seed: req.seed,
-		model
+		model,
+		...(job.cost !== null ? { costUsd: job.cost } : {})
 	};
 }
 

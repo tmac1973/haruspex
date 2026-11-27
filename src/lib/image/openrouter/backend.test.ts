@@ -26,6 +26,7 @@ import { backendForEntry } from '#lib/image/index.ts';
 import type { ImageBackend } from '#lib/image/backend.ts';
 import { ImageBackendError, type ImageModelEntry } from '#lib/image/types.ts';
 import { TRANSPARENCY_LOST, _resetForTests, inferenceOpenRouterKeyId } from './backend';
+import { generationSpend, _resetForTests as resetSpend } from '#lib/generation/spend.svelte.ts';
 
 const LIST = {
 	data: [
@@ -136,8 +137,21 @@ describe('OpenRouter image backend', () => {
 			backend: 'openrouter',
 			model: 'openai/gpt-image-2',
 			seed: 7,
-			entryId: 'test-openrouter'
+			entryId: 'test-openrouter',
+			costUsd: 0.04
 		});
+	});
+
+	it('counts what the picture cost, and one that came with no price', async () => {
+		localStorage.clear();
+		resetSpend();
+		await backend().generate(request);
+		expect(generationSpend()).toMatchObject({ usd: 0.04, pictures: 1, clips: 0, unpriced: 0 });
+		answer = (url) =>
+			url.endsWith('/v1/images') ? json({ data: [{ b64_json: DRAWN }] }) : defaultAnswer(url);
+		const result = await backend().generate(request);
+		expect(result.meta.costUsd).toBeUndefined();
+		expect(generationSpend()).toMatchObject({ usd: 0.04, pictures: 2, unpriced: 1 });
 	});
 
 	it('sends the seed to a model that takes one', async () => {

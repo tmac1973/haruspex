@@ -38,7 +38,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { VideoBackend } from '#lib/videogen/backend.ts';
-import { NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
+import { costPart, NOT_SAVED_LINE } from '#lib/agent/tools/_imageAnswer.ts';
 import { videoServedBy } from '#lib/videogen/fields.ts';
 
 /** A `video` task's spec: a clip to make, or (`op: 'upscale'`) one to make larger. */
@@ -81,6 +81,8 @@ export interface VideoTaskResult {
 	model: string;
 	/** Which backend made it; absent from a task finished before it was kept. */
 	servedBy?: string;
+	/** What it cost, from a backend that charges. */
+	costUsd?: number;
 	/** Missing in results saved before clips were probed for sound. */
 	hasAudio?: boolean;
 	notes: string[];
@@ -107,6 +109,7 @@ export function videoAnswerText(o: {
 	made: Pick<VideoResult, 'width' | 'height' | 'frames' | 'fps' | 'model' | 'seed' | 'url'> & {
 		hasAudio?: boolean;
 		servedBy?: string;
+		costUsd?: number;
 	};
 	title: string;
 	saved: string | null;
@@ -116,7 +119,7 @@ export function videoAnswerText(o: {
 	const m = o.made;
 	const sound = m.hasAudio === undefined ? '' : m.hasAudio ? ', with sound' : ', no sound';
 	const from = o.upscaledFrom;
-	const backend = m.servedBy ? `, backend: ${m.servedBy}` : '';
+	const backend = (m.servedBy ? `, backend: ${m.servedBy}` : '') + costPart(m.costUsd);
 	const lines = [
 		from
 			? `Upscaled clip ready (${from.width}×${from.height} → ${m.width}×${m.height}, ${clipSeconds(m.frames, m.fps)} s, ${m.model}${sound}${backend}).`
@@ -217,6 +220,7 @@ export async function runVideoJob(
 		seed: made.seed,
 		model: made.model,
 		servedBy: videoServedBy(entry),
+		...(made.costUsd === undefined ? {} : { costUsd: made.costUsd }),
 		hasAudio: made.hasAudio,
 		notes,
 		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null,

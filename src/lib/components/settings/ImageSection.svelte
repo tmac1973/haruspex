@@ -6,6 +6,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import ImageEntryEditor from '#lib/components/settings/ImageEntryEditor.svelte';
 	import GenerationModelList from '#lib/components/settings/GenerationModelList.svelte';
+	import GenerationSpendLine from '#lib/components/settings/GenerationSpendLine.svelte';
 	import UpscalerSection from '#lib/components/settings/UpscalerSection.svelte';
 	import { toolchestHint, inferenceToolchest } from '#lib/toolchest/detect.ts';
 	import { hostOf } from '#lib/toolchest/client.ts';
@@ -117,6 +118,7 @@
 	<div class="actions">
 		<button onclick={add}>Add model</button>
 	</div>
+	<GenerationSpendLine paid={entries.some((e) => e.backend === 'openrouter')} />
 </section>
 
 <UpscalerSection kind="image" />

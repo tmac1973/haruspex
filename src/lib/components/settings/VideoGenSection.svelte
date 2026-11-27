@@ -5,6 +5,7 @@
 	 * (`#lib/videogen/route.ts`). One row's editor is open at a time.
 	 */
 	import GenerationModelList from '#lib/components/settings/GenerationModelList.svelte';
+	import GenerationSpendLine from '#lib/components/settings/GenerationSpendLine.svelte';
 	import UpscalerSection from '#lib/components/settings/UpscalerSection.svelte';
 	import VideoEntryEditor from '#lib/components/settings/VideoEntryEditor.svelte';
 	import { toolchestHint, inferenceToolchest } from '#lib/toolchest/detect.ts';
@@ -86,6 +87,7 @@
 	<div class="actions">
 		<button onclick={add}>Add model</button>
 	</div>
+	<GenerationSpendLine paid={entries.some((e) => e.backend === 'openrouter')} />
 </section>
 
 <UpscalerSection kind="video" />

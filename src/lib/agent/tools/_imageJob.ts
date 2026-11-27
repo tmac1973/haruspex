@@ -76,6 +76,8 @@ export interface ImageTaskResult {
 	seed: number | null;
 	/** Which backend made it; absent from a task finished before it was kept. */
 	servedBy?: string;
+	/** What it cost, from a backend that charges. */
+	costUsd?: number;
 	alt: string;
 	verb: string;
 	notes: string[];
@@ -166,6 +168,7 @@ export async function runImageJob(
 			model: image.model,
 			seed: image.seed,
 			servedBy: image.servedBy,
+			...(image.costUsd === undefined ? {} : { costUsd: image.costUsd }),
 			alt: job.alt,
 			verb: job.verb,
 			notes: image.notes

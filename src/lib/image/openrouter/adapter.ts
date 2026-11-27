@@ -10,6 +10,7 @@
  */
 
 import type { ModelOption } from '#lib/image/backend.ts';
+import { formatUsd } from '#lib/utils/format.ts';
 import type { ImageBackendCapabilities } from '#lib/image/types.ts';
 
 /** One parameter a model takes, as the list describes it. */
@@ -201,14 +202,6 @@ export function picturesFrom(payload: unknown): string[] {
 export function costOf(payload: unknown): number | null {
 	const cost = (payload as { usage?: { cost?: unknown } } | null)?.usage?.cost;
 	return typeof cost === 'number' && Number.isFinite(cost) ? cost : null;
-}
-
-/** `$0.018`, `$0.13`: a price to the cent, or to two significant figures below one. */
-export function formatUsd(n: number): string {
-	if (n >= 1) return `$${n.toFixed(2)}`;
-	const rounded = Number(n.toPrecision(2));
-	const places = (String(rounded).split('.')[1] ?? '').length;
-	return `$${rounded.toFixed(Math.max(2, places))}`;
 }
 
 /**

@@ -16,6 +16,8 @@ export interface MadeImages {
 	started: number;
 	seamFailed?: string;
 	transparencyFailed?: string;
+	/** What the pictures cost together, when the backend charges and said so. */
+	costUsd?: number | null;
 	/** Read each picture's size from its PNG header, for a backend that may not draw the size asked for. */
 	sizeFromPng?: boolean;
 }
@@ -37,7 +39,8 @@ export function toImageResult(images: Uint8Array[], made: MadeImages): ImageResu
 			loras: made.loras ?? [],
 			durationMs: Date.now() - made.started,
 			...(made.seamFailed ? { seamFailed: made.seamFailed } : {}),
-			...(made.transparencyFailed ? { transparencyFailed: made.transparencyFailed } : {})
+			...(made.transparencyFailed ? { transparencyFailed: made.transparencyFailed } : {}),
+			...(typeof made.costUsd === 'number' ? { costUsd: made.costUsd } : {})
 		}
 	};
 }

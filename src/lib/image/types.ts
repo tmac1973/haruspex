@@ -129,6 +129,8 @@ export interface ImageResultMeta {
 	 * The image is still returned; the caller says so.
 	 */
 	transparencyFailed?: string;
+	/** What it cost in US dollars, from a backend that charges and said so (OpenRouter). */
+	costUsd?: number;
 	/** Backend-specific payload, for debugging only. Never parsed. */
 	raw?: unknown;
 }

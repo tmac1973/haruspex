@@ -7,6 +7,7 @@
 	import { imageSrc } from '#lib/images/url.ts';
 	import type { ImageTaskResult } from '#lib/agent/tools/_imageJob.ts';
 	import type { BackgroundTask } from '#lib/tasks/types.ts';
+	import { formatUsd } from '#lib/utils/format.ts';
 
 	let { task }: { task: BackgroundTask } = $props();
 
@@ -25,9 +26,10 @@
 	</button>
 {/if}
 <p class="detail">
-	{result.width}×{result.height}{result.servedBy ? ` · ${result.servedBy}` : ''}{result.saved
-		? ` · ${result.saved}`
-		: ''}
+	{result.width}×{result.height}{result.servedBy ? ` · ${result.servedBy}` : ''}{result.costUsd ===
+	undefined
+		? ''
+		: ` · ${formatUsd(result.costUsd)}`}{result.saved ? ` · ${result.saved}` : ''}
 </p>
 
 <style>

@@ -54,7 +54,7 @@ Prompt:
 
 Example output:
 
-The clip plays in the conversation, with sound from a model that makes it. A clip that would cost more than the limit is passed to the next video model in the list, and the answer says so.
+The clip plays in the conversation, with sound from a model that makes it, and the answer says what it cost. A clip that would cost more than the limit is passed to the next video model in the list, and the answer says so.
 
 <!-- media: Settings → Video generation with an OpenRouter model, its price after Probe and the per-clip limit -->
 
