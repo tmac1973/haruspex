@@ -177,13 +177,12 @@ describe('generate_music', () => {
 			workdir: '/home/me/music',
 			relPath: 'rain.mp3'
 		});
-		const writes = byteWrites();
-		expect(writes).toHaveLength(1);
-		expect(writes[0]).toMatchObject({
+		expect(byteWrites()).toHaveLength(0);
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_save_cached_audio', {
+			hash: HASH,
 			workdir: '/home/me/music',
 			relPath: 'rain.mp3',
-			bytes: [9, 9],
-			dryRun: false
+			overwrite: false
 		});
 		expect(state.generate.mock.calls[0][1]).toMatchObject({ conversationId: 'chat-1' });
 		expect(out.result).toContain('Wrote');
@@ -196,9 +195,13 @@ describe('generate_music', () => {
 			workingDir: '/proj'
 		});
 		const out = await executeTool('generate_music', { caption: 'x', path: 'assets/bgm.mp3' }, code);
-		const writes = byteWrites();
-		expect(writes.map((a) => a.dryRun)).toEqual([true, false]);
-		expect(writes[1].bytes).toEqual([9, 9]);
+		expect(byteWrites().map((a) => a.dryRun)).toEqual([true]);
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_save_cached_audio', {
+			hash: HASH,
+			workdir: '/proj',
+			relPath: '/proj/assets/bgm.mp3',
+			overwrite: false
+		});
 		expect(state.generate.mock.calls[0][1]).toMatchObject({ codeSessionId: 'cs-1' });
 		expect(out.result).toContain('Wrote');
 	});

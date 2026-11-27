@@ -264,6 +264,7 @@ export const IPC = {
 	fs_read_text_absolute: 'fs_read_text_absolute',
 	fs_read_text_full: 'fs_read_text_full',
 	fs_read_xlsx: 'fs_read_xlsx',
+	fs_save_cached_audio: 'fs_save_cached_audio',
 	fs_save_cached_image: 'fs_save_cached_image',
 	fs_write_bytes: 'fs_write_bytes',
 	fs_write_bytes_absolute: 'fs_write_bytes_absolute',
