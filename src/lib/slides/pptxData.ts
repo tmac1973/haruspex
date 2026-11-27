@@ -1,5 +1,6 @@
 import type PptxGenJS from 'pptxgenjs';
 import type { Box } from '#lib/slides/geometry.ts';
+import type { Sizes } from '#lib/slides/sizes.ts';
 import { fitHeight, wrappedLines } from '#lib/slides/textfit.ts';
 import type { Theme } from '#lib/slides/themes.ts';
 import type { SlideChart } from '#lib/slides/types.ts';
@@ -18,11 +19,13 @@ function palette(theme: Theme, count: number): string[] {
 	return Array.from({ length: count }, (_, i) => theme.series[i % theme.series.length]);
 }
 
-/** Draw `chart` filling `box`, in the theme's colours and fonts. */
+/** Draw `chart` filling `box`, in the theme's colours and fonts and the
+ *  deck's chart text sizes. */
 export function addChart(
 	deck: PptxGenJS,
 	out: PptxGenJS.Slide,
 	theme: Theme,
+	sizes: Sizes['chart'],
 	box: Box,
 	chart: SlideChart
 ): void {
@@ -44,16 +47,16 @@ export function addChart(
 		plotArea: { fill: { color: theme.background } },
 		showLegend: round || !single,
 		legendPos: 'b',
-		legendFontSize: 14,
+		legendFontSize: sizes.legend,
 		legendColor: theme.text,
 		legendFontFace: theme.bodyFont,
 		catAxisLabelColor: text.color,
 		catAxisLabelFontFace: text.fontFace,
-		catAxisLabelFontSize: 14,
+		catAxisLabelFontSize: sizes.category,
 		catAxisLineColor: theme.line,
 		valAxisLabelColor: text.color,
 		valAxisLabelFontFace: text.fontFace,
-		valAxisLabelFontSize: 12,
+		valAxisLabelFontSize: sizes.value,
 		// Thousands separators from 1,000 up. Below, the axis may step in
 		// fractions, which a whole-number format would round.
 		valAxisLabelFormatCode: big ? '#,##0' : 'General',
@@ -71,7 +74,7 @@ export function addChart(
 		showPercent: round,
 		dataLabelPosition: round ? 'bestFit' : 'outEnd',
 		dataLabelColor: round ? 'FFFFFF' : theme.text,
-		dataLabelFontSize: 13,
+		dataLabelFontSize: sizes.label,
 		dataLabelFontFace: theme.bodyFont
 	});
 }
