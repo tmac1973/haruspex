@@ -781,9 +781,26 @@ function videoGenOffered(opts: ToolFilterOpts): boolean {
 	return opts.videoGeneration && !!opts.taskOwner && !opts.shellMode;
 }
 
-/** A generate tool without `path` and `overwrite`, where there's no folder to write in. */
+/**
+ * A generate tool without `path` and `overwrite`, where there's no folder to
+ * write in: also the `path` of each item of an array of objects
+ * (`generate_speech`'s `lines`).
+ */
 function withoutProjectWrite(schema: ToolDefinition): ToolDefinition {
-	return withoutParams(schema, ['path', 'overwrite']);
+	const stripped = withoutParams(schema, ['path', 'overwrite']);
+	const params = stripped.function.parameters as { properties: Record<string, unknown> };
+	const properties = { ...params.properties };
+	for (const [name, prop] of Object.entries(properties)) {
+		const items = (prop as { items?: { properties?: Record<string, unknown> } }).items;
+		if (!items?.properties || !('path' in items.properties)) continue;
+		const itemProps = { ...items.properties };
+		delete itemProps.path;
+		properties[name] = { ...(prop as object), items: { ...items, properties: itemProps } };
+	}
+	return {
+		...stripped,
+		function: { ...stripped.function, parameters: { ...params, properties } }
+	};
 }
 
 /** The schema without these parameters. */

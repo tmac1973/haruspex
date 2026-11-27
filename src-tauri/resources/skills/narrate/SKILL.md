@@ -67,10 +67,13 @@ for character: about 0.9 for slow and weighty, 1.1 for quick. Stay within
 - **One piece:** one call, with a short `title`.
 - **Over 12,000 characters:** split at chapter or paragraph breaks into
   parts, titled "Part 1", "Part 2" and so on.
-- **Game lines:** one call, and one file, per line. Name each file for what
-  the code calls it (`innkeeper_greet.wav`), in the folder the code loads
-  sounds from, with `path`. Don't replace an existing file unless the user
-  asks.
+- **Game lines:** one call for the scene, with `lines`: one entry a line,
+  with its character's `voice`, its `text` and its `path`. Each line becomes
+  its own file. Name each file for what the code calls it
+  (`innkeeper_greet.wav`), in the folder the code loads sounds from. Up to
+  40 lines a call; put more in another call. Don't replace an existing file
+  unless the user asks. If some lines fail, the result says which: record
+  only those again.
 - **A voiceover for a video:** save it next to the video with `path` if
   there's a working folder. When the video is a Shotcut or Kdenlive project
   and `video_cut` is offered, put the voiceover under the picture with its
