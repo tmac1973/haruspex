@@ -111,7 +111,7 @@ describe('diversity nudge', () => {
 	it('does not fire once a picture was drawn', () => {
 		const n = new NudgeState();
 		n.markWebSearchUsed();
-		n.markPictureMade();
+		n.markSomethingMade();
 		expect(n.needsDiversityNudge(true)).toBe(false);
 	});
 });
@@ -141,7 +141,7 @@ describe('research nudge', () => {
 	// after drawing it.
 	it('does not fire once a picture was drawn', () => {
 		const n = new NudgeState();
-		n.markPictureMade();
+		n.markSomethingMade();
 		n.markImageSearchUsed();
 		expect(n.needsResearchNudge(true, false)).toBe(false);
 	});

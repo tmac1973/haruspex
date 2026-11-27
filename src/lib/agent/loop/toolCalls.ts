@@ -17,8 +17,7 @@ import {
 import { toolResult, type DeferredFamily } from '#lib/agent/tools/types.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
 import { argumentShape, isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
-import { NudgeState } from '#lib/agent/loop/nudges.ts';
-import { PICTURE_TOOLS } from '#lib/images/eligible.ts';
+import { MAKING_TOOLS, NudgeState } from '#lib/agent/loop/nudges.ts';
 import {
 	planToolBatches,
 	runToolBatch,
@@ -273,8 +272,8 @@ export async function executeToolCalls(
 		if (call.name === 'image_search') {
 			nudges.markImageSearchUsed();
 		}
-		if (PICTURE_TOOLS.has(call.name) && !isToolErrorResult(toolContent)) {
-			nudges.markPictureMade();
+		if (MAKING_TOOLS.has(call.name) && !isToolErrorResult(toolContent)) {
+			nudges.markSomethingMade();
 		}
 		if (call.name === 'web_search') {
 			nudges.markWebSearchUsed();
