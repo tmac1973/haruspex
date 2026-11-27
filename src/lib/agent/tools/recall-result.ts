@@ -63,14 +63,7 @@ registerTool({
 			);
 		}
 		const cap = pageCap(archive);
-		if (cap === null) {
-			return toolResult(
-				toolError(
-					`Not read: this round's recalls already fill the room in the context. ` +
-						`Recall "${kept.id}" in a later call, one at a time, or narrow it with pattern or limit.`
-				)
-			);
-		}
+		if (cap === null) return toolResult(toolError(noRoom(kept.id, archive)));
 		const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
 		const out = pattern
 			? matching(kept.id, kept.call, kept.text, pattern, cap)
@@ -90,6 +83,21 @@ function pageCap(archive: RecallArchive): number | null {
 	const room = Math.floor(archive.roomLeft * TOKEN_BYTES_RATIO);
 	if (room >= MIN_PAGE_CHARS) return Math.min(PAGE_CHARS, room);
 	return archive.recalledThisRound ? null : MIN_PAGE_CHARS;
+}
+
+/**
+ * Why a recall was refused, with the numbers to do better: in a live run at a
+ * 32K window the model sent six to eight recalls a round, round after round,
+ * to "one at a time" alone (#1022).
+ */
+function noRoom(id: string, archive: RecallArchive): string {
+	const left = Math.round(archive.roomLeft);
+	return (
+		`Not read: this step's recalls used the room the context has` +
+		(left > 0 ? ` (about ${left} tokens left)` : '') +
+		`. A whole page is about ${Math.round(PAGE_CHARS / TOKEN_BYTES_RATIO)} tokens. ` +
+		`Recall "${id}" in a later step, by itself, or with pattern or a small limit.`
+	);
 }
 
 /** A positive whole number from a model's argument, or `fallback`. */

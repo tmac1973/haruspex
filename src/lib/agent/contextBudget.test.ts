@@ -623,6 +623,64 @@ describe('parseContextOverflow', () => {
 	});
 });
 
+describe('trimOldToolMessages, what it leaves alone', () => {
+	const round = (calls: { id: string; name: string; args?: string }[]): ChatMessage => ({
+		role: 'assistant',
+		content: '',
+		tool_calls: calls.map((c) => ({
+			id: c.id,
+			type: 'function' as const,
+			function: { name: c.name, arguments: c.args ?? '{}' }
+		}))
+	});
+
+	it('stubs other results before ones the model recalled, and never a tiny one', () => {
+		const answer = 'deploy.log:612: [0611] release token: TOKEN-4be2';
+		const msgs: ChatMessage[] = [
+			sys('s'),
+			user('go'),
+			round([
+				{ id: 'k1', name: 'recall_result', args: '{"id":"r8"}' },
+				{ id: 'k2', name: 'recall_result', args: '{"id":"r6"}' }
+			]),
+			tool(answer, 'k1'),
+			tool('R'.repeat(6_000), 'k2'),
+			round([
+				{ id: 'f1', name: 'fs_read_text', args: '{"path":"a.py"}' },
+				{ id: 'f2', name: 'fs_read_text', args: '{"path":"b.py"}' },
+				{ id: 'f3', name: 'fs_read_text', args: '{"path":"c.py"}' },
+				{ id: 'f4', name: 'fs_read_text', args: '{"path":"d.py"}' }
+			]),
+			tool('F'.repeat(4_000), 'f1'),
+			tool('F'.repeat(4_000), 'f2'),
+			tool('F'.repeat(4_000), 'f3'),
+			tool('F'.repeat(4_000), 'f4')
+		];
+		// Room to keep the recalls once the older read is stubbed.
+		const budget = estimateMessagesTokens(msgs) - 1_000;
+		expect(trimOldToolMessages(msgs, { budget })).toBe(true);
+		expect((msgs[6].content as string).startsWith('[Trimmed')).toBe(true);
+		expect(msgs[4].content).toBe('R'.repeat(6_000));
+		// Even with no budget left to reach, the one-line answer stays.
+		trimOldToolMessages(msgs, { budget: 0 });
+		expect(msgs[3].content).toBe(answer);
+	});
+
+	it('does not stub a stub again', () => {
+		const archive = new RecallArchive();
+		const msgs: ChatMessage[] = [
+			sys('s'),
+			user('go'),
+			round(['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: 'fs_read_text' }))),
+			...['a', 'b', 'c', 'd', 'e'].map((id) => tool(id.repeat(8_000), id))
+		];
+		trimOldToolMessages(msgs, { budget: 0, archive });
+		const first = msgs.map((m) => m.content);
+		expect(trimOldToolMessages(msgs, { budget: 0, archive })).toBe(false);
+		expect(msgs.map((m) => m.content)).toEqual(first);
+	});
+});
+
 describe('fitMessagesToBudget and the system prompt', () => {
 	it('shortens a long user message before touching the system prompt', () => {
 		const prompt = 'Instructions. '.repeat(400);
