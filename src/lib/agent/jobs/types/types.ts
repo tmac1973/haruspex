@@ -20,6 +20,7 @@ import type { ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 import type { NewCard } from '#lib/notebooks/api.ts';
+import type { NotebookUpdate } from '#lib/agent/jobs/notebookOutput.ts';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
@@ -227,6 +228,12 @@ export interface JobTypeDefinition {
 	 * type offers no Save to notebook.
 	 */
 	notebookCards?: (result: unknown) => NewCard[];
+	/**
+	 * The changes that bring a notebook a job keeps up to date in line with a
+	 * run's result; given no cards, the cards to start it with. Absent = the
+	 * type offers only a new notebook each run.
+	 */
+	notebookUpdate?: NotebookUpdate;
 	/**
 	 * Platform gate. When it resolves false the type is hidden from the
 	 * picker (types/availability caches the answer for sync UI reads) and

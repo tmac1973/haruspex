@@ -101,12 +101,13 @@
 		Save findings to a notebook
 		<Tooltip
 			label="About saving findings to a notebook"
-			text="After each successful run, make a notebook named after the job and the time, with a summary, a Findings table to triage and a table of what wasn't verified. Off still leaves Save to notebook on the run."
+			text="A summary, a Findings table with a Triage column, and a table of what wasn't verified. A new notebook each run is named after the job and the time. One notebook is made by the first run and updated by later ones: Triage is kept, new findings are added, and open ones a run didn't find are marked Not found. Off still leaves Save to notebook on the run."
 		/>
 	</span>
 	<select bind:value={cfg.notebook_output} aria-label="Save findings to a notebook">
 		<option value="off">Off</option>
 		<option value="new">A new notebook each run</option>
+		<option value="one">One notebook, kept up to date</option>
 	</select>
 </div>
 
