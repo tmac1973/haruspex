@@ -54,3 +54,29 @@ export function callFor(messages: ChatMessage[], toolIdx: number): ToolCall | un
 	}
 	return undefined;
 }
+
+/**
+ * Name the call a tool result answered, for its stub.
+ *
+ * A stub that says only "4000 chars dropped" tells the model nothing it can
+ * act on. Naming the call — `fs_read_text(crates/core/src/lib.rs)` — turns
+ * "call the tool again if needed" into an instruction with an argument, and
+ * distinguishes a result that was evicted from a file that does not exist.
+ * That distinction is the whole problem this stub caused: a run that lost its
+ * reads to trimming reported the code as missing from disk.
+ */
+export function describeToolCall(messages: ChatMessage[], toolIdx: number): string {
+	const call = callFor(messages, toolIdx);
+	if (!call) return '';
+	let arg = '';
+	try {
+		const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+		const key = ['path', 'relPath', 'pattern', 'query', 'command', 'url', 'id'].find(
+			(k) => typeof args[k] === 'string'
+		);
+		if (key) arg = String(args[key]).slice(0, 120);
+	} catch {
+		// Unparseable arguments: the name alone is still worth having.
+	}
+	return arg ? `${call.function.name}(${arg})` : call.function.name;
+}
