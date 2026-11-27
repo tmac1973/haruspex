@@ -72,6 +72,17 @@ export function inLoopTrimBudget(contextSize: number, promptTokens: number): num
 	if (promptTokens / contextSize < IN_LOOP_TRIM_THRESHOLD) return null;
 	return Math.floor(contextSize * IN_LOOP_TRIM_TARGET);
 }
+/**
+ * The most one tool round's `recall_result` calls may hand back, in estimated
+ * tokens: the gap between the trim's target and its threshold. A trim leaves
+ * the prompt near the target, so recalls up to this much don't trigger the
+ * next one. No cap when the window size is unknown.
+ */
+export function recallRoundBudget(contextSize: number): number {
+	if (contextSize <= 0) return Infinity;
+	return Math.floor(contextSize * (IN_LOOP_TRIM_THRESHOLD - IN_LOOP_TRIM_TARGET));
+}
+
 // Last-resort per-call output cap, used only if the settings store can't be
 // read. The operative values come from Settings → Inference → Model defaults,
 // resolved per turn by `resolveMaxResponseTokens` below.
@@ -345,7 +356,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		samplingParams: options.samplingParams ?? null,
 		maxResponseTokens,
 		responseRoom: { limit: maxResponseTokens, fullReserve: false },
-		recallArchive: archiveFor(tools),
+		recallArchive: archiveFor(tools, recallRoundBudget(options.contextSize ?? 0)),
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
 		codeSessionId: options.codeSessionId,

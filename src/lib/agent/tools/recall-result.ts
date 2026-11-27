@@ -8,6 +8,7 @@
  * fill the window the trim just freed.
  */
 
+import { estimateTokens } from '#lib/agent/contextBudget.ts';
 import { RECALL_TOOL } from '#lib/agent/recallArchive.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
@@ -54,9 +55,19 @@ registerTool({
 			);
 		}
 		const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
-		if (pattern) return toolResult(matching(kept.id, kept.call, kept.text, pattern));
 		const offset = Math.max(0, Math.floor(Number(args.offset) || 0));
-		return toolResult(page(kept.id, kept.call, kept.text, offset));
+		const out = pattern
+			? matching(kept.id, kept.call, kept.text, pattern)
+			: page(kept.id, kept.call, kept.text, offset);
+		if (!archive.take(estimateTokens(out))) {
+			return toolResult(
+				toolError(
+					`Not read: this round's recalls already fill the room in the context. ` +
+						`Recall "${kept.id}" in a later call, one or two at a time, or narrow it with pattern.`
+				)
+			);
+		}
+		return toolResult(out);
 	}
 });
 

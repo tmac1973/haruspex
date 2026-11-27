@@ -36,6 +36,19 @@ describe('recall_result', () => {
 		expect(offered({ hasWorkingDir: true, toolAllowlist: ['fetch_url', NAME] })).toBe(true);
 	});
 
+	it('refuses a recall that would overfill the round, then allows it next round', async () => {
+		// Two 16K-char pages are about 9K estimated tokens; the cap holds one.
+		const archive = new RecallArchive(6_000);
+		archive.keep('c1', 'fs_read_text(a.py)', 'a'.repeat(16_000));
+		archive.keep('c2', 'fs_read_text(b.py)', 'b'.repeat(16_000));
+		archive.startRound();
+		expect((await recall({ id: 'r1' }, archive)).result).toContain('aaaa');
+		const refused = (await recall({ id: 'r2' }, archive)).result;
+		expect(refused).toMatch(/"error":"Not read: .*Recall \\"r2\\" in a later call/);
+		archive.startRound();
+		expect((await recall({ id: 'r2' }, archive)).result).toContain('bbbb');
+	});
+
 	it('returns the exact text, a page at a time', async () => {
 		const text = 'a'.repeat(16_000) + 'TAIL';
 		const first = (await recall({ id: 'r1' }, archiveWith(text))).result;
