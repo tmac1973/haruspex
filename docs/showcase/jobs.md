@@ -44,6 +44,30 @@ The report sorts the findings into confirmed, refuted and uncertain:
 
 Read more: job-types, jobs
 
+## Triage an audit's findings in a notebook
+
+When an audit finishes, **📓 Save to notebook** at the top of the run puts its findings in a notebook as a table, with a Triage column to mark each one as you work through it.
+
+Tab: Jobs
+Required settings: None (a working directory)
+
+Prompt:
+
+> Find error paths that drop an error without logging it or telling the user.
+
+Example output:
+
+A **Findings** table, most severe first:
+
+| Finding | Location | Severity | Runs | Triage |
+|---|---|---|---|---|
+| Upload failure is swallowed | `src/upload.ts:88` | high | 4 | Open |
+| Retry loop hides the last error | `src/sync.ts:140-152` | medium | 2 | Open |
+
+A summary card and a **Not verified** table sit beside it.
+
+Read more: job-types, notebooks
+
 ## Turn an idea into a project plan
 
 Guided planning interviews you one question at a time, reads your codebase, and writes an `overview.md` and phase files in dependency order. It never writes code.

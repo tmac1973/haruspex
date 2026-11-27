@@ -3,11 +3,12 @@
 	import { jobReport } from '#lib/reportLogs.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import { jobSourceAttr } from '#lib/notebooks/source.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '#lib/utils/format.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '#lib/stores/jobRuns.svelte.ts';
-	import { getJob, getJobs, type JobWithSteps } from '#lib/stores/jobs.svelte.ts';
+	import { getJob, getJobs, type JobType, type JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 	import JobRunStats from '#lib/components/jobs/JobRunStats.svelte';
 	import {
 		getActiveRunForJob,
@@ -37,6 +38,20 @@
 
 	/** The full job, for its config: the summary list does not carry it. */
 	let fullJob = $state<JobWithSteps | null>(null);
+
+	/** A finished run's results as notebook cards (see `notebookCards` on its type). */
+	function saveToNotebook(e: MouseEvent, run: { id: number; jobType: JobType }) {
+		const btn = e.currentTarget as HTMLElement;
+		const r = btn.getBoundingClientRect();
+		void import('#lib/notebooks/capture.ts').then((m) =>
+			m.captureRunResult(run, { x: r.left, y: r.bottom }, btn)
+		);
+	}
+	/** Whether Save to notebook is offered: notebooks are on and the type makes cards. */
+	function offersNotebook(jobType: JobType | undefined): boolean {
+		const s = getLiveSettings();
+		return s.notebooksTab && !s.leanMode && !!jobType && !!getJobType(jobType)?.notebookCards;
+	}
 
 	const resumable = $derived(
 		!!run &&
@@ -179,6 +194,17 @@
 					onclick={() => onresume(jobId, 'manual')}
 				>
 					Resume
+				</button>
+			{/if}
+			{#if run && fullJob && run.status === 'succeeded' && run.result_json && offersNotebook(fullJob.job_type)}
+				{@const saveRun = { id: run.id, jobType: fullJob.job_type }}
+				<button
+					type="button"
+					class="secondary"
+					title="Save this run's results as notebook cards"
+					onclick={(e) => saveToNotebook(e, saveRun)}
+				>
+					📓 Save to notebook
 				</button>
 			{/if}
 			<button type="button" class="secondary" onclick={onclose}>Close</button>

@@ -24,6 +24,7 @@ import {
 } from '#lib/agent/jobs/types/audit/auditPipeline.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import { parseAuditConfig, type AuditConfig } from '#lib/agent/jobs/types/audit/config.ts';
+import { auditRunResult } from '#lib/agent/jobs/types/audit/notebookCards.ts';
 import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
@@ -130,6 +131,13 @@ export async function runAuditPipeline(ctx: JobRunContext): Promise<void> {
 			}
 		}
 
+		// The findings, for Save to notebook (see notebookCards.ts). The report
+		// is the run's output; losing this only loses that button's cards.
+		try {
+			await ctx.setResult(auditRunResult(result.clusters, numRuns));
+		} catch (e) {
+			console.warn('Could not store the audit findings:', errMessage(e));
+		}
 		const finishedAt = Date.now();
 		const output = result.report + note;
 		ctx.patchStep(synthesisIndex, { status: 'succeeded', output, finishedAt });

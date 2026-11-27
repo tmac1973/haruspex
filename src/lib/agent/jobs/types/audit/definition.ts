@@ -5,6 +5,7 @@ import {
 	DEFAULT_SAMPLE_INSTRUCTIONS,
 	DEFAULT_VERIFY_INSTRUCTIONS
 } from '#lib/agent/jobs/types/audit/auditPipeline.ts';
+import { auditNotebookCards } from '#lib/agent/jobs/types/audit/notebookCards.ts';
 import Editor from '#lib/agent/jobs/types/audit/Editor.svelte';
 
 /**
@@ -92,6 +93,7 @@ export const auditJobType: JobTypeDefinition = {
 			.slice(0, 1)
 			.map((s) => ({ prompt: s.prompt.trim(), deep_research: false }))
 			.filter((s) => s.prompt.length > 0),
+	notebookCards: auditNotebookCards,
 	planSteps: planAuditSteps,
 	runPipeline: runAuditPipeline
 };

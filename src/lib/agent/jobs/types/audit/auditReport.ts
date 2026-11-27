@@ -37,7 +37,7 @@ export interface AuditReportInput {
 const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1, trivial: 0 };
 
 /** `file:12-40`, `file:12`, or just `file` for file-level findings. */
-function formatLocation(c: FindingCluster): string {
+export function formatLocation(c: FindingCluster): string {
 	if (c.lineStart === null) return c.file;
 	if (c.lineEnd === null || c.lineEnd === c.lineStart) return `${c.file}:${c.lineStart}`;
 	return `${c.file}:${c.lineStart}-${c.lineEnd}`;
@@ -131,7 +131,7 @@ export function buildAuditReport(input: AuditReportInput): string {
 }
 
 /** The richest detail across a cluster's members (most words wins). */
-function bestDetail(c: FindingCluster): string | null {
+export function bestDetail(c: FindingCluster): string | null {
 	let best: string | null = null;
 	for (const m of c.members) {
 		const d = m.detail?.trim();

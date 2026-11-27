@@ -19,6 +19,7 @@ import type { RunStatus, RunStepState, RunTrigger } from '#lib/agent/jobs/runner
 import type { ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
+import type { NewCard } from '#lib/notebooks/api.ts';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
@@ -219,6 +220,13 @@ export interface JobTypeDefinition {
 	background?: boolean;
 	/** What one item of the run's `{ items }` result holds (see `cardResult.ts`). */
 	resultSchema?: ResultSchema;
+	/**
+	 * A finished run's result (what it gave `ctx.setResult`) as notebook
+	 * cards, for the run view's Save to notebook. Built from the result, not
+	 * by a model; an empty list when there is nothing to save. Absent = the
+	 * type offers no Save to notebook.
+	 */
+	notebookCards?: (result: unknown) => NewCard[];
 	/**
 	 * Platform gate. When it resolves false the type is hidden from the
 	 * picker (types/availability caches the answer for sync UI reads) and

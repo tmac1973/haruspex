@@ -15,7 +15,7 @@ Pick a job's type in the job editor's **Job type** (see the `jobs` page for runn
 
 **Research.** A list of steps run in order, each a fresh conversation given the last step's output, with optional **Deep research**. Python runs without asking, in the run's own sandbox.
 
-**Audit.** Runs one prompt many times independently (1–20), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: runs, max turns per run, **Read-only runs**, your own instructions, an output file.
+**Audit.** Runs one prompt many times independently (1–20), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: runs, max turns per run, **Read-only runs**, your own instructions, an output file. When a run finishes, **📓 Save to notebook** at the top of it adds a summary, a **Findings** table with a **Triage** column (Open, Fixing, Fixed, Won't fix) and a table of what wasn't verified to a notebook you pick.
 
 **Guided planning.** Turns a rough idea into an `overview.md` and phase files (`phase-NN-*.md`) in dependency order. It never writes code.
 

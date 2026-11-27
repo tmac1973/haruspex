@@ -47,7 +47,8 @@ function harness(j: JobWithSteps, answer: (turn: Turn, n: number) => void | Prom
 		live: 0,
 		steps: {} as Record<number, Record<string, unknown>>,
 		finished: null as { status: string; error: string | null } | null,
-		settled: 0
+		settled: 0,
+		result: undefined as unknown
 	};
 	let n = 0;
 	const abort = new AbortController();
@@ -68,7 +69,10 @@ function harness(j: JobWithSteps, answer: (turn: Turn, n: number) => void | Prom
 		contextSize: () => 8192,
 		visionSupported: () => false,
 		finalizeRun: (status: string, error: string | null) => (h.finished = { status, error }),
-		onSettled: () => h.settled++
+		onSettled: () => h.settled++,
+		setResult: async (value: unknown) => {
+			h.result = value;
+		}
 	} as unknown as JobRunContext;
 	return { h, ctx, abort };
 }
@@ -129,6 +133,18 @@ describe('runAuditPipeline', () => {
 		expect(h.steps[2].output).toContain('Report written to AUDIT.md');
 		expect(written).toHaveLength(1);
 		expect(written[0]).toMatchObject({ workdir: '/w', relPath: 'AUDIT.md', overwrite: true });
+		expect(h.result).toEqual({
+			numRuns: 2,
+			findings: [
+				expect.objectContaining({
+					title: 'Duplicated parser',
+					location: 'src/a.ts:3',
+					consensus: 2,
+					verdict: 'confirmed',
+					evidence: 'seen'
+				})
+			]
+		});
 		expect(h.settled).toBe(1);
 	});
 
