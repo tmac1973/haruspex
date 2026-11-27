@@ -32,6 +32,7 @@ import {
 import { resolveMusicBackend, MusicBackendError, type MusicRequest } from '#lib/music/index.ts';
 import type { MusicProgress, MusicResult } from '#lib/music/types.ts';
 import { describeMusicProgress } from '#lib/music/progress.ts';
+import { configuredMusicServedBy } from '#lib/music/backend.ts';
 import { resolveSong } from '#lib/agent/tools/_musicSource.ts';
 import { canRunInBackground } from '#lib/agent/tools/_imageJob.ts';
 import {
@@ -173,6 +174,7 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 		ctx.onProgress?.(describeMusicProgress(latest, Math.round((Date.now() - started) / 1000)));
 	const tick = setInterval(show, 1000);
 	let made: MusicResult;
+	const servedBy = configuredMusicServedBy();
 	try {
 		show();
 		made = await resolveMusicBackend().generate(
@@ -203,7 +205,12 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 		saved = savedLineOf(target.path, failed);
 	}
 	return {
-		result: musicAnswerText({ made, title, saved, notes: [...args.notes, ...checked.notes] }),
+		result: musicAnswerText({
+			made: { ...made, servedBy },
+			title,
+			saved,
+			notes: [...args.notes, ...checked.notes]
+		}),
 		artifacts: [{ kind: 'audio', mime: made.mime, src: made.url, title }]
 	};
 }

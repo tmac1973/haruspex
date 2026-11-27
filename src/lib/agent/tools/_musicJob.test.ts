@@ -145,6 +145,7 @@ describe('runMusicJob', () => {
 			bpm: 82,
 			key: 'D minor',
 			notes: ['Length set to 240 s (5–240).'],
+			servedBy: 'llama-toolchest',
 			saved: null
 		});
 		expect(songUrl(out)).toContain(HASH);
@@ -158,7 +159,8 @@ describe('runMusicJob', () => {
 			model: 'xl',
 			stage: 'synth'
 		};
-		await runMusicJob(spec(), {}, handle);
+		const out = await runMusicJob(spec(), {}, handle);
+		expect(out.servedBy).toBe('ace-server at box:8083');
 		expect(state.resume).toHaveBeenCalledWith(handle, request, expect.anything());
 		expect(state.generate).not.toHaveBeenCalled();
 		await expect(

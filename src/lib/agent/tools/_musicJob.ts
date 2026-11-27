@@ -18,6 +18,7 @@ import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 import { saveFromCache } from '#lib/agent/tools/_cacheSave.ts';
 import { detachedTarget } from '#lib/agent/tools/_helpers.ts';
 import { resolveMusicBackend } from '#lib/music/index.ts';
+import { configuredMusicServedBy, musicServedBy } from '#lib/music/backend.ts';
 import { getMusicBackend } from '#lib/music/registry.ts';
 import { mimeFor } from '#lib/music/toolchest/adapter.ts';
 import type {
@@ -55,6 +56,8 @@ export interface MusicTaskResult {
 	durationSec: number;
 	seed: number;
 	model: string;
+	/** Which backend made it; absent from a task finished before it was kept. */
+	servedBy?: string;
 	bpm?: number;
 	key?: string;
 	notes: string[];
@@ -97,13 +100,17 @@ export async function measuredSong(
 	};
 }
 
-/** What a song's answer says about it: its length, tempo, key and seed. */
-function summary(made: Pick<MusicResult, 'durationSec' | 'bpm' | 'key' | 'seed'>, title: string) {
+/** What a song's answer says about it. */
+type SongFacts = Pick<MusicResult, 'durationSec' | 'bpm' | 'key' | 'seed'> & { servedBy?: string };
+
+/** What a song's answer says about it: its length, tempo, key, seed and backend. */
+function summary(made: SongFacts, title: string) {
 	const facts = [
 		`${Math.round(made.durationSec)} s`,
 		made.bpm ? `${made.bpm} bpm` : '',
 		made.key ?? '',
-		`seed ${made.seed}`
+		`seed ${made.seed}`,
+		made.servedBy ? `backend: ${made.servedBy}` : ''
 	].filter(Boolean);
 	return `Made "${title}" (${facts.join(', ')}).`;
 }
@@ -114,7 +121,7 @@ function summary(made: Pick<MusicResult, 'durationSec' | 'bpm' | 'key' | 'seed'>
  * saving went, and what was changed on the way.
  */
 export function musicAnswerText(o: {
-	made: Pick<MusicResult, 'durationSec' | 'bpm' | 'key' | 'seed' | 'url'>;
+	made: SongFacts & Pick<MusicResult, 'url'>;
 	title: string;
 	saved: string | null;
 	notes: string[];
@@ -170,6 +177,9 @@ export async function runMusicJob(
 		codeSessionId: spec.codeSessionId ?? undefined
 	};
 	let made: MusicResult;
+	const servedBy = handle
+		? musicServedBy(handle.backend, handle.baseUrl)
+		: configuredMusicServedBy();
 	if (handle) {
 		const backend = getMusicBackend(handle.backend);
 		if (!backend?.resume) throw new Error(`${handle.backend} can't pick a song up again.`);
@@ -186,6 +196,7 @@ export async function runMusicJob(
 		durationSec: made.durationSec,
 		seed: made.seed,
 		model: made.model,
+		...(servedBy ? { servedBy } : {}),
 		...(made.bpm ? { bpm: made.bpm } : {}),
 		...(made.key ? { key: made.key } : {}),
 		notes: [...spec.notes, ...checked.notes],
