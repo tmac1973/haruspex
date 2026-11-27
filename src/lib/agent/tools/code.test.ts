@@ -635,6 +635,20 @@ describe('run_command background / watch', () => {
 		);
 	});
 
+	it('watch:true hands the watch the kill count from before the command started', async () => {
+		mockBackgroundPty();
+		const route = vi.mocked(invoke).getMockImplementation()!;
+		vi.mocked(invoke).mockImplementation((cmd, args) =>
+			cmd === 'shell_memory_status'
+				? Promise.resolve({ limitMb: 8192, oomKills: 4 } as never)
+				: route(cmd, args)
+		);
+		await executeTool('run_command', { command: 'pytest -q', watch: true }, ptyCtx);
+		expect(mocks.registerWatch).toHaveBeenCalledWith(
+			expect.objectContaining({ oomKillsAtStart: 4 })
+		);
+	});
+
 	it('reports a line the shell rejected instead of waiting out the timeout', async () => {
 		// Fish refusing bash syntax: the prompt is redrawn (new markers) but
 		// nothing starts and nothing finishes.

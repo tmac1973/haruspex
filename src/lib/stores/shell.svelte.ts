@@ -70,6 +70,7 @@ import {
 	clearWatchesForSession,
 	buildWatchNotification
 } from '#lib/shell/backgroundWatch.ts';
+import { forgetUnwatchedForSession } from '#lib/shell/backgroundMemory.ts';
 import { registerShellCommandOpener } from '#lib/code/shellBridge.ts';
 import { hostCwd } from '#lib/agent/tools/_helpers.ts';
 import { openCodeAt } from '#lib/code/bridge.ts';
@@ -1129,6 +1130,7 @@ export function closeShellSession(id: string): void {
 	const ptyId = session.boundSessionId;
 	if (ptyId != null) {
 		clearWatchesForSession(ptyId);
+		forgetUnwatchedForSession(ptyId);
 		void invoke('shell_kill', { sessionId: ptyId }).catch(() => {});
 	}
 	dropSession(idx, id);
@@ -1146,7 +1148,10 @@ export function detachShellSession(id: string): void {
 	// slot and can't follow the session to the new window.
 	sessions[idx].cancelTurn();
 	const ptyId = sessions[idx].boundSessionId;
-	if (ptyId != null) clearWatchesForSession(ptyId);
+	if (ptyId != null) {
+		clearWatchesForSession(ptyId);
+		forgetUnwatchedForSession(ptyId);
+	}
 	dropSession(idx, id);
 }
 
