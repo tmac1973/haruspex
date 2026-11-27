@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { entryConfigKey, servedByOf, uniqueName, type GenerationEntry } from './entry';
+import {
+	enabledEntries,
+	entryConfigKey,
+	servedByOf,
+	uniqueName,
+	withEnabled,
+	type GenerationEntry
+} from './entry';
 
 const entry = (
 	over: Partial<GenerationEntry<string, null>> = {}
@@ -51,5 +58,13 @@ describe('servedByOf', () => {
 	it('names the backend alone when there is no address, or the host already says it', () => {
 		expect(servedByOf('Bundled engine', '')).toBe('Bundled engine');
 		expect(servedByOf('OpenRouter', 'https://openrouter.ai/api/v1')).toBe('OpenRouter');
+	});
+});
+
+describe('enabledEntries', () => {
+	it('drops the entries turned off, keeping the order', () => {
+		const list = [entry({ id: 'a' }), withEnabled(entry({ id: 'b' }), false), entry({ id: 'c' })];
+		expect(enabledEntries(list).map((e) => e.id)).toEqual(['a', 'c']);
+		expect(withEnabled(list[1], true)).toEqual(entry({ id: 'b' }));
 	});
 });

@@ -12,17 +12,19 @@
 	import {
 		IMAGE_BACKEND_LABEL,
 		addImageModel,
+		allImageEntries,
 		imageEntries,
 		moveImageModel,
-		removeImageModel
+		removeImageModel,
+		setImageModelEnabled
 	} from '#lib/image/entries.ts';
 	import { capabilityLine } from '#lib/image/capabilityLine.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
 	import type { ImageModelEntry } from '#lib/image/types.ts';
 
 	/** The list as saved, read again after every change made here or in the editor. */
-	let entries = $state<ImageModelEntry[]>(imageEntries());
-	const refresh = () => (entries = imageEntries());
+	let entries = $state<ImageModelEntry[]>(allImageEntries());
+	const refresh = () => (entries = allImageEntries());
 	let openId = $state<string | null>(null);
 
 	/** "llama-toolchest on host has image models", while there are none here. */
@@ -53,11 +55,25 @@
 		invalidateTypeAvailability();
 	}
 
-	function remove(e: ImageModelEntry) {
-		// The engine holds ~7 GB of VRAM; let it go when nothing else uses it.
-		if (e.backend === 'local' && !entries.some((o) => o.id !== e.id && o.backend === 'local')) {
+	/** The engine holds ~7 GB of VRAM; let it go when no other model that is on uses it. */
+	function releaseEngine(e: ImageModelEntry) {
+		if (
+			e.backend === 'local' &&
+			!imageEntries().some((o) => o.id !== e.id && o.backend === 'local')
+		) {
 			void invoke('image_engine_stop').catch(() => {});
 		}
+	}
+
+	function enable(e: ImageModelEntry, on: boolean) {
+		if (!on) releaseEngine(e);
+		setImageModelEnabled(e.id, on);
+		refresh();
+		invalidateTypeAvailability();
+	}
+
+	function remove(e: ImageModelEntry) {
+		releaseEngine(e);
 		removeImageModel(e.id);
 		refresh();
 		if (openId === e.id) openId = null;
@@ -89,6 +105,7 @@
 			return { text: line.text, title: line.howTo };
 		}}
 		onMove={(id, delta) => (moveImageModel(id, delta), refresh())}
+		onEnable={enable}
 		onRemove={remove}
 		bind:openId
 	>

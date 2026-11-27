@@ -45,11 +45,11 @@ When no model in the list can edit, the assistant says so and what can. Lemonade
 
 Ask the assistant to upscale a picture, two or four times: "make it four times bigger". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
-This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** on the **Upscaler** in a bundled-engine model (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance, then add it in Settings → Image generation → Upscalers; that list is tried first, in order.
+This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** on the **Upscaler** in a bundled-engine model (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance, then add it in Settings → Image generation → Upscalers; that list is tried first, in order, skipping any with its box cleared.
 
 ## Draw, edit or upscale in the background
 
-Ask for a picture "in the background" (or several, "four variations in the background") and the assistant starts it and finishes its answer, so you can keep chatting. Each one gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation.
+Ask for a picture "in the background" (or several) and the assistant starts it and finishes its answer. Each one gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation.
 
 If Haruspex closes first, anything on ComfyUI or llama-toolchest is picked up again when it reopens, as long as the server still has it. Anything on the bundled engine or Lemonade, and an edit on a llama-toolchest from before October 31, 2026, is reported as failed instead. The bundled engine and Lemonade draw one picture at a time.
 

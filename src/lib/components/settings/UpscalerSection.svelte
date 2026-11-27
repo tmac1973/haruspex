@@ -14,7 +14,8 @@
 		addUpscaler,
 		moveUpscaler,
 		removeUpscaler,
-		upscalerEntries
+		allUpscalerEntries,
+		setUpscalerEnabled
 	} from '#lib/upscale/entries.ts';
 	import { upscalerCapsLine } from '#lib/upscale/toolchest.ts';
 	import type { UpscalerEntry, UpscalerKind } from '#lib/upscale/types.ts';
@@ -26,8 +27,8 @@
 	let { kind }: Props = $props();
 
 	// svelte-ignore state_referenced_locally
-	let entries = $state<UpscalerEntry[]>(upscalerEntries(kind));
-	const refresh = () => (entries = upscalerEntries(kind));
+	let entries = $state<UpscalerEntry[]>(allUpscalerEntries(kind));
+	const refresh = () => (entries = allUpscalerEntries(kind));
 	let openId = $state<string | null>(null);
 
 	const HELP: Record<UpscalerKind, { line: string; title: string }> = {
@@ -77,6 +78,7 @@
 		{place}
 		capsLine={(e) => (e.caps ? { text: upscalerCapsLine(e.caps) } : null)}
 		onMove={(id, delta) => (moveUpscaler(kind, id, delta), refresh())}
+		onEnable={(e, on) => (setUpscalerEnabled(kind, e.id, on), refresh())}
 		onRemove={remove}
 		bind:openId
 	>

@@ -19,7 +19,7 @@ In Settings → Image generation, press **Add model**, then choose its **Backend
 - **llama-toolchest** — a llama-toolchest server you run with generation on.
 - **OpenRouter** — paid image models on [OpenRouter](https://openrouter.ai).
 
-The image tools use the first model in the list that can do the job, such as an editing one for an edit. Use ↑ and ↓ to change the order. A model that doesn't answer or won't fit in VRAM is skipped. To use a certain one, name it ("draw it with klein"). **Generate a test image** checks a model works.
+The image tools use the first model in the list that can do the job. Use ↑ and ↓ to change the order, and clear a model's box to stop using it without removing it. A model that doesn't answer or won't fit in VRAM is skipped. To use a certain one, name it ("draw it with klein"). **Generate a test image** checks a model works.
 
 Every model's **API key** is a named key from Settings → Inference → API Keys. A server you probe is kept under **Saved servers**.
 
@@ -35,7 +35,7 @@ The first picture after ComfyUI starts waits for the model to load.
 
 ### Set up Lemonade
 
-Enter the **Server address** (`http://127.0.0.1:13305`), pick an **API key** if needed, and press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server (it goes on if you close Settings) and **Remove** deletes it. Then choose the **Model**. It does not make tiling textures.
+Enter the **Server address** (`http://127.0.0.1:13305`), pick an **API key** if needed, and press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. It does not make tiling textures.
 
 ### Set up llama-toolchest
 

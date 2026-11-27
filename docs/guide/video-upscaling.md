@@ -15,7 +15,7 @@ Only llama-toolchest has video upscalers. To make a picture larger, see the `ima
 2. In Settings → Video generation → Upscalers, press **Add upscaler**. It starts on your inference server when that is a llama-toolchest; change the address if the upscaler is on another one.
 3. Pick the instance under **Upscaler**. Probe lists the server's video upscalers, and the row then shows its scale and the clip size it was measured for, such as "×4 · up to 512×288, 33 frames".
 
-Add one row for each upscaler you want Haruspex to use, from one server or several, and move them up or down: the order is the order they are tried. When you first update to a version with this list, it is filled once from the servers your video models are on.
+Add one row for each upscaler you want Haruspex to use, from one server or several, and move them up or down: the order is the order they are tried. Clear a row's box to stop using it without removing it. When you first update to a version with this list, it is filled once from the servers your video models are on.
 
 ## Upscale a clip
 

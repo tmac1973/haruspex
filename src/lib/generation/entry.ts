@@ -26,6 +26,24 @@ export interface GenerationEntry<B extends string, C> {
 	capsAt: number | null;
 	/** The user named it, so a probe leaves the name alone. */
 	renamed: boolean;
+	/**
+	 * Turned off in Settings: kept, with its place in the list, but no tool,
+	 * job or prompt uses it. Absent (on) in lists saved before the switch.
+	 */
+	disabled?: boolean;
+}
+
+/** `e` turned on or off; on drops the field, as lists saved before the switch have it. */
+export function withEnabled<E extends { disabled?: boolean }>(e: E, on: boolean): E {
+	if (!on) return { ...e, disabled: true };
+	const rest = { ...e };
+	delete rest.disabled;
+	return rest;
+}
+
+/** The entries of `list` that are turned on, in order. */
+export function enabledEntries<E extends { disabled?: boolean }>(list: readonly E[]): E[] {
+	return list.filter((e) => !e.disabled);
 }
 
 /**

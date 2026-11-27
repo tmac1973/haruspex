@@ -15,11 +15,13 @@ vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.res
 
 import {
 	addVideoModel,
+	allVideoEntries,
 	firstVideoEntry,
 	moveVideoModel,
 	removeVideoModel,
 	renameVideoModel,
 	saveVideoCaps,
+	setVideoModelEnabled,
 	updateVideoModel,
 	videoEntries,
 	videoEntryApiKey,
@@ -130,5 +132,22 @@ describe('videoEntryForHandle', () => {
 			keyId: null,
 			options: { clientId: 'c1' }
 		});
+	});
+});
+
+describe('turning a video model off', () => {
+	it('keeps it in the list, but out of what the tools use', () => {
+		settings.videoModels = [
+			videoModel('comfyui', { id: 'a', name: 'ltx' }),
+			videoModel('llama-toolchest', { id: 'b', name: 'wan' })
+		];
+		setVideoModelEnabled('a', false);
+		expect(allVideoEntries().map((e) => e.name)).toEqual(['ltx', 'wan']);
+		expect(names()).toEqual(['wan']);
+		expect(firstVideoEntry()?.name).toBe('wan');
+		expect(videoEntryByName('ltx')).toBeUndefined();
+		setVideoModelEnabled('a', true);
+		expect(names()).toEqual(['ltx', 'wan']);
+		expect(videoEntries()[0]).not.toHaveProperty('disabled');
 	});
 });
