@@ -484,6 +484,14 @@ else
 
     cargo build --release --bin koko 2>&1
 
+    # The crates koko was just built from, with their licence texts, for
+    # Settings → About → Licences (scripts/build-licences.mjs reads the list).
+    # Only this resolve knows them: the lock file was made fresh above. Node
+    # on Windows wants Windows paths, not Git Bash's.
+    winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else echo "$1"; fi; }
+    node "$(winpath "$SCRIPT_DIR/crate-licences.mjs")" "$(winpath "$KOKO_SRC/Cargo.toml")" koko \
+        "$TARGET" "$(winpath "$BINARIES_DIR/koko-crates.json")"
+
     # Restore original Cargo.toml
     mv kokoros/Cargo.toml.bak kokoros/Cargo.toml
 

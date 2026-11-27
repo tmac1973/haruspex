@@ -44,8 +44,14 @@ done
 get sidecars/whisper.cpp/LICENSE ggml-org/whisper.cpp "$WHISPER" LICENSE
 
 # Kokoros is built from its default branch, with espeak-ng (and its pcaudiolib
-# and sonic) linked in and espeak-ng's data shipped beside it.
+# and sonic) and ONNX Runtime (through the ort crate) linked in, and espeak-ng's
+# data shipped beside it. Its crates are listed by build-sidecars.sh.
 get sidecars/kokoros/LICENSE lucasjinreal/Kokoros main LICENSE
+# ONNX Runtime's LICENSE is the standard MIT text for Microsoft Corporation
+# (github.com/microsoft/onnxruntime); written from our template, since the
+# ort crate downloads the static library without it.
+sed 's/{holder}/Microsoft Corporation/' "$OUT/spdx/MIT.txt" > "$OUT/sidecars/kokoros/onnxruntime-LICENSE"
+echo "   sidecars/kokoros/onnxruntime-LICENSE (standard MIT text)"
 for f in COPYING COPYING.APACHE COPYING.BSD2 COPYING.UCD; do
     get "sidecars/kokoros/espeak-ng-$f" espeak-ng/espeak-ng master "$f"
 done
