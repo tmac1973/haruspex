@@ -23,12 +23,14 @@
 import { holdsSkillContent } from '#lib/skills/content.ts';
 import { messageText, type ChatMessage, type ToolDefinition } from '#lib/api.ts';
 import {
+	callFor,
 	describeToolCall,
 	droppingUnit,
 	sanitizeOrphanToolResults
 } from '#lib/agent/toolRounds.ts';
 import { forceFit } from '#lib/agent/forceFit.ts';
 import {
+	RECALL_TOOL,
 	archivedStub,
 	keepResult,
 	recallHint,
@@ -109,6 +111,18 @@ interface TrimCandidate {
 	idx: number;
 	text: string;
 	tokens: number;
+	/** A `recall_result` reply: the model asked for this text back. */
+	recalled: boolean;
+}
+
+/**
+ * Text a cut already left: a trim stub (with or without an archive) or the
+ * last-resort marker. Stubbing it again frees nothing. The archived stub
+ * starts "[Trimmed to free context", which the old "[Trimmed:" check missed,
+ * so every trim stubbed the same stubs over again.
+ */
+function alreadyCut(text: string): boolean {
+	return text.startsWith('[Trimmed') || text.startsWith('[Removed to fit context');
 }
 
 function trimCandidates(messages: ChatMessage[]): TrimCandidate[] {
@@ -121,11 +135,12 @@ function trimCandidates(messages: ChatMessage[]): TrimCandidate[] {
 	const out: TrimCandidate[] = [];
 	for (const idx of older) {
 		const text = messageText(messages[idx].content);
-		if (text.startsWith('[Trimmed:')) continue;
+		if (alreadyCut(text)) continue;
 		// A loaded skill is instructions the turn is still following. Stubbing
 		// it would leave the model working without them and nothing to show it.
 		if (holdsSkillContent(text)) continue;
-		out.push({ idx, text, tokens: messageTokens(messages[idx]) });
+		const recalled = callFor(messages, idx)?.function.name === RECALL_TOOL;
+		out.push({ idx, text, tokens: messageTokens(messages[idx]), recalled });
 	}
 	return out;
 }
@@ -168,14 +183,28 @@ export function trimOldToolMessages(
 	let running = estimateMessagesTokens(messages, opts.tools);
 	if (running <= opts.budget) return false;
 	let trimmed = false;
-	for (const c of [...candidates].sort((a, b) => b.tokens - a.tokens)) {
+	for (const c of [...candidates].sort(trimOrder)) {
 		if (running <= opts.budget) break;
 		const stub = stubFor(messages, c.idx, c.text, opts.archive);
+		const saved = c.tokens - (estimateTokens(stub) + PER_MESSAGE_OVERHEAD_TOKENS);
+		// A result no bigger than its stub: stubbing it frees nothing and
+		// loses the text. A one-line recall reply holding the answer went
+		// this way in a live run, and the model made the answer up (#1022).
+		if (saved <= 0) continue;
 		messages[c.idx] = { ...messages[c.idx], content: stub };
-		running -= c.tokens - (estimateTokens(stub) + PER_MESSAGE_OVERHEAD_TOKENS);
+		running -= saved;
 		trimmed = true;
 	}
 	return trimmed;
+}
+
+/**
+ * Results the model read back with `recall_result` go last: it asked for that
+ * text because it needs it, and stubbing it again sends it round in a loop.
+ * Otherwise the biggest first.
+ */
+function trimOrder(a: TrimCandidate, b: TrimCandidate): number {
+	return Number(a.recalled) - Number(b.recalled) || b.tokens - a.tokens;
 }
 
 export interface ContextManagedInfo {

@@ -84,7 +84,12 @@ describe('recall_result', () => {
 		expect(first.length).toBeLessThan(7_300);
 		expect(first.length).toBeGreaterThan(6_000);
 		const refused = (await recall({ id: 'r2' }, archive)).result;
-		expect(refused).toMatch(/"error":"Not read: .*Recall \\"r2\\" in a later call/);
+		const err = JSON.parse(refused).error as string;
+		expect(err).toMatch(/^Not read: this step's recalls used the room the context has/);
+		expect(err).toContain('A whole page is about 4571 tokens.');
+		expect(err).toContain(
+			'Recall "r2" in a later step, by itself, or with pattern or a small limit.'
+		);
 		archive.startRound(2_000);
 		expect((await recall({ id: 'r2' }, archive)).result).toContain('Result r2');
 	});
