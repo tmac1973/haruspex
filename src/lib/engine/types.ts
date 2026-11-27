@@ -146,10 +146,13 @@ export type JobOp =
 	| { type: 'run.cancel'; runId: number }
 	| { type: 'runs.list'; jobId: number }
 	| { type: 'runs.get'; runId: number }
-	/** The run in progress (or the last, until another starts) and the queue. */
+	/**
+	 * The run in view (in progress, or the last until another starts), every
+	 * run going now as `active`, and the queue.
+	 */
 	| { type: 'runs.current' }
 	| { type: 'runs.delete'; runId: number }
-	/** Send a fresh `job-run` event for the current run: the client saw a gap in `seq`. */
+	/** Send a fresh `job-run` event for a run in progress: the client saw a gap in `seq`. */
 	| { type: 'runs.resync'; runId: number };
 
 /** A Code session's controls beyond sending, as the Code tab has them. */

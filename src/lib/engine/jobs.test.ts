@@ -53,7 +53,7 @@ vi.mock('#lib/agent/jobs/types/lean.ts', () => ({
 
 import { flushSync } from 'svelte';
 import { dispatchJobs, watchJobs } from './jobs.svelte.ts';
-import { fake, job, reset, running, jobsStore } from './jobsFake.svelte.ts';
+import { fake, job, reset, running, sideRun, jobsStore } from './jobsFake.svelte.ts';
 import { LIVE_MS } from './watch.svelte.ts';
 import type { JobEvent, JobOp } from './types.ts';
 
@@ -332,7 +332,72 @@ describe('job events', () => {
 		const before = events.length;
 		expect(await run({ type: 'runs.resync', runId: 50 })).toEqual({ resynced: 50 });
 		expect(events.length).toBe(before + 1);
-		await expect(run({ type: 'runs.resync', runId: 49 })).rejects.toThrow("isn't the current run");
+		await expect(run({ type: 'runs.resync', runId: 49 })).rejects.toThrow(
+			"isn't one in progress here"
+		);
 		watcher.stop();
+	});
+
+	it('stream a run going beside the one in view, each with its own seq', async () => {
+		const events: JobEvent[] = [];
+		const watcher = watchJobs((e) => events.push(e));
+		job(1);
+		job(2);
+		running(50, 1);
+		const side = sideRun(60, 2);
+		await settle();
+		const runs = (id: number) => events.filter((e) => 'runId' in e && e.runId === id);
+		expect(runs(60)).toEqual([expect.objectContaining({ type: 'job-run', seq: 1 })]);
+
+		fake.side[0].steps[0].streaming = 'Side text';
+		fake.current!.steps[0].streaming = 'Main text';
+		await settle();
+		expect(runs(60).at(-1)).toMatchObject({ type: 'job-run-live', seq: 2, streaming: 'Side text' });
+		expect(runs(50).at(-1)).toMatchObject({ type: 'job-run-live', seq: 2, streaming: 'Main text' });
+
+		fake.side = [{ ...side, status: 'succeeded', finishedAt: 2 }];
+		await settle();
+		expect(runs(60).at(-1)).toMatchObject({ type: 'job-run', run: { status: 'succeeded' } });
+
+		// Let go once settled: nothing more is sent for it, and it can't be resynced.
+		const before = events.length;
+		fake.side = [];
+		await settle();
+		expect(events.length).toBe(before);
+		await expect(run({ type: 'runs.resync', runId: 60 })).rejects.toThrow();
+		watcher.stop();
+	});
+
+	it('resync a run going beside the one in view', async () => {
+		const events: JobEvent[] = [];
+		const watcher = watchJobs((e) => events.push(e));
+		job(1);
+		job(2);
+		running(50, 1);
+		sideRun(60, 2);
+		await settle();
+		expect(await run({ type: 'runs.resync', runId: 60 })).toEqual({ resynced: 60 });
+		expect(events.at(-1)).toMatchObject({ type: 'job-run', runId: 60, seq: 2 });
+		watcher.stop();
+	});
+});
+
+describe('runs.current', () => {
+	it('lists every run going now beside the one in view', async () => {
+		job(1);
+		job(2);
+		running(50, 1);
+		sideRun(60, 2);
+		const got = await run({ type: 'runs.current' });
+		expect(got.run.id).toBe(50);
+		expect(got.active.map((r: Json) => r.id)).toEqual([50, 60]);
+	});
+
+	it('leaves a finished run in view out of the active list', async () => {
+		job(1);
+		running(50, 1, { status: 'succeeded', finishedAt: 2 });
+		const got = await run({ type: 'runs.current' });
+		expect(got.run.id).toBe(50);
+		expect(got.active).toEqual([]);
 	});
 });

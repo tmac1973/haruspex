@@ -650,6 +650,14 @@ export function getActiveRuns(): RunState[] {
 	return runs.filter(isActive);
 }
 
+/**
+ * Every run this session holds: the ones going now, the run view's finished
+ * one, and any that just ended and are still settling. Oldest first.
+ */
+export function getHeldRuns(): RunState[] {
+	return runs;
+}
+
 /** A run this session holds: one going now, or the run view's finished one. */
 export function getRun(runId: number): RunState | null {
 	return liveRun(runId) ?? null;
