@@ -88,7 +88,7 @@ function check(json: unknown, sc: SpecContext, keyframes: boolean): Checked | st
 
 /** Whether a generated section can open on a keyframe in this run. */
 function usesKeyframes(sc: SpecContext): boolean {
-	return sc.validate.imageBackend && sc.validate.capabilities.includes('start_image');
+	return sc.validate.keyframes && sc.validate.capabilities.includes('start_image');
 }
 
 async function readText(workdir: string, relPath: string): Promise<string | null> {

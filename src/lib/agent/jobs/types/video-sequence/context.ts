@@ -141,7 +141,8 @@ export async function buildSpecContext(
 		listClips(workdir, cfg.episode_dir),
 		listImages(workdir, cfg.episode_dir)
 	]);
-	const imageBackend = cfg.image_keyframes && resolveImageBackend().kind !== 'none';
+	const imageBackend = resolveImageBackend().kind !== 'none';
+	const keyframes = imageBackend && cfg.section_start === 'still';
 	const musicBackend = resolveMusicBackend().kind !== 'none';
 	const validate: ValidateContext = {
 		instance: video.entry.name,
@@ -149,6 +150,7 @@ export async function buildSpecContext(
 		capabilities: capabilityWords(video.caps),
 		...(automatic ? { othersCan: othersCan(video) } : {}),
 		imageBackend,
+		keyframes,
 		musicBackend,
 		files: new Set([...clips.map((c) => c.path), ...images]),
 		...(speaking
@@ -172,12 +174,14 @@ export async function buildSpecContext(
 	});
 	const text = [
 		instanceText(video),
-		imageBackend
+		keyframes
 			? 'Each generated section opens on a keyframe still the image backend makes, unless it has a start_image.'
 			: 'There are no keyframes: a generated section opens from its start_image, or from its prompt alone.',
 		musicBackend ? 'Music generation is set up.' : 'There is no music generation: no music beds.',
 		speakingText(speaking),
-		`Re-anchor every ${cfg.reanchor_every} clips unless the brief says otherwise.`,
+		keyframes
+			? `Re-anchor every ${cfg.reanchor_every} clips unless the brief says otherwise.`
+			: 'Set reanchor_every to 0: there are no stills to end clips on.',
 		clipLines.length
 			? `Clips in the episode folder, which can be existing sections:\n${clipLines.join('\n')}`
 			: 'There are no clips in the episode folder.',

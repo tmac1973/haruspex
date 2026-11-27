@@ -21,6 +21,8 @@
 
 	const cfg = config as unknown as VideoSequenceConfig;
 	const hasImageBackend = resolveImageBackend().kind !== 'none';
+	// Without an image backend there is nothing to draw a still with.
+	if (!hasImageBackend) cfg.section_start = 'prompt';
 	const models = videoEntries();
 	/** Models that make clips without speech, or may: no probe has said. */
 	const makers = models.filter((e) => !e.caps?.needsSpeech);
@@ -108,16 +110,22 @@
 	</div>
 {/if}
 
-{#if hasImageBackend}
-	<label class="check">
-		<input type="checkbox" bind:checked={cfg.image_keyframes} />
-		Open each section on a keyframe
+<div class="field">
+	<span class="label">
+		Sections start from
 		<Tooltip
-			label="About keyframes"
-			text="Makes an opening still for each generated section with the image backend in Settings → Image generation, so every clip of it starts from a picture of the subject."
+			label="About section starts"
+			text="A still: the image backend in Settings → Image generation draws an opening picture for each section, and later sections' stills are edits of the first, so the subject stays the same. The prompt: each section's first clip is made from its text alone. Either way, the clips after it start from the last frame of the one before, and a section's own start picture wins."
 		/>
-	</label>
-{/if}
+	</span>
+	<select bind:value={cfg.section_start} aria-label="Sections start from">
+		<option value="still" disabled={!hasImageBackend}>A still</option>
+		<option value="prompt">The prompt</option>
+	</select>
+	{#if !hasImageBackend}
+		<p class="hint">Stills need an image backend in Settings → Image generation.</p>
+	{/if}
+</div>
 
 {#if canSee}
 	<label class="check">
@@ -130,22 +138,24 @@
 	</label>
 {/if}
 
-<div class="field">
-	<span class="label">
-		Re-anchor every
-		<Tooltip
-			label="About re-anchoring"
-			text="Every this many clips of a section end on a fresh still of it, so a long section doesn't drift. 0 turns it off. The spec's own value wins."
+{#if cfg.section_start === 'still'}
+	<div class="field">
+		<span class="label">
+			Re-anchor every
+			<Tooltip
+				label="About re-anchoring"
+				text="Every this many clips of a section end on a fresh still of it, so a long section doesn't drift. 0 turns it off. The spec's own value wins."
+			/>
+		</span>
+		<input
+			type="number"
+			min="0"
+			max="30"
+			bind:value={cfg.reanchor_every}
+			aria-label="Re-anchor every"
 		/>
-	</span>
-	<input
-		type="number"
-		min="0"
-		max="30"
-		bind:value={cfg.reanchor_every}
-		aria-label="Re-anchor every"
-	/>
-</div>
+	</div>
+{/if}
 
 <div class="field">
 	<span class="label">Editor</span>

@@ -12,7 +12,8 @@ const ctx = (over: Partial<ValidateContext> = {}): ValidateContext => ({
 	files: new Set(['people/tim.png']),
 	speaking: { instance: 's2v', limits: S2V_10S, capabilities: S2V_CAPS },
 	projectFps: 24,
-	...over
+	...over,
+	keyframes: over.keyframes ?? over.imageBackend ?? true
 });
 
 describe('speaking sections in a spec', () => {

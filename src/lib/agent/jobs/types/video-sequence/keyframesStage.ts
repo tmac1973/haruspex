@@ -10,6 +10,7 @@ import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import type { ViewerImage } from '#lib/stores/imageViewer.svelte.ts';
 import { capableEntries, needOf, routedImageBackend } from '#lib/image/route.ts';
+import { resolveImageBackend } from '#lib/image/backend.ts';
 import { videoSettings } from '#lib/video/args.ts';
 import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
@@ -48,11 +49,13 @@ function depsFor(
 	ctx: JobRunContext,
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
-	draws: boolean
+	draws: boolean,
+	keyframes: boolean
 ): KeyframeDeps {
 	const backend = routedImageBackend();
 	return {
 		draws,
+		keyframes: draws && keyframes,
 		canEdit: draws && canEdit(),
 		generate: (req) => backend.generate(req, { signal: ctx.abort.signal }),
 		fit: async (bytes, width, height) =>
@@ -113,13 +116,15 @@ export async function keyframesStage(
 	steps: Steps,
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
+	/** `draws`: generated sections open on stills (portraits are drawn either way). */
 	run: { spec: SequenceSpec; plan: ClipPlan; draws: boolean; attended: boolean }
 ): Promise<Still[]> {
 	steps.start(KEYFRAMES);
 	steps.abortIfCancelled();
 	const progress = mergeProgress(await readProgress(files), run.spec, run.plan);
 	const keys = stillKeys(run.spec, run.plan);
-	const deps = depsFor(ctx, cfg, files, run.draws);
+	const backend = resolveImageBackend().kind !== 'none';
+	const deps = depsFor(ctx, cfg, files, backend, run.draws);
 	const make = async (redo?: { section: string; note: string }) => {
 		const stills = await makeKeyframes(
 			{ spec: run.spec, plan: run.plan, keys, done: progress.keyframes, redo },

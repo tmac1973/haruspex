@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeKeyframes, stillPath, stillsSummary, type KeyframeDeps } from './keyframes';
 import { planClips } from '#lib/sequence/spec/plan.ts';
 import { stillKeys } from '#lib/sequence/spec/progress.ts';
-import { LTX_MODEL, foxSpec } from '#lib/testing/sequenceSpecs.ts';
+import { LTX_MODEL, foxSpec, presenterSpec } from '#lib/testing/sequenceSpecs.ts';
 import type { ImageRequest } from '#lib/image/types.ts';
 import type { FileProgress } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
@@ -36,7 +36,8 @@ function deps(over: Partial<KeyframeDeps> = {}): KeyframeDeps {
 			firstFrames.push([clip, at, out]);
 			disk.set(out, new Uint8Array([9]));
 		},
-		...over
+		...over,
+		keyframes: over.keyframes ?? over.draws ?? true
 	};
 }
 
@@ -97,6 +98,15 @@ describe('makeKeyframes', () => {
 		const first = run.plan.items[0];
 		expect(first.kind === 'generate' && first.start).toEqual({ kind: 'text' });
 		expect(stillsSummary(stills)).toMatch(/opens from its prompt alone/);
+	});
+
+	it('draws only portraits when sections start from their prompts', async () => {
+		const spec = presenterSpec();
+		const run = runOf(spec, {}, false);
+		const stills = await makeKeyframes(run, deps({ keyframes: false }));
+		expect(stills.map((s) => [s.id, s.how])).toEqual([['host', 'drawn']]);
+		expect(requests).toHaveLength(1);
+		expect(requests[0].prompt).toMatch(/^Portrait of/);
 	});
 
 	it('uses the user’s start picture as it is', async () => {

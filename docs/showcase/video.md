@@ -223,7 +223,7 @@ Read more: video-render
 The Video sequence job makes sections of chained clips, joins them, adds music and narration, and renders a Shotcut or Kdenlive project.
 
 Tab: Jobs
-Required settings: Settings → Video editing → Let the assistant edit videos; Settings → Video generation; Settings → Music generation for music; Settings → Image generation for stills
+Required settings: Settings → Video editing → Let the assistant edit videos; Settings → Video generation; Settings → Music generation for music; Settings → Image generation for stills, unless Sections start from is The prompt
 
 Prompt:
 

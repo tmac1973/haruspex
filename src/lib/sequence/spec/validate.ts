@@ -5,7 +5,8 @@
  *
  * What can't work is an error, naming the section. What can work another
  * way is changed and said in a note: a transition the instance can't end on
- * becomes a 1 s crossfade, re-anchoring it can't do is turned off, and clip
+ * becomes a 1 s crossfade, re-anchoring it can't do (or with no stills to end
+ * on) is turned off, and clip
  * sound an instance doesn't make is dropped. There is no length cap.
  */
 import type { VideoLimits } from '#lib/toolchest/models.ts';
@@ -29,8 +30,14 @@ export interface ValidateContext {
 	 * another model rather than being refused.
 	 */
 	othersCan?: string[];
-	/** An image backend is set up, so sections can open on a keyframe. */
+	/** An image backend is set up, so stills and portraits can be drawn. */
 	imageBackend: boolean;
+	/**
+	 * Generated sections open on a keyframe still: the job's sections start
+	 * from a still and there is an image backend to draw it. False opens each
+	 * from its prompt, and turns re-anchoring off, with no stills to end on.
+	 */
+	keyframes: boolean;
 	musicBackend: boolean;
 	/** Files in the episode folder, relative to it with forward slashes. */
 	files: Set<string>;
@@ -124,12 +131,17 @@ function checkSection(s: Section, ctx: ValidateContext, errors: string[], notes:
 		}
 		return;
 	}
-	const keyframe = ctx.imageBackend && can('start_image');
+	const keyframe = ctx.keyframes && can('start_image');
+	// Prompt-only openings the job chose need no note; ones it can't help do.
+	const chosePrompt = ctx.imageBackend && !ctx.keyframes;
 	if (!keyframe && !can('text')) {
+		const fix = chosePrompt
+			? "set the job's Sections start from to A still"
+			: 'set up an image backend in Settings → Image generation for a keyframe';
 		errors.push(
-			`${name}: ${ctx.instance} needs a picture to start from. Give a start_image, or set up an image backend in Settings → Image generation for a keyframe.`
+			`${name}: ${ctx.instance} needs a picture to start from. Give a start_image, or ${fix}.`
 		);
-	} else if (!keyframe) {
+	} else if (!keyframe && !chosePrompt) {
 		notes.push(`${name} opens from its prompt alone, with no keyframe.`);
 	}
 }
@@ -153,6 +165,9 @@ function checkJoins(spec: SequenceSpec, ctx: ValidateContext, errors: string[], 
 		errors.push('reanchor_every is a whole number from 0 (off).');
 	} else if (spec.reanchor_every > 0 && !endImage) {
 		notes.push(`Re-anchoring is off: ${ctx.instance} can't end a clip on a picture.`);
+		spec.reanchor_every = 0;
+	} else if (spec.reanchor_every > 0 && !ctx.keyframes) {
+		notes.push('Re-anchoring is off: sections start from their prompts, so there are no stills.');
 		spec.reanchor_every = 0;
 	}
 }
