@@ -27,6 +27,7 @@
 	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
 	import { splitGrepLine } from '#lib/code/paths.ts';
 	import { check3dFile } from '#lib/helpers/three/output.ts';
+	import { stepImageSrc } from '#lib/code/stepImages.ts';
 	import SubtaskCard from '#lib/components/code/SubtaskCard.svelte';
 	import type { SubtaskState } from '#lib/code/subtask.ts';
 	// A subtask's card lists the child's steps with this same component.
@@ -318,20 +319,25 @@
 						{/if}
 					{/if}
 				{/if}
-				{#if step.thumbDataUrl}
+				{#if stepImageSrc(step)}
+					{@const thumb = stepImageSrc(step)!}
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
 						<span class="image-frame">
 							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 							<img
-								src={step.thumbDataUrl}
+								src={thumb}
 								alt={step.query}
 								class="clickable"
 								title="Click to enlarge"
-								onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
+								onclick={(e) => openViewer(thumb, step.query, e)}
 							/>
-							<ImageSaveButton dataUrl={step.thumbDataUrl} alt={step.query} />
+							<ImageSaveButton
+								hash={step.thumbDataUrl ? undefined : step.thumbHash}
+								dataUrl={step.thumbDataUrl}
+								alt={step.query}
+							/>
 						</span>
 					</div>
 				{/if}

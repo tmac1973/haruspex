@@ -3720,3 +3720,26 @@ fn pruning_email_requests_keeps_open_and_young_rows() {
     db.email_request_insert(&new).unwrap();
     assert_eq!(db.email_requests_prune(other).unwrap(), 0);
 }
+
+#[test]
+fn a_code_session_keeps_its_step_images_through_forks_until_both_go() {
+    let db = test_db();
+    let dir = TempDir::new("step-images");
+    let s = db.create_code_session(dir.path(), None, None).unwrap();
+    let sheet = "f".repeat(64);
+    db.insert_image(&img(&sheet, "haruspex-generated:sheet", 10))
+        .unwrap();
+    db.link_code_session_image(&s.id, &sheet).unwrap();
+    db.link_code_session_image(&s.id, &sheet).unwrap();
+    assert!(db.unreferenced_image_hashes().unwrap().is_empty());
+
+    let fork = db.fork_code_session(&s.id, 0).unwrap();
+    db.delete_code_session(&s.id).unwrap();
+    assert!(
+        db.unreferenced_image_hashes().unwrap().is_empty(),
+        "the fork shows the same steps, so it keeps the sheet"
+    );
+
+    db.delete_code_session(&fork.id).unwrap();
+    assert_eq!(db.unreferenced_image_hashes().unwrap(), vec![sheet]);
+}

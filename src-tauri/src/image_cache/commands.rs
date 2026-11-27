@@ -169,7 +169,9 @@ pub async fn image_sweep(app: AppHandle, db: State<'_, Database>) -> Result<(), 
 ///
 /// With a `conversation_id` the image is linked to that conversation, so the
 /// startup sweep keeps it: unlinked, a picture drawn in chat was deleted the
-/// next time the app started.
+/// next time the app started. With a `code_session_id` it is linked to that
+/// Code session instead: a step's picture, kept out of the saved thread.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn image_store_bytes(
     app: AppHandle,
@@ -179,9 +181,10 @@ pub async fn image_store_bytes(
     width: u32,
     height: u32,
     conversation_id: Option<String>,
+    code_session_id: Option<String>,
 ) -> Result<String, String> {
     let dir = cache_dir(&app)?;
-    store_generated(
+    let hash = store_generated(
         &db,
         &dir,
         &bytes,
@@ -189,7 +192,11 @@ pub async fn image_store_bytes(
         width,
         height,
         conversation_id.as_deref(),
-    )
+    )?;
+    if let Some(id) = code_session_id {
+        db.link_code_session_image(&id, &hash)?;
+    }
+    Ok(hash)
 }
 
 /// An upscaled picture, kept: its hash and the size it was finished at.

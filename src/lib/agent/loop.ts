@@ -128,6 +128,12 @@ export interface SearchStep {
 	 */
 	thumbDataUrl?: string;
 	/**
+	 * The same picture in the image cache, by hash, in place of
+	 * `thumbDataUrl`: the Code tab keeps its steps' pictures there
+	 * (`#lib/code/stepImages.ts`) so a long session's thread stays small.
+	 */
+	thumbHash?: string;
+	/**
 	 * Multi-artifact channel — currently used by the Python sandbox to
 	 * surface plots (image artifacts) and DataFrame tables (HTML artifacts)
 	 * inline beneath the tool step. Renderable but not echoed to the model.
