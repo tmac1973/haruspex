@@ -86,6 +86,21 @@ export function parseVideoModels(payload: unknown): OpenRouterVideoModel[] {
 }
 
 /**
+ * Model families OpenRouter's docs name as taking `input_references`. The
+ * model list has no field for it, so this list is all there is to go on; a
+ * model that refuses them anyway says so (see `submit` in `./backend.ts`).
+ */
+const REFERENCE_FAMILIES = ['alibaba/wan-3', 'bytedance/seedance-2', 'runway/'];
+
+/** `m` keeps the look of reference pictures, as far as anyone has said. */
+export function takesReferences(m: OpenRouterVideoModel): boolean {
+	return REFERENCE_FAMILIES.some((f) => m.id.startsWith(f));
+}
+
+/** The most reference pictures sent with one clip. */
+export const MAX_REFERENCES = 3;
+
+/**
  * The model makes a clip from a prompt here: it lists lengths and sizes. An
  * avatar, edit or upscale model lists neither and is left out.
  */
@@ -179,6 +194,7 @@ export function capsOf(m: OpenRouterVideoModel, tier: string): VideoCaps {
 		speech: false,
 		needsSpeech: false,
 		sound: m.audio,
+		...(takesReferences(m) ? { references: true } : {}),
 		limits: {
 			defaultFps: CAPS_FPS,
 			defaultFrames: nearestDuration(m, DEFAULT_SECONDS) * CAPS_FPS + 1,
@@ -221,6 +237,8 @@ export interface ClipRequest {
 	/** Data URLs of the pictures to start and end on. */
 	startUrl?: string;
 	endUrl?: string;
+	/** Data URLs of pictures whose look to keep. */
+	referenceUrls?: string[];
 }
 
 /** The body of `POST /v1/videos` for `req` on `m`: only what `m` lists is sent. */
@@ -245,6 +263,10 @@ export function buildClipBody(m: OpenRouterVideoModel, req: ClipRequest): Record
 			image_url: { url: f.url },
 			frame_type: f.frame_type
 		}));
+	}
+	const refs = takesReferences(m) ? (req.referenceUrls ?? []).slice(0, MAX_REFERENCES) : [];
+	if (refs.length > 0) {
+		body.input_references = refs.map((url) => ({ type: 'image_url', image_url: { url } }));
 	}
 	return body;
 }

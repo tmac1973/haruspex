@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildClipBody,
+	takesReferences,
 	capsOf,
 	clipProgressOf,
 	durationFor,
@@ -245,6 +246,26 @@ describe('buildClipBody', () => {
 		]);
 		const startOnly = buildClipBody(grok, { ...req, startUrl: 'data:a', endUrl: 'data:b' });
 		expect(startOnly.frame_images).toHaveLength(1);
+	});
+
+	it('sends up to three reference pictures to a model known to take them, and none to others', () => {
+		const urls = ['data:1', 'data:2', 'data:3', 'data:4'];
+		expect(buildClipBody(wan, { ...req, referenceUrls: urls }).input_references).toEqual(
+			urls.slice(0, 3).map((url) => ({ type: 'image_url', image_url: { url } }))
+		);
+		expect(buildClipBody(veo, { ...req, referenceUrls: urls })).not.toHaveProperty(
+			'input_references'
+		);
+	});
+});
+
+describe('takesReferences', () => {
+	it('names the families the docs say take reference pictures', () => {
+		expect(takesReferences(wan)).toBe(true);
+		expect(takesReferences(byId('bytedance/seedance-2.0'))).toBe(true);
+		expect(takesReferences(veo)).toBe(false);
+		expect(capsOf(wan, '720p').references).toBe(true);
+		expect(capsOf(veo, '720p').references).toBeUndefined();
 	});
 });
 

@@ -58,9 +58,11 @@ import {
 	ended,
 	estimateUsd,
 	makesClips,
+	MAX_REFERENCES,
 	parseVideoModels,
 	perSecondUsd,
 	readClipJob,
+	takesReferences,
 	tierOf,
 	tiers as capsTiers,
 	videoModelOptions,
@@ -196,6 +198,12 @@ function check(entry: VideoModelEntry, m: OpenRouterVideoModel, req: VideoReques
 			`${m.name} on OpenRouter can't start from a picture.`
 		);
 	}
+	if (req.references?.length && !takesReferences(m)) {
+		throw new VideoBackendError(
+			'unconfigured',
+			`${m.name} on OpenRouter can't keep the look of reference pictures.`
+		);
+	}
 	if (req.endImage && !m.lastFrame) {
 		throw new VideoBackendError('unconfigured', `${m.name} on OpenRouter can't end on a picture.`);
 	}
@@ -318,6 +326,34 @@ async function finish(
 	};
 }
 
+/**
+ * `POST /v1/videos`. A 400 with reference pictures says they may be why:
+ * which models take them is a guess (`takesReferences`).
+ */
+async function submit(
+	apiKey: string,
+	m: OpenRouterVideoModel,
+	body: Record<string, unknown>,
+	signal?: AbortSignal
+): Promise<unknown> {
+	const res = await fetchWithin(
+		SUBMIT_TIMEOUT_MS,
+		openRouterUrl('/v1/videos'),
+		{ method: 'POST', headers: openRouterHeaders(apiKey, true), body: JSON.stringify(body) },
+		make,
+		signal
+	);
+	if (res.status === 400 && body.input_references) {
+		const e = await refusal(res, make, 'clip');
+		throw new VideoBackendError(
+			'rejected',
+			`${e.message} (${m.name} may not take reference pictures.)`,
+			{ status: 400 }
+		);
+	}
+	return jsonOf(res, make, 'clip');
+}
+
 /** Send one clip and follow it to its end. */
 async function generateWith(
 	entry: VideoModelEntry,
@@ -335,22 +371,13 @@ async function generateWith(
 		fps: req.fps,
 		seed: req.seed % SEED_LIMIT,
 		startUrl: req.startImage ? await dataUrlOf(req.startImage) : undefined,
-		endUrl: req.endImage ? await dataUrlOf(req.endImage) : undefined
+		endUrl: req.endImage ? await dataUrlOf(req.endImage) : undefined,
+		referenceUrls: req.references?.length
+			? await Promise.all(req.references.slice(0, MAX_REFERENCES).map(dataUrlOf))
+			: undefined
 	});
 	opts.onProgress?.({ phase: 'starting' });
-	const created = readClipJob(
-		await jsonOf(
-			await fetchWithin(
-				SUBMIT_TIMEOUT_MS,
-				openRouterUrl('/v1/videos'),
-				{ method: 'POST', headers: openRouterHeaders(apiKey, true), body: JSON.stringify(body) },
-				make,
-				opts.signal
-			),
-			make,
-			'clip'
-		)
-	);
+	const created = readClipJob(await submit(apiKey, m, body, opts.signal));
 	if (!created) throw new VideoBackendError('rejected', 'OpenRouter made no job.');
 	opts.onHandle?.({
 		backend: 'openrouter',

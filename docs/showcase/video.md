@@ -54,9 +54,28 @@ Prompt:
 
 Example output:
 
-The clip plays in the conversation, with sound from a model that makes it, and the answer says what it cost. A clip that would cost more than the limit is passed to the next video model in the list, and the answer says so.
+The clip plays in the conversation, with sound from a model that makes it, and the answer says what it cost. A clip that would cost more than the limit is refused before anything is sent, and the answer says what it would have cost.
 
 <!-- media: Settings → Video generation with an OpenRouter model, its price after Probe and the per-clip limit -->
+
+Read more: video-generation
+
+## Keep a character the same across clips
+
+Give a picture or two of a character, and each clip keeps their look without having to start on that picture. It works with OpenRouter's Wan 3.0, Seedance 2 and Runway models.
+
+Tab: Chat or Code
+Required settings: Settings → Video generation → Add model → Backend: OpenRouter, with Wan 3.0, a Seedance 2 model or a Runway model
+
+Prompt:
+
+> Using the robot from the two pictures I drew earlier as reference, make a clip of it walking through a rainy market at night.
+
+Example output:
+
+The clip plays in the conversation with the robot's colours and shape kept, though the scene is new. A model that doesn't take reference pictures is skipped for one that does.
+
+<!-- media: a clip of the robot in a rainy market beside the two reference pictures -->
 
 Read more: video-generation
 

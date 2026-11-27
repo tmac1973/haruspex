@@ -76,6 +76,13 @@ describe('what a model can do', () => {
 		]);
 		expect(cantDo(LTX, { ...plain, endImage: true })).toEqual(['end on a picture']);
 	});
+
+	it('sends reference pictures only to a model that takes them', () => {
+		const need = needOf({ references: [{ name: 'r', hash: 'h' }] } as never);
+		expect(need.references).toBe(true);
+		expect(cantDo(LTX, need)).toEqual(['keep the look of reference pictures']);
+		expect(cantDo({ ...LTX, references: true }, need)).toEqual([]);
+	});
 });
 
 describe('routeVideo', () => {

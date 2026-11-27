@@ -15,6 +15,7 @@ export function videoCapabilityLine(caps: VideoCaps): { text: string; title?: st
 	if (caps.endImage) parts.push('ends on a picture');
 	if (caps.speech) parts.push(caps.needsSpeech ? 'speech only' : 'speech');
 	if (caps.sound) parts.push('with sound');
+	if (caps.references) parts.push('reference pictures');
 	const most = longestClip(caps);
 	parts.push(`up to ${clipSeconds(most.frames, most.fps)} s at ${most.width}×${most.height}`);
 	const licence = caps.licence

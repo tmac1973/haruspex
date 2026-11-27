@@ -7,13 +7,13 @@ description: Video models on ComfyUI, llama-toolchest or OpenRouter, which model
 
 A ComfyUI or llama-toolchest server, or OpenRouter, can make short video clips. It is off until you add a video model in Settings → Video generation.
 
-This page is about making new clips. Cutting and rendering your own footage is on the `video-editing` page, and making a clip larger is on the `video-upscaling` page.
+This page is about making new clips. Editing footage is on the `video-editing` page; making a clip larger, on the `video-upscaling` page.
 
 ## Add a video model
 
 Open Settings → Video generation and press **Add model**. Choose the **Backend**, enter the **Server address** (`http://host:8188` for ComfyUI, `http://host:3000` for llama-toolchest) and pick an **API key** from Settings → Inference → API Keys if the server needs one. If your chat model comes from a toolchest, its address and key are filled in. Press **Probe**, then choose the **Model**; with only one, it is chosen for you.
 
-Add as many as you like: two ComfyUI servers, or a toolchest's LTX-2.3 and its S2V. Use ↑ and ↓ to set the order; clear a box to stop using a model but keep it.
+Add as many as you like. Use ↑ and ↓ to set the order; clear a box to stop using a model but keep it.
 
 ## Install a model into ComfyUI
 
@@ -24,13 +24,13 @@ A ComfyUI entry lists the four models Haruspex can run there, with their licence
 - **Wan 2.2 S2V**: a person in a picture says some speech, 16 fps, up to 4.8 s. Apache 2.0.
 - **LTX-2.3**: from a prompt or a picture, with its own sound. Its licence allows commercial use only below a revenue threshold, so you're asked before it downloads.
 
-Install downloads into ComfyUI's model folders when it runs on this computer. Elsewhere it goes through ComfyUI-Manager if the server has it, or shows the files to copy by hand. ComfyUI 0.39 or later has every node these need.
+Install downloads into ComfyUI on this computer, goes through ComfyUI-Manager elsewhere, or lists the files to copy by hand. ComfyUI 0.39 or later has every node these need.
 
 On llama-toolchest, adding a model happens in llama-toolchest. A stopped instance starts when Haruspex first uses it.
 
 ## Use a video model on OpenRouter
 
-Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more goes to the next model; 0 is no limit. Prompts and pictures are sent to OpenRouter, and each clip is paid for from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. A model makes clips of set lengths (Veo: 4, 6 or 8 seconds), so the nearest is used. A clip's result says what it cost, and Settings → Video generation keeps a total until you press **Reset**.
+Choose **OpenRouter** as the **Backend**, pick an **API key** (Settings → Inference's OpenRouter key is filled in) and a **Model**, such as Veo 3.1 or Wan 3.0; **Probe** shows its price. Set its **Resolution** (720p unless you choose) and **Most per clip ($)**: a clip that would cost more is refused; 0 is no limit. Prompts and pictures are sent to OpenRouter, and each clip is paid for from the key's credit. OpenRouter can't cancel a clip once sent: **Cancel** stops the wait, but the clip is still paid for. A model makes clips of set lengths (Veo: 4, 6 or 8 seconds), so the nearest is used. A clip's result says what it cost, and Settings → Video generation keeps a total until you press **Reset**.
 
 ## Choose which model makes a clip
 
@@ -38,7 +38,9 @@ Haruspex uses the first model in the list that can make what you asked for: a pi
 
 ## Make a clip
 
-Ask for one in Chat or the Code tab: "a five-second clip of a red fox running through snow". You can ask for portrait, a seed to repeat one, a clip with sound, or give a picture from the conversation (or an image file in the working folder) to start from. With an end picture too, the clip moves from one to the other.
+Ask in Chat or the Code tab: "a five-second clip of a fox running through snow". You can ask for portrait, a seed to repeat one, a clip with sound, or give a picture from the conversation (or an image file in the working folder) to start from. With an end picture too, the clip moves from one to the other.
+
+To keep a character, product or style the same across clips, give up to three reference pictures; the clip need not start on them. On OpenRouter, Wan 3.0, Seedance 2 and Runway models take them; with a start picture too, some models ignore them.
 
 A clip takes minutes, so it runs in the background. It gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in the conversation, where it plays; **Save as…** under the player saves a copy. The card and the result name the backend that made it. With a working folder set, ask "save it as fox.webm" to save it there, then or later.
 
@@ -49,7 +51,6 @@ If Haruspex closes first, the clip is picked up when it reopens, as long as the 
 With a speaking model (Wan 2.2 S2V), a picture of a person and some speech make a clip of them saying it: "make this portrait say 'hello, welcome to the channel'". The speech can be made in the conversation first (see the `speech` page) or be a sound file in the working folder.
 
 - The clip is as long as the speech, up to about 5 seconds. Longer speech is refused before anything is sent: split it at its pauses.
-- The finished clip plays with the speech under it.
 
 ## Continue a clip
 

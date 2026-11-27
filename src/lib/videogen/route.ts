@@ -26,6 +26,8 @@ export interface VideoNeed {
 	endImage: boolean;
 	speech: boolean;
 	sound: boolean;
+	/** Reference pictures to keep the look of. */
+	references?: boolean;
 }
 
 export const NOT_SET_UP =
@@ -40,7 +42,8 @@ export function needOf(req: VideoRequest, sound = false): VideoNeed {
 		startImage: !!req.startImage,
 		endImage: !!req.endImage,
 		speech: !!req.audio,
-		sound
+		sound,
+		...(req.references?.length ? { references: true } : {})
 	};
 }
 
@@ -50,7 +53,8 @@ const PARTS: [keyof VideoNeed & keyof VideoCaps, string][] = [
 	['startImage', 'start from a picture'],
 	['endImage', 'end on a picture'],
 	['speech', 'make someone speak'],
-	['sound', 'make a clip with sound']
+	['sound', 'make a clip with sound'],
+	['references', 'keep the look of reference pictures']
 ];
 
 /** What `caps` can't do of `need`, as phrases; none when it can do it all. */
