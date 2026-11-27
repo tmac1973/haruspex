@@ -81,19 +81,22 @@ export const MODELS_NOTE =
 
 /**
  * Lines to put after a loaded skill's instructions: what the image backend
- * can do now. Empty for a skill that needs no image backend, or when the
- * backend can't say.
+ * can do now, and the upscalers that are on. Empty for a skill that needs no
+ * image backend, or when the backend can't say.
  */
 export async function needsNotes(needs: readonly SkillNeed[]): Promise<string[]> {
 	if (!needs.includes('image') || !met('image')) return [];
 	const entries = imageEntries();
+	// Loaded here, not at the top: the skills client is imported by every
+	// tab, and the image modules are only wanted when an image skill loads.
+	const { upscalersLine } = await import('#lib/image/modelsPrompt.ts');
+	const ups = upscalersLine();
+	const upscalers = ups ? [ups] : [];
 	if (entries.length > 1) {
 		const { entryLine } = await import('#lib/image/capabilityLine.ts');
-		return [...entries.map(entryLine), MODELS_NOTE];
+		return [...entries.map(entryLine), ...upscalers, MODELS_NOTE];
 	}
 	try {
-		// Loaded here, not at the top: the skills client is imported by every
-		// tab, and the image backends are only wanted when an image skill loads.
 		const [{ resolveImageBackend }, { capabilityLine }] = await Promise.all([
 			import('#lib/image/index.ts'),
 			import('#lib/image/capabilityLine.ts')
@@ -102,7 +105,8 @@ export async function needsNotes(needs: readonly SkillNeed[]): Promise<string[]>
 		const line = capabilityLine(await backend.capabilities(), backend.kind);
 		const how = line.howTo ? ` ${line.howTo}` : '';
 		return [
-			`The image backend, ${BACKEND_NAME[backend.kind]} (Settings → Image generation). ${line.text}${how}`
+			`The image backend, ${BACKEND_NAME[backend.kind]} (Settings → Image generation). ${line.text}${how}`,
+			...upscalers
 		];
 	} catch (e) {
 		console.warn('Could not read the image backend for a skill', e);

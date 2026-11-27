@@ -28,6 +28,7 @@ const CAPS = {
 beforeEach(() => {
 	updateSettings({
 		imageModels: [],
+		imageUpscalers: [],
 		musicBackendKind: 'none',
 		leanMode: false
 	});
@@ -86,6 +87,36 @@ describe('needsNotes', () => {
 		expect(note).toContain('Can: draw pictures, edit pictures, upscale pictures');
 		expect(note).toContain("Can't: extend pictures, tiling textures.");
 		expect(note).toContain('Only the bundled engine and ComfyUI extend pictures');
+	});
+
+	it('names the upscalers that are on, after the image models', async () => {
+		const up = (id: string, disabled?: boolean) => ({
+			id,
+			name: id,
+			backend: 'llama-toolchest' as const,
+			url: 'http://box:3000',
+			keyId: null,
+			model: id,
+			options: {},
+			caps: { scale: 4, limits: null },
+			capsAt: 1,
+			renamed: false,
+			...(disabled ? { disabled } : {})
+		});
+		const line = 'Upscalers, which upscale_image tries first: real-esrgan (×4).';
+		updateSettings({
+			imageModels: [...imageModelsFor('lemonade'), ...imageModelsFor('comfyui')],
+			imageUpscalers: [up('real-esrgan'), up('spare', true)]
+		});
+		const several = await needsNotes(['image']);
+		expect(several.at(-2)).toBe(line);
+		expect(several.at(-1)).toBe(MODELS_NOTE);
+
+		updateSettings({ imageModels: imageModelsFor('lemonade') });
+		expect((await needsNotes(['image'])).at(-1)).toBe(line);
+
+		updateSettings({ imageUpscalers: [up('real-esrgan', true)] });
+		expect((await needsNotes(['image'])).join('\n')).not.toContain('Upscalers');
 	});
 
 	it('is empty for other skills, with no backend, or when the backend fails', async () => {
