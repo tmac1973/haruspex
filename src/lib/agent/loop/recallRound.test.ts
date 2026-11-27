@@ -29,12 +29,12 @@ function ctxWith(text: string, contextSize = 40_000) {
 beforeEach(() => resetTokenCalibration());
 
 describe('startRecallRound', () => {
-	it('gives the round the room left below the trim threshold, in plain estimate', () => {
+	it('gives the round the room left a little below the trim threshold, in plain estimate', () => {
 		const ctx = ctxWith('x'.repeat(35_000));
 		startRecallRound(ctx);
 		const calibration = getTokenCalibration(ctx.descriptor.calibrationKey);
 		const prompt = Math.ceil(estimateMessagesTokens(ctx.messages, ctx.tools) * calibration);
-		const room = (Math.floor(40_000 * 0.7) - prompt) / calibration;
+		const room = (Math.floor(40_000 * 0.65) - prompt) / calibration;
 		expect(ctx.recallArchive!.roomLeft).toBeCloseTo(room, 6);
 	});
 
