@@ -270,6 +270,24 @@ function hideAwayFrom(THREE: Three, root: Object3D, b: Bounds): () => void {
 }
 
 /**
+ * Free a one-shot renderer and its WebGL context now. `dispose` alone leaves
+ * the context to the garbage collector, and a long session of checks piles
+ * them up until the web process dies (#996). Only for a canvas that is never
+ * drawn on again: a lost context stays lost.
+ */
+export function releaseRenderer(
+	renderer: Pick<InstanceType<Three['WebGLRenderer']>, 'dispose' | 'forceContextLoss'> | null,
+	canvas: HTMLCanvasElement
+): void {
+	if (renderer) {
+		renderer.dispose();
+		renderer.forceContextLoss();
+	}
+	canvas.width = 0;
+	canvas.height = 0;
+}
+
+/**
  * Draw the sheet as a PNG data URL, or null when WebGL can't. With `closeUp`,
  * `b` is one part's bounds and only what lies near it is drawn.
  */
@@ -325,6 +343,6 @@ export function renderSheet(
 		return null;
 	} finally {
 		show();
-		renderer?.dispose();
+		releaseRenderer(renderer, glCanvas);
 	}
 }
