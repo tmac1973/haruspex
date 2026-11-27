@@ -91,6 +91,17 @@ export async function refusal(res: Response, make: MakeError, what: string): Pro
 	if (res.status === 402) {
 		return make('rejected', `OpenRouter: ${said} (the key is out of credit).`, opts);
 	}
+	// No endpoint left for the model: none serves the request, or the account's
+	// privacy settings ruled them all out. Another model may still do it.
+	if (res.status === 404) {
+		return make(
+			'unconfigured',
+			`OpenRouter can't make the ${what} with this model: ${said}. The privacy settings ` +
+				'on openrouter.ai (data policy, zero data retention, allowed providers) can rule ' +
+				'out all of its providers.',
+			opts
+		);
+	}
 	const kind = res.status === 429 || res.status >= 500 ? 'unreachable' : 'rejected';
 	return make(kind, `OpenRouter refused the ${what}: ${said}`, opts);
 }
