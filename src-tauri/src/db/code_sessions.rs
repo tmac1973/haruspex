@@ -592,6 +592,7 @@ impl Database {
             helper_config: source.helper_config,
         };
         self.insert_code_session(&row)?;
+        self.copy_code_session_images(id, &row.id)?;
         Ok(row)
     }
 }

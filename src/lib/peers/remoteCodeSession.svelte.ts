@@ -13,7 +13,8 @@ import { readOnlyIO } from '#lib/editor/io.ts';
 import { editWorkdirFiles } from '#lib/stores/fileEditor.svelte.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 import type { RewindFile, RewindReport } from '#lib/code/checkpoints.ts';
-import { peerImageUrl } from '#lib/peers/images.ts';
+import { peerImageByHash, peerImageUrl } from '#lib/peers/images.ts';
+import type { SearchStep } from '#lib/agent/loop.ts';
 import { onPeerGone, type PeerView } from '#lib/peers/store.svelte.ts';
 import {
 	getOpenViews,
@@ -72,6 +73,11 @@ export class RemoteCodeSession implements CodeSessionView {
 	// Asked once each; never rendered.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	private asked = new Set<string>();
+	/** Its steps' pictures, by hash, as blob URLs here once read. */
+	private stepImages = $state<Record<string, string>>({});
+	// Asked once each; never rendered.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	private askedSteps = new Set<string>();
 
 	constructor(
 		readonly view: PeerView,
@@ -108,7 +114,10 @@ export class RemoteCodeSession implements CodeSessionView {
 		return (this.state?.messages ?? []).map((m) => this.withImages(m));
 	}
 	get messageSteps(): S['messageSteps'] {
-		return this.state?.messageSteps ?? {};
+		const all = this.state?.messageSteps ?? {};
+		return Object.fromEntries(
+			Object.entries(all).map(([k, steps]) => [k, this.withStepImages(steps)])
+		);
 	}
 	get messageStats(): S['messageStats'] {
 		return (this.state?.messageStats ?? {}) as S['messageStats'];
@@ -117,7 +126,7 @@ export class RemoteCodeSession implements CodeSessionView {
 		return (this.state?.messageStops ?? {}) as S['messageStops'];
 	}
 	get searchSteps(): S['searchSteps'] {
-		return this.state?.searchSteps ?? [];
+		return this.withStepImages(this.state?.searchSteps ?? []);
 	}
 	get streamingContent(): string {
 		return this.state?.streamingContent ?? '';
@@ -182,6 +191,32 @@ export class RemoteCodeSession implements CodeSessionView {
 			return local ? { ...p, image_url: { ...p.image_url, url: local } } : p;
 		});
 		return changed ? { ...m, content } : m;
+	}
+
+	/**
+	 * Steps with their pictures (by hash, in that computer's cache) pointed
+	 * at copies read from it; a step waits without one until its copy is in.
+	 */
+	private withStepImages(steps: SearchStep[]): SearchStep[] {
+		if (!steps.some((s) => s.thumbHash)) return steps;
+		return steps.map((s) => {
+			if (!s.thumbHash) return s;
+			const local = this.stepImages[s.thumbHash];
+			if (!local) {
+				this.fetchStepImage(s.thumbHash);
+				return s.thumbDataUrl ? s : { ...s, thumbHash: undefined };
+			}
+			return { ...s, thumbHash: undefined, thumbDataUrl: local };
+		});
+	}
+
+	private fetchStepImage(hash: string): void {
+		if (this.askedSteps.has(hash)) return;
+		this.askedSteps.add(hash);
+		void peerImageByHash(this.view.id, hash).then((blob) => {
+			if (blob) this.stepImages[hash] = blob;
+			else this.askedSteps.delete(hash);
+		});
 	}
 
 	private fetchImage(url: string): void {

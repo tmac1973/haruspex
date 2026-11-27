@@ -13,6 +13,7 @@
 	import { copyText } from '#lib/utils/copyText.ts';
 	import { renderMarkdown } from '#lib/markdown.ts';
 	import { formatCost, formatTokens } from '#lib/code/usageTotals.ts';
+	import { stepImageSrc } from '#lib/code/stepImages.ts';
 
 	let {
 		subtask,
@@ -61,7 +62,7 @@
 
 	/** The profile's final sheet, else the newest step's thumbnail. */
 	const picture = $derived(
-		subtask.sheet ?? subtask.steps.findLast((s) => s.thumbDataUrl)?.thumbDataUrl ?? null
+		subtask.sheet ?? subtask.steps.map(stepImageSrc).findLast((src) => src !== null) ?? null
 	);
 
 	/** One line on what became of a writing subtask's changes. */

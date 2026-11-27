@@ -717,6 +717,19 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_conversation_images_hash
                 ON conversation_images(image_hash);
 
+            -- The pictures a Code session's steps show by hash (a check_3d
+            -- sheet, a screenshot), so the sweep keeps them while it lives.
+            CREATE TABLE IF NOT EXISTS code_session_images (
+                session_id TEXT NOT NULL
+                    REFERENCES code_sessions(id) ON DELETE CASCADE,
+                image_hash TEXT NOT NULL
+                    REFERENCES images(hash) ON DELETE CASCADE,
+                PRIMARY KEY (session_id, image_hash)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_code_session_images_hash
+                ON code_session_images(image_hash);
+
             CREATE TABLE IF NOT EXISTS audio (
                 hash TEXT PRIMARY KEY,
                 mime TEXT NOT NULL,

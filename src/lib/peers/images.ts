@@ -34,12 +34,19 @@ export async function peerImageUrl(peerId: string, url: string): Promise<string 
 		return null;
 	}
 	if (!row) return null;
+	return peerImageByHash(peerId, row.hash, row.mime);
+}
+
+/**
+ * A blob URL for the image that computer caches as `hash` (a Code step's
+ * picture names it so), or null when it has none.
+ */
+export function peerImageByHash(peerId: string, hash: string, mime = ''): Promise<string | null> {
 	const map = blobs(peerId);
-	const { hash, mime } = row;
 	let made = map.get(hash);
 	if (!made) {
 		made = invoke<ArrayBuffer>('peer_image', { peerId, hash }).then(
-			(bytes) => URL.createObjectURL(new Blob([bytes], { type: mime })),
+			(bytes) => URL.createObjectURL(new Blob([bytes], mime ? { type: mime } : {})),
 			() => {
 				// Not cached: the next ask tries again.
 				map.delete(hash);

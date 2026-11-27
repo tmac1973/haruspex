@@ -23,6 +23,7 @@ import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep, SteeringMessage } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress, markStepsStopped } from '#lib/agent/steps.ts';
 import { SubtaskStops, subtaskActive, type SubtaskState } from '#lib/code/subtask.ts';
+import { storeStepImage, withStoredImage } from '#lib/code/stepImages.ts';
 import {
 	BackgroundSubtasks,
 	buildSubtaskNotification,
@@ -627,6 +628,30 @@ export class CodeSession implements CodeSessionView {
 		}
 	}
 
+	/**
+	 * Move a step's `data:` picture into the image cache, and name it by hash
+	 * wherever the step is by then: the running turn's steps, or a saved
+	 * answer's once the turn has ended.
+	 */
+	private keepStepImage(dataUrl: string): void {
+		if (!dataUrl.startsWith('data:')) return;
+		void storeStepImage(dataUrl, this.id).then((hash) => {
+			if (!hash || this.closed) return;
+			const running = withStoredImage(this.searchSteps, dataUrl, hash);
+			if (running) {
+				this.searchSteps = running;
+				return;
+			}
+			for (const [key, steps] of Object.entries(this.messageSteps)) {
+				const next = withStoredImage(steps, dataUrl, hash);
+				if (!next) continue;
+				this.messageSteps = { ...this.messageSteps, [key]: next };
+				if (!this.busy) void this.persist();
+				return;
+			}
+		});
+	}
+
 	/** Stop one of the running turn's subtasks; the turn carries on without it. */
 	stopSubtask = (id: string): void => {
 		this.subtaskStops.stop(id);
@@ -1143,6 +1168,7 @@ export class CodeSession implements CodeSessionView {
 						);
 					}
 					if (BG_TOOLS.has(call.name)) void this.refreshBackground();
+					if (thumb) this.keepStepImage(thumb);
 				}
 			});
 			// Stopped before the model was ever asked: the turn never started,

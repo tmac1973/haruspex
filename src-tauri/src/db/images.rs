@@ -1,6 +1,6 @@
 //! Cached-image persistence: the `images` rows (content-addressed bytes plus
-//! their provenance) and the `conversation_images` links that decide when the
-//! bytes may be deleted.
+//! their provenance) and the `conversation_images` and `code_session_images`
+//! links that decide when the bytes may be deleted.
 //!
 //! This module owns SQL only. Fetching, decoding and the on-disk files are
 //! `crate::image_cache`'s job — keeping them apart is what lets every query
@@ -151,6 +151,35 @@ impl Database {
         Ok(())
     }
 
+    /// Record that a Code session's steps show an image. Idempotent, as
+    /// [`Self::link_image`] is.
+    pub fn link_code_session_image(
+        &self,
+        session_id: &str,
+        image_hash: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR IGNORE INTO code_session_images (session_id, image_hash)
+             VALUES (?1, ?2)",
+            params![session_id, image_hash],
+        )
+        .map_err(|e| format!("Failed to link image to the Code session: {}", e))?;
+        Ok(())
+    }
+
+    /// Give `to` every image `from` is linked to: a fork shows the same steps.
+    pub fn copy_code_session_images(&self, from: &str, to: &str) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR IGNORE INTO code_session_images (session_id, image_hash)
+             SELECT ?2, image_hash FROM code_session_images WHERE session_id = ?1",
+            params![from, to],
+        )
+        .map_err(|e| format!("Failed to copy the Code session's images: {}", e))?;
+        Ok(())
+    }
+
     /// Look one image up by its content hash — the protocol handler's path.
     pub fn image_by_hash(&self, hash: &str) -> Result<Option<ImageRow>, String> {
         let conn = self.conn();
@@ -236,14 +265,17 @@ impl Database {
         Ok(doomed)
     }
 
-    /// Images no conversation references any more — the cascade's leftovers.
+    /// Images no conversation or Code session references any more — the
+    /// cascade's leftovers.
     pub fn unreferenced_image_hashes(&self) -> Result<Vec<String>, String> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT i.hash FROM images i
-                 LEFT JOIN conversation_images ci ON ci.image_hash = i.hash
-                 WHERE ci.image_hash IS NULL",
+                 WHERE NOT EXISTS
+                     (SELECT 1 FROM conversation_images ci WHERE ci.image_hash = i.hash)
+                   AND NOT EXISTS
+                     (SELECT 1 FROM code_session_images ce WHERE ce.image_hash = i.hash)",
             )
             .map_err(|e| format!("Failed to prepare orphan scan: {}", e))?;
         let rows = stmt
