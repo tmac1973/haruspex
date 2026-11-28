@@ -43,7 +43,7 @@ axum = { version = "0.8.4", default-features = false, features = ["http1", "json
 # Typing it by hand is the step that would lose them, so it is offered as a QR
 # code. Default features off: only the raw module matrix is wanted, not the
 # image or SVG renderers it can also produce.
-qrcode = { version = "0.14.1", default-features = false }
+qrcode = { version = "0.15", default-features = false }
 sha2 = "0.11.0"
 md-5 = "0.11.0"
 uuid = { version = "1.28", features = ["v4"] }
@@ -60,7 +60,7 @@ libc = "0.2.183"
 # Waiting on a sidecar from one thread while another may kill it
 # (`sidecar_process`). The shell plugin uses the same crate for the same reason.
 shared_child = "1.1"
-rusqlite = { version = "0.41.1", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 cpal = "0.18.2"
 rodio = "0.23.0"
 hound = "3.5.1"
@@ -75,11 +75,11 @@ calamine = "0.38"
 zip = "9.0"
 image = "0.25"
 base64 = "0.23"
-rust_xlsxwriter = "0.102"
+rust_xlsxwriter = "0.104"
 portable-pty = "0.9"
 # Editor windows reload a file when something else changes it: inotify on
 # Linux, FSEvents on macOS. See fs_tools/editor.rs.
-notify = "8.2"
+notify = "9"
 
 # Email integration (Phase 10). async-imap handles IMAP over TLS,
 # mail-parser handles RFC 5322 / MIME decoding. lettre is stubbed in
@@ -119,7 +119,9 @@ tauri-plugin-single-instance = "2.5.5"
 # default features, so as a library it costs only cfg-if/derive_builder/
 # thiserror plus the one platform backend. See src/power.rs.
 keepawake = { version = "0.6.1", default-features = false }
-fastembed = { version = "7.1.1", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
+# `onig` is the tokenizer's regex engine, which 7.8 moved into the default
+# features this turns off: without one, `tokenizers` doesn't compile.
+fastembed = { version = "7.8", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls", "onig"] }
 rmcp = { version = "3.5.1", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 tar = "0.4.46"
 flate2 = "1.1.10"
