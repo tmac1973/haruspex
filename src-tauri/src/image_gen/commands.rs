@@ -31,24 +31,12 @@ pub struct NormalizeResult {
 }
 
 fn decode(bytes: &[u8]) -> Result<RgbaImage, String> {
-    image::load_from_memory(bytes)
-        .map_err(|e| format!("Could not read the image: {e}"))
-        .map(|i| i.to_rgba8())
+    super::png::decode_rgba(bytes, "image")
 }
 
-/// Encode with fixed settings and no metadata, so the same pixels always give
-/// the same bytes — a re-run must not dirty a committed asset.
+/// Same pixels, same bytes: see `png`.
 fn encode(img: &RgbaImage) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    image::codecs::png::PngEncoder::new(&mut out)
-        .write_image(
-            img.as_raw(),
-            img.width(),
-            img.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .map_err(|e| format!("Could not encode the image: {e}"))?;
-    Ok(out)
+    super::png::encode_rgba(img, "image")
 }
 
 /// Key, crop, downscale, quantize and outline one image.

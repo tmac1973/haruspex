@@ -252,9 +252,7 @@ pub async fn image_mask_prepare(
         (None, None) => return Err("No picture was given.".into()),
     };
     let (canvas, mask) = tokio::task::spawn_blocking(move || {
-        let src = image::load_from_memory(&bytes)
-            .map_err(|e| format!("Could not read the picture: {e}"))?
-            .to_rgba8();
+        let src = crate::image_gen::png::decode_rgba(&bytes, "picture")?;
         let p = crate::image_gen::mask::prepare(&src, area, extend)?;
         let (w, h) = p.canvas.dimensions();
         Ok::<_, String>((
@@ -306,9 +304,7 @@ pub async fn image_mask_change(
     );
     let edited = edited.clone();
     tokio::task::spawn_blocking(move || {
-        let load = |b: &[u8], what: &str| {
-            image::load_from_memory(b).map_err(|e| format!("Could not read the {what}: {e}"))
-        };
+        let load = crate::image_gen::png::decode;
         Ok(crate::image_gen::mask::masked_change(
             &load(&canvas, "canvas")?.to_rgba8(),
             &load(&edited, "edited picture")?.to_rgba8(),
@@ -341,9 +337,7 @@ pub async fn image_mask_finish(
     );
     let edited = edited.clone();
     let png = tokio::task::spawn_blocking(move || {
-        let load = |b: &[u8], what: &str| {
-            image::load_from_memory(b).map_err(|e| format!("Could not read the {what}: {e}"))
-        };
+        let load = crate::image_gen::png::decode;
         let out = crate::image_gen::mask::composite(
             &load(&canvas, "canvas")?.to_rgba8(),
             &load(&edited, "edited picture")?.to_rgba8(),
