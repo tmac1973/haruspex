@@ -32,12 +32,8 @@ import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { editWorkdirFiles } from '#lib/stores/fileEditor.svelte.ts';
 import { normalizeAbort } from '#lib/utils/error.ts';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted,
-	type JobRunStepStatus
-} from '#lib/stores/jobRuns.svelte.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import {
 	defaultPlanDir,
@@ -1148,12 +1144,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const APPROVAL = 6;
 	const HANDOFF = 7;
 
-	const startStep = (idx: number) => {
-		const startedAt = Date.now();
-		deps.patchStep(idx, { status: 'running', startedAt });
-		deps.setCurrentStepIndex(idx);
-		void markRunStepStarted(runId, idx, startedAt, deps.stepAuthored(idx));
-	};
+	const steps = stepMarkers(deps);
+	const startStep = steps.start;
 	// What the model said during each stage's turns (interview summaries,
 	// verifier findings, revision notes). The live streaming buffer vanishes
 	// when a stage finishes, so this is folded into the stage's persisted
@@ -1167,11 +1159,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		stageNotes.set(idx, notes);
 	};
 	const finishStep = (idx: number, summary: string) => {
-		const finishedAt = Date.now();
 		const notes = stageNotes.get(idx);
 		const output = notes?.length ? `${summary}\n\n---\n\n${notes.join('\n\n---\n\n')}` : summary;
-		deps.patchStep(idx, { status: 'succeeded', output, finishedAt });
-		void markRunStepFinished(runId, idx, 'succeeded', output, null, finishedAt);
+		steps.succeed(idx, output);
 	};
 
 	const turn = async (
@@ -2368,9 +2358,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				// An abort is not a crash: a cancelled run must still cancel.
 				const { aborted, msg } = normalizeAbort(e);
 				if (aborted) throw e;
-				const finishedAt = Date.now();
-				deps.patchStep(VERIFY, { status: 'failed', error: msg, finishedAt });
-				void markRunStepFinished(runId, VERIFY, 'failed', null, msg, finishedAt);
+				steps.finish(VERIFY, 'failed', null, msg);
 			}
 		}
 
@@ -2472,13 +2460,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 
 		deps.finalizeRun('succeeded', null);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
-		const finishedAt = Date.now();
-		// Mark whichever stage was live when the error/cancel hit.
-		const idx = deps.liveStepIndex();
-		deps.patchStep(idx, { status: stepStatus, error: msg, finishedAt });
-		void markRunStepFinished(runId, idx, stepStatus, null, msg, finishedAt);
+		// Marks whichever stage was live when the error/cancel hit.
+		const { aborted, msg } = steps.fail(e);
 		deps.finalizeRun(aborted ? 'cancelled' : 'failed', msg);
 	} finally {
 		deps.onSettled();

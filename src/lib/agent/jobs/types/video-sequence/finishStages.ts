@@ -19,7 +19,7 @@ import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
 import { mergeProgress, progressKeys, type SequenceProgress } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 import { REPORT_FILE } from '#lib/sequence/spec/paths.ts';
-import type { Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import type { StepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import { ASSEMBLE, RENDER, REPORT, SOUND } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 import {
 	readProgress,
@@ -99,7 +99,7 @@ function soundDeps(
 /** What the four stages share as they go. */
 interface Shared {
 	ctx: JobRunContext;
-	steps: Steps;
+	steps: StepMarkers;
 	cfg: VideoSequenceConfig;
 	files: RunFiles;
 	run: FinishRun;
@@ -135,7 +135,7 @@ async function soundStage(sh: Shared): Promise<SoundMade> {
 		...sound.beds.map((b) => `- music ${b.id}: ${b.file}`),
 		...sound.lines.map((l) => `- narration: ${l.file}`)
 	];
-	steps.finish(SOUND, made.length ? made.join('\n') : 'No music or narration in the spec.');
+	steps.succeed(SOUND, made.length ? made.join('\n') : 'No music or narration in the spec.');
 	return sound;
 }
 
@@ -174,7 +174,7 @@ async function assembleStage(
 	await save();
 	const all = [...notes, ...made.notes];
 	const what = `${made.created ? 'Made' : 'Updated'} ${project}: ${cut.items.length} clips, ${format.preset}.`;
-	steps.finish(ASSEMBLE, [what, ...all].join('\n'));
+	steps.succeed(ASSEMBLE, [what, ...all].join('\n'));
 	return { project, notes: all };
 }
 
@@ -199,14 +199,14 @@ async function renderStage(sh: Shared, project: string): Promise<RenderResult> {
 	progress.render = render.path;
 	await save();
 	const problems = render.check?.problems ?? [];
-	steps.finish(RENDER, [`Rendered ${render.path}.`, ...problems.map((p) => `- ${p}`)].join('\n'));
+	steps.succeed(RENDER, [`Rendered ${render.path}.`, ...problems.map((p) => `- ${p}`)].join('\n'));
 	return render;
 }
 
 /** Sound, Assemble, Render and Report; the render. */
 export async function finishStages(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
 	run: FinishRun
@@ -234,6 +234,6 @@ export async function finishStages(
 		finishedMs: Date.now()
 	});
 	await files.writeText(REPORT_FILE, report);
-	steps.finish(REPORT, `Wrote ${files.path(REPORT_FILE)}.\n\n${report}`);
+	steps.succeed(REPORT, `Wrote ${files.path(REPORT_FILE)}.\n\n${report}`);
 	return render;
 }

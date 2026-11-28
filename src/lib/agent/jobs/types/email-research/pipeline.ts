@@ -52,7 +52,7 @@ import {
 } from '#lib/agent/jobs/types/email-research/triage.ts';
 import { requestQuestion, stripPhrase } from '#lib/agent/jobs/types/email-research/body.ts';
 import { failureNote, replyParts } from '#lib/agent/jobs/types/email-research/reply.ts';
-import { stepMarkers } from '#lib/agent/jobs/types/email-research/steps.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import {
 	newReplyId,
 	RESEARCH_TOOLS,

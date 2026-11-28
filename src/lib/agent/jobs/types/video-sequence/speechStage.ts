@@ -15,7 +15,7 @@ import {
 	type SequenceProgress
 } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
-import type { Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import type { StepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import { SPEECH } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 import {
 	readProgress,
@@ -73,7 +73,7 @@ function speechDeps(ctx: JobRunContext, files: RunFiles, save: () => Promise<voi
 /** Speak the lines, plan the clips from them, and join each window's speech. */
 export async function speechStage(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	files: RunFiles,
 	run: SpeechRun
 ): Promise<ClipPlan> {
@@ -81,7 +81,7 @@ export async function speechStage(
 	steps.abortIfCancelled();
 	const sections = speakingSections(run.spec);
 	if (!sections.length) {
-		steps.finish(SPEECH, 'No speaking sections.');
+		steps.succeed(SPEECH, 'No speaking sections.');
 		return planClips(run.spec, run.video.caps, run.draws);
 	}
 	if (!run.speaking) throw new Error('Speaking sections need the job’s speaking model.');
@@ -97,7 +97,7 @@ export async function speechStage(
 	const joined = await joinWindows(plan, progress, deps);
 	const lines = sections.reduce((n, s) => n + s.lines.length, 0);
 	const windows = plan.items.filter((i) => i.kind === 'generate' && i.audio).length;
-	steps.finish(
+	steps.succeed(
 		SPEECH,
 		`${lines} line${lines === 1 ? '' : 's'} (${spoken} spoken now) in ${windows} speaking clip${windows === 1 ? '' : 's'} (${joined} joined now).`
 	);

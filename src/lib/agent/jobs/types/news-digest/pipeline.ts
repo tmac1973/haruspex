@@ -7,16 +7,13 @@
  *   by id, each with a one-line summary. Ids it made up are dropped, and the
  *   card's headline, link and source come from the feed, never from the model.
  */
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted
-} from '#lib/stores/jobRuns.svelte.ts';
-import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
+import { errMessage } from '#lib/utils/error.ts';
 import { pickWithRetry, type ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
 import { parseNewsDigestConfig } from '#lib/agent/jobs/types/news-digest/config.ts';
 import { fetchFeed, freshItems, type FeedItem } from '#lib/agent/jobs/types/news-digest/feeds.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 /** Items the model chooses from, newest first. */
 const MAX_CANDIDATES = 60;
@@ -95,30 +92,13 @@ export async function runNewsDigestPipeline(ctx: JobRunContext): Promise<void> {
 	const config = parseNewsDigestConfig(job.type_config);
 	void markRunStarted(runId, Date.now());
 
-	const start = (step: number) => {
-		const startedAt = Date.now();
-		ctx.patchStep(step, { status: 'running', startedAt });
-		ctx.setCurrentStepIndex(step);
-		void markRunStepStarted(runId, step, startedAt, ctx.stepAuthored(step));
-	};
-	const finish = (
-		step: number,
-		status: 'succeeded' | 'failed' | 'cancelled',
-		output: string | null,
-		error: string | null
-	) => {
-		const finishedAt = Date.now();
-		ctx.patchStep(step, { status, output: output ?? '', error, finishedAt });
-		void markRunStepFinished(runId, step, status, output, error, finishedAt);
-	};
+	const { start, finish, fail } = stepMarkers(ctx);
 
-	let step = FETCH;
 	try {
 		start(FETCH);
 		const { items, notes } = await fetchItems(config.feeds, config.hours);
 		finish(FETCH, 'succeeded', notes.join('\n') || 'No feeds to read.', null);
 
-		step = PICK;
 		start(PICK);
 		if (items.length === 0) {
 			await ctx.setResult({ items: [] });
@@ -159,8 +139,7 @@ export async function runNewsDigestPipeline(ctx: JobRunContext): Promise<void> {
 		finish(PICK, 'succeeded', lines.join('\n') || 'Nothing matches your interests.', null);
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		finish(step, aborted ? 'cancelled' : 'failed', null, msg);
+		const { aborted, msg } = fail(e);
 		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', msg);
 	} finally {
 		ctx.onSettled();

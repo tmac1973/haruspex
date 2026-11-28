@@ -2,7 +2,7 @@
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { mergeProgress } from '#lib/sequence/spec/progress.ts';
-import type { Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import type { StepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import { CHECK } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 import type { VideoSequenceConfig } from '#lib/agent/jobs/types/video-sequence/config.ts';
 import {
@@ -26,7 +26,7 @@ import {
  */
 export async function checkStage(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
 	run: GenerateStageRun
@@ -34,7 +34,7 @@ export async function checkStage(
 	steps.start(CHECK);
 	if (!cfg.vision_checks || !ctx.visionSupported()) {
 		const why = cfg.vision_checks ? "the job's model can't see pictures" : 'checks are off';
-		steps.finish(CHECK, `Skipped: ${why}.`);
+		steps.succeed(CHECK, `Skipped: ${why}.`);
 		return;
 	}
 	const read = async () => (await readProgress(files))?.clips ?? {};
@@ -72,5 +72,5 @@ export async function checkStage(
 			flagged = flaggedClips(run.plan, await read());
 		}
 	}
-	steps.finish(CHECK, flaggedSummary(flagged));
+	steps.succeed(CHECK, flaggedSummary(flagged));
 }

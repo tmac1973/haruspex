@@ -7,15 +7,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
-import { normalizeAbort } from '#lib/utils/error.ts';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted,
-	type JobRunStepStatus
-} from '#lib/stores/jobRuns.svelte.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
-import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	parseModelGenerationConfig,
@@ -50,6 +43,7 @@ import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { handoffToCoding } from '#lib/agent/jobs/chainCoding.ts';
 import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
 const MAX_DERIVE_ATTEMPTS = 2;
@@ -221,24 +215,11 @@ async function handoff(
 }
 
 export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<void> {
-	const { job, runId, abort } = ctx;
+	const { job, runId } = ctx;
 	const cfg = parseModelGenerationConfig(job.type_config);
 	const specPath = resolveModelsSpecPath(cfg);
 
-	const startStep = (idx: number) => {
-		const startedAt = Date.now();
-		ctx.patchStep(idx, { status: 'running', startedAt });
-		ctx.setCurrentStepIndex(idx);
-		void markRunStepStarted(runId, idx, startedAt, ctx.stepAuthored(idx));
-	};
-	const finishStep = (idx: number, output: string) => {
-		const finishedAt = Date.now();
-		ctx.patchStep(idx, { status: 'succeeded', output, finishedAt });
-		void markRunStepFinished(runId, idx, 'succeeded', output, null, finishedAt);
-	};
-	const abortIfCancelled = () => {
-		if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-	};
+	const { start: startStep, succeed: finishStep, abortIfCancelled, fail } = stepMarkers(ctx);
 
 	void markRunStarted(runId, Date.now());
 
@@ -290,14 +271,8 @@ export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
-		const finishedAt = Date.now();
-		const idx = ctx.liveStepIndex();
-		ctx.patchStep(idx, { status: stepStatus, error: msg, finishedAt });
-		void markRunStepFinished(runId, idx, stepStatus, null, msg, finishedAt);
-		const status: RunStatus = aborted ? 'cancelled' : 'failed';
-		ctx.finalizeRun(status, aborted ? null : msg);
+		const { aborted, msg } = fail(e);
+		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', aborted ? null : msg);
 	} finally {
 		ctx.onSettled();
 	}

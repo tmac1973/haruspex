@@ -15,7 +15,7 @@ import { videoSettings } from '#lib/video/args.ts';
 import type { ClipPlan } from '#lib/sequence/spec/plan.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 import { mergeProgress, stillKeys } from '#lib/sequence/spec/progress.ts';
-import type { Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import type { StepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import { KEYFRAMES } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 import {
 	readProgress,
@@ -113,7 +113,7 @@ function picturesMarkdown(pics: ViewerImage[]): string {
 /** Make the run's stills; returns them for the Generate stage. */
 export async function keyframesStage(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
 	/** `draws`: generated sections open on stills (portraits are drawn either way). */
@@ -147,7 +147,7 @@ export async function keyframesStage(
 		files,
 		size
 	);
-	steps.finish(
+	steps.succeed(
 		KEYFRAMES,
 		[stillsSummary(stills), picturesMarkdown(pics)].filter(Boolean).join('\n\n')
 	);
