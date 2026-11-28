@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import { isUnderWriteRoot } from './fs-write';
+
+preloadToolRegistry();
 
 describe('isUnderWriteRoot', () => {
 	const root = 'plan/my-feature/';

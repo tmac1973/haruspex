@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import type { ToolContext } from './types';
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +18,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { invokeHandler } from '#lib/testing/invoke.ts';
 
 let ctx: ToolContext;
+
+preloadToolRegistry();
 
 beforeEach(() => {
 	ctx = makeToolContext({ workingDir: '/tmp/work' });

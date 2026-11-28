@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { MAX_DRAFT_REWRITES } from '#lib/agent/tools/_drafts.ts';
@@ -63,6 +64,8 @@ function route(routes: Parameters<typeof invokeRouter>[0]) {
 		return router<T>(cmd, args as Record<string, unknown>);
 	};
 }
+
+preloadToolRegistry();
 
 const ctx = makeToolContext({ workingDir: '/w' });
 

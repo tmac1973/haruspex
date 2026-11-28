@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
@@ -23,11 +24,7 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 // refuses a second write to one path within a turn.
 let ctx: ToolContext;
 
-// The first import of the tool registry loads every tool module, which went
-// past 5 s on a busy CI runner; pay for it once here, with room to spare.
-beforeAll(async () => {
-	await import('#lib/agent/tools/index.ts');
-}, 30_000);
+preloadToolRegistry();
 
 beforeEach(() => {
 	ctx = makeToolContext({ workingDir: '/tmp/work' });
