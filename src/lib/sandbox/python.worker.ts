@@ -900,7 +900,7 @@ function postInstallProgress(packageName: string, phase: InstallPhase): void {
 
 // Pyodide distribution version — must match the npm `pyodide` package
 // (see package.json) and the version vendored by scripts/fetch-pyodide.sh.
-const PYODIDE_VERSION = '314.0.7';
+const PYODIDE_VERSION = '314.0.8';
 const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
 /**

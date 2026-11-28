@@ -35,7 +35,7 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
-PYODIDE_VERSION="314.0.7"
+PYODIDE_VERSION="314.0.8"
 
 # PyPI wheels we install by explicit local URL (deps=False), NOT via the
 # Pyodide lockfile — either because they're not in the lockfile at all
