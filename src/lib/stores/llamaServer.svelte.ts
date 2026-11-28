@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
 import type { ContextBackoffState } from '#lib/ipc/gen/ContextBackoffState.ts';
 import { PORTS } from '#lib/ports.ts';
+import { isOpenRouterUrl } from '#lib/openrouter.ts';
 import {
 	DEFAULT_CONTEXT_SIZE,
 	getSettings,
@@ -347,14 +348,7 @@ export function setRemoteProblem(
 function buildRemoteLabel(baseUrl: string, modelId: string): string {
 	// OpenRouter is a cloud backend — label it distinctly so the badge always
 	// makes the "prompts leave your device" status obvious at a glance.
-	const isOpenRouter = (() => {
-		try {
-			return new URL(baseUrl).hostname === 'openrouter.ai';
-		} catch {
-			return false;
-		}
-	})();
-	if (isOpenRouter) {
+	if (isOpenRouterUrl(baseUrl)) {
 		const model = modelId.trim();
 		return model ? `${model} @ OpenRouter (cloud)` : 'OpenRouter (cloud)';
 	}

@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { isWebClient } from '#lib/buildFlags.ts';
 import { imageSrc } from '#lib/images/url.ts';
+import { readCachedImage } from '#lib/image/bytes.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
@@ -46,7 +47,7 @@ export async function saveImageAs(hash: string, alt: string): Promise<ImageSaveR
 		a.click();
 		return { kind: 'saved', path: a.download };
 	}
-	const bytes = new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash }));
+	const bytes = await readCachedImage(hash);
 	const ext = imageExtension(bytes);
 	const path = await save({
 		title: 'Save picture',

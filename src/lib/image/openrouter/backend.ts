@@ -16,16 +16,17 @@ import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debugLog.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { bytesToBase64 } from '#lib/utils/base64.ts';
 import { randomSeed } from '#lib/utils/random.ts';
 import { fetchOpenRouterKeyStatus } from '#lib/openrouter.ts';
 import {
 	fetchWithin,
+	hourlyList,
 	jsonOf,
 	openRouterHeaders,
 	openRouterUrl,
 	type MakeError
 } from '#lib/openrouterCalls.ts';
+import { imageDataUrl, isFullyOpaque, readCachedImage } from '#lib/image/bytes.ts';
 import { formatUsd } from '#lib/utils/format.ts';
 import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
@@ -46,7 +47,6 @@ import {
 	capabilitiesOf,
 	costOf,
 	drawsPictures,
-	mimeOf,
 	modelOptions,
 	parseImageModels,
 	picturesFrom,
@@ -58,8 +58,6 @@ import {
 const GENERATE_TIMEOUT_MS = 300_000;
 /** The model list and a price lookup. */
 const LIST_TIMEOUT_MS = 20_000;
-/** How long the model list is kept before it is asked for again. */
-const LIST_TTL_MS = 60 * 60 * 1000;
 
 /** Some providers take a seed only below 2³¹. */
 const SEED_LIMIT = 2 ** 31;
@@ -76,11 +74,9 @@ const NO_TILING = 'OpenRouter cannot make tiling textures, so the edges may not 
 export const TRANSPARENCY_LOST =
 	'OpenRouter returned it with a solid background although a transparent one was asked for.';
 
-let listed: { at: number; models: Promise<OpenRouterImageModel[]> } | null = null;
-
 /** Test-only: forget the model list. */
 export function _resetForTests(): void {
-	listed = null;
+	models.reset();
 }
 
 /** The image layer's error, for the shared calls. */
@@ -100,16 +96,11 @@ async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
 	);
 }
 
+const models = hourlyList((signal) => getJson('/v1/images/models', signal).then(parseImageModels));
+
 /** OpenRouter's image models, asked once an hour. */
 export function imageModels(signal?: AbortSignal): Promise<OpenRouterImageModel[]> {
-	if (listed && Date.now() - listed.at < LIST_TTL_MS) return listed.models;
-	const models = getJson('/v1/images/models', signal).then(parseImageModels);
-	listed = { at: Date.now(), models };
-	// A failed list is asked for again next time.
-	void models.catch(() => {
-		if (listed?.models === models) listed = null;
-	});
-	return models;
+	return models.get(signal);
 }
 
 /** `id`'s price in a few words, or null when it can't be had. */
@@ -138,12 +129,12 @@ async function dataUrlOf(input: ImageInput): Promise<string> {
 		bytes = new Uint8Array(input.bytes);
 	} else {
 		try {
-			bytes = new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }));
+			bytes = await readCachedImage(input.hash);
 		} catch {
 			throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
 		}
 	}
-	return `data:${mimeOf(bytes)};base64,${bytesToBase64(bytes)}`;
+	return imageDataUrl(bytes);
 }
 
 /** `entry`'s model from the list, or why it can't draw. */
@@ -178,16 +169,6 @@ async function keyOf(entry: ImageModelEntry): Promise<string> {
 		);
 	}
 	return key;
-}
-
-/** `TRANSPARENCY_LOST` when `png` has no pixel short of opaque; undefined otherwise or unsure. */
-async function lostTransparency(png: Uint8Array): Promise<string | undefined> {
-	try {
-		const clear = await invoke<number>('image_transparent_fraction', { bytes: Array.from(png) });
-		return clear > 0 ? undefined : TRANSPARENCY_LOST;
-	} catch {
-		return undefined;
-	}
 }
 
 /** Refuse what no OpenRouter model does, before anything is paid for. */
@@ -287,7 +268,8 @@ async function generateWith(
 	const { pictures, cost } = await draw(apiKey, model, body, opts.signal);
 	opts.onProgress?.({ phase: 'downloading' });
 	const images = await fitted(pictures, req.width, req.height);
-	const transparencyFailed = transparent ? await lostTransparency(images[0]) : undefined;
+	const transparencyFailed =
+		transparent && (await isFullyOpaque(images[0])) ? TRANSPARENCY_LOST : undefined;
 
 	return toImageResult(images, {
 		backend: 'openrouter',

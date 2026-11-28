@@ -53,6 +53,15 @@ export function openRouterModelCaps(m: OpenRouterModel): {
 /** Base URL for the OpenRouter API (no trailing slash, no `/v1` suffix). */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 
+/** Whether a base URL points at OpenRouter: its host is OpenRouter's. */
+export function isOpenRouterUrl(url: string): boolean {
+	try {
+		return new URL(url).hostname === new URL(OPENROUTER_BASE_URL).hostname;
+	} catch {
+		return false;
+	}
+}
+
 /** How long a cached catalog stays fresh before the form offers a refresh. */
 export const OPENROUTER_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 

@@ -5,10 +5,10 @@
  * A cached picture goes to the server by hash (Rust reads it); the others'
  * bytes are read here. Each is measured, so the result keeps its shape.
  */
-import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
+import { readCachedImage } from '#lib/image/bytes.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 import { assetIo } from '#lib/agent/tools/_assetIo.ts';
 import type { ImageInput } from '#lib/image/types.ts';
@@ -56,7 +56,7 @@ async function read(ref: string, what: string, ctx: ToolContext): Promise<Read> 
 	const hash = imageHashFromUrl(ref);
 	if (hash) {
 		try {
-			const bytes = new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash }));
+			const bytes = await readCachedImage(hash);
 			return { input: { name: 'image.png', hash }, bytes };
 		} catch {
 			return `${what} is no longer in the image cache.`;

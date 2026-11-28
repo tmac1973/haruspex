@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { mingTransparent, qwen21Transparent } from '#lib/image/comfyui/templates/index.ts';
 import { toBase64 } from '#lib/image/local/adapter.ts';
+import { readCachedImage } from '#lib/image/bytes.ts';
 import { ImageBackendError, type ImageInput, type ImageRequest } from '#lib/image/types.ts';
 import { sleep } from '#lib/utils/async.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -20,9 +21,7 @@ export type SdFamily = 'ming' | 'qwen21';
 export async function base64Of(input: ImageInput): Promise<string> {
 	if ('bytes' in input) return toBase64(new Uint8Array(input.bytes));
 	try {
-		return toBase64(
-			new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }))
-		);
+		return toBase64(await readCachedImage(input.hash));
 	} catch {
 		throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
 	}

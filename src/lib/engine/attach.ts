@@ -4,11 +4,10 @@
  * starts with. Each is handled as the input boxes handle it, so a message
  * from elsewhere reaches the model as one typed here would.
  */
-import { invoke } from '@tauri-apps/api/core';
 import { imageHashFromUrl } from '#lib/images/url.ts';
 import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
-import { bytesToBase64 } from '#lib/utils/base64.ts';
+import { imageDataUrl, readCachedImage } from '#lib/image/bytes.ts';
 import { downscaleDataUrl } from '#lib/utils/image.ts';
 
 /** Most pictures one message may carry. */
@@ -16,14 +15,6 @@ export const MAX_IMAGES = 8;
 
 const HASH = /^[0-9a-f]{64}$/;
 const DATA_URL = /^data:image\/(png|jpeg|webp|gif);base64,/;
-
-/** The type a picture's first bytes say it is. */
-function mimeOf(b: Uint8Array): string {
-	if (b[0] === 0xff && b[1] === 0xd8) return 'image/jpeg';
-	if (b[0] === 0x47 && b[1] === 0x49) return 'image/gif';
-	if (b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45) return 'image/webp';
-	return 'image/png';
-}
 
 /**
  * A message's pictures as the input boxes attach them: data URLs, downscaled.
@@ -47,11 +38,11 @@ export async function attachImages(refs: unknown): Promise<string[]> {
 		}
 		let bytes: Uint8Array;
 		try {
-			bytes = new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash }));
+			bytes = await readCachedImage(hash);
 		} catch {
 			throw new Error(`no picture ${hash.slice(0, 12)}… here: upload it again`);
 		}
-		out.push(await downscaleDataUrl(`data:${mimeOf(bytes)};base64,${bytesToBase64(bytes)}`));
+		out.push(await downscaleDataUrl(imageDataUrl(bytes)));
 	}
 	return out;
 }
