@@ -2,6 +2,12 @@
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "print",
 	"description": "Print windows (print-*): a document from Chat or Notebooks on a white page, read back from Rust (print_document) and printed with print_run. The window may close itself; nothing else.",
-	"windows": ["print-*"],
-	"permissions": ["core:default", "core:window:allow-close"]
+	"windows": [
+		"print-*"
+	],
+	"permissions": [
+		"core:default",
+		"core:window:allow-close",
+		"agentless-commands"
+	]
 }

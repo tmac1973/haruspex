@@ -8,6 +8,8 @@ mod audio_cache;
 mod background;
 mod blob_cache;
 mod camera;
+#[cfg(test)]
+mod capabilities_test;
 mod clipboard;
 mod code_tools;
 mod comfy;
