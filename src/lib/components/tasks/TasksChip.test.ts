@@ -6,7 +6,9 @@ import { flushSync } from 'svelte';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (): Promise<unknown> => null)
 );
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 const stores = vi.hoisted(() => ({
 	work: [] as {

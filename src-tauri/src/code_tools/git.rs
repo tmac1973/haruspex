@@ -911,6 +911,64 @@ mod tests {
     use super::*;
     use crate::test_util::temp_dir;
 
+    /// `git status --porcelain=v2 --branch -z` output from its records.
+    fn porcelain(records: &[&str]) -> String {
+        records.iter().map(|r| format!("{r}\0")).collect()
+    }
+
+    #[test]
+    fn status_reads_the_branch_and_a_short_head() {
+        let st = parse_status(&porcelain(&[
+            "# branch.oid 0123456789abcdef0123456789abcdef01234567",
+            "# branch.head main",
+            "# branch.upstream origin/main",
+            "# branch.ab +0 -0",
+        ]));
+        assert_eq!(st.branch.as_deref(), Some("main"));
+        assert_eq!(st.head.as_deref(), Some("0123456"));
+        assert_eq!((st.changed, st.untracked), (0, 0));
+    }
+
+    #[test]
+    fn a_repo_with_no_commit_and_a_detached_head_have_neither() {
+        let st = parse_status(&porcelain(&[
+            "# branch.oid (initial)",
+            "# branch.head (detached)",
+        ]));
+        assert_eq!(st.head, None);
+        assert_eq!(st.branch, None);
+    }
+
+    #[test]
+    fn a_rename_counts_once_and_its_old_path_is_not_a_record() {
+        // The original path of a rename follows as an entry of its own. Named
+        // like a record here, so reading it as one would count it again.
+        let st = parse_status(&porcelain(&[
+            "# branch.head main",
+            "2 R. N... 100644 100644 100644 aaaa bbbb R100 new name.rs",
+            "1 old-name-that-looks-like-a-record.rs",
+            "1 .M N... 100644 100644 100644 a a changed.rs",
+            "? untracked.rs",
+        ]));
+        assert_eq!(st.changed, 2);
+        assert_eq!(st.untracked, 1);
+    }
+
+    #[test]
+    fn an_unmerged_file_counts_as_changed() {
+        let st = parse_status(&porcelain(&[
+            "u UU N... 100644 100644 100644 100644 a b c both.rs",
+            "1 .M N... 100644 100644 100644 a a edited.rs",
+        ]));
+        assert_eq!(st.changed, 2);
+    }
+
+    #[test]
+    fn ignored_files_and_unknown_records_count_for_nothing() {
+        let st = parse_status(&porcelain(&["! target/", "# branch.ab +1 -2", ""]));
+        assert_eq!((st.changed, st.untracked), (0, 0));
+    }
+
     fn git(dir: &Path, args: &[&str]) {
         let st = std::process::Command::new("git")
             .arg("-C")

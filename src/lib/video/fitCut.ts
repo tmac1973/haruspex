@@ -20,7 +20,8 @@ export function planReplacement(
 ): ReplacementPlan {
 	const ratio = spanSecs / takeSecs;
 	const fits = ratio >= FIT_RANGE[0] - 1e-9 && ratio <= FIT_RANGE[1] + 1e-9;
-	if (mode === 'fit' || (mode === 'auto' && fits)) {
+	// A gap of no length can't be stretched to: the picture is held instead.
+	if (spanSecs > 0 && (mode === 'fit' || (mode === 'auto' && fits))) {
 		return { mode: 'fit', speed: takeSecs / spanSecs };
 	}
 	return takeSecs < spanSecs

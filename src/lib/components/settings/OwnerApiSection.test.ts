@@ -81,7 +81,9 @@ vi.mock('@tauri-apps/api/core', async () =>
 );
 
 // Other computers listens for what Rust finds; OtherComputers.test.ts covers it.
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 import OwnerApiSection from './OwnerApiSection.svelte';
 

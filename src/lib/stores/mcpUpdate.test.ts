@@ -23,7 +23,9 @@ import { invokeCalls, invokeRouter, type InvokeRoute } from '#lib/testing/invoke
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 const ID = 'srv-up';
 

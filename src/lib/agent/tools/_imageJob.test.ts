@@ -12,7 +12,9 @@ const state = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		overDefaults: true,

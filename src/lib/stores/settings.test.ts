@@ -32,6 +32,14 @@ import {
 	setOpenRouterCatalog
 } from '#lib/stores/openrouterCatalog.svelte.ts';
 
+/** The settings module as a fresh start loads it from `stored`; null is a new install. */
+async function freshSettings(stored: Record<string, unknown> | null) {
+	if (stored) localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+	else localStorage.removeItem(SETTINGS_KEY);
+	vi.resetModules();
+	return import('#lib/stores/settings.ts');
+}
+
 // The sampling/template/reasoning readers now take a resolved backend
 // descriptor instead of re-reading the settings mode themselves. These
 // tests still drive configuration through the real settings store and
@@ -641,12 +649,8 @@ describe('load-time reasoning-effort default', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings();
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings();
 
 	it('ships medium, so Qwen 3.8 does not think at its own xhigh default', async () => {
 		localStorage.removeItem(SETTINGS_KEY);
@@ -726,12 +730,8 @@ describe('load-time reasoning-effort default', () => {
 describe('load-time file-write ceiling migration', () => {
 	// The store is a module singleton, so exercising load() needs a fresh
 	// instance: prime localStorage, then re-import.
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings();
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings();
 
 	it('raises an install still sitting on the old default', async () => {
 		const s = await loadWith({ maxResponseTokensFileWrite: 32768 });
@@ -760,12 +760,8 @@ describe('load-time file-write ceiling migration', () => {
 });
 
 describe('load-time context size floor', () => {
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings();
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings();
 
 	it('raises a saved 8K or 16K to 32K', async () => {
 		expect((await loadWith({ contextSize: 8192 })).contextSize).toBe(32768);
@@ -778,12 +774,8 @@ describe('load-time context size floor', () => {
 });
 
 describe('load-time Chat / Code / Shell split', () => {
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings();
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings();
 
 	it('copies the shared system prompt into Code once', async () => {
 		const s = await loadWith({ customSystemPrompt: 'Be brief.' });
@@ -824,12 +816,8 @@ describe('load-time remoteServerUrls seeding', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(inferenceBackend: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ inferenceBackend }));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings().inferenceBackend;
-	}
+	const loadWith = async (inferenceBackend: Record<string, unknown>) =>
+		(await freshSettings({ inferenceBackend })).getSettings().inferenceBackend;
 
 	it('seeds the saved list from a legacy remoteBaseUrl', async () => {
 		const inf = await loadWith({ mode: 'remote', remoteBaseUrl: 'http://host:8080' });
@@ -885,12 +873,8 @@ describe('load-time generationServers seeding', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings().generationServers;
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings().generationServers;
 
 	it('saves every address the generation settings hold, once each', async () => {
 		const servers = await loadWith({
@@ -1183,12 +1167,8 @@ describe('load-time imageModels seeding', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings().imageModels;
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings().imageModels;
 
 	it('makes the chosen backend the first entry, and None no entry', async () => {
 		expect(
@@ -1220,12 +1200,8 @@ describe('load-time video model list', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings().videoModels;
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings().videoModels;
 
 	it('makes the old toolchest instance the first entry, and None no entry', async () => {
 		expect(
@@ -1313,11 +1289,7 @@ describe('load-time proxy split', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		return await import('#lib/stores/settings.ts');
-	}
+	const loadWith = async (stored: Record<string, unknown>) => freshSettings(stored);
 
 	const manual = { mode: 'manual', url: 'http://vpn:3128', bypass: 'example.com' };
 
@@ -1370,11 +1342,7 @@ describe('load-time skills defaults', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		return await import('#lib/stores/settings.ts');
-	}
+	const loadWith = async (stored: Record<string, unknown>) => freshSettings(stored);
 
 	it('gives an install from before skills the defaults', async () => {
 		const m = await loadWith({ theme: 'dark' });
@@ -1388,12 +1356,8 @@ describe('load-time skills defaults', () => {
 });
 
 describe('load-time Shell Full access default migration', () => {
-	async function loadWith(stored: Record<string, unknown>) {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		vi.resetModules();
-		const fresh = await import('#lib/stores/settings.ts');
-		return fresh.getSettings();
-	}
+	const loadWith = async (stored: Record<string, unknown>) =>
+		(await freshSettings(stored)).getSettings();
 
 	afterEach(() => {
 		localStorage.removeItem(SETTINGS_KEY);
@@ -1458,12 +1422,7 @@ describe('code helpers setting', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown> | null) {
-		if (stored) localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		else localStorage.removeItem(SETTINGS_KEY);
-		vi.resetModules();
-		return import('#lib/stores/settings.ts');
-	}
+	const loadWith = async (stored: Record<string, unknown> | null) => freshSettings(stored);
 
 	it('starts with every helper off', async () => {
 		expect((await loadWith(null)).getSettings().codeHelpers).toEqual({});
@@ -1524,12 +1483,7 @@ describe('camera settings', () => {
 		vi.resetModules();
 	});
 
-	async function loadWith(stored: Record<string, unknown> | null) {
-		if (stored) localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-		else localStorage.removeItem(SETTINGS_KEY);
-		vi.resetModules();
-		return import('#lib/stores/settings.ts');
-	}
+	const loadWith = async (stored: Record<string, unknown> | null) => freshSettings(stored);
 
 	const camera = {
 		id: 'k1',
