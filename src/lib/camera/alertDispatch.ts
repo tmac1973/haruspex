@@ -13,6 +13,7 @@
  * email goes to (`camera_alert_send` checks the addresses again).
  */
 import { invoke } from '@tauri-apps/api/core';
+import { forgetItem, persistItem } from '#lib/persist.ts';
 import type { CameraAlert } from '#lib/ipc/gen/CameraAlert.ts';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 import type { CameraEvent } from '#lib/ipc/gen/CameraEvent.ts';
@@ -154,8 +155,8 @@ function pausedSent(): boolean {
 
 function setPausedSent(on: boolean): void {
 	try {
-		if (on) localStorage.setItem(PAUSED_KEY, '1');
-		else localStorage.removeItem(PAUSED_KEY);
+		if (on) persistItem(PAUSED_KEY, '1');
+		else forgetItem(PAUSED_KEY);
 	} catch {
 		// Only means a restart may send it again.
 	}

@@ -81,6 +81,45 @@ describe('persist', () => {
 		expect(sets).toEqual(['chat', 'code']);
 	});
 
+	it('forgets a key in both', async () => {
+		vi.mocked(invoke).mockResolvedValue({ 'haruspex.paused': '1' });
+		const { forgetItem } = await loadPersist();
+		vi.mocked(invoke).mockResolvedValue(undefined);
+		forgetItem('haruspex.paused');
+		expect(localStorage.getItem('haruspex.paused')).toBeNull();
+		await vi.waitFor(() =>
+			expect(invoke).toHaveBeenCalledWith('webview_store_set', {
+				key: 'haruspex.paused',
+				value: null
+			})
+		);
+	});
+
+	it('loads JSON, falling back on missing, broken or refused values', async () => {
+		delete (globalThis as { isTauri?: boolean }).isTauri;
+		const { loadJson } = await loadPersist();
+		const list = (v: unknown) => (Array.isArray(v) ? (v as string[]) : null);
+		expect(loadJson('haruspex.k', list, ['none'])).toEqual(['none']);
+		localStorage.setItem('haruspex.k', '["a"]');
+		expect(loadJson('haruspex.k', list, [])).toEqual(['a']);
+		localStorage.setItem('haruspex.k', '{"a":1}');
+		expect(loadJson('haruspex.k', list, [])).toEqual([]);
+		localStorage.setItem('haruspex.k', '{not json');
+		expect(loadJson('haruspex.k', list, [])).toEqual([]);
+	});
+
+	it('saves JSON, and says when storage refused it', async () => {
+		delete (globalThis as { isTauri?: boolean }).isTauri;
+		const { saveJson } = await loadPersist();
+		expect(saveJson('haruspex.k', { a: 1 })).toBe(true);
+		expect(localStorage.getItem('haruspex.k')).toBe('{"a":1}');
+		const full = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new Error('QuotaExceededError');
+		});
+		expect(saveJson('haruspex.k', { a: 2 })).toBe(false);
+		full.mockRestore();
+	});
+
 	it('only touches localStorage outside Tauri', async () => {
 		delete (globalThis as { isTauri?: boolean }).isTauri;
 		const { persistItem } = await loadPersist();

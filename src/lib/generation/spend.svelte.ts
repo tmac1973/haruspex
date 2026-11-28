@@ -10,6 +10,8 @@
  * watch, not a bill.
  */
 
+import { persistItem } from '#lib/persist.ts';
+
 const KEY = 'haruspex.generation.spend';
 
 export interface GenerationSpend {
@@ -55,7 +57,7 @@ const current = (): GenerationSpend => spend;
 function save(next: GenerationSpend): void {
 	spend = next;
 	try {
-		localStorage.setItem(KEY, JSON.stringify(next));
+		persistItem(KEY, JSON.stringify(next));
 	} catch {
 		// Storage full or refused: the count still lasts until the app closes.
 	}

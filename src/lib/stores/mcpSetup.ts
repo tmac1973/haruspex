@@ -17,7 +17,7 @@
 
 import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
-import { persistItem } from '#lib/persist.ts';
+import { asObject, loadJson, saveJson } from '#lib/persist.ts';
 
 /**
  * Everything the wizard needs to decide whether a step is done.
@@ -49,26 +49,10 @@ const PROGRESS_KEY = 'haruspex.mcp.setupProgress';
 /** Per-server setup progress: the index of the first unfinished step. */
 type ProgressMap = Record<string, number>;
 
-function load(): ProgressMap {
-	try {
-		const raw = localStorage.getItem(PROGRESS_KEY);
-		if (!raw) return {};
-		const parsed: unknown = JSON.parse(raw);
-		return parsed && typeof parsed === 'object' ? (parsed as ProgressMap) : {};
-	} catch {
-		// Losing progress costs the user a few clicks; refusing to load costs
-		// them the wizard entirely.
-		return {};
-	}
-}
-
-function save(map: ProgressMap): void {
-	try {
-		persistItem(PROGRESS_KEY, JSON.stringify(map));
-	} catch {
-		// Best-effort: the wizard still works, it just restarts at step one.
-	}
-}
+// Losing progress costs the user a few clicks; refusing to load costs them
+// the wizard entirely. Unsaved, the wizard just restarts at step one.
+const load = (): ProgressMap => loadJson(PROGRESS_KEY, asObject<ProgressMap>, {});
+const save = (map: ProgressMap): void => void saveJson(PROGRESS_KEY, map);
 
 export function savedStepIndex(serverId: string): number {
 	const value = load()[serverId];
