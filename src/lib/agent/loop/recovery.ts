@@ -8,7 +8,7 @@
 import { ApiError, type ChatCompletionResponse } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/contextBudget.ts';
 import { stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
-import { logDebug, previewPayload } from '#lib/debugLog.ts';
+import { logDebug, privateTextForLog } from '#lib/debugLog.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
 import {
@@ -159,7 +159,7 @@ export function tryMalformedToolCall(
 		(/<tool_call>/.test(response.content) || /<function=/.test(response.content))
 	) {
 		logDebug('agent', `iteration ${iteration} branch=malformed-tool-call recovery`, {
-			rawContent: previewPayload(response.content, 400)
+			rawContent: privateTextForLog(response.content ?? '', 400)
 		});
 		return pushNudge(
 			ctx,
@@ -194,7 +194,7 @@ export function tryDegradedOutput(
 	);
 	if (raw.length > 0 && (isBareUrl || looksLikeNakedToolCall)) {
 		logDebug('agent', `iteration ${iteration} branch=degraded-output break`, {
-			raw: isBareUrl ? urlForReport(raw) : previewPayload(raw, 200),
+			raw: isBareUrl ? urlForReport(raw) : privateTextForLog(raw, 200),
 			isBareUrl,
 			looksLikeNakedToolCall
 		});
@@ -219,7 +219,7 @@ export function tryNarrateRecovery(
 	if (nudges.needsNarrateRecovery() && !looksLikeClarifyingQuestion(response.content || '')) {
 		nudges.consumeNarrateRecovery();
 		logDebug('agent', `iteration ${iteration} branch=narrate-recovery`, {
-			assistantContent: previewPayload(response.content, 400)
+			assistantContent: privateTextForLog(response.content ?? '', 400)
 		});
 		return pushNudge(
 			ctx,
@@ -335,7 +335,7 @@ export function tryFileWriteRecovery(
 			'agent',
 			`iteration ${iteration} branch=file-write-hallucination retry ${nudges.fileWriteRetryCount}`,
 			{
-				assistantContent: previewPayload(response.content, 400)
+				assistantContent: privateTextForLog(response.content ?? '', 400)
 			}
 		);
 		nudges.armNarrateRecovery();

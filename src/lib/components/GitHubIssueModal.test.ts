@@ -20,7 +20,9 @@ vi.mock('#lib/github/issues.ts', async (orig) => ({
 	recentRepos: () => ['tmac1973/haruspex']
 }));
 vi.mock('#lib/stores/toasts.svelte.ts', () => ({ showToast: m.showToast }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 
 import GitHubIssueModal from './GitHubIssueModal.svelte';
 import { closeGitHubFile, getGitHubFile, openGitHubFile } from '#lib/stores/githubIssue.svelte.ts';

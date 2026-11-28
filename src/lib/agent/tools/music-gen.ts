@@ -43,6 +43,7 @@ import {
 	startMusicTask
 } from '#lib/agent/tools/_musicJob.ts';
 import { trimmed } from '#lib/utils/coerce.ts';
+import { titleFromText } from '#lib/utils/format.ts';
 
 export const MIN_SECONDS = 5;
 export const MAX_SECONDS = 240;
@@ -57,17 +58,6 @@ export interface MusicArgs {
 	/** Asked to run in the background. */
 	background: boolean;
 	notes: string[];
-}
-
-/** A title from the caption when none was given: its first five words. */
-function titleOf(caption: string): string {
-	return caption
-		.replace(/[[\]()]/g, '')
-		.split(/[\s,]+/)
-		.filter(Boolean)
-		.slice(0, 5)
-		.map((w) => w[0].toUpperCase() + w.slice(1))
-		.join(' ');
 }
 
 /** The format a path's extension asks for, `null` for none, `'bad'` for another. */
@@ -136,7 +126,7 @@ export function parseMusicArgs(
 	if (timeSignature === null) return 'time_signature must be 2/4, 3/4, 4/4 or 6/8.';
 	return {
 		req: {
-			title: trimmed(args.title) || titleOf(caption),
+			title: trimmed(args.title) || titleFromText(caption),
 			caption,
 			lyrics: instrumental ? undefined : lyrics,
 			instrumental,

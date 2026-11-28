@@ -5,7 +5,7 @@
 use crate::blob_cache::is_valid_hash;
 use crate::db::Database;
 use crate::protocol_util::empty;
-use log::debug;
+use log::warn;
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
@@ -33,7 +33,7 @@ pub fn load(app: &AppHandle, hash: &str) -> Result<(String, Vec<u8>), StatusCode
         Ok(Some(m)) => m,
         Ok(None) => return Err(StatusCode::NOT_FOUND),
         Err(e) => {
-            debug!("notebook file lookup failed for {hash}: {e}");
+            warn!("notebook file lookup failed for {hash}: {e}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };

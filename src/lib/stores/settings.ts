@@ -1863,14 +1863,14 @@ export function enabledDavAccounts(): DavAccount[] {
 	});
 }
 
-/**
- * Merge a partial update into the inferenceBackend sub-object. Callers
- * shouldn't have to rebuild the full config just to flip one field.
- */
 export function updateSkills(partial: Partial<SkillsConfig>): void {
 	commit({ ...settings, skills: { ...settings.skills, ...partial } });
 }
 
+/**
+ * Merge a partial update into the inferenceBackend sub-object. Callers
+ * shouldn't have to rebuild the full config just to flip one field.
+ */
 export function updateInferenceBackend(partial: Partial<InferenceBackendConfig>): void {
 	const current = settings.inferenceBackend;
 	commit({

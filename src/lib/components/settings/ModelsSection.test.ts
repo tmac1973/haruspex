@@ -9,9 +9,9 @@ import { invokeRouter } from '#lib/testing/invoke.ts';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('@tauri-apps/api/event', () => ({
-	listen: vi.fn(async () => () => {})
-}));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 vi.mock('#lib/models/download.ts', () => ({
 	downloadModelWithProgress: vi.fn()

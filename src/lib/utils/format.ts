@@ -35,6 +35,25 @@ export function formatTodayLong(): string {
 	});
 }
 
+/** A timestamp as its time when it is today, else as `Nov 27`. */
+export function formatShortWhen(ms: number, now = new Date()): string {
+	const d = new Date(ms);
+	return d.toDateString() === now.toDateString()
+		? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+		: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** A title from free text: its first five words, each capitalised, without
+ *  brackets or punctuation between words. `fallback` when there are none. */
+export function titleFromText(text: string, fallback = ''): string {
+	const words = text
+		.replace(/[[\]()]/g, '')
+		.split(/[\s,.]+/)
+		.filter(Boolean)
+		.slice(0, 5);
+	return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || fallback;
+}
+
 /** Duration in ms → `Ns` / `Nm Ns` / `Nh Nm` (min 1s). */
 export function formatDuration(ms: number): string {
 	const sec = Math.max(1, Math.round(ms / 1000));

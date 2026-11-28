@@ -1382,7 +1382,7 @@ async function handleSyncWorkdir(msg: {
 			try {
 				fs.writeFile(file.abs_path, bytes);
 			} catch (err) {
-				pendingSyncNotes.push(`could not copy ${file.path} into the sandbox: ${String(err)}`);
+				pendingSyncNotes.push(`could not copy ${file.path} into the sandbox: ${errMessage(err)}`);
 			}
 		}
 		for (const path of msg.deleted) {

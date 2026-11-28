@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { NotebookCard, NotebookDetail } from '#lib/notebooks/api.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));
 vi.mock('#lib/sandbox/sandbox.ts', () => ({ runPython: vi.fn() }));
 vi.mock('#lib/sandbox/availability.ts', () => ({ pythonRuntimeMissing: () => false }));

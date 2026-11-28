@@ -14,7 +14,7 @@ use super::{audio_path, cache_dir};
 use crate::blob_cache::is_valid_hash;
 use crate::db::Database;
 use crate::protocol_util::empty;
-use log::debug;
+use log::{debug, warn};
 use std::path::PathBuf;
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
@@ -81,12 +81,12 @@ pub fn locate(app: &AppHandle, hash: &str) -> Result<(String, PathBuf), StatusCo
         Ok(Some(row)) => row,
         Ok(None) => return Err(StatusCode::NOT_FOUND),
         Err(e) => {
-            debug!("audio lookup failed for {}: {}", hash, e);
+            warn!("audio lookup failed for {}: {}", hash, e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
     let dir = cache_dir(app).map_err(|e| {
-        debug!("audio cache dir unavailable: {}", e);
+        warn!("audio cache dir unavailable: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let path = audio_path(&dir, hash);

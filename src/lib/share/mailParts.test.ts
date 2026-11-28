@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NotebookCard, NotebookDetail } from '#lib/notebooks/api.ts';
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', async () =>
+	(await import('#lib/testing/invoke.ts')).mockTauriCore()
+);
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));
 vi.mock('#lib/stores/toasts.svelte.ts', () => ({ showToast: vi.fn() }));
 vi.mock('#lib/sandbox/sandbox.ts', () => ({ runPython: vi.fn() }));
