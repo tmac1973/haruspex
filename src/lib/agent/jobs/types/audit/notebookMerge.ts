@@ -46,12 +46,16 @@ interface Place {
 	range: { start: number; end: number } | null;
 }
 
-/** `src/a.ts:12-40` → its file and lines. */
+/**
+ * `src/a.ts:12-40` → its file and lines. The verifier often writes more after
+ * the place (`stats.js:3-9 (loop at line 5); index.js:3-8`): the first file
+ * and its lines are the place, and the rest is left out.
+ */
 export function placeOf(location: string): Place {
-	const m = /^(.*?):(\d+(?:\s*[-–]\s*\d+)?)$/.exec(location.trim());
-	return m
-		? { file: normalizeFile(m[1]), range: parseLineRange(m[2]) }
-		: { file: normalizeFile(location), range: null };
+	const text = location.trim();
+	const m = /^(.*?):(\d+(?:\s*[-–]\s*\d+)?)(?!\d)/.exec(text);
+	if (m) return { file: normalizeFile(m[1]), range: parseLineRange(m[2]) };
+	return { file: normalizeFile(text.split(/\s*[;(]|\s+-\s/)[0]), range: null };
 }
 
 function near(a: Place['range'], b: Place['range']): boolean {

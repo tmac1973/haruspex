@@ -130,12 +130,21 @@ export function buildAuditReport(input: AuditReportInput): string {
 	return lines.join('\n').replace(/\n+$/, '\n');
 }
 
-/** The richest detail across a cluster's members (most words wins). */
+/**
+ * The detail to show with a cluster's title: the richest among the members
+ * that reported that title. A cluster can join two different findings that
+ * sit on nearby lines, and the title's own detail must not be swapped for
+ * the other finding's. Members with another title are used only when none
+ * with this one has a detail.
+ */
 export function bestDetail(c: FindingCluster): string | null {
-	let best: string | null = null;
-	for (const m of c.members) {
-		const d = m.detail?.trim();
-		if (d && (best === null || d.length > best.length)) best = d;
-	}
-	return best;
+	const richest = (members: FindingCluster['members']) => {
+		let best: string | null = null;
+		for (const m of members) {
+			const d = m.detail?.trim();
+			if (d && (best === null || d.length > best.length)) best = d;
+		}
+		return best;
+	};
+	return richest(c.members.filter((m) => m.title === c.title)) ?? richest(c.members);
 }
