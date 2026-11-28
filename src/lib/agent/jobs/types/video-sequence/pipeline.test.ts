@@ -113,7 +113,7 @@ vi.mock('#lib/agent/tools/_musicJob.ts', () => ({
 		return { hash: 'b'.repeat(64), durationSec: spec.request.durationSec };
 	}
 }));
-vi.mock('#lib/utils/async.ts', () => ({ sleep: async () => {} }));
+vi.mock('#lib/utils/async.ts', () => ({ sleep: async () => {}, sleepOrAbort: async () => {} }));
 const asked = vi.hoisted(() => ({
 	questions: [] as UserQuestionRequest[],
 	answers: [] as UserAnswer[]
