@@ -6,7 +6,7 @@
  * switch carried the other's server, key and model across: pick an OpenRouter
  * key, go back to Remote, and your own server was sent the OpenRouter key.
  */
-import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
+import { isOpenRouterUrl, OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
 import type { InferenceBackendConfig, RemoteProfile } from '#lib/stores/settings.ts';
 
 export type RemoteOption = 'generic' | 'openrouter';
@@ -57,7 +57,7 @@ function freshProfile(cfg: InferenceBackendConfig, option: RemoteOption): Remote
 	return {
 		...empty,
 		// The first saved server, so the form opens on something the user added.
-		remoteBaseUrl: cfg.remoteServerUrls.find((u) => !u.includes('openrouter.ai')) ?? '',
+		remoteBaseUrl: cfg.remoteServerUrls.find((u) => !isOpenRouterUrl(u)) ?? '',
 		remoteBackendKind: null,
 		allowParallelInference: false
 	};

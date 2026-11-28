@@ -16,8 +16,7 @@ import {
 	type SamplingSource
 } from '#lib/agent/jobs/modelAdvanced.ts';
 import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
-import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
-import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
+import { isOpenRouterUrl, OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
 
 export { isOpenRouterUrl };
 

@@ -5,7 +5,7 @@
  * blocks startup and never changes the settings.
  */
 import { probeInferenceServer } from '#lib/inferenceProbe.ts';
-import { fetchOpenRouterCatalog, OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
+import { fetchOpenRouterCatalog, isOpenRouterUrl } from '#lib/openrouter.ts';
 import type { InferenceBackendConfig } from '#lib/stores/settings.ts';
 import { setRemoteProblem } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -23,14 +23,6 @@ type RemoteBackend = Pick<
 	InferenceBackendConfig,
 	'remoteBaseUrl' | 'remoteApiKeyId' | 'remoteApiKey' | 'remoteModelId'
 >;
-
-export function isOpenRouterUrl(baseUrl: string): boolean {
-	try {
-		return new URL(baseUrl).hostname === new URL(OPENROUTER_BASE_URL).hostname;
-	} catch {
-		return false;
-	}
-}
 
 /**
  * List the server's models and look for the configured id. OpenRouter's

@@ -20,7 +20,7 @@
 		type NormalizedModel,
 		type ProbeResult
 	} from '#lib/inferenceProbe.ts';
-	import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
+	import { isOpenRouterUrl } from '#lib/openrouter.ts';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ToggleField from '#lib/components/ToggleField.svelte';
 	import { errMessage } from '#lib/utils/error.ts';

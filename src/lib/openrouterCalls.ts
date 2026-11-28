@@ -106,6 +106,35 @@ export async function refusal(res: Response, make: MakeError, what: string): Pro
 	return make(kind, `OpenRouter refused the ${what}: ${said}`, opts);
 }
 
+/** How long a model list is kept before it is asked for again. */
+export const LIST_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * A model list asked for at most once an hour (`LIST_TTL_MS`). Callers asking
+ * while it loads share the one request; a failed list is asked for again on
+ * the next call.
+ */
+export function hourlyList<T>(load: (signal?: AbortSignal) => Promise<T[]>): {
+	get(signal?: AbortSignal): Promise<T[]>;
+	reset(): void;
+} {
+	let listed: { at: number; items: Promise<T[]> } | null = null;
+	return {
+		get(signal) {
+			if (listed && Date.now() - listed.at < LIST_TTL_MS) return listed.items;
+			const items = load(signal);
+			listed = { at: Date.now(), items };
+			void items.catch(() => {
+				if (listed?.items === items) listed = null;
+			});
+			return items;
+		},
+		reset() {
+			listed = null;
+		}
+	};
+}
+
 /** An answer's JSON, or a refusal saying what OpenRouter said. */
 export async function jsonOf(res: Response, make: MakeError, what: string): Promise<unknown> {
 	if (!res.ok) throw await refusal(res, make, what);

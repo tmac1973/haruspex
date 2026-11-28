@@ -228,12 +228,3 @@ export function priceLine(payload: unknown): string | null {
 	if (mp !== null) return `${formatUsd(mp)} a megapixel`;
 	return out.some((p) => p.unit === 'token') ? 'priced by token' : null;
 }
-
-/** The MIME type of a picture's bytes, from its first bytes; PNG when unknown. */
-export function mimeOf(bytes: Uint8Array): string {
-	const at = (i: number, ...b: number[]) => b.every((x, j) => bytes[i + j] === x);
-	if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
-	if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp';
-	if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif';
-	return 'image/png';
-}

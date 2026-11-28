@@ -21,10 +21,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { bytesToBase64 } from '#lib/utils/base64.ts';
 import { fetchOpenRouterKeyStatus } from '#lib/openrouter.ts';
 import {
 	fetchWithin,
+	hourlyList,
 	jsonOf,
 	openRouterHeaders,
 	openRouterUrl,
@@ -32,7 +32,7 @@ import {
 	type MakeError
 } from '#lib/openrouterCalls.ts';
 import { formatUsd } from '#lib/utils/format.ts';
-import { mimeOf } from '#lib/image/openrouter/adapter.ts';
+import { imageDataUrl, readCachedImage } from '#lib/image/bytes.ts';
 import { recordSpend } from '#lib/generation/spend.svelte.ts';
 import type { ProbeResult } from '#lib/image/backend.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
@@ -81,17 +81,14 @@ const SUBMIT_TIMEOUT_MS = 120_000;
 const DOWNLOAD_TIMEOUT_MS = 600_000;
 /** How long a clip may take, queue included. */
 const CLIP_DEADLINE_MS = 3_600_000;
-/** How long the model list is kept before it is asked for again. */
-const LIST_TTL_MS = 60 * 60 * 1000;
 /** Some providers take a seed only below 2³¹. */
 const SEED_LIMIT = 2 ** 31;
 
 let pollMs = 10_000;
-let listed: { at: number; models: Promise<OpenRouterVideoModel[]> } | null = null;
 
 /** Test-only: forget the model list, and poll every `ms`. */
 export function _resetForTests(ms = 0): void {
-	listed = null;
+	models.reset();
 	pollMs = ms;
 }
 
@@ -116,16 +113,13 @@ async function getJson(path: string, apiKey?: string, signal?: AbortSignal): Pro
 	);
 }
 
+const models = hourlyList((signal) =>
+	getJson('/v1/videos/models', undefined, signal).then(parseVideoModels)
+);
+
 /** OpenRouter's video models, asked once an hour. */
 export function videoModels(signal?: AbortSignal): Promise<OpenRouterVideoModel[]> {
-	if (listed && Date.now() - listed.at < LIST_TTL_MS) return listed.models;
-	const models = getJson('/v1/videos/models', undefined, signal).then(parseVideoModels);
-	listed = { at: Date.now(), models };
-	// A failed list is asked for again next time.
-	void models.catch(() => {
-		if (listed?.models === models) listed = null;
-	});
-	return models;
+	return models.get(signal);
 }
 
 /** The tier `entry` makes clips at: its own choice, else 720p, else the smallest. */
@@ -175,13 +169,11 @@ async function keyOf(keyId: string | null): Promise<string> {
 
 /** A picture from the image cache as a data URL. */
 async function dataUrlOf(image: VideoStartImage): Promise<string> {
-	let bytes: Uint8Array;
 	try {
-		bytes = new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: image.hash }));
+		return imageDataUrl(await readCachedImage(image.hash));
 	} catch {
 		throw new VideoBackendError('rejected', `${image.name} is no longer in the image cache.`);
 	}
-	return `data:${mimeOf(bytes)};base64,${bytesToBase64(bytes)}`;
 }
 
 /** Refuse what `m` can't do, or what would cost more than the limit, before anything is sent. */

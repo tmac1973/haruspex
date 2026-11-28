@@ -19,6 +19,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { isFullyOpaque } from '#lib/image/bytes.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import { toImageResult } from '#lib/image/result.ts';
@@ -179,14 +180,9 @@ export const TRANSPARENCY_LOST =
 
 /** `TRANSPARENCY_LOST` when `png` has no pixel short of opaque; undefined otherwise or unsure. */
 async function lostTransparency(png: Uint8Array): Promise<string | undefined> {
-	try {
-		const clear = await invoke<number>('image_transparent_fraction', { bytes: Array.from(png) });
-		if (clear > 0) return undefined;
-		console.warn('lemonade: a transparent Ming request came back fully opaque');
-		return TRANSPARENCY_LOST;
-	} catch {
-		return undefined;
-	}
+	if (!(await isFullyOpaque(png))) return undefined;
+	console.warn('lemonade: a transparent Ming request came back fully opaque');
+	return TRANSPARENCY_LOST;
 }
 
 async function configOf(entry: ImageModelEntry): Promise<LemonadeConfig> {

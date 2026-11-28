@@ -5,7 +5,6 @@ import {
 	capabilitiesOf,
 	costOf,
 	drawsPictures,
-	mimeOf,
 	modelOptions,
 	nearestAspectRatio,
 	nearestResolution,
@@ -234,17 +233,5 @@ describe('formatUsd', () => {
 		expect(formatUsd(0.13)).toBe('$0.13');
 		expect(formatUsd(0.4)).toBe('$0.40');
 		expect(formatUsd(0)).toBe('$0.00');
-	});
-});
-
-describe('mimeOf', () => {
-	it('knows PNG, JPEG, WebP and GIF by their first bytes', () => {
-		expect(mimeOf(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe('image/png');
-		expect(mimeOf(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
-		expect(
-			mimeOf(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))
-		).toBe('image/webp');
-		expect(mimeOf(new Uint8Array([0x47, 0x49, 0x46, 0x38]))).toBe('image/gif');
-		expect(mimeOf(new Uint8Array([1, 2, 3]))).toBe('image/png');
 	});
 });

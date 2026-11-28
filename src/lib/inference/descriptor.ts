@@ -15,7 +15,7 @@
  */
 
 import type { BackendOverride } from '#lib/api.ts';
-import type { OpenRouterModel } from '#lib/openrouter.ts';
+import { isOpenRouterUrl, type OpenRouterModel } from '#lib/openrouter.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
 import { getOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 import { localServerKey } from '#lib/inference/localServerKey.ts';
@@ -230,15 +230,6 @@ function modelTraitsFromId(id: string | null | undefined): ModelTraits | null {
 /** Local models all come from the managed Qwen lineup — an unrecognized
  *  filename still gets the default profile (pre-descriptor behavior). */
 const LOCAL_DEFAULT_FAMILY: QwenSamplingFamily = 'qwen3.5';
-
-/** True when a base URL points at openrouter.ai (heuristic — host match). */
-export function isOpenRouterUrl(url: string): boolean {
-	try {
-		return new URL(url).hostname === 'openrouter.ai';
-	} catch {
-		return false;
-	}
-}
 
 /** Trim whitespace and trailing slashes off a configured base URL. */
 function normalizeBaseUrl(url: string | null | undefined): string {
