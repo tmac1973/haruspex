@@ -1,0 +1,60 @@
+# App commands withheld from windows that run no agent turn: editor-*,
+# print-*, preview-*. build.rs grants those windows every other command
+# (the agentless-commands set), so a script that got into one still can't
+# read a secret, start a process, pair a computer or send mail.
+#
+# Withheld, not denied: Tauri applies a deny to every window, whatever
+# capability names it. A new command of one of these kinds belongs here.
+
+# Secrets and sign-in
+secret_get
+secret_set
+secret_delete
+get_llama_api_key
+db_set_job_api_key_ref
+google_sign_in
+google_sign_out
+
+# Remote control and other computers
+remote_start
+remote_stop
+remote_link_qr
+remote_sessions
+remote_disconnect
+remote_trusted_hosts
+owner_api_apply
+owner_clients_list
+owner_client_create
+owner_client_revoke
+owner_client_pair
+owner_trusted_hosts
+peers_apply
+peer_lists_save
+peer_op
+peer_upload
+peer_probe
+
+# Starting and driving processes
+shell_spawn
+shell_write
+shell_restart
+run_command_capture
+mcp_start_server
+mcp_call_tool
+mcp_install_server
+mcp_uninstall_server
+mcp_run_setup_command
+mcp_install_addon
+mcp_place_setup_file
+mcp_connect_remote_server
+mcp_update_stage
+mcp_update_swap
+mcp_update_commit
+
+# Mail and alerts
+email_send
+email_trash
+email_read_full
+email_list_recent
+email_request_reply
+camera_alert_send

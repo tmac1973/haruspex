@@ -12,7 +12,6 @@
 		"core:window:allow-set-focus",
 		"core:window:allow-unminimize",
 		"core:webview:allow-set-webview-zoom",
-		"all-commands",
-		"no-agent-window"
+		"agentless-commands"
 	]
 }

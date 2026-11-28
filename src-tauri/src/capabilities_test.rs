@@ -3,9 +3,12 @@
 //!
 //! Windows that run agent turns (main, `shell-*`, `code-*`) get every
 //! command; windows that run none (`editor-*`, `print-*`, `preview-*`) get
-//! every command but the `no-agent-window` set (`permissions/`), so a script
-//! that got into one can't read a secret, start a process, pair a computer or
-//! send mail. See `capabilities/` and `build.rs`.
+//! every command but those in `acl/withheld-from-agentless-windows.txt`, so a
+//! script that got into one can't read a secret, start a process, pair a
+//! computer or send mail. See `capabilities/` and `build.rs`.
+//!
+//! The checks follow `RuntimeAuthority::resolve_access`, in particular that a
+//! deny applies to every window whichever capability names it.
 
 use std::collections::BTreeMap;
 
@@ -29,10 +32,10 @@ fn reaches(entries: Option<&Vec<ResolvedCommand>>, window: &str) -> bool {
     })
 }
 
-/// Whether `window` may call app command `cmd`: granted, and not denied
-/// (a deny wins, as in `RuntimeAuthority::resolve_access`).
+/// Whether `window` may call app command `cmd`: not denied anywhere (a deny
+/// isn't per window), and granted to `window`.
 fn may_call(r: &Resolved, cmd: &str, window: &str) -> bool {
-    reaches(r.allowed_commands.get(cmd), window) && !reaches(r.denied_commands.get(cmd), window)
+    !r.denied_commands.contains_key(cmd) && reaches(r.allowed_commands.get(cmd), window)
 }
 
 /// Every command in `generate_handler!`, as build.rs reads it.
@@ -54,6 +57,19 @@ const AGENTLESS_WINDOWS: &[&str] = &["editor-2", "print-4", "preview-9"];
 #[test]
 fn the_app_checks_its_own_commands() {
     assert!(resolved().has_app_acl);
+}
+
+#[test]
+fn no_app_command_is_denied() {
+    // A deny reaches every window, the main one included: keeping a command
+    // from some windows means leaving it out of what they are granted.
+    let r = resolved();
+    for cmd in app_commands() {
+        assert!(
+            !r.denied_commands.contains_key(&cmd),
+            "{cmd} is denied, so no window can call it"
+        );
+    }
 }
 
 #[test]
@@ -111,7 +127,7 @@ fn windows_that_run_no_turn_keep_everything_else() {
 
 #[test]
 fn every_secret_command_is_denied_to_windows_that_run_no_turn() {
-    // A new command of these kinds belongs in permissions/no-agent-window.toml.
+    // A new command of these kinds belongs in acl/withheld-from-agentless-windows.txt.
     let r = resolved();
     let sensitive = [
         "secret_",

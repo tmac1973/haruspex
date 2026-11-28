@@ -14,7 +14,6 @@
 		"core:window:allow-set-title",
 		"core:window:allow-set-focus",
 		"core:window:allow-unminimize",
-		"all-commands",
-		"no-agent-window"
+		"agentless-commands"
 	]
 }
