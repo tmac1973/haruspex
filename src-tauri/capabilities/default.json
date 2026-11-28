@@ -107,6 +107,7 @@
 		"shell:allow-kill",
 		"shell:allow-open",
 		"dialog:allow-open",
-		"dialog:allow-save"
+		"dialog:allow-save",
+		"all-commands"
 	]
 }

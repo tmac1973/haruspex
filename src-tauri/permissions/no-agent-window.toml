@@ -1,0 +1,63 @@
+# What a window that runs no agent turn may never call, whatever else it is
+# granted: editor-*, print-*, preview-* (see capabilities/). Deny wins over
+# allow, so these windows can hold every other command (all-commands) and
+# keep working as the root layout and their pages change, while a script
+# that got into one still can't read a secret, start a process, pair a
+# computer or send mail.
+#
+# A new command in one of these kinds belongs here too.
+
+[[set]]
+identifier = "no-agent-window"
+description = "Denies secrets, remote control, process and MCP control, and mail to windows that run no agent turn."
+permissions = [
+  # Secrets and sign-in
+  "deny-secret-get",
+  "deny-secret-set",
+  "deny-secret-delete",
+  "deny-get-llama-api-key",
+  "deny-db-set-job-api-key-ref",
+  "deny-google-sign-in",
+  "deny-google-sign-out",
+  # Remote control and other computers
+  "deny-remote-start",
+  "deny-remote-stop",
+  "deny-remote-link-qr",
+  "deny-remote-sessions",
+  "deny-remote-disconnect",
+  "deny-remote-trusted-hosts",
+  "deny-owner-api-apply",
+  "deny-owner-clients-list",
+  "deny-owner-client-create",
+  "deny-owner-client-revoke",
+  "deny-owner-client-pair",
+  "deny-owner-trusted-hosts",
+  "deny-peers-apply",
+  "deny-peer-lists-save",
+  "deny-peer-op",
+  "deny-peer-upload",
+  "deny-peer-probe",
+  # Starting and driving processes
+  "deny-shell-spawn",
+  "deny-shell-write",
+  "deny-shell-restart",
+  "deny-run-command-capture",
+  "deny-mcp-start-server",
+  "deny-mcp-call-tool",
+  "deny-mcp-install-server",
+  "deny-mcp-uninstall-server",
+  "deny-mcp-run-setup-command",
+  "deny-mcp-install-addon",
+  "deny-mcp-place-setup-file",
+  "deny-mcp-connect-remote-server",
+  "deny-mcp-update-stage",
+  "deny-mcp-update-swap",
+  "deny-mcp-update-commit",
+  # Mail and alerts
+  "deny-email-send",
+  "deny-email-trash",
+  "deny-email-read-full",
+  "deny-email-list-recent",
+  "deny-email-request-reply",
+  "deny-camera-alert-send",
+]
