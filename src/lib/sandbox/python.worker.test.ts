@@ -819,7 +819,7 @@ describe('python.worker network shims', () => {
 		const resp = await fakeSelf.fetch(`${ORIGIN}/pyodide/rare-1.0-py3-none-any.whl`);
 		expect(resp).toBe(cdn);
 		expect(origFetch.mock.calls.at(-1)?.[0]).toBe(
-			'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/rare-1.0-py3-none-any.whl'
+			'https://cdn.jsdelivr.net/pyodide/v314.0.8/full/rare-1.0-py3-none-any.whl'
 		);
 	});
 
