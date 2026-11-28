@@ -7,7 +7,7 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
-	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import { pickedServer, rememberServer } from '#lib/stores/generationServers.svelte.ts';
 	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import AudioPlayer from '#lib/components/AudioPlayer.svelte';
@@ -88,8 +88,7 @@
 	}
 
 	function pickServer(saved: GenerationServer | null) {
-		baseUrl = saved?.url ?? '';
-		apiKeyId = saved?.keyId ?? apiKeyId;
+		({ url: baseUrl, keyId: apiKeyId } = pickedServer(saved, apiKeyId));
 		updateSettings({ musicToolchestBaseUrl: baseUrl, musicToolchestApiKeyId: apiKeyId });
 		probeResult = null;
 		if (baseUrl) void probe();

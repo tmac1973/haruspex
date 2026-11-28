@@ -12,6 +12,20 @@ import {
 	type GenerationServerKind
 } from '#lib/stores/settings.ts';
 
+/**
+ * The address and key an editor takes when the user picks `saved` from the
+ * address dropdown. A saved server brings its own key, none included: the
+ * key of the server picked before belongs to that server and must not be
+ * sent to this one. Choosing no saved server clears the address and keeps
+ * the key, for the user to type an address it goes with.
+ */
+export function pickedServer(
+	saved: GenerationServer | null,
+	keyId: string | null
+): { url: string; keyId: string | null } {
+	return saved ? { url: saved.url, keyId: saved.keyId } : { url: '', keyId };
+}
+
 /** Bumped on every change, so a dropdown reading the list redraws. */
 let revision = $state(0);
 
