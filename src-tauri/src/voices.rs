@@ -150,24 +150,7 @@ fn check_length(secs: f64) -> Result<(), String> {
 }
 
 async fn ffmpeg(ffmpeg: &str, args: &[String]) -> Result<Vec<u8>, String> {
-    let mut cmd = tokio::process::Command::new(ffmpeg);
-    cmd.args(["-nostdin", "-hide_banner", "-v", "error"])
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    crate::video::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(Duration::from_secs(120), cmd.output())
-        .await
-        .map_err(|_| "ffmpeg took too long".to_string())?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "Reading the sound failed: {}",
-            err.lines().next().unwrap_or("ffmpeg failed")
-        ));
-    }
-    Ok(out.stdout)
+    crate::video::ffmpeg_checked(ffmpeg, args, Duration::from_secs(120), "Reading the sound").await
 }
 
 /// `from`–`to` (the whole file when None) of `src` as mono 24 kHz 16-bit WAV.

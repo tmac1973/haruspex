@@ -905,24 +905,11 @@ fn cached_clip(app: &tauri::AppHandle, hash: &str) -> Result<std::path::PathBuf,
 
 /// Run ffmpeg to the end, or say why it failed.
 async fn ffmpeg_run(ffmpeg: &str, args: &[std::ffi::OsString], what: &str) -> Result<(), String> {
-    let mut cmd = tokio::process::Command::new(ffmpeg);
-    cmd.args(["-nostdin", "-hide_banner", "-v", "error", "-y"])
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    super::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(std::time::Duration::from_secs(600), cmd.output())
+    let mut all = vec![std::ffi::OsString::from("-y")];
+    all.extend_from_slice(args);
+    super::ffmpeg_checked(ffmpeg, &all, std::time::Duration::from_secs(600), what)
         .await
-        .map_err(|_| format!("{what} took too long"))?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "{what} failed: {}",
-            super::ffmpeg_error(&err, "ffmpeg failed")
-        ));
-    }
-    Ok(())
+        .map(|_| ())
 }
 
 /// The ffmpeg arguments that put `audio`'s sound under `video`'s picture,

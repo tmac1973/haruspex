@@ -9,7 +9,6 @@ use super::check::{parse_ebur128, TARGET_LUFS};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 /// Gains are kept within this many dB either way, so a near-silent clip's
 /// noise isn't raised to speech level.
@@ -137,14 +136,9 @@ async fn measure_one(ffmpeg: &str, s: &Stretch) -> Result<Measured, String> {
         "-f",
         "null",
         "-",
-    ])
-    .stdin(std::process::Stdio::null())
-    .kill_on_drop(true);
-    super::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
-        .await
-        .map_err(|_| "measuring the loudness took too long".to_string())?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    ]);
+    let out =
+        super::ffmpeg_output(cmd, super::FFMPEG_PASS_TIMEOUT, "measuring the loudness").await?;
     let l = parse_ebur128(&String::from_utf8_lossy(&out.stderr))
         .ok_or_else(|| format!("ffmpeg measured no loudness in {}", s.file.display()))?;
     Ok(Measured {

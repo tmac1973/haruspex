@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
@@ -60,24 +59,16 @@ pub async fn detect(
     if let Some((from, to)) = window {
         cmd.args(["-ss", &format!("{from:.3}"), "-to", &format!("{to:.3}")]);
     }
-    cmd.arg("-i")
-        .arg(file)
-        .args([
-            "-map",
-            "0:a:0",
-            "-af",
-            &format!("silencedetect=noise={noise_db}dB:d={min_secs}"),
-            "-f",
-            "null",
-            "-",
-        ])
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    super::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
-        .await
-        .map_err(|_| "finding the silences took too long".to_string())?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+    cmd.arg("-i").arg(file).args([
+        "-map",
+        "0:a:0",
+        "-af",
+        &format!("silencedetect=noise={noise_db}dB:d={min_secs}"),
+        "-f",
+        "null",
+        "-",
+    ]);
+    let out = super::ffmpeg_output(cmd, super::FFMPEG_PASS_TIMEOUT, "finding the silences").await?;
     let duration = window.map(|(f, t)| t - f);
     let offset = window.map_or(0.0, |(f, _)| f);
     Ok(parse(&String::from_utf8_lossy(&out.stderr), duration)

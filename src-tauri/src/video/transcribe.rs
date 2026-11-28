@@ -133,24 +133,7 @@ fn save_cache(episode_dir: &Path, file: &Path, t: &Transcript) {
 }
 
 async fn run_ffmpeg(ffmpeg: &str, args: &[&str], what: &str) -> Result<Vec<u8>, String> {
-    let mut cmd = tokio::process::Command::new(ffmpeg);
-    cmd.args(["-nostdin", "-hide_banner", "-v", "error"])
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    super::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
-        .await
-        .map_err(|_| format!("{what} took too long"))?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "{what} failed: {}",
-            super::ffmpeg_error(&err, "ffmpeg failed")
-        ));
-    }
-    Ok(out.stdout)
+    super::ffmpeg_checked(ffmpeg, args, super::FFMPEG_PASS_TIMEOUT, what).await
 }
 
 /// The clip's sound as 16 kHz mono WAV, extracted once.
