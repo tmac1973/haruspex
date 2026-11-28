@@ -307,7 +307,10 @@ impl Credentials {
                 ..
             } => {
                 let password = match password_ref.as_deref().filter(|r| !r.is_empty()) {
-                    Some(key) => crate::secrets::require(key, "camera password").await?,
+                    Some(key) => {
+                        crate::secrets::check_ref(key, "camera:")?;
+                        crate::secrets::require(key, "camera password").await?
+                    }
                     None => String::new(),
                 };
                 Ok(Self {

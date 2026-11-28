@@ -106,6 +106,7 @@ impl ProxyConfig {
         let Some(key) = self.password_ref.as_deref() else {
             return Ok(url.to_string());
         };
+        crate::secrets::check_ref(key, "proxy:")?;
         let password = crate::secrets::get_blocking(key)?.ok_or_else(|| {
             "The proxy password is missing from Haruspex's secret store — enter it again in \
              Settings → Network."

@@ -613,6 +613,27 @@ pub async fn require(key: &str, what: &str) -> Result<String, String> {
     })
 }
 
+/// Check a secret reference that came in a setting from the webview (an
+/// account's `password_ref`, say) before reading it: it must be a key of
+/// `namespace`, the kind that setting holds. Rust sends what it reads to a
+/// host the same setting names, so without this a webview that could write
+/// settings could point an email account at a `dav:` or `peer:` secret and
+/// have it sent to a server of its choosing, around [`secret_get`]'s
+/// [`READABLE`] list.
+pub fn check_ref(key: &str, namespace: &str) -> Result<(), String> {
+    debug_assert!(
+        NAMESPACES.contains(&namespace),
+        "{namespace} is not a namespace"
+    );
+    if key.len() > namespace.len() && key.starts_with(namespace) {
+        Ok(())
+    } else {
+        Err(format!(
+            "A saved password points at the wrong kind of secret ({key:?}); enter it again."
+        ))
+    }
+}
+
 /// The kinds of secret, by key prefix. One namespace per kind, so a webview
 /// bug cannot overwrite an entry it does not own, and a fixed list, so a key
 /// the app does not use cannot be written at all.
@@ -759,6 +780,16 @@ impl Store for Memory {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_ref_must_be_of_its_settings_kind() {
+        assert!(check_ref("email:acct-1", "email:").is_ok());
+        assert!(check_ref("dav:acct-1", "email:").is_err());
+        assert!(check_ref("peer:token", "camera:").is_err());
+        // The bare prefix names no secret.
+        assert!(check_ref("email:", "email:").is_err());
+        assert!(check_ref("", "proxy:").is_err());
+    }
+
     use super::*;
     use crate::test_util::temp_dir;
 
