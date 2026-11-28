@@ -11,6 +11,7 @@ import {
 	parseNotebookOutput,
 	type NotebookOutputMode
 } from '#lib/agent/jobs/notebookOutput.ts';
+import { configRecord } from '#lib/agent/jobs/configRecord.ts';
 
 export interface AuditConfig {
 	/** Independent sample runs. null = runner default (3). */
@@ -32,15 +33,7 @@ export interface AuditConfig {
 }
 
 export function parseAuditConfig(json: string | null): AuditConfig {
-	let raw: Record<string, unknown> = {};
-	if (json) {
-		try {
-			const parsed: unknown = JSON.parse(json);
-			if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
-		} catch {
-			// Malformed config behaves like no config — runner defaults.
-		}
-	}
+	const raw = configRecord(json);
 	return {
 		num_runs: finiteOrNull(raw.num_runs),
 		output_file: nonEmptyOrNull(raw.output_file),

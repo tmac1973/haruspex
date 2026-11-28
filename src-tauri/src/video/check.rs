@@ -5,7 +5,6 @@ use super::loudness::MAX_GAIN;
 use super::probe;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::time::Duration;
 
 /// YouTube normalises to about -14 LUFS; within a unit of that is fine.
 pub const TARGET_LUFS: f64 = -14.0;
@@ -77,14 +76,9 @@ pub async fn measure(ffmpeg: &str, file: &Path) -> Result<Loudness, String> {
             "-f",
             "null",
             "-",
-        ])
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    super::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
-        .await
-        .map_err(|_| "measuring the loudness took too long".to_string())?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
+        ]);
+    let out =
+        super::ffmpeg_output(cmd, super::FFMPEG_PASS_TIMEOUT, "measuring the loudness").await?;
     parse_ebur128(&String::from_utf8_lossy(&out.stderr))
         .ok_or_else(|| "ffmpeg reported no loudness".to_string())
 }

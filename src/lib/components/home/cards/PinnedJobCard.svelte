@@ -4,7 +4,8 @@
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import { jobSourceAttr } from '#lib/notebooks/source.ts';
 	import { getJobs } from '#lib/stores/jobs.svelte.ts';
-	import { enqueue, getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { enqueue, getActiveRunForJob } from '#lib/agent/jobs/runner.svelte.ts';
+	import { jobQueued } from '#lib/home/cardRun.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { finalOutput, getLatestRun } from '#lib/home/latestRun.svelte.ts';
@@ -18,7 +19,7 @@
 		const run = jobId === null ? null : getActiveRunForJob(jobId);
 		return run?.status === 'running' ? run : null;
 	});
-	const queued = $derived(getPendingQueue().some((q) => q.jobId === jobId));
+	const queued = $derived(jobQueued(jobId));
 	const failed = $derived(latestRun?.latest?.status === 'failed' ? latestRun.latest : null);
 	const output = $derived(
 		latestRun?.latestSucceeded ? finalOutput(latestRun.latestSucceeded) : null

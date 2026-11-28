@@ -2,6 +2,7 @@
 //! dialog chose, and reading a spreadsheet's sheets for import. Only paths
 //! from those dialogs reach these.
 
+use crate::ipc_util::header;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -16,17 +17,6 @@ const MAX_IMPORT_ROWS: usize = 5000;
 pub struct ImportedSheet {
     pub name: String,
     pub rows: Vec<Vec<String>>,
-}
-
-pub(crate) fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
-    let raw = request
-        .headers()
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| format!("No {name} was given."))?;
-    urlencoding::decode(raw)
-        .map(|s| s.into_owned())
-        .map_err(|e| format!("{name} is not valid UTF-8: {e}"))
 }
 
 /// Write an export (the raw body) to `x-path`, the file the Save dialog

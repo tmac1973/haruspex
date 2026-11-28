@@ -8,17 +8,13 @@
  *   subject, sender and date come from IMAP, never from the model.
  */
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted
-} from '#lib/stores/jobRuns.svelte.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { emailCall, type EmailListing } from '#lib/agent/tools/email.ts';
-import { normalizeAbort } from '#lib/utils/error.ts';
 import { pickWithRetry, type ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
 import { parseEmailDigestConfig } from '#lib/agent/jobs/types/email-digest/config.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 /** Listings asked of each account; the model picks from these. */
 const LIST_PER_ACCOUNT = 50;
@@ -124,30 +120,13 @@ export async function runEmailDigestPipeline(ctx: JobRunContext): Promise<void> 
 	const config = parseEmailDigestConfig(job.type_config);
 	void markRunStarted(runId, Date.now());
 
-	const start = (step: number) => {
-		const startedAt = Date.now();
-		ctx.patchStep(step, { status: 'running', startedAt });
-		ctx.setCurrentStepIndex(step);
-		void markRunStepStarted(runId, step, startedAt, ctx.stepAuthored(step));
-	};
-	const finish = (
-		step: number,
-		status: 'succeeded' | 'failed' | 'cancelled',
-		output: string | null,
-		error: string | null
-	) => {
-		const finishedAt = Date.now();
-		ctx.patchStep(step, { status, output: output ?? '', error, finishedAt });
-		void markRunStepFinished(runId, step, status, output, error, finishedAt);
-	};
+	const { start, finish, fail } = stepMarkers(ctx);
 
-	let step = FETCH;
 	try {
 		start(FETCH);
 		const { candidates, notes } = await fetchCandidates(job, abort.signal);
 		finish(FETCH, 'succeeded', notes.join('\n') || 'No accounts to read.', null);
 
-		step = PICK;
 		start(PICK);
 		if (candidates.length === 0) {
 			await ctx.setResult({ items: [] });
@@ -178,8 +157,7 @@ export async function runEmailDigestPipeline(ctx: JobRunContext): Promise<void> 
 		finish(PICK, 'succeeded', lines.join('\n') || 'Nothing fits the rule.', null);
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		finish(step, aborted ? 'cancelled' : 'failed', null, msg);
+		const { aborted, msg } = fail(e);
 		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', msg);
 	} finally {
 		ctx.onSettled();

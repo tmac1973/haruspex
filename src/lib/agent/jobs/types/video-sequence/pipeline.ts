@@ -11,17 +11,11 @@
  */
 import { videoEntries } from '#lib/videogen/entries.ts';
 import { invoke } from '@tauri-apps/api/core';
-import { normalizeAbort } from '#lib/utils/error.ts';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	type JobRunStepStatus
-} from '#lib/stores/jobRuns.svelte.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
-import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
-import { stepsOf, type Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import { stepMarkers, type StepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import { keyframesStage } from '#lib/agent/jobs/types/video-sequence/keyframesStage.ts';
 import { generateStage } from '#lib/agent/jobs/types/video-sequence/generateStage.ts';
 import { checkStage } from '#lib/agent/jobs/types/video-sequence/checkStage.ts';
@@ -130,7 +124,7 @@ async function preflight(
 /** The Interview stage: what the user decided, '' when nothing was asked. */
 async function interviewStage(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	cfg: VideoSequenceConfig,
 	sc: SpecContext,
 	run: { attended: boolean; existing: string | null; specPath: string; made: string }
@@ -138,25 +132,25 @@ async function interviewStage(
 	steps.start(INTERVIEW);
 	steps.abortIfCancelled();
 	if (run.existing !== null) {
-		steps.finish(INTERVIEW, `${run.made}Skipped: ${run.specPath} is already written.`);
+		steps.succeed(INTERVIEW, `${run.made}Skipped: ${run.specPath} is already written.`);
 		return '';
 	}
 	if (!run.attended) {
-		steps.finish(
+		steps.succeed(
 			INTERVIEW,
 			`${run.made}Skipped: the run is unattended, so the spec comes from the brief alone.`
 		);
 		return '';
 	}
 	const answers = await interview(ctx, cfg, sc);
-	steps.finish(INTERVIEW, `${run.made}${answers || 'Nothing was asked: the brief settles it.'}`);
+	steps.succeed(INTERVIEW, `${run.made}${answers || 'Nothing was asked: the brief settles it.'}`);
 	return answers;
 }
 
 /** The Spec stage: read or write `sequence.json`, and stop to show it when attended. */
 async function specStage(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	cfg: VideoSequenceConfig,
 	sc: SpecContext,
 	run: { attended: boolean; existing: string | null; specPath: string; answers: string }
@@ -181,7 +175,7 @@ async function specStage(
 		checked = after;
 	}
 	if (wrote) await writeSpec(ctx, run.specPath, checked.validated.spec);
-	steps.finish(SPEC, `${wrote ? 'Wrote' : 'Read'} ${run.specPath}.\n\n${checked.summary}`);
+	steps.succeed(SPEC, `${wrote ? 'Wrote' : 'Read'} ${run.specPath}.\n\n${checked.summary}`);
 	return checked;
 }
 
@@ -198,7 +192,7 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 	const specPath = specPathFor(cfg);
 	// A chained or scheduled run has nobody to ask, whatever the config says.
 	const attended = ctx.trigger === 'manual' && cfg.run_mode === 'attended';
-	const steps = stepsOf(ctx);
+	const steps = stepMarkers(ctx);
 	const startedMs = Date.now();
 	void markRunStarted(ctx.runId, startedMs);
 	try {
@@ -238,14 +232,8 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 		});
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
-		const at = Date.now();
-		const idx = ctx.liveStepIndex();
-		ctx.patchStep(idx, { status: stepStatus, error: msg, finishedAt: at });
-		void markRunStepFinished(ctx.runId, idx, stepStatus, null, msg, at);
-		const status: RunStatus = aborted ? 'cancelled' : 'failed';
-		ctx.finalizeRun(status, aborted ? null : msg);
+		const { aborted, msg } = steps.fail(e);
+		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', aborted ? null : msg);
 	} finally {
 		ctx.onSettled();
 	}

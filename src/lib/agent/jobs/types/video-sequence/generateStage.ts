@@ -22,7 +22,7 @@ import { planClips, type ClipPlan } from '#lib/sequence/spec/plan.ts';
 import { itemKeys, mergeProgress } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
 import type { VideoLimits } from '#lib/toolchest/models.ts';
-import type { Steps } from '#lib/agent/jobs/types/video-sequence/steps.ts';
+import type { StepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 import { GENERATE } from '#lib/agent/jobs/types/video-sequence/stages.ts';
 import {
 	readProgress,
@@ -205,7 +205,7 @@ function withNote(spec: SequenceSpec, section: string, note: string): SequenceSp
 /** Make the clips; returns the spec and plan they were made from. */
 export async function generateStage(
 	ctx: JobRunContext,
-	steps: Steps,
+	steps: StepMarkers,
 	cfg: VideoSequenceConfig,
 	files: RunFiles,
 	run: GenerateStageRun
@@ -230,7 +230,7 @@ export async function generateStage(
 			const pace = outcome.secsPerClip
 				? ` The first took ${Math.round(outcome.secsPerClip / 60)} min.`
 				: '';
-			steps.finish(
+			steps.succeed(
 				GENERATE,
 				`${outcome.made} clips made, ${outcome.kept} kept from before, in ${files.path('generated')}.${pace}`
 			);

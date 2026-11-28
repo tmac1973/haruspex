@@ -32,13 +32,8 @@ import {
 import { withWebResearch } from '#lib/agent/jobs/types/webResearch.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
-import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted,
-	type JobRunStepStatus
-} from '#lib/stores/jobRuns.svelte.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import { notify } from '#lib/notify.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import type { StepChecklistEntry } from '#lib/agent/jobs/runner.svelte.ts';
@@ -85,6 +80,7 @@ import {
 	preflightPrompt
 } from '#lib/agent/jobs/types/autonomous-coding/prompts.ts';
 import { RECALL_TOOL } from '#lib/agent/recallArchive.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 export const PREFLIGHT = 0;
 export const DECOMPOSE = 1;
@@ -314,20 +310,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 	const interactive = ctx.trigger !== 'chained' && cfg.mute_preflight !== true;
 	void markRunStarted(runId, Date.now());
 
-	const startStep = (idx: number) => {
-		const startedAt = Date.now();
-		ctx.patchStep(idx, { status: 'running', startedAt });
-		ctx.setCurrentStepIndex(idx);
-		void markRunStepStarted(runId, idx, startedAt, ctx.stepAuthored(idx));
-	};
-	const finishStep = (idx: number, output: string) => {
-		const finishedAt = Date.now();
-		ctx.patchStep(idx, { status: 'succeeded', output, finishedAt });
-		void markRunStepFinished(runId, idx, 'succeeded', output, null, finishedAt);
-	};
-	const abortIfCancelled = () => {
-		if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-	};
+	const { start: startStep, succeed: finishStep, abortIfCancelled, fail } = stepMarkers(ctx);
 
 	try {
 		if (ctx.trigger === 'scheduled') {
@@ -702,12 +685,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			`${job.name}: ${sum.done} done, ${sum.blocked} blocked — report in ${reportPath}`
 		);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		const stepStatus: JobRunStepStatus = aborted ? 'cancelled' : 'failed';
-		const finishedAt = Date.now();
-		const idx = ctx.liveStepIndex();
-		ctx.patchStep(idx, { status: stepStatus, error: msg, finishedAt });
-		void markRunStepFinished(runId, idx, stepStatus, null, msg, finishedAt);
+		const { aborted, msg } = fail(e);
 		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', msg);
 		if (!aborted) {
 			void notify('Autonomous coding failed', `${job.name}: ${msg.slice(0, 180)}`);

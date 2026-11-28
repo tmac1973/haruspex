@@ -21,8 +21,9 @@
 
 use super::{cache_dir, image_path, is_valid_hash};
 use crate::db::Database;
+use crate::protocol_util::empty;
 use log::debug;
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
 /// Serve one image. Every failure is a status code — a broken `<img>` at
@@ -35,20 +36,7 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         Ok(found) => found,
         Err(status) => return empty(status),
     };
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, mime)
-        .header(header::CONTENT_LENGTH, bytes.len())
-        // Content-addressed bytes never change, so a viewer should never
-        // re-request one it already holds.
-        .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
-        // The app sets Cross-Origin-Embedder-Policy: credentialless, which
-        // blocks cross-origin subresources that do not opt in. A custom scheme
-        // is a different origin from the page, so without this every image is
-        // silently blocked by COEP — the same reason sandbox_fetch sets it.
-        .header("Cross-Origin-Resource-Policy", "cross-origin")
-        .body(bytes)
-        .unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR))
+    crate::protocol_util::immutable(mime, bytes)
 }
 
 /// One cached image's type and bytes, by an already validated hash. Also
@@ -139,13 +127,6 @@ pub fn webview_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 fn hash_from_path(path: &str) -> Option<String> {
     let candidate = path.rsplit('/').next()?;
     is_valid_hash(candidate).then(|| candidate.to_string())
-}
-
-fn empty(status: StatusCode) -> Response<Vec<u8>> {
-    Response::builder()
-        .status(status)
-        .body(Vec::new())
-        .unwrap_or_else(|_| Response::new(Vec::new()))
 }
 
 #[cfg(test)]

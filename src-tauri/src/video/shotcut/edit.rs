@@ -17,7 +17,7 @@
 use super::doc::{Doc, Slot, OURS, OURS_LUFS};
 use crate::video::mlt::fps::Fps;
 use crate::video::mlt::warp;
-use crate::video::mlt::xml::{escape, Splices};
+use crate::video::mlt::xml::{escape, set_or_add_attrs, whole_line, Splices};
 use crate::video::timeline::{Edited, Fit, GainRange, Media, Placement, Source};
 use std::collections::HashSet;
 
@@ -414,59 +414,6 @@ pub(super) fn new_chain(fps: &Fps, id: &str, m: &Media) -> String {
         hash = escape(&m.file_hash),
         caption = escape(caption),
     )
-}
-
-/// The text of an element's start tag with some attributes set, adding any it
-/// didn't have.
-pub(super) fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
-    let n = doc.tree.node(node);
-    let mut out = format!("<{}", n.name);
-    for (k, v) in &n.attrs {
-        let v = set
-            .iter()
-            .find(|(sk, _)| sk == k)
-            .map(|(_, sv)| sv.as_str())
-            .unwrap_or(v);
-        out.push_str(&format!(" {k}=\"{}\"", escape(v)));
-    }
-    for (k, v) in set {
-        if n.attr(k).is_none() {
-            out.push_str(&format!(" {k}=\"{}\"", escape(v)));
-        }
-    }
-    out.push_str(if n.self_closing() { "/>" } else { ">" });
-    out
-}
-
-/// Replace a start tag's attributes, if any value differs.
-pub(super) fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
-    let n = doc.tree.node(node);
-    if set.iter().all(|(k, v)| n.attr(k) == Some(v.as_str())) {
-        return;
-    }
-    let tag_end = if n.self_closing() {
-        n.span.end
-    } else {
-        n.inner_start
-    };
-    splices.replace(n.span.start..tag_end, retag(doc, node, set));
-}
-
-/// The span of an element with the indentation before it, so removing it
-/// leaves no blank line.
-pub(super) fn whole_line(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
-    let line_start = text[..span.start].rfind('\n').map_or(0, |i| i + 1);
-    let start = if text[line_start..span.start].trim().is_empty() {
-        line_start
-    } else {
-        span.start
-    };
-    let end = if text[span.end..].starts_with('\n') {
-        span.end + 1
-    } else {
-        span.end
-    };
-    start..end
 }
 
 /// Rename every `id="…"` inside a copied element: the chain to `chain`, its
@@ -919,14 +866,14 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
 pub(super) fn set_length(doc: &Doc, splices: &mut Splices, total: i64) {
     let fps = doc.fps;
     let last = tc(&fps, total - 1);
-    set_attrs(
-        doc,
+    set_or_add_attrs(
+        &doc.tree,
         splices,
         doc.main_tractor,
         &[("in", "00:00:00.000".to_string()), ("out", last.clone())],
     );
     if let Some(black) = doc.tree.by_id("black") {
-        set_attrs(doc, splices, black, &[("out", last.clone())]);
+        set_or_add_attrs(&doc.tree, splices, black, &[("out", last.clone())]);
         if let Some(p) = doc.tree.property_node(black, "length") {
             let n = doc.tree.node(p);
             splices.replace(n.inner_start..n.inner_end, tc(&fps, total));
@@ -934,7 +881,7 @@ pub(super) fn set_length(doc: &Doc, splices: &mut Splices, total: i64) {
     }
     if let Some(bg) = doc.tree.by_id("background") {
         if let Some(e) = doc.tree.children_named(bg, "entry").next() {
-            set_attrs(doc, splices, e, &[("out", last)]);
+            set_or_add_attrs(&doc.tree, splices, e, &[("out", last)]);
         }
     }
 }

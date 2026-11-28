@@ -85,13 +85,7 @@ pub(crate) const BROWSER_ENGINES: &[BrowserEngine] = &[
     BrowserEngine {
         stats_key: "brave_html/browser",
         url: |q, recency| {
-            let tf = match recency {
-                "day" => "&tf=pd",
-                "week" => "&tf=pw",
-                "month" => "&tf=pm",
-                "year" => "&tf=py",
-                _ => "",
-            };
+            let tf = crate::proxy::search::brave_time_filter(recency);
             format!(
                 "https://search.brave.com/search?q={}&source=web{}",
                 encode(q),

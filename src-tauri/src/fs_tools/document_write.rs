@@ -6,7 +6,7 @@
 use super::path::{
     refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
 };
-use super::pptx::header;
+use crate::ipc_util::header;
 
 /// The largest document written. Each picture is held to the slides' image
 /// cap when the document is built; this bounds a document of many.

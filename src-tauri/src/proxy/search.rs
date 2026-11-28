@@ -479,19 +479,24 @@ fn finish_scrape(
 // so we anchor on stable data attributes (`data-type="web"`) and unhashed
 // class prefixes (`search-snippet-title`, `generic-snippet`) instead.
 
-pub(super) async fn search_brave_html(
-    query: &str,
-    recency: &str,
-    proxy: Option<&ProxyConfig>,
-) -> Result<Vec<SearchResult>, SearchFailure> {
-    // Brave time filter: tf=pd (past day), pw (week), pm (month), py (year)
-    let tf = match recency {
+/// Brave's time filter for a recency: past day, week, month or year, and
+/// nothing for any other.
+pub(crate) fn brave_time_filter(recency: &str) -> &'static str {
+    match recency {
         "day" => "&tf=pd",
         "week" => "&tf=pw",
         "month" => "&tf=pm",
         "year" => "&tf=py",
         _ => "",
-    };
+    }
+}
+
+pub(super) async fn search_brave_html(
+    query: &str,
+    recency: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<SearchResult>, SearchFailure> {
+    let tf = brave_time_filter(recency);
 
     let url = format!(
         "https://search.brave.com/search?q={}&source=web{}",

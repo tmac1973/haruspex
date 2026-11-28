@@ -20,13 +20,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type { CameraConfig } from '#lib/ipc/gen/CameraConfig.ts';
 import type { CameraEvent } from '#lib/ipc/gen/CameraEvent.ts';
 import type { JobRunSummary } from '#lib/stores/jobRuns.svelte.ts';
-import {
-	markRunStarted,
-	markRunStepFinished,
-	markRunStepStarted
-} from '#lib/stores/jobRuns.svelte.ts';
+import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
+import { errMessage } from '#lib/utils/error.ts';
 import { parseModelJson, turnWithRetry } from '#lib/agent/jobs/cardResult.ts';
 import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 import { NOT_LOCAL } from '#lib/agent/tools/_cameraGate.ts';
@@ -41,6 +37,7 @@ import {
 	type CameraDigestConfig
 } from '#lib/agent/jobs/types/camera-digest/config.ts';
 import { dbQuery } from '#lib/stores/dbCall.ts';
+import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 /** Entries read from each camera's log, newest first. */
 export const PER_CAMERA = 200;
@@ -366,30 +363,13 @@ export async function runCameraDigestPipeline(ctx: JobRunContext): Promise<void>
 	const config = parseCameraDigestConfig(job.type_config);
 	void markRunStarted(runId, Date.now());
 
-	const start = (step: number) => {
-		const startedAt = Date.now();
-		ctx.patchStep(step, { status: 'running', startedAt });
-		ctx.setCurrentStepIndex(step);
-		void markRunStepStarted(runId, step, startedAt, ctx.stepAuthored(step));
-	};
-	const finish = (
-		step: number,
-		status: 'succeeded' | 'failed' | 'cancelled',
-		output: string | null,
-		error: string | null
-	) => {
-		const finishedAt = Date.now();
-		ctx.patchStep(step, { status, output: output ?? '', error, finishedAt });
-		void markRunStepFinished(runId, step, status, output, error, finishedAt);
-	};
+	const { start, finish, fail } = stepMarkers(ctx);
 
-	let step = GATHER;
 	try {
 		start(GATHER);
 		const gathered = await gather(ctx, config);
 		finish(GATHER, 'succeeded', gathered.notes.join('\n'), null);
 
-		step = SUMMARISE;
 		start(SUMMARISE);
 		if (gathered.events.length === 0) {
 			await ctx.setResult({ summary: NOTHING_LOGGED, highlights: [] });
@@ -408,8 +388,7 @@ export async function runCameraDigestPipeline(ctx: JobRunContext): Promise<void>
 		finish(SUMMARISE, 'succeeded', lines.join('\n'), null);
 		ctx.finalizeRun('succeeded', null);
 	} catch (e) {
-		const { aborted, msg } = normalizeAbort(e);
-		finish(step, aborted ? 'cancelled' : 'failed', null, msg);
+		const { aborted, msg } = fail(e);
 		ctx.finalizeRun(aborted ? 'cancelled' : 'failed', msg);
 	} finally {
 		ctx.onSettled();

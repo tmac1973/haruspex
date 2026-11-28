@@ -54,6 +54,61 @@ pub(crate) fn prepare_child(cmd: &mut tokio::process::Command) {
     crate::shell::platform::apply_no_window(cmd.as_std_mut());
 }
 
+/// A file's size and modification time in seconds (zeros when it can't be
+/// read), so a cache keyed on them misses once the file changes.
+pub(crate) fn file_stamp(file: &std::path::Path) -> (u64, u64) {
+    let meta = std::fs::metadata(file).ok();
+    let size = meta.as_ref().map_or(0, |m| m.len());
+    let mtime = meta
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    (size, mtime)
+}
+
+/// How long one ffmpeg pass over a whole recording (measuring it, finding
+/// its silences, cutting its sound out) may take.
+pub(crate) const FFMPEG_PASS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// Run an ffmpeg command to the end, with nothing on stdin, and return what
+/// it printed. `what` names the job for the errors ("measuring the loudness
+/// took too long"). The exit status is the caller's to judge: a measuring
+/// pass reads stderr whatever it is.
+pub(crate) async fn ffmpeg_output(
+    mut cmd: tokio::process::Command,
+    timeout: std::time::Duration,
+    what: &str,
+) -> Result<std::process::Output, String> {
+    cmd.stdin(std::process::Stdio::null()).kill_on_drop(true);
+    prepare_child(&mut cmd);
+    tokio::time::timeout(timeout, cmd.output())
+        .await
+        .map_err(|_| format!("{what} took too long"))?
+        .map_err(|e| format!("could not run ffmpeg: {e}"))
+}
+
+/// Run ffmpeg quietly (`-nostdin -hide_banner -v error`) over `args`, and
+/// return its stdout once it succeeds, or why it failed.
+pub(crate) async fn ffmpeg_checked<S: AsRef<std::ffi::OsStr>>(
+    ffmpeg: &str,
+    args: &[S],
+    timeout: std::time::Duration,
+    what: &str,
+) -> Result<Vec<u8>, String> {
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-v", "error"])
+        .args(args);
+    let out = ffmpeg_output(cmd, timeout, what).await?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "{what} failed: {}",
+            ffmpeg_error(&err, "ffmpeg failed")
+        ));
+    }
+    Ok(out.stdout)
+}
+
 /// Why ffmpeg failed, from its stderr: a codec or format this ffmpeg
 /// lacks, said in words, or else its first line (`fallback` when it said
 /// nothing).

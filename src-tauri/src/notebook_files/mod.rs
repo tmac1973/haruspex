@@ -9,6 +9,7 @@ pub mod transfer;
 
 use crate::blob_cache;
 use crate::db::Database;
+use crate::ipc_util::header;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -208,17 +209,6 @@ fn safe_name(name: &str) -> String {
     } else {
         trimmed.to_string()
     }
-}
-
-fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
-    let raw = request
-        .headers()
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| format!("No {name} was given."))?;
-    urlencoding::decode(raw)
-        .map(|s| s.into_owned())
-        .map_err(|e| format!("{name} is not valid UTF-8: {e}"))
 }
 
 /// Keep a file sent as the raw body, named by the `x-name` header, typed by

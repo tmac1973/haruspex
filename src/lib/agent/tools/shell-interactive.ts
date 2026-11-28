@@ -25,18 +25,10 @@ import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { spillIfLarge } from '#lib/agent/tools/_ptyExec.ts';
 import { snapshotTerminal } from '#lib/stores/shellTerminalSnapshot.ts';
+import type { CapturedRegion } from '#lib/ipc/gen/CapturedRegion.ts';
 
 /** Cap on images buffered into one turn — too many exhausts model context. */
 const MAX_PENDING_IMAGES = 4;
-
-interface CapturedRegion {
-	commandLine: string;
-	output: string;
-	exitCode: number | null;
-	cwd: string | null;
-	truncated: boolean;
-	pending?: boolean;
-}
 
 // settle/interrupt polling cadence (ms).
 const SETTLE_POLL_MS = 150;

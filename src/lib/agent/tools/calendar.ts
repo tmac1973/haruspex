@@ -19,6 +19,7 @@ import { enabledDavAccounts, getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { selectAccounts } from '#lib/agent/tools/_accountSelector.ts';
 
 /**
  * Which accounts a call should reach.
@@ -30,14 +31,7 @@ import { errMessage } from '#lib/utils/error.ts';
  * fail.
  */
 export function resolveDavAccounts(selector?: string): DavAccount[] {
-	const all = enabledDavAccounts();
-	if (!selector) return all;
-	const byId = all.filter((a) => a.id === selector);
-	if (byId.length > 0) return byId;
-	const needle = selector.trim().toLowerCase();
-	const byLabel = all.filter((a) => a.label.trim().toLowerCase() === needle);
-	if (byLabel.length > 0) return byLabel;
-	return all.filter((a) => a.address.trim().toLowerCase() === needle);
+	return selectAccounts(enabledDavAccounts(), selector, (a) => a.address);
 }
 
 /**

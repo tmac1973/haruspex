@@ -7,8 +7,7 @@
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import { jobSourceAttr } from '#lib/notebooks/source.ts';
-	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
-	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
+	import { cardRunState } from '#lib/home/cardRun.ts';
 	import { CARD_JOB_WAIT_TIP } from '#lib/home/jobsCard.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
@@ -37,12 +36,7 @@
 	let { card }: { card: HomeCard } = $props();
 
 	const jobId = $derived(card.job_id);
-	const latestRun = $derived(jobId === null ? null : getLatestRun(jobId));
-	const run = $derived(jobId === null ? null : getActiveRunForJob(jobId));
-	const running = $derived(run?.status === 'running');
-	const waiting = $derived(running && (run?.waitingForSlot ?? false));
-	const queued = $derived(getPendingQueue().some((q) => q.jobId === jobId));
-	const failed = $derived(latestRun?.latest?.status === 'failed' ? latestRun.latest : null);
+	const { latestRun, running, waiting, queued, failed } = $derived(cardRunState(jobId));
 
 	/** The job's settings, read again whenever the job is saved. */
 	let config = $state<EmailResearchConfig | null>(null);

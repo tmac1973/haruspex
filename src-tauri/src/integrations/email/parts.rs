@@ -130,8 +130,8 @@ pub fn email_part_stage(request: tauri::ipc::Request<'_>) -> Result<String, Stri
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("A file must be sent as raw bytes.".into());
     };
-    let name = crate::notebook_files::transfer::header(&request, "x-name")?;
-    let mime = crate::notebook_files::transfer::header(&request, "x-mime")?;
+    let name = crate::ipc_util::header(&request, "x-name")?;
+    let mime = crate::ipc_util::header(&request, "x-mime")?;
     if lettre::message::header::ContentType::parse(&mime).is_err() {
         return Err(format!("{mime:?} is not a MIME type"));
     }

@@ -13,6 +13,7 @@ use super::range::{self, Slice};
 use super::{audio_path, cache_dir};
 use crate::blob_cache::is_valid_hash;
 use crate::db::Database;
+use crate::protocol_util::empty;
 use log::debug;
 use std::path::PathBuf;
 use tauri::http::{header, Request, Response, StatusCode};
@@ -102,13 +103,6 @@ pub fn locate(app: &AppHandle, hash: &str) -> Result<(String, PathBuf), StatusCo
 fn hash_from_path(path: &str) -> Option<String> {
     let candidate = path.rsplit('/').next()?;
     is_valid_hash(candidate).then(|| candidate.to_string())
-}
-
-fn empty(status: StatusCode) -> Response<Vec<u8>> {
-    Response::builder()
-        .status(status)
-        .body(Vec::new())
-        .unwrap_or_else(|_| Response::new(Vec::new()))
 }
 
 #[cfg(test)]

@@ -81,19 +81,9 @@ fn is_turbo(model: &Path) -> bool {
         .is_some_and(|n| n == crate::models::WHISPER_VIDEO_MODEL)
 }
 
-fn stamp(file: &Path) -> (u64, u64) {
-    let meta = std::fs::metadata(file).ok();
-    let size = meta.as_ref().map_or(0, |m| m.len());
-    let mtime = meta
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_secs());
-    (size, mtime)
-}
-
 /// A short, stable key for a clip as it is now.
 fn clip_key(file: &Path) -> String {
-    let (size, mtime) = stamp(file);
+    let (size, mtime) = super::file_stamp(file);
     let mut h = Sha256::new();
     h.update(file.to_string_lossy().as_bytes());
     h.update(size.to_le_bytes());
@@ -117,11 +107,11 @@ pub fn cache_path(episode_dir: &Path, file: &Path) -> PathBuf {
 pub fn cached(episode_dir: &Path, file: &Path) -> Option<Transcript> {
     let text = std::fs::read_to_string(cache_path(episode_dir, file)).ok()?;
     let c: Cached = serde_json::from_str(&text).ok()?;
-    ((c.size, c.mtime) == stamp(file)).then_some(c.transcript)
+    ((c.size, c.mtime) == super::file_stamp(file)).then_some(c.transcript)
 }
 
 fn save_cache(episode_dir: &Path, file: &Path, t: &Transcript) {
-    let (size, mtime) = stamp(file);
+    let (size, mtime) = super::file_stamp(file);
     let c = Cached {
         size,
         mtime,
@@ -133,24 +123,7 @@ fn save_cache(episode_dir: &Path, file: &Path, t: &Transcript) {
 }
 
 async fn run_ffmpeg(ffmpeg: &str, args: &[&str], what: &str) -> Result<Vec<u8>, String> {
-    let mut cmd = tokio::process::Command::new(ffmpeg);
-    cmd.args(["-nostdin", "-hide_banner", "-v", "error"])
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    super::prepare_child(&mut cmd);
-    let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
-        .await
-        .map_err(|_| format!("{what} took too long"))?
-        .map_err(|e| format!("could not run ffmpeg: {e}"))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "{what} failed: {}",
-            super::ffmpeg_error(&err, "ffmpeg failed")
-        ));
-    }
-    Ok(out.stdout)
+    super::ffmpeg_checked(ffmpeg, args, super::FFMPEG_PASS_TIMEOUT, what).await
 }
 
 /// The clip's sound as 16 kHz mono WAV, extracted once.
@@ -591,7 +564,7 @@ mod tests {
         let dir = temp_dir("transcript_cache_v1");
         let clip = dir.join("a.mp4");
         std::fs::write(&clip, b"one").unwrap();
-        let (size, mtime) = stamp(&clip);
+        let (size, mtime) = crate::video::file_stamp(&clip);
         let v1 =
             cache_path(&dir, &clip).with_file_name(format!("a-{}.json", &clip_key(&clip)[..8]));
         std::fs::create_dir_all(v1.parent().unwrap()).unwrap();

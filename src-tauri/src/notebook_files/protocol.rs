@@ -4,8 +4,9 @@
 
 use crate::blob_cache::is_valid_hash;
 use crate::db::Database;
+use crate::protocol_util::empty;
 use log::debug;
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
 pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
@@ -20,14 +21,7 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         return empty(StatusCode::BAD_REQUEST);
     };
     match load(app, &hash) {
-        Ok((mime, bytes)) => Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, mime)
-            .header(header::CONTENT_LENGTH, bytes.len())
-            .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
-            .header("Cross-Origin-Resource-Policy", "cross-origin")
-            .body(bytes)
-            .unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR)),
+        Ok((mime, bytes)) => crate::protocol_util::immutable(mime, bytes),
         Err(status) => empty(status),
     }
 }
@@ -46,11 +40,4 @@ pub fn load(app: &AppHandle, hash: &str) -> Result<(String, Vec<u8>), StatusCode
     let dir = super::dir(app).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let bytes = std::fs::read(dir.join(hash)).map_err(|_| StatusCode::NOT_FOUND)?;
     Ok((mime, bytes))
-}
-
-fn empty(status: StatusCode) -> Response<Vec<u8>> {
-    Response::builder()
-        .status(status)
-        .body(Vec::new())
-        .unwrap_or_else(|_| Response::new(Vec::new()))
 }

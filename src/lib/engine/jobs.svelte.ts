@@ -59,6 +59,7 @@ import {
 import { LIVE_MS } from '#lib/engine/watch.svelte.ts';
 import type { JobEvent, JobFields, JobOp, JobRunLive, JobStepWrite } from '#lib/engine/types.ts';
 import { snapshot } from '#lib/utils/snapshot.ts';
+import { DEFAULT_MODEL_COLUMNS } from '#lib/agent/jobs/chainModel.ts';
 
 /** The columns a client may write. Everything else the app owns. */
 const WRITABLE: (keyof JobFields)[] = [
@@ -168,13 +169,7 @@ const BLANK: StoredColumns = {
 	schedule_kind: 'manual',
 	schedule_config: null,
 	next_due_at: null,
-	model_remote_base_url: null,
-	model_remote_api_key: null,
-	model_remote_api_key_id: null,
-	model_remote_model_id: null,
-	model_remote_context_size: null,
-	model_remote_vision_supported: null,
-	model_advanced: null
+	...DEFAULT_MODEL_COLUMNS
 };
 
 /** A job's stored columns, or a new job's. */

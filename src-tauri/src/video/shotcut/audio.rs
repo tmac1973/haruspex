@@ -8,10 +8,8 @@
 //! and a missing track is added. Unchanged tracks are left byte for byte.
 
 use super::doc::{Doc, Entry, Slot};
-use super::edit::{
-    chain_length, gain_filter_for, limiter_filter, new_chain, set_length, tc, whole_line,
-};
-use crate::video::mlt::xml::{escape, Splices};
+use super::edit::{chain_length, gain_filter_for, limiter_filter, new_chain, set_length, tc};
+use crate::video::mlt::xml::{escape, whole_line, Splices};
 use crate::video::timeline::{AudioClip, AudioPlacement, AudioSource, Edited};
 use std::collections::HashSet;
 

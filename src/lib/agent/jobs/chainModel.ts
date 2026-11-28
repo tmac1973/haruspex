@@ -22,6 +22,20 @@ export interface ModelColumns {
 }
 
 /**
+ * Every model column empty: the job runs on whatever Settings → Inference
+ * has active.
+ */
+export const DEFAULT_MODEL_COLUMNS: Readonly<ModelColumns> = {
+	model_remote_base_url: null,
+	model_remote_api_key: null,
+	model_remote_api_key_id: null,
+	model_remote_model_id: null,
+	model_remote_context_size: null,
+	model_remote_vision_supported: null,
+	model_advanced: null
+};
+
+/**
  * A stage's model override: the same columns, stored in the planning job's
  * type_config. Null means "same as the job that creates the stage".
  */
@@ -66,15 +80,7 @@ export function parseChainModel(raw: unknown): ChainModel | null {
 	const baseUrl = nonEmptyOrNull(r.model_remote_base_url);
 	const modelId = nonEmptyOrNull(r.model_remote_model_id);
 	if ('model_remote_base_url' in r && r.model_remote_base_url === null && !modelId) {
-		return {
-			model_remote_base_url: null,
-			model_remote_api_key: null,
-			model_remote_api_key_id: null,
-			model_remote_model_id: null,
-			model_remote_context_size: null,
-			model_remote_vision_supported: null,
-			model_advanced: nonEmptyOrNull(r.model_advanced)
-		};
+		return { ...DEFAULT_MODEL_COLUMNS, model_advanced: nonEmptyOrNull(r.model_advanced) };
 	}
 	if (!baseUrl || !modelId) return null;
 	const ctx = r.model_remote_context_size;

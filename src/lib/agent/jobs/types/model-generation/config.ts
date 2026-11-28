@@ -8,6 +8,7 @@ import {
 } from '#lib/agent/jobs/chainModel.ts';
 import { DEFAULT_MODELS_SPEC_PATH } from '#lib/models3d/spec/paths.ts';
 import { clampInt } from '#lib/utils/clampInt.ts';
+import { configRecord } from '#lib/agent/jobs/configRecord.ts';
 
 /** Whether the run stops after creation for a review. */
 export type ModelRunMode = 'attended' | 'unattended';
@@ -80,17 +81,7 @@ function text(v: unknown): string | null {
 }
 
 export function parseModelGenerationConfig(json: string | null): ModelGenerationConfig {
-	let raw: Record<string, unknown> = {};
-	if (json) {
-		try {
-			const parsed: unknown = JSON.parse(json);
-			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-				raw = parsed as Record<string, unknown>;
-			}
-		} catch {
-			// Malformed config behaves like no config.
-		}
-	}
+	const raw = configRecord(json);
 	return {
 		spec_path: text(raw.spec_path),
 		// Kept as typed, not trimmed: line breaks in a description are content.

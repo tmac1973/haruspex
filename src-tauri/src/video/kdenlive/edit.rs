@@ -19,7 +19,7 @@
 
 use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS, OURS_LUFS};
 use crate::video::mlt::warp;
-use crate::video::mlt::xml::{escape, Splices};
+use crate::video::mlt::xml::{escape, retag, set_attrs, whole_line, Splices};
 use crate::video::timeline::{Edited, Fit, GainRange, Media, Placement, Source};
 use std::collections::{HashMap, HashSet};
 
@@ -457,36 +457,6 @@ fn mix_transition(
     out
 }
 
-/// The text of an element's start tag with some attributes set.
-pub(super) fn retag(doc: &Doc, node: usize, set: &[(&str, String)]) -> String {
-    let n = doc.tree.node(node);
-    let mut out = format!("<{}", n.name);
-    for (k, v) in &n.attrs {
-        let v = set
-            .iter()
-            .find(|(sk, _)| sk == k)
-            .map(|(_, sv)| sv.as_str())
-            .unwrap_or(v);
-        out.push_str(&format!(" {k}=\"{}\"", escape(v)));
-    }
-    out.push_str(if n.self_closing() { "/>" } else { ">" });
-    out
-}
-
-/// Replace a start tag's attributes, if any value differs.
-pub(super) fn set_attrs(doc: &Doc, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
-    let n = doc.tree.node(node);
-    if set.iter().all(|(k, v)| n.attr(k) == Some(v.as_str())) {
-        return;
-    }
-    let tag_end = if n.self_closing() {
-        n.span.end
-    } else {
-        n.inner_start
-    };
-    splices.replace(n.span.start..tag_end, retag(doc, node, set));
-}
-
 /// Set a `<property>`'s value, if it differs.
 pub(super) fn set_property(
     doc: &Doc,
@@ -507,23 +477,6 @@ pub(super) fn set_property(
             );
         }
     }
-}
-
-/// The whole line an element sits on (its indent through its newline), for
-/// removing it.
-pub(super) fn line_of(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
-    let start = text[..span.start].rfind('\n').map_or(span.start, |i| i + 1);
-    let start = if text[start..span.start].trim().is_empty() {
-        start
-    } else {
-        span.start
-    };
-    let end = if text[span.end..].starts_with('\n') {
-        span.end + 1
-    } else {
-        span.end
-    };
-    start..end
 }
 
 pub(super) fn new_uuid() -> String {
@@ -647,7 +600,7 @@ pub(super) fn rewrite_playlist(
     }
     let n = doc.tree.node(playlist);
     if n.self_closing() {
-        let open = retag(doc, playlist, &[]).replacen("/>", ">", 1);
+        let open = retag(&doc.tree, playlist, &[]).replacen("/>", ">", 1);
         splices.replace(n.span.clone(), format!("{open}{body}\n </playlist>"));
         return;
     }
@@ -702,8 +655,7 @@ pub(super) fn entry_text(
     match old {
         Some(e) => {
             let n = doc.tree.node(e.node);
-            let tag = retag(
-                doc,
+            let tag = retag(&doc.tree,
                 e.node,
                 &[("in", in_tc), ("out", out_tc), ("producer", chain.to_string())],
             );
@@ -728,7 +680,7 @@ pub(super) fn entry_text(
                     dropped.extend(doc.our_range_filters(e.node));
                 }
                 for f in dropped {
-                    let r = line_of(&doc.text, doc.tree.node(f).span.clone());
+                    let r = whole_line(&doc.text, doc.tree.node(f).span.clone());
                     edits.push((r.start - n.inner_start..r.end - n.inner_start, String::new()));
                 }
                 if let Some(f) = filter {
@@ -736,7 +688,7 @@ pub(super) fn entry_text(
                         .tree
                         .children_named(e.node, "property")
                         .last()
-                        .map(|p| line_of(&doc.text, doc.tree.node(p).span.clone()).end - n.inner_start)
+                        .map(|p| whole_line(&doc.text, doc.tree.node(p).span.clone()).end - n.inner_start)
                         .unwrap_or_else(|| usize::from(body.starts_with('\n')));
                     edits.push((at..at, f));
                 }
@@ -889,7 +841,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             };
             let id = format!("chain{next_chain}");
             next_chain += 1;
-            let text = &doc.text[line_of(&doc.text, doc.tree.node(chain).span.clone())];
+            let text = &doc.text[whole_line(&doc.text, doc.tree.node(chain).span.clone())];
             let mut copy =
                 text.replacen(&format!("id=\"{}\"", e.chain), &format!("id=\"{id}\""), 1);
             if let (Some(speed), Some(length)) = (l.warp, l.src_len) {
@@ -1036,7 +988,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             if others == 0 {
                 if let Some(ch) = doc.tree.by_id(&e.chain) {
                     splices.replace(
-                        line_of(&doc.text, doc.tree.node(ch).span.clone()),
+                        whole_line(&doc.text, doc.tree.node(ch).span.clone()),
                         String::new(),
                     );
                 }
@@ -1051,7 +1003,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             .map(|&p| doc.tree.node(p).span.start)
             .min()
             .ok_or("the main track has no playlists")?;
-        let at = line_of(&doc.text, first..first).start;
+        let at = whole_line(&doc.text, first..first).start;
         splices.insert(at, new_chains);
     }
     bins.write(doc, &mut splices);
@@ -1138,7 +1090,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         }
         for mix in &ours {
             splices.replace(
-                line_of(&doc.text, doc.tree.node(mix.node).span.clone()),
+                whole_line(&doc.text, doc.tree.node(mix.node).span.clone()),
                 String::new(),
             );
         }
@@ -1153,7 +1105,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                 .tree
                 .children_named(tractor, "track")
                 .last()
-                .map(|t| line_of(&doc.text, doc.tree.node(t).span.clone()).end)
+                .map(|t| whole_line(&doc.text, doc.tree.node(t).span.clone()).end)
                 .ok_or("a main track has no lanes")?;
             splices.insert(after, added);
         }
@@ -1168,7 +1120,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             if let Some(&start) = new_start.get(&b) {
                 let frames = mix.out_frame - mix.in_frame;
                 set_attrs(
-                    doc,
+                    &doc.tree,
                     &mut splices,
                     mix.node,
                     &[
@@ -1216,13 +1168,13 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
     }
     let last = |end: i64| fps.timecode((end - 1).max(0));
     set_attrs(
-        doc,
+        &doc.tree,
         &mut splices,
         doc.tracks[doc.main_video].tractor,
         &[("out", last(video_end))],
     );
     set_attrs(
-        doc,
+        &doc.tree,
         &mut splices,
         doc.tracks[doc.main_audio].tractor,
         &[("out", last(audio_end))],
@@ -1314,7 +1266,7 @@ impl BinAdds {
         if self.chains.is_empty() {
             return;
         }
-        let at = line_of(&doc.text, doc.tree.node(doc.bin).span.clone()).start;
+        let at = whole_line(&doc.text, doc.tree.node(doc.bin).span.clone()).start;
         splices.insert(at, self.chains);
         let bin_node = doc.tree.node(doc.bin);
         let last = bin_node
@@ -1330,7 +1282,7 @@ impl BinAdds {
 pub(super) fn set_sequence_length(doc: &Doc, splices: &mut Splices, total: i64) {
     let fps = doc.fps;
     let last = |end: i64| fps.timecode((end - 1).max(0));
-    set_attrs(doc, splices, doc.sequence, &[("out", last(total))]);
+    set_attrs(&doc.tree, splices, doc.sequence, &[("out", last(total))]);
     set_property(
         doc,
         splices,
@@ -1346,9 +1298,9 @@ pub(super) fn set_sequence_length(doc: &Doc, splices: &mut Splices, total: i64) 
         &total.to_string(),
     );
     if let Some(pt) = doc.project_tractor {
-        set_attrs(doc, splices, pt, &[("out", last(total))]);
+        set_attrs(&doc.tree, splices, pt, &[("out", last(total))]);
         if let Some(t) = doc.tree.children_named(pt, "track").next() {
-            set_attrs(doc, splices, t, &[("out", last(total))]);
+            set_attrs(&doc.tree, splices, t, &[("out", last(total))]);
         }
     }
     if let Some(black) = doc.black {
@@ -1360,7 +1312,7 @@ pub(super) fn set_sequence_length(doc: &Doc, splices: &mut Splices, total: i64) 
             .unwrap_or(0);
         if current < total {
             set_attrs(
-                doc,
+                &doc.tree,
                 splices,
                 black,
                 &[("out", fps.timecode(total + fps.frames(300.0)))],
