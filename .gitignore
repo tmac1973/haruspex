@@ -62,6 +62,8 @@ id_ed25519*
 id_ecdsa*
 .netrc
 *.env
+token.json
+*.ovpn
 # Haruspex's own secret and pairing files, if a data folder is copied in
 secrets.bin
 secrets.key
@@ -72,6 +74,13 @@ owner-clients.json
 *.sqlite3
 *.db
 *.bak
+# SQLite's side files, which hold the latest writes
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.db-wal
+*.db-shm
+*.db-journal
 
 # OS files
 .DS_Store

@@ -39,15 +39,7 @@ import {
 	type VideoModelCaps
 } from '#lib/agent/tools/_videoSpeech.ts';
 import { trimmed } from '#lib/utils/coerce.ts';
-
-/** A title from the prompt when none was given: its first five words. */
-function titleOf(prompt: string): string {
-	const words = prompt
-		.split(/[\s,.]+/)
-		.filter(Boolean)
-		.slice(0, 5);
-	return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Clip';
-}
+import { titleFromText } from '#lib/utils/format.ts';
 
 /** The seed asked for, a random one for none, or what is wrong with it. */
 function seedOf(raw: unknown): number | string {
@@ -344,7 +336,7 @@ registerTool({
 
 		const prompt = trimmed(args.prompt);
 		const request: VideoRequest = {
-			title: trimmed(args.title) || titleOf(prompt),
+			title: trimmed(args.title) || titleFromText(prompt, 'Clip'),
 			prompt,
 			...(trimmed(args.negative_prompt) ? { negativePrompt: trimmed(args.negative_prompt) } : {}),
 			width: fit.width,

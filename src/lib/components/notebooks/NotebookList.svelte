@@ -7,6 +7,7 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import { focusOnMount } from '#lib/utils/focusOnMount.ts';
+	import { formatShortWhen } from '#lib/utils/format.ts';
 	import NotebookSearch from '#lib/components/notebooks/NotebookSearch.svelte';
 	import {
 		allTags,
@@ -87,14 +88,6 @@
 		newTitle = '';
 		await newNotebook(t, filter ? [filter] : []);
 	}
-
-	function ago(ms: number): string {
-		const d = new Date(ms);
-		const today = new Date();
-		return d.toDateString() === today.toDateString()
-			? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-			: d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-	}
 </script>
 
 <aside class="list">
@@ -165,7 +158,7 @@
 						</span>
 						<span class="meta">
 							{nb.card_count}
-							{nb.card_count === 1 ? 'card' : 'cards'} · {ago(nb.updated_at)}
+							{nb.card_count === 1 ? 'card' : 'cards'} · {formatShortWhen(nb.updated_at)}
 						</span>
 					</button>
 				{/if}

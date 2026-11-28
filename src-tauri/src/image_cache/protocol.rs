@@ -22,7 +22,7 @@
 use super::{cache_dir, image_path, is_valid_hash};
 use crate::db::Database;
 use crate::protocol_util::empty;
-use log::debug;
+use log::{debug, warn};
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
@@ -47,13 +47,13 @@ pub fn load(app: &AppHandle, hash: &str) -> Result<(String, Vec<u8>), StatusCode
         Ok(Some(row)) => row,
         Ok(None) => return Err(StatusCode::NOT_FOUND),
         Err(e) => {
-            debug!("image lookup failed for {}: {}", hash, e);
+            warn!("image lookup failed for {}: {}", hash, e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
 
     let dir = cache_dir(app).map_err(|e| {
-        debug!("image cache dir unavailable: {}", e);
+        warn!("image cache dir unavailable: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 

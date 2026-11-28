@@ -6,7 +6,7 @@
 		loadRunsForJob,
 		type JobRunSummary
 	} from '#lib/stores/jobRuns.svelte.ts';
-	import { formatDuration } from '#lib/utils/format.ts';
+	import { formatDuration, formatShortWhen } from '#lib/utils/format.ts';
 	import { activatable } from '#lib/actions/activatable.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {
@@ -35,16 +35,6 @@
 		void loadRunsForJob(jobId);
 	});
 
-	function formatWhen(ms: number): string {
-		const d = new Date(ms);
-		const now = new Date();
-		const sameDay = d.toDateString() === now.toDateString();
-		if (sameDay) {
-			return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-		}
-		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-	}
-
 	function durationLabel(run: JobRunSummary): string {
 		if (run.started_at && run.finished_at) {
 			return formatDuration(run.finished_at - run.started_at);
@@ -67,7 +57,7 @@
 					message: 'It will not start, and it is removed from this list.'
 				};
 			}
-			const label = `${formatWhen(pendingDelete.run.queued_at)} (${pendingDelete.run.status})`;
+			const label = `${formatShortWhen(pendingDelete.run.queued_at)} (${pendingDelete.run.status})`;
 			return {
 				title: 'Delete run?',
 				message: `Delete run from ${label}? This cannot be undone.`
@@ -138,7 +128,7 @@
 				>
 					<div class="row-content">
 						<div class="row-top">
-							<span class="when">{formatWhen(run.queued_at)}</span>
+							<span class="when">{formatShortWhen(run.queued_at)}</span>
 							<span
 								class="status-dot status-{run.status}"
 								title={run.status}

@@ -36,9 +36,7 @@ pub fn template_text(preset: &str, root: &Path) -> Result<String, String> {
     let p = profile(preset)?;
     let uuid = format!("{{{}}}", uuid::Uuid::new_v4());
     let session = format!("{{{}}}", uuid::Uuid::new_v4());
-    let id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis());
+    let id = crate::time_util::now_ms_u64();
     Ok(TEMPLATE
         .replace("{{PROFILE}}", &profile_tag(&p))
         .replace("{{PROFILE_NAME}}", p.name)

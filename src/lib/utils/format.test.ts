@@ -1,5 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatContextSize, formatGigabytes, plural } from './format';
+import {
+	formatBytes,
+	formatContextSize,
+	formatGigabytes,
+	formatShortWhen,
+	plural,
+	titleFromText
+} from './format';
+
+describe('formatShortWhen', () => {
+	const now = new Date(2026, 10, 27, 15, 0);
+	it('shows the time for today', () => {
+		const ms = new Date(2026, 10, 27, 9, 5).getTime();
+		expect(formatShortWhen(ms, now)).toBe(
+			new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+		);
+	});
+	it('shows month and day for another day', () => {
+		const ms = new Date(2026, 10, 26, 23, 59).getTime();
+		expect(formatShortWhen(ms, now)).toBe(
+			new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+		);
+	});
+});
+
+describe('titleFromText', () => {
+	it('takes the first five words, capitalised', () => {
+		expect(titleFromText('a slow walk, by the sea at night')).toBe('A Slow Walk By The');
+	});
+	it('drops brackets and full stops', () => {
+		expect(titleFromText('[verse] rain. on (soft) glass')).toBe('Verse Rain On Soft Glass');
+	});
+	it('falls back when there are no words', () => {
+		expect(titleFromText(' , . ', 'Clip')).toBe('Clip');
+		expect(titleFromText('')).toBe('');
+	});
+});
 
 describe('formatContextSize', () => {
 	it.each([
