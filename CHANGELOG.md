@@ -1,5 +1,108 @@
 # Changelog
 
+## [0.2.26](https://github.com/tmac1973/haruspex/compare/v0.2.25...v0.2.26) (2026-11-28)
+
+
+### Features
+
+* **agent:** keep trimmed tool results, and let the model read them back ([#1300](https://github.com/tmac1973/haruspex/issues/1300)) ([69699cf](https://github.com/tmac1973/haruspex/commit/69699cf4c873954b0a54c31d9f0a1a81f8ad558b)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** log how much of each prompt llama-server read from its cache ([#1287](https://github.com/tmac1973/haruspex/issues/1287)) ([4b5efb1](https://github.com/tmac1973/haruspex/commit/4b5efb16654b1e763f5dfe4d7646c79d0fe22ef1)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **image,video:** name the backend in generation tool results ([#1322](https://github.com/tmac1973/haruspex/issues/1322)) ([85535be](https://github.com/tmac1973/haruspex/commit/85535bef3cb9613a5256e74602243612e45b9175))
+* **image,video:** record what OpenRouter charged, and keep a running total ([#1330](https://github.com/tmac1973/haruspex/issues/1330)) ([5ec0e6a](https://github.com/tmac1973/haruspex/commit/5ec0e6aa56ee801968ccd65e62b8c27eaa5f2136))
+* **image:** move Ming-Image to 0.2 Design ([#1348](https://github.com/tmac1973/haruspex/issues/1348)) ([1caedc1](https://github.com/tmac1973/haruspex/commit/1caedc14db6218aba4b2b694adf199efd408cf93)), closes [#1341](https://github.com/tmac1973/haruspex/issues/1341)
+* **image:** OpenRouter as an image backend ([#1311](https://github.com/tmac1973/haruspex/issues/1311)) ([45b60f0](https://github.com/tmac1973/haruspex/commit/45b60f076a8fc343efa5592453ecf7963a5b3cb0)), closes [#1278](https://github.com/tmac1973/haruspex/issues/1278)
+* **jobs:** archive jobs out of the list ([#1307](https://github.com/tmac1973/haruspex/issues/1307)) ([8278788](https://github.com/tmac1973/haruspex/commit/82787889df536ccbfe2130c20b6222cb936b95a4))
+* **jobs:** keep one notebook of an audit's findings up to date ([#1360](https://github.com/tmac1973/haruspex/issues/1360)) ([69802cc](https://github.com/tmac1973/haruspex/commit/69802ccafec1ab8fdae6675b0fef6c4d3000853c))
+* **jobs:** offer recall_result to job stages that read, run or fetch ([#1314](https://github.com/tmac1973/haruspex/issues/1314)) ([8cd5f71](https://github.com/tmac1973/haruspex/commit/8cd5f717d0cd3f6bea50448b674ffed544ffcde7)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **jobs:** save an audit's findings to a notebook ([#1356](https://github.com/tmac1973/haruspex/issues/1356)) ([3682fd5](https://github.com/tmac1973/haruspex/commit/3682fd57aa604b9a7d5539022b39e58a8fb41ae7))
+* **jobs:** save each audit run's findings to a new notebook ([#1358](https://github.com/tmac1973/haruspex/issues/1358)) ([13caeb3](https://github.com/tmac1973/haruspex/commit/13caeb39820dc8151bbea4a1db954fc7ebc127ec))
+* **licences:** add the licences of the code llama.cpp bundles ([#1333](https://github.com/tmac1973/haruspex/issues/1333)) ([a00aff0](https://github.com/tmac1973/haruspex/commit/a00aff0e8c59d01ade39bf477f0a197317948046)), closes [#991](https://github.com/tmac1973/haruspex/issues/991)
+* **licences:** add the licences of the code whisper.cpp and sd-server bundle ([#1337](https://github.com/tmac1973/haruspex/issues/1337)) ([9ff32e2](https://github.com/tmac1973/haruspex/commit/9ff32e23a41101f415e20ec36082974b1101ed1c)), closes [#991](https://github.com/tmac1973/haruspex/issues/991)
+* **licences:** add the npm code in sd-server's web UI ([#1338](https://github.com/tmac1973/haruspex/issues/1338)) ([9e78bd9](https://github.com/tmac1973/haruspex/commit/9e78bd91a5fd3fc7d54b8bb4354eec4c32b0fbe2)), closes [#991](https://github.com/tmac1973/haruspex/issues/991)
+* **licences:** list Rust crates, Python wheels and program licence texts ([#1325](https://github.com/tmac1973/haruspex/issues/1325)) ([72d1143](https://github.com/tmac1973/haruspex/commit/72d114331a5e7bf790fab0188979a7522de4b8e2))
+* **licences:** list the crates koko is built from, and ONNX Runtime ([#1331](https://github.com/tmac1973/haruspex/issues/1331)) ([3d33b5b](https://github.com/tmac1973/haruspex/commit/3d33b5be4c45a64ffe201a0291963727d21558cc)), closes [#991](https://github.com/tmac1973/haruspex/issues/991)
+* **music:** name the backend in music tool results ([#1324](https://github.com/tmac1973/haruspex/issues/1324)) ([df70765](https://github.com/tmac1973/haruspex/commit/df70765ec6dda9ef5bf48af5b94e690e2b73e156))
+* **notebooks:** work through a checklist in Shell, with notes and sudo prompts ([#1359](https://github.com/tmac1973/haruspex/issues/1359)) ([ac5c09b](https://github.com/tmac1973/haruspex/commit/ac5c09b8043a235820b3d442249719ce36f64efb))
+* **notebooks:** work through a table or a whole notebook in Shell ([#1365](https://github.com/tmac1973/haruspex/issues/1365)) ([0ec61d7](https://github.com/tmac1973/haruspex/commit/0ec61d7486411bb6d08e1f7e6046a368c7e389dd))
+* **settings:** turn image, video and upscaler entries off without removing them ([#1326](https://github.com/tmac1973/haruspex/issues/1326)) ([f74126f](https://github.com/tmac1973/haruspex/commit/f74126f496db620aa2dd0bb6464ed4bf4202f4f1))
+* **settings:** upscaler lists in Settings → Image and Video generation ([#1285](https://github.com/tmac1973/haruspex/issues/1285)) ([39790c7](https://github.com/tmac1973/haruspex/commit/39790c7e7674928fb2f0dbdec802e59e3addc346))
+* **shell:** report memory-cap kills for background commands ([#1305](https://github.com/tmac1973/haruspex/issues/1305)) ([1b182d7](https://github.com/tmac1973/haruspex/commit/1b182d7c701440ace6c226de652be38701f9fa08)), closes [#391](https://github.com/tmac1973/haruspex/issues/391)
+* **speech:** per-line voices for a scene's game lines ([#1319](https://github.com/tmac1973/haruspex/issues/1319)) ([075f352](https://github.com/tmac1973/haruspex/commit/075f352fdad8d897def05e0f1bf92bdd37114a13)), closes [#774](https://github.com/tmac1973/haruspex/issues/774)
+* **ui:** one right-click menu for every list row ([#1286](https://github.com/tmac1973/haruspex/issues/1286)) ([6116cc0](https://github.com/tmac1973/haruspex/commit/6116cc0abc8e8c9b20a47afdf2c7c360f962ae2b))
+* **video-sequence:** sections start from a still or from the prompt ([#1328](https://github.com/tmac1973/haruspex/issues/1328)) ([e4ff33e](https://github.com/tmac1973/haruspex/commit/e4ff33e7c4f892f2101e51a0bb962a9898587076))
+* **video-sequence:** show the stills question as thumbnails and a viewer button ([#1283](https://github.com/tmac1973/haruspex/issues/1283)) ([63ffb45](https://github.com/tmac1973/haruspex/commit/63ffb456449b6aaffd3006033a1caed97d8de4bb))
+* **videogen:** add OpenRouter as a video backend ([#1316](https://github.com/tmac1973/haruspex/issues/1316)) ([8ed4867](https://github.com/tmac1973/haruspex/commit/8ed48676c6c0c585f6604bb5cfc1965b7588d25d))
+* **video:** reference pictures, and pass a refused clip to the next model ([#1334](https://github.com/tmac1973/haruspex/issues/1334)) ([534ef13](https://github.com/tmac1973/haruspex/commit/534ef139e721fd6f3d63725c3ca14b1ebe2fde8f))
+
+
+### Bug Fixes
+
+* **3d:** free each sheet's WebGL context when check_3d is done with it ([#1315](https://github.com/tmac1973/haruspex/issues/1315)) ([e8ee0c8](https://github.com/tmac1973/haruspex/commit/e8ee0c8e46a083297423065b21c6d67b405e6414)), closes [#996](https://github.com/tmac1973/haruspex/issues/996)
+* **agent:** aim a round's recalls at 65% of the window, not the 70% trigger ([#1306](https://github.com/tmac1973/haruspex/issues/1306)) ([0ce39ca](https://github.com/tmac1973/haruspex/commit/0ce39ca49c81a0aac4719d937a9b2bd0041658af)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** cap how much one round of recall_result hands back ([#1301](https://github.com/tmac1973/haruspex/issues/1301)) ([1496119](https://github.com/tmac1973/haruspex/commit/149611927d2a84b856fd352307befc53313818ff)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** drop a round of tool calls whole, never half of it ([#1291](https://github.com/tmac1973/haruspex/issues/1291)) ([3b7c525](https://github.com/tmac1973/haruspex/commit/3b7c5257c773087d416dbf54c89a611a3c82112b)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** forceFit removes older messages before it cuts the system prompt ([#1308](https://github.com/tmac1973/haruspex/issues/1308)) ([2f612c0](https://github.com/tmac1973/haruspex/commit/2f612c097663fc916a4a0bc358ef333aa33595c5)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** forceFit's cuts keep a recall_result id ([#1309](https://github.com/tmac1973/haruspex/issues/1309)) ([f83c7ea](https://github.com/tmac1973/haruspex/commit/f83c7eaea578d810b1484a29ef00a43b7b883257)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** four tool problems from the 2026-11-26 model feedback ([#1318](https://github.com/tmac1973/haruspex/issues/1318)) ([5046d72](https://github.com/tmac1973/haruspex/commit/5046d72f675d1dfc8cda785070cfc7139bc8add6)), closes [#1317](https://github.com/tmac1973/haruspex/issues/1317)
+* **agent:** keep recalled and tiny results through a trim, and say the room left ([#1312](https://github.com/tmac1973/haruspex/issues/1312)) ([6021a8c](https://github.com/tmac1973/haruspex/commit/6021a8c50a1df26ac222450b8129597e8d4a3c82)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** log prompt-cache hits from cached_tokens, not only timings ([#1293](https://github.com/tmac1973/haruspex/issues/1293)) ([d5b1ff4](https://github.com/tmac1973/haruspex/commit/d5b1ff4feca4102cf77961185ce46c336d7e03b9)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** recall_result reads lines, in pages sized to the room left ([#1304](https://github.com/tmac1973/haruspex/issues/1304)) ([93d595c](https://github.com/tmac1973/haruspex/commit/93d595ce98e02209046a6a2ac22acfaff63d525e)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** reserve an eighth of the window for a reply, not the whole cap ([#1295](https://github.com/tmac1973/haruspex/issues/1295)) ([6a25f96](https://github.com/tmac1973/haruspex/commit/6a25f96e6ab143ced3b4d21758cf51c9fd33bb46)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** size each round's recall budget from the room left ([#1302](https://github.com/tmac1973/haruspex/issues/1302)) ([564cca5](https://github.com/tmac1973/haruspex/commit/564cca5a6e315f7f6fb8c2a4b15ecb8efd40e7a8)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **agent:** trim before the send, from 70% of the window down to 55% ([#1298](https://github.com/tmac1973/haruspex/issues/1298)) ([f4cff82](https://github.com/tmac1973/haruspex/commit/f4cff82ea7cf004df590a738e1b19403300b3269)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* audit quick wins for logging, gitignore and copied helpers ([#1382](https://github.com/tmac1973/haruspex/issues/1382)) ([3a5abe7](https://github.com/tmac1973/haruspex/commit/3a5abe715d72e638e29e10f5ac4b03772c07b393))
+* **build:** give Windows test binaries the Common Controls v6 manifest ([#1400](https://github.com/tmac1973/haruspex/issues/1400)) ([1853f8a](https://github.com/tmac1973/haruspex/commit/1853f8ad7a257e24504309d416f9c376f2cee339))
+* **chat:** leave recall_result pairs out of the tool results kept for the next turn ([#1357](https://github.com/tmac1973/haruspex/issues/1357)) ([73ce34c](https://github.com/tmac1973/haruspex/commit/73ce34c6e2ac5862ba145a270c37f61b35381497))
+* **code:** keep step pictures in the image cache, not the thread ([#1336](https://github.com/tmac1973/haruspex/issues/1336)) ([e204d1c](https://github.com/tmac1973/haruspex/commit/e204d1cb4581da2ac083e478e9df988284875ec1))
+* **deps:** pdfmake 0.3.15, pyodide 314.0.8, and in-range updates ([#1378](https://github.com/tmac1973/haruspex/issues/1378)) ([106405f](https://github.com/tmac1973/haruspex/commit/106405f39dded054fc6c595254632f2da10f14f6))
+* **email:** queue overlapping review drafts instead of refusing the second ([#1387](https://github.com/tmac1973/haruspex/issues/1387)) ([80ab9a6](https://github.com/tmac1973/haruspex/commit/80ab9a6dda7bc95dc543b054c142dfa7b693f0e4))
+* **image:** lock the bundled sd-server to the app with a per-run key ([#1342](https://github.com/tmac1973/haruspex/issues/1342)) ([edadd9f](https://github.com/tmac1973/haruspex/commit/edadd9f8b4717b3685aa58b81263f44022b17e42))
+* **image:** send toolchest and Lemonade upscalers an RGB picture; say a named model is turned off ([#1355](https://github.com/tmac1973/haruspex/issues/1355)) ([95d2b01](https://github.com/tmac1973/haruspex/commit/95d2b012718ead5024182fa1dc7f27d845023690))
+* **inference:** give each model its own lane on a server that runs one instance per model ([#1329](https://github.com/tmac1973/haruspex/issues/1329)) ([5a4074b](https://github.com/tmac1973/haruspex/commit/5a4074b3b89ae3c282729852b7b29153080ade83))
+* **inference:** keep the status badge on the backend Settings uses ([#1297](https://github.com/tmac1973/haruspex/issues/1297)) ([7fedd36](https://github.com/tmac1973/haruspex/commit/7fedd360b85c30d6dc437c6c1c328735b98ffd0d))
+* **jobs:** keep the notebook a run made when the editor saves the job ([#1362](https://github.com/tmac1973/haruspex/issues/1362)) ([9b05583](https://github.com/tmac1973/haruspex/commit/9b055831ba5bef2c4afef2412359cf26af9203ea))
+* **jobs:** match an audit's findings to its notebook rows again ([#1401](https://github.com/tmac1973/haruspex/issues/1401)) ([833b714](https://github.com/tmac1973/haruspex/commit/833b714c59bdd2ff4666ae16c5d1009eb79fe1cc))
+* **log:** blank credentials in the App log, on stderr and in the viewer ([#1393](https://github.com/tmac1973/haruspex/issues/1393)) ([5ac33ab](https://github.com/tmac1973/haruspex/commit/5ac33ab01a5104f3a06045a962c5c9c5e45daeb1))
+* **log:** redact every key:value pair in a word, and leave token counts ([#1294](https://github.com/tmac1973/haruspex/issues/1294)) ([5607893](https://github.com/tmac1973/haruspex/commit/5607893de731201f2156c71b8146a9c3d84365b4)), closes [#1022](https://github.com/tmac1973/haruspex/issues/1022)
+* **notebooks:** keep ';' in row updates and refuse CSV rows split by a comma ([#1354](https://github.com/tmac1973/haruspex/issues/1354)) ([821659e](https://github.com/tmac1973/haruspex/commit/821659e0f98262249aeec6e13b9e05db42a2bc7a)), closes [#1353](https://github.com/tmac1973/haruspex/issues/1353)
+* **notebooks:** keep notebook tools out of job turns in lean mode ([#1364](https://github.com/tmac1973/haruspex/issues/1364)) ([0f8fe71](https://github.com/tmac1973/haruspex/commit/0f8fe717cec7936b721f5b51a1ac200436b4f1ca))
+* **notebooks:** refresh the Notebooks tab for changes made in a detached window ([#1367](https://github.com/tmac1973/haruspex/issues/1367)) ([f4af32d](https://github.com/tmac1973/haruspex/commit/f4af32d48c5961840138dc895ebcb1dab9f237cf))
+* **notebooks:** say a save from job output came from that job run ([#1351](https://github.com/tmac1973/haruspex/issues/1351)) ([d998554](https://github.com/tmac1973/haruspex/commit/d998554f553b4587af98f2df0c1c34673d9c9289))
+* **notebooks:** say how to read the rest of a long card in the outline ([#1361](https://github.com/tmac1973/haruspex/issues/1361)) ([2b00c3c](https://github.com/tmac1973/haruspex/commit/2b00c3c216400c5f97c3b37f1bd7019df2b511d9))
+* **notebooks:** skip sites that are down for now in the link check; banner shows each broken link ([#1340](https://github.com/tmac1973/haruspex/issues/1340)) ([f3f34ab](https://github.com/tmac1973/haruspex/commit/f3f34ab45d7631293fcdd408aea0dd6b6aeee317))
+* **remote:** send job-run events for every run going now, not only the one in view ([#1332](https://github.com/tmac1973/haruspex/issues/1332)) ([28ddafe](https://github.com/tmac1973/haruspex/commit/28ddafe71a848bd1d3f0d0d5b79e5a55cbd6bf9e))
+* **save:** copy videos and songs from the cache in Rust, past the 10 MB write cap ([#1320](https://github.com/tmac1973/haruspex/issues/1320)) ([2832814](https://github.com/tmac1973/haruspex/commit/283281475afcaffd0fce312571d01b7abfc9f5e8))
+* **save:** save_generated saves a video clip made earlier ([#1323](https://github.com/tmac1973/haruspex/issues/1323)) ([bdeaa58](https://github.com/tmac1973/haruspex/commit/bdeaa587570e3e3193a4c5d86742e60ef362fc16)), closes [#1321](https://github.com/tmac1973/haruspex/issues/1321)
+* **secrets:** check a setting's password ref is of its own kind ([#1388](https://github.com/tmac1973/haruspex/issues/1388)) ([fe70179](https://github.com/tmac1973/haruspex/commit/fe70179709c0cb53fffb4aa7e7a10bf69a1ac801))
+* **security:** close redaction gaps and tidy secret files ([#1373](https://github.com/tmac1973/haruspex/issues/1373)) ([78a3c2b](https://github.com/tmac1973/haruspex/commit/78a3c2bd784db9d8cf2e2b687f2ea6e853f467ff))
+* **security:** keep secrets, processes, pairing and mail from windows that run no agent turn ([#1396](https://github.com/tmac1973/haruspex/issues/1396)) ([47a75cd](https://github.com/tmac1973/haruspex/commit/47a75cd4ad25900083f560e00224939be8dc8182))
+* **server:** give llama-server ten minutes to load, not one ([#1299](https://github.com/tmac1973/haruspex/issues/1299)) ([126c5f6](https://github.com/tmac1973/haruspex/commit/126c5f6268a54f148f2cf5b52fd3d7846f31ca89))
+* **settings:** a picked saved server brings its own key, even none ([#1389](https://github.com/tmac1973/haruspex/issues/1389)) ([ef9e0dd](https://github.com/tmac1973/haruspex/commit/ef9e0dd15a3ae30408f130ce0864a1a78b015ecd))
+* **settings:** one scroll bar for the pane, not two on top of each other ([#1339](https://github.com/tmac1973/haruspex/issues/1339)) ([f5857d7](https://github.com/tmac1973/haruspex/commit/f5857d7da9fb67c0f39835a86c7b7c4fa1459fab))
+* **skills:** name the upscalers in an image skill's Set up now ([#1346](https://github.com/tmac1973/haruspex/issues/1346)) ([7208f28](https://github.com/tmac1973/haruspex/commit/7208f284ee45a6b18a40d966431aa1e8c41b0022)), closes [#1343](https://github.com/tmac1973/haruspex/issues/1343)
+* **slides:** larger chart text in portrait decks ([#831](https://github.com/tmac1973/haruspex/issues/831)) ([#1303](https://github.com/tmac1973/haruspex/issues/1303)) ([2cc4387](https://github.com/tmac1973/haruspex/commit/2cc43879cd6b522cacb90ebe05dad6b559c4eb07))
+* **tts:** drop punctuation-only sentences that end koko's stream ([#1310](https://github.com/tmac1973/haruspex/issues/1310)) ([8313086](https://github.com/tmac1973/haruspex/commit/8313086001f5e9a6fc7b796246c71da1e9f31051))
+* **video-sequence:** keep the spec's style out of speaking sections ([#1335](https://github.com/tmac1973/haruspex/issues/1335)) ([07bc432](https://github.com/tmac1973/haruspex/commit/07bc432db92a6eb4485f8d92962cd77a17def95e))
+* **video:** prune only a project's own backups ([#1366](https://github.com/tmac1973/haruspex/issues/1366)) ([7e05682](https://github.com/tmac1973/haruspex/commit/7e056821cc1a6371564d6100f09cbd00649f1a93))
+* **video:** say near-silent clips are near-silent when their gain is at its cap ([#1347](https://github.com/tmac1973/haruspex/issues/1347)) ([e9071e2](https://github.com/tmac1973/haruspex/commit/e9071e22f1afae9a632a78b2546ad9df17600520)), closes [#1344](https://github.com/tmac1973/haruspex/issues/1344)
+
+
+### Code Refactoring
+
+* follow the project's own helpers for clones, locks and errors ([#1374](https://github.com/tmac1973/haruspex/issues/1374)) ([da270a8](https://github.com/tmac1973/haruspex/commit/da270a83fb109ca2fded7f9f296dbc3627c571aa))
+* one atomic file write and one home_dir in the Rust helpers ([#1383](https://github.com/tmac1973/haruspex/issues/1383)) ([cd56992](https://github.com/tmac1973/haruspex/commit/cd5699200923f2acc23bf0d4f523f180831317f5))
+* one formatTokens, one relative-path rule, one test flush; no sleeps in engine tests ([#1395](https://github.com/tmac1973/haruspex/issues/1395)) ([422a727](https://github.com/tmac1973/haruspex/commit/422a7271a7fad40e0a5a1c0219e20aa7a32f6975))
+* one PNG decode and encode for the image tools; the out-of-order test proves the order ([#1398](https://github.com/tmac1973/haruspex/issues/1398)) ([b0bd5f3](https://github.com/tmac1973/haruspex/commit/b0bd5f3fb5be1fa9c52f39bd148da6e1a7d5a94e))
+* one working-folder file helper for the job pipelines ([#1385](https://github.com/tmac1973/haruspex/issues/1385)) ([6bede32](https://github.com/tmac1973/haruspex/commit/6bede3243977e409612d43e99fac87eb1606eb0b))
+* persist gains forgetItem and JSON helpers; two stores stop skipping it ([#1386](https://github.com/tmac1973/haruspex/issues/1386)) ([a308f8f](https://github.com/tmac1973/haruspex/commit/a308f8f1d349e29cb9476a7bf0a62f0d27fb8abf))
+* remove duplicated code from the audit ([#1375](https://github.com/tmac1973/haruspex/issues/1375)) ([078b33f](https://github.com/tmac1973/haruspex/commit/078b33f15f47ad295cbe4f539e097388412d6edc))
+* share OpenRouter URL, model-list and picture-byte helpers ([#1384](https://github.com/tmac1973/haruspex/issues/1384)) ([19a4b1e](https://github.com/tmac1973/haruspex/commit/19a4b1eaf242ab39d04ea4224d7277a96096d934))
+
+
+### Documentation
+
+* **plan:** archive the completed plans ([#1363](https://github.com/tmac1973/haruspex/issues/1363)) ([e90a9aa](https://github.com/tmac1973/haruspex/commit/e90a9aacc26a0dcb3b20c8366b690ee56b53fc1e))
+
 ## [0.2.25](https://github.com/tmac1973/haruspex/compare/v0.2.24...v0.2.25) (2026-11-26)
 
 
