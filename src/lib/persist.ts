@@ -11,7 +11,8 @@
  * route, so the stores the routes import can keep reading `localStorage`
  * synchronously. (Not a top-level await here: a module that awaits, inside
  * the stores' import cycles, lets the bundle run modules out of order.)
- * Writes go through {@link persistItem}, which updates both. On the first
+ * Writes go through {@link persistItem} and {@link forgetItem}, which update
+ * both ({@link loadJson} and {@link saveJson} for a JSON value). On the first
  * launch after this shipped there is no file yet, and the window starts it
  * from its own `localStorage`.
  *
@@ -81,8 +82,8 @@ export async function loadSavedItems(): Promise<void> {
 	(globalThis as { __haruspexSavedLoaded?: Items }).__haruspexSavedLoaded = localItems();
 }
 
-// Writes waiting for the file, newest value per key.
-const pending = new Map<string, string>();
+// Writes waiting for the file, newest value per key; null removes the key.
+const pending = new Map<string, string | null>();
 let flushing = false;
 let warned = false;
 
@@ -92,7 +93,7 @@ async function flush(): Promise<void> {
 	try {
 		// One at a time, in order, so an older value can never land last.
 		while (pending.size > 0) {
-			const [key, value] = pending.entries().next().value as [string, string];
+			const [key, value] = pending.entries().next().value as [string, string | null];
 			pending.delete(key);
 			try {
 				await invoke('webview_store_set', { key, value });
@@ -106,7 +107,7 @@ async function flush(): Promise<void> {
 	}
 }
 
-function queue(key: string, value: string): void {
+function queue(key: string, value: string | null): void {
 	if (!isTauri()) return;
 	pending.set(key, value);
 	void flush();
@@ -116,4 +117,42 @@ function queue(key: string, value: string): void {
 export function persistItem(key: string, value: string): void {
 	queue(key, value);
 	localStorage.setItem(key, value);
+}
+
+/** `localStorage.removeItem`, for every build. */
+export function forgetItem(key: string): void {
+	queue(key, null);
+	localStorage.removeItem(key);
+}
+
+/**
+ * A saved JSON value: what `parse` makes of it, or `fallback` when it is
+ * missing, isn't JSON, or `parse` refuses it (null).
+ */
+export function loadJson<T>(key: string, parse: (value: unknown) => T | null, fallback: T): T {
+	try {
+		const raw = localStorage.getItem(key);
+		if (raw == null) return fallback;
+		return parse(JSON.parse(raw)) ?? fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+/** For {@link loadJson}: any non-null object, as `T`. */
+export function asObject<T extends object>(value: unknown): T | null {
+	return value && typeof value === 'object' && !Array.isArray(value) ? (value as T) : null;
+}
+
+/**
+ * Save `value` as JSON for every build. Best effort: false when storage
+ * refused it (full, or disabled), which callers treat as "not kept".
+ */
+export function saveJson(key: string, value: unknown): boolean {
+	try {
+		persistItem(key, JSON.stringify(value));
+		return true;
+	} catch {
+		return false;
+	}
 }

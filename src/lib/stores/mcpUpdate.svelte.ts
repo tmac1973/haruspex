@@ -16,7 +16,7 @@ import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { McpUpdateStatus } from '#lib/ipc/gen/McpUpdateStatus.ts';
 import { unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
-import { persistItem } from '#lib/persist.ts';
+import { asObject, loadJson, saveJson } from '#lib/persist.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import {
 	installedManifest,
@@ -98,23 +98,11 @@ export async function recoverInterruptedUpdates(): Promise<void> {
 /** The pin each server was last told about, so a new pin toasts once. */
 const NOTIFIED_KEY = 'haruspex.mcp.updateNotified';
 
-function loadNotified(): Record<string, string> {
-	try {
-		const parsed: unknown = JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? '{}');
-		return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {};
-	} catch {
-		// Unreadable means the toast may show again, never that it is lost.
-		return {};
-	}
-}
-
-function saveNotified(notified: Record<string, string>): void {
-	try {
-		persistItem(NOTIFIED_KEY, JSON.stringify(notified));
-	} catch {
-		// As above: at worst, one more toast.
-	}
-}
+// Unreadable or unsaved means the toast may show again, never that it is lost.
+const loadNotified = (): Record<string, string> =>
+	loadJson(NOTIFIED_KEY, asObject<Record<string, string>>, {});
+const saveNotified = (notified: Record<string, string>): void =>
+	void saveJson(NOTIFIED_KEY, notified);
 
 /** Forget what a removed server was told, so a reinstall starts fresh. */
 export function forgetUpdateNotice(serverId: string): void {

@@ -24,7 +24,7 @@
  */
 
 import type { McpToolAnnotations } from '#lib/ipc/gen/McpToolAnnotations.ts';
-import { persistItem } from '#lib/persist.ts';
+import { loadJson, saveJson } from '#lib/persist.ts';
 import { createApprovalQueue, type PromptOrigin } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type McpApprovalChoice = 'allow_once' | 'allow_always' | 'deny';
@@ -80,26 +80,16 @@ function pairKey(serverId: string, toolName: string): string {
 // A plain array rather than a Set: this is persisted, non-reactive data read a
 // handful of times per turn, and a Set living in a `.svelte.ts` module reads as
 // reactive state that it is not.
-function loadAlways(): string[] {
-	try {
-		const raw = localStorage.getItem(ALWAYS_KEY);
-		if (!raw) return [];
-		const parsed: unknown = JSON.parse(raw);
-		return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === 'string') : [];
-	} catch {
-		// A corrupt store means "nothing is pre-approved", which is the safe
-		// reading: the user gets asked again rather than silently not asked.
-		return [];
-	}
-}
-
-function saveAlways(keys: string[]): void {
-	try {
-		persistItem(ALWAYS_KEY, JSON.stringify(keys));
-	} catch {
-		// Persistence is a convenience; failing to store it costs a re-prompt.
-	}
-}
+// A corrupt store means "nothing is pre-approved", which is the safe reading:
+// the user gets asked again rather than silently not asked. Failing to store
+// it costs a re-prompt.
+const loadAlways = (): string[] =>
+	loadJson(
+		ALWAYS_KEY,
+		(v) => (Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : null),
+		[]
+	);
+const saveAlways = (keys: string[]): void => void saveJson(ALWAYS_KEY, keys);
 
 export function isAlwaysAllowed(serverId: string, toolName: string): boolean {
 	return loadAlways().includes(pairKey(serverId, toolName));
