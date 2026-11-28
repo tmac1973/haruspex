@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAuditReport, type VerifiedCluster } from './auditReport';
+import { bestDetail, buildAuditReport, type VerifiedCluster } from './auditReport';
 
 function cluster(p: Partial<VerifiedCluster> & { title: string; file: string }): VerifiedCluster {
 	return {
@@ -104,6 +104,35 @@ describe('buildAuditReport', () => {
 		expect(md).toContain('duplication');
 		expect(md).toContain('a much longer detail'); // richest member detail
 		expect(md).toContain('> **Verification:** confirmed both call sites exist');
+	});
+
+	it("shows the title's own detail when the cluster joined another finding", () => {
+		const members = [
+			{
+				file: 'a.js',
+				title: 'Loop skips the first element',
+				severity: 'high' as const,
+				detail: 'starts at i = 1',
+				run: 0
+			},
+			{
+				file: 'a.js',
+				title: 'No check that the input is an array',
+				severity: 'medium' as const,
+				detail: 'average() with no argument throws a TypeError',
+				run: 1
+			}
+		];
+		const c = cluster({
+			file: 'a.js',
+			lineStart: 3,
+			title: 'Loop skips the first element',
+			members
+		});
+		expect(bestDetail(c)).toBe('starts at i = 1');
+		expect(bestDetail({ ...c, members: [{ ...members[0], detail: undefined }, members[1]] })).toBe(
+			'average() with no argument throws a TypeError'
+		);
 	});
 
 	it("shows the verifier's corrected location for a confirmed finding", () => {

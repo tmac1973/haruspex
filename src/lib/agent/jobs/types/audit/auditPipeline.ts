@@ -13,7 +13,11 @@ import {
 	type ClusterOptions,
 	type FindingCluster
 } from '#lib/agent/jobs/types/audit/auditCluster.ts';
-import { buildAuditReport, type VerifiedCluster } from '#lib/agent/jobs/types/audit/auditReport.ts';
+import {
+	bestDetail,
+	buildAuditReport,
+	type VerifiedCluster
+} from '#lib/agent/jobs/types/audit/auditReport.ts';
 
 /** Hard cap on verification turns per run, so a noisy audit can't run away. */
 const DEFAULT_MAX_VERIFICATIONS = 50;
@@ -166,7 +170,7 @@ export function buildVerifyPrompt(cluster: FindingCluster, instructions?: string
 			: cluster.lineEnd && cluster.lineEnd !== cluster.lineStart
 				? `${cluster.file}:${cluster.lineStart}-${cluster.lineEnd}`
 				: `${cluster.file}:${cluster.lineStart}`;
-	const detail = cluster.members.map((m) => m.detail?.trim()).find((d) => d) ?? '';
+	const detail = bestDetail(cluster) ?? '';
 	const instr = instructions?.trim() || DEFAULT_VERIFY_INSTRUCTIONS;
 	return (
 		`Finding under review:\n` +

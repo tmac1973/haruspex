@@ -70,6 +70,34 @@ describe('matching a finding to its row', () => {
 		expect(placeOf('src/a.ts')).toEqual({ file: 'src/a.ts', range: null });
 	});
 
+	it('reads the place from a location with more written after it', () => {
+		expect(placeOf('stats.js:3-9 (loop at line 5)')).toEqual({
+			file: 'stats.js',
+			range: { start: 3, end: 9 }
+		});
+		expect(placeOf('stats.js:3-9 (loop at line 5); index.js:3-8')).toEqual({
+			file: 'stats.js',
+			range: { start: 3, end: 9 }
+		});
+		expect(placeOf('package.json (the description field)')).toEqual({
+			file: 'package.json',
+			range: null
+		});
+	});
+
+	it('matches a finding found again with a different note after its place', () => {
+		const f = finding({
+			title: 'average() loop starts at index 1, skipping the first element',
+			location: 'stats.js:3-9 (loop at line 5); index.js:3-8'
+		});
+		expect(
+			matchScore(f, {
+				finding: 'Off-by-one in average(): loop starts at i = 1',
+				location: 'stats.js:3-9 (loop at line 5)'
+			})
+		).toBeGreaterThan(0);
+	});
+
 	it('needs the same file, then a similar title or nearby lines', () => {
 		const f = finding({ title: 'Upload error is swallowed', location: 'src/up.ts:88' });
 		expect(
