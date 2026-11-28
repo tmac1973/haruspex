@@ -5,7 +5,6 @@
  * Report, Hand off. The handoff goes last, so nothing before it renumbers.
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
 import { markRunStarted } from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
@@ -42,7 +41,7 @@ import { isAttended, reviewStage } from '#lib/agent/jobs/types/model-generation/
 import type { ModelSpec } from '#lib/models3d/spec/types.ts';
 import type { EntryState } from '#lib/agent/jobs/types/model-generation/state.ts';
 import { handoffToCoding } from '#lib/agent/jobs/chainCoding.ts';
-import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
+import { workdirFiles } from '#lib/agent/jobs/workdirFiles.ts';
 import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
@@ -63,32 +62,6 @@ export function specSummary(spec: ModelSpec): string {
 	return (
 		`${spec.entries.length} model(s), ${animated.length} animated` +
 		(clips.length > 0 ? ` (${clips.join(', ')})` : '')
-	);
-}
-
-async function readWorkdirFile(ctx: JobRunContext, relPath: string): Promise<string | null> {
-	try {
-		return await invoke<string>('fs_read_text_full', {
-			workdir: ctx.job.working_dir,
-			relPath
-		});
-	} catch {
-		return null;
-	}
-}
-
-async function writeWorkdirFile(
-	ctx: JobRunContext,
-	relPath: string,
-	content: string
-): Promise<void> {
-	await trackWrite(createdScope({ jobRunId: ctx.runId }), ctx.job.working_dir, relPath, true, () =>
-		invoke('fs_write_text', {
-			workdir: ctx.job.working_dir,
-			relPath,
-			content,
-			overwrite: true
-		})
 	);
 }
 
@@ -153,7 +126,7 @@ async function specStage(
 	specPath: string,
 	abortIfCancelled: () => void
 ): Promise<{ spec: ModelSpec; output: string }> {
-	const json = await readWorkdirFile(ctx, specPath);
+	const json = await workdirFiles(ctx).readText(specPath);
 	if (json !== null) {
 		// A spec the user wrote is theirs: read and checked, never rewritten.
 		// A run that "fixes" someone's file by replacing it has destroyed the
@@ -170,7 +143,7 @@ async function specStage(
 	}
 	if (!cfg.description) throw new Error('No models.json and no description.');
 	const spec = await deriveModelSpec(ctx, cfg.description, specPath, SPEC, abortIfCancelled);
-	await writeWorkdirFile(ctx, specPath, renderModelSpec(spec));
+	await workdirFiles(ctx).writeText(specPath, renderModelSpec(spec));
 	return {
 		spec,
 		output:
@@ -248,8 +221,7 @@ export async function runModelGenerationPipeline(ctx: JobRunContext): Promise<vo
 		startStep(REPORT);
 		abortIfCancelled();
 		const reportPath = modelsReportPath(specPath);
-		await writeWorkdirFile(
-			ctx,
+		await workdirFiles(ctx).writeText(
 			reportPath,
 			renderModelReport({
 				spec,
