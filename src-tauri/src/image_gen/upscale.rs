@@ -8,7 +8,9 @@
 //! Real-ESRGAN x4plus only does ×4.
 
 use image::imageops::FilterType;
-use image::{ImageEncoder, RgbaImage};
+use image::RgbaImage;
+
+use super::png::{decode_rgba, encode_rgb, encode_rgba};
 
 /// The largest edge a finished upscale may have, as sd-server's own limit.
 pub const MAX_EDGE: u32 = 8192;
@@ -17,12 +19,6 @@ pub struct Finished {
     pub png: Vec<u8>,
     pub width: u32,
     pub height: u32,
-}
-
-fn decode(bytes: &[u8], what: &str) -> Result<RgbaImage, String> {
-    image::load_from_memory(bytes)
-        .map(|i| i.to_rgba8())
-        .map_err(|e| format!("Could not read the {what}: {e}"))
 }
 
 fn has_alpha(img: &RgbaImage) -> bool {
@@ -41,11 +37,11 @@ pub fn finish_upscale(
             "{width}×{height} is not a size to upscale to (at most {MAX_EDGE} a side)."
         ));
     }
-    let mut out = decode(upscaled, "upscaled picture")?;
+    let mut out = decode_rgba(upscaled, "upscaled picture")?;
     if out.dimensions() != (width, height) {
         out = image::imageops::resize(&out, width, height, FilterType::Lanczos3);
     }
-    let src = decode(source, "original picture")?;
+    let src = decode_rgba(source, "original picture")?;
     let alpha = has_alpha(&src);
     if alpha {
         let mask = image::imageops::resize(&src, width, height, FilterType::Triangle);
@@ -53,16 +49,15 @@ pub fn finish_upscale(
             px.0[3] = m.0[3];
         }
     }
-    let mut png = Vec::new();
-    let encoder = image::codecs::png::PngEncoder::new(&mut png);
-    let result = if alpha {
-        encoder.write_image(out.as_raw(), width, height, image::ExtendedColorType::Rgba8)
+    let png = if alpha {
+        encode_rgba(&out, "upscaled picture")?
     } else {
         // Opaque: three channels, a quarter smaller.
-        let rgb = image::DynamicImage::ImageRgba8(out).to_rgb8();
-        encoder.write_image(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
+        encode_rgb(
+            &image::DynamicImage::ImageRgba8(out).to_rgb8(),
+            "upscaled picture",
+        )?
     };
-    result.map_err(|e| format!("Could not encode the upscaled picture: {e}"))?;
     Ok(Finished { png, width, height })
 }
 
@@ -72,16 +67,7 @@ mod tests {
     use image::Rgba;
 
     fn png(img: &RgbaImage) -> Vec<u8> {
-        let mut out = Vec::new();
-        image::codecs::png::PngEncoder::new(&mut out)
-            .write_image(
-                img.as_raw(),
-                img.width(),
-                img.height(),
-                image::ExtendedColorType::Rgba8,
-            )
-            .unwrap();
-        out
+        encode_rgba(img, "sprite").unwrap()
     }
 
     /// A sprite: an opaque square on a transparent field.

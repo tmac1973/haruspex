@@ -749,13 +749,9 @@ pub async fn image_engine_upscale(
 /// `bytes` as an RGB PNG: the upscaler refuses any other channel count. The
 /// alpha it drops is put back afterwards (`image_gen::upscale`).
 pub(crate) fn rgb_png(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let rgb = image::load_from_memory(bytes)
-        .map_err(|e| format!("Could not read the picture to upscale: {e}"))?
-        .to_rgb8();
-    let mut out = std::io::Cursor::new(Vec::new());
-    rgb.write_to(&mut out, image::ImageFormat::Png)
-        .map_err(|e| format!("Could not encode the picture to upscale: {e}"))?;
-    Ok(out.into_inner())
+    use crate::image_gen::png;
+    let what = "picture to upscale";
+    png::encode_rgb(&png::decode(bytes, what)?.to_rgb8(), what)
 }
 
 async fn run_upscale(script: &str, timeout_ms: u64) -> Result<String, String> {

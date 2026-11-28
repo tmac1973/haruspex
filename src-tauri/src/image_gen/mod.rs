@@ -25,6 +25,7 @@ pub mod ground;
 pub mod mask;
 pub mod normalize;
 pub mod palette;
+pub mod png;
 pub mod profile;
 pub mod sheet;
 pub mod split;

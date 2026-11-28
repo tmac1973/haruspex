@@ -289,11 +289,17 @@ describe('concurrency', () => {
 		// Two runs of the same spec must produce the same report.
 		const spec = specOf([{ id: 'slow' }, { id: 'fast' }]);
 		let n = 0;
+		// The first entry finishes only once the second has: no timing to race.
+		const finished: number[] = [];
+		let releaseSlow = () => {};
+		const slowGate = new Promise<void>((r) => (releaseSlow = r));
 		const h = harness({
 			concurrency: 2,
 			generate: async () => {
 				const mine = n++;
-				await new Promise((r) => setTimeout(r, mine === 0 ? 10 : 1));
+				if (mine === 0) await slowGate;
+				finished.push(mine);
+				if (mine === 1) releaseSlow();
 				return {
 					images: [{ bytes: new Uint8Array([9]), mimeType: 'image/png', width: 512, height: 512 }],
 					meta: {
@@ -308,6 +314,7 @@ describe('concurrency', () => {
 			}
 		});
 		const results = await generateEntries(spec, h.deps);
+		expect(finished).toEqual([1, 0]);
 		expect(results.map((r) => r.outcome.id)).toEqual(['slow', 'fast']);
 		expect(results.map((r) => r.outcome.seed)).toEqual([0, 1]);
 	});
