@@ -81,12 +81,7 @@ fn cache_path(episode_dir: &Path) -> PathBuf {
 }
 
 fn key(file: &Path, stream: u32, from: f64, to: f64) -> String {
-    let meta = std::fs::metadata(file).ok();
-    let size = meta.as_ref().map_or(0, |m| m.len());
-    let mtime = meta
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_secs());
+    let (size, mtime) = super::file_stamp(file);
     format!(
         "{}|{size}|{mtime}|{stream}|{from:.3}|{to:.3}",
         file.display()

@@ -7,24 +7,12 @@
 use super::path::{
     refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
 };
+use crate::ipc_util::header;
 
 /// The largest deck written. Each picture is held to
 /// `MAX_EMBEDDED_IMAGE_BYTES` when the deck is built; this bounds a deck of
 /// many.
 const MAX_DECK_BYTES: usize = 200 * 1_048_576;
-
-/// A header's value, percent-decoded: a path can hold any character, and a
-/// header only ASCII. Shared with `pdf_write`, whose PDF arrives the same way.
-pub(super) fn header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
-    let raw = request
-        .headers()
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| format!("No {name} was given."))?;
-    urlencoding::decode(raw)
-        .map(|s| s.into_owned())
-        .map_err(|e| format!("{name} is not valid UTF-8: {e}"))
-}
 
 /// Only a .pptx path and a zip package: the cap here is above the one for
 /// content a model writes, so this must not become a way around it.

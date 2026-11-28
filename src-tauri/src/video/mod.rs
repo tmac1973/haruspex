@@ -54,6 +54,18 @@ pub(crate) fn prepare_child(cmd: &mut tokio::process::Command) {
     crate::shell::platform::apply_no_window(cmd.as_std_mut());
 }
 
+/// A file's size and modification time in seconds (zeros when it can't be
+/// read), so a cache keyed on them misses once the file changes.
+pub(crate) fn file_stamp(file: &std::path::Path) -> (u64, u64) {
+    let meta = std::fs::metadata(file).ok();
+    let size = meta.as_ref().map_or(0, |m| m.len());
+    let mtime = meta
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    (size, mtime)
+}
+
 /// How long one ffmpeg pass over a whole recording (measuring it, finding
 /// its silences, cutting its sound out) may take.
 pub(crate) const FFMPEG_PASS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
