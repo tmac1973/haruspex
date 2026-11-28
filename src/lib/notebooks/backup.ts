@@ -9,14 +9,11 @@ import type { NotebookBackupCounts } from '#lib/ipc/gen/NotebookBackupCounts.ts'
 import type { NotebookBackupInfo } from '#lib/ipc/gen/NotebookBackupInfo.ts';
 import type { NotebookRestoreMode } from '#lib/ipc/gen/NotebookRestoreMode.ts';
 import type { NotebookRestoreResult } from '#lib/ipc/gen/NotebookRestoreResult.ts';
+import { plural } from '#lib/utils/format.ts';
 
 export type { NotebookBackupInfo, NotebookRestoreMode, NotebookRestoreResult };
 
 const FILTERS = [{ name: 'Notebook backup', extensions: ['zip'] }];
-
-function plural(n: number, one: string): string {
-	return `${n} ${one}${n === 1 ? '' : 's'}`;
-}
 
 /** `haruspex-notebooks-2026-11-24.zip` for a backup made on that day. */
 export function backupFileName(now: Date = new Date()): string {

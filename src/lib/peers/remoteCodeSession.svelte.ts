@@ -24,6 +24,7 @@ import {
 } from '#lib/stores/code.svelte.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { peerOp, type PeerOperation } from '#lib/peers/peerOp.ts';
 
 /** Nothing that reaches into this computer applies to another's session. */
 const REMOTE: Readonly<CodeSessionCapabilities> = Object.freeze({
@@ -229,15 +230,9 @@ export class RemoteCodeSession implements CodeSessionView {
 		});
 	}
 
-	/** An operation there, its failure kept in `lastError`. */
-	private async op<T>(operation: Parameters<PeerView['client']['op']>[0]): Promise<T | undefined> {
-		this.opError = null;
-		try {
-			return await this.view.client.op<T>(operation);
-		} catch (e) {
-			this.opError = errMessage(e);
-			return undefined;
-		}
+	/** An operation there, its failure kept as the error the view shows. */
+	private op<T>(operation: PeerOperation): Promise<T | undefined> {
+		return peerOp<T>(this.view, operation, (e) => (this.opError = e));
 	}
 
 	/** Follow it there; `session.open` opens it in a window on that computer. */

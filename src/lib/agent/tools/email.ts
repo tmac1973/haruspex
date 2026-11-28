@@ -7,6 +7,7 @@ import { runSubAgent, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
 import type { EmailAccount } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { selectAccounts } from '#lib/agent/tools/_accountSelector.ts';
 
 const EMAIL_SUMMARY_MAX_TOKENS = 400;
 
@@ -71,13 +72,7 @@ interface EmailSummarizerInput {
  */
 export function resolveEmailAccounts(selector?: string): EmailAccount[] {
 	const all = getSettings().integrations.email.accounts.filter((a) => a.enabled);
-	if (!selector) return all;
-	const byId = all.filter((a) => a.id === selector);
-	if (byId.length > 0) return byId;
-	const needle = selector.trim().toLowerCase();
-	const byLabel = all.filter((a) => a.label.trim().toLowerCase() === needle);
-	if (byLabel.length > 0) return byLabel;
-	return all.filter((a) => a.emailAddress.trim().toLowerCase() === needle);
+	return selectAccounts(all, selector, (a) => a.emailAddress);
 }
 
 /**

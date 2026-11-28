@@ -18,6 +18,7 @@ import { ChatRun } from '#lib/stores/chatRun.svelte.ts';
 import { renderMarkdown } from '#lib/markdown.ts';
 import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { peerOp, type PeerOperation } from '#lib/peers/peerOp.ts';
 
 /**
  * The incognito toggle is its memory switch (`chat.memory`); speech and
@@ -126,14 +127,8 @@ export class RemoteChatSource implements ChatSource {
 	setExhaustiveResearch = (): void => {};
 
 	/** An operation there, its failure kept as the error the view shows. */
-	private async op<T>(operation: Parameters<PeerView['client']['op']>[0]): Promise<T | undefined> {
-		this.opError = null;
-		try {
-			return await this.view.client.op<T>(operation);
-		} catch (e) {
-			this.opError = errMessage(e);
-			return undefined;
-		}
+	private op<T>(operation: PeerOperation): Promise<T | undefined> {
+		return peerOp<T>(this.view, operation, (e) => (this.opError = e));
 	}
 
 	/** Follow it there and show it here. */

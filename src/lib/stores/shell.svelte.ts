@@ -76,21 +76,7 @@ import { hostCwd } from '#lib/agent/tools/_helpers.ts';
 import { openCodeAt } from '#lib/code/bridge.ts';
 import { openForCommand } from '#lib/shell/openForCommand.ts';
 import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
-
-interface CapturedRegion {
-	commandLine: string;
-	output: string;
-	exitCode: number | null;
-	cwd: string | null;
-	truncated: boolean;
-	// True for an in-flight command (still running, no exit code yet).
-	pending?: boolean;
-	/** Absolute stream offset of the first byte of `output`. */
-	outputStart: number;
-	/** Absolute stream offset just past `output`. Fed back as the next
-	 *  turn's `pendingFrom` watermark. */
-	outputEnd: number;
-}
+import type { CapturedRegion } from '#lib/ipc/gen/CapturedRegion.ts';
 
 export interface ShellSubmission {
 	body: string;

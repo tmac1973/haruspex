@@ -26,6 +26,7 @@ import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import type { ShellMemoryStatus } from '#lib/ipc/gen/ShellMemoryStatus.ts';
 import { shellMemoryStatus } from '#lib/shell/backgroundMemory.ts';
 import { bytesToBase64 } from '#lib/utils/base64.ts';
+import type { CapturedRegion } from '#lib/ipc/gen/CapturedRegion.ts';
 
 /** Inline output budget before middle-truncation + temp-file spill. */
 export const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
@@ -47,14 +48,6 @@ interface ShellCtxSnapshot {
 	output_total: number;
 	current_cwd: string | null;
 	context?: { shellPath: string; shellName: string };
-}
-interface CapturedRegion {
-	commandLine: string;
-	output: string;
-	exitCode: number | null;
-	cwd: string | null;
-	truncated: boolean;
-	pending?: boolean;
 }
 
 /** The command currently running in the PTY (last marker is a start with no

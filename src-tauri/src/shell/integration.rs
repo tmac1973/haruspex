@@ -49,8 +49,9 @@ pub struct Marker {
     pub command_line: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct CapturedRegion {
     pub command_line: String,
     pub output: String,
@@ -65,10 +66,12 @@ pub struct CapturedRegion {
     /// Absolute stream offset of the first output byte in `output`.
     /// For a pending region resumed from a watermark this is the watermark,
     /// not the command's own start.
+    #[ts(type = "number")]
     pub output_start: u64,
     /// Absolute stream offset just past the last output byte in `output`.
     /// The caller feeds this back as `pending_from` on the next capture to
     /// receive only what has arrived since — see `pending_command`.
+    #[ts(type = "number")]
     pub output_end: u64,
 }
 

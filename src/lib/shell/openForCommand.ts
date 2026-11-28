@@ -19,6 +19,7 @@ import { sleep } from '#lib/utils/async.ts';
 import { toPtyPaste } from '#lib/shell/commandBlock.ts';
 import type { ShellCommandRequest, ShellCommandResult } from '#lib/code/shellBridge.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
+import type { CapturedRegion } from '#lib/ipc/gen/CapturedRegion.ts';
 
 /** The parts of a `ShellSession` this needs. */
 export interface OpenedSession {
@@ -42,14 +43,6 @@ export interface OpenerDeps {
 interface ShellCtx {
 	completed_total: number;
 	marker_total: number;
-}
-
-interface CapturedRegion {
-	commandLine: string;
-	output: string;
-	exitCode: number | null;
-	cwd: string | null;
-	pending?: boolean;
 }
 
 export const POLL_MS = 150;
