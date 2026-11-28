@@ -85,8 +85,11 @@ pub async fn get_diagnostics(
 }
 
 /// The webview's debug log, redacted as the Rust logs are for a report.
+/// `inline` is the secrets the webview's settings hold inline (no secret
+/// store on this computer): Rust never stores those, so it learns them here.
 #[tauri::command]
-pub fn feedback_redact(lines: Vec<String>) -> Vec<String> {
+pub fn feedback_redact(lines: Vec<String>, inline: Option<Vec<String>>) -> Vec<String> {
+    crate::secrets::note_values(&inline.unwrap_or_default());
     for_report(lines)
 }
 
@@ -459,7 +462,19 @@ mod tests {
     #[test]
     fn a_secret_read_this_session_is_blanked_wherever_it_appears() {
         crate::secrets::seed_for_test("apikey:test-report", "plain-looking-value-42");
-        let out = feedback_redact(vec!["sent plain-looking-value-42 upstream".into()]);
+        let out = feedback_redact(vec!["sent plain-looking-value-42 upstream".into()], None);
         assert_eq!(out, vec!["sent [redacted] upstream".to_string()]);
+    }
+
+    #[test]
+    fn an_inline_settings_secret_is_blanked_and_remembered() {
+        let out = feedback_redact(
+            vec!["login inline-settings-pw-7 ok".into()],
+            Some(vec!["inline-settings-pw-7".into()]),
+        );
+        assert_eq!(out, vec!["login [redacted] ok".to_string()]);
+        // Later redaction, with nothing passed, still knows it.
+        let later = redact_for_report("again inline-settings-pw-7");
+        assert_eq!(later, "again [redacted]");
     }
 }

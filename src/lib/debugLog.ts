@@ -195,6 +195,18 @@ let fileTimer: ReturnType<typeof setInterval> | null = null;
 const FILE_FLUSH_MS = 1000;
 
 /**
+ * The secrets the settings hold inline, for the mirror file's redaction.
+ * Set once the settings have loaded (`hooks.client.ts`): reading them from
+ * here would load the settings store before the shared settings file is in
+ * localStorage, and it would start from defaults.
+ */
+let inlineSecrets: () => string[] = () => [];
+
+export function setInlineSecretsSource(source: () => string[]): void {
+	inlineSecrets = source;
+}
+
+/**
  * Mirror the buffer to `<app data>/logs/agent-debug.log` when the build allows
  * it (dev builds, or `HARUSPEX_DEBUG_LOG_FILE` set), so a session can be read
  * after the app closes. Lines are batched and flushed once a second. Returns
@@ -216,7 +228,7 @@ export async function startDebugLogFile(
 		if (!fileQueue || fileQueue.length === 0) return;
 		const lines = fileQueue;
 		fileQueue = [];
-		void invoke('debug_log_append', { lines }).catch(() => {
+		void invoke('debug_log_append', { lines, inline: inlineSecrets() }).catch(() => {
 			// A failing write would fail again every second: stop mirroring.
 			fileQueue = null;
 			if (fileTimer !== null) clearInterval(fileTimer);
