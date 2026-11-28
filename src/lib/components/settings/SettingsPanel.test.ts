@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const presets = [
 	{
@@ -42,7 +43,10 @@ function rail(label: string): HTMLElement {
 	return found;
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 20));
+/** Wait for the page to show `text`, or to stop showing it. */
+const shows = (text: string) => vi.waitFor(() => expect(document.body.textContent).toContain(text));
+const hides = (text: string) =>
+	vi.waitFor(() => expect(document.body.textContent).not.toContain(text));
 
 beforeEach(() => {
 	localStorage.clear();
@@ -62,19 +66,16 @@ describe('settings navigation', () => {
 		render(SettingsPanel, { props: { onclose: () => {} } });
 
 		rail('Integrations').click();
-		await settle();
-		expect(document.body.textContent).toContain('with Allow sending drafts messages');
+		await shows('with Allow sending drafts messages');
 
-		screen.getByText('Add email account').click();
-		await settle();
+		(await screen.findByText('Add email account')).click();
+		await tick();
 
 		rail('General').click();
-		await settle();
-		expect(document.body.textContent).not.toContain('with Allow sending drafts messages');
+		await hides('with Allow sending drafts messages');
 
 		rail('Integrations').click();
-		await settle();
-		expect(document.body.textContent).toContain('with Allow sending drafts messages');
+		await shows('with Allow sending drafts messages');
 	});
 
 	it('returns to Integrations after a calendar account was added', async () => {
@@ -83,17 +84,13 @@ describe('settings navigation', () => {
 		render(SettingsPanel, { props: { onclose: () => {} } });
 
 		rail('Integrations').click();
-		await settle();
-
-		screen.getByText('Add a calendar link').click();
-		await settle();
+		(await screen.findByText('Add a calendar link')).click();
+		await tick();
 
 		rail('General').click();
-		await settle();
+		await hides('Calendar & Contacts');
 		rail('Integrations').click();
-		await settle();
-
-		expect(document.body.textContent).toContain('Calendar & Contacts');
+		await shows('Calendar & Contacts');
 	});
 
 	it('moves between every section without getting stuck', async () => {
@@ -109,8 +106,9 @@ describe('settings navigation', () => {
 			['General', 'General']
 		] as const) {
 			rail(label).click();
-			await settle();
-			expect(document.body.textContent, `after clicking ${label}`).toContain(marker);
+			await vi.waitFor(() =>
+				expect(document.body.textContent, `after clicking ${label}`).toContain(marker)
+			);
 		}
 	});
 
@@ -118,13 +116,11 @@ describe('settings navigation', () => {
 		render(SettingsPanel, { props: { onclose: () => {} } });
 
 		rail('Integrations').click();
-		await settle();
-		expect(document.body.textContent).toContain('Calendar & Contacts');
+		await shows('Calendar & Contacts');
 		expect(document.body.textContent).not.toContain('MCP integrations');
 
 		rail('MCP servers').click();
-		await settle();
-		expect(document.body.textContent).toContain('MCP integrations');
+		await shows('MCP integrations');
 		expect(document.body.textContent).not.toContain('Calendar & Contacts');
 	});
 
@@ -161,7 +157,6 @@ describe('settings navigation', () => {
 		expect(mcp.textContent).toContain('1');
 
 		await refreshUpdateStatuses([]);
-		await settle();
-		expect(rail('MCP servers').title).toBe('');
+		await vi.waitFor(() => expect(rail('MCP servers').title).toBe(''));
 	});
 });

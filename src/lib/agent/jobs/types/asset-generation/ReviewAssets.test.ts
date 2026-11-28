@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const spec = {
 	version: 1,
@@ -77,8 +78,9 @@ describe('ReviewAssets', () => {
 		await waitFor(() => expect(screen.getAllByRole('img')).toHaveLength(2));
 		screen.getByAltText('player');
 		screen.getByText('not made');
-		// Loaded once, not in a loop.
-		await new Promise((r) => setTimeout(r, 50));
+		// Loaded once, not in a loop: a loop would read it again within a few
+		// rounds of effects.
+		for (let i = 0; i < 5; i++) await tick();
 		expect(invokeCalls(vi.mocked(invoke), 'fs_read_text_full')).toHaveLength(1);
 	});
 

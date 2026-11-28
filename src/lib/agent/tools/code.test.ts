@@ -556,7 +556,13 @@ describe('run_command PTY driving', () => {
 			{ command: 'sleep 99', timeout_secs: 2 },
 			{ ...ptyCtx, signal: controller.signal }
 		);
-		await new Promise((r) => setTimeout(r, 50));
+		// Abort once the command is in the terminal, not after a guessed delay.
+		await vi.waitFor(() =>
+			expect(invoke).toHaveBeenCalledWith(
+				'shell_write',
+				expect.objectContaining({ data: expect.stringContaining('sleep 99') })
+			)
+		);
 		controller.abort();
 		await p;
 		expect(invoke).toHaveBeenCalledWith('shell_write', expect.objectContaining({ data: '\x03' }));

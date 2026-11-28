@@ -8,7 +8,9 @@ import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 import McpServerRow from '#lib/components/settings/McpServerRow.svelte';
 import { refreshUpdateStatuses } from '#lib/stores/mcpUpdate.svelte.ts';

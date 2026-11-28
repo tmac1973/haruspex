@@ -103,15 +103,21 @@ describe('WorkerManager boot timeout', () => {
 	});
 
 	it('leaves a worker that reported ready alone', async () => {
-		const fake = new FakeWorker();
-		vi.spyOn(fake, 'terminate');
-		const wm = new WorkerManager(() => fake as unknown as Worker, { bootTimeoutMs: 20 });
-		const p = wm.runPython('print(1)');
-		fake.emit({ kind: 'ready' });
-		await new Promise((r) => setTimeout(r, 40));
-		fake.emit({ kind: 'done', id: runId(fake), result: doneResult({ result: '1' }) });
-		expect((await p).result).toBe('1');
-		expect(fake.terminate).not.toHaveBeenCalled();
+		vi.useFakeTimers();
+		try {
+			const fake = new FakeWorker();
+			vi.spyOn(fake, 'terminate');
+			const wm = new WorkerManager(() => fake as unknown as Worker, { bootTimeoutMs: 20 });
+			const p = wm.runPython('print(1)');
+			fake.emit({ kind: 'ready' });
+			// Past the boot timeout: a ready worker must not be taken down by it.
+			await vi.advanceTimersByTimeAsync(40);
+			fake.emit({ kind: 'done', id: runId(fake), result: doneResult({ result: '1' }) });
+			expect((await p).result).toBe('1');
+			expect(fake.terminate).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 

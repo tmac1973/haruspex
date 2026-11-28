@@ -14,7 +14,9 @@ vi.mock('@tauri-apps/api/core', async () => {
 		})
 	});
 });
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	getCurrentWebviewWindow: () => ({ label: 'main' })
 }));
@@ -157,7 +159,7 @@ describe('the task runner', () => {
 		const a = dispatch(task({ id: 'a' }), 'run');
 		const b = dispatch(task({ id: 'b' }), 'run');
 		const again = dispatch(task({ id: 'a' }), 'run');
-		await new Promise((r) => setTimeout(r, 10));
+		await vi.waitFor(() => expect(running).toBe(2));
 		release();
 		await Promise.all([a, b, again]);
 		expect(most).toBe(2);

@@ -5,7 +5,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore({}, async (): Promise<unknown> => null)
 );
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 import TaskCard from './TaskCard.svelte';
 import { _resetTasksForTests, upsertTask } from '#lib/tasks/store.svelte.ts';

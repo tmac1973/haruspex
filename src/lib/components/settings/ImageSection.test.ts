@@ -11,7 +11,9 @@ import type { ImageModelEntry } from '#lib/image/types.ts';
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', async () =>
+	(await import('#lib/testing/event.ts')).mockTauriEvent()
+);
 
 const settings = vi.hoisted(() => ({
 	imageModels: [] as ImageModelEntry[],
