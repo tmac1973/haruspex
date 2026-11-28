@@ -191,6 +191,7 @@ impl DavAccount {
     pub async fn stored_secret(&self) -> Result<String, String> {
         match self.password_ref.as_deref() {
             Some(key) if self.password.is_empty() => {
+                crate::secrets::check_ref(key, "dav:")?;
                 crate::secrets::require(key, &format!("password for {}", self.label)).await
             }
             _ => Ok(self.password.clone()),

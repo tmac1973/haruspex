@@ -180,6 +180,7 @@ impl EmailAccount {
         else {
             return Ok(self.clone());
         };
+        crate::secrets::check_ref(key, "email:")?;
         match store.get(key)? {
             Some(password) => Ok(EmailAccount {
                 password,
@@ -275,6 +276,17 @@ mod tests {
         a.password_ref = Some("email:test-1".into());
         assert!(a.validate().is_ok());
         assert_eq!(a.resolved_from(&store).unwrap().password, "from-keychain");
+    }
+
+    #[test]
+    fn a_ref_to_another_kind_of_secret_is_not_read() {
+        let store = Memory::default();
+        store.set("dav:cal-1", "calendar-password").unwrap();
+        let mut a = sample_account();
+        a.password = String::new();
+        a.password_ref = Some("dav:cal-1".into());
+        let err = a.resolved_from(&store).unwrap_err();
+        assert!(err.contains("wrong kind of secret"), "{err}");
     }
 
     #[test]
