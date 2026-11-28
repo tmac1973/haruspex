@@ -5,6 +5,13 @@
 //! UI can display via the Log Viewer. This covers any log output from the
 //! main Rust process — PDF extraction errors, file tool failures, database
 //! issues, proxy errors, etc. — that previously had no user-visible surface.
+//!
+//! Every line has the shapes credentials take blanked as it is logged
+//! (`text_util::redact_secrets`: `Bearer …`, `token=…`, URL userinfo), so a
+//! careless `log::` call can't put one on stderr, which a packaged app may
+//! hand to the system journal, or in the buffer. That pass takes no lock, so
+//! logging from inside `secrets` is safe. `get_app_logs` also blanks every
+//! secret value seen this session as it hands the buffer to the webview.
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
@@ -85,7 +92,7 @@ impl Log for AppLogger {
             Level::Trace => "TRACE",
         };
         let target = record.target();
-        let message = format!("{}", record.args());
+        let message = crate::text_util::redact_secrets(&record.args().to_string(), &[]);
         let line = format!("[{}] [{}] [{}] {}", ts, level_tag, target, message);
 
         // Mirror to stderr for dev / terminal launches (always — terminal
@@ -157,9 +164,15 @@ pub fn get_logs() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The buffer for the App log viewer, with every secret value seen this
+/// session blanked too: the webview may hold none of them.
 #[tauri::command]
 pub async fn get_app_logs() -> Vec<String> {
+    let known = crate::secrets::known_values();
     get_logs()
+        .iter()
+        .map(|line| crate::text_util::redact_secrets(line, &known))
+        .collect()
 }
 
 #[tauri::command]
@@ -259,6 +272,43 @@ mod tests {
     use super::*;
 
     // Calendar math moved to crate::time_util — tested there.
+
+    #[test]
+    fn a_logged_credential_is_blanked_before_it_is_kept() {
+        let logger = AppLogger {
+            level: LevelFilter::Info,
+        };
+        logger.log(
+            &Record::builder()
+                .level(Level::Warn)
+                .target("haruspex::test")
+                .args(format_args!(
+                    "request failed: Authorization: Bearer sk-live-abc123def456 to https://bob:hunter22@api.example/v1"
+                ))
+                .build(),
+        );
+        let line = get_logs()
+            .into_iter()
+            .rfind(|l| l.contains("request failed"))
+            .unwrap();
+        assert!(!line.contains("sk-live-abc123def456"), "{line}");
+        assert!(!line.contains("hunter22"), "{line}");
+        assert!(line.contains("api.example"), "{line}");
+    }
+
+    #[test]
+    fn the_viewer_gets_known_secret_values_blanked_too() {
+        crate::secrets::note_values(&["plain-secret-value-42".to_string()]);
+        buffer()
+            .lock_or_recover()
+            .push_back("[t] [INFO ] [x] connected with plain-secret-value-42".into());
+        let shown = tauri::async_runtime::block_on(get_app_logs());
+        let line = shown
+            .iter()
+            .rfind(|l| l.contains("connected with"))
+            .unwrap();
+        assert!(!line.contains("plain-secret-value-42"), "{line}");
+    }
 
     #[test]
     fn sidecar_passthrough_filter_catches_every_sidecar() {
