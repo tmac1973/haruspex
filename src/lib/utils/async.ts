@@ -20,3 +20,13 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 		signal?.addEventListener('abort', done, { once: true });
 	});
 }
+
+/**
+ * `sleep`, but an AbortError once `signal` aborts, before or during the
+ * wait: for a loop that must stop when its run is cancelled, not go round
+ * once more.
+ */
+export async function sleepOrAbort(ms: number, signal?: AbortSignal): Promise<void> {
+	await sleep(ms, signal);
+	if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+}

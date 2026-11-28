@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import { hasEnded } from '#lib/tasks/types.ts';
 import type { RenderResult } from '#lib/ipc/gen/RenderResult.ts';
-import { sleep } from '#lib/utils/async.ts';
+import { sleepOrAbort } from '#lib/utils/async.ts';
 
 export interface RenderDeps {
 	start(owner: string): Promise<BackgroundTask>;
@@ -61,7 +61,7 @@ export function tauriRenderDeps(
 		takeNotices: async (owner) => {
 			await invoke('task_take_notices', { owner });
 		},
-		wait: sleep,
+		wait: sleepOrAbort,
 		status
 	};
 }

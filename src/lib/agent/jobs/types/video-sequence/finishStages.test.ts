@@ -426,13 +426,7 @@ describe('finishStages', () => {
 		expect(h.steps[SOUND].status).toBe('running');
 	});
 
-	// Bug: render.ts:64 waits between polls with `sleep`, which resolves rather
-	// than rejects when the run is cancelled, and `renderAndWait` (render.ts:34)
-	// never looks at the signal itself. So cancelling a run while it renders
-	// never cancels the render task: the loop polls `task_list` back to back,
-	// with no wait, until the render ends, and the run then carries on to the
-	// report. (render.test.ts passes only because its fake `wait` throws.)
-	it.skip('cancels the render task when the run is cancelled during it', async () => {
+	it('cancels the render task when the run is cancelled during it', async () => {
 		vi.useFakeTimers();
 		renders = [task('running', { percent: 0 })];
 		let polls = 0;

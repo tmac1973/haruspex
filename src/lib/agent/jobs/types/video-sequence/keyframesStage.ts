@@ -126,12 +126,16 @@ export async function keyframesStage(
 	const backend = resolveImageBackend().kind !== 'none';
 	const deps = depsFor(ctx, cfg, files, backend, run.draws);
 	const make = async (redo?: { section: string; note: string }) => {
-		const stills = await makeKeyframes(
-			{ spec: run.spec, plan: run.plan, keys, done: progress.keyframes, redo },
-			deps
-		);
-		await writeProgress(files, progress);
-		return stills;
+		try {
+			return await makeKeyframes(
+				{ spec: run.spec, plan: run.plan, keys, done: progress.keyframes, redo },
+				deps
+			);
+		} finally {
+			// Also after a failure or a cancel: each still made is recorded as
+			// it is made, and the next run keeps those.
+			await writeProgress(files, progress);
+		}
 	};
 	let stills = await make();
 	const shown = stills.filter((s) => s.how !== 'reused');

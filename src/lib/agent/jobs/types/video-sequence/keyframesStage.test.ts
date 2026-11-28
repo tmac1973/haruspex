@@ -395,11 +395,7 @@ describe('keyframesStage', () => {
 		);
 	});
 
-	// Bug: keyframesStage.ts:133 writes the progress file only once
-	// `makeKeyframes` has made every still, so a run that fails or is cancelled
-	// part way records none of the stills it did make, and the next run draws
-	// them all again (a still is minutes on a local image model).
-	it.skip('keeps the stills made before a failure for the next run', async () => {
+	it('keeps the stills made before a failure for the next run', async () => {
 		image.answer = (n) => {
 			if (n === 3) throw new Error('out of memory');
 			return null;

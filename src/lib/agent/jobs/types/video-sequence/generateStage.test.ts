@@ -420,12 +420,7 @@ describe('generateStage', () => {
 		expect(h.steps[GENERATE].status).toBe('running');
 	});
 
-	// Bug: generateStage.ts:160 waits with `sleep`, which resolves when the run
-	// is cancelled, though `GenerateDeps.pause` (generate.ts:71) promises to
-	// reject. So a cancel during the minute's wait sends the clip to the video
-	// backend once more, after the cancel; only a backend that checks the
-	// signal before it sends anything ends it there.
-	it.skip('sends nothing more once the run is cancelled during the wait', async () => {
+	it('sends nothing more once the run is cancelled during the wait', async () => {
 		const video = fakeModel(LTX_LIKE);
 		video.model.fail = (n) => (n === 1 ? new Error('failed to load the model') : null);
 		const sends: VideoRequest[] = [];

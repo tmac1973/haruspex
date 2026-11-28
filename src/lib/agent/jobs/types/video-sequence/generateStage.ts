@@ -17,7 +17,7 @@ import type { PickedModel } from '#lib/agent/jobs/types/video-sequence/pick.ts';
 import { videoSrc } from '#lib/videogen/url.ts';
 import { videoSettings } from '#lib/video/args.ts';
 import { randomSeed } from '#lib/utils/random.ts';
-import { sleep } from '#lib/utils/async.ts';
+import { sleepOrAbort } from '#lib/utils/async.ts';
 import { planClips, type ClipPlan } from '#lib/sequence/spec/plan.ts';
 import { itemKeys, mergeProgress } from '#lib/sequence/spec/progress.ts';
 import type { SequenceSpec } from '#lib/sequence/spec/types.ts';
@@ -157,7 +157,7 @@ function depsFor(
 		ask: attended ? (item, made) => askFirstClip(ctx, item.section, made.hash) : undefined,
 		seed: randomSeed,
 		now: () => Date.now(),
-		pause: (ms) => sleep(ms, signal),
+		pause: (ms) => sleepOrAbort(ms, signal),
 		signal
 	};
 }
