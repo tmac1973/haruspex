@@ -58,21 +58,9 @@ impl SessionContext {
             shell_path: shell_path.to_string(),
             shell_name,
             shell_version,
-            home: home_dir(),
+            home: crate::env_util::home_dir_string(),
             hostname: hostname(),
         }
-    }
-}
-
-/// The user's home directory: $HOME on Unix, %USERPROFILE% on Windows.
-fn home_dir() -> Option<String> {
-    #[cfg(windows)]
-    {
-        std::env::var("USERPROFILE").ok()
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::var("HOME").ok()
     }
 }
 

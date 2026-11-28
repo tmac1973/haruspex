@@ -400,28 +400,7 @@ pub(crate) mod dpapi {
 
 /// Write `bytes` to `path` atomically, readable by the owner only on Unix.
 fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    }
-    let tmp = path.with_extension("tmp");
-    {
-        use std::io::Write;
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        let mut f = opts
-            .open(&tmp)
-            .map_err(|e| format!("Could not write {}: {e}", tmp.display()))?;
-        f.write_all(bytes)
-            .and_then(|_| f.sync_all())
-            .map_err(|e| format!("Could not write {}: {e}", tmp.display()))?;
-    }
-    std::fs::rename(&tmp, path).map_err(|e| format!("Could not write {}: {e}", path.display()))
+    crate::file_util::write_private_atomic(path, bytes).map_err(|e| format!("Could not write {e}"))
 }
 
 impl Store for EncryptedFile {

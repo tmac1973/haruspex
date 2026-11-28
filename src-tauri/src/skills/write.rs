@@ -107,14 +107,8 @@ pub fn save(
     if parsed.name != req.name {
         return Err(format!("the name must stay \"{}\"", req.name));
     }
-    fs::create_dir_all(&target.dir).map_err(|e| e.to_string())?;
     let file = target.dir.join("SKILL.md");
-    let tmp = target.dir.join(".SKILL.md.tmp");
-    fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &file).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        e.to_string()
-    })?;
+    crate::file_util::write_atomic(&file, text.as_bytes())?;
     Ok(file)
 }
 

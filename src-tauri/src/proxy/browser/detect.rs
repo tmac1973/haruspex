@@ -100,7 +100,7 @@ const ABSOLUTE_CANDIDATES: &[&str] = &[];
 /// Home-relative candidates (expanded at runtime). macOS user-installed
 /// bundles; on Windows, Chrome's per-user install location.
 fn home_relative_candidates() -> Vec<PathBuf> {
-    let Some(home) = home_dir() else {
+    let Some(home) = crate::env_util::home_dir() else {
         return Vec::new();
     };
     #[cfg(target_os = "macos")]
@@ -141,14 +141,6 @@ fn windows_program_candidates() -> Vec<PathBuf> {
         }
     }
     out
-}
-
-fn home_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let key = "USERPROFILE";
-    #[cfg(not(windows))]
-    let key = "HOME";
-    std::env::var_os(key).map(PathBuf::from)
 }
 
 /// Run `--version` and return its first line when the binary answers as a

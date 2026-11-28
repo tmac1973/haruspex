@@ -230,14 +230,7 @@ impl Clients {
             clients: inner.clients.clone(),
         })
         .map_err(|e| e.to_string())?;
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
-        }
-        std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+        crate::file_util::write_private_atomic(path, &body)
     }
 
     pub fn list(&self) -> Vec<OwnerClient> {

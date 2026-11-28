@@ -79,12 +79,7 @@ pub fn save(cwd: &Path, text: &str) -> Result<PathBuf, String> {
         ));
     }
     let path = target(cwd)?;
-    let tmp = path.with_file_name(".AGENTS.md.tmp");
-    fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &path).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        e.to_string()
-    })?;
+    crate::file_util::write_atomic(&path, text.as_bytes())?;
     Ok(path)
 }
 

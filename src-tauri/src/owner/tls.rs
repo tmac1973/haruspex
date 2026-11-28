@@ -97,25 +97,7 @@ fn save(path: &Path, identity: &Identity) -> Result<(), String> {
     let json = serde_json::to_vec_pretty(identity).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     let json = crate::secrets::dpapi::protect(&json)?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("could not create {dir:?}: {e}"))?;
-    }
-    let tmp = path.with_extension("tmp");
-    {
-        use std::io::Write;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut f = options
-            .open(&tmp)
-            .map_err(|e| format!("could not write {tmp:?}: {e}"))?;
-        f.write_all(&json).map_err(|e| e.to_string())?;
-    }
-    std::fs::rename(&tmp, path).map_err(|e| format!("could not save {path:?}: {e}"))
+    crate::file_util::write_private_atomic(path, &json).map_err(|e| format!("could not save {e}"))
 }
 
 /// A new certificate for `names` and `ips`, valid from a day before `now`
