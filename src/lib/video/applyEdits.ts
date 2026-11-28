@@ -91,7 +91,8 @@ export function replacementSteps(
 		index: m.index,
 		end: 'last',
 		atSecs: snap(m.clipTo, fps, true),
-		secs: Math.ceil(plan.holdSecs * fps) / fps
+		// Up to whole frames, with snap's slack: 1.1 − 1.0 is a hair over 0.1.
+		secs: Math.ceil(plan.holdSecs * fps - 1e-6) / fps
 	};
 	return { plan, stretch: null, ops: [mute(m.clipTo), hold, place(take)] };
 }

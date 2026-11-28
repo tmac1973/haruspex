@@ -161,9 +161,13 @@ export async function openNotebook(id: string, cardId?: string, rowId?: string):
 	return openNotebookOn(localBackend, id, cardId, rowId);
 }
 
+/** Counts opens, so one that a later open overtook drops its result. */
+let openSeq = 0;
+
 /**
  * Open a notebook on `be` (this computer, or a paired one). A paired
- * computer's changes reach the open notebook through its events.
+ * computer's changes reach the open notebook through its events. False when
+ * it could not be read, or when another open came after it.
  */
 export async function openNotebookOn(
 	be: NotebookBackend,
@@ -182,13 +186,16 @@ export async function openNotebookOn(
 		});
 	}
 	openId = id;
+	const seq = ++openSeq;
 	try {
-		open = await be.get(id);
+		const read = await be.get(id);
+		if (seq !== openSeq) return false;
+		open = read;
 		void linksOnOpen(open);
 	} catch (e) {
+		if (seq !== openSeq) return false;
 		console.warn('notebooks: open failed', e);
-		open = null;
-		openId = null;
+		closeNotebook();
 		showToast('That notebook was deleted.', { kind: 'error' });
 		return false;
 	}

@@ -20,6 +20,9 @@ import { splitThinkChannels, stripThinkBlocks } from '#lib/markdown.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import { getChatTemplateKwargs } from '#lib/stores/settings.ts';
 
+/** A part too big for one request is cut; this ends its marker, not a shell command's. */
+const CLIPPED_PART_HINT = 'Summarise what is here; the cut middle is not available';
+
 /**
  * A reply as a summary should see it: the answer without its reasoning. When
  * the reasoning is all there is (a model that wrote its whole answer inside
@@ -110,7 +113,8 @@ export async function summarizeInChunks(opts: {
 			if (chunk.length > 0 && used + cost > budget) break;
 			chunk.push(
 				cost > budget
-					? truncateCapturedOutput(part, Math.floor(budget * TOKEN_BYTES_RATIO)).text
+					? truncateCapturedOutput(part, Math.floor(budget * TOKEN_BYTES_RATIO), CLIPPED_PART_HINT)
+							.text
 					: part
 			);
 			used += cost;
