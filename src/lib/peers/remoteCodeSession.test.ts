@@ -184,6 +184,28 @@ describe("another computer's Code session", () => {
 		expect(s.blockedReason).toBe('desk-pc is offline.');
 	});
 
+	it('keeps the effort and model it had when that computer refuses a change', async () => {
+		const p = fakePeer({
+			'session.get': state(),
+			'session.effort': new Error('unknown effort'),
+			'session.model': new Error('no such model')
+		});
+		const s = await openRemoteSession(p.view, 's1');
+		await expect(s.setEffort('high')).rejects.toThrow('unknown effort');
+		expect(s.effort).toBeNull();
+		await expect(s.setModel({ baseUrl: 'http://box:8080/v1', modelId: 'gone' })).rejects.toThrow(
+			'no such model'
+		);
+		expect(s.model).toBeNull();
+	});
+
+	it('refuses a model from this computer’s picker', async () => {
+		const p = fakePeer({ 'session.get': state() });
+		const s = await openRemoteSession(p.view, 's1');
+		await expect(s.setBackend()).rejects.toThrow('Pick one of its own models.');
+		expect(p.ops.some((o) => String(o.type).includes('backend'))).toBe(false);
+	});
+
 	it('closing its tab stops following it, and leaves it open there', async () => {
 		const p = fakePeer({ 'session.get': state() });
 		const s = await openRemoteSession(p.view, 's1');
