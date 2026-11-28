@@ -9,6 +9,7 @@
  */
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { shownPath } from '#lib/code/paths.ts';
 
 /** Editor → main: put this in a conversation's box. */
 export const SEND_TO_CHAT_EVENT = 'editor://send-to-chat';
@@ -33,13 +34,6 @@ export function holds(dir: string, folder: string): boolean {
 	const d = norm(dir);
 	const f = norm(folder);
 	return d !== '' && (f === d || f.startsWith(`${d}/`));
-}
-
-/** `path` relative to `dir` when inside it, else as it is. */
-export function relativeTo(dir: string, path: string): string {
-	const d = norm(dir);
-	const p = norm(path);
-	return p.startsWith(`${d}/`) ? p.slice(d.length + 1) : p;
 }
 
 export interface Candidate {
@@ -71,7 +65,7 @@ export interface ChatTargets {
 export async function handleSendToChat(p: SendToChatPayload, t: ChatTargets): Promise<void> {
 	const pick = pickConversation(await t.candidates(), p.folder);
 	const dir = pick?.folder ?? p.folder;
-	const text = `${p.command} ${relativeTo(dir, p.path)}`;
+	const text = `${p.command} ${shownPath(dir, p.path)}`;
 	if (!pick) t.newChat(p.folder, text);
 	else if (pick.kind === 'code') await t.fillCode(pick.id, text);
 	else await t.fillChat(pick.id, text);

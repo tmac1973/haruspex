@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { nextTask as tick } from '#lib/testing/flush.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	MAX_PARALLEL_TOOL_CALLS,
@@ -20,8 +21,6 @@ function deferred<T>() {
 	});
 	return { promise, resolve, reject };
 }
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('toolCallConcurrency', () => {
 	it('runs one at a time on a serialized lane', () => {

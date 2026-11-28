@@ -255,7 +255,7 @@ describe('delegate_3d’s result', () => {
 		m.files.add('assets/crate.js').add('assets/crate.glb');
 		const out = await call({});
 		expect(out.result).toContain('Files: assets/crate.js, assets/crate.glb.');
-		expect(out.result).toContain('Cost: $0.05 (1.2k tokens).');
+		expect(out.result).toContain('Cost: $0.05 (1.2K tokens).');
 	});
 
 	it('has no nudge for a clean check', () => {

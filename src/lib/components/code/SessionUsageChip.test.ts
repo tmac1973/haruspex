@@ -14,7 +14,7 @@ describe('the session usage chip', () => {
 			props: { totals: { ...emptyUsage(), promptTokens: 12_000, completionTokens: 345, calls: 3 } }
 		});
 		const chip = screen.getByTestId('session-usage');
-		expect(chip.textContent?.trim()).toBe('12k tok');
+		expect(chip.textContent?.trim()).toBe('12K tok');
 		expect(chip.title).toMatch(/12,345 tokens over 3 model calls/);
 		expect(chip.title).not.toMatch(/Cost/);
 		expect(chip.title).not.toMatch(/Sub-agents/);
@@ -51,7 +51,7 @@ describe('the session usage chip', () => {
 			}
 		});
 		const chip = screen.getByTestId('session-usage');
-		expect(chip.textContent).toMatch(/1\.0k tok · ~\$0\.13/);
+		expect(chip.textContent).toMatch(/1K tok · ~\$0\.13/);
 		expect(chip.title).toMatch(/estimated/);
 	});
 });

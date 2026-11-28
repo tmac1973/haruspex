@@ -59,6 +59,14 @@ export function relativeToRoot(root: string, path: string): string | null {
 	return rel || null;
 }
 
+/**
+ * `path` as a message to the model or user shows it: relative to `root` when
+ * inside it, else as it is.
+ */
+export function shownPath(root: string, path: string): string {
+	return relativeToRoot(root, path) ?? path;
+}
+
 export interface PathRef {
 	path: string;
 	/** 1-based, when the text gave one. */

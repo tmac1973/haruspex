@@ -36,7 +36,9 @@ import type { ChatEvent } from './types.ts';
 
 async function settle() {
 	flushSync();
-	await new Promise((r) => setTimeout(r, LIVE_MS * 2));
+	// The clock is fake in 'chat events', the only block that settles: move
+	// it past the coalescing window instead of sleeping.
+	await vi.advanceTimersByTimeAsync(LIVE_MS * 2);
 	flushSync();
 }
 
@@ -213,10 +215,14 @@ describe('chat events', () => {
 	let stop: () => void;
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		events = [];
 		stop = watchChats((e) => events.push(e)).stop;
 	});
-	afterEach(() => stop());
+	afterEach(() => {
+		stop();
+		vi.useRealTimers();
+	});
 
 	const mirrorOf = (id: string) =>
 		events.filter((e) => e.chatId === id).reduce(reduceChat, emptyChatMirror());

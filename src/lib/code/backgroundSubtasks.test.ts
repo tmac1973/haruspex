@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTask as tick } from '#lib/testing/flush.ts';
 import type { SubtaskEnv, SubtaskSpec } from '#lib/code/subtaskRun.ts';
 
 const mocks = vi.hoisted(() => ({
@@ -68,8 +69,6 @@ function host() {
 	};
 	return { h, done, states, stops, leaseDone };
 }
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
 	mocks.runSubtaskSpec.mockReset();

@@ -29,7 +29,8 @@ import { newSubtaskState } from '#lib/code/subtask.ts';
 import type { SubtaskProfile, SubtaskUsage } from '#lib/code/subtaskProfile.ts';
 import type { SubtaskResult } from '#lib/code/runSubtask.ts';
 import type { SubtaskSpec } from '#lib/code/subtaskRun.ts';
-import { formatCost, formatTokens } from '#lib/code/usageTotals.ts';
+import { formatCost } from '#lib/code/usageTotals.ts';
+import { formatTokens } from '#lib/utils/format.ts';
 import {
 	finalCheck3d,
 	lastCheckOptions,

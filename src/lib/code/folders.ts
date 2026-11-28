@@ -21,7 +21,7 @@ import type { WorktreeRemoval } from '#lib/ipc/gen/WorktreeRemoval.ts';
 import { listCodeSessions, type CodeSessionSummary } from '#lib/code/db.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { turnCheckpoints } from '#lib/code/checkpoints.ts';
-import { ioRoot } from '#lib/code/paths.ts';
+import { ioRoot, shownPath } from '#lib/code/paths.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** What a write is told while another session has the folder. */
@@ -155,7 +155,7 @@ export function formatFileNotices(notices: FileNotice[], root: string): string |
 		// The newest title wins: a session may have been named since.
 		entry.title = n.title || entry.title;
 		for (const f of n.files) {
-			const shown = relativeTo(root, f);
+			const shown = shownPath(root, f);
 			if (!entry.files.includes(shown)) entry.files.push(shown);
 		}
 		bySession.set(n.session_id, entry);
@@ -167,11 +167,6 @@ export function formatFileNotices(notices: FileNotice[], root: string): string |
 		return `Since your last turn, session '${title || 'untitled'}' changed: ${named}${more}`;
 	});
 	return `${lines.join('\n')}\nRe-read those files before editing them.`;
-}
-
-function relativeTo(root: string, path: string): string {
-	const base = root.replace(/\/+$/, '') + '/';
-	return path.startsWith(base) ? path.slice(base.length) : path;
 }
 
 /**

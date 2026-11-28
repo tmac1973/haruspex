@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { nextTask as settleFocus } from '#lib/testing/flush.ts';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import Modal from './Modal.svelte';
 
 // Modal's initial-focus effect runs after a tick (a microtask past the
 // effect flush), so tests wait a macrotask before asserting focus.
-function settleFocus() {
-	return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 const twoButtons = createRawSnippet(() => ({
 	render: () =>

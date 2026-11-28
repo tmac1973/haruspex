@@ -174,9 +174,18 @@ function gates() {
 /** Let effects run and the coalesced live text go out. */
 async function settle() {
 	flushSync();
-	await new Promise((r) => setTimeout(r, LIVE_MS * 2));
+	// The clock is fake (below): move it past the coalescing window, no sleep.
+	await vi.advanceTimersByTimeAsync(LIVE_MS * 2);
 	flushSync();
 }
+
+beforeEach(() => {
+	vi.useFakeTimers();
+});
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 function mirrorOf(events: SessionEvent[]): Mirror {
 	return events.reduce(reduce, emptyMirror());

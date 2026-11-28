@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { nextTask as settle } from '#lib/testing/flush.ts';
 
 const events = vi.hoisted(() => ({
 	handlers: new Map<string, (e: { payload: unknown }) => void>(),
@@ -25,8 +26,6 @@ const DESK = 'desk';
 function emit(name: string, payload: unknown): void {
 	events.handlers.get(name)!({ payload });
 }
-
-const settle = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
 	events.handlers.clear();

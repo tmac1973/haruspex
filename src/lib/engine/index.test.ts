@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { nextTask as settle } from '#lib/testing/flush.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const mocks = vi.hoisted(() => ({
@@ -38,7 +39,6 @@ async function startEngine() {
 }
 
 /** Lets the engine's own `.then` run. */
-const settle = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
 	// Each test's engine is the first in its window.

@@ -4,6 +4,7 @@ import {
 	makeCodePathLinker,
 	parsePathRef,
 	relativeToRoot,
+	shownPath,
 	splitGrepLine,
 	wslShare
 } from './paths';
@@ -37,6 +38,19 @@ describe('relativeToRoot', () => {
 
 	it('takes a root with a trailing slash', () => {
 		expect(relativeToRoot('/proj/', '/proj/a.ts')).toBe('a.ts');
+	});
+});
+
+describe('shownPath', () => {
+	it('shows a path inside the folder relative to it, and any other as it is', () => {
+		expect(shownPath('/v', '/v/ep/a.json')).toBe('ep/a.json');
+		expect(shownPath('/w', '/v/a.json')).toBe('/v/a.json');
+		expect(shownPath('/v', 'ep/a.json')).toBe('ep/a.json');
+	});
+
+	it('matches a Windows root whatever its slashes', () => {
+		expect(shownPath('C:\\proj', 'C:/proj/src/a.ts')).toBe('src/a.ts');
+		expect(shownPath('C:/proj', 'C:\\proj\\src\\a.ts')).toBe('src/a.ts');
 	});
 });
 
