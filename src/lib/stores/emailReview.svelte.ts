@@ -9,11 +9,19 @@
  * "allow". A message goes out under the user's name, to people who cannot
  * be un-sent to.
  *
- * Same pattern as memoryApproval.svelte.ts: one review at a time, a second
- * overlapping request rejects.
+ * Reviews queue (`approvalQueue.svelte.ts`), one shown at a time: a model's
+ * draft and one the user started can both be waiting.
+ *
+ * Unlike the other prompts, stopping the turn does not withdraw a draft.
+ * The user may be part way through editing it, or have pressed Send with
+ * `email_send` in flight; pulling it then would lose their text, and the
+ * dialog's answer would go to the next draft in the queue. The dialog
+ * answers every draft it shows, so a stopped turn's draft is still sent or
+ * discarded by the user.
  */
 
 import type { EmailAccount } from '#lib/stores/settings.ts';
+import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
 import type { StagedFile, StagedPicture } from '#lib/email/parts.ts';
 
 export interface EmailDraft {
@@ -80,35 +88,26 @@ interface PendingEmailReview {
 	/** The accounts it may go from: enabled, with Allow sending on. */
 	accounts: EmailAccount[];
 	note: boolean;
-	resolve: (outcome: EmailReviewOutcome) => void;
 }
 
-let pending = $state<PendingEmailReview | null>(null);
+const queue = createApprovalQueue<PendingEmailReview, EmailReviewOutcome>();
 
+/** Open `draft` for review, behind any draft already showing. */
 export function askEmailReview(
 	draft: EmailDraft,
 	accounts: EmailAccount[],
 	options: EmailReviewOptions = {}
 ): Promise<EmailReviewOutcome> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error('An email draft is already open for review; finish that one first.')
-		);
-	}
-	return new Promise<EmailReviewOutcome>((resolve) => {
-		pending = { draft, accounts, note: options.note ?? true, resolve };
-	});
+	return queue.ask({ draft, accounts, note: options.note ?? true });
 }
 
 export function getPendingEmailReview(): PendingEmailReview | null {
-	return pending;
+	return queue.current();
 }
 
+/** Answer the draft the dialog shows; the next one, if any, opens. */
 export function resolveEmailReview(outcome: EmailReviewOutcome): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(outcome);
+	queue.resolve(outcome);
 }
 
 /** The text that is sent: the body, then the quoted original. */
