@@ -29,7 +29,7 @@ import type { ClipProgress } from '#lib/sequence/spec/progress.ts';
 import { GENERATED_DIR } from '#lib/sequence/spec/paths.ts';
 import { estimateRun } from '#lib/sequence/spec/estimate.ts';
 import { firstFrameId, reanchorId } from '#lib/sequence/spec/progress.ts';
-import { errMessage } from '#lib/utils/error.ts';
+import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { couldNotStart } from '#lib/toolchest/startFailure.ts';
 
 type ClipOpts = Pick<VideoGenerateOptions, 'onHandle' | 'onProgress'>;
@@ -95,8 +95,6 @@ export const STILLS_DIR = '.haruspex/stills';
 export function clipPath(id: string, mime = 'video/webm'): string {
 	return `${GENERATED_DIR}/${id}.${mime === 'video/mp4' ? 'mp4' : 'webm'}`;
 }
-
-const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
 
 /** How many times a clip waits for a model the server could not start. */
 export const START_WAITS = 3;
@@ -206,7 +204,7 @@ async function makeClip(
 			const result = await deps.resume(job.resume, job.request(job.seed), opts(job.seed));
 			return { result, seed: job.seed };
 		} catch (e) {
-			if (isAbort(e)) throw e;
+			if (isAbortError(e)) throw e;
 			// The server no longer has it: make it again.
 			run.clips[item.id] = { key, status: 'pending', seed: job.seed };
 		}
@@ -217,7 +215,7 @@ async function makeClip(
 		try {
 			return { result: await deps.generate(job.request(seed), opts(seed)), seed };
 		} catch (e) {
-			if (isAbort(e)) throw e;
+			if (isAbortError(e)) throw e;
 			const why = errMessage(e);
 			// The model couldn't load (another holds the GPU): a new seed won't
 			// help. Wait and send the same request again, a few times.

@@ -8,6 +8,7 @@
 //! cooldown. While the camera is being turned ([`hold_motion`]) its picture
 //! changes are not motion: the room didn't move, the camera did.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -21,7 +22,7 @@ pub(crate) const AFTER_TURN_MS: i64 = 4_000;
 static HELD: LazyLock<Mutex<HashMap<String, i64>>> = LazyLock::new(Default::default);
 
 fn held() -> std::sync::MutexGuard<'static, HashMap<String, i64>> {
-    HELD.lock().unwrap_or_else(|p| p.into_inner())
+    HELD.lock_or_recover()
 }
 
 /// Ignore the camera's picture changes until `until` (epoch ms), replacing any

@@ -21,13 +21,7 @@
 		type PreviewNavigate
 	} from '#lib/preview/open.ts';
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
-	import {
-		SETTINGS_KEY,
-		applyAccent,
-		applyTheme,
-		type AccentColor,
-		type ThemeMode
-	} from '#lib/stores/settings.ts';
+	import { followSettingsStorage } from '#lib/stores/settings.ts';
 
 	const WIDTH_KEY = 'haruspex.previewWidth';
 	const win = getCurrentWebviewWindow();
@@ -62,18 +56,6 @@
 		void win.setTitle(previewTitle(path)).catch(() => {});
 	});
 
-	/** Follow the theme when Settings changes it in the main window. */
-	function onStorage(e: StorageEvent): void {
-		if (e.key !== SETTINGS_KEY || !e.newValue) return;
-		try {
-			const s = JSON.parse(e.newValue) as { theme?: ThemeMode; accentColor?: AccentColor };
-			if (s.theme) applyTheme(s.theme);
-			if (s.accentColor) applyAccent(s.accentColor);
-		} catch {
-			// A half-written value: the next change will do.
-		}
-	}
-
 	onMount(() => {
 		const stops = [
 			win.listen(PREVIEW_CHANGED_EVENT, () => {
@@ -91,7 +73,7 @@
 	});
 </script>
 
-<svelte:window onstorage={onStorage} />
+<svelte:window onstorage={followSettingsStorage} />
 
 <div class="preview-window">
 	<PreviewToolbar

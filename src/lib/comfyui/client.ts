@@ -18,7 +18,7 @@
  */
 
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
-import { errMessage } from '#lib/utils/error.ts';
+import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
@@ -160,7 +160,7 @@ async function viaFetch(cfg: ClientConfig, call: Call, signal?: AbortSignal): Pr
 	} catch (e) {
 		if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
 		// An aborted fetch that the caller did not cancel is our own timeout.
-		const timedOut = e instanceof Error && e.name === 'AbortError';
+		const timedOut = isAbortError(e);
 		throw new ImageBackendError(
 			timedOut ? 'timeout' : 'unreachable',
 			timedOut

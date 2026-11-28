@@ -11,6 +11,7 @@
 //! - [`last_aimed_at`]: when a person or a chat last turned the camera, so a
 //!   room check never moves a camera someone is aiming.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
@@ -187,18 +188,13 @@ static LAST_AIM: LazyLock<Mutex<HashMap<String, i64>>> = LazyLock::new(Default::
 /// A person or a chat turned this camera now (epoch ms).
 pub fn record_aim(camera_id: &str, now: i64) {
     LAST_AIM
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
+        .lock_or_recover()
         .insert(camera_id.to_string(), now);
 }
 
 /// When a person or a chat last turned this camera, epoch ms.
 pub fn last_aimed_at(camera_id: &str) -> Option<i64> {
-    LAST_AIM
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .get(camera_id)
-        .copied()
+    LAST_AIM.lock_or_recover().get(camera_id).copied()
 }
 
 /// How long after someone turns a camera a room check leaves it alone.

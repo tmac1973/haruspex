@@ -77,8 +77,7 @@ describe('failure mapping', () => {
 
 	it('maps our own abort to `timeout`, not `unreachable`', async () => {
 		// An AbortError the caller did not cause is the request deadline.
-		const abort = new Error('aborted');
-		abort.name = 'AbortError';
+		const abort = new DOMException('aborted', 'AbortError');
 		fetchMock.mockRejectedValue(abort);
 		await expect(api.systemStats(cfg)).rejects.toMatchObject({ kind: 'timeout' });
 	});
@@ -86,8 +85,7 @@ describe('failure mapping', () => {
 	it('maps a caller abort to `cancelled`', async () => {
 		const c = new AbortController();
 		c.abort();
-		const abort = new Error('aborted');
-		abort.name = 'AbortError';
+		const abort = new DOMException('aborted', 'AbortError');
 		fetchMock.mockRejectedValue(abort);
 		await expect(api.history(cfg, 'p1', '9', c.signal)).rejects.toMatchObject({
 			kind: 'cancelled'

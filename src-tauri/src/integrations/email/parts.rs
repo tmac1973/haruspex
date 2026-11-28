@@ -7,6 +7,7 @@
 //! dialog discards the draft (`email_part_drop`). A failed send keeps them,
 //! so Send can be clicked again.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -108,10 +109,7 @@ impl Store {
 
 fn store() -> MutexGuard<'static, Store> {
     static STORE: OnceLock<Mutex<Store>> = OnceLock::new();
-    STORE
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    STORE.get_or_init(Mutex::default).lock_or_recover()
 }
 
 /// The files a message names, split into inline pictures and attachments.

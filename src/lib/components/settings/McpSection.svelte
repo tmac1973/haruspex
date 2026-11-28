@@ -11,7 +11,8 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
-	import { getSettings, setMcpServers, snapshot } from '#lib/stores/settings.ts';
+	import { getSettings, setMcpServers } from '#lib/stores/settings.ts';
+	import { snapshot } from '#lib/utils/snapshot.ts';
 	import { storeCustomEnv, storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
 	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';

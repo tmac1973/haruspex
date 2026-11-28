@@ -4,6 +4,7 @@
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { createSubscriber } from 'svelte/reactivity';
 import { clampInt } from '#lib/utils/clampInt.ts';
+import { snapshot } from '#lib/utils/snapshot.ts';
 import type { ToolChoice } from '#lib/ipc/gen/ToolChoice.ts';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
@@ -1663,22 +1664,6 @@ export function getLiveSettings(): AppSettings {
 }
 
 /**
- * A plain deep copy, safe to take of a Svelte 5 `$state` proxy.
- *
- * `structuredClone` throws `DataCloneError` on a proxy, and the settings
- * sections all edit a working copy held in `$state` before handing it back
- * here — so without this, storing one poisons the settings object: every
- * later `structuredClone` of it throws, which in a Svelte template aborts
- * the render and leaves the panel stuck on whatever it was showing.
- *
- * Everything stored in settings is JSON — strings, numbers, booleans, null —
- * so a JSON round-trip is both a complete copy and a proxy stripper.
- */
-export function snapshot<T>(value: T): T {
-	return JSON.parse(JSON.stringify(value)) as T;
-}
-
-/**
  * The single write path. Every mutation goes through here so the stored
  * object is always plain data, whatever the caller passed in.
  */
@@ -1686,6 +1671,18 @@ function commit(next: AppSettings): void {
 	settings = snapshot(next);
 	save(settings);
 	notifySettingsChanged();
+}
+
+/**
+ * A pop-out window's `storage` listener. Each window loads the settings once,
+ * so this follows the changes another window writes, theme and accent among
+ * them.
+ */
+export function followSettingsStorage(e: StorageEvent): void {
+	if (e.key !== SETTINGS_KEY) return;
+	reloadSettingsFromStorage();
+	applyTheme();
+	applyAccent();
 }
 
 /**

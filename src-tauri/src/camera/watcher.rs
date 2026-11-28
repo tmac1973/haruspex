@@ -17,6 +17,7 @@ use super::capture::{self, Platform};
 use super::detect::{self, Closed, Detector, Reading, Step, Timings, Trigger};
 use super::{shared, ActiveHours, CameraConfig, CameraSource, Credentials};
 use crate::db::{Database, NewCameraEvent};
+use crate::sync_util::LockExt;
 use crate::video::binaries::{resolve_tool, BinaryOverrides, Tool};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -743,7 +744,7 @@ pub struct WatcherRegistry {
 
 impl WatcherRegistry {
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        self.state.lock_or_recover()
     }
 
     pub fn status(&self) -> CameraWatchStatus {

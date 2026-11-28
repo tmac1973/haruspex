@@ -30,6 +30,7 @@ import { getPendingCameraUse, resolveCameraUse } from '#lib/stores/cameraApprova
 import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import type { Prompt, PromptAnswer, PromptEvent } from '#lib/engine/types.ts';
+import { snapshot } from '#lib/utils/snapshot.ts';
 
 const ids = new WeakMap<object, string>();
 let next = 0;
@@ -201,7 +202,7 @@ export function currentPrompts(label: string): Prompt[] {
 			detail: { path: conflict.path, choices: ['overwrite', 'counter', 'cancel'] }
 		});
 	}
-	return JSON.parse(JSON.stringify(out)) as Prompt[];
+	return snapshot(out);
 }
 
 /**

@@ -34,8 +34,8 @@
 			maxRounds: rounds,
 			maxCostUsd: unlimited ? null : cost > 0 ? cost : null
 		};
-		// Plain JSON: no proxies and no undefined fields reach the store.
-		setCodeHelperConfig(helperId, JSON.parse(JSON.stringify(value)));
+		// The store snapshots it: no proxies and no undefined fields reach it.
+		setCodeHelperConfig(helperId, value);
 	}
 
 	function choose(next: BackendOverride | null) {

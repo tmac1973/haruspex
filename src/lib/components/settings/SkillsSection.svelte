@@ -21,7 +21,8 @@
 	import { listSkills, readSkill, repoLabel } from '#lib/skills/client.ts';
 	import { unmetFor } from '#lib/skills/needs.ts';
 	import { setRepoTrust, setRepoTrusted } from '#lib/skills/project.ts';
-	import { getSettings, snapshot, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
+	import { getSettings, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
+	import { snapshot } from '#lib/utils/snapshot.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	const CLAUDE_SKILLS = '~/.claude/skills';

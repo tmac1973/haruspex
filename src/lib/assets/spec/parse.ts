@@ -20,6 +20,7 @@ import { DEFAULT_ANCHOR_IMAGE, DEFAULT_ANCHOR_RECIPE } from '#lib/assets/spec/pa
 import type { LoraRef } from '#lib/image/types.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 import { stringOr } from '#lib/utils/coerce.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type ParseResult = { spec: AssetSpec } | { errors: string[] };
 
@@ -123,7 +124,7 @@ export function parseAssetSpec(json: string): ParseResult {
 	try {
 		raw = JSON.parse(json);
 	} catch (e) {
-		return { errors: [`The spec is not valid JSON — ${e instanceof Error ? e.message : e}`] };
+		return { errors: [`The spec is not valid JSON — ${errMessage(e)}`] };
 	}
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
 		return { errors: ['The spec must be a JSON object.'] };

@@ -6,13 +6,7 @@
 	import { page } from '$app/state';
 	import ShellPane from '#lib/components/shell/ShellPane.svelte';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
-	import {
-		SETTINGS_KEY,
-		applyAccent,
-		applyTheme,
-		getLiveSettings,
-		reloadSettingsFromStorage
-	} from '#lib/stores/settings.ts';
+	import { followSettingsStorage, getLiveSettings } from '#lib/stores/settings.ts';
 	import { reattachShellSession, getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import { fullAccessFromUrl, handBackToMain } from '#lib/shell/windows.ts';
 	import { relayToMain, useCodeRelay } from '#lib/code/bridge.ts';
@@ -41,14 +35,6 @@
 	);
 
 	let closing = false;
-
-	/** Follow the main window's settings, lean mode among them. */
-	function onStorage(e: StorageEvent): void {
-		if (e.key !== SETTINGS_KEY) return;
-		reloadSettingsFromStorage();
-		applyTheme();
-		applyAccent();
-	}
 
 	async function handBack() {
 		if (closing) return;
@@ -82,7 +68,7 @@
 	});
 </script>
 
-<svelte:window onstorage={onStorage} />
+<svelte:window onstorage={followSettingsStorage} />
 
 <div class="detached">
 	<div class="bar">

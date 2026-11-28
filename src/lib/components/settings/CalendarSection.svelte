@@ -22,7 +22,8 @@
 	 */
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import { getSettings, setDavAccounts, snapshot } from '#lib/stores/settings.ts';
+	import { getSettings, setDavAccounts } from '#lib/stores/settings.ts';
+	import { snapshot } from '#lib/utils/snapshot.ts';
 	import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 	import type { DavKind } from '#lib/ipc/gen/DavKind.ts';
 	import type { GoogleSignIn } from '#lib/ipc/gen/GoogleSignIn.ts';

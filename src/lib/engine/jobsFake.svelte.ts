@@ -5,6 +5,7 @@
 import { vi } from 'vitest';
 import type { PendingQueueEntry, RunState } from '#lib/agent/jobs/runner.svelte.ts';
 import type { JobInput, JobStepInput, JobWithSteps } from '#lib/stores/jobs.svelte.ts';
+import { snapshot } from '#lib/utils/snapshot.ts';
 
 export const fake = $state({
 	current: null as RunState | null,
@@ -155,7 +156,7 @@ export const runner = {
 export const jobsStore = {
 	getJob: async (id: number) => {
 		const j = find(id);
-		return j ? (JSON.parse(JSON.stringify(j)) as JobWithSteps) : null;
+		return j ? snapshot(j) : null;
 	},
 	getJobs: () => fake.jobs.map((j) => ({ ...j, step_count: j.steps.length })),
 	loadJobs: async () => {},

@@ -595,9 +595,11 @@ impl LlamaServer {
                     }
                     CommandEvent::Stderr(line) => {
                         let line_str = String::from_utf8_lossy(&line).to_string();
-                        // llama-server writes its routine progress to stderr, so
-                        // the stream says nothing about severity.
-                        info!("llama-server stderr: {}", line_str);
+                        log::log!(
+                            log_classifier::stderr_level(&line_str),
+                            "llama-server stderr: {}",
+                            line_str
+                        );
                         let mut state = inner.lock().await;
                         push_log(&mut state.log_buffer, &format!("[stderr] {}", line_str));
                         state.note_stderr_signal(&line_str);

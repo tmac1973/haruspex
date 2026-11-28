@@ -58,9 +58,7 @@ import {
 } from '#lib/stores/jobRuns.svelte.ts';
 import { LIVE_MS } from '#lib/engine/watch.svelte.ts';
 import type { JobEvent, JobFields, JobOp, JobRunLive, JobStepWrite } from '#lib/engine/types.ts';
-
-/** Plain data, whatever Svelte's proxies make of it. */
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T;
+import { snapshot } from '#lib/utils/snapshot.ts';
 
 /** The columns a client may write. Everything else the app owns. */
 const WRITABLE: (keyof JobFields)[] = [
@@ -95,7 +93,7 @@ async function mustGet(jobId: number): Promise<JobWithSteps> {
 function jobOut(job: JobWithSteps) {
 	const def = getJobType(job.job_type);
 	return {
-		...plain(job),
+		...snapshot(job),
 		model_remote_api_key: null,
 		has_inline_api_key: !!job.model_remote_api_key,
 		config: def ? def.configFromJob(job.type_config) : null,
@@ -286,7 +284,7 @@ export function runLive(run: RunState): JobRunLive {
 			status: s.status,
 			output: s.output,
 			error: s.error,
-			usage: plain(s.usage),
+			usage: snapshot(s.usage),
 			toolCalls: s.searchSteps.length,
 			startedAt: s.startedAt,
 			finishedAt: s.finishedAt
@@ -343,7 +341,7 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 			);
 		case 'jobs.list':
 			await loadJobs();
-			return plain(getJobs());
+			return snapshot(getJobs());
 		case 'jobs.get':
 			return jobOut(await mustGet(op.jobId));
 		case 'jobs.create':
@@ -391,20 +389,20 @@ export async function dispatchJobs(op: JobOp): Promise<unknown> {
 		case 'runs.list':
 			await mustGet(op.jobId);
 			await loadRunsForJob(op.jobId);
-			return plain(getRunsForJob(op.jobId));
+			return snapshot(getRunsForJob(op.jobId));
 		case 'runs.get': {
 			const run = await runOf(op.runId);
 			const live = getRun(op.runId);
 			// A run in progress has what the database doesn't keep: the text
 			// being written, reasoning and the tool steps.
-			return { ...plain(run), live: live ? plain(live) : null };
+			return { ...snapshot(run), live: live ? snapshot(live) : null };
 		}
 		case 'runs.current': {
 			const current = getCurrentRun();
 			return {
 				run: current ? runLive(current) : null,
 				active: getActiveRuns().map(runLive),
-				queue: plain(getPendingQueue())
+				queue: snapshot(getPendingQueue())
 			};
 		}
 		case 'runs.delete': {
@@ -516,7 +514,7 @@ export function watchJobs(sink: (e: JobEvent) => void): { stop: () => void } {
 		});
 
 		$effect(() => {
-			const queue = plain(getPendingQueue());
+			const queue = snapshot(getPendingQueue());
 			const key = JSON.stringify(queue);
 			untrack(() => {
 				if (key === lastQueue) return;
