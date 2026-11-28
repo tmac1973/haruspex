@@ -8,9 +8,10 @@
 
 use super::doc::{Doc, Entry};
 use super::edit::{
-    entry_text, groups_text, line_of, remap_groups, rewrite_playlist, set_attrs, set_property,
-    set_sequence_length, BinAdds, GainWrite, Lane,
+    entry_text, groups_text, remap_groups, rewrite_playlist, set_property, set_sequence_length,
+    BinAdds, GainWrite, Lane,
 };
+use crate::video::mlt::xml::{set_attrs, whole_line};
 use crate::video::timeline::{AudioClip, AudioPlacement, AudioSource, Edited};
 use std::collections::{HashMap, HashSet};
 
@@ -230,7 +231,7 @@ pub fn apply(doc: &Doc, wanted: &[AudioPlacement]) -> Result<Edited, String> {
                 ));
             }
             set_attrs(
-                doc,
+                &doc.tree,
                 &mut splices,
                 doc.tracks[t].tractor,
                 &[("out", fps.timecode((ends[k] - 1).max(0)))],
@@ -257,7 +258,7 @@ pub fn apply(doc: &Doc, wanted: &[AudioPlacement]) -> Result<Edited, String> {
         if !others {
             if let Some(ch) = doc.tree.by_id(&e.chain) {
                 splices.replace(
-                    line_of(&doc.text, doc.tree.node(ch).span.clone()),
+                    whole_line(&doc.text, doc.tree.node(ch).span.clone()),
                     String::new(),
                 );
             }
@@ -270,7 +271,7 @@ pub fn apply(doc: &Doc, wanted: &[AudioPlacement]) -> Result<Edited, String> {
             .map(|&p| doc.tree.node(p).span.start)
             .min()
             .ok_or("the audio tracks have no playlists")?;
-        splices.insert(line_of(&doc.text, first..first).start, new_chains);
+        splices.insert(whole_line(&doc.text, first..first).start, new_chains);
     }
     bins.write(doc, &mut splices);
 

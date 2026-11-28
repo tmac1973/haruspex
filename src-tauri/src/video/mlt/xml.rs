@@ -210,6 +210,86 @@ impl Splices {
     }
 }
 
+/// The text of an element's start tag with some attributes set. Kdenlive's
+/// editor sets only attributes the tag has: a project it writes must stay
+/// byte for byte what Kdenlive itself would write.
+pub fn retag(tree: &Tree, node: usize, set: &[(&str, String)]) -> String {
+    retag_with(tree, node, set, false)
+}
+
+fn retag_with(tree: &Tree, node: usize, set: &[(&str, String)], add_missing: bool) -> String {
+    let n = tree.node(node);
+    let mut out = format!("<{}", n.name);
+    for (k, v) in &n.attrs {
+        let v = set
+            .iter()
+            .find(|(sk, _)| sk == k)
+            .map(|(_, sv)| sv.as_str())
+            .unwrap_or(v);
+        out.push_str(&format!(" {k}=\"{}\"", escape(v)));
+    }
+    if add_missing {
+        for (k, v) in set {
+            if n.attr(k).is_none() {
+                out.push_str(&format!(" {k}=\"{}\"", escape(v)));
+            }
+        }
+    }
+    out.push_str(if n.self_closing() { "/>" } else { ">" });
+    out
+}
+
+/// Replace a start tag's attributes, if any value differs. Attributes the tag
+/// lacks are left out (see [`retag`]).
+pub fn set_attrs(tree: &Tree, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
+    splice_attrs(tree, splices, node, set, false);
+}
+
+/// [`set_attrs`], adding any attribute the tag lacks, as Shotcut's editor
+/// needs.
+pub fn set_or_add_attrs(tree: &Tree, splices: &mut Splices, node: usize, set: &[(&str, String)]) {
+    splice_attrs(tree, splices, node, set, true);
+}
+
+fn splice_attrs(
+    tree: &Tree,
+    splices: &mut Splices,
+    node: usize,
+    set: &[(&str, String)],
+    add_missing: bool,
+) {
+    let n = tree.node(node);
+    if set.iter().all(|(k, v)| n.attr(k) == Some(v.as_str())) {
+        return;
+    }
+    let tag_end = if n.self_closing() {
+        n.span.end
+    } else {
+        n.inner_start
+    };
+    splices.replace(
+        n.span.start..tag_end,
+        retag_with(tree, node, set, add_missing),
+    );
+}
+
+/// The span of an element with the indentation before it and the newline
+/// after it, so removing it leaves no blank line.
+pub fn whole_line(text: &str, span: Range<usize>) -> Range<usize> {
+    let line_start = text[..span.start].rfind('\n').map_or(0, |i| i + 1);
+    let start = if text[line_start..span.start].trim().is_empty() {
+        line_start
+    } else {
+        span.start
+    };
+    let end = if text[span.end..].starts_with('\n') {
+        span.end + 1
+    } else {
+        span.end
+    };
+    start..end
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
