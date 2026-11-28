@@ -10,7 +10,7 @@
 	import { getSettings, updateSettings, type GenerationServer } from '#lib/stores/settings.ts';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
-	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import { pickedServer, rememberServer } from '#lib/stores/generationServers.svelte.ts';
 	import { inferenceToolchest } from '#lib/toolchest/detect.ts';
 	import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 	import { withSavedModel } from '#lib/toolchest/kind.ts';
@@ -76,8 +76,7 @@
 	}
 
 	function pickServer(saved: GenerationServer | null) {
-		baseUrl = saved?.url ?? '';
-		apiKeyId = saved?.keyId ?? apiKeyId;
+		({ url: baseUrl, keyId: apiKeyId } = pickedServer(saved, apiKeyId));
 		updateSettings({ speechServerBaseUrl: baseUrl, speechServerApiKeyId: apiKeyId });
 		if (baseUrl) void probe();
 	}

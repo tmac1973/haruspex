@@ -11,7 +11,7 @@
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
-	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import { pickedServer, rememberServer } from '#lib/stores/generationServers.svelte.ts';
 	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
 	import { withSavedModel } from '#lib/toolchest/kind.ts';
@@ -151,8 +151,7 @@
 	}
 
 	function pickServer(saved: GenerationServer | null) {
-		url = saved?.url ?? '';
-		keyId = saved?.keyId ?? keyId;
+		({ url, keyId } = pickedServer(saved, keyId));
 		patch({ url, keyId });
 		probeResult = null;
 		if (url) void probe();

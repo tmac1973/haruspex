@@ -21,7 +21,7 @@
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
 	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
-	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import { pickedServer, rememberServer } from '#lib/stores/generationServers.svelte.ts';
 	import {
 		cancelDownload,
 		getActiveDownload,
@@ -221,8 +221,7 @@
 	}
 
 	function pickServer(saved: GenerationServer | null) {
-		url = saved?.url ?? '';
-		if (saved) keyId = saved.keyId;
+		({ url, keyId } = pickedServer(saved, keyId));
 		patch({ url, keyId });
 		probeResult = null;
 		if (url) void probe();

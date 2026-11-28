@@ -8,7 +8,7 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
-	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import { pickedServer, rememberServer } from '#lib/stores/generationServers.svelte.ts';
 	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import { withSavedModel } from '#lib/toolchest/kind.ts';
 	import { renameUpscaler, updateUpscaler, upscalerById } from '#lib/upscale/entries.ts';
@@ -77,8 +77,7 @@
 	}
 
 	function pickServer(saved: GenerationServer | null) {
-		url = saved?.url ?? '';
-		keyId = saved?.keyId ?? keyId;
+		({ url, keyId } = pickedServer(saved, keyId));
 		patch({ url, keyId });
 		probeResult = null;
 		if (url) void probe();

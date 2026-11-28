@@ -142,6 +142,22 @@ describe('Settings → Music generation', () => {
 		expect(settings.musicToolchestBaseUrl).toBe('http://box:3000');
 	});
 
+	it('does not send the last server’s key to a saved one that has none', async () => {
+		settings.generationServers = [
+			{ kind: 'llama-toolchest', url: 'http://open:3000', keyId: null }
+		];
+		render(MusicSection);
+		await chooseToolchest();
+		await waitFor(() => expect(settings.musicToolchestApiKeyId).toBe('k1'));
+		const saved = screen.getByLabelText('Saved servers:') as HTMLSelectElement;
+		await waitFor(() =>
+			expect([...saved.options].map((o) => o.value)).toContain('http://open:3000')
+		);
+		await fireEvent.change(saved, { target: { value: 'http://open:3000' } });
+		expect(settings.musicToolchestBaseUrl).toBe('http://open:3000');
+		expect(settings.musicToolchestApiKeyId).toBeNull();
+	});
+
 	it('adds a typed address to the saved list', async () => {
 		settings.musicBackendKind = 'llama-toolchest';
 		render(MusicSection);
