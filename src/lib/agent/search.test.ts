@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
@@ -6,6 +7,8 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 import { invoke } from '@tauri-apps/api/core';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+
+preloadToolRegistry();
 
 const defaultCtx = makeToolContext();
 

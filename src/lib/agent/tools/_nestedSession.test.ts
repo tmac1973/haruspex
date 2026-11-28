@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
@@ -9,6 +10,8 @@ vi.mock('@tauri-apps/api/core', async () =>
 
 /** Shell tab, Code mode, bound to a live PTY — the configuration where the
  *  file tools and the terminal can drift onto different machines. */
+preloadToolRegistry();
+
 const shellCodeCtx = makeToolContext({
 	shellMode: true,
 	codeMode: true,

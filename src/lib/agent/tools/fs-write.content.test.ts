@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { pngHeader } from '#lib/slides/testImages.ts';
@@ -17,6 +18,8 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) =>
 		logDebug: mocks.logDebug
 	})
 );
+
+preloadToolRegistry();
 
 const ctx = makeToolContext({
 	workingDir: '/tmp/work'

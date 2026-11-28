@@ -1,10 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { preloadToolRegistry } from '#lib/testing/toolRegistry.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 vi.mock('@tauri-apps/api/core', async () =>
 	(await import('#lib/testing/invoke.ts')).mockTauriCore()
 );
+
+preloadToolRegistry();
 
 const chatCtx = makeToolContext({
 	workingDir: '/tmp/work'
