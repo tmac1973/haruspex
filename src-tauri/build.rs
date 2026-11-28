@@ -17,9 +17,40 @@ fn main() {
             .filter(|c| !withheld.iter().any(|w| w == c)),
     );
     let manifest = tauri_build::AppManifest::new().commands(commands);
-    if let Err(e) = tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest)) {
+    let mut attributes = tauri_build::Attributes::new().app_manifest(manifest);
+    if embed_windows_manifest() {
+        attributes = attributes
+            .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+    }
+    if let Err(e) = tauri_build::try_build(attributes) {
         panic!("tauri build failed: {e:#}");
     }
+}
+
+/// On Windows, `windows/app.manifest` (Common Controls v6) in every target
+/// the linker makes, the test binaries too. Returns whether it did.
+///
+/// tauri-build links its own copy of that manifest into the app's binary
+/// only. The unit-test binary links the same code, which now imports
+/// `TaskDialogIndirect`, a function only Common Controls v6 has; without the
+/// manifest Windows loads v5, and the binary dies before its first test
+/// (`STATUS_ENTRYPOINT_NOT_FOUND`). So tauri-build is told to leave the
+/// manifest out, and the linker embeds it everywhere instead.
+fn embed_windows_manifest() -> bool {
+    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if os != "windows" || env != "msvc" {
+        return false;
+    }
+    println!("cargo:rerun-if-changed=windows/app.manifest");
+    let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    let path = std::path::Path::new(&dir)
+        .join("windows")
+        .join("app.manifest");
+    assert!(path.is_file(), "{} is missing", path.display());
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", path.display());
+    true
 }
 
 /// Every command `src/lib.rs` hands `generate_handler!`, by its own name.

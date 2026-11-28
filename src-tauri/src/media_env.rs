@@ -27,6 +27,7 @@ pub fn media_dir_for(binary: &Path) -> Option<PathBuf> {
         return None;
     }
     let dir = binary.parent()?;
+    #[cfg_attr(not(debug_assertions), allow(unused_mut))]
     let mut candidates = vec![
         dir.join("media"),
         dir.join("binaries").join("media"),
