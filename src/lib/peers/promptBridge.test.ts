@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { nextTask as settle } from '#lib/testing/flush.ts';
 import { flushSync } from 'svelte';
 
 vi.mock('@tauri-apps/api/core', async () =>
@@ -91,7 +92,6 @@ function prompt(
 }
 
 const ORIGIN = { peerId: 'desk', name: 'desk-pc' };
-const settle = () => new Promise((r) => setTimeout(r, 0));
 
 let peer: ReturnType<typeof fakePeer>;
 let deps: { notify: Mock<BridgeDeps['notify']>; focused: Mock<BridgeDeps['focused']> };

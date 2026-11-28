@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { nextTask as tick } from '#lib/testing/flush.ts';
 
 // A turn giving its slot back while a long tool runs, and taking one again
 // (`HeldSlot`). The queue's ordering of a returning turn is Rust's, covered by
@@ -64,10 +65,6 @@ import {
 	type HeldSlot,
 	type WithSlotOptions
 } from '#lib/agent/inferenceQueue.svelte.ts';
-
-function tick() {
-	return new Promise((r) => setTimeout(r, 0));
-}
 
 function deferred<T = void>() {
 	let resolve!: (v: T) => void;

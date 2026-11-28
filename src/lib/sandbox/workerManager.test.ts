@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { nextTask as tick } from '#lib/testing/flush.ts';
 import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 
 // Worker-manager pulls in a few app singletons; stub them so the manager is
@@ -50,8 +51,6 @@ class FakeWorker {
 		return this.posted.map((m) => m.kind);
 	}
 }
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function doneResult(over: Partial<ToolResult> = {}): ToolResult {
 	return {

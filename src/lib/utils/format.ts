@@ -71,10 +71,15 @@ export function formatContextSize(n: number): string {
 	return n >= 1024 ? `${Math.round(n / 1024)}K` : String(n);
 }
 
-/** Compact token count: 1234 → "1.2K". Shared by every context gauge. */
+/**
+ * A token count, short: `950`, `1.2K`, `48K`, `4.1M`. One decimal below ten
+ * of a unit, none above. Every gauge and usage line shows counts this way.
+ */
 export function formatTokens(n: number): string {
-	if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-	return n.toString();
+	const short = (v: number) => v.toFixed(v < 10 ? 1 : 0).replace(/\.0$/, '');
+	if (n < 1000) return String(n);
+	if (n < 1_000_000) return `${short(n / 1000)}K`;
+	return `${short(n / 1_000_000)}M`;
 }
 
 /** `1 file`, `2 files`: the count with the word it takes. */

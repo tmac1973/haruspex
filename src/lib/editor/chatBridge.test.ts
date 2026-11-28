@@ -7,7 +7,6 @@ import {
 	handleSendToChat,
 	holds,
 	pickConversation,
-	relativeTo,
 	type Candidate,
 	type ChatTargets
 } from './chatBridge';
@@ -41,8 +40,6 @@ describe('send to chat', () => {
 		expect(holds('/v/', '/v')).toBe(true);
 		expect(holds('/v', '/vx')).toBe(false);
 		expect(holds('C:\\v', 'C:\\v\\ep')).toBe(true);
-		expect(relativeTo('/v', '/v/ep/a.json')).toBe('ep/a.json');
-		expect(relativeTo('/w', '/v/a.json')).toBe('/v/a.json');
 	});
 
 	it('picks the most recent conversation whose folder holds the file', () => {

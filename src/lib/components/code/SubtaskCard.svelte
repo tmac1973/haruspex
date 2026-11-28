@@ -12,7 +12,8 @@
 	import { formatCommandDuration } from '#lib/code/commandResult.ts';
 	import { copyText } from '#lib/utils/copyText.ts';
 	import { renderMarkdown } from '#lib/markdown.ts';
-	import { formatCost, formatTokens } from '#lib/code/usageTotals.ts';
+	import { formatCost } from '#lib/code/usageTotals.ts';
+	import { formatTokens } from '#lib/utils/format.ts';
 	import { stepImageSrc } from '#lib/code/stepImages.ts';
 
 	let {

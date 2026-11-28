@@ -4,6 +4,7 @@ import {
 	formatContextSize,
 	formatGigabytes,
 	formatShortWhen,
+	formatTokens,
 	plural,
 	titleFromText
 } from './format';
@@ -71,5 +72,19 @@ describe('plural', () => {
 		expect(plural(1, 'clip')).toBe('1 clip');
 		expect(plural(2, 'clip')).toBe('2 clips');
 		expect(plural(0, 'was', 'were')).toBe('0 were');
+	});
+});
+
+describe('formatTokens', () => {
+	it.each([
+		[950, '950'],
+		[1000, '1K'],
+		[1234, '1.2K'],
+		[48_200, '48K'],
+		[262_144, '262K'],
+		[4_100_000, '4.1M'],
+		[12_000_000, '12M']
+	])('%i → %s', (n, out) => {
+		expect(formatTokens(n)).toBe(out);
 	});
 });

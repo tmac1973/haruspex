@@ -4,7 +4,8 @@
 	 * of cost on OpenRouter (`code/usageTotals.ts`). Compact; the tooltip has the breakdown. Hidden
 	 * until the session's agent has made a call.
 	 */
-	import { formatCost, formatTokens, type SessionUsage } from '#lib/code/usageTotals.ts';
+	import { formatCost, type SessionUsage } from '#lib/code/usageTotals.ts';
+	import { formatTokens } from '#lib/utils/format.ts';
 
 	let { totals }: { totals: SessionUsage } = $props();
 

@@ -1,10 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { nextTask as settleFocus } from '#lib/testing/flush.ts';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import ConfirmDialog from './ConfirmDialog.svelte';
-
-function settleFocus() {
-	return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 function renderDialog(overrides: Record<string, unknown> = {}) {
 	const onconfirm = vi.fn();

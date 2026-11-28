@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { nextTask as tick } from '#lib/testing/flush.ts';
 
 // The authoritative queue *logic* (FIFO, capacity, lease, window cleanup)
 // lives in Rust now and is covered by `inference_queue.rs` unit tests. These
@@ -85,10 +86,6 @@ import {
 	laneKey,
 	_resetForTests
 } from '#lib/agent/inferenceQueue.svelte.ts';
-
-function tick() {
-	return new Promise((r) => setTimeout(r, 0));
-}
 
 function deferred<T = void>() {
 	let resolve!: (v: T) => void;

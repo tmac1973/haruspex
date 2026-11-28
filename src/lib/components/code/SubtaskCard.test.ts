@@ -125,10 +125,10 @@ describe('SubtaskCard in the background', () => {
 		const { unmount } = render(SubtaskCard, {
 			subtask: { ...startedSubtask(base), tokens: 12_300, costUsd: 0.42 }
 		});
-		expect(screen.getByTestId('subtask-usage').textContent).toBe('12k tokens · $0.42');
+		expect(screen.getByTestId('subtask-usage').textContent).toBe('12K tokens · $0.42');
 		unmount();
 		render(SubtaskCard, { subtask: { ...startedSubtask(base), tokens: 4200 } });
-		expect(screen.getByTestId('subtask-usage').textContent).toBe('4.2k tokens');
+		expect(screen.getByTestId('subtask-usage').textContent).toBe('4.2K tokens');
 		expect(screen.queryByText(/\$/)).toBeNull();
 	});
 

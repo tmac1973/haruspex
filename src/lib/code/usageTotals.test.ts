@@ -5,8 +5,7 @@ import {
 	callCostUsd,
 	catalogPrices,
 	emptyUsage,
-	formatCost,
-	formatTokens
+	formatCost
 } from '#lib/code/usageTotals.ts';
 
 const call = (prompt: number, completion: number, cost?: number) => ({
@@ -66,10 +65,6 @@ describe('session usage totals', () => {
 	});
 
 	it('formats counts and costs compactly', () => {
-		expect(formatTokens(950)).toBe('950');
-		expect(formatTokens(1234)).toBe('1.2k');
-		expect(formatTokens(48_200)).toBe('48k');
-		expect(formatTokens(4_100_000)).toBe('4.1M');
 		expect(formatCost(0)).toBe('$0.00');
 		expect(formatCost(0.004)).toBe('<$0.01');
 		expect(formatCost(12.3)).toBe('$12.30');
