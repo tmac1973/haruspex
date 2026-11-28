@@ -5,8 +5,7 @@
 	 */
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 	import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
-	import { getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
-	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
+	import { cardRunState } from '#lib/home/cardRun.ts';
 	import { CARD_JOB_WAIT_TIP } from '#lib/home/jobsCard.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
@@ -16,12 +15,7 @@
 	let { card }: { card: HomeCard } = $props();
 
 	const jobId = $derived(card.job_id);
-	const latestRun = $derived(jobId === null ? null : getLatestRun(jobId));
-	const run = $derived(jobId === null ? null : getActiveRunForJob(jobId));
-	const running = $derived(run?.status === 'running');
-	const waiting = $derived(running && (run?.waitingForSlot ?? false));
-	const queued = $derived(getPendingQueue().some((q) => q.jobId === jobId));
-	const failed = $derived(latestRun?.latest?.status === 'failed' ? latestRun.latest : null);
+	const { latestRun, running, waiting, queued, failed } = $derived(cardRunState(jobId));
 	const items = $derived.by((): NewsItem[] | null => {
 		const json = latestRun?.latestSucceeded?.result_json;
 		if (!json) return null;

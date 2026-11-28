@@ -20,7 +20,8 @@
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
-	import { enqueue, getActiveRunForJob, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { enqueue, getActiveRunForJob } from '#lib/agent/jobs/runner.svelte.ts';
+	import { jobQueued } from '#lib/home/cardRun.ts';
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 
 	const cards = $derived(getHomeCards());
@@ -95,7 +96,7 @@
 	function jobBusy(jobId: number | null): boolean {
 		if (jobId === null) return false;
 		if (getActiveRunForJob(jobId)?.status === 'running') return true;
-		return getPendingQueue().some((q) => q.jobId === jobId);
+		return jobQueued(jobId);
 	}
 
 	function editJob(jobId: number) {

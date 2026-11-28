@@ -14,6 +14,7 @@ import {
 } from '#lib/stores/jobs.svelte.ts';
 import { addCard, cardUsesExistingJob, getHomeCards } from '#lib/stores/homeCards.svelte.ts';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
+import { DEFAULT_MODEL_COLUMNS } from '#lib/agent/jobs/chainModel.ts';
 
 /**
  * Make a card type's job from the Add card form's settings and add its card.
@@ -38,13 +39,7 @@ export async function createCardJob(
 		schedule_config: scheduleToConfigJson(schedule),
 		next_due_at: Date.now(),
 		type_config: jobType.configToJson({ ...jobType.configDefaults(), ...typeConfig }),
-		model_remote_base_url: null,
-		model_remote_api_key: null,
-		model_remote_api_key_id: null,
-		model_remote_model_id: null,
-		model_remote_context_size: null,
-		model_remote_vision_supported: null,
-		model_advanced: null
+		...DEFAULT_MODEL_COLUMNS
 	});
 	if (jobId === null) return null;
 	return addCard(cardTypeId, {}, jobId, cardType.defaultSize);

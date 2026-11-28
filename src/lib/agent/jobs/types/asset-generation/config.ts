@@ -3,6 +3,7 @@
 import { parseModelColumns, type ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
 import { clampInt } from '#lib/utils/clampInt.ts';
+import { configRecord } from '#lib/agent/jobs/configRecord.ts';
 
 /** Which checkpoints the run stops at. */
 export type AssetRunMode = 'attended' | 'unattended';
@@ -116,15 +117,7 @@ function clampPowerOfTwo(v: unknown): number | null {
 }
 
 export function parseAssetGenerationConfig(json: string | null): AssetGenerationConfig {
-	let raw: Record<string, unknown> = {};
-	if (json) {
-		try {
-			const parsed: unknown = JSON.parse(json);
-			if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
-		} catch {
-			// Malformed config behaves like no config.
-		}
-	}
+	const raw = configRecord(json);
 	return {
 		spec_path:
 			typeof raw.spec_path === 'string' && raw.spec_path.trim().length > 0

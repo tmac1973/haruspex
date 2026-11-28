@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import type { PendingQueueEntry, RunState } from '#lib/agent/jobs/runner.svelte.ts';
 import type { JobInput, JobStepInput, JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import { snapshot } from '#lib/utils/snapshot.ts';
+import { DEFAULT_MODEL_COLUMNS } from '#lib/agent/jobs/chainModel.ts';
 
 export const fake = $state({
 	current: null as RunState | null,
@@ -45,13 +46,7 @@ export function job(id: number, patch: Partial<JobWithSteps> = {}): JobWithSteps
 		schedule_config: null,
 		next_due_at: null,
 		type_config: null,
-		model_remote_base_url: null,
-		model_remote_api_key: null,
-		model_remote_api_key_id: null,
-		model_remote_model_id: null,
-		model_remote_context_size: null,
-		model_remote_vision_supported: null,
-		model_advanced: null,
+		...DEFAULT_MODEL_COLUMNS,
 		created_at: 0,
 		updated_at: 0,
 		steps: [{ id: 1, ordering: 0, prompt: 'Find it', deep_research: false }],

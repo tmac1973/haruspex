@@ -13,12 +13,8 @@ import { authLine, reasonLabel, stateLabel } from '#lib/home/emailRequests.ts';
 import { listEmailRequests } from '#lib/stores/emailRequests.ts';
 import { parseEmailResearchConfig } from '#lib/agent/jobs/types/email-research/config.ts';
 import { stripPhrase } from '#lib/agent/jobs/types/email-research/body.ts';
-import {
-	getActiveRunForJob,
-	getActiveRuns,
-	getPendingQueue,
-	getQueueDepth
-} from '#lib/agent/jobs/runner.svelte.ts';
+import { getActiveRunForJob, getActiveRuns, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+import { jobQueued } from '#lib/home/cardRun.ts';
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getCardError, getCardNotice } from '#lib/home/fetchedCards.svelte.ts';
 import { GITHUB_EMPTY, githubConfigOf, scopeLine, type GitHubResult } from '#lib/home/github.ts';
@@ -96,7 +92,7 @@ async function jobState(jobId: number) {
 	const state: HomeJobState = {
 		running,
 		waiting: running && current?.waitingForSlot === true,
-		queued: getPendingQueue().some((q) => q.jobId === jobId),
+		queued: jobQueued(jobId),
 		failed: latest?.status === 'failed' ? (latest.error ?? 'The last run failed.') : null,
 		updatedAt: withSteps?.finished_at ?? null
 	};

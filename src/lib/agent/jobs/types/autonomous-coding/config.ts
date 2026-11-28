@@ -1,3 +1,5 @@
+import { configRecord } from '#lib/agent/jobs/configRecord.ts';
+
 /** Autonomous-coding `type_config` JSON shape. */
 
 export interface AutonomousCodingConfig {
@@ -90,15 +92,7 @@ export const MIN_MAX_TURNS = 50;
 export const MAX_MAX_TURNS = 600;
 
 export function parseAutonomousCodingConfig(json: string | null): AutonomousCodingConfig {
-	let raw: Record<string, unknown> = {};
-	if (json) {
-		try {
-			const parsed: unknown = JSON.parse(json);
-			if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
-		} catch {
-			// Malformed config behaves like no config.
-		}
-	}
+	const raw = configRecord(json);
 	return {
 		plan_dir: typeof raw.plan_dir === 'string' && raw.plan_dir.length > 0 ? raw.plan_dir : null,
 		signing_fallback:

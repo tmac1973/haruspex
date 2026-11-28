@@ -12,6 +12,7 @@
  * Phase 05 widens this with `unattended_chain`.
  */
 import { parseChainModel, type ChainModel } from '#lib/agent/jobs/chainModel.ts';
+import { configRecord } from '#lib/agent/jobs/configRecord.ts';
 
 /**
  * The model each chained stage runs on. Null means "same as this job", the
@@ -146,15 +147,7 @@ export interface GuidedPlanningConfig {
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
-	let raw: Record<string, unknown> = {};
-	if (json) {
-		try {
-			const parsed: unknown = JSON.parse(json);
-			if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
-		} catch {
-			// Malformed config behaves like no config.
-		}
-	}
+	const raw = configRecord(json);
 	const mode: GuidedPlanningRunMode = RUN_MODES.includes(raw.run_mode as GuidedPlanningRunMode)
 		? (raw.run_mode as GuidedPlanningRunMode)
 		: 'attended';
