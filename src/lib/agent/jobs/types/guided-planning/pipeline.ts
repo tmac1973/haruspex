@@ -8,6 +8,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { workdirFiles } from '#lib/agent/jobs/workdirFiles.ts';
 import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
 import { createJob } from '#lib/stores/jobs.svelte.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
@@ -1230,52 +1231,19 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	// claims a file it can't see, and never asks the user to approve a phantom plan.
 	const MAX_WRITE_ATTEMPTS = 3;
 
-	const fileExists = async (relPath: string): Promise<boolean> => {
+	const files = workdirFiles(deps);
+	const fileExists = async (relPath: string): Promise<boolean> =>
 		// No sandbox root → can't verify (and writes need one anyway); don't block.
-		if (!job.working_dir) return true;
-		try {
-			return await invoke<boolean>('fs_path_exists', {
-				workdir: job.working_dir,
-				relPath
-			});
-		} catch {
-			return false;
-		}
-	};
-
-	/**
-	 * Read a workdir file for validation, or null if it can't be read.
-	 *
-	 * Full-fidelity read: the gate has to see the END of the file to notice a
-	 * missing tail, and a windowed read (fs_read_text defaults to 2000 lines)
-	 * would make tail truncation invisible by construction.
-	 */
-	const readWorkdirFile = async (relPath: string): Promise<string | null> => {
-		if (!job.working_dir) return null;
-		try {
-			return await invoke<string>('fs_read_text_full', {
-				workdir: job.working_dir,
-				relPath
-			});
-		} catch {
-			return null;
-		}
-	};
+		!job.working_dir || files.exists(relPath);
 
 	/** Write a workdir file the runner owns — the spec, the overview's ids. */
 	const writeWorkdirFile = async (relPath: string, content: string): Promise<void> => {
-		if (!job.working_dir) return;
-		await invoke('fs_write_text', {
-			workdir: job.working_dir,
-			relPath,
-			content,
-			overwrite: true
-		});
+		if (job.working_dir) await files.writeText(relPath, content);
 	};
 
 	const checkPhaseFile = (relPath: string) => async (): Promise<string | null> => {
 		if (!(await fileExists(relPath))) return `${relPath} is not on disk`;
-		const text = await readWorkdirFile(relPath);
+		const text = await files.readText(relPath);
 		// Unreadable, no sandbox root, or anything that isn't actually a string
 		// → fall back to the existence result rather than failing a file that
 		// may well be fine. The typeof guard matters: a backend that resolves
@@ -1297,7 +1265,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 
 	const verificationCommandProblem = async (): Promise<string | null> => {
 		if (!job.working_dir) return null;
-		const text = await readWorkdirFile(overviewPath);
+		const text = await files.readText(overviewPath);
 		if (typeof text !== 'string') return null;
 		const command = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
 		if (!command) return null;
@@ -1346,7 +1314,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 
 	const outlineOrderingProblem = async (phases: NormalizedPhase[]): Promise<string | null> => {
 		if (!job.working_dir) return null;
-		const text = await readWorkdirFile(overviewPath);
+		const text = await files.readText(overviewPath);
 		if (typeof text !== 'string') return null;
 		const problem = testSuiteOrderingProblem(
 			extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING),
@@ -1500,7 +1468,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// Hand the verifier the overview rather than making it fetch a file the
 		// runner has already read for its own gates. Null (no sandbox root)
 		// falls back to the read-it-yourself wording.
-		const overviewText = await readWorkdirFile(overviewPath);
+		const overviewText = await files.readText(overviewPath);
 		const verdict = await turn(
 			VERIFY,
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
@@ -1534,7 +1502,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			'verify.revise'
 		);
 		if (revised.length === 0) return revised;
-		const overviewText = await readWorkdirFile(overviewPath);
+		const overviewText = await files.readText(overviewPath);
 		for (const relPath of revised) {
 			await ensureWritten(
 				checkPhaseFile(relPath),
@@ -1784,7 +1752,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	 * something we hoped it would look up.
 	 */
 	const appendAssetsToOverview = async (entries: Array<{ id: string; out: string }>) => {
-		const existing = await readWorkdirFile(overviewPath);
+		const existing = await files.readText(overviewPath);
 		if (existing === null) return;
 		// Idempotent: a re-run must not stack four Assets sections.
 		const base = existing.split('\n## Assets\n')[0].trimEnd();
@@ -1894,7 +1862,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const appendModelsToOverview = async (
 		entries: Array<{ id: string; height: number; clips: string[] }>
 	) => {
-		const existing = await readWorkdirFile(overviewPath);
+		const existing = await files.readText(overviewPath);
 		if (existing === null) return;
 		// Idempotent, and it keeps an Assets section that comes after it.
 		const [base, rest = ''] = existing.split('\n## 3D models\n');
@@ -2184,7 +2152,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			abortIfCancelled();
 			// The overview itself, not just its path: the question is "is this
 			// right?", and it should be answerable without leaving the modal.
-			const overviewText = (await readWorkdirFile(overviewPath))?.trim();
+			const overviewText = (await files.readText(overviewPath))?.trim();
 			const answer = await askUserQuestion(
 				{
 					runId,
@@ -2284,7 +2252,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		// bytes. Inlining it costs the same prompt tokens as the model fetching
 		// it and saves a tool round trip per phase. Null (no sandbox root) falls
 		// back to the read-it-yourself wording.
-		const planningOverview = await readWorkdirFile(overviewPath);
+		const planningOverview = await files.readText(overviewPath);
 		for (const phase of outline) {
 			abortIfCancelled();
 			deps.patchStep(PLANNING, { streaming: `Writing phase ${phase.nn} — ${phase.title}` });

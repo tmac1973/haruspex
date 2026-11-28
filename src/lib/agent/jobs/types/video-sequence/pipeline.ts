@@ -22,7 +22,7 @@ import { checkStage } from '#lib/agent/jobs/types/video-sequence/checkStage.ts';
 import { finishStages } from '#lib/agent/jobs/types/video-sequence/finishStages.ts';
 import { runFiles } from '#lib/agent/jobs/types/video-sequence/files.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
-import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
+import { workdirFiles } from '#lib/agent/jobs/workdirFiles.ts';
 import { refreshVideoBinaries, videoToolsOn } from '#lib/video/binaries.ts';
 import { parseSequenceSpec } from '#lib/sequence/spec/parse.ts';
 import { validateSequenceSpec, type Validated } from '#lib/sequence/spec/validate.ts';
@@ -83,14 +83,6 @@ function check(json: unknown, sc: SpecContext, keyframes: boolean): Checked | st
 /** Whether a generated section can open on a keyframe in this run. */
 function usesKeyframes(sc: SpecContext): boolean {
 	return sc.validate.keyframes && sc.validate.capabilities.includes('start_image');
-}
-
-async function readText(workdir: string, relPath: string): Promise<string | null> {
-	try {
-		return await invoke<string>('fs_read_text_full', { workdir, relPath });
-	} catch {
-		return null;
-	}
 }
 
 /**
@@ -179,12 +171,8 @@ async function specStage(
 	return checked;
 }
 
-async function writeSpec(ctx: JobRunContext, specPath: string, spec: SequenceSpec): Promise<void> {
-	const workdir = ctx.job.working_dir;
-	const content = `${JSON.stringify(spec, null, 2)}\n`;
-	await trackWrite(createdScope({ jobRunId: ctx.runId }), workdir, specPath, true, () =>
-		invoke('fs_write_text', { workdir, relPath: specPath, content, overwrite: true })
-	);
+function writeSpec(ctx: JobRunContext, specPath: string, spec: SequenceSpec): Promise<void> {
+	return workdirFiles(ctx).writeText(specPath, `${JSON.stringify(spec, null, 2)}\n`);
 }
 
 export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void> {
@@ -197,7 +185,7 @@ export async function runVideoSequencePipeline(ctx: JobRunContext): Promise<void
 	void markRunStarted(ctx.runId, startedMs);
 	try {
 		const { sc, made: madeNote } = await preflight(ctx, cfg);
-		const existing = await readText(ctx.job.working_dir!, specPath);
+		const existing = await workdirFiles(ctx).readText(specPath);
 		const run = { attended, existing, specPath };
 		const answers = await interviewStage(ctx, steps, cfg, sc, { ...run, made: madeNote });
 		const { validated } = await specStage(ctx, steps, cfg, sc, { ...run, answers });
@@ -406,8 +394,7 @@ async function editByHand(
 	checked: Checked
 ): Promise<Checked> {
 	const workdir = ctx.job.working_dir!;
-	const content = `${JSON.stringify(checked.validated.spec, null, 2)}\n`;
-	await invoke('fs_write_text', { workdir, relPath: specPath, content, overwrite: true });
+	await writeSpec(ctx, specPath, checked.validated.spec);
 	const opened = await openInEditor(workdir, [specPath]);
 	for (;;) {
 		const answer = await askUserQuestion(
@@ -426,7 +413,7 @@ async function editByHand(
 		if (answer.kind !== 'selected' || answer.labels[0] !== 'Done') {
 			throw new DOMException('Aborted', 'AbortError');
 		}
-		const text = await readText(workdir, specPath);
+		const text = await workdirFiles(ctx).readText(specPath);
 		const got = check(text, sc, keyframes);
 		if (!Array.isArray(got)) return got;
 		await askUserQuestion(

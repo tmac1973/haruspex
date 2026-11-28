@@ -20,6 +20,7 @@
 
 import { onBoundaryRefusal, type BoundaryRefusal } from '#lib/shell/boundary.ts';
 import { invoke } from '@tauri-apps/api/core';
+import { workdirFiles } from '#lib/agent/jobs/workdirFiles.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	SUBMIT_ITERATION_RESULT_TOOL,
@@ -274,10 +275,10 @@ async function resolveVerifyCommand(
 	planDir: string,
 	decisionsPath: string
 ): Promise<string | null> {
-	const text = (await readPlanFile(ctx, decisionsPath)) ?? '';
+	const text = (await workdirFiles(ctx).readText(decisionsPath)) ?? '';
 	const fromDecisions = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
 	if (fromDecisions !== null) return fromDecisions;
-	const overviewText = (await readPlanFile(ctx, `${planDir}overview.md`)) ?? '';
+	const overviewText = (await workdirFiles(ctx).readText(`${planDir}overview.md`)) ?? '';
 	return extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING);
 }
 
@@ -402,7 +403,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 		// crashed/killed run picks up where it left off by re-running the job.
 		startStep(DECOMPOSE);
 		abortIfCancelled();
-		const resumed = parseTodoPlan((await readPlanFile(ctx, todoPath)) ?? '');
+		const resumed = parseTodoPlan((await workdirFiles(ctx).readText(todoPath)) ?? '');
 		let plan: LoopPlan;
 		if (resumed) {
 			// A legacy phaseless TODO gets one catch-all phase so deep
@@ -434,7 +435,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 						`step(s) → ${todoPath}\n\n${renderOverview(plan.items)}`
 				);
 			}
-			await writePlanFile(ctx, todoPath, renderTodoPlan(plan));
+			await workdirFiles(ctx).writeText(todoPath, renderTodoPlan(plan));
 		}
 
 		// Stage 2 — the loop. The baseline commit (made right after preflight)
@@ -444,7 +445,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 		abortIfCancelled();
 		const maxAttempts = ITEM_MAX_ATTEMPTS;
 		const maxTurns = cfg.max_turns ?? DEFAULT_MAX_TURNS;
-		let progress = (await readPlanFile(ctx, progressPath)) ?? '# Coding progress\n';
+		let progress = (await workdirFiles(ctx).readText(progressPath)) ?? '# Coding progress\n';
 		const recentNotes: string[] = [];
 		/** Each phase's latest repair note, handed whole to its next repair cycle. */
 		const lastRepairNote = new Map<string, string>();
@@ -461,8 +462,8 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
 			// logOnly: the entry is progress commentary (command warnings/changes);
 			// the plan didn't change, so skip the byte-identical TODO rewrite.
-			if (!opts?.logOnly) await writePlanFile(ctx, todoPath, renderTodoPlan(plan));
-			await writePlanFile(ctx, progressPath, progress);
+			if (!opts?.logOnly) await workdirFiles(ctx).writeText(todoPath, renderTodoPlan(plan));
+			await workdirFiles(ctx).writeText(progressPath, progress);
 		};
 
 		// Commands re-resolved fresh at every use (see resolveCommands). Fresh
@@ -1178,31 +1179,6 @@ async function runFinalizeTurn(
 // ---------------------------------------------------------------------------
 // File plumbing (the runner owns TODO/PROGRESS; the model never edits them)
 
-async function readPlanFile(ctx: JobRunContext, relPath: string): Promise<string | null> {
-	if (!ctx.job.working_dir) return null;
-	try {
-		// Full-fidelity read, NOT the model-facing windowed fs_read_text: these
-		// files are read-modify-written by the runner (PROGRESS grows every
-		// iteration), and a head-truncated read rewritten to disk would
-		// silently destroy the tail of a long run's log.
-		return await invoke<string>('fs_read_text_full', {
-			workdir: ctx.job.working_dir,
-			relPath
-		});
-	} catch {
-		return null;
-	}
-}
-
-async function writePlanFile(ctx: JobRunContext, relPath: string, content: string): Promise<void> {
-	await invoke('fs_write_text', {
-		workdir: ctx.job.working_dir,
-		relPath,
-		content,
-		overwrite: true
-	});
-}
-
 /**
  * A model may narrate a write without calling the tool — verify the expected
  * file landed on disk, retrying with a pointed prompt before failing honestly.
@@ -1397,7 +1373,7 @@ async function tryParsePlanDir(ctx: JobRunContext, planDir: string): Promise<Loo
 	const files: PlanFile[] = [];
 	for (const name of names) {
 		if (!PHASE_FILE_RE.test(name)) continue;
-		const content = await readPlanFile(ctx, `${planDir}${name}`);
+		const content = await workdirFiles(ctx).readText(`${planDir}${name}`);
 		if (content === null) return null;
 		files.push({ name, content });
 	}
@@ -1447,10 +1423,10 @@ async function ensureGitignore(ctx: JobRunContext): Promise<void> {
 	}
 	if (wanted.size === 0) return;
 
-	const existing = (await readPlanFile(ctx, '.gitignore')) ?? '';
+	const existing = (await workdirFiles(ctx).readText('.gitignore')) ?? '';
 	const merged = mergeGitignore(existing, [...wanted]);
 	if (merged === null) return;
-	await writePlanFile(ctx, '.gitignore', merged);
+	await workdirFiles(ctx).writeText('.gitignore', merged);
 }
 
 /**

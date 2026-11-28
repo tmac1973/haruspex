@@ -94,7 +94,7 @@ import type {
 	SheetOutcome
 } from '#lib/agent/jobs/types/asset-generation/types.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
-import { createdScope, trackWrite } from '#lib/agent/tools/_created.ts';
+import { workdirFiles } from '#lib/agent/jobs/workdirFiles.ts';
 import { stepMarkers } from '#lib/agent/jobs/stepMarkers.ts';
 
 /** One retry with the problems quoted, then the stage fails honestly. */
@@ -196,73 +196,6 @@ function sheetSummary(sheets: SheetOutcome[]): string {
 	);
 }
 
-async function workdirPathExists(ctx: JobRunContext, relPath: string): Promise<boolean> {
-	if (!ctx.job.working_dir) return false;
-	try {
-		return await invoke<boolean>('fs_path_exists', {
-			workdir: ctx.job.working_dir,
-			relPath
-		});
-	} catch {
-		return false;
-	}
-}
-
-async function readWorkdirFile(ctx: JobRunContext, relPath: string): Promise<string | null> {
-	if (!ctx.job.working_dir) return null;
-	try {
-		return await invoke<string>('fs_read_text_full', {
-			workdir: ctx.job.working_dir,
-			relPath
-		});
-	} catch {
-		return null;
-	}
-}
-
-async function readWorkdirBytes(ctx: JobRunContext, relPath: string): Promise<Uint8Array | null> {
-	if (!ctx.job.working_dir) return null;
-	try {
-		const bytes = await invoke<number[]>('fs_read_bytes', {
-			workdir: ctx.job.working_dir,
-			relPath
-		});
-		return new Uint8Array(bytes);
-	} catch {
-		return null;
-	}
-}
-
-async function writeWorkdirBytes(
-	ctx: JobRunContext,
-	relPath: string,
-	bytes: Uint8Array
-): Promise<void> {
-	await trackWrite(createdScope({ jobRunId: ctx.runId }), ctx.job.working_dir, relPath, true, () =>
-		invoke('fs_write_bytes', {
-			workdir: ctx.job.working_dir,
-			relPath,
-			bytes: Array.from(bytes),
-			overwrite: true
-		})
-	);
-}
-
-async function writeWorkdirFile(
-	ctx: JobRunContext,
-	relPath: string,
-	content: string
-): Promise<void> {
-	await trackWrite(createdScope({ jobRunId: ctx.runId }), ctx.job.working_dir, relPath, true, () =>
-		invoke('fs_write_text', {
-			workdir: ctx.job.working_dir,
-			relPath,
-			content,
-			overwrite: true
-		})
-	);
-}
-
 /**
  * One judging turn: the anchor and the asset, side by side.
  *
@@ -359,9 +292,9 @@ async function drawTransitions(
 				spec,
 				tileSize,
 				signal: opts.signal,
-				exists: (rel) => workdirPathExists(ctx, rel),
-				writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
-				writeText: (rel, text) => writeWorkdirFile(ctx, rel, text),
+				exists: (rel) => workdirFiles(ctx).exists(rel),
+				writeBytes: (rel, bytes) => workdirFiles(ctx).writeBytes(rel, bytes),
+				writeText: (rel, text) => workdirFiles(ctx).writeText(rel, text),
 				render: (view, a, other, edge, seeds) =>
 					renderTransition(view, a, other, edge, tileSize, seeds, []),
 				preview: (view, sheet) => transitionPreview(view, sheet, tileSize),
@@ -447,7 +380,7 @@ async function writeContactSheet(
 	try {
 		const images: Uint8Array[] = [];
 		for (const rel of produced) {
-			const bytes = await readWorkdirBytes(ctx, rel);
+			const bytes = await workdirFiles(ctx).readBytes(rel);
 			if (bytes && bytes.length > 0) images.push(bytes);
 		}
 		if (images.length === 0) return null;
@@ -456,7 +389,7 @@ async function writeContactSheet(
 		const sheet = await contactSheet(images, cell);
 		const dir = specPath.lastIndexOf('/');
 		const rel = dir < 0 ? 'contact-sheet.png' : `${specPath.slice(0, dir)}/contact-sheet.png`;
-		await writeWorkdirBytes(ctx, rel, sheet);
+		await workdirFiles(ctx).writeBytes(rel, sheet);
 		return rel;
 	} catch {
 		return null;
@@ -548,7 +481,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(SPEC);
 		abortIfCancelled();
-		const json = await readWorkdirFile(ctx, specPath);
+		const json = await workdirFiles(ctx).readText(specPath);
 		let spec: AssetSpec;
 
 		if (json !== null) {
@@ -570,7 +503,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				const sized = applyJobSize(spec, cfg.target_size, await nativeEdgeFor(spec.style.model));
 				if (sized.from !== null) {
 					spec = sized.spec;
-					await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+					await workdirFiles(ctx).writeText(specPath, renderAssetSpec(spec));
 					resized =
 						`\nAsset size changed from ${sized.from} to ${cfg.target_size} px to match the job. ` +
 						`Assets already on disk keep their old size; delete them to remake them.`;
@@ -643,7 +576,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				);
 			}
 			spec = derived;
-			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+			await workdirFiles(ctx).writeText(specPath, renderAssetSpec(spec));
 			finishStep(
 				SPEC,
 				`Wrote ${specPath} — ${spec.entries.length} asset(s): ${breakdown(spec)}\n\n` +
@@ -673,10 +606,10 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				runId: ctx.runId,
 				signal: abort.signal,
 				present: (markdown) => ctx.patchStep(ANCHOR, { streaming: markdown }),
-				readFile: (rel) => readWorkdirFile(ctx, rel),
-				readBytes: (rel) => readWorkdirBytes(ctx, rel),
-				writeFile: (rel, content) => writeWorkdirFile(ctx, rel, content),
-				writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
+				readFile: (rel) => workdirFiles(ctx).readText(rel),
+				readBytes: (rel) => workdirFiles(ctx).readBytes(rel),
+				writeFile: (rel, content) => workdirFiles(ctx).writeText(rel, content),
+				writeBytes: (rel, bytes) => workdirFiles(ctx).writeBytes(rel, bytes),
 				caps
 			},
 			MAX_GENERATION_EDGE
@@ -693,7 +626,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		// their repo, saying nothing happened.
 		const nextPalette = spec.normalize.palette ?? [];
 		if (!samePalette(priorPalette, nextPalette)) {
-			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+			await workdirFiles(ctx).writeText(specPath, renderAssetSpec(spec));
 		}
 		finishStep(
 			ANCHOR,
@@ -721,7 +654,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			for (const [id, why] of r.failed) recipesFailed.set(id, why);
 			if (r.written.length > 0) {
 				spec = r.spec;
-				await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+				await workdirFiles(ctx).writeText(specPath, renderAssetSpec(spec));
 			}
 			abortIfCancelled();
 		}
@@ -742,8 +675,8 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			},
 			signal: abort.signal,
 			generate: (req, opts) => backend.generate(req, opts),
-			exists: (rel) => workdirPathExists(ctx, rel),
-			writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
+			exists: (rel) => workdirFiles(ctx).exists(rel),
+			writeBytes: (rel, bytes) => workdirFiles(ctx).writeBytes(rel, bytes),
 			progress: (n, total, id) => ctx.patchStep(GENERATE, { streaming: `${n}/${total} — ${id}` }),
 			onSheet: (o) => sheets.push(o),
 			pregenerated: anchored.pregenerated
@@ -773,7 +706,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		const marked = markRejections(drawn ?? spec, entries);
 		if (marked || drawn) {
 			spec = marked ?? drawn!;
-			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+			await workdirFiles(ctx).writeText(specPath, renderAssetSpec(spec));
 		}
 		// Sets are drawn from code-drawn textures' recipes, after them.
 		const sets = codeTextures
@@ -786,7 +719,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			: { spec: null, outcomes: [] };
 		if (sets.spec) {
 			spec = sets.spec;
-			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+			await workdirFiles(ctx).writeText(specPath, renderAssetSpec(spec));
 		}
 		const tally = countByStatus(entries);
 		finishStep(
@@ -809,8 +742,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		startStep(REPORT);
 		abortIfCancelled();
 		const sheetPath = await writeContactSheet(ctx, spec, entries, specPath);
-		await writeWorkdirFile(
-			ctx,
+		await workdirFiles(ctx).writeText(
 			reportPath,
 			renderAssetReport({
 				spec,
