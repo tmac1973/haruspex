@@ -332,6 +332,10 @@ jobs:
             # (same sonames, other versions) from libs/ (docs/image-generation.md).
             # media/lib after it: the shared libav*, MLT and Qt the bundled
             # ffmpeg, ffprobe and melt need (scripts/build-media.sh).
+            # CARGO_BUILD_JOBS=2: with all four of the runner's jobs, the
+            # release compile of the app crate beside three others ran its
+            # 16 GB out and rustc was killed (0.2.26, SIGKILL, no error).
+            CARGO_BUILD_JOBS=2 \
             APPIMAGE_EXTRACT_AND_RUN=1 \
             NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs:$PWD/src-tauri/binaries/media/lib" \
               npm run tauri build -- --bundles appimage,deb,rpm ${{ matrix.tauri_args }}
