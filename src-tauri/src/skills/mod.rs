@@ -477,13 +477,13 @@ pub struct ProjectInstructions {
 /// instructions too, but a shell sitting in `~` doesn't treat the home
 /// directory's skills as a project's.
 pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
-    project_root_in(cwd, home_dir().as_deref())
+    project_root_in(cwd, crate::env_util::home_dir().as_deref())
 }
 
 /// Where `/init` writes for a shell in `cwd`: its project, or outside one the
 /// folder itself, unless that is the home folder or above it.
 pub fn instructions_root(cwd: &Path) -> Option<PathBuf> {
-    let home = home_dir();
+    let home = crate::env_util::home_dir();
     project_root_in(cwd, home.as_deref())
         .or_else(|| below_home(cwd, cwd, home.as_deref()).then(|| cwd.to_path_buf()))
 }
@@ -509,14 +509,6 @@ fn below_home(dir: &Path, cwd: &Path, home: Option<&Path>) -> bool {
         Some(home) => !home.starts_with(dir),
         None => dir == cwd,
     }
-}
-
-fn home_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let key = "USERPROFILE";
-    #[cfg(not(windows))]
-    let key = "HOME";
-    std::env::var_os(key).map(PathBuf::from)
 }
 
 fn project_instructions(root: &Path) -> ProjectInstructions {

@@ -16,7 +16,22 @@
 //! only inside `#[cfg(test)]` (`HARUSPEX_PDEATH_CHILD`, `HARUSPEX_GOOGLE_TOKEN_FILE`,
 //! `HARUSPEX_TILE_DIR` and the like). Conventions of the OS or of a library —
 //! `HOME`, `PATH`, `SHELL`, `XDG_*`, `USERPROFILE`, `APPDIR`, `HF_HOME` — are
-//! read where they are used.
+//! read where they are used, bar the home folder ([`home_dir`]).
+
+/// The user's home folder from the environment: `%USERPROFILE%` on Windows,
+/// `$HOME` elsewhere. For code with no `AppHandle` to ask Tauri.
+pub fn home_dir() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    let key = "USERPROFILE";
+    #[cfg(not(windows))]
+    let key = "HOME";
+    std::env::var_os(key).map(std::path::PathBuf::from)
+}
+
+/// [`home_dir`] as a string, for code that compares or rewrites text.
+pub fn home_dir_string() -> Option<String> {
+    home_dir().map(|p| p.to_string_lossy().into_owned())
+}
 
 /// See the table above.
 pub const DEBUG_LOG_FILE_VAR: &str = "HARUSPEX_DEBUG_LOG_FILE";

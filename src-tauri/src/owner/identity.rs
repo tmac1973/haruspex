@@ -48,14 +48,9 @@ fn load_or_create_id(path: &Path) -> String {
         log::warn!("[owner] instance id file is not an id; making a new one");
     }
     let id = new_id();
-    let tmp = path.with_extension("tmp");
-    // On a first launch the app data folder may not exist yet (Windows).
-    let written = path
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|_| std::fs::write(&tmp, format!("{id}\n")))
-        .and_then(|_| std::fs::rename(&tmp, path));
-    if let Err(e) = written {
+    // On a first launch the app data folder may not exist yet (Windows):
+    // the write makes it.
+    if let Err(e) = crate::file_util::write_atomic(path, format!("{id}\n").as_bytes()) {
         log::warn!("[owner] could not keep the instance id: {e}");
     }
     id

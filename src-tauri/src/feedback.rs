@@ -104,7 +104,7 @@ pub(crate) fn redact_for_report(text: &str) -> String {
 /// which carry signed links and tokens under any name, and email addresses.
 fn for_report(lines: Vec<String>) -> Vec<String> {
     let known = crate::secrets::known_values();
-    let home = home_dir();
+    let home = crate::env_util::home_dir_string();
     lines
         .into_iter()
         .map(|line| {
@@ -113,15 +113,6 @@ fn for_report(lines: Vec<String>) -> Vec<String> {
             scrub_line(&redact_phones(&line))
         })
         .collect()
-}
-
-/// The user's home directory: $HOME on Unix, %USERPROFILE% on Windows.
-fn home_dir() -> Option<String> {
-    #[cfg(windows)]
-    let key = "USERPROFILE";
-    #[cfg(not(windows))]
-    let key = "HOME";
-    std::env::var(key).ok()
 }
 
 /// `line` with the home folder written as `~`, in every spelling a log or a

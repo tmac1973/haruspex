@@ -103,17 +103,11 @@ impl WebviewStore {
         let Some(path) = &self.path else {
             return Ok(());
         };
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        }
-        let body = serde_json::to_vec(&File {
+        let file = File {
             version: 1,
             items: items.clone(),
-        })
-        .map_err(|e| e.to_string())?;
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
-        std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+        };
+        crate::file_util::save_json(path, &file, false)
     }
 }
 
